@@ -34,52 +34,20 @@ func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-
 	workspace, err := os.MkdirTemp("", "harnesslint-fix-*")
 	if err != nil {
 		return Report{}, err
 	}
 	defer func() { _ = os.RemoveAll(workspace) }()
-	if err := materializeFixManifest(workspace, before); err != nil {
-		return Report{}, err
-	}
-	if err := initializeFixWorkspace(workspace); err != nil {
-		return Report{}, err
-	}
-
-	report, err := execute(workspace)
+	report, after, changed, err := runIsolatedFixWorkspace(workspace, before, execute)
 	if err != nil {
 		return Report{}, err
-	}
-	afterPaths, err := repositoryPaths(workspace)
-	if err != nil {
-		return Report{}, err
-	}
-	after, err := captureFixManifest(workspace, afterPaths)
-	if err != nil {
-		return Report{}, err
-	}
-	changed, err := fixManifestChangedPaths(before, after)
-	if err != nil {
-		return Report{}, err
-	}
-	if len(changed) != report.Fixed {
-		return Report{}, fmt.Errorf("quality fixer change count mismatch: report=%d postimages=%d", report.Fixed, len(changed))
 	}
 	if len(changed) == 0 {
 		return report, nil
 	}
-
-	if err := verifyFixManifest(root, before); err != nil {
-		return Report{}, fmt.Errorf("quality fixer input changed while isolated fixer ran: %w", err)
-	}
-	for _, path := range changed {
-		if err := applyFixPostimage(root, path, before[path], after[path]); err != nil {
-			return Report{}, err
-		}
-	}
-	if err := verifyFixManifest(root, after); err != nil {
-		return Report{}, fmt.Errorf("quality fixer postimage verification failed: %w", err)
+	if err := applyIsolatedFixPostimages(root, before, after, changed); err != nil {
+		return Report{}, err
 	}
 	report.FixEvidence = &FixEvidence{
 		Method: FixProvenanceIsolatedPostimageV1,
@@ -90,6 +58,50 @@ func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
 		},
 	}
 	return report, nil
+}
+
+func runIsolatedFixWorkspace(workspace string, before fixManifest, execute isolatedFixRun) (Report, fixManifest, []string, error) {
+	if err := materializeFixManifest(workspace, before); err != nil {
+		return Report{}, nil, nil, err
+	}
+	if err := initializeFixWorkspace(workspace); err != nil {
+		return Report{}, nil, nil, err
+	}
+	report, err := execute(workspace)
+	if err != nil {
+		return Report{}, nil, nil, err
+	}
+	afterPaths, err := repositoryPaths(workspace)
+	if err != nil {
+		return Report{}, nil, nil, err
+	}
+	after, err := captureFixManifest(workspace, afterPaths)
+	if err != nil {
+		return Report{}, nil, nil, err
+	}
+	changed, err := fixManifestChangedPaths(before, after)
+	if err != nil {
+		return Report{}, nil, nil, err
+	}
+	if len(changed) != report.Fixed {
+		return Report{}, nil, nil, fmt.Errorf("quality fixer change count mismatch: report=%d postimages=%d", report.Fixed, len(changed))
+	}
+	return report, after, changed, nil
+}
+
+func applyIsolatedFixPostimages(root string, before, after fixManifest, changed []string) error {
+	if err := verifyFixManifest(root, before); err != nil {
+		return fmt.Errorf("quality fixer input changed while isolated fixer ran: %w", err)
+	}
+	for _, path := range changed {
+		if err := applyFixPostimage(root, path, before[path], after[path]); err != nil {
+			return err
+		}
+	}
+	if err := verifyFixManifest(root, after); err != nil {
+		return fmt.Errorf("quality fixer postimage verification failed: %w", err)
+	}
+	return nil
 }
 
 func initializeFixWorkspace(root string) error {

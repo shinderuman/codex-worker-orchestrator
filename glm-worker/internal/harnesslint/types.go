@@ -2,8 +2,6 @@ package harnesslint
 
 import "sort"
 
-const FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
-
 type Violation struct {
 	Rule    string `json:"rule"`
 	Path    string `json:"path"`
@@ -30,6 +28,8 @@ type Report struct {
 	Violations  []Violation  `json:"violations"`
 	FixEvidence *FixEvidence `json:"fix_evidence,omitempty"`
 }
+
+const FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
 
 func makeReport(fixed int, violations []Violation) Report {
 	sort.Slice(violations, func(i, j int) bool {

@@ -71,14 +71,25 @@ func (w *Workflow) prepareReviewInputSnapshot(
 			err,
 		)
 	}
-	handled, qualityReport, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
-	if err != nil || handled {
-		return workerEnd, true, err
+	qualityReport, err := w.qualityGate(w.config.RepoRoot)
+	if err != nil {
+		return workerEnd, true, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
 	}
-	if qualityReport.Fixed == 0 {
-		return workerEnd, false, nil
+	reviewInput := workerEnd
+	if qualityReport.Fixed > 0 {
+		reviewInput, stopped, err = w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport)
+		if err != nil || stopped {
+			return reviewInput, true, err
+		}
 	}
-	return w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport)
+	if !harnesslint.IsViolation(qualityReport) {
+		return reviewInput, false, nil
+	}
+	result := qualityGateFixResult(qualityReport)
+	if err := w.writeLastReview(result); err != nil {
+		return reviewInput, true, err
+	}
+	return reviewInput, true, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
 }
 
 func (w *Workflow) buildReviewCheckpoint(
@@ -176,31 +187,12 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 			err,
 		)
 	}
-	evidence := report.FixEvidence
-	if evidence == nil || evidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 || evidence.Input == nil {
+	if reason := qualityFixSnapshotMismatchReason(workerEnd, reviewInput, report); reason != "" {
 		return reviewInput, true, w.failClosedSnapshot(
 			state.SnapshotStageReviewStart,
 			workerEnd,
 			reviewInput,
-			fmt.Sprintf("machine quality fixer provenanceがありません(fixed=%d)", report.Fixed),
-			nil,
-		)
-	}
-	if evidence.Input.Head != workerEnd.Head || evidence.Input.IndexDigest != workerEnd.IndexDigest || evidence.Input.WorktreeDigest != workerEnd.WorktreeDigest {
-		return reviewInput, true, w.failClosedSnapshot(
-			state.SnapshotStageReviewStart,
-			workerEnd,
-			reviewInput,
-			fmt.Sprintf("machine quality fixer provenanceがworker-end snapshotと一致しません(fixed=%d)", report.Fixed),
-			nil,
-		)
-	}
-	if reviewInput.Head != workerEnd.Head || reviewInput.IndexDigest != workerEnd.IndexDigest {
-		return reviewInput, true, w.failClosedSnapshot(
-			state.SnapshotStageReviewStart,
-			workerEnd,
-			reviewInput,
-			fmt.Sprintf("machine quality fixer実行中にHEAD/indexが変化しました(fixed=%d)", report.Fixed),
+			reason,
 			nil,
 		)
 	}
@@ -235,25 +227,18 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 	return reviewInput, false, nil
 }
 
-func (w *Workflow) handleRepositoryQualityViolation(
-	request string,
-	workerResult packet.Result,
-	reviewNumber int,
-	autoFixes int,
-	workerPhase string,
-) (bool, harnesslint.Report, error) {
-	qualityReport, err := w.qualityGate(w.config.RepoRoot)
-	if err != nil {
-		return true, harnesslint.Report{}, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
+func qualityFixSnapshotMismatchReason(workerEnd, reviewInput state.GitSnapshot, report harnesslint.Report) string {
+	evidence := report.FixEvidence
+	switch {
+	case evidence == nil || evidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 || evidence.Input == nil:
+		return fmt.Sprintf("machine quality fixer provenanceがありません(fixed=%d)", report.Fixed)
+	case evidence.Input.Head != workerEnd.Head || evidence.Input.IndexDigest != workerEnd.IndexDigest || evidence.Input.WorktreeDigest != workerEnd.WorktreeDigest:
+		return fmt.Sprintf("machine quality fixer provenanceがworker-end snapshotと一致しません(fixed=%d)", report.Fixed)
+	case reviewInput.Head != workerEnd.Head || reviewInput.IndexDigest != workerEnd.IndexDigest:
+		return fmt.Sprintf("machine quality fixer実行中にHEAD/indexが変化しました(fixed=%d)", report.Fixed)
+	default:
+		return ""
 	}
-	if !harnesslint.IsViolation(qualityReport) {
-		return false, qualityReport, nil
-	}
-	result := qualityGateFixResult(qualityReport)
-	if err := w.writeLastReview(result); err != nil {
-		return true, qualityReport, err
-	}
-	return true, qualityReport, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
 }
 
 func (w *Workflow) handleReviewResult(
