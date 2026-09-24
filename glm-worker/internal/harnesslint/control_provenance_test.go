@@ -47,62 +47,15 @@ func TestControlProvenanceValidMachineAndNonMachineEntries(t *testing.T) {
 }
 
 func TestControlProvenanceLocatorDriftFailsClosed(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		kind       string
-		mutate     func(*controlProvenanceControl)
-		file       string
-		wantSymbol string
+	classifications := []struct {
+		name           string
+		classification controlProvenanceClassification
+		boundary       string
 	}{
-		{
-			name: "owner rename",
-			kind: "machine owner",
-			mutate: func(control *controlProvenanceControl) {
-				control.MachineOwners[0].Symbol = "renamedOwner"
-			},
-			file:       "owner.go",
-			wantSymbol: "renamedOwner",
-		},
-		{
-			name: "test deletion",
-			kind: "test",
-			mutate: func(control *controlProvenanceControl) {
-				control.Tests[0].Symbol = "DeletedTest"
-			},
-			file:       "owner_test.go",
-			wantSymbol: "DeletedTest",
-		},
-		{
-			name: "postcondition rename",
-			kind: "postcondition",
-			mutate: func(control *controlProvenanceControl) {
-				control.Postconditions[0].Symbol = "renamedPostcondition"
-			},
-			file:       "owner.go",
-			wantSymbol: "renamedPostcondition",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
-			writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
-			control := controlProvenanceMachineFixture()
-			tc.mutate(&control)
-			writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{Version: 1, Controls: []controlProvenanceControl{control}})
-
-			violations, err := controlProvenanceViolations(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !hasControlProvenanceViolation(violations, tc.file, tc.kind, tc.wantSymbol) {
-				t.Fatalf("violations = %#v", violations)
-			}
-		})
+		{name: "machine", classification: controlClassificationMachine},
+		{name: "partial", classification: controlClassificationPartial, boundary: "external boundary remains"},
 	}
-}
-
-func TestControlProvenancePartialLocatorDriftFailsClosed(t *testing.T) {
-	for _, tc := range []struct {
+	drifts := []struct {
 		name       string
 		kind       string
 		mutate     func(*controlProvenanceControl)
@@ -136,26 +89,29 @@ func TestControlProvenancePartialLocatorDriftFailsClosed(t *testing.T) {
 			file:       "owner.go",
 			wantSymbol: "renamedPostcondition",
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
-			writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
-			control := controlProvenanceMachineFixture()
-			control.ID = "partial"
-			control.Classification = controlClassificationPartial
-			control.Boundary = "external boundary remains"
-			tc.mutate(&control)
-			writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{Version: 1, Controls: []controlProvenanceControl{control}})
+	}
+	for _, classification := range classifications {
+		for _, drift := range drifts {
+			t.Run(classification.name+"/"+drift.name, func(t *testing.T) {
+				root := t.TempDir()
+				writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
+				writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+				control := controlProvenanceMachineFixture()
+				control.ID = classification.name
+				control.Classification = classification.classification
+				control.Boundary = classification.boundary
+				drift.mutate(&control)
+				writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{Version: 1, Controls: []controlProvenanceControl{control}})
 
-			violations, err := controlProvenanceViolations(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !hasControlProvenanceViolation(violations, tc.file, tc.kind, tc.wantSymbol) {
-				t.Fatalf("violations = %#v", violations)
-			}
-		})
+				violations, err := controlProvenanceViolations(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !hasControlProvenanceViolation(violations, drift.file, drift.kind, drift.wantSymbol) {
+					t.Fatalf("violations = %#v", violations)
+				}
+			})
+		}
 	}
 }
 
