@@ -1,0 +1,34 @@
+name: Web GPT Hook Lock Race Fix
+
+on:
+  push:
+    branches:
+      - web-gpt/review-fix/5eb816d-c2b6893
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Apply lock fix
+        run: |
+          python3 .github/web-gpt-lock-race-fix.py
+          rm .github/web-gpt-lock-race-fix.py .github/workflows/web-gpt-hook-lock-race-fix.yml
+      - name: Validate shell
+        run: |
+          sh -n scripts/manage-pull-hook.sh
+          sh -n tests/install_hook_ownership_smoke.sh
+          sh tests/install_hook_ownership_smoke.sh
+          git diff --check
+      - name: Commit production fix
+        run: |
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add scripts/manage-pull-hook.sh tests/install_hook_ownership_smoke.sh .github/web-gpt-lock-race-fix.py .github/workflows/web-gpt-hook-lock-race-fix.yml
+          git commit -m "Avoid stale lock recovery takeover race"
+          git push origin HEAD:web-gpt/review-fix/5eb816d-c2b6893
