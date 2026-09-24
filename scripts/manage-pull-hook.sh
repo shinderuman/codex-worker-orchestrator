@@ -46,20 +46,65 @@ esac
 managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"
 managed_state="version=2 baseline=absent value=$managed_hooks_path"
 pending_state="version=2 baseline=absent pending=$managed_hooks_path"
-install_lock_dir="$common_dir/codex-worker-orchestrator/hooks-install.lock"
-mkdir -p "${install_lock_dir%/*}"
-if ! mkdir "$install_lock_dir" 2>/dev/null; then
-	printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_dir" >&2
-	exit 1
-fi
-lock_owned=1
+install_lock_path="$common_dir/codex-worker-orchestrator/hooks-install.lock"
+install_lock_candidate="$install_lock_path.candidate.$$"
+install_lock_stale="$install_lock_path.stale.$$"
+mkdir -p "${install_lock_path%/*}"
+lock_owned=0
 release_install_lock() {
 	if [ "$lock_owned" -eq 1 ]; then
-		rmdir "$install_lock_dir" 2>/dev/null || true
+		if [ -f "$install_lock_path" ] && [ ! -L "$install_lock_path" ] && [ "$(cat "$install_lock_path" 2>/dev/null || true)" = "$$" ]; then
+			rm -f "$install_lock_path"
+		fi
 		lock_owned=0
 	fi
 }
-trap 'release_install_lock' EXIT HUP INT TERM
+acquire_install_lock() {
+	umask 077
+	printf '%s\n' "$$" >"$install_lock_candidate"
+	if ln "$install_lock_candidate" "$install_lock_path" 2>/dev/null; then
+		rm -f "$install_lock_candidate"
+		lock_owned=1
+		return 0
+	fi
+	rm -f "$install_lock_candidate"
+	if [ -L "$install_lock_path" ] || [ ! -f "$install_lock_path" ]; then
+		printf 'git hook: hook activation lock is not a regular file: %s\n' "$install_lock_path" >&2
+		return 1
+	fi
+	owner_pid=$(cat "$install_lock_path" 2>/dev/null || true)
+	case "$owner_pid" in
+	'' | *[!0-9]*)
+		printf 'git hook: hook activation lock owner is invalid: %s\n' "$install_lock_path" >&2
+		return 1
+		;;
+	esac
+	if kill -0 "$owner_pid" 2>/dev/null; then
+		printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_path" >&2
+		return 1
+	fi
+	if ! mv "$install_lock_path" "$install_lock_stale" 2>/dev/null; then
+		printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_path" >&2
+		return 1
+	fi
+	rm -f "$install_lock_stale"
+	printf '%s\n' "$$" >"$install_lock_candidate"
+	if ! ln "$install_lock_candidate" "$install_lock_path" 2>/dev/null; then
+		rm -f "$install_lock_candidate"
+		printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_path" >&2
+		return 1
+	fi
+	rm -f "$install_lock_candidate"
+	lock_owned=1
+	return 0
+}
+if ! acquire_install_lock; then
+	exit 1
+fi
+trap 'release_install_lock' EXIT
+trap 'release_install_lock; exit 129' HUP
+trap 'release_install_lock; exit 130' INT
+trap 'release_install_lock; exit 143' TERM
 
 state_path=$(git -C "$repo_root" rev-parse --git-path codex-worker-orchestrator/hooks-path.state)
 case "$state_path" in
@@ -104,6 +149,7 @@ if [ "$state_present" -eq 1 ]; then
 fi
 initial_hooks_path_present=$hooks_path_present
 initial_hooks_path=$hooks_path
+hooks_path_written=0
 
 write_state() {
 	value=$1
@@ -159,16 +205,33 @@ restore_install_baseline() {
 	fi
 	staging_hooks_path=
 	backup_hooks_path=
-	if [ "$initial_hooks_path_present" -eq 1 ]; then
-		if ! git -C "$repo_root" config --local core.hooksPath "$initial_hooks_path"; then
-			printf '%s\n' 'git hook: failed to restore previous core.hooksPath' >&2
+	if [ "$hooks_path_written" -eq 1 ]; then
+		current_hooks_path=
+		if current_hooks_path=$(git -C "$repo_root" config --local --get-all core.hooksPath); then
+			current_hooks_path_present=1
+		else
+			status=$?
+			if [ "$status" -ne 1 ]; then
+				printf '%s\n' 'git hook: failed to inspect core.hooksPath before rollback' >&2
+				return 1
+			fi
+			current_hooks_path_present=0
+		fi
+		if [ "$current_hooks_path_present" -ne 1 ] || [ "$current_hooks_path" != "$managed_hooks_path" ]; then
+			printf '%s\n' 'git hook: rollback preserved externally changed core.hooksPath' >&2
 			return 1
 		fi
-	else
-		git -C "$repo_root" config --local --unset-all core.hooksPath >/dev/null 2>&1 || true
-		if git -C "$repo_root" config --local --get-all core.hooksPath >/dev/null 2>&1; then
-			printf '%s\n' 'git hook: failed to restore absent core.hooksPath baseline' >&2
-			return 1
+		if [ "$initial_hooks_path_present" -eq 1 ]; then
+			if ! git -C "$repo_root" config --local core.hooksPath "$initial_hooks_path"; then
+				printf '%s\n' 'git hook: failed to restore previous core.hooksPath' >&2
+				return 1
+			fi
+		else
+			git -C "$repo_root" config --local --unset-all core.hooksPath >/dev/null 2>&1 || true
+			if git -C "$repo_root" config --local --get-all core.hooksPath >/dev/null 2>&1; then
+				printf '%s\n' 'git hook: failed to restore absent core.hooksPath baseline' >&2
+				return 1
+			fi
 		fi
 	fi
 	if [ "$initial_state_present" -eq 1 ]; then
@@ -179,7 +242,10 @@ restore_install_baseline() {
 	else
 		rm -f "$state_path"
 	fi
-	trap 'release_install_lock' EXIT HUP INT TERM
+	trap 'release_install_lock' EXIT
+	trap 'release_install_lock; exit 129' HUP
+	trap 'release_install_lock; exit 130' INT
+	trap 'release_install_lock; exit 143' TERM
 	return 0
 }
 
@@ -198,13 +264,19 @@ finalize_managed_hooks() {
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
 	staging_hooks_path=
 	backup_hooks_path=
-	trap 'release_install_lock' EXIT HUP INT TERM
+	trap 'release_install_lock' EXIT
+	trap 'release_install_lock; exit 129' HUP
+	trap 'release_install_lock; exit 130' INT
+	trap 'release_install_lock; exit 143' TERM
 }
 
 install_managed_hooks() {
 	staging_hooks_path="$managed_hooks_path.stage.$$"
 	backup_hooks_path="$managed_hooks_path.backup.$$"
-	trap 'cleanup_snapshot_work; release_install_lock' EXIT HUP INT TERM
+	trap 'cleanup_snapshot_work; release_install_lock' EXIT
+	trap 'cleanup_snapshot_work; release_install_lock; exit 129' HUP
+	trap 'cleanup_snapshot_work; release_install_lock; exit 130' INT
+	trap 'cleanup_snapshot_work; release_install_lock; exit 143' TERM
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
 	mkdir -p "$staging_hooks_path"
 
@@ -322,6 +394,7 @@ if [ "$state_present" -eq 1 ]; then
 				printf '%s\n' 'git hook: failed to recover pending managed hooks activation' >&2
 				exit 1
 			fi
+			hooks_path_written=1
 		fi
 		write_state "$managed_state"
 		if ! verify_or_rollback "$managed_state"; then
@@ -346,6 +419,7 @@ if ! git -C "$repo_root" config --local core.hooksPath "$managed_hooks_path"; th
 	printf '%s\n' 'git hook: failed to enable managed snapshot hooks; pending ownership state retained for recovery' >&2
 	exit 1
 fi
+hooks_path_written=1
 write_state "$managed_state"
 if ! verify_or_rollback "$managed_state"; then
 	exit 1

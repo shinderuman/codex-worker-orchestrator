@@ -189,10 +189,10 @@ func forwardOnlySemanticDualWaitReader(pkg *forwardOnlySemanticPackage, function
 	for _, arm := range arms {
 		markers := arm.markers | forwardOnlySemanticWaitMarkers(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)
 		sinks := forwardOnlySemanticSinks(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)
-		switch {
-		case arm.kind == forwardOnlyOldTransport && markers&forwardOnlyOldWait != 0:
+		if arm.kind&forwardOnlyOldTransport != 0 && markers&forwardOnlyOldWait != 0 {
 			oldSinks = mergeForwardOnlySemanticSet(oldSinks, sinks)
-		case arm.kind == forwardOnlyCurrentTransport && markers&forwardOnlyCurrentWait != 0:
+		}
+		if arm.kind&forwardOnlyCurrentTransport != 0 && markers&forwardOnlyCurrentWait != 0 {
 			currentSinks = mergeForwardOnlySemanticSet(currentSinks, sinks)
 		}
 	}
@@ -492,7 +492,7 @@ func forwardOnlySemanticReturnsTrue(statement *ast.ReturnStmt) bool {
 
 func forwardOnlySemanticNormalizesCurrentWait(pkg *forwardOnlySemanticPackage, function *forwardOnlySemanticFunction) bool {
 	for _, arm := range forwardOnlySemanticTransportArms(pkg, function.decl.Body) {
-		if arm.kind != forwardOnlyCurrentTransport {
+		if arm.kind&forwardOnlyCurrentTransport == 0 {
 			continue
 		}
 		markers := arm.markers | forwardOnlySemanticWaitMarkers(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)
@@ -536,14 +536,19 @@ func forwardOnlySemanticNodeHasOldWaitRewrite(pkg *forwardOnlySemanticPackage, f
 
 func forwardOnlySemanticSameObjectOldWaitRewrite(pkg *forwardOnlySemanticPackage, node ast.Node) bool {
 	writes := make(map[string]uint8)
+	constructed := false
 	ast.Inspect(node, func(current ast.Node) bool {
-		assignment, ok := current.(*ast.AssignStmt)
-		if ok {
-			forwardOnlySemanticRecordRewriteAssignment(pkg, writes, assignment)
+		switch typed := current.(type) {
+		case *ast.AssignStmt:
+			forwardOnlySemanticRecordRewriteAssignment(pkg, writes, typed)
+		case *ast.CompositeLit:
+			if forwardOnlySemanticWaitInputKind(pkg, typed) == forwardOnlyOldTransport {
+				constructed = true
+			}
 		}
 		return true
 	})
-	return forwardOnlySemanticHasOldWaitRewrite(writes)
+	return constructed || forwardOnlySemanticHasOldWaitRewrite(writes)
 }
 
 func forwardOnlySemanticRecordRewriteAssignment(pkg *forwardOnlySemanticPackage, writes map[string]uint8, assignment *ast.AssignStmt) {

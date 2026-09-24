@@ -39,6 +39,34 @@ func TestInspectPublicationGuardSetupAcceptsExecutableBinding(t *testing.T) {
 	}
 }
 
+func TestInspectPublicationGuardSetupRejectsBindingShapesHooksReject(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "glm-parent-action")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "missing newline", body: target},
+		{name: "leading whitespace", body: " " + target + "\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newPublicationGuardTestRepo(t)
+			if err := os.WriteFile(filepath.Join(repo, ".githooks", publicationGuardBindingName), []byte(tc.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			report, err := InspectPublicationGuardSetup(repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Defects) != 1 || report.Defects[0].Defect != PublicationGuardBindingInvalid {
+				t.Fatalf("defects = %#v", report.Defects)
+			}
+		})
+	}
+}
+
 func newPublicationGuardTestRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()

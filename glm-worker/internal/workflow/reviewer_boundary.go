@@ -46,6 +46,16 @@ func (w *Workflow) reviewedBoundaryContext(repoRoot string, reviewNumber int) st
 	return renderReviewedBoundary(identities, reviewed)
 }
 
+func reviewedBlobRecordVersion(raw []byte) (int, error) {
+	var envelope struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return 0, err
+	}
+	return envelope.Version, nil
+}
+
 func (w *Workflow) loadReviewedBlobRounds() ([]reviewBlobRound, error) {
 	data, err := os.ReadFile(w.state.Path(reviewedBlobsFile))
 	if err != nil {
@@ -59,12 +69,17 @@ func (w *Workflow) loadReviewedBlobRounds() ([]reviewBlobRound, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		var round reviewBlobRound
-		if err := json.Unmarshal([]byte(line), &round); err != nil {
+		raw := []byte(line)
+		version, err := reviewedBlobRecordVersion(raw)
+		if err != nil {
 			return nil, fmt.Errorf("reviewed blob ledgerを読めません: %w", err)
 		}
-		if round.Version != reviewedBlobsVersion {
+		if version != reviewedBlobsVersion {
 			continue
+		}
+		var round reviewBlobRound
+		if err := json.Unmarshal(raw, &round); err != nil {
+			return nil, fmt.Errorf("reviewed blob ledgerを読めません: %w", err)
 		}
 		rounds = append(rounds, round)
 	}
@@ -79,12 +94,16 @@ func (w *Workflow) promoteLastReviewBlobs(nextReviewNumber int) error {
 		}
 		return err
 	}
+	version, err := reviewedBlobRecordVersion(raw)
+	if err != nil {
+		return fmt.Errorf("前review roundのblob記録を読めません: %w", err)
+	}
+	if version != reviewedBlobsVersion {
+		return nil
+	}
 	var previous reviewBlobRound
 	if err := json.Unmarshal(raw, &previous); err != nil {
 		return fmt.Errorf("前review roundのblob記録を読めません: %w", err)
-	}
-	if previous.Version != reviewedBlobsVersion {
-		return nil
 	}
 	if len(previous.Files) == 0 || previous.ReviewNumber >= nextReviewNumber {
 		return nil

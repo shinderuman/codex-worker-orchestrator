@@ -33,7 +33,7 @@ while :; do sleep 0.2; done
 	r.config.ClaudeBin = commandPath
 	r.config.EnvAllowlist = append(r.config.EnvAllowlist, "GLM_PROBE_PID")
 
-	deadline := time.Now().Add(150 * time.Millisecond)
+	deadline := time.Now().Add(2 * time.Second)
 	_, err := r.ProbeWithDeadline("opus", deadline)
 	if !errors.Is(err, ErrProbeDeadlineExceeded) {
 		t.Fatalf("ErrProbeDeadlineExceededを期待: %v", err)
