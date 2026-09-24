@@ -19,6 +19,12 @@ type controlProvenanceLocator = controlprovenance.Locator
 type controlProvenanceProjectionGuard = controlprovenance.ProjectionGuard
 type controlProvenanceClassification = controlprovenance.Classification
 
+type knownMachineControl struct {
+	id                   string
+	ownerPath            string
+	canonicalOwnerSymbol string
+}
+
 const controlProvenanceRegistryPath = controlprovenance.RegistryPath
 
 const (
@@ -93,11 +99,7 @@ func validateControlProvenanceRegistry(root string, registry controlProvenanceRe
 }
 
 func validateKnownMachineControlCoverage(root string, controls []controlProvenanceControl) []Violation {
-	known := []struct {
-		id                   string
-		ownerPath            string
-		canonicalOwnerSymbol string
-	}{
+	known := []knownMachineControl{
 		{id: forwardOnlyCompatibilityRule, ownerPath: "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go"},
 		{id: parentActionMachineProjectionControlID, ownerPath: parentActionGrammarOwnerPath, canonicalOwnerSymbol: parentActionGrammarOwnerSymbol},
 		{id: publicationGuardSetupControlID, ownerPath: "glm-worker/internal/publicationguard/setup.go"},
@@ -111,30 +113,32 @@ func validateKnownMachineControlCoverage(root string, controls []controlProvenan
 	}
 
 	var violations []Violation
-	for _, knownControl := range known {
-		absolute := filepath.Join(root, filepath.FromSlash(knownControl.ownerPath))
-		info, err := os.Stat(absolute)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("cannot inspect current machine control %q owner %q: %v", knownControl.id, knownControl.ownerPath, err)))
-			continue
-		}
-		if !info.Mode().IsRegular() {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q owner %q is not a regular file", knownControl.id, knownControl.ownerPath)))
-			continue
-		}
-		control, ok := registered[knownControl.id]
-		if !ok {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q is missing from provenance registry", knownControl.id)))
-			continue
-		}
-		if knownControl.canonicalOwnerSymbol != "" && !hasControlProvenanceLocator(control.MachineOwners, knownControl.ownerPath, knownControl.canonicalOwnerSymbol) {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q canonical owner %q::%s is missing from provenance machine owners", knownControl.id, knownControl.ownerPath, knownControl.canonicalOwnerSymbol)))
-		}
+	for _, control := range known {
+		violations = append(violations, validateKnownMachineControl(root, registered, control)...)
 	}
 	return violations
+}
+
+func validateKnownMachineControl(root string, registered map[string]controlProvenanceControl, known knownMachineControl) []Violation {
+	absolute := filepath.Join(root, filepath.FromSlash(known.ownerPath))
+	info, err := os.Stat(absolute)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return []Violation{controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("cannot inspect current machine control %q owner %q: %v", known.id, known.ownerPath, err))}
+	}
+	if !info.Mode().IsRegular() {
+		return []Violation{controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q owner %q is not a regular file", known.id, known.ownerPath))}
+	}
+	control, ok := registered[known.id]
+	if !ok {
+		return []Violation{controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q is missing from provenance registry", known.id))}
+	}
+	if known.canonicalOwnerSymbol != "" && !hasControlProvenanceLocator(control.MachineOwners, known.ownerPath, known.canonicalOwnerSymbol) {
+		return []Violation{controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q canonical owner %q::%s is missing from provenance machine owners", known.id, known.ownerPath, known.canonicalOwnerSymbol))}
+	}
+	return nil
 }
 
 func hasControlProvenanceLocator(locators []controlProvenanceLocator, locatorPath, symbol string) bool {
