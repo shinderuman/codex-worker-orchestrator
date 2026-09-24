@@ -84,7 +84,7 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 		"-p", "--safe-mode", "--setting-sources", "", "--no-session-persistence",
 		"--model", "opus", "--output-format", "json", "--dangerously-skip-permissions",
 		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands",
-		"--settings", settings, "--tools", "Bash", "run the provided Bash tool",
+		"--tools", "Bash", "--settings", settings, "run the provided Bash tool",
 	)
 	command.Dir = "."
 	command.Env = buildChildEnv(nil, settingEnv, additions, nil)
