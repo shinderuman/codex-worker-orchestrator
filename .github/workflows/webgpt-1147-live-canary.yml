@@ -19,6 +19,15 @@ jobs:
           node-version: '24'
       - run: npm install -g @anthropic-ai/claude-code@latest
       - run: claude --version
+      - name: Verify production CLI flags remain available
+        run: |
+          help="$(claude --help)"
+          for flag in --safe-mode --setting-sources --no-session-persistence --model --output-format --dangerously-skip-permissions --strict-mcp-config --mcp-config --disable-slash-commands --settings --tools; do
+            if ! printf '%s\n' "$help" | grep -Fq -- "$flag"; then
+              echo "missing production flag: $flag"
+              exit 1
+            fi
+          done
       - name: Verify scrub preserves bypass permission mode
         env:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
