@@ -19,5 +19,17 @@ jobs:
           node-version: '24'
       - run: npm install -g @anthropic-ai/claude-code@latest
       - run: claude --version
+      - name: Verify scrub preserves bypass permission mode
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
+          ANTHROPIC_AUTH_TOKEN: glm-worker-scrub-token
+          ANTHROPIC_BASE_URL: http://127.0.0.1:1
+        run: |
+          set +e
+          output="$(timeout 5s claude -p --setting-sources '' --no-session-persistence --model opus --output-format json --dangerously-skip-permissions --tools '' 'reply with ok' 2>&1)"
+          if printf '%s\n' "$output" | grep -Fq 'Permission mode forced to default'; then
+            echo 'scrub changes bypass permission mode to default'
+            exit 1
+          fi
       - working-directory: glm-worker
         run: go test ./internal/runner -run '^TestClaudeSubprocessEnvScrubLiveNoAI$' -count=1 -v
