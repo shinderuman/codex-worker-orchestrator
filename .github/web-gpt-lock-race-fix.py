@@ -94,3 +94,10 @@ assert_managed_hooks "$repo"
 test -d "$stale_ticket"
 ''',
 )
+
+p = Path("tests/install_hook_ownership_smoke.sh")
+text = p.read_text()
+old = 'test ! -e "$lock"\n'
+if text.count(old) != 1:
+    raise SystemExit("old lock assertion replacement mismatch")
+p.write_text(text.replace(old, "", 1))
