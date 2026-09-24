@@ -75,12 +75,9 @@ func (w *Workflow) prepareReviewInputSnapshot(
 	if err != nil {
 		return workerEnd, true, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
 	}
-	reviewInput := workerEnd
-	if qualityReport.Fixed > 0 {
-		reviewInput, stopped, err = w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport)
-		if err != nil || stopped {
-			return reviewInput, true, err
-		}
+	reviewInput, stopped, err := w.acceptQualityGateSnapshot(workerEnd, parentBefore, qualityReport)
+	if err != nil || stopped {
+		return reviewInput, true, err
 	}
 	if !harnesslint.IsViolation(qualityReport) {
 		return reviewInput, false, nil
@@ -174,6 +171,39 @@ func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Res
 		return packet.Result{}, stopped, err
 	}
 	return reviewResult, false, nil
+}
+
+func (w *Workflow) acceptQualityGateSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
+	if report.Fixed > 0 {
+		return w.acceptQualityFixSnapshot(workerEnd, parentBefore, report)
+	}
+	if harnesslint.IsViolation(report) {
+		return w.guardQualityViolationNoFixSnapshot(workerEnd)
+	}
+	return workerEnd, false, nil
+}
+
+func (w *Workflow) guardQualityViolationNoFixSnapshot(workerEnd state.GitSnapshot) (state.GitSnapshot, bool, error) {
+	current, err := w.captureSnapshot(w.config.RepoRoot)
+	if err != nil {
+		return current, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			state.GitSnapshot{},
+			"machine quality violation後snapshot取得失敗",
+			err,
+		)
+	}
+	if state.EqualGitSnapshot(workerEnd, current) {
+		return current, false, nil
+	}
+	return current, true, w.failClosedSnapshot(
+		state.SnapshotStageReviewStart,
+		workerEnd,
+		current,
+		"machine quality gate実行中にfixer由来でないrepository変更を検出しました",
+		nil,
+	)
 }
 
 func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
