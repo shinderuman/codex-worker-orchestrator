@@ -252,19 +252,21 @@ case "$common" in
 /*) ;;
 *) common="$repo/$common" ;;
 esac
-lock="$common/codex-worker-orchestrator/hooks-install.lock"
-mkdir -p "${lock%/*}"
-printf '%s\n' "$$" >"$lock"
+lock_root="$common/codex-worker-orchestrator/hooks-install.lock"
+mkdir -p "$lock_root"
+live_ticket="$lock_root/$$"
+mkdir "$live_ticket"
 if sh "$helper" install "$repo" "$guard_bin" >"$tmp/install-lock.stdout" 2>"$tmp/install-lock.stderr"; then
 	printf '%s\n' 'concurrent hook installer unexpectedly bypassed activation lock' >&2
 	exit 1
 fi
 grep -Fq 'another installer owns hook activation' "$tmp/install-lock.stderr"
-rm -f "$lock"
-printf '%s\n' 99999999 >"$lock"
+rmdir "$live_ticket"
+stale_ticket="$lock_root/99999999"
+mkdir "$stale_ticket"
 sh "$helper" install "$repo" "$guard_bin"
 assert_managed_hooks "$repo"
-test ! -e "$lock"
+test -d "$stale_ticket"
 
 repo="$tmp/preexisting-tracked"
 new_repo "$repo"

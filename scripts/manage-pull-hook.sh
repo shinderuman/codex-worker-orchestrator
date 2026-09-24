@@ -46,56 +46,54 @@ esac
 managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"
 managed_state="version=2 baseline=absent value=$managed_hooks_path"
 pending_state="version=2 baseline=absent pending=$managed_hooks_path"
-install_lock_path="$common_dir/codex-worker-orchestrator/hooks-install.lock"
-install_lock_candidate="$install_lock_path.candidate.$$"
-install_lock_stale="$install_lock_path.stale.$$"
-mkdir -p "${install_lock_path%/*}"
+install_lock_root="$common_dir/codex-worker-orchestrator/hooks-install.lock"
+install_lock_ticket="$install_lock_root/$$"
+mkdir -p "$install_lock_root"
 lock_owned=0
 release_install_lock() {
 	if [ "$lock_owned" -eq 1 ]; then
-		if [ -f "$install_lock_path" ] && [ ! -L "$install_lock_path" ] && [ "$(cat "$install_lock_path" 2>/dev/null || true)" = "$$" ]; then
-			rm -f "$install_lock_path"
-		fi
+		rmdir "$install_lock_ticket" 2>/dev/null || true
 		lock_owned=0
 	fi
 }
 acquire_install_lock() {
-	umask 077
-	printf '%s\n' "$$" >"$install_lock_candidate"
-	if ln "$install_lock_candidate" "$install_lock_path" 2>/dev/null; then
-		rm -f "$install_lock_candidate"
-		lock_owned=1
-		return 0
+	if [ -e "$install_lock_ticket" ] || [ -L "$install_lock_ticket" ]; then
+		if [ ! -d "$install_lock_ticket" ] || [ -L "$install_lock_ticket" ] || ! rmdir "$install_lock_ticket" 2>/dev/null; then
+			printf 'git hook: own stale hook activation ticket is invalid: %s\n' "$install_lock_ticket" >&2
+			return 1
+		fi
 	fi
-	rm -f "$install_lock_candidate"
-	if [ -L "$install_lock_path" ] || [ ! -f "$install_lock_path" ]; then
-		printf 'git hook: hook activation lock is not a regular file: %s\n' "$install_lock_path" >&2
+	if ! mkdir "$install_lock_ticket" 2>/dev/null; then
+		printf 'git hook: failed to create hook activation ticket: %s\n' "$install_lock_ticket" >&2
 		return 1
 	fi
-	owner_pid=$(cat "$install_lock_path" 2>/dev/null || true)
-	case "$owner_pid" in
-	'' | *[!0-9]*)
-		printf 'git hook: hook activation lock owner is invalid: %s\n' "$install_lock_path" >&2
-		return 1
-		;;
-	esac
-	if kill -0 "$owner_pid" 2>/dev/null; then
-		printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_path" >&2
-		return 1
-	fi
-	if ! mv "$install_lock_path" "$install_lock_stale" 2>/dev/null; then
-		printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_path" >&2
-		return 1
-	fi
-	rm -f "$install_lock_stale"
-	printf '%s\n' "$$" >"$install_lock_candidate"
-	if ! ln "$install_lock_candidate" "$install_lock_path" 2>/dev/null; then
-		rm -f "$install_lock_candidate"
-		printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_path" >&2
-		return 1
-	fi
-	rm -f "$install_lock_candidate"
 	lock_owned=1
+	for ticket in "$install_lock_root"/*; do
+		if [ ! -e "$ticket" ] && [ ! -L "$ticket" ]; then
+			continue
+		fi
+		if [ "$ticket" = "$install_lock_ticket" ]; then
+			continue
+		fi
+		if [ ! -d "$ticket" ] || [ -L "$ticket" ]; then
+			printf 'git hook: hook activation ticket is invalid: %s\n' "$ticket" >&2
+			release_install_lock
+			return 1
+		fi
+		owner_pid=${ticket##*/}
+		case "$owner_pid" in
+		'' | *[!0-9]*)
+			printf 'git hook: hook activation ticket owner is invalid: %s\n' "$ticket" >&2
+			release_install_lock
+			return 1
+			;;
+		esac
+		if kill -0 "$owner_pid" 2>/dev/null; then
+			printf 'git hook: another installer owns hook activation: %s\n' "$ticket" >&2
+			release_install_lock
+			return 1
+		fi
+	done
 	return 0
 }
 if ! acquire_install_lock; then
