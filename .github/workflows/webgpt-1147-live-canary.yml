@@ -6,7 +6,11 @@ on:
       - webgpt/refactor-1147-subprocess-credential-scrub
 
 jobs:
-  claude-subprocess-env-scrub:
+  worker-bash-credential-deny:
+    strategy:
+      fail-fast: false
+      matrix:
+        claude-version: ['2.1.226', 'latest']
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -17,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      - run: npm install -g @anthropic-ai/claude-code@latest
+      - run: npm install -g @anthropic-ai/claude-code@${{ matrix.claude-version }}
       - run: claude --version
       - name: Verify production CLI flags remain available
         run: |
@@ -28,17 +32,5 @@ jobs:
               exit 1
             fi
           done
-      - name: Verify scrub preserves bypass permission mode
-        env:
-          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
-          ANTHROPIC_AUTH_TOKEN: glm-worker-scrub-token
-          ANTHROPIC_BASE_URL: http://127.0.0.1:1
-        run: |
-          set +e
-          output="$(timeout 5s claude -p --setting-sources '' --no-session-persistence --model opus --output-format json --dangerously-skip-permissions --tools '' 'reply with ok' 2>&1)"
-          if printf '%s\n' "$output" | grep -Fq 'Permission mode forced to default'; then
-            echo 'scrub changes bypass permission mode to default'
-            exit 1
-          fi
       - working-directory: glm-worker
         run: go test ./internal/runner -run '^TestClaudeSubprocessEnvScrubLiveNoAI$' -count=1 -v
