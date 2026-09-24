@@ -101,7 +101,3 @@ func parentActionSpecs(actions []string, requiredParameters map[string]string) m
 func parentActionSpec(action string, requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
 	return parentactiongrammar.Project(action, requiredParameters)
 }
-
-func improvementDispositionActionSpec(requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
-	return parentactiongrammar.Project(string(state.ParentActionImprovementDisposition), requiredParameters)
-}
