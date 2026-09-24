@@ -214,6 +214,45 @@ func TestControlProvenanceRequiresKnownCurrentMachineControls(t *testing.T) {
 	}
 }
 
+func TestControlProvenanceRequiresCurrentCanonicalLocatorsAfterOwnershipTransfer(t *testing.T) {
+	root := t.TempDir()
+	writeControlProvenanceGo(t, root, parentActionGrammarOwnerPath, "package parentactiongrammar\nfunc Project() {}\n")
+	writeControlProvenanceGo(t, root, "glm-worker/internal/app/parent_handoff_actions.go", "package app\nfunc parentActionSpecs() {}\nfunc parentActionSpec() {}\n")
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+		Version: 1,
+		Controls: []controlProvenanceControl{{
+			ID:             parentActionMachineProjectionControlID,
+			Classification: controlClassificationMachine,
+			Purpose:        "project exact parent commands",
+			MachineOwners: []controlProvenanceLocator{{
+				Path:   "glm-worker/internal/app/parent_handoff_actions.go",
+				Symbol: "parentActionSpecs",
+			}},
+			Tests: []controlProvenanceLocator{{Path: "owner_test.go", Symbol: "TestOwner"}},
+			Postconditions: []controlProvenanceLocator{{
+				Path:   "glm-worker/internal/app/parent_handoff_actions.go",
+				Symbol: "parentActionSpec",
+			}},
+			ResidualParentJudgment: "semantic action choice",
+		}},
+	})
+
+	violations, err := controlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragments := range [][]string{
+		{parentActionMachineProjectionControlID, "canonical machine owner", parentActionGrammarOwnerPath, parentActionGrammarOwnerSymbol, "missing from provenance machine owners"},
+		{parentActionMachineProjectionControlID, "canonical test", parentActionGrammarTestPath, parentActionGrammarTestSymbol, "missing from provenance tests"},
+		{parentActionMachineProjectionControlID, "canonical postcondition", parentActionGrammarOwnerPath, parentActionGrammarOwnerSymbol, "missing from provenance postconditions"},
+	} {
+		if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, fragments...) {
+			t.Fatalf("missing canonical locator violation %q in %#v", fragments, violations)
+		}
+	}
+}
+
 func TestControlProvenanceRejectsLineNumberSchema(t *testing.T) {
 	root := t.TempDir()
 	registryPath := filepath.Join(root, filepath.FromSlash(controlProvenanceRegistryPath))

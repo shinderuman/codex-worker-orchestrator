@@ -300,8 +300,8 @@
       "purpose": "Project exact admissible parent commands, staged semantic slots, token-bound continuation commands, and canonical terminal handoff without parent-side command reconstruction.",
       "machine_owners": [
         {
-          "path": "glm-worker/internal/app/parent_handoff_actions.go",
-          "symbol": "parentActionSpecs"
+          "path": "glm-worker/internal/parentactiongrammar/grammar.go",
+          "symbol": "Project"
         },
         {
           "path": "glm-worker/internal/parentaction/prepared_projection.go",
@@ -313,6 +313,14 @@
         }
       ],
       "tests": [
+        {
+          "path": "glm-worker/internal/parentactiongrammar/grammar_test.go",
+          "symbol": "TestProjectPreservesCurrentActionSpecs"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/projected_grammar_test.go",
+          "symbol": "TestProjectedParentActionGrammarIsExecutable"
+        },
         {
           "path": "glm-worker/internal/app/parent_handoff_actions_test.go",
           "symbol": "TestParentHandoffActionSpecs"
@@ -327,6 +335,10 @@
         }
       ],
       "postconditions": [
+        {
+          "path": "glm-worker/internal/parentactiongrammar/grammar.go",
+          "symbol": "Project"
+        },
         {
           "path": "glm-worker/internal/app/parent_handoff_actions.go",
           "symbol": "parentActionSpec"
