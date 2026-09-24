@@ -28,11 +28,15 @@ func TestQualityFixSnapshotFeedsReviewer(t *testing.T) {
 	}
 	w.captureSnapshot = state.CaptureGitSnapshot
 	w.captureBoundarySnapshot = state.CaptureRepositoryBoundarySnapshot
-	w.qualityGate = func(string) (harnesslint.Report, error) {
+	w.qualityGate = func(root string) (harnesslint.Report, error) {
+		input, err := state.CaptureGitSnapshot(root)
+		if err != nil {
+			return harnesslint.Report{}, err
+		}
 		if err := os.WriteFile(path, formatted, 0o644); err != nil {
 			return harnesslint.Report{}, err
 		}
-		return harnesslint.Report{Status: "pass", Fixed: 1, Violations: []harnesslint.Violation{}}, nil
+		return qualityFixReportForSnapshot(input), nil
 	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -58,6 +62,34 @@ func TestQualityFixSnapshotFeedsReviewer(t *testing.T) {
 	}
 	if string(got) != string(formatted) {
 		t.Fatalf("review対象がformatter適用後内容ではありません: %q", got)
+	}
+}
+
+func TestQualityFixSnapshotRejectsUnprovenFixedReport(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
+	w := newWorkflowT(t, st, r)
+	path := filepath.Join(w.config.RepoRoot, "fixture.go")
+	if err := os.WriteFile(path, []byte("package fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.captureSnapshot = state.CaptureGitSnapshot
+	w.captureBoundarySnapshot = state.CaptureRepositoryBoundarySnapshot
+	w.qualityGate = func(string) (harnesslint.Report, error) {
+		if err := os.WriteFile(path, []byte("package fixture\n\nvar changed = true\n"), 0o644); err != nil {
+			return harnesslint.Report{}, err
+		}
+		return harnesslint.Report{Status: "pass", Fixed: 1, Violations: []harnesslint.Violation{}}, nil
+	}
+
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.phases) != 1 {
+		t.Fatalf("provenanceのないmachine fix後にreviewerを呼んでいます: %v", r.phases)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("provenanceのないmachine fixはfail closedすべきです: %s", st.TaskStatus())
 	}
 }
 
@@ -97,5 +129,21 @@ func TestParentFileStatesRequireExactMatch(t *testing.T) {
 	}
 	if !state.SameParentFileStates(before, before) {
 		t.Fatal("同一parent-managed metadataを不一致扱いしています")
+	}
+}
+
+func qualityFixReportForSnapshot(input state.GitSnapshot) harnesslint.Report {
+	return harnesslint.Report{
+		Status:     "pass",
+		Fixed:      1,
+		Violations: []harnesslint.Violation{},
+		FixEvidence: &harnesslint.FixEvidence{
+			Method: harnesslint.FixProvenanceIsolatedPostimageV1,
+			Input: &harnesslint.FixInputSnapshot{
+				Head:           input.Head,
+				IndexDigest:    input.IndexDigest,
+				WorktreeDigest: input.WorktreeDigest,
+			},
+		},
 	}
 }
