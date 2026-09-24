@@ -8,6 +8,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type Spec struct {
+	Kind               string              `json:"kind"`
+	Command            []string            `json:"command,omitempty"`
+	PrepareCommand     []string            `json:"prepare_command,omitempty"`
+	Parameters         map[string]string   `json:"parameters,omitempty"`
+	RequiredParameters []string            `json:"required_parameters,omitempty"`
+	OptionalParameters []string            `json:"optional_parameters,omitempty"`
+	Choices            map[string][]string `json:"choices,omitempty"`
+}
+
 const (
 	Binary = "glm-parent-action"
 
@@ -25,16 +35,6 @@ const (
 	SourceCallIDOption  = "--source-call-id"
 	DispositionOption   = "--disposition"
 )
-
-type Spec struct {
-	Kind               string              `json:"kind"`
-	Command            []string            `json:"command,omitempty"`
-	PrepareCommand     []string            `json:"prepare_command,omitempty"`
-	Parameters         map[string]string   `json:"parameters,omitempty"`
-	RequiredParameters []string            `json:"required_parameters,omitempty"`
-	OptionalParameters []string            `json:"optional_parameters,omitempty"`
-	Choices            map[string][]string `json:"choices,omitempty"`
-}
 
 func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	if parentaction.Action(action) == parentaction.ActionReviseMilestones {
@@ -82,37 +82,58 @@ func ParseDefectRegistrationArgs(args []string) (string, string, bool) {
 }
 
 func ParseImprovementDispositionArgs(args []string) (string, string, string, string, error) {
-	if len(args) != 7 && len(args) != 9 {
-		return "", "", "", "", improvementDispositionUsageError()
-	}
-	if args[0] != ImprovementDispositionAction || args[1] != SignalKindOption || args[3] != SourceCallIDOption || args[5] != DispositionOption {
+	if !validImprovementDispositionShape(args) {
 		return "", "", "", "", improvementDispositionUsageError()
 	}
 	kind := args[2]
 	sourceCallID := args[4]
-	disposition := args[6]
 	if kind == "" || sourceCallID == "" {
 		return "", "", "", "", improvementDispositionUsageError()
 	}
-	targetTask := ""
-	if len(args) == 9 {
-		if args[7] != TaskOption {
-			return "", "", "", "", improvementDispositionUsageError()
-		}
-		targetTask = args[8]
+	disposition := args[6]
+	targetTask, err := improvementDispositionTarget(args)
+	if err != nil {
+		return "", "", "", "", err
 	}
+	if err := validateImprovementDispositionTarget(disposition, targetTask); err != nil {
+		return "", "", "", "", err
+	}
+	return kind, sourceCallID, disposition, targetTask, nil
+}
+
+func validImprovementDispositionShape(args []string) bool {
+	if len(args) != 7 && len(args) != 9 {
+		return false
+	}
+	return args[0] == ImprovementDispositionAction &&
+		args[1] == SignalKindOption &&
+		args[3] == SourceCallIDOption &&
+		args[5] == DispositionOption
+}
+
+func improvementDispositionTarget(args []string) (string, error) {
+	if len(args) == 7 {
+		return "", nil
+	}
+	if args[7] != TaskOption {
+		return "", improvementDispositionUsageError()
+	}
+	return args[8], nil
+}
+
+func validateImprovementDispositionTarget(disposition, targetTask string) error {
 	resolved := state.ImprovementSignalDisposition(disposition)
 	if !resolved.Valid() {
-		return "", "", "", "", fmt.Errorf("unknown improvement signal disposition %q", disposition)
+		return fmt.Errorf("unknown improvement signal disposition %q", disposition)
 	}
 	needsTask := state.ImprovementDispositionNeedsTask(resolved)
 	if needsTask && targetTask == "" {
-		return "", "", "", "", fmt.Errorf("improvement signal disposition %s requires --task", disposition)
+		return fmt.Errorf("improvement signal disposition %s requires --task", disposition)
 	}
 	if !needsTask && targetTask != "" {
-		return "", "", "", "", fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
+		return fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
 	}
-	return kind, sourceCallID, disposition, targetTask, nil
+	return nil
 }
 
 func staged(action string) Spec {
