@@ -13,7 +13,12 @@ func Run(root string, fix bool) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	return run(root, fix, runner)
+	if fix {
+		return runWithIsolatedFixes(root, func(workspace string) (Report, error) {
+			return run(workspace, true, runner)
+		})
+	}
+	return run(root, false, runner)
 }
 
 func run(root string, fix bool, runner commandRunner) (Report, error) {
