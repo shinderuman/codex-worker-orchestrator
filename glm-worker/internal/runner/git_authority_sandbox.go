@@ -30,12 +30,6 @@ func (p *gitBashSandboxPolicy) settings() map[string]any {
 		"autoAllowBashIfSandboxed": true,
 		"allowUnsandboxedCommands": false,
 		"excludedCommands":         []string{},
-		"credentials": map[string]any{
-			"envVars": []map[string]string{
-				{"name": providerAuthTokenEnvKey, "mode": "deny"},
-				{"name": providerAPIKeyEnvKey, "mode": "deny"},
-			},
-		},
 		"filesystem": map[string]any{
 			"allowWrite": sandboxAbsolutePaths(p.allowWrite),
 			"denyWrite":  sandboxAbsolutePaths(p.denyWrite),
