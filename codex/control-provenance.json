@@ -13,19 +13,44 @@
       "classification": "machine-enforced",
       "purpose": "Project rules, plan, and ACTIVE task from one stable repository snapshot for fresh and resume parent bootstrap, failing closed if authority changes while it is being projected.",
       "machine_owners": [
-        {"path": "glm-worker/internal/authoritybootstrapcmd/bootstrap.go", "symbol": "BuildCommand"},
-        {"path": "glm-worker/internal/authoritybootstrapcmd/run.go", "symbol": "loadSnapshot"}
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/bootstrap.go",
+          "symbol": "BuildCommand"
+        },
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/run.go",
+          "symbol": "loadSnapshot"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/authoritybootstrapcmd/bootstrap_test.go", "symbol": "TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot"},
-        {"path": "glm-worker/internal/harnesslint/authority_bootstrap_instruction_test.go", "symbol": "TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContract"}
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/bootstrap_test.go",
+          "symbol": "TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/authority_bootstrap_instruction_test.go",
+          "symbol": "TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContract"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/authoritybootstrapcmd/bootstrap.go", "symbol": "projectBootstrap"},
-        {"path": "glm-worker/internal/authoritybootstrapcmd/run.go", "symbol": "sameSnapshot"}
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/bootstrap.go",
+          "symbol": "projectBootstrap"
+        },
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/run.go",
+          "symbol": "sameSnapshot"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/AGENTS.md", "forbidden_tokens": ["glm-worker --authority rules", "glm-worker --authority plan", "glm-worker --authority active"]}
+        {
+          "path": "codex/AGENTS.md",
+          "forbidden_tokens": [
+            "glm-worker --authority rules",
+            "glm-worker --authority plan",
+            "glm-worker --authority active"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent reads and semantically interprets the projected authority content after the machine proves source selection and snapshot coherence."
     },
@@ -34,13 +59,22 @@
       "classification": "partial",
       "purpose": "Track the boundary between repository-side Codex auto-resume transaction checks and the external automation write.",
       "machine_owners": [
-        {"path": "glm-worker/internal/autoresume/codex_wake_transaction.go", "symbol": "BuildCodexWakeTransaction"}
+        {
+          "path": "glm-worker/internal/autoresume/codex_wake_transaction.go",
+          "symbol": "BuildCodexWakeTransaction"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/autoresume/codex_wake_transaction_test.go", "symbol": "TestBuildCodexWakeTransactionCreatesPlaceholderFromCanonicalReset"}
+        {
+          "path": "glm-worker/internal/autoresume/codex_wake_transaction_test.go",
+          "symbol": "TestBuildCodexWakeTransactionCreatesPlaceholderFromCanonicalReset"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/autoresume/codex_wake_response.go", "symbol": "codexWakeVerifiedOutput"}
+        {
+          "path": "glm-worker/internal/autoresume/codex_wake_response.go",
+          "symbol": "codexWakeVerifiedOutput"
+        }
       ],
       "residual_parent_judgment": "The parent remains responsible for the external automation mutation and for interpreting provider-side outcomes.",
       "boundary": "Repository code validates transaction evidence, but the automation service write is not fully machine-owned here."
@@ -71,13 +105,22 @@
       "classification": "partial",
       "purpose": "Track repository-side execution-permission state without claiming ownership of external approval decisions.",
       "machine_owners": [
-        {"path": "glm-worker/internal/codexinstall/files.go", "symbol": "collectDesiredFiles"}
+        {
+          "path": "glm-worker/internal/codexinstall/files.go",
+          "symbol": "collectDesiredFiles"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/workflow/quality_gate_rules_test.go", "symbol": "TestManagedRulesAllowInstalledGLMRuntimeCommands"}
+        {
+          "path": "glm-worker/internal/workflow/quality_gate_rules_test.go",
+          "symbol": "TestManagedRulesAllowInstalledGLMRuntimeCommands"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/codexinstall/files.go", "symbol": "validateManagedFilesForStateCommit"}
+        {
+          "path": "glm-worker/internal/codexinstall/files.go",
+          "symbol": "validateManagedFilesForStateCommit"
+        }
       ],
       "residual_parent_judgment": "The parent interprets external execution denials and chooses an allowed next action.",
       "boundary": "Machine state is available locally, but the external approval reviewer or sandbox decision is not repository-owned."
@@ -87,17 +130,40 @@
       "classification": "machine-enforced",
       "purpose": "Reject implementation admission when the active task lacks the required external-feasibility declaration or evidence shape.",
       "machine_owners": [
-        {"path": "glm-worker/internal/workflow/externalfeasibility.go", "symbol": "Workflow.gateExternalFeasibility"}
+        {
+          "path": "glm-worker/internal/workflow/externalfeasibility.go",
+          "symbol": "Workflow.gateExternalFeasibility"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/workflow/external_feasibility_gate_test.go", "symbol": "TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorker"}
+        {
+          "path": "glm-worker/internal/workflow/external_feasibility_gate_test.go",
+          "symbol": "TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorker"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/workflow/externalfeasibility.go", "symbol": "Workflow.failClosedExternalFeasibility"}
+        {
+          "path": "glm-worker/internal/workflow/externalfeasibility.go",
+          "symbol": "Workflow.failClosedExternalFeasibility"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/instructions/feasibility-gate.md", "forbidden_tokens": ["external_feasibility_missing", "external_feasibility_malformed", "external_feasibility_unverified"]},
-        {"path": "codex/instructions/glm-execution.md", "forbidden_tokens": ["external_feasibility_missing", "external_feasibility_malformed", "external_feasibility_unverified"]}
+        {
+          "path": "codex/instructions/feasibility-gate.md",
+          "forbidden_tokens": [
+            "external_feasibility_missing",
+            "external_feasibility_malformed",
+            "external_feasibility_unverified"
+          ]
+        },
+        {
+          "path": "codex/instructions/glm-execution.md",
+          "forbidden_tokens": [
+            "external_feasibility_missing",
+            "external_feasibility_malformed",
+            "external_feasibility_unverified"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent judges whether the declared external premise and producer evidence are semantically sufficient."
     },
@@ -106,13 +172,22 @@
       "classification": "partial",
       "purpose": "Track mechanical handling of failure artifacts without claiming that arbitrary sensitive content can be recognized exhaustively.",
       "machine_owners": [
-        {"path": "glm-worker/internal/runner/sensitive_artifact_admission.go", "symbol": "validateSensitiveResultArtifacts"}
+        {
+          "path": "glm-worker/internal/runner/sensitive_artifact_admission.go",
+          "symbol": "validateSensitiveResultArtifacts"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/runner/sensitive_artifact_admission_test.go", "symbol": "TestSensitiveArtifactAdmissionRejectsEffectiveProviderAuthToken"}
+        {
+          "path": "glm-worker/internal/runner/sensitive_artifact_admission_test.go",
+          "symbol": "TestSensitiveArtifactAdmissionRejectsEffectiveProviderAuthToken"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/runner/sensitive_artifact_admission.go", "symbol": "validateSensitiveArtifactContents"}
+        {
+          "path": "glm-worker/internal/runner/sensitive_artifact_admission.go",
+          "symbol": "validateSensitiveArtifactContents"
+        }
       ],
       "residual_parent_judgment": "The parent must judge whether produced artifacts contain sensitive material that structural filters cannot identify.",
       "boundary": "Known artifact boundaries are machine-controlled, but arbitrary semantic confidentiality is not."
@@ -122,15 +197,30 @@
       "classification": "machine-enforced",
       "purpose": "Reject concrete backward-compatibility, migration, and retired-surface reintroduction patterns through the shared repository lint gate.",
       "machine_owners": [
-        {"path": "glm-worker/internal/harnesslint/run.go", "symbol": "checkRules"},
-        {"path": "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go", "symbol": "scanForwardOnlyCompatibilityRule"}
+        {
+          "path": "glm-worker/internal/harnesslint/run.go",
+          "symbol": "checkRules"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go",
+          "symbol": "scanForwardOnlyCompatibilityRule"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/harnesslint/forward_only_semantic_test.go", "symbol": "TestForwardOnlySemanticRejectsDualParentWaitReader"},
-        {"path": "glm-worker/internal/harnesslint/forward_only_shell_state_test.go", "symbol": "TestForwardOnlyCompatibilityRejectsShellStateCompatibility"}
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only_semantic_test.go",
+          "symbol": "TestForwardOnlySemanticRejectsDualParentWaitReader"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only_shell_state_test.go",
+          "symbol": "TestForwardOnlyCompatibilityRejectsShellStateCompatibility"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/harnesslint/forward_only.go", "symbol": "forwardOnlyViolation"}
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only.go",
+          "symbol": "forwardOnlyViolation"
+        }
       ],
       "residual_parent_judgment": "The parent decides whether a requested compatibility change is semantically justified; the machine gate only rejects the concrete backward patterns it owns."
     },
@@ -146,22 +236,61 @@
       "classification": "machine-enforced",
       "purpose": "Constrain worker and reviewer structured results to the machine packet schema and validation contract.",
       "machine_owners": [
-        {"path": "glm-worker/internal/packet/schema.go", "symbol": "WorkerSchemaJSON"},
-        {"path": "glm-worker/internal/packet/schema.go", "symbol": "ReviewerSchemaJSON"},
-        {"path": "glm-worker/internal/packet/result.go", "symbol": "ParseStructured"}
+        {
+          "path": "glm-worker/internal/packet/schema.go",
+          "symbol": "WorkerSchemaJSON"
+        },
+        {
+          "path": "glm-worker/internal/packet/schema.go",
+          "symbol": "ReviewerSchemaJSON"
+        },
+        {
+          "path": "glm-worker/internal/packet/result.go",
+          "symbol": "ParseStructured"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/packet/result_test.go", "symbol": "TestValidateResultRejectsOversizeDisplay"},
-        {"path": "glm-worker/internal/packet/schema_test.go", "symbol": "TestReviewerSchemaContents"}
+        {
+          "path": "glm-worker/internal/packet/result_test.go",
+          "symbol": "TestValidateResultRejectsOversizeDisplay"
+        },
+        {
+          "path": "glm-worker/internal/packet/schema_test.go",
+          "symbol": "TestReviewerSchemaContents"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/packet/validate.go", "symbol": "ValidateWorkerResult"},
-        {"path": "glm-worker/internal/packet/validate.go", "symbol": "ValidateReviewerResult"}
+        {
+          "path": "glm-worker/internal/packet/validate.go",
+          "symbol": "ValidateWorkerResult"
+        },
+        {
+          "path": "glm-worker/internal/packet/validate.go",
+          "symbol": "ValidateReviewerResult"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/glm-worker/prompts/WORKER.md", "forbidden_tokens": ["6 KiB", "1536 bytes"]},
-        {"path": "codex/glm-worker/prompts/REVIEWER.md", "forbidden_tokens": ["6 KiB", "1536 bytes"]},
-        {"path": "codex/instructions/glm-packets.md", "forbidden_tokens": ["compact 1行JSON", "[\"none\"]"]}
+        {
+          "path": "codex/glm-worker/prompts/WORKER.md",
+          "forbidden_tokens": [
+            "6 KiB",
+            "1536 bytes"
+          ]
+        },
+        {
+          "path": "codex/glm-worker/prompts/REVIEWER.md",
+          "forbidden_tokens": [
+            "6 KiB",
+            "1536 bytes"
+          ]
+        },
+        {
+          "path": "codex/instructions/glm-packets.md",
+          "forbidden_tokens": [
+            "compact 1行JSON",
+            "[\"none\"]"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent still evaluates the substantive meaning of a structurally valid packet."
     },
@@ -170,18 +299,42 @@
       "classification": "machine-enforced",
       "purpose": "Project exact admissible parent commands, staged semantic slots, token-bound continuation commands, and canonical terminal handoff without parent-side command reconstruction.",
       "machine_owners": [
-        {"path": "glm-worker/internal/app/parent_handoff_actions.go", "symbol": "parentActionSpecs"},
-        {"path": "glm-worker/internal/parentaction/prepared_projection.go", "symbol": "Prepared.MarshalJSON"},
-        {"path": "glm-worker/internal/parentactioncmd/terminal_envelope.go", "symbol": "executeWithTerminalEnvelope"}
+        {
+          "path": "glm-worker/internal/app/parent_handoff_actions.go",
+          "symbol": "parentActionSpecs"
+        },
+        {
+          "path": "glm-worker/internal/parentaction/prepared_projection.go",
+          "symbol": "Prepared.MarshalJSON"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/terminal_envelope.go",
+          "symbol": "executeWithTerminalEnvelope"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/app/parent_handoff_actions_test.go", "symbol": "TestParentHandoffActionSpecs"},
-        {"path": "glm-worker/internal/parentaction/prepared_projection_test.go", "symbol": "TestPreparedProjection"},
-        {"path": "glm-worker/internal/parentactioncmd/terminal_envelope_test.go", "symbol": "TestExecuteWithTerminalEnvelope"}
+        {
+          "path": "glm-worker/internal/app/parent_handoff_actions_test.go",
+          "symbol": "TestParentHandoffActionSpecs"
+        },
+        {
+          "path": "glm-worker/internal/parentaction/prepared_projection_test.go",
+          "symbol": "TestPreparedProjection"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/terminal_envelope_test.go",
+          "symbol": "TestExecuteWithTerminalEnvelope"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/app/parent_handoff_actions.go", "symbol": "parentActionSpec"},
-        {"path": "glm-worker/internal/parentactioncmd/terminal_envelope.go", "symbol": "parentActionTerminalEnvelope"}
+        {
+          "path": "glm-worker/internal/app/parent_handoff_actions.go",
+          "symbol": "parentActionSpec"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/terminal_envelope.go",
+          "symbol": "parentActionTerminalEnvelope"
+        }
       ],
       "residual_parent_judgment": "The parent still chooses among machine-admitted semantic actions and supplies the substantive decision or fix payload."
     },
@@ -190,22 +343,62 @@
       "classification": "machine-enforced",
       "purpose": "Admit parent actions only through staged payload and lifecycle checks that match the current task state.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentaction/parentaction.go", "symbol": "Consume"},
-        {"path": "glm-worker/internal/executionunit/preflight.go", "symbol": "Parse"},
-        {"path": "glm-worker/internal/state/parent_action.go", "symbol": "StateStore.AdmitParentAction"}
+        {
+          "path": "glm-worker/internal/parentaction/parentaction.go",
+          "symbol": "Consume"
+        },
+        {
+          "path": "glm-worker/internal/executionunit/preflight.go",
+          "symbol": "Parse"
+        },
+        {
+          "path": "glm-worker/internal/state/parent_action.go",
+          "symbol": "StateStore.AdmitParentAction"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/parentaction/parentaction_test.go", "symbol": "TestConsumeRejectsUnwrittenOrForgedSlots"},
-        {"path": "glm-worker/internal/parentaction/parentaction_test.go", "symbol": "TestConsumeDecisionPreservesSlotOnSemanticValidationFailure"},
-        {"path": "glm-worker/internal/state/parent_action_test.go", "symbol": "TestParentActionPlanWaitingStates"}
+        {
+          "path": "glm-worker/internal/parentaction/parentaction_test.go",
+          "symbol": "TestConsumeRejectsUnwrittenOrForgedSlots"
+        },
+        {
+          "path": "glm-worker/internal/parentaction/parentaction_test.go",
+          "symbol": "TestConsumeDecisionPreservesSlotOnSemanticValidationFailure"
+        },
+        {
+          "path": "glm-worker/internal/state/parent_action_test.go",
+          "symbol": "TestParentActionPlanWaitingStates"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/state/parent_action.go", "symbol": "StateStore.ParentActionPlan"}
+        {
+          "path": "glm-worker/internal/state/parent_action.go",
+          "symbol": "StateStore.ParentActionPlan"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/instructions/task-request-boundary.md", "forbidden_tokens": ["start-milestones <token>", "revise-milestones <token>", "fresh_worker\":true"]},
-        {"path": "codex/AGENTS.md", "forbidden_tokens": ["新規task・decision・fix・accept・resume"]},
-        {"path": "codex/instructions/glm-execution.md", "forbidden_tokens": ["status:\"prepared\"", ".glm-worker-parent-actions/", "1 MiB"]}
+        {
+          "path": "codex/instructions/task-request-boundary.md",
+          "forbidden_tokens": [
+            "start-milestones <token>",
+            "revise-milestones <token>",
+            "fresh_worker\":true"
+          ]
+        },
+        {
+          "path": "codex/AGENTS.md",
+          "forbidden_tokens": [
+            "新規task・decision・fix・accept・resume"
+          ]
+        },
+        {
+          "path": "codex/instructions/glm-execution.md",
+          "forbidden_tokens": [
+            "status:\"prepared\"",
+            ".glm-worker-parent-actions/",
+            "1 MiB"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent chooses among machine-admitted semantic actions; the staging layer only proves admissibility and payload binding."
     },
@@ -214,19 +407,44 @@
       "classification": "machine-enforced",
       "purpose": "Project parent-visible evidence under a scoped lease and suppress duplicate bodies without losing the canonical claim boundary.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentevidence/projector.go", "symbol": "Projector.commitLocked"}
+        {
+          "path": "glm-worker/internal/parentevidence/projector.go",
+          "symbol": "Projector.commitLocked"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/app/parent_evidence_replay_test.go", "symbol": "TestParentEvidenceReplayReducesModelVisibleBytesAndReturns"},
-        {"path": "glm-worker/internal/app/parent_evidence_ledger_lock_test.go", "symbol": "TestParentEvidenceLedgerLockSerializesConcurrentReads"}
+        {
+          "path": "glm-worker/internal/app/parent_evidence_replay_test.go",
+          "symbol": "TestParentEvidenceReplayReducesModelVisibleBytesAndReturns"
+        },
+        {
+          "path": "glm-worker/internal/app/parent_evidence_ledger_lock_test.go",
+          "symbol": "TestParentEvidenceLedgerLockSerializesConcurrentReads"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/parentevidence/projector.go", "symbol": "Projector.degradeDuplicateParts"},
-        {"path": "glm-worker/internal/parentevidence/projector.go", "symbol": "Projector.saveSurvivingClaims"}
+        {
+          "path": "glm-worker/internal/parentevidence/projector.go",
+          "symbol": "Projector.degradeDuplicateParts"
+        },
+        {
+          "path": "glm-worker/internal/parentevidence/projector.go",
+          "symbol": "Projector.saveSurvivingClaims"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/instructions/glm-parent-evidence.md", "forbidden_tokens": ["duplicate_parent_projection"]},
-        {"path": "codex/AGENTS.md", "forbidden_tokens": ["JSON/JSONL、analysis-index"]}
+        {
+          "path": "codex/instructions/glm-parent-evidence.md",
+          "forbidden_tokens": [
+            "duplicate_parent_projection"
+          ]
+        },
+        {
+          "path": "codex/AGENTS.md",
+          "forbidden_tokens": [
+            "JSON/JSONL、analysis-index"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent chooses which evidence questions matter and interprets the projected evidence semantically."
     },
@@ -235,17 +453,39 @@
       "classification": "machine-enforced",
       "purpose": "Prevent worker model calls from silently changing parent-managed plan and task metadata.",
       "machine_owners": [
-        {"path": "glm-worker/internal/workflow/planfile.go", "symbol": "Workflow.captureParentFileGuard"}
+        {
+          "path": "glm-worker/internal/workflow/planfile.go",
+          "symbol": "Workflow.captureParentFileGuard"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/workflow/plan_file_guard_test.go", "symbol": "TestPlanFileWorkerMutationFailsClosedBeforeReview"}
+        {
+          "path": "glm-worker/internal/workflow/plan_file_guard_test.go",
+          "symbol": "TestPlanFileWorkerMutationFailsClosedBeforeReview"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/workflow/planfile.go", "symbol": "Workflow.verifyParentFileAfterCall"}
+        {
+          "path": "glm-worker/internal/workflow/planfile.go",
+          "symbol": "Workflow.verifyParentFileAfterCall"
+        }
       ],
       "projection_guards": [
-        {"path": "AGENTS.md", "forbidden_tokens": ["追跡中欠損", "呼出前後変化", "停止期間外変化"]},
-        {"path": "IMPLEMENTATION_RULES.md", "forbidden_tokens": ["model実行中は不変", "外部変更はfail closed"]}
+        {
+          "path": "AGENTS.md",
+          "forbidden_tokens": [
+            "追跡中欠損",
+            "呼出前後変化",
+            "停止期間外変化"
+          ]
+        },
+        {
+          "path": "IMPLEMENTATION_RULES.md",
+          "forbidden_tokens": [
+            "model実行中は不変",
+            "外部変更はfail closed"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent decides the intended metadata repair or authorized update after a fail-closed stop."
     },
@@ -254,13 +494,22 @@
       "classification": "partial",
       "purpose": "Track the machine-visible parent continuation state without claiming the whole continuation decision is mechanical.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentcontinuation/projection.go", "symbol": "BuildProjectContinuation"}
+        {
+          "path": "glm-worker/internal/parentcontinuation/projection.go",
+          "symbol": "BuildProjectContinuation"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/parentcontinuation/projection_test.go", "symbol": "TestRateLimitedRequestRequiresVerifiedAutomationForStop"}
+        {
+          "path": "glm-worker/internal/parentcontinuation/projection_test.go",
+          "symbol": "TestRateLimitedRequestRequiresVerifiedAutomationForStop"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/parentcontinuation/projection.go", "symbol": "BuildPostCompletionRequest"}
+        {
+          "path": "glm-worker/internal/parentcontinuation/projection.go",
+          "symbol": "BuildPostCompletionRequest"
+        }
       ],
       "residual_parent_judgment": "The parent decides the semantic continuation after reading the machine state and task outcome.",
       "boundary": "Continuation state is machine-projected, while the next semantic action remains a parent decision."
@@ -270,17 +519,38 @@
       "classification": "machine-enforced",
       "purpose": "Serialize the model-running parent owner and recover a detached owner through one bounded wait/handoff lifecycle.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentactioncmd/parent_wait.go", "symbol": "withParentWaitLease"},
-        {"path": "glm-worker/internal/parentactioncmd/parent_wait.go", "symbol": "executeParentWait"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "withParentWaitLease"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "executeParentWait"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/parentactioncmd/parent_wait_test.go", "symbol": "TestParentWaitLeaseRejectsDuplicateModelRunningOwner"},
-        {"path": "glm-worker/internal/parentactioncmd/parent_wait_test.go", "symbol": "TestParentWaitBlocksOnPrimaryOwnerWithoutOutput"},
-        {"path": "glm-worker/internal/parentactioncmd/parent_wait_epoch_test.go", "symbol": "TestParentWaitLeaseRotatesOwnerEpoch"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait_test.go",
+          "symbol": "TestParentWaitLeaseRejectsDuplicateModelRunningOwner"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait_test.go",
+          "symbol": "TestParentWaitBlocksOnPrimaryOwnerWithoutOutput"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait_epoch_test.go",
+          "symbol": "TestParentWaitLeaseRotatesOwnerEpoch"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/parentactioncmd/parent_wait.go", "symbol": "parentWaitHandoff"},
-        {"path": "glm-worker/internal/parentactioncmd/parent_wait.go", "symbol": "encodeParentWaitSuperseded"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "parentWaitHandoff"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "encodeParentWaitSuperseded"
+        }
       ],
       "residual_parent_judgment": "The parent interprets the recovered handoff semantically and decides the next admitted action."
     },
@@ -289,14 +559,26 @@
       "classification": "machine-enforced",
       "purpose": "Fail closed when the local publication guard hooks or bound glm-parent-action executable are not demonstrably effective.",
       "machine_owners": [
-        {"path": "glm-worker/internal/publicationguard/setup.go", "symbol": "InspectPublicationGuardSetup"}
+        {
+          "path": "glm-worker/internal/publicationguard/setup.go",
+          "symbol": "InspectPublicationGuardSetup"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/publicationguard/setup_test.go", "symbol": "TestInspectPublicationGuardSetupRequiresBinding"},
-        {"path": "glm-worker/internal/publicationguard/setup_test.go", "symbol": "TestInspectPublicationGuardSetupAcceptsExecutableBinding"}
+        {
+          "path": "glm-worker/internal/publicationguard/setup_test.go",
+          "symbol": "TestInspectPublicationGuardSetupRequiresBinding"
+        },
+        {
+          "path": "glm-worker/internal/publicationguard/setup_test.go",
+          "symbol": "TestInspectPublicationGuardSetupAcceptsExecutableBinding"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/publicationguard/setup.go", "symbol": "VerifyPublicationGuardSetup"}
+        {
+          "path": "glm-worker/internal/publicationguard/setup.go",
+          "symbol": "VerifyPublicationGuardSetup"
+        }
       ],
       "residual_parent_judgment": "The parent decides when and how to repair or reinstall the publication guard; the machine only proves the local setup before publication admission."
     },
@@ -305,16 +587,30 @@
       "classification": "machine-enforced",
       "purpose": "Bind quality validation evidence to the current handoff and repository snapshot before final parent acceptance.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentactioncmd/finalization.go", "symbol": "runFinalizationCheckWithWorker"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/finalization.go",
+          "symbol": "runFinalizationCheckWithWorker"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/parentactioncmd/finalization_test.go", "symbol": "TestFinalizationCheckBlocksWhenValidationIsNotCurrentForHandoffSnapshot"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/finalization_test.go",
+          "symbol": "TestFinalizationCheckBlocksWhenValidationIsNotCurrentForHandoffSnapshot"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/parentactioncmd/finalization.go", "symbol": "handoffContainsValidation"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/finalization.go",
+          "symbol": "handoffContainsValidation"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/instructions/quality-gate-capability.md", "forbidden_tokens": ["機械確認した上でfresh gate"]}
+        {
+          "path": "codex/instructions/quality-gate-capability.md",
+          "forbidden_tokens": [
+            "機械確認した上でfresh gate"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent performs the final semantic acceptance after the machine proves validation freshness and snapshot binding."
     },
@@ -323,18 +619,39 @@
       "classification": "machine-enforced",
       "purpose": "Block task completion until local final state is proven synchronized with the bound remote branch.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentactioncmd/complete.go", "symbol": "verifyParentCompletion"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete.go",
+          "symbol": "verifyParentCompletion"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/parentactioncmd/complete_test.go", "symbol": "TestCompleteFinalizesAfterParentPush"},
-        {"path": "glm-worker/internal/parentactioncmd/complete_test.go", "symbol": "TestCompleteKeepsAwaitingWhileFinalHeadIsAhead"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete_test.go",
+          "symbol": "TestCompleteFinalizesAfterParentPush"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete_test.go",
+          "symbol": "TestCompleteKeepsAwaitingWhileFinalHeadIsAhead"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/parentactioncmd/complete.go", "symbol": "verifyCompletionRemoteSync"},
-        {"path": "glm-worker/internal/parentactioncmd/complete.go", "symbol": "verifyCompletionUnchanged"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete.go",
+          "symbol": "verifyCompletionRemoteSync"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete.go",
+          "symbol": "verifyCompletionUnchanged"
+        }
       ],
       "projection_guards": [
-        {"path": "IMPLEMENTATION_RULES.md", "forbidden_tokens": ["Plan・ACTIVE file・task corpus", "機械postcondition"]}
+        {
+          "path": "IMPLEMENTATION_RULES.md",
+          "forbidden_tokens": [
+            "Plan・ACTIVE file・task corpus",
+            "機械postcondition"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent performs or authorizes the remote write; the machine only proves the required synchronization postcondition."
     },
@@ -343,17 +660,34 @@
       "classification": "machine-enforced",
       "purpose": "Activate deterministic full-corpus search when the task contract explicitly requires exhaustive search evidence.",
       "machine_owners": [
-        {"path": "glm-worker/internal/workflow/exhaustive_search.go", "symbol": "Workflow.exhaustiveSearchContext"}
+        {
+          "path": "glm-worker/internal/workflow/exhaustive_search.go",
+          "symbol": "Workflow.exhaustiveSearchContext"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/workflow/exhaustive_search_test.go", "symbol": "TestExhaustiveSearchFailureStopsBeforeModelUse"},
-        {"path": "glm-worker/internal/reposearch/exhaustive_test.go", "symbol": "TestExhaustiveSearchScansEntireSearchableCorpusWithoutTopN"}
+        {
+          "path": "glm-worker/internal/workflow/exhaustive_search_test.go",
+          "symbol": "TestExhaustiveSearchFailureStopsBeforeModelUse"
+        },
+        {
+          "path": "glm-worker/internal/reposearch/exhaustive_test.go",
+          "symbol": "TestExhaustiveSearchScansEntireSearchableCorpusWithoutTopN"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/workflow/exhaustive_search.go", "symbol": "Workflow.writeExhaustiveSearchManifest"}
+        {
+          "path": "glm-worker/internal/workflow/exhaustive_search.go",
+          "symbol": "Workflow.writeExhaustiveSearchManifest"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/instructions/glm-repo-search.md", "forbidden_tokens": ["EXHAUSTIVE_SEARCH_REQUIRED: true"]}
+        {
+          "path": "codex/instructions/glm-repo-search.md",
+          "forbidden_tokens": [
+            "EXHAUSTIVE_SEARCH_REQUIRED: true"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent or model must still judge whether the chosen predicate is semantically sufficient for the requested exhaustive claim."
     },
@@ -362,15 +696,30 @@
       "classification": "machine-enforced",
       "purpose": "Keep reviewer execution on a reviewer role/session with read-only capability distinct from implementation worker execution.",
       "machine_owners": [
-        {"path": "glm-worker/internal/workflow/review_flow.go", "symbol": "Workflow.buildReviewCheckpoint"},
-        {"path": "glm-worker/internal/runner/runner.go", "symbol": "ClaudeRunner.prepareRunSession"}
+        {
+          "path": "glm-worker/internal/workflow/review_flow.go",
+          "symbol": "Workflow.buildReviewCheckpoint"
+        },
+        {
+          "path": "glm-worker/internal/runner/runner.go",
+          "symbol": "ClaudeRunner.prepareRunSession"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/runner/runner_test.go", "symbol": "TestClaudeRunnerRunResumesSessionReadOnly"},
-        {"path": "glm-worker/internal/state/state_test.go", "symbol": "TestSessionIDPersists"}
+        {
+          "path": "glm-worker/internal/runner/runner_test.go",
+          "symbol": "TestClaudeRunnerRunResumesSessionReadOnly"
+        },
+        {
+          "path": "glm-worker/internal/state/state_test.go",
+          "symbol": "TestSessionIDPersists"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/state/store.go", "symbol": "StateStore.SessionID"}
+        {
+          "path": "glm-worker/internal/state/store.go",
+          "symbol": "StateStore.SessionID"
+        }
       ],
       "residual_parent_judgment": "The parent evaluates reviewer findings and final acceptance; machine separation does not make review semantics mechanical."
     },
@@ -379,13 +728,22 @@
       "classification": "partial",
       "purpose": "Track runtime-install evidence required for completion without claiming all installation effects are repository-local.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentactioncmd/runtime_install.go", "symbol": "runtimeInstallRequirementForTask"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/runtime_install.go",
+          "symbol": "runtimeInstallRequirementForTask"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/parentactioncmd/runtime_install_test.go", "symbol": "TestRuntimeInstallEvidenceRejectsLaterRuntimeChange"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/runtime_install_test.go",
+          "symbol": "TestRuntimeInstallEvidenceRejectsLaterRuntimeChange"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/parentactioncmd/runtime_install.go", "symbol": "verifyRuntimeInstallCompletion"}
+        {
+          "path": "glm-worker/internal/parentactioncmd/runtime_install.go",
+          "symbol": "verifyRuntimeInstallCompletion"
+        }
       ],
       "residual_parent_judgment": "The parent evaluates whether external runtime installation evidence is sufficient for the intended environment.",
       "boundary": "Completion checks are mechanical, but the installed runtime environment has effects beyond repository state."
@@ -395,19 +753,43 @@
       "classification": "machine-enforced",
       "purpose": "Bind session rotation claim, new thread identity, and task start through one coherent machine lifecycle.",
       "machine_owners": [
-        {"path": "glm-worker/internal/state/session_rotation.go", "symbol": "StateStore.ClaimSessionRotation"},
-        {"path": "glm-worker/internal/state/session_rotation.go", "symbol": "StateStore.BindSessionRotationClaim"}
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.ClaimSessionRotation"
+        },
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.BindSessionRotationClaim"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/state/session_rotation_identity_test.go", "symbol": "TestSessionRotationRejectsClaimantParentIdentityMismatch"},
-        {"path": "glm-worker/internal/state/session_rotation_identity_test.go", "symbol": "TestSessionRotationIdentityCoherencePreservesRetries"}
+        {
+          "path": "glm-worker/internal/state/session_rotation_identity_test.go",
+          "symbol": "TestSessionRotationRejectsClaimantParentIdentityMismatch"
+        },
+        {
+          "path": "glm-worker/internal/state/session_rotation_identity_test.go",
+          "symbol": "TestSessionRotationIdentityCoherencePreservesRetries"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/state/session_rotation.go", "symbol": "StateStore.StartSessionRotationTask"},
-        {"path": "glm-worker/internal/state/session_rotation.go", "symbol": "StateStore.AcknowledgeSessionRotationClaim"}
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.StartSessionRotationTask"
+        },
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.AcknowledgeSessionRotationClaim"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/instructions/session-rotation.md", "forbidden_tokens": ["予定task IDを照合", "同じclaimで同じtaskへ再開"]}
+        {
+          "path": "codex/instructions/session-rotation.md",
+          "forbidden_tokens": [
+            "予定task IDを照合",
+            "同じclaimで同じtaskへ再開"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent decides when rotation is semantically appropriate and owns external creation of the new Codex thread."
     },
@@ -416,13 +798,22 @@
       "classification": "partial",
       "purpose": "Track machine failure evidence for session rotation without promoting external thread-creation failure proof to full enforcement.",
       "machine_owners": [
-        {"path": "glm-worker/internal/state/session_rotation.go", "symbol": "StateStore.ReleaseSessionRotationClaim"}
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.ReleaseSessionRotationClaim"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/state/session_rotation_failure_test.go", "symbol": "TestReleaseSessionRotationClaimRequiresBoundConfirmedFailure"}
+        {
+          "path": "glm-worker/internal/state/session_rotation_failure_test.go",
+          "symbol": "TestReleaseSessionRotationClaimRequiresBoundConfirmedFailure"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/state/session_rotation.go", "symbol": "StateStore.ReleaseSessionRotationClaim"}
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.ReleaseSessionRotationClaim"
+        }
       ],
       "residual_parent_judgment": "The parent interprets external thread-creation failure and decides whether and how to retry or recover.",
       "boundary": "Repository state records failure evidence, but thread creation occurs outside the repository process."
@@ -432,13 +823,22 @@
       "classification": "partial",
       "purpose": "Track machine evidence bindings used before Sol acceptance without treating semantic review quality as mechanical.",
       "machine_owners": [
-        {"path": "glm-worker/internal/parentevidence/review.go", "symbol": "BuildReviewManifest"}
+        {
+          "path": "glm-worker/internal/parentevidence/review.go",
+          "symbol": "BuildReviewManifest"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/state/parent_review_evidence_test.go", "symbol": "TestParentReviewEvidenceProofInvalidatedBySnapshotChange"}
+        {
+          "path": "glm-worker/internal/state/parent_review_evidence_test.go",
+          "symbol": "TestParentReviewEvidenceProofInvalidatedBySnapshotChange"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/parentevidence/review.go", "symbol": "Projector.markReviewProof"}
+        {
+          "path": "glm-worker/internal/parentevidence/review.go",
+          "symbol": "Projector.markReviewProof"
+        }
       ],
       "residual_parent_judgment": "The parent must actually evaluate the relevant evidence and findings before acceptance.",
       "boundary": "Evidence availability and binding are machine-checkable; substantive review remains semantic."
@@ -448,22 +848,58 @@
       "classification": "machine-enforced",
       "purpose": "Keep stop, interrupted isolation, and parent-wait park/unpark transitions within their distinct machine lifecycle states.",
       "machine_owners": [
-        {"path": "glm-worker/internal/app/stop_endpoint.go", "symbol": "stopEndpointServer.handleConn"},
-        {"path": "glm-worker/internal/app/isolation.go", "symbol": "isolateInterruptedTask"},
-        {"path": "glm-worker/internal/state/park.go", "symbol": "StateStore.EnterParked"}
+        {
+          "path": "glm-worker/internal/app/stop_endpoint.go",
+          "symbol": "stopEndpointServer.handleConn"
+        },
+        {
+          "path": "glm-worker/internal/app/isolation.go",
+          "symbol": "isolateInterruptedTask"
+        },
+        {
+          "path": "glm-worker/internal/state/park.go",
+          "symbol": "StateStore.EnterParked"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/workflow/stop_interruption_test.go", "symbol": "TestStopDuringRunningCallSavesInterruptedState"},
-        {"path": "glm-worker/internal/app/isolation_test.go", "symbol": "TestIsolateRejectsNonUserInterruptedState"},
-        {"path": "glm-worker/internal/workflow/park_test.go", "symbol": "TestParkPreservesTaskStateAndCreatesInterruptWorktree"}
+        {
+          "path": "glm-worker/internal/workflow/stop_interruption_test.go",
+          "symbol": "TestStopDuringRunningCallSavesInterruptedState"
+        },
+        {
+          "path": "glm-worker/internal/app/isolation_test.go",
+          "symbol": "TestIsolateRejectsNonUserInterruptedState"
+        },
+        {
+          "path": "glm-worker/internal/workflow/park_test.go",
+          "symbol": "TestParkPreservesTaskStateAndCreatesInterruptWorktree"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/app/stop_endpoint.go", "symbol": "stopEndpointServer.buildResponse"},
-        {"path": "glm-worker/internal/app/isolation.go", "symbol": "persistIsolationRecords"},
-        {"path": "glm-worker/internal/state/park.go", "symbol": "StateStore.CommitUnpark"}
+        {
+          "path": "glm-worker/internal/app/stop_endpoint.go",
+          "symbol": "stopEndpointServer.buildResponse"
+        },
+        {
+          "path": "glm-worker/internal/app/isolation.go",
+          "symbol": "persistIsolationRecords"
+        },
+        {
+          "path": "glm-worker/internal/state/park.go",
+          "symbol": "StateStore.CommitUnpark"
+        }
       ],
       "projection_guards": [
-        {"path": "codex/instructions/glm-stop-isolate.md", "forbidden_tokens": ["stop_endpoint_absent", "stop_endpoint_stale", "interrupted_cleanup_residual", "stop-worktree.patch", "stop-index.patch"]}
+        {
+          "path": "codex/instructions/glm-stop-isolate.md",
+          "forbidden_tokens": [
+            "stop_endpoint_absent",
+            "stop_endpoint_stale",
+            "interrupted_cleanup_residual",
+            "stop-worktree.patch",
+            "stop-index.patch"
+          ]
+        }
       ],
       "residual_parent_judgment": "The parent decides why an interruption is needed and when the preserved task should be resumed or dispositioned."
     },
@@ -472,13 +908,22 @@
       "classification": "partial",
       "purpose": "Track machine isolation from user-global instruction/config surfaces without claiming ownership of the external user configuration.",
       "machine_owners": [
-        {"path": "glm-worker/internal/codexcontext/context.go", "symbol": "ensureManagedConfig"}
+        {
+          "path": "glm-worker/internal/codexcontext/context.go",
+          "symbol": "ensureManagedConfig"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/codexcontext/context_test.go", "symbol": "TestEnableDisableManagedProjectConfig"}
+        {
+          "path": "glm-worker/internal/codexcontext/context_test.go",
+          "symbol": "TestEnableDisableManagedProjectConfig"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/codexcontext/context.go", "symbol": "managedConfigState"}
+        {
+          "path": "glm-worker/internal/codexcontext/context.go",
+          "symbol": "managedConfigState"
+        }
       ],
       "residual_parent_judgment": "The parent remains responsible for intended user-global configuration changes outside the isolated invocation.",
       "boundary": "Invocation isolation is machine-controlled, but the user's global configuration is external state."
@@ -495,13 +940,22 @@
       "classification": "machine-enforced",
       "purpose": "Bind worker execution to the captured Git authority snapshot and fail when protected Git authority changes unexpectedly.",
       "machine_owners": [
-        {"path": "glm-worker/internal/runner/git_authority_guard.go", "symbol": "prepareGitAuthorityGuard"}
+        {
+          "path": "glm-worker/internal/runner/git_authority_guard.go",
+          "symbol": "prepareGitAuthorityGuard"
+        }
       ],
       "tests": [
-        {"path": "glm-worker/internal/runner/git_authority_ref_evidence_test.go", "symbol": "TestGitAuthorityGuardRetainsConcreteRefMutationEvidence"}
+        {
+          "path": "glm-worker/internal/runner/git_authority_ref_evidence_test.go",
+          "symbol": "TestGitAuthorityGuardRetainsConcreteRefMutationEvidence"
+        }
       ],
       "postconditions": [
-        {"path": "glm-worker/internal/runner/git_authority_guard.go", "symbol": "gitAuthorityGuard.verify"}
+        {
+          "path": "glm-worker/internal/runner/git_authority_guard.go",
+          "symbol": "gitAuthorityGuard.verify"
+        }
       ],
       "residual_parent_judgment": "The parent decides the intended recovery when a Git authority mutation is detected."
     }
