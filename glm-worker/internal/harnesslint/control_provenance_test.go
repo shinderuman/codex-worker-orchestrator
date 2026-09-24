@@ -214,6 +214,39 @@ func TestControlProvenanceRequiresKnownCurrentMachineControls(t *testing.T) {
 	}
 }
 
+func TestControlProvenanceRequiresCurrentCanonicalOwnerAfterOwnershipTransfer(t *testing.T) {
+	root := t.TempDir()
+	writeControlProvenanceGo(t, root, parentActionGrammarOwnerPath, "package parentactiongrammar\nfunc Project() {}\n")
+	writeControlProvenanceGo(t, root, "glm-worker/internal/app/parent_handoff_actions.go", "package app\nfunc parentActionSpecs() {}\nfunc parentActionSpec() {}\n")
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+		Version: 1,
+		Controls: []controlProvenanceControl{{
+			ID:             parentActionMachineProjectionControlID,
+			Classification: controlClassificationMachine,
+			Purpose:        "project exact parent commands",
+			MachineOwners: []controlProvenanceLocator{{
+				Path:   "glm-worker/internal/app/parent_handoff_actions.go",
+				Symbol: "parentActionSpecs",
+			}},
+			Tests: []controlProvenanceLocator{{Path: "owner_test.go", Symbol: "TestOwner"}},
+			Postconditions: []controlProvenanceLocator{{
+				Path:   "glm-worker/internal/app/parent_handoff_actions.go",
+				Symbol: "parentActionSpec",
+			}},
+			ResidualParentJudgment: "semantic action choice",
+		}},
+	})
+
+	violations, err := controlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, parentActionMachineProjectionControlID, "canonical owner", parentActionGrammarOwnerPath, parentActionGrammarOwnerSymbol, "missing from provenance machine owners") {
+		t.Fatalf("violations = %#v", violations)
+	}
+}
+
 func TestControlProvenanceRejectsLineNumberSchema(t *testing.T) {
 	root := t.TempDir()
 	registryPath := filepath.Join(root, filepath.FromSlash(controlProvenanceRegistryPath))
