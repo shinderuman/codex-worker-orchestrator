@@ -57,7 +57,7 @@ func TestProjectedImprovementDispositionGrammarIsExecutable(t *testing.T) {
 	}
 	args := append([]string(nil), spec.Command[1:]...)
 	args = append(args, parentactiongrammar.DispositionOption, string(state.ImprovementSignalDispositionReject))
-	kind, callID, disposition, taskPath, err := parseImprovementDispositionArgs(args)
+	kind, callID, disposition, taskPath, err := parentactiongrammar.ParseImprovementDispositionArgs(args)
 	if err != nil {
 		t.Fatal(err)
 	}
