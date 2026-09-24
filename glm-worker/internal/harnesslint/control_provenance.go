@@ -135,7 +135,15 @@ func validateControlProvenanceControl(root string, control controlProvenanceCont
 			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("machine-enforced control %q must not declare a non-machine boundary", control.ID)))
 		}
 		violations = append(violations, validateMachineControlLocators(root, control)...)
-	case controlClassificationPartial, controlClassificationProse, controlClassificationSemanticParent, controlClassificationExternalUnenforced:
+	case controlClassificationPartial:
+		if strings.TrimSpace(control.Boundary) == "" {
+			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("partial control %q must declare its residual enforcement boundary", control.ID)))
+		}
+		if len(control.ProjectionGuards) != 0 {
+			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("partial control %q must not carry projection guard metadata", control.ID)))
+		}
+		violations = append(violations, validateMachineControlLocators(root, control)...)
+	case controlClassificationProse, controlClassificationSemanticParent, controlClassificationExternalUnenforced:
 		if strings.TrimSpace(control.Boundary) == "" {
 			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must declare its enforcement boundary", control.ID)))
 		}
@@ -161,7 +169,7 @@ func validateMachineControlLocators(root string, control controlProvenanceContro
 	var violations []Violation
 	for _, group := range groups {
 		if len(group.locators) == 0 {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("machine-enforced control %q has no %s locator", control.ID, group.name)))
+			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("control %q has no %s locator", control.ID, group.name)))
 			continue
 		}
 		for _, locator := range group.locators {
