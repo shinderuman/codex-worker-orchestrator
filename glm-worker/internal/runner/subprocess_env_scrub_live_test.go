@@ -52,6 +52,10 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 	var requestCount atomic.Int32
 	var parentCredentialSeen atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isClaudeProviderHealthCheck(r) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if requestHasCredential(r, credentialValue) {
 			parentCredentialSeen.Store(true)
 		}
