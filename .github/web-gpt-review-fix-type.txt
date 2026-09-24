@@ -1,0 +1,9 @@
+from pathlib import Path
+
+p = Path("glm-worker/internal/autoresume/codex_wake_transaction.go")
+text = p.read_text()
+old = "func readWakeTOMLForThread(path, entryName, wakeThreadID string) (wakeAutomation, string) {"
+new = "func readWakeTOMLForThread(path, entryName, wakeThreadID string) (AutomationTOML, string) {"
+if text.count(old) != 1:
+    raise SystemExit("wake helper type replacement mismatch")
+p.write_text(text.replace(old, new, 1))
