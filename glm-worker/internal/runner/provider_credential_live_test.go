@@ -45,6 +45,10 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			var mu sync.Mutex
 			var observation providerCredentialRequestObservation
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if isClaudeProviderHealthCheck(r) {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
 				mu.Lock()
 				observation = providerCredentialRequestObservation{
 					method:              r.Method,
@@ -98,6 +102,10 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			}
 		})
 	}
+}
+
+func isClaudeProviderHealthCheck(r *http.Request) bool {
+	return r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/api/hello")
 }
 
 func prepareClaudeCanaryHome(t *testing.T, home string) string {
