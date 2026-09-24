@@ -8,7 +8,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type parentHandoffActionSpec = parentactiongrammar.Spec
+type parentHandoffActionSpec parentactiongrammar.Spec
 
 type parentHandoffOutputAlias parentHandoffOutput
 type parentHandoffRecoveryOutputAlias parentHandoffRecoveryOutput
@@ -99,5 +99,9 @@ func parentActionSpecs(actions []string, requiredParameters map[string]string) m
 }
 
 func parentActionSpec(action string, requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
-	return parentactiongrammar.Project(action, requiredParameters)
+	spec, ok := parentactiongrammar.Project(action, requiredParameters)
+	if !ok {
+		return parentHandoffActionSpec{}, false
+	}
+	return parentHandoffActionSpec(spec), true
 }
