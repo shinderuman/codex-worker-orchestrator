@@ -143,10 +143,3 @@ test -d "$stale_ticket"
 test "$(cat "$stale_ticket/started")" = 'stale-process-start'
 ''',
 )
-
-p = Path("tests/install_hook_ownership_smoke.sh")
-text = p.read_text()
-old = 'test -d "$stale_ticket"\n'
-if text.count(old) != 1:
-    raise SystemExit("old stale ticket assertion replacement mismatch")
-p.write_text(text.replace(old, "", 1))
