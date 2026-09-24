@@ -28,6 +28,9 @@ func TestControlProvenanceValidMachineAndNonMachineEntries(t *testing.T) {
 				ID:                     "partial",
 				Classification:         controlClassificationPartial,
 				Purpose:                "partial purpose",
+				MachineOwners:          []controlProvenanceLocator{{Path: "owner.go", Symbol: "ownerType.owner"}},
+				Tests:                  []controlProvenanceLocator{{Path: "owner_test.go", Symbol: "TestOwner"}},
+				Postconditions:         []controlProvenanceLocator{{Path: "owner.go", Symbol: "postcondition"}},
 				ResidualParentJudgment: "semantic disposition",
 				Boundary:               "not fully machine enforced",
 			},
@@ -44,7 +47,15 @@ func TestControlProvenanceValidMachineAndNonMachineEntries(t *testing.T) {
 }
 
 func TestControlProvenanceLocatorDriftFailsClosed(t *testing.T) {
-	for _, tc := range []struct {
+	classifications := []struct {
+		name           string
+		classification controlProvenanceClassification
+		boundary       string
+	}{
+		{name: "machine", classification: controlClassificationMachine},
+		{name: "partial", classification: controlClassificationPartial, boundary: "external boundary remains"},
+	}
+	drifts := []struct {
 		name       string
 		kind       string
 		mutate     func(*controlProvenanceControl)
@@ -78,23 +89,29 @@ func TestControlProvenanceLocatorDriftFailsClosed(t *testing.T) {
 			file:       "owner.go",
 			wantSymbol: "renamedPostcondition",
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
-			writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
-			control := controlProvenanceMachineFixture()
-			tc.mutate(&control)
-			writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{Version: 1, Controls: []controlProvenanceControl{control}})
+	}
+	for _, classification := range classifications {
+		for _, drift := range drifts {
+			t.Run(classification.name+"/"+drift.name, func(t *testing.T) {
+				root := t.TempDir()
+				writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
+				writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+				control := controlProvenanceMachineFixture()
+				control.ID = classification.name
+				control.Classification = classification.classification
+				control.Boundary = classification.boundary
+				drift.mutate(&control)
+				writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{Version: 1, Controls: []controlProvenanceControl{control}})
 
-			violations, err := controlProvenanceViolations(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !hasControlProvenanceViolation(violations, tc.file, tc.kind, tc.wantSymbol) {
-				t.Fatalf("violations = %#v", violations)
-			}
-		})
+				violations, err := controlProvenanceViolations(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !hasControlProvenanceViolation(violations, drift.file, drift.kind, drift.wantSymbol) {
+					t.Fatalf("violations = %#v", violations)
+				}
+			})
+		}
 	}
 }
 
@@ -120,18 +137,18 @@ func TestControlProvenanceRejectsIgnoredLocatorDirectories(t *testing.T) {
 	}
 }
 
-func TestControlProvenanceRejectsMachineLocatorsOnNonMachineControl(t *testing.T) {
+func TestControlProvenanceRejectsMachineLocatorsOnNonPartialControl(t *testing.T) {
 	root := t.TempDir()
 	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\n")
 	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
 		Version: 1,
 		Controls: []controlProvenanceControl{{
-			ID:                     "partial",
-			Classification:         controlClassificationPartial,
-			Purpose:                "partial purpose",
+			ID:                     "semantic",
+			Classification:         controlClassificationSemanticParent,
+			Purpose:                "semantic purpose",
 			MachineOwners:          []controlProvenanceLocator{{Path: "owner.go", Symbol: "owner"}},
 			ResidualParentJudgment: "semantic disposition",
-			Boundary:               "not fully machine enforced",
+			Boundary:               "semantic boundary",
 		}},
 	})
 
@@ -139,7 +156,27 @@ func TestControlProvenanceRejectsMachineLocatorsOnNonMachineControl(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, "must not carry machine owner", "partial") {
+	if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, "must not carry machine owner", "semantic") {
+		t.Fatalf("violations = %#v", violations)
+	}
+}
+
+func TestControlProvenanceRejectsProjectionGuardsOnPartialControl(t *testing.T) {
+	root := t.TempDir()
+	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+	control := controlProvenanceMachineFixture()
+	control.ID = "partial"
+	control.Classification = controlClassificationPartial
+	control.Boundary = "external boundary remains"
+	control.ProjectionGuards = []controlProvenanceProjectionGuard{{Path: "instruction.md", ForbiddenTokens: []string{"duplicate"}}}
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{Version: 1, Controls: []controlProvenanceControl{control}})
+
+	violations, err := controlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, "partial control", "must not carry projection guard metadata") {
 		t.Fatalf("violations = %#v", violations)
 	}
 }

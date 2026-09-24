@@ -58,6 +58,24 @@
       "id": "codex-auto-resume-automation-transaction",
       "classification": "partial",
       "purpose": "Track the boundary between repository-side Codex auto-resume transaction checks and the external automation write.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/autoresume/codex_wake_transaction.go",
+          "symbol": "BuildCodexWakeTransaction"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/autoresume/codex_wake_transaction_test.go",
+          "symbol": "TestBuildCodexWakeTransactionCreatesPlaceholderFromCanonicalReset"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/autoresume/codex_wake_response.go",
+          "symbol": "codexWakeVerifiedOutput"
+        }
+      ],
       "residual_parent_judgment": "The parent remains responsible for the external automation mutation and for interpreting provider-side outcomes.",
       "boundary": "Repository code validates transaction evidence, but the automation service write is not fully machine-owned here."
     },
@@ -86,6 +104,24 @@
       "id": "execution-permission-convergence",
       "classification": "partial",
       "purpose": "Track repository-side execution-permission state without claiming ownership of external approval decisions.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/codexinstall/files.go",
+          "symbol": "collectDesiredFiles"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/workflow/quality_gate_rules_test.go",
+          "symbol": "TestManagedRulesAllowInstalledGLMRuntimeCommands"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/codexinstall/files.go",
+          "symbol": "validateManagedFilesForStateCommit"
+        }
+      ],
       "residual_parent_judgment": "The parent interprets external execution denials and chooses an allowed next action.",
       "boundary": "Machine state is available locally, but the external approval reviewer or sandbox decision is not repository-owned."
     },
@@ -135,6 +171,24 @@
       "id": "failure-artifact-confidentiality",
       "classification": "partial",
       "purpose": "Track mechanical handling of failure artifacts without claiming that arbitrary sensitive content can be recognized exhaustively.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/runner/sensitive_artifact_admission.go",
+          "symbol": "validateSensitiveResultArtifacts"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/runner/sensitive_artifact_admission_test.go",
+          "symbol": "TestSensitiveArtifactAdmissionRejectsEffectiveProviderAuthToken"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/runner/sensitive_artifact_admission.go",
+          "symbol": "validateSensitiveArtifactContents"
+        }
+      ],
       "residual_parent_judgment": "The parent must judge whether produced artifacts contain sensitive material that structural filters cannot identify.",
       "boundary": "Known artifact boundaries are machine-controlled, but arbitrary semantic confidentiality is not."
     },
@@ -439,6 +493,24 @@
       "id": "parent-plan-continuation",
       "classification": "partial",
       "purpose": "Track the machine-visible parent continuation state without claiming the whole continuation decision is mechanical.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/parentcontinuation/projection.go",
+          "symbol": "BuildProjectContinuation"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/parentcontinuation/projection_test.go",
+          "symbol": "TestRateLimitedRequestRequiresVerifiedAutomationForStop"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/parentcontinuation/projection.go",
+          "symbol": "BuildPostCompletionRequest"
+        }
+      ],
       "residual_parent_judgment": "The parent decides the semantic continuation after reading the machine state and task outcome.",
       "boundary": "Continuation state is machine-projected, while the next semantic action remains a parent decision."
     },
@@ -655,6 +727,24 @@
       "id": "runtime-install-completion",
       "classification": "partial",
       "purpose": "Track runtime-install evidence required for completion without claiming all installation effects are repository-local.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/runtime_install.go",
+          "symbol": "runtimeInstallRequirementForTask"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/runtime_install_test.go",
+          "symbol": "TestRuntimeInstallEvidenceRejectsLaterRuntimeChange"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/runtime_install.go",
+          "symbol": "verifyRuntimeInstallCompletion"
+        }
+      ],
       "residual_parent_judgment": "The parent evaluates whether external runtime installation evidence is sufficient for the intended environment.",
       "boundary": "Completion checks are mechanical, but the installed runtime environment has effects beyond repository state."
     },
@@ -707,6 +797,24 @@
       "id": "session-rotation-fail-proof",
       "classification": "partial",
       "purpose": "Track machine failure evidence for session rotation without promoting external thread-creation failure proof to full enforcement.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.ReleaseSessionRotationClaim"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/state/session_rotation_failure_test.go",
+          "symbol": "TestReleaseSessionRotationClaimRequiresBoundConfirmedFailure"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.ReleaseSessionRotationClaim"
+        }
+      ],
       "residual_parent_judgment": "The parent interprets external thread-creation failure and decides whether and how to retry or recover.",
       "boundary": "Repository state records failure evidence, but thread creation occurs outside the repository process."
     },
@@ -714,6 +822,24 @@
       "id": "sol-review-evidence-before-accept",
       "classification": "partial",
       "purpose": "Track machine evidence bindings used before Sol acceptance without treating semantic review quality as mechanical.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/parentevidence/review.go",
+          "symbol": "BuildReviewManifest"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/state/parent_review_evidence_test.go",
+          "symbol": "TestParentReviewEvidenceProofInvalidatedBySnapshotChange"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/parentevidence/review.go",
+          "symbol": "Projector.markReviewProof"
+        }
+      ],
       "residual_parent_judgment": "The parent must actually evaluate the relevant evidence and findings before acceptance.",
       "boundary": "Evidence availability and binding are machine-checkable; substantive review remains semantic."
     },
@@ -781,6 +907,24 @@
       "id": "user-global-instruction-config-ownership",
       "classification": "partial",
       "purpose": "Track machine isolation from user-global instruction/config surfaces without claiming ownership of the external user configuration.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/codexcontext/context.go",
+          "symbol": "ensureManagedConfig"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/codexcontext/context_test.go",
+          "symbol": "TestEnableDisableManagedProjectConfig"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/codexcontext/context.go",
+          "symbol": "managedConfigState"
+        }
+      ],
       "residual_parent_judgment": "The parent remains responsible for intended user-global configuration changes outside the isolated invocation.",
       "boundary": "Invocation isolation is machine-controlled, but the user's global configuration is external state."
     },
