@@ -41,8 +41,8 @@ func TestClaudeSubprocessEnvScrubLiveNoAI(t *testing.T) {
 
 func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey string) {
 	t.Helper()
-	dir := t.TempDir()
-	reportPath := filepath.Join(dir, "subprocess-env-report")
+	home := t.TempDir()
+	reportPath := filepath.Join(home, "subprocess-env-report")
 	credentialValue := "glm-worker-subprocess-scrub-canary"
 	bashCommand := `auth_token=absent; api_key=absent; ` +
 		`[ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] && auth_token=present; ` +
@@ -60,19 +60,17 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 	}))
 	defer server.Close()
 
-	configDir := filepath.Join(dir, "claude-config")
-	if err := os.MkdirAll(configDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	settings, err := isolationSettings(configDir, &gitBashSandboxPolicy{allowWrite: []string{dir}})
+	configDir := prepareClaudeCanaryHome(t, home)
+	settings, err := isolationSettings(configDir, &gitBashSandboxPolicy{allowWrite: []string{home}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	settingEnv := map[string]string{
-		credentialKey:        credentialValue,
-		"ANTHROPIC_BASE_URL": server.URL + "/api/anthropic",
-	}
+	settingEnv := map[string]string{credentialKey: credentialValue}
+	settingEnv["ANTHROPIC_BASE_URL"] = server.URL + "/api/anthropic"
+	settingEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "glm-canary"
+	settingEnv["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 	additions := claudeInvocationEnvDefaults()
+	additions["HOME"] = home
 	additions["CLAUDE_CONFIG_DIR"] = configDir
 	additions["GLM_SUBPROCESS_SCRUB_REPORT"] = reportPath
 
@@ -84,7 +82,7 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands",
 		"--settings", settings, "--tools", "Bash", "run the provided Bash tool",
 	)
-	command.Dir = dir
+	command.Dir = "."
 	command.Env = buildChildEnv(nil, settingEnv, additions, nil)
 	var output bytes.Buffer
 	command.Stdout = &output
@@ -120,6 +118,7 @@ func claudeCanaryFailureCategory(output []byte) string {
 		{needle: "API Error", category: "api-error"},
 		{needle: "tool_use", category: "tool-use-protocol"},
 		{needle: "safe mode", category: "safe-mode"},
+		{needle: "bubblewrap is required", category: "bubblewrap-missing"},
 	} {
 		if bytes.Contains(output, []byte(candidate.needle)) {
 			return candidate.category
