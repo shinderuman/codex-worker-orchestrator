@@ -20,9 +20,13 @@ type controlProvenanceProjectionGuard = controlprovenance.ProjectionGuard
 type controlProvenanceClassification = controlprovenance.Classification
 
 type knownMachineControl struct {
-	id                   string
-	ownerPath            string
-	canonicalOwnerSymbol string
+	id                       string
+	ownerPath                string
+	canonicalOwnerSymbol     string
+	canonicalTestPath        string
+	canonicalTestSymbol      string
+	canonicalPostconditionPath   string
+	canonicalPostconditionSymbol string
 }
 
 const controlProvenanceRegistryPath = controlprovenance.RegistryPath
@@ -37,6 +41,8 @@ const (
 	parentActionMachineProjectionControlID = "parent-action-machine-projection"
 	parentActionGrammarOwnerPath           = "glm-worker/internal/parentactiongrammar/grammar.go"
 	parentActionGrammarOwnerSymbol         = "Project"
+	parentActionGrammarTestPath            = "glm-worker/internal/parentactiongrammar/grammar_test.go"
+	parentActionGrammarTestSymbol          = "TestProjectPreservesCurrentActionSpecs"
 	publicationGuardSetupControlID         = "publication-guard-setup"
 )
 
@@ -101,7 +107,15 @@ func validateControlProvenanceRegistry(root string, registry controlProvenanceRe
 func validateKnownMachineControlCoverage(root string, controls []controlProvenanceControl) []Violation {
 	known := []knownMachineControl{
 		{id: forwardOnlyCompatibilityRule, ownerPath: "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go"},
-		{id: parentActionMachineProjectionControlID, ownerPath: parentActionGrammarOwnerPath, canonicalOwnerSymbol: parentActionGrammarOwnerSymbol},
+		{
+			id:                         parentActionMachineProjectionControlID,
+			ownerPath:                  parentActionGrammarOwnerPath,
+			canonicalOwnerSymbol:       parentActionGrammarOwnerSymbol,
+			canonicalTestPath:          parentActionGrammarTestPath,
+			canonicalTestSymbol:        parentActionGrammarTestSymbol,
+			canonicalPostconditionPath: parentActionGrammarOwnerPath,
+			canonicalPostconditionSymbol: parentActionGrammarOwnerSymbol,
+		},
 		{id: publicationGuardSetupControlID, ownerPath: "glm-worker/internal/publicationguard/setup.go"},
 	}
 
@@ -135,10 +149,22 @@ func validateKnownMachineControl(root string, registered map[string]controlProve
 	if !ok {
 		return []Violation{controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q is missing from provenance registry", known.id))}
 	}
+
+	var violations []Violation
 	if known.canonicalOwnerSymbol != "" && !hasControlProvenanceLocator(control.MachineOwners, known.ownerPath, known.canonicalOwnerSymbol) {
-		return []Violation{controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q canonical owner %q::%s is missing from provenance machine owners", known.id, known.ownerPath, known.canonicalOwnerSymbol))}
+		violations = append(violations, missingCanonicalProvenanceLocator(known.id, "machine owner", known.ownerPath, known.canonicalOwnerSymbol))
 	}
-	return nil
+	if known.canonicalTestSymbol != "" && !hasControlProvenanceLocator(control.Tests, known.canonicalTestPath, known.canonicalTestSymbol) {
+		violations = append(violations, missingCanonicalProvenanceLocator(known.id, "test", known.canonicalTestPath, known.canonicalTestSymbol))
+	}
+	if known.canonicalPostconditionSymbol != "" && !hasControlProvenanceLocator(control.Postconditions, known.canonicalPostconditionPath, known.canonicalPostconditionSymbol) {
+		violations = append(violations, missingCanonicalProvenanceLocator(known.id, "postcondition", known.canonicalPostconditionPath, known.canonicalPostconditionSymbol))
+	}
+	return violations
+}
+
+func missingCanonicalProvenanceLocator(controlID, kind, locatorPath, symbol string) Violation {
+	return controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q canonical %s %q::%s is missing from provenance %ss", controlID, kind, locatorPath, symbol, kind))
 }
 
 func hasControlProvenanceLocator(locators []controlProvenanceLocator, locatorPath, symbol string) bool {
