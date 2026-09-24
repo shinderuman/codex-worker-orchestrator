@@ -17,11 +17,17 @@ func TestClaudeInvocationDefaultsPreserveConfiguredValues(t *testing.T) {
 	if got := defaults["CLAUDE_CODE_ALWAYS_ENABLE_EFFORT"]; got != configuredAlwaysEnableEffort {
 		t.Fatalf("always effort env = %q, want %q", got, configuredAlwaysEnableEffort)
 	}
+	if got := defaults["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"]; got != configuredClaudeSubprocessEnvScrub {
+		t.Fatalf("subprocess env scrub = %q, want %q", got, configuredClaudeSubprocessEnvScrub)
+	}
 	if configuredAutoCompactWindowTokens != 500_000 {
 		t.Fatalf("configured auto compact tokens = %d, want 500000", configuredAutoCompactWindowTokens)
 	}
 	if configuredAlwaysEnableEffort != "1" {
 		t.Fatalf("configured always effort = %q, want 1", configuredAlwaysEnableEffort)
+	}
+	if configuredClaudeSubprocessEnvScrub != "1" {
+		t.Fatalf("configured subprocess env scrub = %q, want 1", configuredClaudeSubprocessEnvScrub)
 	}
 }
 
@@ -34,7 +40,7 @@ func TestAutoCompactArgumentDerivesFromConfiguredTokens(t *testing.T) {
 	}
 }
 
-func TestManagedClaudeSettingsMirrorOrchestratorInvocationDefaults(t *testing.T) {
+func TestManagedClaudeSettingsMirrorManagedDefaultsOnly(t *testing.T) {
 	path := filepath.Join("..", "..", "..", "claude", "settings-managed.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -46,10 +52,13 @@ func TestManagedClaudeSettingsMirrorOrchestratorInvocationDefaults(t *testing.T)
 	if err := json.Unmarshal(data, &settings); err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range claudeInvocationEnvDefaults() {
+	for key, want := range claudeManagedEnvDefaults() {
 		if got := settings.Env[key]; got != want {
 			t.Fatalf("managed Claude projection %s = %q, want %q", key, got, want)
 		}
+	}
+	if _, ok := settings.Env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"]; ok {
+		t.Fatal("runner-only subprocess scrub must not be projected into managed Claude settings")
 	}
 }
 
