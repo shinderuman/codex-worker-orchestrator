@@ -1,6 +1,8 @@
 package parentactiongrammar
 
 import (
+	"fmt"
+
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -9,16 +11,19 @@ import (
 const (
 	Binary = "glm-parent-action"
 
+	RecordDefectFindingAction    = "record-defect-finding"
+	ImprovementDispositionAction = "improvement-disposition"
+
 	AcceptedScopeParameter = "accepted-scope"
 	TaskParameter          = "task"
 	SignalKindParameter    = "signal-kind"
 	SourceCallIDParameter  = "source-call-id"
 
-	AcceptedScopeOption      = "--accepted-scope"
-	TaskOption               = "--task"
-	SignalKindOption         = "--signal-kind"
-	SourceCallIDOption       = "--source-call-id"
-	DispositionOption        = "--disposition"
+	AcceptedScopeOption = "--accepted-scope"
+	TaskOption          = "--task"
+	SignalKindOption    = "--signal-kind"
+	SourceCallIDOption  = "--source-call-id"
+	DispositionOption   = "--disposition"
 )
 
 type Spec struct {
@@ -60,6 +65,54 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	default:
 		return Spec{}, false
 	}
+}
+
+func ValidateApproveSurfaceArgs(args []string) bool {
+	return len(args) == 2 && args[0] == AcceptedScopeOption && args[1] == parentfix.AcceptedScopeCurrentDiff
+}
+
+func ParseDefectRegistrationArgs(args []string) (string, string, bool) {
+	if len(args) != 3 || args[1] != TaskOption {
+		return "", "", false
+	}
+	if args[0] != RecordDefectFindingAction && args[0] != string(state.ParentActionBindDefectTask) {
+		return "", "", false
+	}
+	return args[0], args[2], true
+}
+
+func ParseImprovementDispositionArgs(args []string) (string, string, string, string, error) {
+	if len(args) != 7 && len(args) != 9 {
+		return "", "", "", "", improvementDispositionUsageError()
+	}
+	if args[0] != ImprovementDispositionAction || args[1] != SignalKindOption || args[3] != SourceCallIDOption || args[5] != DispositionOption {
+		return "", "", "", "", improvementDispositionUsageError()
+	}
+	kind := args[2]
+	sourceCallID := args[4]
+	disposition := args[6]
+	if kind == "" || sourceCallID == "" {
+		return "", "", "", "", improvementDispositionUsageError()
+	}
+	targetTask := ""
+	if len(args) == 9 {
+		if args[7] != TaskOption {
+			return "", "", "", "", improvementDispositionUsageError()
+		}
+		targetTask = args[8]
+	}
+	resolved := state.ImprovementSignalDisposition(disposition)
+	if !resolved.Valid() {
+		return "", "", "", "", fmt.Errorf("unknown improvement signal disposition %q", disposition)
+	}
+	needsTask := state.ImprovementDispositionNeedsTask(resolved)
+	if needsTask && targetTask == "" {
+		return "", "", "", "", fmt.Errorf("improvement signal disposition %s requires --task", disposition)
+	}
+	if !needsTask && targetTask != "" {
+		return "", "", "", "", fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
+	}
+	return kind, sourceCallID, disposition, targetTask, nil
 }
 
 func staged(action string) Spec {
@@ -122,7 +175,7 @@ func projectImprovementDisposition(requiredParameters map[string]string) (Spec, 
 		Kind: "bounded-choice",
 		Command: []string{
 			Binary,
-			string(state.ParentActionImprovementDisposition),
+			ImprovementDispositionAction,
 			SignalKindOption,
 			signalKind,
 			SourceCallIDOption,
@@ -135,4 +188,8 @@ func projectImprovementDisposition(requiredParameters map[string]string) (Spec, 
 			DispositionOption: state.ImprovementSignalDispositionChoices(),
 		},
 	}, true
+}
+
+func improvementDispositionUsageError() error {
+	return fmt.Errorf("usage: glm-parent-action improvement-disposition --signal-kind <kind> --source-call-id <call-id> --disposition <adopt|existing-owner|duplicate|reject|awaiting-evidence> [--task <IMPLEMENTATION_TASKS/...md>]")
 }
