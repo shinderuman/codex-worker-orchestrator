@@ -131,27 +131,43 @@ func validateControlProvenanceControl(root string, control controlProvenanceCont
 
 	switch control.Classification {
 	case controlClassificationMachine:
-		if strings.TrimSpace(control.Boundary) != "" {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("machine-enforced control %q must not declare a non-machine boundary", control.ID)))
-		}
-		violations = append(violations, validateMachineControlLocators(root, control)...)
+		violations = append(violations, validateFullyMachineControl(root, control)...)
 	case controlClassificationPartial:
-		if strings.TrimSpace(control.Boundary) == "" {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("partial control %q must declare its residual enforcement boundary", control.ID)))
-		}
-		if len(control.ProjectionGuards) != 0 {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("partial control %q must not carry projection guard metadata", control.ID)))
-		}
-		violations = append(violations, validateMachineControlLocators(root, control)...)
+		violations = append(violations, validatePartialControl(root, control)...)
 	case controlClassificationProse, controlClassificationSemanticParent, controlClassificationExternalUnenforced:
-		if strings.TrimSpace(control.Boundary) == "" {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must declare its enforcement boundary", control.ID)))
-		}
-		if len(control.MachineOwners) != 0 || len(control.Tests) != 0 || len(control.Postconditions) != 0 || len(control.ProjectionGuards) != 0 {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must not carry machine owner, test, postcondition, or projection guard metadata", control.ID)))
-		}
+		violations = append(violations, validateResidualOnlyControl(control)...)
 	default:
 		violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("control %q has unsupported classification %q", control.ID, control.Classification)))
+	}
+	return violations
+}
+
+func validateFullyMachineControl(root string, control controlProvenanceControl) []Violation {
+	var violations []Violation
+	if strings.TrimSpace(control.Boundary) != "" {
+		violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("machine-enforced control %q must not declare a non-machine boundary", control.ID)))
+	}
+	return append(violations, validateMachineControlLocators(root, control)...)
+}
+
+func validatePartialControl(root string, control controlProvenanceControl) []Violation {
+	var violations []Violation
+	if strings.TrimSpace(control.Boundary) == "" {
+		violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("partial control %q must declare its residual enforcement boundary", control.ID)))
+	}
+	if len(control.ProjectionGuards) != 0 {
+		violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("partial control %q must not carry projection guard metadata", control.ID)))
+	}
+	return append(violations, validateMachineControlLocators(root, control)...)
+}
+
+func validateResidualOnlyControl(control controlProvenanceControl) []Violation {
+	var violations []Violation
+	if strings.TrimSpace(control.Boundary) == "" {
+		violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must declare its enforcement boundary", control.ID)))
+	}
+	if len(control.MachineOwners) != 0 || len(control.Tests) != 0 || len(control.Postconditions) != 0 || len(control.ProjectionGuards) != 0 {
+		violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must not carry machine owner, test, postcondition, or projection guard metadata", control.ID)))
 	}
 	return violations
 }
