@@ -4,18 +4,11 @@ import (
 	"encoding/json"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type parentHandoffActionSpec struct {
-	Kind               string              `json:"kind"`
-	Command            []string            `json:"command,omitempty"`
-	PrepareCommand     []string            `json:"prepare_command,omitempty"`
-	Parameters         map[string]string   `json:"parameters,omitempty"`
-	RequiredParameters []string            `json:"required_parameters,omitempty"`
-	OptionalParameters []string            `json:"optional_parameters,omitempty"`
-	Choices            map[string][]string `json:"choices,omitempty"`
-}
+type parentHandoffActionSpec parentactiongrammar.Spec
 
 type parentHandoffOutputAlias parentHandoffOutput
 type parentHandoffRecoveryOutputAlias parentHandoffRecoveryOutput
@@ -106,100 +99,9 @@ func parentActionSpecs(actions []string, requiredParameters map[string]string) m
 }
 
 func parentActionSpec(action string, requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
-	if parentaction.Action(action) == parentaction.ActionReviseMilestones {
-		return parentHandoffActionSpec{
-			Kind:           "staged",
-			PrepareCommand: []string{"glm-parent-action", "prepare", action},
-		}, true
-	}
-
-	switch state.ParentAction(action) {
-	case state.ParentActionDecision:
-		return parentHandoffActionSpec{
-			Kind:           "staged",
-			PrepareCommand: []string{"glm-parent-action", "prepare", action},
-		}, true
-	case state.ParentActionFix:
-		return parentFixActionSpec(requiredParameters), true
-	case state.ParentActionImprovementDisposition:
-		return improvementDispositionActionSpec(requiredParameters)
-	case state.ParentActionApproveSurface:
-		acceptedScope := requiredParameters["accepted-scope"]
-		if acceptedScope == "" {
-			return parentHandoffActionSpec{}, false
-		}
-		return parentHandoffActionSpec{
-			Kind:       "direct",
-			Command:    []string{"glm-parent-action", action, "--accepted-scope", acceptedScope},
-			Parameters: map[string]string{"accepted-scope": acceptedScope},
-		}, true
-	case state.ParentActionBindDefectTask:
-		taskPath := requiredParameters["task"]
-		if taskPath == "" {
-			return parentHandoffActionSpec{}, false
-		}
-		return parentHandoffActionSpec{
-			Kind:       "direct",
-			Command:    []string{"glm-parent-action", action, "--task", taskPath},
-			Parameters: map[string]string{"task": taskPath},
-		}, true
-	case state.ParentActionReopen:
-		return parentHandoffActionSpec{Kind: "direct", Command: []string{"glm-parent-action", "reopen"}}, true
-	case state.ParentActionAccept,
-		state.ParentActionComplete,
-		state.ParentActionInstall,
-		state.ParentActionResume,
-		state.ParentActionPark,
-		state.ParentActionUnpark,
-		state.ParentActionNoGo:
-		return parentHandoffActionSpec{Kind: "direct", Command: []string{"glm-parent-action", action}}, true
-	default:
+	spec, ok := parentactiongrammar.Project(action, requiredParameters)
+	if !ok {
 		return parentHandoffActionSpec{}, false
 	}
-}
-
-func improvementDispositionActionSpec(requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
-	signalKind := requiredParameters[improvementSignalKindParameter]
-	sourceCallID := requiredParameters[improvementSignalCallIDParameter]
-	if signalKind == "" || sourceCallID == "" {
-		return parentHandoffActionSpec{}, false
-	}
-	parameters := make(map[string]string, len(requiredParameters))
-	for key, value := range requiredParameters {
-		parameters[key] = value
-	}
-	return parentHandoffActionSpec{
-		Kind: "bounded-choice",
-		Command: []string{
-			"glm-parent-action",
-			string(state.ParentActionImprovementDisposition),
-			"--signal-kind",
-			signalKind,
-			"--source-call-id",
-			sourceCallID,
-		},
-		Parameters:         parameters,
-		RequiredParameters: []string{"--disposition"},
-		OptionalParameters: []string{"--task"},
-		Choices: map[string][]string{
-			"--disposition": state.ImprovementSignalDispositionChoices(),
-		},
-	}, true
-}
-
-func parentFixActionSpec(requiredParameters map[string]string) parentHandoffActionSpec {
-	prepareCommand := []string{"glm-parent-action", "prepare", string(state.ParentActionFix)}
-	optionalParameters := []string{"--origin", "--cause", "--accepted-scope"}
-	var parameters map[string]string
-	if acceptedScope := requiredParameters["accepted-scope"]; acceptedScope != "" {
-		prepareCommand = append(prepareCommand, "--accepted-scope", acceptedScope)
-		parameters = map[string]string{"accepted-scope": acceptedScope}
-		optionalParameters = []string{"--origin", "--cause"}
-	}
-	return parentHandoffActionSpec{
-		Kind:               "staged",
-		PrepareCommand:     prepareCommand,
-		Parameters:         parameters,
-		OptionalParameters: optionalParameters,
-	}
+	return parentHandoffActionSpec(spec), true
 }

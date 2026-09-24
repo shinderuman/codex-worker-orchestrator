@@ -12,7 +12,22 @@ type Options struct {
 	AcceptedScope string
 }
 
+const (
+	OriginOption             = "--origin"
+	CauseOption              = "--cause"
+	AcceptedScopeOption      = "--accepted-scope"
+	AcceptedScopeCurrentDiff = "current-diff"
+)
+
 var ErrInvalidOptions = errors.New("invalid parent fix options")
+
+func OptionalArgumentNames(acceptedScopeBound bool) []string {
+	options := []string{OriginOption, CauseOption}
+	if !acceptedScopeBound {
+		options = append(options, AcceptedScopeOption)
+	}
+	return options
+}
 
 func Extract(args []string) (Options, []string, error) {
 	options := Options{}
@@ -42,20 +57,20 @@ func extractSemanticPairs(options *Options, pairs []string) ([]string, error) {
 
 func applySemanticPair(options *Options, name, value string) (bool, error) {
 	switch name {
-	case "--origin":
+	case OriginOption:
 		if options.Origin != "" || !state.ValidParentOrigin(value) {
 			return true, ErrInvalidOptions
 		}
 		options.Origin = value
 		return true, nil
-	case "--cause":
+	case CauseOption:
 		if options.Cause != "" || !state.ValidParentCause(value) {
 			return true, ErrInvalidOptions
 		}
 		options.Cause = value
 		return true, nil
-	case "--accepted-scope":
-		if options.AcceptedScope != "" || value != "current-diff" {
+	case AcceptedScopeOption:
+		if options.AcceptedScope != "" || value != AcceptedScopeCurrentDiff {
 			return true, ErrInvalidOptions
 		}
 		options.AcceptedScope = value

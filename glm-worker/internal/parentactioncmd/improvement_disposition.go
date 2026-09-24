@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
@@ -22,15 +23,15 @@ type improvementDispositionOutput struct {
 }
 
 const (
-	actionImprovementDisposition  = "improvement-disposition"
-	improvementSignalKindOption   = "--signal-kind"
-	improvementSignalCallIDOption = "--source-call-id"
-	improvementDispositionOption  = "--disposition"
-	improvementTaskOption         = "--task"
+	actionImprovementDisposition  = parentactiongrammar.ImprovementDispositionAction
+	improvementSignalKindOption   = parentactiongrammar.SignalKindOption
+	improvementSignalCallIDOption = parentactiongrammar.SourceCallIDOption
+	improvementDispositionOption  = parentactiongrammar.DispositionOption
+	improvementTaskOption         = parentactiongrammar.TaskOption
 )
 
 func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	kind, sourceCallID, disposition, targetTask, err := parseImprovementDispositionArgs(args)
+	kind, sourceCallID, disposition, targetTask, err := parentactiongrammar.ParseImprovementDispositionArgs(args)
 	if err != nil {
 		return err
 	}
@@ -129,65 +130,6 @@ func recordImprovementDisposition(st *state.StateStore, signal state.Improvement
 		status = parentActionStatusRecorded
 	}
 	return writeImprovementDispositionOutput(stdout, status, signal, record, plan)
-}
-
-func parseImprovementDispositionArgs(args []string) (string, string, string, string, error) {
-	if err := validateImprovementDispositionArgShape(args); err != nil {
-		return "", "", "", "", err
-	}
-	kind := args[2]
-	sourceCallID := args[4]
-	disposition := args[6]
-	if kind == "" || sourceCallID == "" {
-		return "", "", "", "", improvementDispositionUsageError()
-	}
-	targetTask, err := improvementDispositionTargetArg(args)
-	if err != nil {
-		return "", "", "", "", err
-	}
-	resolved := state.ImprovementSignalDisposition(disposition)
-	if !resolved.Valid() {
-		return "", "", "", "", fmt.Errorf("unknown improvement signal disposition %q", disposition)
-	}
-	if err := validateImprovementDispositionTarget(resolved, targetTask); err != nil {
-		return "", "", "", "", err
-	}
-	return kind, sourceCallID, disposition, targetTask, nil
-}
-
-func validateImprovementDispositionArgShape(args []string) error {
-	if len(args) != 7 && len(args) != 9 {
-		return improvementDispositionUsageError()
-	}
-	if args[0] != actionImprovementDisposition || args[1] != improvementSignalKindOption || args[3] != improvementSignalCallIDOption || args[5] != improvementDispositionOption {
-		return improvementDispositionUsageError()
-	}
-	return nil
-}
-
-func improvementDispositionTargetArg(args []string) (string, error) {
-	if len(args) == 7 {
-		return "", nil
-	}
-	if args[7] != improvementTaskOption {
-		return "", improvementDispositionUsageError()
-	}
-	return args[8], nil
-}
-
-func validateImprovementDispositionTarget(disposition state.ImprovementSignalDisposition, targetTask string) error {
-	needsTask := state.ImprovementDispositionNeedsTask(disposition)
-	if needsTask && targetTask == "" {
-		return fmt.Errorf("improvement signal disposition %s requires --task", disposition)
-	}
-	if !needsTask && targetTask != "" {
-		return fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
-	}
-	return nil
-}
-
-func improvementDispositionUsageError() error {
-	return fmt.Errorf("usage: glm-parent-action improvement-disposition --signal-kind <kind> --source-call-id <call-id> --disposition <adopt|existing-owner|duplicate|reject|awaiting-evidence> [--task <IMPLEMENTATION_TASKS/...md>]")
 }
 
 func recordImprovementDispositionEvent(st *state.StateStore, record state.ImprovementSignalDispositionRecord) {
