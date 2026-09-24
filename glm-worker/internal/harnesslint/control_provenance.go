@@ -27,6 +27,8 @@ const (
 	controlClassificationProse              = controlprovenance.ClassificationProse
 	controlClassificationSemanticParent     = controlprovenance.ClassificationSemanticParent
 	controlClassificationExternalUnenforced = controlprovenance.ClassificationExternalUnenforced
+
+	publicationGuardSetupControlID = "publication-guard-setup"
 )
 
 func controlProvenanceViolations(root string) ([]Violation, error) {
@@ -83,7 +85,41 @@ func validateControlProvenanceRegistry(root string, registry controlProvenanceRe
 		lastID = control.ID
 		violations = append(violations, validateControlProvenanceControl(root, control)...)
 	}
+	violations = append(violations, validateKnownMachineControlCoverage(root, seen)...)
 	return violations, nil
+}
+
+func validateKnownMachineControlCoverage(root string, seen map[string]struct{}) []Violation {
+	// These bounded sentinels couple proven current machine owners to the provenance
+	// inventory. They do not define control behavior or discover controls heuristically.
+	known := []struct {
+		id        string
+		ownerPath string
+	}{
+		{id: forwardOnlyCompatibilityRule, ownerPath: "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go"},
+		{id: publicationGuardSetupControlID, ownerPath: "glm-worker/internal/publicationguard/setup.go"},
+	}
+
+	var violations []Violation
+	for _, control := range known {
+		absolute := filepath.Join(root, filepath.FromSlash(control.ownerPath))
+		info, err := os.Stat(absolute)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("cannot inspect current machine control %q owner %q: %v", control.id, control.ownerPath, err)))
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q owner %q is not a regular file", control.id, control.ownerPath)))
+			continue
+		}
+		if _, registered := seen[control.id]; !registered {
+			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("current machine control %q is missing from provenance registry", control.id)))
+		}
+	}
+	return violations
 }
 
 func validateControlProvenanceControl(root string, control controlProvenanceControl) []Violation {
