@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-          cache: npm
       - run: npm install -g @anthropic-ai/claude-code@latest
+      - run: claude --version
       - working-directory: glm-worker
         run: go test ./internal/runner -run '^TestClaudeSubprocessEnvScrubLiveNoAI$' -count=1 -v
