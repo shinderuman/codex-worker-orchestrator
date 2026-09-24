@@ -20,11 +20,11 @@ type controlProvenanceProjectionGuard = controlprovenance.ProjectionGuard
 type controlProvenanceClassification = controlprovenance.Classification
 
 type knownMachineControl struct {
-	id                       string
-	ownerPath                string
-	canonicalOwnerSymbol     string
-	canonicalTestPath        string
-	canonicalTestSymbol      string
+	id                           string
+	ownerPath                    string
+	canonicalOwnerSymbol         string
+	canonicalTestPath            string
+	canonicalTestSymbol          string
 	canonicalPostconditionPath   string
 	canonicalPostconditionSymbol string
 }
@@ -108,12 +108,12 @@ func validateKnownMachineControlCoverage(root string, controls []controlProvenan
 	known := []knownMachineControl{
 		{id: forwardOnlyCompatibilityRule, ownerPath: "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go"},
 		{
-			id:                         parentActionMachineProjectionControlID,
-			ownerPath:                  parentActionGrammarOwnerPath,
-			canonicalOwnerSymbol:       parentActionGrammarOwnerSymbol,
-			canonicalTestPath:          parentActionGrammarTestPath,
-			canonicalTestSymbol:        parentActionGrammarTestSymbol,
-			canonicalPostconditionPath: parentActionGrammarOwnerPath,
+			id:                           parentActionMachineProjectionControlID,
+			ownerPath:                    parentActionGrammarOwnerPath,
+			canonicalOwnerSymbol:         parentActionGrammarOwnerSymbol,
+			canonicalTestPath:            parentActionGrammarTestPath,
+			canonicalTestSymbol:          parentActionGrammarTestSymbol,
+			canonicalPostconditionPath:   parentActionGrammarOwnerPath,
 			canonicalPostconditionSymbol: parentActionGrammarOwnerSymbol,
 		},
 		{id: publicationGuardSetupControlID, ownerPath: "glm-worker/internal/publicationguard/setup.go"},
