@@ -68,13 +68,11 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			if err := os.MkdirAll(configDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			settings, err := isolationSettings(configDir, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
 			settingEnv := map[string]string{
-				tc.credentialKey:     credential,
-				"ANTHROPIC_BASE_URL": server.URL + "/api/anthropic",
+				tc.credentialKey:                         credential,
+				"ANTHROPIC_BASE_URL":                   server.URL + "/api/anthropic",
+				"ANTHROPIC_DEFAULT_OPUS_MODEL":         "glm-canary",
+				"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
 			}
 			additions := claudeInvocationEnvDefaults()
 			additions["CLAUDE_CONFIG_DIR"] = configDir
@@ -82,10 +80,9 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			command := exec.CommandContext(ctx, resolved,
-				"-p", "--safe-mode", "--setting-sources", "", "--no-session-persistence",
-				"--model", "opus", "--output-format", "json", "--dangerously-skip-permissions",
-				"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands",
-				"--settings", settings, "--tools", "", "reply with ok",
+				"-p", "--setting-sources", "", "--no-session-persistence",
+				"--model", "opus", "--output-format", "json", "--disable-slash-commands",
+				"--tools", "", "reply with ok",
 			)
 			command.Dir = "."
 			command.Env = buildChildEnv(nil, settingEnv, additions, nil)
