@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -88,13 +89,16 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			)
 			command.Dir = "."
 			command.Env = buildChildEnv(nil, settingEnv, additions, nil)
-			_ = command.Run()
+			var output bytes.Buffer
+			command.Stdout = &output
+			command.Stderr = &output
+			runErr := command.Run()
 
 			mu.Lock()
 			got := observation
 			mu.Unlock()
 			if got.method == "" {
-				t.Fatal("Claude Code did not reach the configured provider endpoint")
+				t.Fatalf("Claude Code did not reach the configured provider endpoint: run_error=%T category=%s", runErr, claudeCanaryFailureCategory(output.Bytes()))
 			}
 			if !got.expectedCredential {
 				t.Fatalf("provider credential missing: method=%s path=%s authorization_header=%t api_key_header=%t", got.method, got.path, got.authorizationHeader, got.apiKeyHeader)
