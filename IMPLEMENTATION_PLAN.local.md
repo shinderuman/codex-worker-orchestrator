@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/system-one-adoption-evidence-gate.md`
+- `IMPLEMENTATION_TASKS/partial-control-machine-segment-provenance.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/system-one-adoption-evidence-gate.md`
 - `IMPLEMENTATION_TASKS/system-one-review-feedback-eval.md`
 - `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 - `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
