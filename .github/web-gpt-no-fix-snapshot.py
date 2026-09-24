@@ -18,16 +18,9 @@ replace_once(
 \t\t}
 \t}
 ''',
-    '''\tif qualityReport.Fixed > 0 {
-\t\treviewInput, stopped, err = w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport)
-\t\tif err != nil || stopped {
-\t\t\treturn reviewInput, true, err
-\t\t}
-\t} else if harnesslint.IsViolation(qualityReport) {
-\t\treviewInput, stopped, err = w.guardQualityViolationNoFixSnapshot(workerEnd)
-\t\tif err != nil || stopped {
-\t\t\treturn reviewInput, true, err
-\t\t}
+    '''\treviewInput, stopped, err = w.acceptQualityGateSnapshot(workerEnd, parentBefore, qualityReport)
+\tif err != nil || stopped {
+\t\treturn reviewInput, true, err
 \t}
 ''',
 )
@@ -36,7 +29,17 @@ replace_once(
     "glm-worker/internal/workflow/review_flow.go",
     '''func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
 ''',
-    '''func (w *Workflow) guardQualityViolationNoFixSnapshot(workerEnd state.GitSnapshot) (state.GitSnapshot, bool, error) {
+    '''func (w *Workflow) acceptQualityGateSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
+\tif report.Fixed > 0 {
+\t\treturn w.acceptQualityFixSnapshot(workerEnd, parentBefore, report)
+\t}
+\tif harnesslint.IsViolation(report) {
+\t\treturn w.guardQualityViolationNoFixSnapshot(workerEnd)
+\t}
+\treturn workerEnd, false, nil
+}
+
+func (w *Workflow) guardQualityViolationNoFixSnapshot(workerEnd state.GitSnapshot) (state.GitSnapshot, bool, error) {
 \tcurrent, err := w.captureSnapshot(w.config.RepoRoot)
 \tif err != nil {
 \t\treturn current, true, w.failClosedSnapshot(
