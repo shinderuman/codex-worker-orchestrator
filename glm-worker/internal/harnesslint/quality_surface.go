@@ -235,13 +235,14 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 			Message: "required quality-gate wiring is missing: " + token,
 		})
 	}
-	for _, token := range check.forbiddenTokens {
-		if !strings.Contains(text, token) {
-			continue
-		}
+	forbidden, err := qualityWiringForbiddenCalls(check, data)
+	if err != nil {
+		return nil, err
+	}
+	for _, call := range forbidden {
 		violations = append(violations, Violation{
 			Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
-			Message: "forbidden quality-gate wiring is present: " + token,
+			Message: "forbidden quality-gate wiring is present: " + call,
 		})
 	}
 	orderViolations, err := qualityWiringOrderViolations(check, data)
@@ -250,6 +251,58 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 	}
 	violations = append(violations, orderViolations...)
 	return violations, nil
+}
+
+func qualityWiringForbiddenCalls(check qualityWiringCheck, data []byte) ([]string, error) {
+	if len(check.forbiddenTokens) == 0 {
+		return nil, nil
+	}
+	if !strings.HasSuffix(check.path, ".go") {
+		return qualityWiringForbiddenText(check.forbiddenTokens, data), nil
+	}
+	return qualityWiringForbiddenGo(check.path, data)
+}
+
+func qualityWiringForbiddenText(values []string, data []byte) []string {
+	var found []string
+	text := string(data)
+	for _, value := range values {
+		if strings.Contains(text, value) {
+			found = append(found, value)
+		}
+	}
+	return found
+}
+
+func qualityWiringForbiddenGo(path string, data []byte) ([]string, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		if qualityWiringIsHarnessCheck(node) {
+			found = true
+		}
+		return true
+	})
+	if found {
+		return []string{"harnesslint.Check"}, nil
+	}
+	return nil, nil
+}
+
+func qualityWiringIsHarnessCheck(node ast.Node) bool {
+	call, ok := node.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Check" {
+		return false
+	}
+	pkg, ok := selector.X.(*ast.Ident)
+	return ok && pkg.Name == "harnesslint"
 }
 
 func qualityWiringOrderViolations(check qualityWiringCheck, data []byte) ([]Violation, error) {

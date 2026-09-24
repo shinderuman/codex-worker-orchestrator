@@ -15,7 +15,7 @@ func TestLoadReviewedBlobRoundsIgnoresNonCurrentVersions(t *testing.T) {
 		`{"version":1,"review_number":1,"files":[]}`,
 		`{"review_number":2,"files":[]}`,
 		`{"version":0,"review_number":3,"files":[]}`,
-		`{"version":999,"review_number":4,"files":[]}`,
+		`{"version":999,"review_number":4,"files":{}}`,
 	}, "\n") + "\n"
 	if err := os.WriteFile(w.state.Path(reviewedBlobsFile), []byte(ledger), 0o600); err != nil {
 		t.Fatal(err)
@@ -65,6 +65,24 @@ func TestPromoteLastReviewBlobsRequiresCurrentVersion(t *testing.T) {
 				t.Fatalf("non-current round was promoted: %#v", rounds)
 			}
 		})
+	}
+}
+
+func TestPromoteLastReviewBlobsSkipsFutureIncompatibleShape(t *testing.T) {
+	w := newReviewedBoundarySchemaWorkflow(t, "promotion-future-shape")
+	record := `{"version":999,"review_number":1,"files":{"future":"shape"}}`
+	if err := os.WriteFile(w.state.Path(lastReviewBlobsFile), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.promoteLastReviewBlobs(2); err != nil {
+		t.Fatal(err)
+	}
+	rounds, err := w.loadReviewedBlobRounds()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rounds) != 0 {
+		t.Fatalf("future incompatible round was promoted: %#v", rounds)
 	}
 }
 

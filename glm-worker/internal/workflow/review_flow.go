@@ -71,14 +71,22 @@ func (w *Workflow) prepareReviewInputSnapshot(
 			err,
 		)
 	}
-	handled, qualityReport, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
-	if err != nil || handled {
-		return workerEnd, true, err
+	qualityReport, err := w.qualityGate(w.config.RepoRoot)
+	if err != nil {
+		return workerEnd, true, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
 	}
-	if qualityReport.Fixed == 0 {
-		return workerEnd, false, nil
+	reviewInput, stopped, err := w.acceptQualityGateSnapshot(workerEnd, parentBefore, qualityReport)
+	if err != nil || stopped {
+		return reviewInput, true, err
 	}
-	return w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport.Fixed)
+	if !harnesslint.IsViolation(qualityReport) {
+		return reviewInput, false, nil
+	}
+	result := qualityGateFixResult(qualityReport)
+	if err := w.writeLastReview(result); err != nil {
+		return reviewInput, true, err
+	}
+	return reviewInput, true, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
 }
 
 func (w *Workflow) buildReviewCheckpoint(
@@ -165,7 +173,40 @@ func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Res
 	return reviewResult, false, nil
 }
 
-func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, fixed int) (state.GitSnapshot, bool, error) {
+func (w *Workflow) acceptQualityGateSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
+	if report.Fixed > 0 {
+		return w.acceptQualityFixSnapshot(workerEnd, parentBefore, report)
+	}
+	if harnesslint.IsViolation(report) {
+		return w.guardQualityViolationNoFixSnapshot(workerEnd)
+	}
+	return workerEnd, false, nil
+}
+
+func (w *Workflow) guardQualityViolationNoFixSnapshot(workerEnd state.GitSnapshot) (state.GitSnapshot, bool, error) {
+	current, err := w.captureSnapshot(w.config.RepoRoot)
+	if err != nil {
+		return current, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			state.GitSnapshot{},
+			"machine quality violation後snapshot取得失敗",
+			err,
+		)
+	}
+	if state.EqualGitSnapshot(workerEnd, current) {
+		return current, false, nil
+	}
+	return current, true, w.failClosedSnapshot(
+		state.SnapshotStageReviewStart,
+		workerEnd,
+		current,
+		"machine quality gate実行中にfixer由来でないrepository変更を検出しました",
+		nil,
+	)
+}
+
+func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
 	reviewInput, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
 		return reviewInput, true, w.failClosedSnapshot(
@@ -174,6 +215,15 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 			state.GitSnapshot{},
 			"machine quality fixer後snapshot取得失敗",
 			err,
+		)
+	}
+	if reason := qualityFixSnapshotMismatchReason(workerEnd, reviewInput, report); reason != "" {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			reason,
+			nil,
 		)
 	}
 	parentAfter, err := state.CaptureParentFileStates(w.config.RepoRoot)
@@ -191,7 +241,7 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 			state.SnapshotStageReviewStart,
 			workerEnd,
 			reviewInput,
-			fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", fixed),
+			fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", report.Fixed),
 			nil,
 		)
 	}
@@ -207,25 +257,28 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 	return reviewInput, false, nil
 }
 
-func (w *Workflow) handleRepositoryQualityViolation(
-	request string,
-	workerResult packet.Result,
-	reviewNumber int,
-	autoFixes int,
-	workerPhase string,
-) (bool, harnesslint.Report, error) {
-	qualityReport, err := w.qualityGate(w.config.RepoRoot)
-	if err != nil {
-		return true, harnesslint.Report{}, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
+func qualityFixSnapshotMismatchReason(workerEnd, reviewInput state.GitSnapshot, report harnesslint.Report) string {
+	evidence := report.FixEvidence
+	if evidence == nil || evidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 {
+		return fmt.Sprintf("machine quality fixer provenanceがありません(fixed=%d)", report.Fixed)
 	}
-	if !harnesslint.IsViolation(qualityReport) {
-		return false, qualityReport, nil
+	if !qualityFixEvidenceMatches(workerEnd, evidence.Input) {
+		return fmt.Sprintf("machine quality fixer input provenanceがworker-end snapshotと一致しません(fixed=%d)", report.Fixed)
 	}
-	result := qualityGateFixResult(qualityReport)
-	if err := w.writeLastReview(result); err != nil {
-		return true, qualityReport, err
+	if !qualityFixEvidenceMatches(reviewInput, evidence.Output) {
+		return fmt.Sprintf("machine quality fixer output provenanceがreview-input snapshotと一致しません(fixed=%d)", report.Fixed)
 	}
-	return true, qualityReport, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
+	if reviewInput.Head != workerEnd.Head || reviewInput.IndexDigest != workerEnd.IndexDigest {
+		return fmt.Sprintf("machine quality fixer実行中にHEAD/indexが変化しました(fixed=%d)", report.Fixed)
+	}
+	return ""
+}
+
+func qualityFixEvidenceMatches(snapshot state.GitSnapshot, evidence *harnesslint.FixInputSnapshot) bool {
+	return evidence != nil &&
+		evidence.Head == snapshot.Head &&
+		evidence.IndexDigest == snapshot.IndexDigest &&
+		evidence.WorktreeDigest == snapshot.WorktreeDigest
 }
 
 func (w *Workflow) handleReviewResult(

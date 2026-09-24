@@ -151,6 +151,17 @@ func codexWakeTimes(snapshot codexlimit.Snapshot, now time.Time) (time.Time, tim
 	return fromEpoch, fromEpoch.Add(codexWakeSafetyMargin), nil
 }
 
+func readWakeTOMLForThread(path, entryName, wakeThreadID string) (AutomationTOML, string) {
+	candidate, problem := readWakeTOML(path, entryName)
+	if problem != "" {
+		return candidate, problem
+	}
+	if candidate.TargetThreadID != wakeThreadID {
+		return candidate, "target thread changed during inventory"
+	}
+	return candidate, ""
+}
+
 func resolveCodexWakeAutomation(dir, wakeThreadID string) (string, bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -172,7 +183,7 @@ func resolveCodexWakeAutomation(dir, wakeThreadID string) (string, bool, error) 
 		if inventory.TargetThreadID != wakeThreadID {
 			continue
 		}
-		candidate, problem := readWakeTOML(path, entry.Name())
+		candidate, problem := readWakeTOMLForThread(path, entry.Name(), wakeThreadID)
 		if problem != "" {
 			return "", false, fmt.Errorf("wake automation candidate is not valid: %s", problem)
 		}

@@ -1,6 +1,7 @@
 package publicationguard
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,7 +80,11 @@ func publicationGuardBindingDefect(hooksDir string) *PublicationGuardHookDefect 
 	if err != nil || len(data) == 0 {
 		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookEmpty}
 	}
-	target := strings.TrimSpace(string(data))
+	lineEnd := bytes.IndexByte(data, '\n')
+	if lineEnd <= 0 {
+		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
+	}
+	target := string(data[:lineEnd])
 	if !filepath.IsAbs(target) {
 		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
 	}

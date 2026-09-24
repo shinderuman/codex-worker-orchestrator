@@ -28,7 +28,14 @@ func runRepositoryQualityGate(root string) (harnesslint.Report, error) {
 	if !qualityToolsApply {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
-	return harnesslint.Run(root, true)
+	report, err := harnesslint.Run(root, true)
+	if err != nil {
+		return harnesslint.Report{}, err
+	}
+	if report.Fixed > 0 && (report.FixEvidence == nil || report.FixEvidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 || report.FixEvidence.Input == nil) {
+		return harnesslint.Report{}, fmt.Errorf("machine quality fixer provenance is missing")
+	}
+	return report, nil
 }
 
 func captureQualitySurfaceDigest(root string) (string, error) {

@@ -11,11 +11,26 @@ type Violation struct {
 	Fixable bool   `json:"fixable"`
 }
 
-type Report struct {
-	Status     string      `json:"status"`
-	Fixed      int         `json:"fixed"`
-	Violations []Violation `json:"violations"`
+type FixInputSnapshot struct {
+	Head           string `json:"head"`
+	IndexDigest    string `json:"index_digest"`
+	WorktreeDigest string `json:"worktree_digest"`
 }
+
+type FixEvidence struct {
+	Method string            `json:"method"`
+	Input  *FixInputSnapshot `json:"input,omitempty"`
+	Output *FixInputSnapshot `json:"output,omitempty"`
+}
+
+type Report struct {
+	Status      string       `json:"status"`
+	Fixed       int          `json:"fixed"`
+	Violations  []Violation  `json:"violations"`
+	FixEvidence *FixEvidence `json:"fix_evidence,omitempty"`
+}
+
+const FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
 
 func makeReport(fixed int, violations []Violation) Report {
 	sort.Slice(violations, func(i, j int) bool {

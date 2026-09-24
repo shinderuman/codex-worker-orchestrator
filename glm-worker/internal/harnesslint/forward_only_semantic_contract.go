@@ -171,7 +171,15 @@ func forwardOnlySemanticCountSubject(expression ast.Expr) string {
 		if !ok || identifier.Name != "len" || len(typed.Args) != 1 {
 			return ""
 		}
-		return forwardOnlySemanticObjectBase(typed.Args[0])
+		argument := forwardOnlyUnparen(typed.Args[0])
+		for {
+			selector, ok := argument.(*ast.SelectorExpr)
+			if !ok {
+				break
+			}
+			argument = forwardOnlyUnparen(selector.X)
+		}
+		return forwardOnlySemanticObjectBase(argument)
 	default:
 		return ""
 	}
