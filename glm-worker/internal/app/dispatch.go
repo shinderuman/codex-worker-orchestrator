@@ -38,7 +38,8 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeRepoSearchEval,
 		ModePacketCheck,
 		ModeProjectState,
-		ModeEvidence:
+		ModeEvidence,
+		ModeShadowEval:
 		return dispatchReadOnly, nil
 	case ModeStop, ModeCodexWakePlan, ModeCodexWakeResponse:
 		return dispatchRuntimeControl, nil
@@ -84,7 +85,8 @@ func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error 
 		ModeTestImpact,
 		ModeRepoSearchEval,
 		ModeBundle,
-		ModeReviewGap:
+		ModeReviewGap,
+		ModeShadowEval:
 		return executeReadOnlyAnalysis(cmd, cfg, stdout)
 	default:
 		return executeReadOnlyInspection(cmd, cfg, stdout)
@@ -157,6 +159,8 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 		return printBundle(cfg, st, cmd.Payload, stdout)
 	case ModeReviewGap:
 		return printReviewGap(cfg, st, cmd.Payload, stdout)
+	case ModeShadowEval:
+		return executeShadowEval(cmd, cfg, st, stdout)
 	default:
 		return fmt.Errorf("command mode %d is not read-only analysis", cmd.Mode)
 	}

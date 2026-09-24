@@ -37,6 +37,7 @@ type Command struct {
 	SearchScopes        []string
 	SearchBudgetBytes   int
 	EvidenceManifest    string
+	ReferencePath       string
 }
 
 type VerifyArgs struct {
@@ -84,6 +85,7 @@ const (
 	modeRecoverQualitySurface
 	ModeCodexWakePlan
 	ModeCodexWakeResponse
+	ModeShadowEval
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -103,6 +105,8 @@ const repoSearchMaxBudgetBytes = 64 * 1024
 const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>] [--compact]"
 
 const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
+
+const shadowEvalUsage = "usage: glm-worker --shadow-eval <task-id> [--reference <reference.json>]"
 
 var commandParsers = map[string]commandParser{
 	"--decision-stdin": func(args []string) (Command, error) {
@@ -182,6 +186,7 @@ var commandParsers = map[string]commandParser{
 	},
 	"--repo-search": repoSearchCommand,
 	"--evidence":    evidenceCommand,
+	"--shadow-eval": shadowEvalCommand,
 	"--repo-search-eval": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeRepoSearchEval, "usage: glm-worker --repo-search-eval")
 	},
@@ -242,6 +247,20 @@ func evidenceCommand(args []string) (Command, error) {
 		return Command{}, machinecli.UsageErrorf("%s", evidenceUsage)
 	}
 	return Command{Mode: ModeEvidence, EvidenceManifest: args[1]}, nil
+}
+
+func shadowEvalCommand(args []string) (Command, error) {
+	if len(args) < 2 || len(args)%2 != 0 {
+		return Command{}, machinecli.UsageErrorf("%s", shadowEvalUsage)
+	}
+	command := Command{Mode: ModeShadowEval, Payload: args[1]}
+	for index := 2; index < len(args); index += 2 {
+		if args[index] != "--reference" || args[index+1] == "" || command.ReferencePath != "" {
+			return Command{}, machinecli.UsageErrorf("%s", shadowEvalUsage)
+		}
+		command.ReferencePath = args[index+1]
+	}
+	return command, nil
 }
 
 func parentHandoffCommand(args []string) (Command, error) {

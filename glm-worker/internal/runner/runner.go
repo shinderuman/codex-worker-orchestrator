@@ -31,6 +31,7 @@ type ClaudeRunner struct {
 	stop               *StopController
 	bashSandbox        *gitBashSandboxPolicy
 	validationAttempts map[string]int
+	decisionTimeout    time.Duration
 
 	instructionSurfaceDigest string
 }
@@ -190,7 +191,7 @@ func structuredSchema(role state.SessionRole, phase string) (string, error) {
 }
 
 func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
-	return &ClaudeRunner{config: cfg, state: st, validationAttempts: make(map[string]int)}
+	return &ClaudeRunner{config: cfg, state: st, validationAttempts: make(map[string]int), decisionTimeout: defaultDecisionTimeout}
 }
 
 func (r *ClaudeRunner) AttachStopController(stop *StopController) {
