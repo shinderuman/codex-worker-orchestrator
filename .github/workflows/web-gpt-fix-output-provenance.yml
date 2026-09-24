@@ -22,6 +22,38 @@ jobs:
       - name: Apply output provenance fix
         run: |
           python3 .github/web-gpt-fix-output-provenance.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("glm-worker/internal/workflow/review_flow.go")
+          text = p.read_text()
+          start = text.index("func qualityFixSnapshotMismatchReason(")
+          end = text.index("\nfunc (w *Workflow) handleReviewResult(", start)
+          replacement = '''func qualityFixSnapshotMismatchReason(workerEnd, reviewInput state.GitSnapshot, report harnesslint.Report) string {
+          \tevidence := report.FixEvidence
+          \tif evidence == nil || evidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 {
+          \t\treturn fmt.Sprintf("machine quality fixer provenanceがありません(fixed=%d)", report.Fixed)
+          \t}
+          \tif !qualityFixEvidenceMatches(workerEnd, evidence.Input) {
+          \t\treturn fmt.Sprintf("machine quality fixer input provenanceがworker-end snapshotと一致しません(fixed=%d)", report.Fixed)
+          \t}
+          \tif !qualityFixEvidenceMatches(reviewInput, evidence.Output) {
+          \t\treturn fmt.Sprintf("machine quality fixer output provenanceがreview-input snapshotと一致しません(fixed=%d)", report.Fixed)
+          \t}
+          \tif reviewInput.Head != workerEnd.Head || reviewInput.IndexDigest != workerEnd.IndexDigest {
+          \t\treturn fmt.Sprintf("machine quality fixer実行中にHEAD/indexが変化しました(fixed=%d)", report.Fixed)
+          \t}
+          \treturn ""
+          }
+
+          func qualityFixEvidenceMatches(snapshot state.GitSnapshot, evidence *harnesslint.FixInputSnapshot) bool {
+          \treturn evidence != nil &&
+          \t\tevidence.Head == snapshot.Head &&
+          \t\tevidence.IndexDigest == snapshot.IndexDigest &&
+          \t\tevidence.WorktreeDigest == snapshot.WorktreeDigest
+          }
+          '''
+          p.write_text(text[:start] + replacement + text[end:])
+          PY
           gofmt -w \
             glm-worker/internal/harnesslint/fix_isolation.go \
             glm-worker/internal/harnesslint/fix_isolation_test.go \
