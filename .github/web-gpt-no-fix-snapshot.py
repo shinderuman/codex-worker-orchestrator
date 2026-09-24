@@ -20,11 +20,14 @@ replace_once(
 ''',
     '''\tif qualityReport.Fixed > 0 {
 \t\treviewInput, stopped, err = w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport)
-\t} else {
-\t\treviewInput, stopped, err = w.acceptQualityNoFixSnapshot(workerEnd)
-\t}
-\tif err != nil || stopped {
-\t\treturn reviewInput, true, err
+\t\tif err != nil || stopped {
+\t\t\treturn reviewInput, true, err
+\t\t}
+\t} else if harnesslint.IsViolation(qualityReport) {
+\t\treviewInput, stopped, err = w.guardQualityViolationNoFixSnapshot(workerEnd)
+\t\tif err != nil || stopped {
+\t\t\treturn reviewInput, true, err
+\t\t}
 \t}
 ''',
 )
@@ -33,14 +36,14 @@ replace_once(
     "glm-worker/internal/workflow/review_flow.go",
     '''func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
 ''',
-    '''func (w *Workflow) acceptQualityNoFixSnapshot(workerEnd state.GitSnapshot) (state.GitSnapshot, bool, error) {
+    '''func (w *Workflow) guardQualityViolationNoFixSnapshot(workerEnd state.GitSnapshot) (state.GitSnapshot, bool, error) {
 \tcurrent, err := w.captureSnapshot(w.config.RepoRoot)
 \tif err != nil {
 \t\treturn current, true, w.failClosedSnapshot(
 \t\t\tstate.SnapshotStageReviewStart,
 \t\t\tworkerEnd,
 \t\t\tstate.GitSnapshot{},
-\t\t\t"machine quality gate後snapshot取得失敗",
+\t\t\t"machine quality violation後snapshot取得失敗",
 \t\t\terr,
 \t\t)
 \t}
@@ -62,41 +65,42 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 
 p = Path("glm-worker/internal/workflow/quality_fixer_snapshot_test.go")
 text = p.read_text()
-start = text.index("func TestQualityPassWithoutFixDoesNotRebaseExternalChange(")
-end = text.index("\nfunc TestParentFileStatesRequireExactMatch(", start)
-replacement = '''func TestQualityNoFixRejectsExternalChangeBeforeNextPhase(t *testing.T) {
-\tfor _, status := range []string{"pass", "fail"} {
-\t\tt.Run(status, func(t *testing.T) {
-\t\t\tst := newStateStoreT(t)
-\t\t\tr := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
-\t\t\tw := newWorkflowT(t, st, r)
-\t\t\tpath := filepath.Join(w.config.RepoRoot, "fixture.go")
-\t\t\tif err := os.WriteFile(path, []byte("package fixture\\n"), 0o644); err != nil {
-\t\t\t\tt.Fatal(err)
-\t\t\t}
-\t\t\tw.captureSnapshot = state.CaptureGitSnapshot
-\t\t\tw.captureBoundarySnapshot = state.CaptureRepositoryBoundarySnapshot
-\t\t\tw.qualityGate = func(string) (harnesslint.Report, error) {
-\t\t\t\tif err := os.WriteFile(path, []byte("package fixture\\n\\nvar changed = true\\n"), 0o644); err != nil {
-\t\t\t\t\treturn harnesslint.Report{}, err
-\t\t\t\t}
-\t\t\t\treport := harnesslint.Report{Status: status, Fixed: 0, Violations: []harnesslint.Violation{}}
-\t\t\t\tif status == "fail" {
-\t\t\t\t\treport.Violations = []harnesslint.Violation{{Rule: "fixture", Path: "fixture.go", Line: 1, Column: 1, Message: "still invalid"}}
-\t\t\t\t}
-\t\t\t\treturn report, nil
-\t\t\t}
-\t\t\tif err := w.ExecuteNewTask("request"); err != nil {
-\t\t\t\tt.Fatal(err)
-\t\t\t}
-\t\t\tif len(r.phases) != 1 {
-\t\t\t\tt.Fatalf("external変更確認前に次phaseへ進んでいます: %v", r.phases)
-\t\t\t}
-\t\t\tif st.TaskStatus() != state.TaskStatusWaitingSolReview {
-\t\t\t\tt.Fatalf("fixer由来でないexternal変更はfail closedすべきです: %s", st.TaskStatus())
-\t\t\t}
-\t\t})
+marker = "func TestQualityPassWithoutFixDoesNotRebaseExternalChange(t *testing.T) {"
+insert = '''func TestQualityViolationWithoutFixRejectsExternalChangeBeforeAutoFix(t *testing.T) {
+\tst := newStateStoreT(t)
+\tr := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
+\tw := newWorkflowT(t, st, r)
+\tpath := filepath.Join(w.config.RepoRoot, "fixture.go")
+\tif err := os.WriteFile(path, []byte("package fixture\\n"), 0o644); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tw.captureSnapshot = state.CaptureGitSnapshot
+\tw.captureBoundarySnapshot = state.CaptureRepositoryBoundarySnapshot
+\tw.qualityGate = func(string) (harnesslint.Report, error) {
+\t\tif err := os.WriteFile(path, []byte("package fixture\\n\\nvar changed = true\\n"), 0o644); err != nil {
+\t\t\treturn harnesslint.Report{}, err
+\t\t}
+\t\treturn harnesslint.Report{
+\t\t\tStatus: "fail",
+\t\t\tFixed:  0,
+\t\t\tViolations: []harnesslint.Violation{{
+\t\t\t\tRule: "fixture", Path: "fixture.go", Line: 1, Column: 1, Message: "still invalid",
+\t\t\t}},
+\t\t}, nil
+\t}
+
+\tif err := w.ExecuteNewTask("request"); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif len(r.phases) != 1 {
+\t\tt.Fatalf("external変更確認前にauto-fixへ進んでいます: %v", r.phases)
+\t}
+\tif st.TaskStatus() != state.TaskStatusWaitingSolReview {
+\t\tt.Fatalf("fixer由来でないexternal変更はfail closedすべきです: %s", st.TaskStatus())
 \t}
 }
+
 '''
-p.write_text(text[:start] + replacement + text[end:])
+if text.count(marker) != 1:
+    raise SystemExit("pass no-fix test marker missing")
+p.write_text(text.replace(marker, insert + marker, 1))
