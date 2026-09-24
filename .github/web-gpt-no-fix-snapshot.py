@@ -11,14 +11,15 @@ def replace_once(path: str, old: str, new: str) -> None:
 
 replace_once(
     "glm-worker/internal/workflow/review_flow.go",
-    '''\tif qualityReport.Fixed > 0 {
+    '''\treviewInput := workerEnd
+\tif qualityReport.Fixed > 0 {
 \t\treviewInput, stopped, err = w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport)
 \t\tif err != nil || stopped {
 \t\t\treturn reviewInput, true, err
 \t\t}
 \t}
 ''',
-    '''\treviewInput, stopped, err = w.acceptQualityGateSnapshot(workerEnd, parentBefore, qualityReport)
+    '''\treviewInput, stopped, err := w.acceptQualityGateSnapshot(workerEnd, parentBefore, qualityReport)
 \tif err != nil || stopped {
 \t\treturn reviewInput, true, err
 \t}
