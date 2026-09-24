@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestRunWithIsolatedFixesAppliesVerifiedPostimage(t *testing.T) {
@@ -37,6 +39,33 @@ func TestRunWithIsolatedFixesAppliesVerifiedPostimage(t *testing.T) {
 	}
 	if string(got) != "after\n" {
 		t.Fatalf("postimage = %q", got)
+	}
+}
+
+func TestVerifyFixInputSnapshotRejectsChangeBetweenSnapshotAndManifest(t *testing.T) {
+	root := newFixIsolationRepo(t)
+	fixture := filepath.Join(root, "fixture.go")
+	if err := os.WriteFile(fixture, []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitAddFixIsolationRepo(t, root)
+	input, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := repositoryPaths(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture, []byte("external\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := captureFixManifest(root, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyFixInputSnapshot(root, input, before); err == nil || !strings.Contains(err.Error(), "input changed during manifest capture") {
+		t.Fatalf("snapshot-to-manifest race was not rejected: %v", err)
 	}
 }
 

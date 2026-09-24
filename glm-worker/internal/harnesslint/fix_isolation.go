@@ -34,6 +34,9 @@ func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	if err := verifyFixInputSnapshot(root, input, before); err != nil {
+		return Report{}, err
+	}
 	workspace, err := os.MkdirTemp("", "harnesslint-fix-*")
 	if err != nil {
 		return Report{}, err
@@ -64,6 +67,20 @@ func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
 		},
 	}
 	return report, nil
+}
+
+func verifyFixInputSnapshot(root string, input state.GitSnapshot, before fixManifest) error {
+	current, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		return err
+	}
+	if !state.EqualGitSnapshot(input, current) {
+		return fmt.Errorf("quality fixer input changed during manifest capture")
+	}
+	if err := verifyFixManifest(root, before); err != nil {
+		return fmt.Errorf("quality fixer input manifest does not match captured snapshot: %w", err)
+	}
+	return nil
 }
 
 func runIsolatedFixWorkspace(workspace string, before fixManifest, execute isolatedFixRun) (Report, fixManifest, []string, error) {
