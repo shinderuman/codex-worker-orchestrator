@@ -81,9 +81,9 @@ func TestClaudeSubprocessEnvScrubLiveNoAI(t *testing.T) {
 		}
 	}
 	for key, want := range map[string]string{
-		"auth_token": "absent",
-		"api_key":    "absent",
-		"base_url":   "present",
+		"auth_token":  "absent",
+		"api_key":     "absent",
+		"base_url":    "present",
 		"report_path": "present",
 	} {
 		if got[key] != want {
