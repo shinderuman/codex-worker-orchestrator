@@ -32,5 +32,9 @@ jobs:
               exit 1
             fi
           done
-      - working-directory: glm-worker
+      - name: Verify parent provider credential remains available
+        working-directory: glm-worker
+        run: go test ./internal/runner -run '^TestClaudeProviderCredentialLiveNoAI$' -count=1 -v
+      - name: Verify worker Bash cannot observe provider credentials
+        working-directory: glm-worker
         run: go test ./internal/runner -run '^TestClaudeSubprocessEnvScrubLiveNoAI$' -count=1 -v
