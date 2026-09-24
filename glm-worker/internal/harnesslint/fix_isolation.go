@@ -46,7 +46,8 @@ func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
 	if len(changed) == 0 {
 		return report, nil
 	}
-	if err := applyIsolatedFixPostimages(root, before, after, changed); err != nil {
+	output, err := applyIsolatedFixPostimages(root, before, after, changed)
+	if err != nil {
 		return Report{}, err
 	}
 	report.FixEvidence = &FixEvidence{
@@ -55,6 +56,11 @@ func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
 			Head:           input.Head,
 			IndexDigest:    input.IndexDigest,
 			WorktreeDigest: input.WorktreeDigest,
+		},
+		Output: &FixInputSnapshot{
+			Head:           output.Head,
+			IndexDigest:    output.IndexDigest,
+			WorktreeDigest: output.WorktreeDigest,
 		},
 	}
 	return report, nil
@@ -89,19 +95,23 @@ func runIsolatedFixWorkspace(workspace string, before fixManifest, execute isola
 	return report, after, changed, nil
 }
 
-func applyIsolatedFixPostimages(root string, before, after fixManifest, changed []string) error {
+func applyIsolatedFixPostimages(root string, before, after fixManifest, changed []string) (state.GitSnapshot, error) {
 	if err := verifyFixManifest(root, before); err != nil {
-		return fmt.Errorf("quality fixer input changed while isolated fixer ran: %w", err)
+		return state.GitSnapshot{}, fmt.Errorf("quality fixer input changed while isolated fixer ran: %w", err)
 	}
 	for _, path := range changed {
 		if err := applyFixPostimage(root, path, before[path], after[path]); err != nil {
-			return err
+			return state.GitSnapshot{}, err
 		}
 	}
-	if err := verifyFixManifest(root, after); err != nil {
-		return fmt.Errorf("quality fixer postimage verification failed: %w", err)
+	output, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		return state.GitSnapshot{}, err
 	}
-	return nil
+	if err := verifyFixManifest(root, after); err != nil {
+		return state.GitSnapshot{}, fmt.Errorf("quality fixer postimage verification failed: %w", err)
+	}
+	return output, nil
 }
 
 func initializeFixWorkspace(root string) error {

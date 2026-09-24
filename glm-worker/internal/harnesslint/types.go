@@ -20,6 +20,7 @@ type FixInputSnapshot struct {
 type FixEvidence struct {
 	Method string            `json:"method"`
 	Input  *FixInputSnapshot `json:"input,omitempty"`
+	Output *FixInputSnapshot `json:"output,omitempty"`
 }
 
 type Report struct {

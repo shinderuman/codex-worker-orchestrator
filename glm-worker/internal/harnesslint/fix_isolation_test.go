@@ -25,8 +25,11 @@ func TestRunWithIsolatedFixesAppliesVerifiedPostimage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.FixEvidence == nil || report.FixEvidence.Method != FixProvenanceIsolatedPostimageV1 {
+	if report.FixEvidence == nil || report.FixEvidence.Method != FixProvenanceIsolatedPostimageV1 || report.FixEvidence.Input == nil || report.FixEvidence.Output == nil {
 		t.Fatalf("fix evidence = %#v", report.FixEvidence)
+	}
+	if report.FixEvidence.Input.WorktreeDigest == report.FixEvidence.Output.WorktreeDigest {
+		t.Fatal("fix evidence input/output worktree digests did not change")
 	}
 	got, err := os.ReadFile(fixture)
 	if err != nil {

@@ -229,16 +229,26 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 
 func qualityFixSnapshotMismatchReason(workerEnd, reviewInput state.GitSnapshot, report harnesslint.Report) string {
 	evidence := report.FixEvidence
-	switch {
-	case evidence == nil || evidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 || evidence.Input == nil:
+	if evidence == nil || evidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 {
 		return fmt.Sprintf("machine quality fixer provenanceがありません(fixed=%d)", report.Fixed)
-	case evidence.Input.Head != workerEnd.Head || evidence.Input.IndexDigest != workerEnd.IndexDigest || evidence.Input.WorktreeDigest != workerEnd.WorktreeDigest:
-		return fmt.Sprintf("machine quality fixer provenanceがworker-end snapshotと一致しません(fixed=%d)", report.Fixed)
-	case reviewInput.Head != workerEnd.Head || reviewInput.IndexDigest != workerEnd.IndexDigest:
-		return fmt.Sprintf("machine quality fixer実行中にHEAD/indexが変化しました(fixed=%d)", report.Fixed)
-	default:
-		return ""
 	}
+	if !qualityFixEvidenceMatches(workerEnd, evidence.Input) {
+		return fmt.Sprintf("machine quality fixer input provenanceがworker-end snapshotと一致しません(fixed=%d)", report.Fixed)
+	}
+	if !qualityFixEvidenceMatches(reviewInput, evidence.Output) {
+		return fmt.Sprintf("machine quality fixer output provenanceがreview-input snapshotと一致しません(fixed=%d)", report.Fixed)
+	}
+	if reviewInput.Head != workerEnd.Head || reviewInput.IndexDigest != workerEnd.IndexDigest {
+		return fmt.Sprintf("machine quality fixer実行中にHEAD/indexが変化しました(fixed=%d)", report.Fixed)
+	}
+	return ""
+}
+
+func qualityFixEvidenceMatches(snapshot state.GitSnapshot, evidence *harnesslint.FixInputSnapshot) bool {
+	return evidence != nil &&
+		evidence.Head == snapshot.Head &&
+		evidence.IndexDigest == snapshot.IndexDigest &&
+		evidence.WorktreeDigest == snapshot.WorktreeDigest
 }
 
 func (w *Workflow) handleReviewResult(

@@ -36,7 +36,11 @@ func TestQualityFixSnapshotFeedsReviewer(t *testing.T) {
 		if err := os.WriteFile(path, formatted, 0o644); err != nil {
 			return harnesslint.Report{}, err
 		}
-		return qualityFixReportForSnapshot(input), nil
+		output, err := state.CaptureGitSnapshot(root)
+		if err != nil {
+			return harnesslint.Report{}, err
+		}
+		return qualityFixReportForSnapshots(input, output), nil
 	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -139,7 +143,7 @@ func TestParentFileStatesRequireExactMatch(t *testing.T) {
 	}
 }
 
-func qualityFixReportForSnapshot(input state.GitSnapshot) harnesslint.Report {
+func qualityFixReportForSnapshots(input, output state.GitSnapshot) harnesslint.Report {
 	return harnesslint.Report{
 		Status:     "pass",
 		Fixed:      1,
@@ -151,6 +155,20 @@ func qualityFixReportForSnapshot(input state.GitSnapshot) harnesslint.Report {
 				IndexDigest:    input.IndexDigest,
 				WorktreeDigest: input.WorktreeDigest,
 			},
+			Output: &harnesslint.FixInputSnapshot{
+				Head:           output.Head,
+				IndexDigest:    output.IndexDigest,
+				WorktreeDigest: output.WorktreeDigest,
+			},
 		},
+	}
+}
+
+func TestQualityFixSnapshotRejectsOutputMismatch(t *testing.T) {
+	workerEnd := state.GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "before"}
+	reviewInput := state.GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "after-external"}
+	report := qualityFixReportForSnapshots(workerEnd, state.GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "fixer-after"})
+	if reason := qualityFixSnapshotMismatchReason(workerEnd, reviewInput, report); reason == "" {
+		t.Fatal("fixer return後のexternal worktree changeを受理しています")
 	}
 }
