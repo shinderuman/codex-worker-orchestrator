@@ -3,6 +3,7 @@ package app
 import (
 	"strconv"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -37,7 +38,7 @@ func improvementSignalAdvisory(signal *state.ImprovementSignal) *parentHandoffIm
 	if signal == nil {
 		return nil
 	}
-	spec, ok := improvementDispositionActionSpec(improvementSignalParameters(*signal))
+	spec, ok := parentactiongrammar.Project(string(state.ParentActionImprovementDisposition), improvementSignalParameters(*signal))
 	if !ok {
 		return nil
 	}
