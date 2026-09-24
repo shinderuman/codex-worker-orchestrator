@@ -24,8 +24,8 @@ const (
 	RecordDefectFindingAction    = "record-defect-finding"
 	ImprovementDispositionAction = "improvement-disposition"
 
-	AcceptedScopeParameter = "accepted-scope"
-	TaskParameter          = "task"
+	AcceptedScopeParameter = state.ParentActionAcceptedScopeParameter
+	TaskParameter          = state.ParentActionTaskParameter
 	SignalKindParameter    = "signal-kind"
 	SourceCallIDParameter  = "source-call-id"
 
