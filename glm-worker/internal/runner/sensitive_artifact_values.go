@@ -14,8 +14,6 @@ type SensitiveArtifactValue struct {
 const (
 	SensitiveArtifactProviderAuthToken = "provider-auth-token"
 	SensitiveArtifactProviderAPIKey    = "provider-api-key"
-	providerAuthTokenEnvKey             = "ANTHROPIC_AUTH_TOKEN"
-	providerAPIKeyEnvKey                = "ANTHROPIC_API_KEY"
 )
 
 func SensitiveArtifactValues(cfg config.AppConfig) ([]SensitiveArtifactValue, error) {
@@ -31,9 +29,9 @@ func SensitiveArtifactValues(cfg config.AppConfig) ([]SensitiveArtifactValue, er
 			continue
 		}
 		switch key {
-		case providerAuthTokenEnvKey:
+		case "ANTHROPIC_AUTH_TOKEN":
 			values = append(values, SensitiveArtifactValue{Category: SensitiveArtifactProviderAuthToken, Value: value})
-		case providerAPIKeyEnvKey:
+		case "ANTHROPIC_API_KEY":
 			values = append(values, SensitiveArtifactValue{Category: SensitiveArtifactProviderAPIKey, Value: value})
 		}
 	}
