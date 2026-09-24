@@ -63,16 +63,14 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			}))
 			defer server.Close()
 
-			dir := t.TempDir()
-			configDir := filepath.Join(dir, "claude-config")
-			if err := os.MkdirAll(configDir, 0o700); err != nil {
-				t.Fatal(err)
-			}
+			home := t.TempDir()
+			configDir := prepareClaudeCanaryHome(t, home)
 			settingEnv := map[string]string{tc.credentialKey: credential}
 			settingEnv["ANTHROPIC_BASE_URL"] = server.URL + "/api/anthropic"
 			settingEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "glm-canary"
 			settingEnv["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 			additions := claudeInvocationEnvDefaults()
+			additions["HOME"] = home
 			additions["CLAUDE_CONFIG_DIR"] = configDir
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -100,6 +98,18 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			}
 		})
 	}
+}
+
+func prepareClaudeCanaryHome(t *testing.T, home string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"hasCompletedOnboarding":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return configDir
 }
 
 func sanitizedClaudeCanaryOutput(output []byte, credential string) string {
