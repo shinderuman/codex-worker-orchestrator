@@ -214,7 +214,7 @@ func TestControlProvenanceRequiresKnownCurrentMachineControls(t *testing.T) {
 	}
 }
 
-func TestControlProvenanceRequiresCurrentCanonicalOwnerAfterOwnershipTransfer(t *testing.T) {
+func TestControlProvenanceRequiresCurrentCanonicalLocatorsAfterOwnershipTransfer(t *testing.T) {
 	root := t.TempDir()
 	writeControlProvenanceGo(t, root, parentActionGrammarOwnerPath, "package parentactiongrammar\nfunc Project() {}\n")
 	writeControlProvenanceGo(t, root, "glm-worker/internal/app/parent_handoff_actions.go", "package app\nfunc parentActionSpecs() {}\nfunc parentActionSpec() {}\n")
@@ -242,8 +242,14 @@ func TestControlProvenanceRequiresCurrentCanonicalOwnerAfterOwnershipTransfer(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, parentActionMachineProjectionControlID, "canonical owner", parentActionGrammarOwnerPath, parentActionGrammarOwnerSymbol, "missing from provenance machine owners") {
-		t.Fatalf("violations = %#v", violations)
+	for _, fragments := range [][]string{
+		{parentActionMachineProjectionControlID, "canonical machine owner", parentActionGrammarOwnerPath, parentActionGrammarOwnerSymbol, "missing from provenance machine owners"},
+		{parentActionMachineProjectionControlID, "canonical test", parentActionGrammarTestPath, parentActionGrammarTestSymbol, "missing from provenance tests"},
+		{parentActionMachineProjectionControlID, "canonical postcondition", parentActionGrammarOwnerPath, parentActionGrammarOwnerSymbol, "missing from provenance postconditions"},
+	} {
+		if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, fragments...) {
+			t.Fatalf("missing canonical locator violation %q in %#v", fragments, violations)
+		}
 	}
 }
 
