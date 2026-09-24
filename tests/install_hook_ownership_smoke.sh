@@ -256,16 +256,22 @@ lock_root="$common/codex-worker-orchestrator/hooks-install.lock"
 mkdir -p "$lock_root"
 live_ticket="$lock_root/$$"
 mkdir "$live_ticket"
+live_started=$(LC_ALL=C ps -p "$$" -o lstart=)
+printf '%s\n' "$live_started" >"$live_ticket/started"
 if sh "$helper" install "$repo" "$guard_bin" >"$tmp/install-lock.stdout" 2>"$tmp/install-lock.stderr"; then
 	printf '%s\n' 'concurrent hook installer unexpectedly bypassed activation lock' >&2
 	exit 1
 fi
 grep -Fq 'another installer owns hook activation' "$tmp/install-lock.stderr"
+rm -f "$live_ticket/started"
 rmdir "$live_ticket"
-stale_ticket="$lock_root/99999999"
+stale_ticket="$lock_root/$$"
 mkdir "$stale_ticket"
+printf '%s\n' 'stale-process-start' >"$stale_ticket/started"
 sh "$helper" install "$repo" "$guard_bin"
 assert_managed_hooks "$repo"
+test -d "$stale_ticket"
+test "$(cat "$stale_ticket/started")" = 'stale-process-start'
 test -d "$stale_ticket"
 
 repo="$tmp/preexisting-tracked"
