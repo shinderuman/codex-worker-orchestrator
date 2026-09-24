@@ -13,9 +13,9 @@ type parentHandoffImprovementSignal struct {
 }
 
 const (
-	improvementSignalKindParameter   = "signal-kind"
+	improvementSignalKindParameter   = parentactiongrammar.SignalKindParameter
 	improvementSignalCountParameter  = "signal-count"
-	improvementSignalCallIDParameter = "source-call-id"
+	improvementSignalCallIDParameter = parentactiongrammar.SourceCallIDParameter
 	improvementSignalReasonParameter = "reason"
 	invalidPacketOutcome             = "invalid_packet"
 )
