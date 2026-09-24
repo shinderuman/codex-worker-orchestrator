@@ -18,6 +18,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentidentity"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
@@ -180,7 +181,7 @@ func executeParentReadOrParkAction(cfg config.AppConfig, args []string, stdout, 
 }
 
 func executeApproveSurfaceAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	if len(args) != 2 || args[0] != "--accepted-scope" || args[1] != "current-diff" {
+	if !parentactiongrammar.ValidateApproveSurfaceArgs(args) {
 		return fmt.Errorf("usage: glm-parent-action approve-surface --accepted-scope current-diff")
 	}
 	if err := persistParentCodexIdentity(cfg); err != nil {
