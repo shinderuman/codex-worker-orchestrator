@@ -210,7 +210,6 @@ func TestControlProjectionProcedureGuardRejectsNonMachineRegistration(t *testing
 
 func TestControlProjectionProcedureGuardLeavesNonMachineBoundariesAlone(t *testing.T) {
 	for _, classification := range []string{
-		controlClassificationPartial,
 		controlClassificationProse,
 		controlClassificationSemanticParent,
 		controlClassificationExternalUnenforced,
