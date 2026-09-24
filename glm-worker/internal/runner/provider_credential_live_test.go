@@ -68,7 +68,7 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			if err := os.MkdirAll(configDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			settings, err := isolationSettings(configDir, &gitBashSandboxPolicy{allowWrite: []string{dir}})
+			settings, err := isolationSettings(configDir, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
