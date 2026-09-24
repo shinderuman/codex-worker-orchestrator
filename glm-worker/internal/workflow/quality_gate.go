@@ -13,6 +13,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
@@ -28,7 +29,26 @@ func runRepositoryQualityGate(root string) (harnesslint.Report, error) {
 	if !qualityToolsApply {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
-	return harnesslint.Run(root, true)
+	input, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		return harnesslint.Report{}, err
+	}
+	report, err := harnesslint.Run(root, true)
+	if err != nil {
+		return harnesslint.Report{}, err
+	}
+	if report.Fixed == 0 {
+		return report, nil
+	}
+	if report.FixEvidence == nil || report.FixEvidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 {
+		return harnesslint.Report{}, fmt.Errorf("machine quality fixer provenance is missing")
+	}
+	report.FixEvidence.Input = &harnesslint.FixInputSnapshot{
+		Head:           input.Head,
+		IndexDigest:    input.IndexDigest,
+		WorktreeDigest: input.WorktreeDigest,
+	}
+	return report, nil
 }
 
 func captureQualitySurfaceDigest(root string) (string, error) {
