@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type isolatedFixRun func(string) (Report, error)
@@ -20,6 +22,10 @@ type fixFileState struct {
 type fixManifest map[string]fixFileState
 
 func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
+	input, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		return Report{}, err
+	}
 	paths, err := repositoryPaths(root)
 	if err != nil {
 		return Report{}, err
@@ -75,7 +81,14 @@ func runWithIsolatedFixes(root string, execute isolatedFixRun) (Report, error) {
 	if err := verifyFixManifest(root, after); err != nil {
 		return Report{}, fmt.Errorf("quality fixer postimage verification failed: %w", err)
 	}
-	report.FixEvidence = &FixEvidence{Method: FixProvenanceIsolatedPostimageV1}
+	report.FixEvidence = &FixEvidence{
+		Method: FixProvenanceIsolatedPostimageV1,
+		Input: &FixInputSnapshot{
+			Head:           input.Head,
+			IndexDigest:    input.IndexDigest,
+			WorktreeDigest: input.WorktreeDigest,
+		},
+	}
 	return report, nil
 }
 

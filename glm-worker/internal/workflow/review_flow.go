@@ -78,7 +78,7 @@ func (w *Workflow) prepareReviewInputSnapshot(
 	if qualityReport.Fixed == 0 {
 		return workerEnd, false, nil
 	}
-	return w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport.Fixed)
+	return w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport)
 }
 
 func (w *Workflow) buildReviewCheckpoint(
@@ -165,7 +165,7 @@ func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Res
 	return reviewResult, false, nil
 }
 
-func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, fixed int) (state.GitSnapshot, bool, error) {
+func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, report harnesslint.Report) (state.GitSnapshot, bool, error) {
 	reviewInput, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
 		return reviewInput, true, w.failClosedSnapshot(
@@ -174,6 +174,34 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 			state.GitSnapshot{},
 			"machine quality fixer後snapshot取得失敗",
 			err,
+		)
+	}
+	evidence := report.FixEvidence
+	if evidence == nil || evidence.Method != harnesslint.FixProvenanceIsolatedPostimageV1 || evidence.Input == nil {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			fmt.Sprintf("machine quality fixer provenanceがありません(fixed=%d)", report.Fixed),
+			nil,
+		)
+	}
+	if evidence.Input.Head != workerEnd.Head || evidence.Input.IndexDigest != workerEnd.IndexDigest || evidence.Input.WorktreeDigest != workerEnd.WorktreeDigest {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			fmt.Sprintf("machine quality fixer provenanceがworker-end snapshotと一致しません(fixed=%d)", report.Fixed),
+			nil,
+		)
+	}
+	if reviewInput.Head != workerEnd.Head || reviewInput.IndexDigest != workerEnd.IndexDigest {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			fmt.Sprintf("machine quality fixer実行中にHEAD/indexが変化しました(fixed=%d)", report.Fixed),
+			nil,
 		)
 	}
 	parentAfter, err := state.CaptureParentFileStates(w.config.RepoRoot)
@@ -191,7 +219,7 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 			state.SnapshotStageReviewStart,
 			workerEnd,
 			reviewInput,
-			fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", fixed),
+			fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", report.Fixed),
 			nil,
 		)
 	}
