@@ -36,8 +36,8 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 		name          string
 		credentialKey string
 	}{
-		{name: "auth-token", credentialKey: providerAuthTokenEnvKey},
-		{name: "api-key", credentialKey: providerAPIKeyEnvKey},
+		{name: "auth-token", credentialKey: "ANTHROPIC_AUTH_TOKEN"},
+		{name: "api-key", credentialKey: "ANTHROPIC_API_KEY"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			credential := "glm-worker-provider-canary"
@@ -86,7 +86,7 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 				"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands",
 				"--settings", settings, "--tools", "", "reply with ok",
 			)
-			command.Dir = dir
+			command.Dir = "."
 			command.Env = buildChildEnv(nil, settingEnv, additions, nil)
 			_ = command.Run()
 
@@ -105,9 +105,9 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 
 func requestHeaderContainsCredential(r *http.Request, key, credential string) bool {
 	switch key {
-	case providerAuthTokenEnvKey:
+	case "ANTHROPIC_AUTH_TOKEN":
 		return strings.Contains(r.Header.Get("Authorization"), credential)
-	case providerAPIKeyEnvKey:
+	case "ANTHROPIC_API_KEY":
 		return r.Header.Get("X-Api-Key") == credential
 	default:
 		return false
