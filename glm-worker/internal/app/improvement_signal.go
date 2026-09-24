@@ -44,7 +44,7 @@ func improvementSignalAdvisory(signal *state.ImprovementSignal) *parentHandoffIm
 	}
 	return &parentHandoffImprovementSignal{
 		Signal:     *signal,
-		ActionSpec: spec,
+		ActionSpec: parentHandoffActionSpec(spec),
 	}
 }
 
