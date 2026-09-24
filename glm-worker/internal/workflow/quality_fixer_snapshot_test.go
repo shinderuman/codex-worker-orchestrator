@@ -93,6 +93,40 @@ func TestQualityFixSnapshotRejectsUnprovenFixedReport(t *testing.T) {
 	}
 }
 
+func TestQualityFixViolationRejectsUnprovenBeforeAutoFix(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
+	w := newWorkflowT(t, st, r)
+	path := filepath.Join(w.config.RepoRoot, "fixture.go")
+	if err := os.WriteFile(path, []byte("package fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.captureSnapshot = state.CaptureGitSnapshot
+	w.captureBoundarySnapshot = state.CaptureRepositoryBoundarySnapshot
+	w.qualityGate = func(string) (harnesslint.Report, error) {
+		if err := os.WriteFile(path, []byte("package fixture\n\nvar changed = true\n"), 0o644); err != nil {
+			return harnesslint.Report{}, err
+		}
+		return harnesslint.Report{
+			Status: "fail",
+			Fixed:  1,
+			Violations: []harnesslint.Violation{{
+				Rule: "fixture", Path: "fixture.go", Line: 1, Column: 1, Message: "still invalid",
+			}},
+		}, nil
+	}
+
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.phases) != 1 {
+		t.Fatalf("provenance確認前にauto-fixへ進んでいます: %v", r.phases)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("provenanceのないquality fix violationはfail closedすべきです: %s", st.TaskStatus())
+	}
+}
+
 func TestQualityPassWithoutFixDoesNotRebaseExternalChange(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
