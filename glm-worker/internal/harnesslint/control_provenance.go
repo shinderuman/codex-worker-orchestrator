@@ -90,8 +90,6 @@ func validateControlProvenanceRegistry(root string, registry controlProvenanceRe
 }
 
 func validateKnownMachineControlCoverage(root string, seen map[string]struct{}) []Violation {
-	// These bounded sentinels couple proven current machine owners to the provenance
-	// inventory. They do not define control behavior or discover controls heuristically.
 	known := []struct {
 		id        string
 		ownerPath string
