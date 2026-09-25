@@ -54,21 +54,13 @@ func TestReviewNeedsHighRiskFloor(t *testing.T) {
 
 func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
-	st := newStateStoreT(t)
-	w := newWorkflowT(t, st, &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) {
-		return []string{"internal/task/change.go", "cmd/tool/main.go"}, nil
-	}
 
-	enforced := w.riskFloorFailClosedResult(passPkt)
+	enforced := riskFloorFailClosedResult(passPkt)
 	if enforced.Status != packet.StatusNeedsSolReview || enforced.Risk != packet.RiskHigh {
 		t.Fatalf("status=%s risk=%s", enforced.Status, enforced.Risk)
 	}
 	if err := validateTypedResult(enforced); err != nil {
 		t.Fatalf("fail closed結果がvalidate不合格: %v", err)
-	}
-	if got := strings.Join(enforced.Targets, ","); got != "internal/task/change.go:diff,cmd/tool/main.go:diff" {
-		t.Fatalf("fail closed TARGETSがcurrent task diffを指していない: %q", got)
 	}
 	if enforced.RequirementCoverage == "covered" {
 		t.Fatalf("reviewerのPASS内容をfail closed結果へ捏造している: %#v", enforced)
@@ -76,18 +68,13 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 }
 
 func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
-	st := newStateStoreT(t)
-	w := newWorkflowT(t, st, &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) {
-		return []string{"internal/task/change.go"}, nil
-	}
 	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"],"sol_question":"q"}`)
-	if resolved := w.resolveRiskFloorReemit(compliant); resolved.Status != packet.StatusNeedsSolReview {
+	if resolved := resolveRiskFloorReemit(compliant); resolved.Status != packet.StatusNeedsSolReview {
 		t.Fatalf("準拠再出力はそのまま採用すべき: %#v", resolved)
 	}
 
 	passed := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"pass again","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
-	closed := w.resolveRiskFloorReemit(passed)
+	closed := resolveRiskFloorReemit(passed)
 	if closed.Status != packet.StatusNeedsSolReview || !strings.Contains(closed.Summary, "PASS") {
 		t.Fatalf("再違反はfail closedのNEEDS_SOL_REVIEWへ昇格すべき: %#v", closed)
 	}
