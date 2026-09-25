@@ -64,12 +64,6 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 		Handoff:    projectedHandoff,
 		Projection: &stats,
 	}
-	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
-		return parentActionTerminalEnvelopePayload{}, err
-	}
-	if stats.ProjectedBytes <= stats.BudgetBytes {
-		return candidate, nil
-	}
 	return fitSemanticTerminalProjection(candidate, stats, terminalJSON)
 }
 
@@ -114,9 +108,6 @@ func fitSemanticTerminalProjection(candidate parentActionTerminalEnvelopePayload
 	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
 	}
-	if stats.ProjectedBytes <= stats.BudgetBytes {
-		return candidate, nil
-	}
 	return fitRecoverableEvidenceProjection(candidate, stats)
 }
 
@@ -133,9 +124,9 @@ func fitRecoverableEvidenceProjection(candidate parentActionTerminalEnvelopePayl
 		if err := finalizeProjectionStats(&candidate, &stats); err != nil {
 			return parentActionTerminalEnvelopePayload{}, err
 		}
-		if stats.ProjectedBytes <= stats.BudgetBytes {
-			return candidate, nil
-		}
+	}
+	if stats.ProjectedBytes <= stats.BudgetBytes {
+		return candidate, nil
 	}
 	stats.Overflow = true
 	return parentActionTerminalEnvelopePayload{}, &parentActionTerminalProjectionError{stats: stats}
