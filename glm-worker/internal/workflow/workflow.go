@@ -284,7 +284,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Model:          w.config.WorkerModel,
 			ReadOnly:       pocStage,
 			Effort:         w.config.EscalatedEffort,
-			Prompt:          prompt,
+			Prompt:         prompt,
 			OriginalPrompt: prompt,
 			Request:        request,
 			Decision:       decision,
