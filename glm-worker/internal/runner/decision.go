@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -63,9 +64,9 @@ func (r *ClaudeRunner) Decide(model, effort, schema, prompt string) (DecisionCal
 	}
 	defer func() { _ = devNull.Close() }()
 
-	command := newProcessGroupCmd(r.config.ClaudeBin, decisionArgs(model, effort, schema, isolationArgs, prompt)...)
+	command := newProcessGroupCmd(r.config.ClaudeBin, decisionArgs(model, effort, schema, isolationArgs)...)
 	command.Dir = decisionDir
-	command.Stdin = devNull
+	command.Stdin = strings.NewReader(prompt)
 	command.Stdout = output
 	command.Stderr = stderr
 	additions := claudeInvocationEnvDefaults()
@@ -118,7 +119,7 @@ func decisionRunFailureReason(runErr error) string {
 	return "command-failure"
 }
 
-func decisionArgs(model, effort, schema, isolationArgs, prompt string) []string {
+func decisionArgs(model, effort, schema, isolationArgs string) []string {
 	return []string{
 		"-p", "--safe-mode", "--setting-sources", "",
 		"--no-session-persistence",
@@ -132,6 +133,5 @@ func decisionArgs(model, effort, schema, isolationArgs, prompt string) []string 
 		"--tools", "",
 		"--settings", isolationArgs,
 		"--json-schema", schema,
-		prompt,
 	}
 }
