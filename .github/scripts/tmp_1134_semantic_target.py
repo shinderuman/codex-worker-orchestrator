@@ -1,0 +1,181 @@
+from pathlib import Path
+
+
+def replace_one(path: str, old: str, new: str) -> None:
+    p = Path(path)
+    text = p.read_text()
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected exactly one match, got {count}")
+    p.write_text(text.replace(old, new, 1))
+
+
+replace_one(
+    "glm-worker/internal/reviewtarget/target.go",
+    ")\n\nfunc Parse(target string)",
+    ")\n\nconst WholeFileDiffLocator = \"diff\"\n\nfunc Parse(target string)",
+)
+
+replace_one(
+    "glm-worker/internal/parentevidence/review.go",
+    "\tif start, end, ok := NumericRange(locator); ok {\n\t\treturn reviewDiffSectionCoversLines(section, start, end)\n\t}\n\treturn locator != \"\" && strings.Contains(section, locator)\n",
+    "\tif start, end, ok := NumericRange(locator); ok {\n\t\treturn reviewDiffSectionCoversLines(section, start, end)\n\t}\n\tif locator == reviewtarget.WholeFileDiffLocator {\n\t\treturn true\n\t}\n\treturn locator != \"\" && strings.Contains(section, locator)\n",
+)
+
+replace_one(
+    "glm-worker/internal/workflow/workflow.go",
+    '"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"',
+    '"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"',
+)
+
+replace_one(
+    "glm-worker/internal/workflow/workflow.go",
+    """\treturn resolveRiskFloorReemit(reemitResult), false, nil
+}
+
+func resolveRiskFloorReemit(reemitResult packet.Result) packet.Result {
+\tif reemitResult.Status == packet.StatusNeedsSolReview {
+\t\treturn reemitResult
+\t}
+\treturn riskFloorFailClosedResult(reemitResult)
+}
+
+func riskFloorFailClosedResult(reemitResult packet.Result) packet.Result {
+\treturn packet.Result{
+\t\tStatus:              packet.StatusNeedsSolReview,
+\t\tRisk:                packet.RiskHigh,
+\t\tSummary:             fmt.Sprintf(\"reviewerがrisk floor再出力要求へ従わず%sを返したためSol確認へ昇格\", reemitResult.Status),
+\t\tRequirementCoverage: \"reviewer再出力が非準拠のためSolが直接確認する必要あり\",
+\t\tInvariants:          \"wrapper risk floorはHIGH RISK経路のreviewer PASSを許容しない\",
+\t\tTestEvidence:        \"reviewer同一sessionへNEEDS_SOL_REVIEW/HIGH再出力を依頼済み\",
+\t\tIssues:              fmt.Sprintf(\"reviewer再出力が非許容STATUS(%s)を返却\", reemitResult.Status),
+\t\tResidualRisk:        \"reviewer判断だけでHIGH RISK経路を完了扱いできない\",
+\t\tTargets:             []string{\"glm-worker/internal/workflow/workflow.go:riskFloorFailClosedResult\"},
+\t\tArtifacts:           append([]string(nil), reemitResult.Artifacts...),
+\t\tSolQuestion:         \"reviewer非準拠時の最終確認・修正方針をSolが判断する\",
+\t}
+}
+""",
+    """\tresolved, err := w.resolveRiskFloorReemit(reemitResult)
+\tif err != nil {
+\t\treturn packet.Result{}, false, err
+\t}
+\treturn resolved, false, nil
+}
+
+func (w *Workflow) resolveRiskFloorReemit(reemitResult packet.Result) (packet.Result, error) {
+\tif reemitResult.Status == packet.StatusNeedsSolReview {
+\t\treturn reemitResult, nil
+\t}
+\treturn w.riskFloorFailClosedResult(reemitResult)
+}
+
+func (w *Workflow) riskFloorFailClosedResult(reemitResult packet.Result) (packet.Result, error) {
+\ttargets, err := w.riskFloorReviewTargets()
+\tif err != nil {
+\t\treturn packet.Result{}, err
+\t}
+\treturn packet.Result{
+\t\tStatus:              packet.StatusNeedsSolReview,
+\t\tRisk:                packet.RiskHigh,
+\t\tSummary:             fmt.Sprintf(\"reviewerがrisk floor再出力要求へ従わず%sを返したためSol確認へ昇格\", reemitResult.Status),
+\t\tRequirementCoverage: \"reviewer再出力が非準拠のためSolが直接確認する必要あり\",
+\t\tInvariants:          \"wrapper risk floorはHIGH RISK経路のreviewer PASSを許容しない\",
+\t\tTestEvidence:        \"reviewer同一sessionへNEEDS_SOL_REVIEW/HIGH再出力を依頼済み\",
+\t\tIssues:              fmt.Sprintf(\"reviewer再出力が非許容STATUS(%s)を返却\", reemitResult.Status),
+\t\tResidualRisk:        \"reviewer判断だけでHIGH RISK経路を完了扱いできない\",
+\t\tTargets:             targets,
+\t\tArtifacts:           append([]string(nil), reemitResult.Artifacts...),
+\t\tSolQuestion:         \"reviewer非準拠時の最終確認・修正方針をSolが判断する\",
+\t}, nil
+}
+
+func (w *Workflow) riskFloorReviewTargets() ([]string, error) {
+\tpaths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr(\"baseline-head\", \"\"))
+\tif err != nil {
+\t\treturn nil, fmt.Errorf(\"risk floor review targets: %w\", err)
+\t}
+\tif len(paths) == 0 {
+\t\treturn nil, fmt.Errorf(\"risk floor review targets: current task has no changed paths\")
+\t}
+\tpaths = append([]string(nil), paths...)
+\tsort.Strings(paths)
+\ttargets := make([]string, 0, len(paths))
+\tfor _, path := range paths {
+\t\ttargets = append(targets, fmt.Sprintf(\"%s:%s\", path, reviewtarget.WholeFileDiffLocator))
+\t}
+\treturn targets, nil
+}
+""",
+)
+
+replace_one(
+    "glm-worker/internal/workflow/resume_flow.go",
+    "\tif checkpoint.RiskFloorReemit {\n\t\treturn resolveRiskFloorReemit(result), false, nil\n\t}\n",
+    "\tif checkpoint.RiskFloorReemit {\n\t\tresolved, err := w.resolveRiskFloorReemit(result)\n\t\treturn resolved, false, err\n\t}\n",
+)
+
+replace_one(
+    "glm-worker/internal/workflow/risk_floor_test.go",
+    "\tenforced := riskFloorFailClosedResult(passPkt)\n\tif enforced.Status != packet.StatusNeedsSolReview || enforced.Risk != packet.RiskHigh {",
+    "\tw := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})\n\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{\"internal/task/change.go\"}, nil }\n\tenforced, err := w.riskFloorFailClosedResult(passPkt)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif enforced.Status != packet.StatusNeedsSolReview || enforced.Risk != packet.RiskHigh {",
+)
+
+replace_one(
+    "glm-worker/internal/workflow/risk_floor_test.go",
+    "\tif enforced.RequirementCoverage == \"covered\" {\n\t\tt.Fatalf(\"reviewerのPASS内容をfail closed結果へ捏造している: %#v\", enforced)\n\t}\n}\n\nfunc TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {\n\tcompliant := resultFromBody",
+    "\tif enforced.RequirementCoverage == \"covered\" {\n\t\tt.Fatalf(\"reviewerのPASS内容をfail closed結果へ捏造している: %#v\", enforced)\n\t}\n\tif len(enforced.Targets) != 1 || enforced.Targets[0] != \"internal/task/change.go:diff\" {\n\t\tt.Fatalf(\"semantic review targets = %#v\", enforced.Targets)\n\t}\n}\n\nfunc TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {\n\tw := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})\n\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{\"internal/task/change.go\"}, nil }\n\tcompliant := resultFromBody",
+)
+
+replace_one(
+    "glm-worker/internal/workflow/risk_floor_test.go",
+    "\tif resolved := resolveRiskFloorReemit(compliant); resolved.Status != packet.StatusNeedsSolReview {\n\t\tt.Fatalf(\"準拠再出力はそのまま採用すべき: %#v\", resolved)\n\t}\n\n\tpassed := resultFromBody(`{\"status\":\"PASS\",\"risk\":\"LOW\",\"summary\":\"pass again\",\"requirement_coverage\":\"covered\",\"invariants\":\"preserved\",\"test_evidence\":\"ev\",\"issues\":\"none\",\"residual_risk\":\"none\",\"targets\":[\"none\"]}`)\n\tclosed := resolveRiskFloorReemit(passed)\n\tif closed.Status != packet.StatusNeedsSolReview || !strings.Contains(closed.Summary, \"PASS\") {",
+    "\tresolved, err := w.resolveRiskFloorReemit(compliant)\n\tif err != nil || resolved.Status != packet.StatusNeedsSolReview {\n\t\tt.Fatalf(\"準拠再出力はそのまま採用すべき: %#v err=%v\", resolved, err)\n\t}\n\n\tpassed := resultFromBody(`{\"status\":\"PASS\",\"risk\":\"LOW\",\"summary\":\"pass again\",\"requirement_coverage\":\"covered\",\"invariants\":\"preserved\",\"test_evidence\":\"ev\",\"issues\":\"none\",\"residual_risk\":\"none\",\"targets\":[\"none\"]}`)\n\tclosed, err := w.resolveRiskFloorReemit(passed)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif closed.Status != packet.StatusNeedsSolReview || !strings.Contains(closed.Summary, \"PASS\") {",
+)
+
+Path("glm-worker/internal/workflow/risk_floor_parent_evidence_test.go").write_text(r'''package workflow
+
+import (
+    "bytes"
+    "errors"
+    "os"
+    "path/filepath"
+    "strings"
+    "testing"
+
+    "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
+    "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
+
+func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
+    repo := newRetentionGitRepo(t)
+    st := newGitStateStoreT(t, repo)
+    if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("base\nchanged\n"), 0o644); err != nil { t.Fatal(err) }
+    w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+    passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
+    enforced, err := w.riskFloorFailClosedResult(passPkt)
+    if err != nil { t.Fatal(err) }
+    if len(enforced.Targets) != 1 || enforced.Targets[0] != "tracked.md:diff" { t.Fatalf("targets = %#v", enforced.Targets) }
+    if err := validateTypedResult(enforced); err != nil { t.Fatalf("synthesized fail-closed packet invalid: %v", err) }
+    if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil { t.Fatal(err) }
+    snapshot, err := state.CaptureGitSnapshot(repo)
+    if err != nil { t.Fatal(err) }
+    digest := state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
+    if err := st.RecordSolResultWithReviewSnapshot(enforced, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, digest); err != nil { t.Fatal(err) }
+    var stdout bytes.Buffer
+    if err := parentevidence.PrintReviewEvidence(repo, st, &stdout); err != nil { t.Fatal(err) }
+    binding, err := st.CurrentParentReviewBinding()
+    if err != nil || binding == nil || binding.Proof == nil { t.Fatalf("review proof = %#v err=%v", binding, err) }
+    if len(binding.Proof.Claims) != 1 || binding.Proof.Claims[0].Kind != "diff" { t.Fatalf("review proof claims = %#v", binding.Proof.Claims) }
+    if !strings.Contains(stdout.String(), "+changed") { t.Fatalf("projected evidence did not expose actual task diff: %s", stdout.String()) }
+}
+
+func TestRiskFloorFailClosedDoesNotSubstituteFallbackTarget(t *testing.T) {
+    w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
+    passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
+    w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }
+    if _, err := w.riskFloorFailClosedResult(passPkt); err == nil || !strings.Contains(err.Error(), "no changed paths") { t.Fatalf("empty task diff should fail closed without substitute target: %v", err) }
+    w.collectChangedPaths = func(string, string) ([]string, error) { return nil, errors.New("changed paths unavailable") }
+    if _, err := w.riskFloorFailClosedResult(passPkt); err == nil || !strings.Contains(err.Error(), "changed paths unavailable") { t.Fatalf("changed-path failure should propagate instead of substituting target: %v", err) }
+}
+''')
