@@ -15,19 +15,7 @@ import (
 const anthropicBaseURLEnv = "ANTHROPIC_BASE_URL"
 
 func loadConfiguredSettingEnv(cfg config.AppConfig) (map[string]string, []string, error) {
-	settingsPath := cfg.ClaudeSettingsPath
-	if settingsPath == "" {
-		configDir, err := resolveClaudeConfigDir(cfg.ClaudeConfigDir)
-		if err != nil {
-			return nil, nil, err
-		}
-		settingsPath = filepath.Join(configDir, "settings.json")
-	}
-	return loadSettingEnvPath(settingsPath, cfg.ClaudeSettingsOverride)
-}
-
-func loadInvocationSettingEnv(cfg config.AppConfig) (map[string]string, []string, error) {
-	settingEnv, deletes, err := loadConfiguredSettingEnv(cfg)
+	settingEnv, deletes, err := loadConfiguredSettingEnvRaw(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -37,6 +25,18 @@ func loadInvocationSettingEnv(cfg config.AppConfig) (map[string]string, []string
 		}
 	}
 	return settingEnv, deletes, nil
+}
+
+func loadConfiguredSettingEnvRaw(cfg config.AppConfig) (map[string]string, []string, error) {
+	settingsPath := cfg.ClaudeSettingsPath
+	if settingsPath == "" {
+		configDir, err := resolveClaudeConfigDir(cfg.ClaudeConfigDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		settingsPath = filepath.Join(configDir, "settings.json")
+	}
+	return loadSettingEnvPath(settingsPath, cfg.ClaudeSettingsOverride)
 }
 
 func validateManagedProviderRoute(cfg config.AppConfig, settingEnv map[string]string, deletes []string) error {
