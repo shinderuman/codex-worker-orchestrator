@@ -197,7 +197,7 @@ func needsSolReviewPacket() string {
 		TestEvidence:        "ev",
 		Issues:              "i",
 		ResidualRisk:        "r",
-		Targets:             []string{"t"},
+		Targets:             []string{"glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"},
 		SolQuestion:         "q",
 	})
 }
@@ -1788,7 +1788,7 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 }
 
 func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
-	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["t"],"sol_question":"q"}`)
+	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"],"sol_question":"q"}`)
 	if resolved := resolveRiskFloorReemit(compliant); resolved.Status != packet.StatusNeedsSolReview {
 		t.Fatalf("準拠再出力はそのまま採用すべき: %#v", resolved)
 	}
@@ -2127,7 +2127,7 @@ func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) 
 		t.Fatalf("status = %q want waiting-sol-review", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, `"targets":["t"]`) || strings.Contains(review, "none") {
+	if !strings.Contains(review, `"targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"]`) || strings.Contains(review, "none") {
 		t.Fatalf("Sol境界のreview packetへ正規targetsだけが伝わっていません: %s", review)
 	}
 	taskID, _ := st.TaskID()
