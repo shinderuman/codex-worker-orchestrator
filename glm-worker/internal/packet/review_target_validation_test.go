@@ -11,11 +11,11 @@ func TestNeedsSolReviewTargetStructureValidatedAtPacketBoundary(t *testing.T) {
 		Risk:                RiskHigh,
 		Summary:             "review",
 		RequirementCoverage: "covered",
-		Invariants:           "preserved",
-		TestEvidence:         "tests passed",
-		Issues:               "issue",
-		ResidualRisk:         "risk",
-		SolQuestion:          "question",
+		Invariants:          "preserved",
+		TestEvidence:        "tests passed",
+		Issues:              "issue",
+		ResidualRisk:        "risk",
+		SolQuestion:         "question",
 	}
 
 	for _, target := range []string{
@@ -57,11 +57,11 @@ func TestNonSolReviewTargetSemanticsRemainUnchanged(t *testing.T) {
 		Risk:                RiskLow,
 		Summary:             "review",
 		RequirementCoverage: "covered",
-		Invariants:           "preserved",
-		TestEvidence:         "tests passed",
-		Issues:               "none",
-		ResidualRisk:         "none",
-		Targets:              []string{"conceptual target without locator"},
+		Invariants:          "preserved",
+		TestEvidence:        "tests passed",
+		Issues:              "none",
+		ResidualRisk:        "none",
+		Targets:             []string{"conceptual target without locator"},
 	}
 	if err := ValidateReviewerResult(result); err != nil {
 		t.Fatalf("non-NEEDS_SOL_REVIEW target semantics changed: %v", err)
