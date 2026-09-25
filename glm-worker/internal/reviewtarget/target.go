@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const WholeFileDiffLocator = "diff"
+
 func Parse(target string) (string, string, error) {
 	target = strings.TrimSpace(target)
 	separator := strings.Index(target, ":")

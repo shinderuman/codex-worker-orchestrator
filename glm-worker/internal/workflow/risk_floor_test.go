@@ -55,7 +55,12 @@ func TestReviewNeedsHighRiskFloor(t *testing.T) {
 func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 
-	enforced := riskFloorFailClosedResult(passPkt)
+	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+	enforced, err := w.riskFloorFailClosedResult(passPkt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if enforced.Status != packet.StatusNeedsSolReview || enforced.Risk != packet.RiskHigh {
 		t.Fatalf("status=%s risk=%s", enforced.Status, enforced.Risk)
 	}
@@ -65,16 +70,25 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 	if enforced.RequirementCoverage == "covered" {
 		t.Fatalf("reviewerのPASS内容をfail closed結果へ捏造している: %#v", enforced)
 	}
+	if len(enforced.Targets) != 1 || enforced.Targets[0] != "internal/task/change.go:diff" {
+		t.Fatalf("semantic review targets = %#v", enforced.Targets)
+	}
 }
 
 func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
+	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
 	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"],"sol_question":"q"}`)
-	if resolved := resolveRiskFloorReemit(compliant); resolved.Status != packet.StatusNeedsSolReview {
-		t.Fatalf("準拠再出力はそのまま採用すべき: %#v", resolved)
+	resolved, err := w.resolveRiskFloorReemit(compliant)
+	if err != nil || resolved.Status != packet.StatusNeedsSolReview {
+		t.Fatalf("準拠再出力はそのまま採用すべき: %#v err=%v", resolved, err)
 	}
 
 	passed := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"pass again","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
-	closed := resolveRiskFloorReemit(passed)
+	closed, err := w.resolveRiskFloorReemit(passed)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if closed.Status != packet.StatusNeedsSolReview || !strings.Contains(closed.Summary, "PASS") {
 		t.Fatalf("再違反はfail closedのNEEDS_SOL_REVIEWへ昇格すべき: %#v", closed)
 	}
@@ -294,6 +308,9 @@ func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -394,6 +411,9 @@ func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
 	}
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
