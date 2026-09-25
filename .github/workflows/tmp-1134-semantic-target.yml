@@ -19,7 +19,9 @@ jobs:
         with:
           go-version-file: glm-worker/go.mod
       - name: Apply patch
-        run: python3 .github/scripts/tmp_1134_semantic_target.py
+        run: |
+          python3 .github/scripts/tmp_1134_semantic_target.py
+          python3 .github/scripts/tmp_1134_fixture_patch.py
       - name: Format
         run: |
           gofmt -w \
@@ -28,7 +30,8 @@ jobs:
             glm-worker/internal/workflow/workflow.go \
             glm-worker/internal/workflow/resume_flow.go \
             glm-worker/internal/workflow/risk_floor_test.go \
-            glm-worker/internal/workflow/risk_floor_parent_evidence_test.go
+            glm-worker/internal/workflow/risk_floor_parent_evidence_test.go \
+            glm-worker/internal/workflow/diagnostic_test.go
       - name: Targeted tests
         working-directory: glm-worker
         run: go test ./internal/reviewtarget ./internal/parentevidence ./internal/workflow
@@ -36,12 +39,15 @@ jobs:
         run: |
           git config user.name web-gpt
           git config user.email web-gpt@users.noreply.github.com
-          git rm .github/workflows/tmp-1134-semantic-target.yml .github/scripts/tmp_1134_semantic_target.py
+          git rm .github/workflows/tmp-1134-semantic-target.yml \
+            .github/scripts/tmp_1134_semantic_target.py \
+            .github/scripts/tmp_1134_fixture_patch.py
           git add glm-worker/internal/reviewtarget/target.go \
             glm-worker/internal/parentevidence/review.go \
             glm-worker/internal/workflow/workflow.go \
             glm-worker/internal/workflow/resume_flow.go \
             glm-worker/internal/workflow/risk_floor_test.go \
-            glm-worker/internal/workflow/risk_floor_parent_evidence_test.go
+            glm-worker/internal/workflow/risk_floor_parent_evidence_test.go \
+            glm-worker/internal/workflow/diagnostic_test.go
           git commit -m "fix: bind risk-floor targets to provable task diff"
           git push origin HEAD:web-gpt/1134-parent-evidence-diff-target
