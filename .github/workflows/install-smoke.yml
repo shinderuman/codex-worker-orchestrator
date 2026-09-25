@@ -20,28 +20,35 @@ jobs:
         include:
           - name: installer
             command: ./tests/install_smoke.sh
+            quality_setup: true
           - name: detached-runtime-identity
             command: ./tests/install_detached_runtime_identity_smoke.sh
-          - name: linked-worktree-hook-ownership
-            command: sh ./tests/install_hook_linked_worktree_smoke.sh
+            quality_setup: true
+          - name: hook-ownership
+            command: sh ./tests/install_hook_ownership_smoke.sh
+            quality_setup: false
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
+        if: ${{ matrix.quality_setup }}
         id: quality-tools
         run: |
           GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
           printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
+        if: ${{ matrix.quality_setup }}
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
       - name: Cache quality tools
+        if: ${{ matrix.quality_setup }}
         continue-on-error: true
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
           key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
       - name: Install quality tools
+        if: ${{ matrix.quality_setup }}
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
