@@ -1,0 +1,53 @@
+name: Temporary #1160 owner inventory
+
+on:
+  push:
+    branches:
+      - web-gpt/1160-codex-working-set
+
+permissions:
+  contents: write
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: web-gpt/1160-codex-working-set
+          fetch-depth: 0
+
+      - name: Fresh Go owner inventory
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          rows=[]
+          for p in Path('glm-worker').rglob('*.go'):
+              text=p.read_text(errors='replace')
+              lines=text.count('\n')+1
+              funcs=len(re.findall(r'^func\s+(?:\([^\n]*\)\s*)?[A-Za-z0-9_]+\s*\(', text, re.M))
+              tests=len(re.findall(r'^func\s+Test[A-Za-z0-9_]+\s*\(', text, re.M))
+              rows.append((lines, funcs, tests, str(p)))
+          for lines, funcs, tests, path in sorted(rows, reverse=True)[:35]:
+              print(f'OWNER {lines:5d} lines {funcs:3d} funcs {tests:3d} tests {path}')
+
+          p=Path('glm-worker/internal/workflow/workflow_test.go')
+          text=p.read_text()
+          for i,line in enumerate(text.splitlines(),1):
+              m=re.match(r'func\s+(Test[A-Za-z0-9_]+|[a-zA-Z_][A-Za-z0-9_]*)\s*\(', line)
+              if m:
+                  print(f'WORKFLOW_DECL {i:5d} {m.group(1)}')
+          PY
+
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-1160-inventory.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'chore: remove #1160 inventory workflow'
+          git push origin HEAD:web-gpt/1160-codex-working-set
