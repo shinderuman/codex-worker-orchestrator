@@ -55,8 +55,8 @@ jobs:
           resume = resume_path.read_text()
           resume = replace_once(
               resume,
-              'return resolveRiskFloorReemit(reemitResult)',
-              'return w.resolveRiskFloorReemit(reemitResult)',
+              'return resolveRiskFloorReemit(result), false, nil',
+              'return w.resolveRiskFloorReemit(result), false, nil',
               'resume risk-floor resolve',
           )
           resume_path.write_text(resume)
