@@ -23,7 +23,11 @@ func loadConfiguredSettingEnv(cfg config.AppConfig) (map[string]string, []string
 		}
 		settingsPath = filepath.Join(configDir, "settings.json")
 	}
-	settingEnv, deletes, err := loadSettingEnvPath(settingsPath, cfg.ClaudeSettingsOverride)
+	return loadSettingEnvPath(settingsPath, cfg.ClaudeSettingsOverride)
+}
+
+func loadInvocationSettingEnv(cfg config.AppConfig) (map[string]string, []string, error) {
+	settingEnv, deletes, err := loadConfiguredSettingEnv(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
