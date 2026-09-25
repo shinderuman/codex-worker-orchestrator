@@ -29,7 +29,7 @@ func TestGLMWaitContractPinsLongBlockingBoundary(t *testing.T) {
 		t.Fatal("glm-execution.md missing wait section")
 	}
 	for _, token := range []string{
-		"// @exec: {\"yield_time_ms\":21600000,\"max_output_tokens\":4096}",
+		"// @exec: {\"yield_time_ms\":21600000,\"max_output_tokens\":8192}",
 		"background_terminal_max_timeout=21600000",
 		"tools.exec_command",
 		"tools.write_stdin",
