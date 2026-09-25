@@ -310,6 +310,13 @@ func newMultiRepoEnv(t *testing.T) *multiRepoEnv {
 			t.Fatal(err)
 		}
 	}
+	managedSettings, err := json.Marshal(map[string]any{"env": map[string]string{"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.claudeCfg, "settings.json"), managedSettings, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	writeMultiRepoQualityToolStubs(t, env.qualityBin)
 
 	for _, prompt := range []struct{ name, body string }{

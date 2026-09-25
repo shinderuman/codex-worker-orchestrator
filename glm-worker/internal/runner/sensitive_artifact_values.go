@@ -17,7 +17,7 @@ const (
 )
 
 func SensitiveArtifactValues(cfg config.AppConfig) ([]SensitiveArtifactValue, error) {
-	settingEnv, deletes, err := loadConfiguredSettingEnv(cfg)
+	settingEnv, deletes, err := loadConfiguredSettingEnvRaw(cfg)
 	if err != nil {
 		return nil, err
 	}
