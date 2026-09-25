@@ -309,7 +309,7 @@ func (w *Workflow) resolveResumedReviewResult(
 	result packet.Result,
 ) (packet.Result, bool, error) {
 	if checkpoint.RiskFloorReemit {
-		return resolveRiskFloorReemit(result), false, nil
+		return w.resolveRiskFloorReemit(result), false, nil
 	}
 	decision := w.state.ReadOr("last-decision", "none")
 	highRiskFloor := w.resolveReviewResumeRisk(workerResult, checkpoint).high

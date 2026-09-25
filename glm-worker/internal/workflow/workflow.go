@@ -480,17 +480,17 @@ func (w *Workflow) riskFloorReemit(
 	} else if stopped {
 		return packet.Result{}, true, nil
 	}
-	return resolveRiskFloorReemit(reemitResult), false, nil
+	return w.resolveRiskFloorReemit(reemitResult), false, nil
 }
 
-func resolveRiskFloorReemit(reemitResult packet.Result) packet.Result {
+func (w *Workflow) resolveRiskFloorReemit(reemitResult packet.Result) packet.Result {
 	if reemitResult.Status == packet.StatusNeedsSolReview {
 		return reemitResult
 	}
-	return riskFloorFailClosedResult(reemitResult)
+	return w.riskFloorFailClosedResult(reemitResult)
 }
 
-func riskFloorFailClosedResult(reemitResult packet.Result) packet.Result {
+func (w *Workflow) riskFloorFailClosedResult(reemitResult packet.Result) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
@@ -500,10 +500,29 @@ func riskFloorFailClosedResult(reemitResult packet.Result) packet.Result {
 		TestEvidence:        "reviewer同一sessionへNEEDS_SOL_REVIEW/HIGH再出力を依頼済み",
 		Issues:              fmt.Sprintf("reviewer再出力が非許容STATUS(%s)を返却", reemitResult.Status),
 		ResidualRisk:        "reviewer判断だけでHIGH RISK経路を完了扱いできない",
-		Targets:             []string{"glm-worker/internal/workflow/workflow.go:riskFloorFailClosedResult"},
+		Targets:             w.riskFloorReviewTargets(),
 		Artifacts:           append([]string(nil), reemitResult.Artifacts...),
 		SolQuestion:         "reviewer非準拠時の最終確認・修正方針をSolが判断する",
 	}
+}
+
+func (w *Workflow) riskFloorReviewTargets() []string {
+	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+	if err == nil {
+		targets := make([]string, 0, len(paths))
+		for _, path := range paths {
+			if path != "" {
+				targets = append(targets, path+":diff")
+			}
+		}
+		if len(targets) > 0 {
+			return targets
+		}
+	}
+	if path, err := w.state.CurrentTaskAuthorityPath(); err == nil && path != "" {
+		return []string{path + ":1"}
+	}
+	return []string{implementationPlanFile + ":1"}
 }
 
 func (w *Workflow) captureWorkerEndSnapshot() (state.GitSnapshot, bool, error) {
