@@ -1,0 +1,132 @@
+name: Temporary #1160 harnesslint owner split
+
+on:
+  push:
+    branches:
+      - web-gpt/1160-codex-working-set
+
+permissions:
+  contents: write
+
+jobs:
+  split:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: web-gpt/1160-codex-working-set
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: glm-worker/go.mod
+          cache: false
+      - name: Split independent Go lint rule owners
+        shell: bash
+        run: |
+          cat >/tmp/move_funcs.go <<'GO'
+          package main
+
+          import (
+              "fmt"
+              "go/ast"
+              "go/parser"
+              "go/token"
+              "os"
+              "sort"
+              "strings"
+          )
+
+          type move struct {
+              start, end int
+              name, target, text string
+          }
+
+          func main() {
+              source := "glm-worker/internal/harnesslint/go_rules.go"
+              targets := map[string]string{}
+              add := func(target string, names ...string) {
+                  for _, name := range names { targets[name] = target }
+              }
+              add("glm-worker/internal/harnesslint/go_rules_contract_pins.go",
+                  "prosePinGoViolations", "prosePinFunctionViolations", "prosePinNodeViolations", "proseLiteralViolations",
+                  "instructionHashGoViolations", "importsPackage", "containsSHA256Reference",
+                  "isStringPinCall", "stringLiteral", "hasDocumentReference", "proseLike", "nodeText",
+              )
+              add("glm-worker/internal/harnesslint/go_rules_test_structure.go",
+                  "shadowProductionViolations", "scenarioSelfTestViolations", "testSizeViolations",
+              )
+              add("glm-worker/internal/harnesslint/go_rules_thin_wrapper.go",
+                  "thinWrapperViolations", "thinWrapperViolation", "hasBuildConstraint",
+                  "parameterNames", "forwardedCall", "argumentsForward",
+              )
+
+              data, err := os.ReadFile(source)
+              if err != nil { panic(err) }
+              fset := token.NewFileSet()
+              file, err := parser.ParseFile(fset, source, data, parser.ParseComments)
+              if err != nil { panic(err) }
+              var moves []move
+              seen := map[string]bool{}
+              grouped := map[string][]move{}
+              for _, decl := range file.Decls {
+                  fn, ok := decl.(*ast.FuncDecl)
+                  if !ok { continue }
+                  target, ok := targets[fn.Name.Name]
+                  if !ok { continue }
+                  start := fset.Position(fn.Pos()).Offset
+                  end := fset.Position(fn.End()).Offset
+                  m := move{start:start, end:end, name:fn.Name.Name, target:target, text:string(data[start:end])}
+                  moves = append(moves, m)
+                  grouped[target] = append(grouped[target], m)
+                  seen[fn.Name.Name] = true
+              }
+              for name := range targets {
+                  if !seen[name] { panic(fmt.Sprintf("requested function not found: %s", name)) }
+              }
+              sort.Slice(moves, func(i, j int) bool { return moves[i].start > moves[j].start })
+              remaining := append([]byte(nil), data...)
+              for _, m := range moves { remaining = append(remaining[:m.start], remaining[m.end:]...) }
+              if err := os.WriteFile(source, remaining, 0o644); err != nil { panic(err) }
+
+              files := make([]string, 0, len(grouped))
+              for target := range grouped { files = append(files, target) }
+              sort.Strings(files)
+              for _, target := range files {
+                  group := grouped[target]
+                  sort.Slice(group, func(i, j int) bool { return group[i].start < group[j].start })
+                  parts := []string{"package harnesslint"}
+                  for _, m := range group { parts = append(parts, strings.TrimSpace(m.text)) }
+                  if err := os.WriteFile(target, []byte(strings.Join(parts, "\n\n")+"\n"), 0o644); err != nil { panic(err) }
+              }
+          }
+          GO
+          go run /tmp/move_funcs.go
+          go run golang.org/x/tools/cmd/goimports@v0.26.0 -w \
+            glm-worker/internal/harnesslint/go_rules.go \
+            glm-worker/internal/harnesslint/go_rules_contract_pins.go \
+            glm-worker/internal/harnesslint/go_rules_test_structure.go \
+            glm-worker/internal/harnesslint/go_rules_thin_wrapper.go
+          gofmt -w \
+            glm-worker/internal/harnesslint/go_rules.go \
+            glm-worker/internal/harnesslint/go_rules_contract_pins.go \
+            glm-worker/internal/harnesslint/go_rules_test_structure.go \
+            glm-worker/internal/harnesslint/go_rules_thin_wrapper.go
+          git diff --check
+          wc -l \
+            glm-worker/internal/harnesslint/go_rules.go \
+            glm-worker/internal/harnesslint/go_rules_contract_pins.go \
+            glm-worker/internal/harnesslint/go_rules_test_structure.go \
+            glm-worker/internal/harnesslint/go_rules_thin_wrapper.go
+      - name: Targeted harnesslint validation
+        working-directory: glm-worker
+        run: go test ./internal/harnesslint
+      - name: Commit semantic split and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-1160-harnesslint-split.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'refactor: split harnesslint Go rule owners'
+          git push origin HEAD:web-gpt/1160-codex-working-set
