@@ -209,7 +209,12 @@ func terminalPayloadRealWorkerTerminalResult(t *testing.T) {
 	}, "\n")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(home, "claude-config"), 0o700); err != nil {
+	claudeConfigDir := filepath.Join(home, "claude-config")
+	if err := os.MkdirAll(claudeConfigDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	managedSettings := []byte("{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://api.z.ai/api/anthropic\"}}")
+	if err := os.WriteFile(filepath.Join(claudeConfigDir, "settings.json"), managedSettings, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -225,7 +230,7 @@ func terminalPayloadRealWorkerTerminalResult(t *testing.T) {
 		"GLM_WORKER_PROMPT_DIR=" + prompts,
 		"GLM_WORKER_CLAUDE_BIN=" + claudeBin,
 		"GLM_WORKER_TELEMETRY_CONTENT=false",
-		"CLAUDE_CONFIG_DIR=" + filepath.Join(home, "claude-config"),
+		"CLAUDE_CONFIG_DIR=" + claudeConfigDir,
 	}
 	orchestration.runLongCell(t, ctx, repo, os.Args[0], []string{"-test.run=TestTerminalPayloadBoundarySingleRender"}, extraEnv)
 	orchestration.captureTerminal(taskKey)
