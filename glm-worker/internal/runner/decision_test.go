@@ -42,7 +42,8 @@ func newDecisionFixture(t *testing.T, resultLine string) (*ClaudeRunner, string,
 	dir := t.TempDir()
 	argumentsPath := filepath.Join(dir, "args")
 	environmentPath := filepath.Join(dir, "env")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"" + argumentsPath + "\"\nenv >\"" + environmentPath + "\"\nprintf '%s\\n' '" + resultLine + "'\n"
+	stdinPath := argumentsPath + ".stdin"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"" + argumentsPath + "\"\nenv >\"" + environmentPath + "\"\ncat >\"" + stdinPath + "\"\nprintf '%s\\n' '" + resultLine + "'\n"
 	return newDecisionRunner(t, script), argumentsPath, environmentPath
 }
 
@@ -85,8 +86,15 @@ func TestDecideRunsIsolatedStructuredCall(t *testing.T) {
 	if got := argumentAfter(args, "--mcp-config"); got != `{"mcpServers":{}}` {
 		t.Fatalf("decision MCP = %q: %#v", got, args)
 	}
-	if args[len(args)-1] != "prompt-json" {
-		t.Fatalf("decision promptが最後の引数であるべき: %#v", args)
+	if containsArgument(args, "prompt-json") {
+		t.Fatalf("decision promptをargvへ載せるべきではありません: %#v", args)
+	}
+	stdin, err := os.ReadFile(argumentsPath + ".stdin")
+	if err != nil {
+		t.Fatalf("decision stdin capture: %v", err)
+	}
+	if string(stdin) != "prompt-json" {
+		t.Fatalf("decision prompt stdin = %q", stdin)
 	}
 
 	environment := readLines(t, environmentPath)
