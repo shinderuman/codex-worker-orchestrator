@@ -181,6 +181,9 @@ func reviewDiffFileCoversTarget(target string, file DiffFile, body string) bool 
 	if start, end, ok := NumericRange(locator); ok {
 		return reviewDiffSectionCoversLines(section, start, end)
 	}
+	if locator == reviewtarget.WholeFileDiffLocator {
+		return true
+	}
 	return locator != "" && strings.Contains(section, locator)
 }
 

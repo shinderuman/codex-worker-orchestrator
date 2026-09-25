@@ -421,6 +421,9 @@ func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
