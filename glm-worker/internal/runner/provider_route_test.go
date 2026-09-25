@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,11 +65,15 @@ func TestManagedProviderRouteRejectsDefaultAnthropicExposure(t *testing.T) {
 
 func TestManagedProviderRouteTombstoneCannotReflowFromParent(t *testing.T) {
 	cfg := managedProviderConfig(t, map[string]any{anthropicBaseURLEnv: "https://api.z.ai/api/anthropic"})
-	cfg.ClaudeSettingsOverride = writeOverrideFile(t, `{"env":{"ANTHROPIC_BASE_URL":null}}`)
+	overrideBody, err := json.Marshal(map[string]any{"env": map[string]any{anthropicBaseURLEnv: nil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ClaudeSettingsOverride = writeOverrideFile(t, string(overrideBody))
 	cfg.EnvAllowlist = []string{anthropicBaseURLEnv}
 	t.Setenv(anthropicBaseURLEnv, "https://api.z.ai/api/anthropic")
 
-	_, _, err := loadConfiguredSettingEnv(cfg)
+	_, _, err = loadConfiguredSettingEnv(cfg)
 	if err == nil || !strings.Contains(err.Error(), "fallbackを拒否") {
 		t.Fatalf("tombstone must fail closed instead of reflowing parent route: %v", err)
 	}
@@ -110,7 +115,7 @@ func TestManagedProviderRouteGuardCoversRunDecideAndProbe(t *testing.T) {
 	_, err := r.Run(state.WorkerRole, "provider-route", "opus", false, "high", "prompt", filepath.Join(t.TempDir(), "run.out"))
 	assertRouteGuard("Run", err)
 
-	_, err = r.Decide("opus", "low", `{"type":"object"}`, "prompt")
+	_, err = r.Decide("opus", "low", "{}", "prompt")
 	assertRouteGuard("Decide", err)
 
 	_, err = r.Probe("opus")
