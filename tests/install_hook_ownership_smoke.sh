@@ -402,3 +402,42 @@ if git -C "$repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then
 	printf '%s\n' 'invalid ownership state changed core.hooksPath' >&2
 	exit 1
 fi
+
+repo="$tmp/linked-worktree-main"
+linked="$tmp/linked-worktree"
+new_repo "$repo"
+sh "$helper" install "$repo" "$guard_bin"
+managed=$(managed_hooks_path "$repo")
+state=$(state_path "$repo")
+test -f "$state"
+test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
+test "$(git -C "$repo" config --local --get-all core.hooksPath)" = "$managed"
+
+git -C "$repo" worktree add -q --detach "$linked" HEAD
+main_git_dir=$(git -C "$repo" rev-parse --git-dir)
+linked_git_dir=$(git -C "$linked" rev-parse --git-dir)
+test "$main_git_dir" != "$linked_git_dir"
+test "$(managed_hooks_path "$linked")" = "$managed"
+test "$(git -C "$linked" config --local --get-all core.hooksPath)" = "$managed"
+
+sh "$helper" install "$linked" "$guard_bin" >"$tmp/linked-install.stdout" 2>"$tmp/linked-install.stderr"
+grep -Fq 'refreshed installer-owned snapshot hooks' "$tmp/linked-install.stdout"
+test ! -s "$tmp/linked-install.stderr"
+test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
+test "$(git -C "$repo" config --local --get-all core.hooksPath)" = "$managed"
+test "$(git -C "$linked" config --local --get-all core.hooksPath)" = "$managed"
+assert_managed_hooks "$linked"
+
+sh "$helper" retire "$linked" "$guard_bin" >"$tmp/linked-retire.stdout" 2>"$tmp/linked-retire.stderr"
+grep -Fq 'retired installer-owned core.hooksPath' "$tmp/linked-retire.stdout"
+test ! -s "$tmp/linked-retire.stderr"
+test ! -e "$state"
+test ! -e "$managed"
+if git -C "$repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then
+	printf '%s\n' 'linked-worktree retire left shared core.hooksPath configured' >&2
+	exit 1
+fi
+if git -C "$linked" config --local --get-all core.hooksPath >/dev/null 2>&1; then
+	printf '%s\n' 'linked-worktree retire left linked core.hooksPath configured' >&2
+	exit 1
+fi
