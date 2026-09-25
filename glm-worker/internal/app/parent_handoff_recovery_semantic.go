@@ -9,8 +9,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const parentHandoffRecoverySemanticStateKey = "last-review"
-
 type parentHandoffRecoverySemanticResult struct {
 	Availability string          `json:"availability"`
 	Authority    string          `json:"authority"`
@@ -19,6 +17,8 @@ type parentHandoffRecoverySemanticResult struct {
 	Packet       json.RawMessage `json:"packet,omitempty"`
 	Reason       string          `json:"reason,omitempty"`
 }
+
+const parentHandoffRecoverySemanticStateKey = "last-review"
 
 func projectParentHandoffRecoverySemantic(
 	st *state.StateStore,
