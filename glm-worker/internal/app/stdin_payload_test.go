@@ -26,7 +26,7 @@ func needsSolReviewPacketApp() string {
 		TestEvidence:        "ev",
 		Issues:              "i",
 		ResidualRisk:        "r",
-		Targets:             []string{"t"},
+		Targets:             []string{"glm-worker/internal/app/stdin_payload_test.go:needsSolReviewPacketApp"},
 		SolQuestion:         "q",
 	})
 }
