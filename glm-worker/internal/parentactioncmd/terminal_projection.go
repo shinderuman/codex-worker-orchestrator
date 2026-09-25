@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 type parentActionTerminalProjectionStats struct {
@@ -28,8 +30,9 @@ type parentActionTerminalProjectionError struct {
 }
 
 const (
-	parentActionTerminalBudgetBytes   = 2400
-	parentActionTerminalJSONLineBytes = 1
+	parentActionTerminalAuthorityBudgetBytes = 2 * 1024
+	parentActionTerminalBudgetBytes          = packet.MaxPacketBytes + parentActionTerminalAuthorityBudgetBytes
+	parentActionTerminalJSONLineBytes        = 1
 )
 
 func (e *parentActionTerminalProjectionError) Error() string {
