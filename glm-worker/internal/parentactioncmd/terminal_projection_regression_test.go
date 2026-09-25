@@ -23,7 +23,7 @@ func TestTerminalProjectionPreservesNoArtifactDecisionBeyondLegacyBudget(t *test
 	if len(terminal) > packet.MaxPacketBytes {
 		t.Fatalf("fixture must remain a valid packet-sized semantic result: bytes=%d max=%d", len(terminal), packet.MaxPacketBytes)
 	}
-	handoff := representativeHandoff(t, "small", "small")
+	handoff := representativeHandoff(t, strings.Repeat("baseline-", 180), strings.Repeat("validation-", 180))
 
 	var stdout bytes.Buffer
 	if err := writeProjectedTerminalEnvelope(&stdout, terminal, handoff); err != nil {
@@ -46,6 +46,9 @@ func TestTerminalProjectionPreservesNoArtifactDecisionBeyondLegacyBudget(t *test
 	}
 	if envelope.Projection.ProjectedBytes <= 2400 {
 		t.Fatalf("fixture must exercise the reopened >2400-byte regression: projected=%d", envelope.Projection.ProjectedBytes)
+	}
+	if envelope.Projection.RawBytes <= envelope.Projection.ProjectedBytes {
+		t.Fatalf("projection did not reduce model-visible bytes: %+v", envelope.Projection)
 	}
 	if envelope.Projection.ProjectedBytes != stdout.Len() {
 		t.Fatalf("projected_bytes=%d stdout=%d", envelope.Projection.ProjectedBytes, stdout.Len())
