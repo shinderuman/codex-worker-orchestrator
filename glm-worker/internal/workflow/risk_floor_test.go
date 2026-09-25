@@ -70,7 +70,7 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 	if enforced.RequirementCoverage == "covered" {
 		t.Fatalf("reviewerのPASS内容をfail closed結果へ捏造している: %#v", enforced)
 	}
-	if len(enforced.Targets) != 1 || enforced.Targets[0] != "internal/task/change.go:diff" {
+	if len(enforced.Targets) != 1 || enforced.Targets[0] != "internal/task/change.go:@diff" {
 		t.Fatalf("semantic review targets = %#v", enforced.Targets)
 	}
 }

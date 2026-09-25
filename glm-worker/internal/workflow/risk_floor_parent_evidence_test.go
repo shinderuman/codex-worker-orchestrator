@@ -24,7 +24,7 @@ func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(enforced.Targets) != 1 || enforced.Targets[0] != "tracked.md:diff" {
+	if len(enforced.Targets) != 1 || enforced.Targets[0] != "tracked.md:@diff" {
 		t.Fatalf("targets = %#v", enforced.Targets)
 	}
 	if err := validateTypedResult(enforced); err != nil {
