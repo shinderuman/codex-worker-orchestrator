@@ -7,6 +7,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 type constraintError struct {
@@ -293,6 +295,11 @@ func validateTargetElement(result Result, element string, seen map[string]struct
 	if strings.EqualFold(trimmed, ReportOnlyTargets) &&
 		(result.Status != StatusFixRequired || element != ReportOnlyTargets || len(result.Targets) != 1) {
 		return false, newConstraintError("targets-packet-reserved", "TARGETSの予約値PACKETはFIX_REQUIREDの報告再出力専用です: 実装修正では具体対象を指定してください")
+	}
+	if result.Status == StatusNeedsSolReview {
+		if _, _, err := reviewtarget.Parse(trimmed); err != nil {
+			return false, newConstraintError("targets-review-shape", fmt.Sprintf("NEEDS_SOL_REVIEWのTARGETSはrepository相対path:locator形式で指定してください: %q", element))
+		}
 	}
 	return false, nil
 }

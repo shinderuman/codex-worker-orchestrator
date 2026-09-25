@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -84,20 +85,7 @@ func BuildReviewManifest(st *state.StateStore) (Manifest, error) {
 }
 
 func ReviewTarget(target string) (string, string, error) {
-	target = strings.TrimSpace(target)
-	separator := strings.Index(target, ":")
-	if separator <= 0 || separator == len(target)-1 {
-		return "", "", fmt.Errorf("review evidence target must use repository-relative path:locator form: %s", target)
-	}
-	path := strings.TrimSpace(target[:separator])
-	locator := strings.TrimSpace(target[separator+1:])
-	if path == "" || locator == "" || !RelativePath(path) {
-		return "", "", fmt.Errorf("review evidence target must use repository-relative path:locator form: %s", target)
-	}
-	if strings.ContainsAny(path, " ,()") {
-		return "", "", fmt.Errorf("review evidence target path is not machine-addressable: %s", target)
-	}
-	return path, locator, nil
+	return reviewtarget.Parse(target)
 }
 
 func (p *Projector) markReviewProof(parts []Part) error {

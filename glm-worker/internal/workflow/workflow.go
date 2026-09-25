@@ -500,7 +500,7 @@ func riskFloorFailClosedResult(reemitResult packet.Result) packet.Result {
 		TestEvidence:        "reviewer同一sessionへNEEDS_SOL_REVIEW/HIGH再出力を依頼済み",
 		Issues:              fmt.Sprintf("reviewer再出力が非許容STATUS(%s)を返却", reemitResult.Status),
 		ResidualRisk:        "reviewer判断だけでHIGH RISK経路を完了扱いできない",
-		Targets:             []string{"直近reviewer出力と最終diff"},
+		Targets:             []string{"glm-worker/internal/workflow/workflow.go:riskFloorFailClosedResult"},
 		Artifacts:           append([]string(nil), reemitResult.Artifacts...),
 		SolQuestion:         "reviewer非準拠時の最終確認・修正方針をSolが判断する",
 	}

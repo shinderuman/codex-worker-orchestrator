@@ -79,7 +79,7 @@ func reviewFixPacketApp() string {
 		TestEvidence:        "ev",
 		Issues:              "i",
 		ResidualRisk:        "r",
-		Targets:             []string{"t"},
+		Targets:             []string{"glm-worker/internal/app/parent_review_test.go:reviewFixPacketApp"},
 		SolQuestion:         "q",
 	})
 }
