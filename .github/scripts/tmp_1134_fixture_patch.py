@@ -10,6 +10,8 @@ def replace_one(path: str, old: str, new: str) -> None:
     p.write_text(text.replace(old, new, 1))
 
 
+test_target = "glm-worker/internal/workflow/risk_floor_test.go"
+
 replace_one(
     "glm-worker/internal/workflow/risk_floor_test.go",
     '''func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
@@ -21,27 +23,18 @@ replace_one(
 \t}}
 \tw := newWorkflowT(t, st, r)
 ''',
-    '''func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
+    f'''func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {{
 \tst := newStateStoreT(t)
-\tr := &scriptedRunner{steps: []runnerStep{
-\t\t{structured: implementedPacketWithRisk("high risk work", "HIGH")},
-\t\t{structured: passPacket()},
-\t\t{structured: passPacket()},
-\t}}
+\tr := &scriptedRunner{{steps: []runnerStep{{
+\t\t{{structured: implementedPacketWithRisk("high risk work", "HIGH")}},
+\t\t{{structured: passPacket()}},
+\t\t{{structured: passPacket()}},
+\t}}}}
 \tw := newWorkflowT(t, st, r)
-\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+\tw.collectChangedPaths = func(string, string) ([]string, error) {{ return []string{{"{test_target}"}}, nil }}
 ''',
 )
 
-replace_one(
-    "glm-worker/internal/workflow/risk_floor_test.go",
-    '''func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
-\tst := newStateStoreT(t)
-''',
-    '''func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
-\tst := newStateStoreT(t)
-''',
-)
 replace_one(
     "glm-worker/internal/workflow/risk_floor_test.go",
     '''\tr := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
@@ -49,11 +42,11 @@ replace_one(
 
 \tif err := w.ExecuteResume(); err != nil {
 ''',
-    '''\tr := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
+    f'''\tr := &scriptedRunner{{steps: []runnerStep{{{{structured: passPacket()}}}}}}
 \tw := newWorkflowT(t, st, r)
-\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+\tw.collectChangedPaths = func(string, string) ([]string, error) {{ return []string{{"{test_target}"}}, nil }}
 
-\tif err := w.ExecuteResume(); err != nil {
+\tif err := w.ExecuteResume(); err != nil {{
 ''',
 )
 
@@ -68,14 +61,14 @@ replace_one(
 \t}}
 \tw := newWorkflowT(t, st, r)
 ''',
-    '''func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
+    f'''func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {{
 \tst := newStateStoreT(t)
-\tr := &scriptedRunner{steps: []runnerStep{
-\t\t{structured: implementedPacketWithRisk("risky", "HIGH")},
-\t\t{structured: passPacket()},
-\t\t{structured: passPacket()},
-\t}}
+\tr := &scriptedRunner{{steps: []runnerStep{{
+\t\t{{structured: implementedPacketWithRisk("risky", "HIGH")}},
+\t\t{{structured: passPacket()}},
+\t\t{{structured: passPacket()}},
+\t}}}}
 \tw := newWorkflowT(t, st, r)
-\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+\tw.collectChangedPaths = func(string, string) ([]string, error) {{ return []string{{"{test_target}"}}, nil }}
 ''',
 )
