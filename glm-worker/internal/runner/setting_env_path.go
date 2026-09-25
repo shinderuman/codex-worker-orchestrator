@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
+
+const anthropicBaseURLEnv = "ANTHROPIC_BASE_URL"
 
 func loadConfiguredSettingEnv(cfg config.AppConfig) (map[string]string, []string, error) {
 	settingsPath := cfg.ClaudeSettingsPath
@@ -19,7 +23,48 @@ func loadConfiguredSettingEnv(cfg config.AppConfig) (map[string]string, []string
 		}
 		settingsPath = filepath.Join(configDir, "settings.json")
 	}
-	return loadSettingEnvPath(settingsPath, cfg.ClaudeSettingsOverride)
+	settingEnv, deletes, err := loadSettingEnvPath(settingsPath, cfg.ClaudeSettingsOverride)
+	if err != nil {
+		return nil, nil, err
+	}
+	if cfg.ClaudeSettingsPath != "" {
+		if err := validateManagedProviderRoute(cfg, settingEnv, deletes); err != nil {
+			return nil, nil, err
+		}
+	}
+	return settingEnv, deletes, nil
+}
+
+func validateManagedProviderRoute(cfg config.AppConfig, settingEnv map[string]string, deletes []string) error {
+	baseURL := strings.TrimSpace(settingEnv[anthropicBaseURLEnv])
+	if baseURL == "" && !stringListContains(deletes, anthropicBaseURLEnv) && stringListContains(cfg.EnvAllowlist, anthropicBaseURLEnv) {
+		baseURL = strings.TrimSpace(os.Getenv(anthropicBaseURLEnv))
+	}
+	if baseURL == "" {
+		return fmt.Errorf("managed Claude runtimeの%sがありません: Anthropic既定providerへのfallbackを拒否します", anthropicBaseURLEnv)
+	}
+	if routesToAnthropicProvider(baseURL) {
+		return fmt.Errorf("managed Claude runtimeの%sがunsupported Anthropic providerを指しています", anthropicBaseURLEnv)
+	}
+	return nil
+}
+
+func routesToAnthropicProvider(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	return host == "anthropic.com" || strings.HasSuffix(host, ".anthropic.com")
+}
+
+func stringListContains(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func loadSettingEnvPath(settingsPath, overridePath string) (map[string]string, []string, error) {
