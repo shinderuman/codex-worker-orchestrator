@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -26,6 +27,9 @@ func TestParentHandoffRecoveryIncludesReviewerSemanticResult(t *testing.T) {
 	machine, err := result.MachineJSON()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(machine) <= 2400 {
+		t.Fatalf("fixture must exceed the parent-action terminal projection budget: bytes=%d", len(machine))
 	}
 	if err := st.Write(parentHandoffRecoverySemanticStateKey, string(machine)); err != nil {
 		t.Fatal(err)
@@ -134,8 +138,8 @@ func recoveryReviewerDecisionResult() packet.Result {
 		Status:          packet.StatusNeedsSolDecision,
 		Risk:            packet.RiskHigh,
 		Decision:        "choose the bounded implementation path",
-		Evidence:        "reviewer found a semantic decision boundary that the parent must resolve",
-		Options:         "retain current behavior or apply the bounded change",
+		Evidence:        strings.Repeat("reviewer semantic evidence remains exact; ", 32),
+		Options:         strings.Repeat("retain current behavior or apply the bounded change; ", 28),
 		Recommendation:  "apply the bounded change",
 		TestObligations: "run focused recovery tests and the repository quality gate",
 		Targets:         []string{"glm-worker/internal/app/parent_handoff_recovery_semantic.go"},
