@@ -1,0 +1,146 @@
+name: Temporary #1160 runner test redistribution
+
+on:
+  push:
+    branches:
+      - web-gpt/1160-codex-working-set
+
+permissions:
+  contents: write
+
+jobs:
+  redistribute:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: web-gpt/1160-codex-working-set
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: glm-worker/go.mod
+          cache: false
+      - name: Move runner tests to semantic owners
+        shell: bash
+        run: |
+          cat >/tmp/move_decls.go <<'GO'
+          package main
+
+          import (
+              "fmt"
+              "go/ast"
+              "go/parser"
+              "go/token"
+              "os"
+              "sort"
+              "strings"
+          )
+
+          type move struct { start, end int; name, target, text string }
+
+          func declName(decl ast.Decl) string {
+              switch d := decl.(type) {
+              case *ast.FuncDecl:
+                  return d.Name.Name
+              case *ast.GenDecl:
+                  if d.Tok != token.TYPE || len(d.Specs) != 1 { return "" }
+                  if s, ok := d.Specs[0].(*ast.TypeSpec); ok { return s.Name.Name }
+              }
+              return ""
+          }
+
+          func main() {
+              source := "glm-worker/internal/runner/runner_test.go"
+              targetFor := map[string]string{}
+              add := func(target string, names ...string) { for _, n := range names { targetFor[n] = target } }
+
+              add("glm-worker/internal/runner/runtime_environment_test.go",
+                  "TestBuildChildEnvDropsInjectionChannelsAndKeepsEssentials",
+                  "TestBuildChildEnvHonorsExtraAllowlist",
+                  "TestBuildChildEnvSettingEnvOverridesParent",
+                  "readLines", "containsArgument", "argumentAfter", "containsString",
+                  "TestIsolationSettingsBlocksAllScopesAndCustomizations",
+                  "TestIsolationSettingsFallsBackToHomeForRules",
+                  "TestLoadSettingEnvExtractsOnlyAllowlistedKeys",
+                  "TestLoadSettingEnvToleratesMissingFile",
+              )
+              add("glm-worker/internal/runner/isolation_migration_test.go",
+                  "isolationMigrationFixture",
+                  "TestClaudeRunnerReMintSessionOnStaleIsolationPolicy",
+                  "newIsolationMigrationFixture", "invocationArgs", "seedStaleReadyRole",
+                  "TestIsolationMigrationWorkerFirstClearsReviewerSession",
+                  "TestIsolationMigrationReviewerFirstClearsWorkerSession",
+                  "TestIsolationMigrationClearsNonCallingReadyRole",
+                  "TestIsolationPolicyPersistedBeforeExecutionOnFailure",
+                  "TestIsolationPolicyWriteFailureAbortsBeforeClaude",
+                  "assertFullIsolationArgs",
+                  "TestIsolationArgsIdenticalAcrossRoleAndResume",
+              )
+              add("glm-worker/internal/runner/five_hour_limit_resume_test.go",
+                  "newFiveHourLimitResumeFixture", "testFirstRunFiveHourLimitResumesSameSession",
+                  "TestFirstWorkerRunFiveHourLimitResumesSameSession",
+                  "TestFirstReviewerRunFiveHourLimitResumesSameSession",
+              )
+
+              data, err := os.ReadFile(source); if err != nil { panic(err) }
+              fset := token.NewFileSet()
+              file, err := parser.ParseFile(fset, source, data, parser.ParseComments); if err != nil { panic(err) }
+              var moves []move
+              grouped := map[string][]move{}
+              seen := map[string]bool{}
+              for _, decl := range file.Decls {
+                  name := declName(decl)
+                  target, ok := targetFor[name]
+                  if !ok { continue }
+                  start := fset.Position(decl.Pos()).Offset
+                  end := fset.Position(decl.End()).Offset
+                  m := move{start:start, end:end, name:name, target:target, text:string(data[start:end])}
+                  moves = append(moves, m); grouped[target] = append(grouped[target], m); seen[name] = true
+              }
+              for n := range targetFor { if !seen[n] { panic(fmt.Sprintf("requested declaration not found: %s", n)) } }
+              sort.Slice(moves, func(i,j int) bool { return moves[i].start > moves[j].start })
+              remaining := append([]byte(nil), data...)
+              for _, m := range moves { remaining = append(remaining[:m.start], remaining[m.end:]...) }
+              if err := os.WriteFile(source, remaining, 0o644); err != nil { panic(err) }
+
+              names := make([]string,0,len(grouped)); for n := range grouped { names=append(names,n) }; sort.Strings(names)
+              for _, target := range names {
+                  group := grouped[target]; sort.Slice(group, func(i,j int) bool { return group[i].start < group[j].start })
+                  existing, err := os.ReadFile(target)
+                  if os.IsNotExist(err) { existing=[]byte("package runner\n") } else if err != nil { panic(err) }
+                  parts := []string{strings.TrimRight(string(existing), "\n")}
+                  for _, m := range group { parts=append(parts, strings.TrimSpace(m.text)) }
+                  if err := os.WriteFile(target, []byte(strings.Join(parts,"\n\n")+"\n"), 0o644); err != nil { panic(err) }
+              }
+          }
+          GO
+          go run /tmp/move_decls.go
+          go run golang.org/x/tools/cmd/goimports@v0.26.0 -w \
+            glm-worker/internal/runner/runner_test.go \
+            glm-worker/internal/runner/runtime_environment_test.go \
+            glm-worker/internal/runner/isolation_migration_test.go \
+            glm-worker/internal/runner/five_hour_limit_resume_test.go
+          gofmt -w \
+            glm-worker/internal/runner/runner_test.go \
+            glm-worker/internal/runner/runtime_environment_test.go \
+            glm-worker/internal/runner/isolation_migration_test.go \
+            glm-worker/internal/runner/five_hour_limit_resume_test.go
+          git diff --check
+          wc -l \
+            glm-worker/internal/runner/runner_test.go \
+            glm-worker/internal/runner/runtime_environment_test.go \
+            glm-worker/internal/runner/isolation_migration_test.go \
+            glm-worker/internal/runner/five_hour_limit_resume_test.go
+      - name: Targeted runner validation
+        working-directory: glm-worker
+        run: go test ./internal/runner
+      - name: Commit redistribution and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-1160-runner-tests.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'refactor: redistribute runner semantic tests'
+          git push origin HEAD:web-gpt/1160-codex-working-set
