@@ -115,7 +115,6 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		state:                   st,
 		runner:                  r,
 		output:                  output,
-		temp:                    "",
 		captureSnapshot:         state.CaptureGitSnapshot,
 		captureBoundarySnapshot: state.CaptureRepositoryBoundarySnapshot,
 		collectChangedPaths: func(repoRoot, _ string) ([]string, error) {
@@ -285,7 +284,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Model:          w.config.WorkerModel,
 			ReadOnly:       pocStage,
 			Effort:         w.config.EscalatedEffort,
-			Prompt:         prompt,
+			Prompt:          prompt,
 			OriginalPrompt: prompt,
 			Request:        request,
 			Decision:       decision,
