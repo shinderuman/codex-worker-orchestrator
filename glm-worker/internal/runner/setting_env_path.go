@@ -47,19 +47,29 @@ func validateManagedProviderRoute(cfg config.AppConfig, settingEnv map[string]st
 	if baseURL == "" {
 		return fmt.Errorf("managed Claude runtimeの%sがありません: Anthropic既定providerへのfallbackを拒否します", anthropicBaseURLEnv)
 	}
-	if routesToAnthropicProvider(baseURL) {
+	anthropic, err := routesToAnthropicProvider(baseURL)
+	if err != nil {
+		return fmt.Errorf("managed Claude runtimeの%sを解釈できません: %w", anthropicBaseURLEnv, err)
+	}
+	if anthropic {
 		return fmt.Errorf("managed Claude runtimeの%sがunsupported Anthropic providerを指しています", anthropicBaseURLEnv)
 	}
 	return nil
 }
 
-func routesToAnthropicProvider(rawURL string) bool {
+func routesToAnthropicProvider(rawURL string) (bool, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return false
+		return false, err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false, fmt.Errorf("HTTP(S) URLではありません")
 	}
 	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
-	return host == "anthropic.com" || strings.HasSuffix(host, ".anthropic.com")
+	if host == "" {
+		return false, fmt.Errorf("hostがありません")
+	}
+	return host == "anthropic.com" || strings.HasSuffix(host, ".anthropic.com"), nil
 }
 
 func stringListContains(values []string, wanted string) bool {
