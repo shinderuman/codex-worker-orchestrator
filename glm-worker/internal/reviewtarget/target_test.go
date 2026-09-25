@@ -11,6 +11,8 @@ func TestParseReviewTarget(t *testing.T) {
 		wantErr     bool
 	}{
 		{name: "symbol", target: "glm-worker/internal/packet/validate.go:validateTargets", wantPath: "glm-worker/internal/packet/validate.go", wantLocator: "validateTargets"},
+		{name: "symbol named diff", target: "foo.go:diff", wantPath: "foo.go", wantLocator: "diff"},
+		{name: "whole file diff", target: "foo.go:@diff", wantPath: "foo.go", wantLocator: WholeFileDiffLocator},
 		{name: "line", target: "a.go:10", wantPath: "a.go", wantLocator: "10"},
 		{name: "range", target: "a.go:10-20", wantPath: "a.go", wantLocator: "10-20"},
 		{name: "padded", target: " a.go:10 ", wantPath: "a.go", wantLocator: "10"},
