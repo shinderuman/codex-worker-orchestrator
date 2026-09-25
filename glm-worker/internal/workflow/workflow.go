@@ -13,6 +13,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -480,17 +481,25 @@ func (w *Workflow) riskFloorReemit(
 	} else if stopped {
 		return packet.Result{}, true, nil
 	}
-	return resolveRiskFloorReemit(reemitResult), false, nil
-}
-
-func resolveRiskFloorReemit(reemitResult packet.Result) packet.Result {
-	if reemitResult.Status == packet.StatusNeedsSolReview {
-		return reemitResult
+	resolved, err := w.resolveRiskFloorReemit(reemitResult)
+	if err != nil {
+		return packet.Result{}, false, err
 	}
-	return riskFloorFailClosedResult(reemitResult)
+	return resolved, false, nil
 }
 
-func riskFloorFailClosedResult(reemitResult packet.Result) packet.Result {
+func (w *Workflow) resolveRiskFloorReemit(reemitResult packet.Result) (packet.Result, error) {
+	if reemitResult.Status == packet.StatusNeedsSolReview {
+		return reemitResult, nil
+	}
+	return w.riskFloorFailClosedResult(reemitResult)
+}
+
+func (w *Workflow) riskFloorFailClosedResult(reemitResult packet.Result) (packet.Result, error) {
+	targets, err := w.riskFloorReviewTargets()
+	if err != nil {
+		return packet.Result{}, err
+	}
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
@@ -500,10 +509,27 @@ func riskFloorFailClosedResult(reemitResult packet.Result) packet.Result {
 		TestEvidence:        "reviewer同一sessionへNEEDS_SOL_REVIEW/HIGH再出力を依頼済み",
 		Issues:              fmt.Sprintf("reviewer再出力が非許容STATUS(%s)を返却", reemitResult.Status),
 		ResidualRisk:        "reviewer判断だけでHIGH RISK経路を完了扱いできない",
-		Targets:             []string{"glm-worker/internal/workflow/workflow.go:riskFloorFailClosedResult"},
+		Targets:             targets,
 		Artifacts:           append([]string(nil), reemitResult.Artifacts...),
 		SolQuestion:         "reviewer非準拠時の最終確認・修正方針をSolが判断する",
+	}, nil
+}
+
+func (w *Workflow) riskFloorReviewTargets() ([]string, error) {
+	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+	if err != nil {
+		return nil, fmt.Errorf("risk floor review targets: %w", err)
 	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("risk floor review targets: current task has no changed paths")
+	}
+	paths = append([]string(nil), paths...)
+	sort.Strings(paths)
+	targets := make([]string, 0, len(paths))
+	for _, path := range paths {
+		targets = append(targets, fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator))
+	}
+	return targets, nil
 }
 
 func (w *Workflow) captureWorkerEndSnapshot() (state.GitSnapshot, bool, error) {

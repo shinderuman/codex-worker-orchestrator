@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -117,8 +119,16 @@ func newParentReviewOpportunity(t *testing.T) (config.AppConfig, *state.StateSto
 	return cfg, st
 }
 
+func writeParentReviewTaskChange(t *testing.T, cfg config.AppConfig) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "parent-review-change.txt"), []byte("task change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func applyParentReviewFix(t *testing.T, cfg config.AppConfig) {
 	t.Helper()
+	writeParentReviewTaskChange(t, cfg)
 	fix := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("fixed")},
 		{structured: passPacketApp()},
@@ -480,6 +490,7 @@ func TestExecuteFixWithoutOriginRecordsUnknownOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	writeParentReviewTaskChange(t, cfg)
 	fix := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("fixed")},
 		{structured: passPacketApp()},
@@ -522,6 +533,7 @@ func TestExecuteFixOriginValuesRecorded(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		writeParentReviewTaskChange(t, cfg)
 		fix := &fakeRunner{steps: []fakeStep{
 			{structured: implementedPacketApp("fixed")},
 			{structured: passPacketApp()},
