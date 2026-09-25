@@ -66,27 +66,29 @@ type EventEvidence struct {
 }
 
 type InputItem struct {
-	CallID        string          `json:"call_id"`
-	Role          string          `json:"role"`
-	Phase         string          `json:"phase"`
-	PacketStatus  string          `json:"packet_status"`
-	Outcome       string          `json:"outcome"`
-	StartedAt     string          `json:"started_at"`
-	DurationMS    int64           `json:"duration_ms"`
-	Usage         UsageProjection `json:"usage"`
-	ToolUseCounts map[string]int  `json:"tool_use_counts,omitempty"`
-	Events        []EventEvidence `json:"events,omitempty"`
-	Summary       string          `json:"summary"`
-	Issues        string          `json:"issues"`
-	Decision      string          `json:"decision"`
+	CallID              string          `json:"call_id"`
+	Role                string          `json:"role"`
+	Phase               string          `json:"phase"`
+	PacketStatus        string          `json:"packet_status"`
+	Outcome             string          `json:"outcome"`
+	StartedAt           string          `json:"started_at"`
+	DurationMS          int64           `json:"duration_ms"`
+	Usage               UsageProjection `json:"usage"`
+	SourceEvidenceBytes int             `json:"source_evidence_bytes"`
+	ToolUseCounts       map[string]int  `json:"tool_use_counts,omitempty"`
+	Events              []EventEvidence `json:"events,omitempty"`
+	Summary             string          `json:"summary"`
+	Issues              string          `json:"issues"`
+	Decision            string          `json:"decision"`
 }
 
 type ShadowInput struct {
-	Schema      string            `json:"schema"`
-	TaskID      string            `json:"bundle_task_id"`
-	ItemsSHA256 string            `json:"items_sha256"`
-	SourceFiles map[string]string `json:"source_files"`
-	Items       []InputItem       `json:"items"`
+	Schema              string            `json:"schema"`
+	TaskID              string            `json:"bundle_task_id"`
+	ItemsSHA256         string            `json:"items_sha256"`
+	SourceFiles         map[string]string `json:"source_files"`
+	SourceEvidenceBytes int               `json:"source_evidence_bytes"`
+	Items               []InputItem       `json:"items"`
 }
 
 type packetProjection struct {
@@ -102,15 +104,19 @@ const packetTextBoundBytes = 768
 const packetTextOmissionMarker = "[前方を省略] "
 
 const (
-	eventEvidenceMaxItems      = 32
-	eventSearchPathMaxItems    = 16
-	eventBlockMaxItems         = 24
-	eventValidationMaxItems    = 12
+	eventEvidenceMaxItems   = 32
+	eventSearchPathMaxItems = 16
+	eventBlockMaxItems      = 24
+	eventValidationMaxItems = 12
 )
 
 func BuildInput(taskID string, logs []state.ModelCallLog, records []state.TaskEventRecord) (ShadowInput, error) {
 	toolCounts := toolUseCountsByCall(records)
 	events := eventEvidenceByCall(records)
+	sourceBytesByCall, totalSourceBytes, err := sourceEvidenceByteCounts(logs, records)
+	if err != nil {
+		return ShadowInput{}, err
+	}
 	items := make([]InputItem, 0, len(logs))
 	for _, log := range logs {
 		if log.CallType != state.CallTypeTask {
@@ -118,13 +124,14 @@ func BuildInput(taskID string, logs []state.ModelCallLog, records []state.TaskEv
 		}
 		packet := packetProjectionFromResponse(log.Response)
 		items = append(items, InputItem{
-			CallID:       log.CallID,
-			Role:         string(log.Role),
-			Phase:        log.Phase,
-			PacketStatus: log.PacketStatus,
-			Outcome:      log.Outcome,
-			StartedAt:    log.StartedAt.UTC().Format(time.RFC3339Nano),
-			DurationMS:   log.WallDurationMS,
+			CallID:              log.CallID,
+			Role:                string(log.Role),
+			Phase:               log.Phase,
+			PacketStatus:        log.PacketStatus,
+			Outcome:             log.Outcome,
+			StartedAt:           log.StartedAt.UTC().Format(time.RFC3339Nano),
+			DurationMS:          log.WallDurationMS,
+			SourceEvidenceBytes: sourceBytesByCall[log.CallID],
 			Usage: UsageProjection{
 				InputTokens:              log.TreeUsage.InputTokens,
 				CacheCreationInputTokens: log.TreeUsage.CacheCreationInputTokens,
@@ -148,7 +155,8 @@ func BuildInput(taskID string, logs []state.ModelCallLog, records []state.TaskEv
 			"telemetry": "telemetry/" + taskID + ".jsonl",
 			"events":    "events/" + taskID + ".jsonl",
 		},
-		Items: items,
+		SourceEvidenceBytes: totalSourceBytes,
+		Items:               items,
 	}
 	digest, err := ItemsSHA256(items)
 	if err != nil {
@@ -196,6 +204,34 @@ func boundedPacketText(text string) string {
 		start++
 	}
 	return packetTextOmissionMarker + string(tail[start:])
+}
+
+func sourceEvidenceByteCounts(logs []state.ModelCallLog, records []state.TaskEventRecord) (map[string]int, int, error) {
+	byCall := make(map[string]int)
+	total := 0
+	for _, log := range logs {
+		data, err := json.Marshal(log)
+		if err != nil {
+			return nil, 0, fmt.Errorf("shadow telemetry sourceをJSON化できません: %w", err)
+		}
+		size := len(data) + 1
+		total += size
+		if log.CallType == state.CallTypeTask && log.CallID != "" {
+			byCall[log.CallID] += size
+		}
+	}
+	for _, record := range records {
+		data, err := json.Marshal(record)
+		if err != nil {
+			return nil, 0, fmt.Errorf("shadow event sourceをJSON化できません: %w", err)
+		}
+		size := len(data) + 1
+		total += size
+		if record.CallID != "" {
+			byCall[record.CallID] += size
+		}
+	}
+	return byCall, total, nil
 }
 
 func eventEvidenceByCall(records []state.TaskEventRecord) map[string][]EventEvidence {
