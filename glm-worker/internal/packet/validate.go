@@ -7,6 +7,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 type constraintError struct {
@@ -294,6 +296,11 @@ func validateTargetElement(result Result, element string, seen map[string]struct
 		(result.Status != StatusFixRequired || element != ReportOnlyTargets || len(result.Targets) != 1) {
 		return false, newConstraintError("targets-packet-reserved", "TARGETSの予約値PACKETはFIX_REQUIREDの報告再出力専用です: 実装修正では具体対象を指定してください")
 	}
+	if result.Status == StatusNeedsSolReview {
+		if _, _, err := reviewtarget.Parse(trimmed); err != nil {
+			return false, newConstraintError("targets-review-shape", fmt.Sprintf("NEEDS_SOL_REVIEWのTARGETSはrepository相対path:locator形式で指定してください: %q", element))
+		}
+	}
 	return false, nil
 }
 
@@ -389,10 +396,10 @@ func validateArtifactPath(path, root, resolvedRoot string, seen map[string]struc
 	return nil
 }
 
-func pathWithinRoot(root string, path string) bool {
-	relative, err := filepath.Rel(root, path)
-	if err != nil || relative == "." || relative == ".." {
+func pathWithinRoot(root, candidate string) bool {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == "." || rel == ".." {
 		return false
 	}
-	return !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
