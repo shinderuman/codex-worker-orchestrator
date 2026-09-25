@@ -148,11 +148,7 @@ trap 'release_install_lock; exit 129' HUP
 trap 'release_install_lock; exit 130' INT
 trap 'release_install_lock; exit 143' TERM
 
-state_path=$(git -C "$repo_root" rev-parse --git-path codex-worker-orchestrator/hooks-path.state)
-case "$state_path" in
-/*) ;;
-*) state_path="$repo_root/$state_path" ;;
-esac
+state_path="$common_dir/codex-worker-orchestrator/hooks-path.state"
 
 state_present=0
 state_kind=
