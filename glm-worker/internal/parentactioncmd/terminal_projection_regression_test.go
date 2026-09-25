@@ -1,6 +1,8 @@
 package parentactioncmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -23,9 +25,20 @@ func TestTerminalProjectionPreservesNoArtifactDecisionBeyondLegacyBudget(t *test
 	}
 	handoff := representativeHandoff(t, "small", "small")
 
-	envelope, err := projectParentActionTerminalEnvelope(terminal, handoff)
+	var stdout bytes.Buffer
+	if err := writeProjectedTerminalEnvelope(&stdout, terminal, handoff); err != nil {
+		t.Fatalf("write projected terminal envelope: %v", err)
+	}
+	if stdout.Len() > parentActionTerminalBudgetBytes {
+		t.Fatalf("model-visible stdout exceeds budget: bytes=%d budget=%d", stdout.Len(), parentActionTerminalBudgetBytes)
+	}
+	machineJSON, err := decodeSingleMachineJSON(stdout.Bytes(), "projected terminal envelope")
 	if err != nil {
-		t.Fatalf("projection failed: %v", err)
+		t.Fatalf("projected stdout is not one machine JSON value: %v", err)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
+		t.Fatal(err)
 	}
 	assertEnvelopeWithinBudget(t, envelope)
 	if envelope.Projection == nil {
@@ -33,6 +46,9 @@ func TestTerminalProjectionPreservesNoArtifactDecisionBeyondLegacyBudget(t *test
 	}
 	if envelope.Projection.ProjectedBytes <= 2400 {
 		t.Fatalf("fixture must exercise the reopened >2400-byte regression: projected=%d", envelope.Projection.ProjectedBytes)
+	}
+	if envelope.Projection.ProjectedBytes != stdout.Len() {
+		t.Fatalf("projected_bytes=%d stdout=%d", envelope.Projection.ProjectedBytes, stdout.Len())
 	}
 	if envelope.Projection.BudgetBytes != parentActionTerminalBudgetBytes {
 		t.Fatalf("budget=%d want=%d", envelope.Projection.BudgetBytes, parentActionTerminalBudgetBytes)
