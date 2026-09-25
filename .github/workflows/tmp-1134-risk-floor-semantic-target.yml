@@ -51,6 +51,16 @@ jobs:
           text = replace_once(text, marker, helper, 'risk-floor target helper')
           workflow_path.write_text(text)
 
+          resume_path = Path('glm-worker/internal/workflow/resume_flow.go')
+          resume = resume_path.read_text()
+          resume = replace_once(
+              resume,
+              'return resolveRiskFloorReemit(reemitResult)',
+              'return w.resolveRiskFloorReemit(reemitResult)',
+              'resume risk-floor resolve',
+          )
+          resume_path.write_text(resume)
+
           test_path = Path('glm-worker/internal/workflow/risk_floor_test.go')
           tests = test_path.read_text()
           tests = replace_once(
@@ -75,7 +85,7 @@ jobs:
           tests = tests.replace('closed := resolveRiskFloorReemit(passed)', 'closed := w.resolveRiskFloorReemit(passed)', 1)
           test_path.write_text(tests)
           PY
-          gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/risk_floor_test.go
+          gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/resume_flow.go glm-worker/internal/workflow/risk_floor_test.go
           cd glm-worker
           go test ./internal/workflow
       - name: Commit focused change and remove temporary workflow
@@ -84,6 +94,6 @@ jobs:
           rm .github/workflows/tmp-1134-risk-floor-semantic-target.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/risk_floor_test.go .github/workflows/tmp-1134-risk-floor-semantic-target.yml
+          git add glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/resume_flow.go glm-worker/internal/workflow/risk_floor_test.go .github/workflows/tmp-1134-risk-floor-semantic-target.yml
           git commit -m 'fix: bind risk-floor fallback to task review targets'
           git push origin HEAD:web-gpt/1134-risk-floor-semantic-target
