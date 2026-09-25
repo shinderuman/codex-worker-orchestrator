@@ -64,6 +64,15 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 		Handoff:    projectedHandoff,
 		Projection: &stats,
 	}
+	if err := applyRecoverableEvidenceProjection(&candidate, &stats); err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	if stats.ProjectedBytes <= stats.BudgetBytes {
+		return candidate, nil
+	}
 	return fitSemanticTerminalProjection(candidate, stats, terminalJSON)
 }
 
@@ -105,31 +114,32 @@ func fitSemanticTerminalProjection(candidate parentActionTerminalEnvelopePayload
 	stats.OmittedFields = sortedUniqueStrings(append(stats.OmittedFields, prefixedFields("terminal", terminalOmitted)...))
 	candidate.Terminal = projectedTerminal
 	candidate.Projection = &stats
+	if err := applyRecoverableEvidenceProjection(&candidate, &stats); err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
 	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
-	}
-	return fitRecoverableEvidenceProjection(candidate, stats)
-}
-
-func fitRecoverableEvidenceProjection(candidate parentActionTerminalEnvelopePayload, stats parentActionTerminalProjectionStats) (parentActionTerminalEnvelopePayload, error) {
-	locatorProjected, projectedFields, changed, err := projectRecoverableTerminalEvidence(candidate.Terminal)
-	if err != nil {
-		return parentActionTerminalEnvelopePayload{}, err
-	}
-	if changed {
-		stats.TerminalMode = "semantic-locators"
-		stats.ProjectedFields = sortedUniqueStrings(append(stats.ProjectedFields, prefixedFields("terminal", projectedFields)...))
-		candidate.Terminal = locatorProjected
-		candidate.Projection = &stats
-		if err := finalizeProjectionStats(&candidate, &stats); err != nil {
-			return parentActionTerminalEnvelopePayload{}, err
-		}
 	}
 	if stats.ProjectedBytes <= stats.BudgetBytes {
 		return candidate, nil
 	}
 	stats.Overflow = true
 	return parentActionTerminalEnvelopePayload{}, &parentActionTerminalProjectionError{stats: stats}
+}
+
+func applyRecoverableEvidenceProjection(candidate *parentActionTerminalEnvelopePayload, stats *parentActionTerminalProjectionStats) error {
+	locatorProjected, projectedFields, changed, err := projectRecoverableTerminalEvidence(candidate.Terminal)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	stats.TerminalMode = "semantic-locators"
+	stats.ProjectedFields = sortedUniqueStrings(append(stats.ProjectedFields, prefixedFields("terminal", projectedFields)...))
+	candidate.Terminal = locatorProjected
+	candidate.Projection = stats
+	return nil
 }
 
 func writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON json.RawMessage, projectionErr *parentActionTerminalProjectionError) (parentActionTerminalEnvelopePayload, error) {
