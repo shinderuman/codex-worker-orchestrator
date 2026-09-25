@@ -38,11 +38,16 @@ func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.
 	if err != nil {
 		return err
 	}
-	value := projectParentHandoffRecovery(buildParentHandoffWithConfig(cfg, st))
+	full := buildParentHandoffWithConfig(cfg, st)
+	value := projectParentHandoffRecovery(full)
 	applyParentGuardRecovery(st, &value)
 	applyParentQualityGateRecovery(st, &value)
-	digest, _ := parentevidence.Digest(value)
+	projected, err := projectParentHandoffRecoverySemantic(st, full, value)
+	if err != nil {
+		return err
+	}
+	digest, _ := parentevidence.Digest(projected)
 	return parentevidence.FinishReadInScope(st, scope, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
-		return parentevidence.WriteMeasuredJSON(stdout, value)
+		return parentevidence.WriteMeasuredJSON(stdout, projected)
 	})
 }
