@@ -126,7 +126,7 @@ func (e *ParentValidationEvidence) ResolvedFor(form string) bool {
 
 func (r Result) MachineJSON() ([]byte, error) {
 	if r.Status == StatusNeedsSolReview {
-		if err := validateReviewTargets(r); err != nil {
+		if err := validateTargets(r); err != nil {
 			return nil, fmt.Errorf("NEEDS_SOL_REVIEW machine result: %w", err)
 		}
 	}
