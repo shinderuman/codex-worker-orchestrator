@@ -396,10 +396,10 @@ func validateArtifactPath(path, root, resolvedRoot string, seen map[string]struc
 	return nil
 }
 
-func pathWithinRoot(root, candidate string) bool {
-	rel, err := filepath.Rel(root, candidate)
-	if err != nil || rel == "." || rel == ".." {
+func pathWithinRoot(root string, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == "." || relative == ".." {
 		return false
 	}
-	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
