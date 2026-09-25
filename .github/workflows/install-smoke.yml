@@ -22,6 +22,8 @@ jobs:
             command: ./tests/install_smoke.sh
           - name: detached-runtime-identity
             command: ./tests/install_detached_runtime_identity_smoke.sh
+          - name: linked-worktree-hook-ownership
+            command: sh ./tests/install_hook_linked_worktree_smoke.sh
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
