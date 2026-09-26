@@ -235,6 +235,16 @@ func runReviewResumeDeltaCase(t *testing.T, tt reviewResumeDeltaCase) reviewResu
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	out := &bytes.Buffer{}
 	w := newReviewResumeWorkflow(t, st, r, out)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		paths := make([]string, 0, 2)
+		if tt.planAtReviewStart != "" || tt.planAtStop != "" || tt.planAtResume != "" {
+			paths = append(paths, state.ParentPlanFile)
+		}
+		if tt.taskAtReviewStart != "" || tt.taskAtStop != "" || tt.taskAtResume != "" {
+			paths = append(paths, activeTaskRepoPath)
+		}
+		return paths, nil
+	}
 	repoRoot := w.config.RepoRoot
 	if tt.planAtReviewStart != "" {
 		writeRepoParentPlan(t, repoRoot, tt.planAtReviewStart)
