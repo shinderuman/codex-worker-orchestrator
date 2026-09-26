@@ -54,7 +54,23 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 	}
 	paths = append([]string(nil), paths...)
 	sort.Strings(paths)
-	targets := canonicalReviewTargets(paths)
+	targets := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, raw := range paths {
+		path := strings.TrimSpace(raw)
+		if path == "" {
+			continue
+		}
+		target := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
+		if _, _, err := reviewtarget.Parse(target); err != nil {
+			return nil, fmt.Errorf("current task review targets: changed path %q cannot be represented as a review target: %w", path, err)
+		}
+		if _, duplicate := seen[target]; duplicate {
+			continue
+		}
+		seen[target] = struct{}{}
+		targets = append(targets, target)
+	}
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("current task review targets: current task has no changed paths")
 	}
