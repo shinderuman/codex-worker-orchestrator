@@ -78,9 +78,14 @@ def inject_after_constructor(path, test_name, constructors, body):
     if line_end < 0:
         line_end = len(segment)
     line_start = segment.rfind('\n', 0, pos) + 1
-    indent = segment[line_start:pos]
-    indent = indent[:len(indent) - len(indent.lstrip())]
-    insertion = '\n' + indent + body
+    line = segment[line_start:line_end]
+    match = re.search(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*:?=', line)
+    if not match:
+        raise SystemExit(f'{path}: cannot determine workflow variable in {test_name}: {line!r}')
+    workflow_var = match.group(1)
+    indent = line[:len(line) - len(line.lstrip())]
+    rendered = body.replace('{workflow}', workflow_var)
+    insertion = '\n' + indent + rendered
     segment = segment[:line_end] + insertion + segment[line_end:]
     p.write_text(text[:start] + segment + text[end:])
 
@@ -111,11 +116,10 @@ for name in [
 ]:
     inject_test_collector('glm-worker/internal/workflow/parent_review_test.go', name, 'tracked.go')
 
-inject_test_collector('glm-worker/internal/workflow/task_lifecycle_test.go', 'TestAutoFixNonConvergence', 'tracked.go')
 inject_test_collector('glm-worker/internal/workflow/parent_validation_test.go', 'exhaustParentValidationFixBudget', 'tracked.go')
 
-actual_diff_body = 'w.collectChangedPaths = func(repoRoot, _ string) ([]string, error) { return collectTaskChangedPaths(repoRoot, w.state) }'
-fixed_target_body = 'w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }'
+actual_diff_body = '{workflow}.collectChangedPaths = func(repoRoot, _ string) ([]string, error) { return collectTaskChangedPaths(repoRoot, {workflow}.state) }'
+fixed_target_body = '{workflow}.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }'
 
 for name in [
     'TestReviewEndWorktreeMutationRejectsPass',
@@ -125,38 +129,17 @@ for name in [
     'TestReviewEndMutationRejectsFixRequired',
     'TestReviewEndMutationRejectsNeedsSolReview',
 ]:
-    inject_after_constructor(
-        'glm-worker/internal/workflow/review_end_snapshot_test.go',
-        name,
-        ['newMutationWorkflow'],
-        actual_diff_body,
-    )
+    inject_after_constructor('glm-worker/internal/workflow/review_end_snapshot_test.go', name, ['newMutationWorkflow'], actual_diff_body)
 
-inject_after_constructor(
-    'glm-worker/internal/workflow/review_end_snapshot_test.go',
-    'TestReviewEndMutationOnRiskFloorReemitRejects',
-    ['newMutationWorkflowShell'],
-    actual_diff_body,
-)
-
-inject_after_constructor(
-    'glm-worker/internal/workflow/review_end_snapshot_test.go',
-    'TestReviewEndMutationAfterRateLimitResumeRejectsPass',
-    ['newMutationWorkflowShell'],
-    fixed_target_body,
-)
+inject_after_constructor('glm-worker/internal/workflow/review_end_snapshot_test.go', 'TestReviewEndMutationOnRiskFloorReemitRejects', ['newMutationWorkflowShell'], actual_diff_body)
+inject_after_constructor('glm-worker/internal/workflow/review_end_snapshot_test.go', 'TestReviewEndMutationAfterRateLimitResumeRejectsPass', ['newMutationWorkflowShell'], fixed_target_body)
 
 for name in [
     'TestReportOnlyWorktreeMutationFailsClosedBeforeReview',
     'TestReportOnlyIndexMutationFailsClosedBeforeReview',
     'TestReportOnlyHeadMutationFailsClosedBeforeReview',
 ]:
-    inject_after_constructor(
-        'glm-worker/internal/workflow/report_only_snapshot_test.go',
-        name,
-        ['newReportOnlyWorkflow'],
-        actual_diff_body,
-    )
+    inject_after_constructor('glm-worker/internal/workflow/report_only_snapshot_test.go', name, ['newReportOnlyWorkflow'], actual_diff_body)
 
 for name in [
     'TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun',
@@ -164,39 +147,60 @@ for name in [
     'TestReportOnlyComparisonSaveFailureFailsClosed',
     'TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch',
 ]:
-    inject_after_constructor(
-        'glm-worker/internal/workflow/report_only_snapshot_test.go',
-        name,
-        ['newReportOnlyWorkflow', 'newMutationWorkflowShell'],
-        fixed_target_body,
-    )
+    inject_after_constructor('glm-worker/internal/workflow/report_only_snapshot_test.go', name, ['newReportOnlyWorkflow', 'newMutationWorkflowShell'], fixed_target_body)
 
-inject_after_constructor(
-    'glm-worker/internal/workflow/report_only_snapshot_test.go',
-    'TestReportOnlyTransientRecoveryStillEnforcesInvariant',
-    ['newReportOnlyWorkflow'],
-    actual_diff_body,
-)
+inject_after_constructor('glm-worker/internal/workflow/report_only_snapshot_test.go', 'TestReportOnlyTransientRecoveryStillEnforcesInvariant', ['newReportOnlyWorkflow'], actual_diff_body)
 
 for name in [
     'TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot',
     'TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot',
     'TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls',
 ]:
-    inject_after_constructor(
-        'glm-worker/internal/workflow/report_only_snapshot_test.go',
-        name,
-        ['newMutationWorkflowShell'],
-        fixed_target_body,
-    )
+    inject_after_constructor('glm-worker/internal/workflow/report_only_snapshot_test.go', name, ['newMutationWorkflowShell'], fixed_target_body)
 
 for name in [
     'TestPlanFileReviewerMutationUsesExistingSnapshotInvariant',
     'TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant',
 ]:
-    inject_after_constructor(
-        'glm-worker/internal/workflow/plan_file_guard_test.go',
-        name,
-        ['newPlanFileWorkflow'],
-        actual_diff_body,
-    )
+    inject_after_constructor('glm-worker/internal/workflow/plan_file_guard_test.go', name, ['newPlanFileWorkflow'], actual_diff_body)
+
+# Review-resume table helper only gets a target for cases whose expected outcome
+# is fail-closed. Accepted resume cases remain untouched so risk-floor behavior is
+# not changed by test setup.
+patch(
+    'glm-worker/internal/workflow/review_resume_parent_test.go',
+    'func runReviewResumeDeltaCase(t *testing.T, tt reviewResumeDeltaCase) reviewResumeDeltaRun {',
+    'func runReviewResumeDeltaCase(t *testing.T, tt reviewResumeDeltaCase, failClosed bool) reviewResumeDeltaRun {',
+)
+patch(
+    'glm-worker/internal/workflow/review_resume_parent_test.go',
+    '\tw := newReviewResumeWorkflow(t, st, r, out)\n\trepoRoot := w.config.RepoRoot\n',
+    '\tw := newReviewResumeWorkflow(t, st, r, out)\n\tif failClosed {\n\t\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }\n\t}\n\trepoRoot := w.config.RepoRoot\n',
+)
+patch(
+    'glm-worker/internal/workflow/review_resume_parent_test.go',
+    'assertReviewResumeAccepted(t, runReviewResumeDeltaCase(t, tt))',
+    'assertReviewResumeAccepted(t, runReviewResumeDeltaCase(t, tt, false))',
+)
+patch(
+    'glm-worker/internal/workflow/review_resume_parent_test.go',
+    'run := runReviewResumeDeltaCase(t, tt)\n\t\t\tassertReviewResumeStopped',
+    'run := runReviewResumeDeltaCase(t, tt, true)\n\t\t\tassertReviewResumeStopped',
+)
+
+# Other synthetic resume fail-closed tests set the existing collector on only
+# the workflow instance that is expected to synthesize NEEDS_SOL_REVIEW.
+inject_after_constructor('glm-worker/internal/workflow/repository_boundary_activation_test.go', 'TestReviewResumeInactiveHarnessRejectsCoincidentalParentPathChange', ['newReviewResumeWorkflow'], fixed_target_body)
+inject_after_constructor('glm-worker/internal/workflow/review_resume_parent_test.go', 'TestReviewResumeLegacyStateFailsClosed', ['newReviewResumeWorkflow'], fixed_target_body)
+inject_after_constructor('glm-worker/internal/workflow/review_resume_parent_test.go', 'TestReviewResumeParentUpdateThenReviewerMutationFailsClosed', ['newReviewResumeWorkflow'], fixed_target_body)
+
+patch(
+    'glm-worker/internal/workflow/review_resume_parent_test.go',
+    '\tw2 := newReviewResumeWorkflow(t, st, r2, &out2)\n',
+    '\tw2 := newReviewResumeWorkflow(t, st, r2, &out2)\n\tw2.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }\n',
+)
+patch(
+    'glm-worker/internal/workflow/review_resume_parent_canonical_test.go',
+    '\tw3 := newReviewResumeWorkflow(t, st, r3, &out3)\n',
+    '\tw3 := newReviewResumeWorkflow(t, st, r3, &out3)\n\tw3.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }\n',
+)
