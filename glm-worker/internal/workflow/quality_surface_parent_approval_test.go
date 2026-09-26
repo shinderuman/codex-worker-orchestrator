@@ -35,7 +35,7 @@ func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
 
 	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexport GOCACHE=/tmp/go-cache\nexit 0\n")
 	w := NewWorkflow(cfg, st, nil, io.Discard)
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) { return []string{"commentlint"}, nil }
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"commentlint"}, nil }
 	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)

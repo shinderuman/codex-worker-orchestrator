@@ -163,7 +163,7 @@ func (w *Workflow) finishParentValidationNonConvergence(failure packet.Result) e
 }
 
 func (w *Workflow) parentValidationNonConvergedResult(failure packet.Result) (packet.Result, error) {
-	targets, err := w.currentReviewDiffTargets()
+	targets, err := w.resultOrCurrentReviewTargets(failure)
 	if err != nil {
 		return packet.Result{}, fmt.Errorf("parent validation non-convergence review targets: %w", err)
 	}

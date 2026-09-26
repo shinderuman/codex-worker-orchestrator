@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -850,7 +849,7 @@ func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string
 }
 
 func (w *Workflow) nonConvergedResult(reviewResult packet.Result) (packet.Result, error) {
-	targets, err := w.currentReviewDiffTargets()
+	targets, err := w.resultOrCurrentReviewTargets(reviewResult)
 	if err != nil {
 		return packet.Result{}, fmt.Errorf("non-convergence review targets: %w", err)
 	}
