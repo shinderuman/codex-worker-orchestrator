@@ -96,13 +96,4 @@ for name in [
 inject_test_collector('glm-worker/internal/workflow/task_lifecycle_test.go', 'TestAutoFixNonConvergence', 'tracked.go')
 
 # Parent-validation budget tests share one local fixture; keep the override local to that fixture.
-patch(
-    'glm-worker/internal/workflow/parent_validation_test.go',
-    '''\tw := newWorkflowTWithOutput(t, st, r, &output)
-\tw.temp = t.TempDir()
-''',
-    '''\tw := newWorkflowTWithOutput(t, st, r, &output)
-\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.go"}, nil }
-\tw.temp = t.TempDir()
-''',
-)
+inject_test_collector('glm-worker/internal/workflow/parent_validation_test.go', 'exhaustParentValidationFixBudget', 'tracked.go')
