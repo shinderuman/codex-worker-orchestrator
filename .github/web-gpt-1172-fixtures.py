@@ -164,18 +164,16 @@ for name in [
 ]:
     inject_after_constructor('glm-worker/internal/workflow/plan_file_guard_test.go', name, ['newPlanFileWorkflow'], actual_diff_body)
 
-# Review-resume table helper only gets a target for cases whose expected outcome
-# is fail-closed. Accepted resume cases remain untouched so risk-floor behavior is
-# not changed by test setup.
 patch(
     'glm-worker/internal/workflow/review_resume_parent_test.go',
     'func runReviewResumeDeltaCase(t *testing.T, tt reviewResumeDeltaCase) reviewResumeDeltaRun {',
     'func runReviewResumeDeltaCase(t *testing.T, tt reviewResumeDeltaCase, failClosed bool) reviewResumeDeltaRun {',
 )
-patch(
+inject_after_constructor(
     'glm-worker/internal/workflow/review_resume_parent_test.go',
-    '\tw := newReviewResumeWorkflow(t, st, r, out)\n\trepoRoot := w.config.RepoRoot\n',
-    '\tw := newReviewResumeWorkflow(t, st, r, out)\n\tif failClosed {\n\t\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }\n\t}\n\trepoRoot := w.config.RepoRoot\n',
+    'runReviewResumeDeltaCase',
+    ['newReviewResumeWorkflow'],
+    'if failClosed {\n\t\t{workflow}.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }\n\t}',
 )
 patch(
     'glm-worker/internal/workflow/review_resume_parent_test.go',
@@ -188,8 +186,6 @@ patch(
     'run := runReviewResumeDeltaCase(t, tt, true)\n\t\t\tassertReviewResumeStopped',
 )
 
-# Other synthetic resume fail-closed tests set the existing collector on only
-# the workflow instance that is expected to synthesize NEEDS_SOL_REVIEW.
 inject_after_constructor('glm-worker/internal/workflow/repository_boundary_activation_test.go', 'TestReviewResumeInactiveHarnessRejectsCoincidentalParentPathChange', ['newReviewResumeWorkflow'], fixed_target_body)
 inject_after_constructor('glm-worker/internal/workflow/review_resume_parent_test.go', 'TestReviewResumeLegacyStateFailsClosed', ['newReviewResumeWorkflow'], fixed_target_body)
 inject_after_constructor('glm-worker/internal/workflow/review_resume_parent_test.go', 'TestReviewResumeParentUpdateThenReviewerMutationFailsClosed', ['newReviewResumeWorkflow'], fixed_target_body)
