@@ -8,38 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
-const (
-	internalReviewNoTarget     = "none"
-	internalReviewPacketTarget = "PACKET"
-)
-
-func canonicalReviewTargets(values []string) []string {
-	targets := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, raw := range values {
-		value := strings.TrimSpace(raw)
-		if value == "" || value == internalReviewNoTarget || value == internalReviewPacketTarget {
-			continue
-		}
-		target := value
-		if _, _, err := reviewtarget.Parse(target); err != nil {
-			if !strings.Contains(value, "/") && !strings.Contains(value, ".") {
-				continue
-			}
-			target = fmt.Sprintf("%s:%s", value, reviewtarget.WholeFileDiffLocator)
-			if _, _, parseErr := reviewtarget.Parse(target); parseErr != nil {
-				continue
-			}
-		}
-		if _, duplicate := seen[target]; duplicate {
-			continue
-		}
-		seen[target] = struct{}{}
-		targets = append(targets, target)
-	}
-	return targets
-}
-
 func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 	collect := w.collectChangedPaths
 	if w.collectReviewTargetPaths != nil {
