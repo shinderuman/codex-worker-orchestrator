@@ -265,7 +265,7 @@ func TestParentValidationNonConvergenceFixRerunsGateBeforeReview(t *testing.T) {
 	}
 }
 
-func TestParentValidationBudgetExhaustionKeepsFailureTargets(t *testing.T) {
+func TestParentValidationBudgetExhaustionUsesCurrentTaskTargets(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: parentValidationObligatedPacket("initial")},
@@ -292,8 +292,8 @@ func TestParentValidationBudgetExhaustionKeepsFailureTargets(t *testing.T) {
 		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
 	}
 	emitted := output.String()
-	if !strings.Contains(emitted, `"targets":["a.go:@diff"]`) {
-		t.Fatalf("terminal packet must keep the harnesslint failure targets: %s", emitted)
+	if !strings.Contains(emitted, `"targets":["tracked.go:@diff"]`) {
+		t.Fatalf("terminal packet must use the actual current-task review target: %s", emitted)
 	}
 	if !strings.Contains(emitted, "worker fix budget exhausted: machine quality gate") {
 		t.Fatalf("terminal packet summary misattributes the harnesslint failure: %s", emitted)
