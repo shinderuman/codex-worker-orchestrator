@@ -2,9 +2,10 @@ package workflow
 
 import (
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
@@ -20,32 +21,34 @@ func TestCanonicalInternalReviewTargets(t *testing.T) {
 	}
 }
 
-func TestCurrentReviewDiffTargetsFallsBackWithoutBaseline(t *testing.T) {
+func TestCurrentReviewDiffTargetsUsesActualTaskPaths(t *testing.T) {
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) {
-		return nil, errors.New("baseline unavailable")
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"z.go", "a.go", "z.go"}, nil }
+	targets, err := w.currentReviewDiffTargets()
+	if err != nil {
+		t.Fatal(err)
 	}
-	targets := w.currentReviewDiffTargetsOrFallback([]string{"glm-worker/internal/state/snapshot.go:@diff"})
-	if len(targets) != 1 || targets[0] != "glm-worker/internal/state/snapshot.go:@diff" {
-		t.Fatalf("targets = %#v", targets)
+	want := []string{"a.go:@diff", "z.go:@diff"}
+	if !reflect.DeepEqual(targets, want) {
+		t.Fatalf("targets = %#v want %#v", targets, want)
 	}
 }
 
-func TestSyntheticReviewProducersUseCanonicalTargets(t *testing.T) {
-	results := []packet.Result{
-		snapshotFailClosedResult("review-start", "snapshot mismatch"),
-		reportOnlySnapshotFailClosedResult("report-only-end", "snapshot mismatch"),
-		nonConvergedResult(packet.Result{Targets: []string{"a.go"}}),
-		parentValidationNonConvergedResult(packet.Result{Targets: []string{"a.go"}}),
-	}
-	for _, result := range results {
-		if len(result.Targets) == 0 {
-			t.Fatalf("missing targets: %#v", result)
-		}
-		for _, target := range result.Targets {
-			if _, _, err := reviewtarget.Parse(target); err != nil {
-				t.Fatalf("target %q: %v", target, err)
+func TestCurrentReviewDiffTargetsRejectsUnavailableOrEmpty(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		collect func(string, string) ([]string, error)
+		want    string
+	}{
+		{"lookup-failure", func(string, string) ([]string, error) { return nil, errors.New("changed paths unavailable") }, "changed paths unavailable"},
+		{"empty", func(string, string) ([]string, error) { return nil, nil }, "no changed paths"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
+			w.collectChangedPaths = tc.collect
+			if _, err := w.currentReviewDiffTargets(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v want %q", err, tc.want)
 			}
-		}
+		})
 	}
 }

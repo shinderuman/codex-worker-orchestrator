@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
@@ -39,25 +40,19 @@ func canonicalReviewTargets(values []string) []string {
 	return targets
 }
 
-func reviewTargetsOrFallback(values, fallback []string) []string {
-	if targets := canonicalReviewTargets(values); len(targets) > 0 {
-		return targets
-	}
-	return canonicalReviewTargets(fallback)
-}
-
 func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
-	return w.riskFloorReviewTargets()
-}
-
-func (w *Workflow) currentReviewDiffTargetsOrFallback(fallback []string) []string {
-	if w.collectChangedPaths != nil {
-		paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
-		if err == nil {
-			if targets := canonicalReviewTargets(paths); len(targets) > 0 {
-				return targets
-			}
-		}
+	if w.collectChangedPaths == nil {
+		return nil, fmt.Errorf("current task review targets: changed-path collector is unavailable")
 	}
-	return canonicalReviewTargets(fallback)
+	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+	if err != nil {
+		return nil, fmt.Errorf("current task review targets: %w", err)
+	}
+	paths = append([]string(nil), paths...)
+	sort.Strings(paths)
+	targets := canonicalReviewTargets(paths)
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("current task review targets: current task has no changed paths")
+	}
+	return targets, nil
 }
