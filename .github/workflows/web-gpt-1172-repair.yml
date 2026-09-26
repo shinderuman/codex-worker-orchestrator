@@ -7,11 +7,8 @@ on:
     paths:
       - .github/workflows/web-gpt-1172-repair.yml
 
-permissions:
-  contents: write
-
 jobs:
-  repair:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,18 +18,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: glm-worker/go.mod
-      - name: Apply focused fixture corrections
-        run: |
-          python3 .github/web-gpt-1172-repair.py
-          gofmt -w \
-            glm-worker/internal/workflow/risk_floor_test.go \
-            glm-worker/internal/workflow/parent_validation_test.go \
-            glm-worker/internal/workflow/quality_surface_parent_approval_test.go
-          git config user.name web-gpt
-          git config user.email web-gpt@users.noreply.github.com
-          git add glm-worker/internal/workflow
-          git commit -m "test: align fixtures with current-task review targets"
-          git push origin HEAD:web-gpt/1172-review-target-shadow-evidence
       - name: Focused tests
         run: |
           cd glm-worker
