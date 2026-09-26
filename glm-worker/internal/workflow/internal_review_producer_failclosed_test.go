@@ -38,7 +38,7 @@ func TestInternalReviewProducersDoNotEmitWithoutActualTaskTargets(t *testing.T) 
 				st := newStateStoreT(t)
 				var out bytes.Buffer
 				w := newWorkflowTWithOutput(t, st, &scriptedRunner{}, &out)
-				w.collectChangedPaths = mode.collect
+				w.collectReviewTargetPaths = mode.collect
 				before := st.TaskStatus()
 				if err := producer.run(w); err == nil {
 					t.Fatal("missing actual task targets must return an error")

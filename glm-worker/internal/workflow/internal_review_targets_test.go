@@ -23,7 +23,7 @@ func TestCanonicalInternalReviewTargets(t *testing.T) {
 
 func TestCurrentReviewDiffTargetsUsesActualTaskPaths(t *testing.T) {
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"z.go", "a.go", "z.go"}, nil }
+	w.collectReviewTargetPaths = func(string, string) ([]string, error) { return []string{"z.go", "a.go", "z.go"}, nil }
 	targets, err := w.currentReviewDiffTargets()
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestCurrentReviewDiffTargetsRejectsUnavailableOrEmpty(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-			w.collectChangedPaths = tc.collect
+			w.collectReviewTargetPaths = tc.collect
 			if _, err := w.currentReviewDiffTargets(); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v want %q", err, tc.want)
 			}

@@ -41,10 +41,14 @@ func canonicalReviewTargets(values []string) []string {
 }
 
 func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
-	if w.collectChangedPaths == nil {
+	collect := w.collectChangedPaths
+	if w.collectReviewTargetPaths != nil {
+		collect = w.collectReviewTargetPaths
+	}
+	if collect == nil {
 		return nil, fmt.Errorf("current task review targets: changed-path collector is unavailable")
 	}
-	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+	paths, err := collect(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
 	if err != nil {
 		return nil, fmt.Errorf("current task review targets: %w", err)
 	}
