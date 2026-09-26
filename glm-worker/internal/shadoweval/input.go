@@ -282,28 +282,37 @@ func eventEvidencePriority(record state.TaskEventRecord) int {
 	if record.IsError || validationHasCorrectnessSignal(record.Validation) {
 		return 3
 	}
-	hasValidation := record.Validation != nil
-	hasOperation := len(record.SearchPaths) > 0
+	priority := 0
+	if record.Validation != nil {
+		priority = 2
+	} else if len(record.SearchPaths) > 0 {
+		priority = 1
+	}
 	for _, block := range record.Blocks {
-		if block.IsError {
+		blockPriority := eventBlockPriority(block)
+		if blockPriority == 3 {
 			return 3
 		}
-		if block.OperationCategory != "" {
-			hasOperation = true
-		}
-		if len(block.Validation) > 0 {
-			hasValidation = true
-		}
-		for _, observation := range block.Validation {
-			if validationResultHasCorrectnessSignal(observation.Result) {
-				return 3
-			}
+		if blockPriority > priority {
+			priority = blockPriority
 		}
 	}
-	if hasValidation {
+	return priority
+}
+
+func eventBlockPriority(block state.TaskBlockSummary) int {
+	if block.IsError {
+		return 3
+	}
+	for _, observation := range block.Validation {
+		if validationResultHasCorrectnessSignal(observation.Result) {
+			return 3
+		}
+	}
+	if len(block.Validation) > 0 {
 		return 2
 	}
-	if hasOperation {
+	if block.OperationCategory != "" {
 		return 1
 	}
 	return 0
