@@ -84,7 +84,6 @@ func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	repoRoot := w.config.RepoRoot
 	writeRepoActiveTask(t, repoRoot, "task-at-stop\n\n## External feasibility\n\nstatus: not-applicable\n")
 	writeRepoParentPlan(t, repoRoot, "# plan\n\n## ACTIVE\n\n- `"+activeTaskRepoPath+"`\n")
@@ -129,7 +128,6 @@ func TestRateLimitStopRecordsStopParentFiles(t *testing.T) {
 		runErr: errors.New("exit status 1"),
 	}}}
 	w := newWorkflowT(t, st, r)
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.config.RepoShort = "testrepo1234"
 	w.temp = t.TempDir()
 	writeRepoParentPlan(t, w.config.RepoRoot, "plan-at-stop\n")

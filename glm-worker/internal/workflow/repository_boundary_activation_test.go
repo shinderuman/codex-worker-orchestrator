@@ -38,7 +38,6 @@ func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			st := newStateStoreT(t)
 			w := newWorkflowT(t, st, &scriptedRunner{})
-			w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 			switch tt.activation {
 			case "active":
 				pinRepositoryHarnessActiveT(t, st)
@@ -78,7 +77,6 @@ func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) 
 func TestCaptureRepositoryBoundaryFailsClosedWhenActiveTaskLosesActivationPin(t *testing.T) {
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	if err := st.Write(activeTaskStateKey, activeTaskRepoPath); err != nil {
 		t.Fatal(err)
 	}

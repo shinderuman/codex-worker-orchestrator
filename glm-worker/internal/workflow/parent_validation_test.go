@@ -32,7 +32,6 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.temp = t.TempDir()
 	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
 	if err := os.MkdirAll(workingDir, 0o700); err != nil {
@@ -117,7 +116,6 @@ func exhaustParentValidationFixBudget(t *testing.T, st *state.StateStore) (strin
 	}}
 	var output bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &output)
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.temp = t.TempDir()
 	w.config.MaxAutoFixRounds = 1
 	w.qualityGate = func(string) (harnesslint.Report, error) {
@@ -202,7 +200,6 @@ func TestParentValidationNonConvergenceFixRerunsGateBeforeReview(t *testing.T) {
 	}}
 	var fixOutput bytes.Buffer
 	fixWorkflow := newWorkflowTWithOutput(t, st, fixRunner, &fixOutput)
-	fixWorkflow.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	fixWorkflow.temp = t.TempDir()
 	fixWorkflow.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
@@ -268,7 +265,7 @@ func TestParentValidationNonConvergenceFixRerunsGateBeforeReview(t *testing.T) {
 	}
 }
 
-func TestParentValidationBudgetExhaustionUsesCurrentTaskTargets(t *testing.T) {
+func TestParentValidationBudgetExhaustionKeepsFailureTargets(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: parentValidationObligatedPacket("initial")},
@@ -276,7 +273,6 @@ func TestParentValidationBudgetExhaustionUsesCurrentTaskTargets(t *testing.T) {
 	}}
 	var output bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &output)
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.temp = t.TempDir()
 	w.config.MaxAutoFixRounds = 1
 	w.qualityGate = func(string) (harnesslint.Report, error) {
@@ -296,8 +292,8 @@ func TestParentValidationBudgetExhaustionUsesCurrentTaskTargets(t *testing.T) {
 		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
 	}
 	emitted := output.String()
-	if !strings.Contains(emitted, `"targets":["tracked.go:@diff"]`) {
-		t.Fatalf("terminal packet must use the actual current-task review target: %s", emitted)
+	if !strings.Contains(emitted, `"targets":["a.go:@diff"]`) {
+		t.Fatalf("terminal packet must keep the harnesslint failure targets: %s", emitted)
 	}
 	if !strings.Contains(emitted, "worker fix budget exhausted: machine quality gate") {
 		t.Fatalf("terminal packet summary misattributes the harnesslint failure: %s", emitted)
@@ -336,7 +332,6 @@ func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
 func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
 	if err := os.MkdirAll(workingDir, 0o700); err != nil {
 		t.Fatal(err)
