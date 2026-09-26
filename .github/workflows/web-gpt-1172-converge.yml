@@ -1,0 +1,51 @@
+name: Web GPT 1172 converge
+
+on:
+  push:
+    branches:
+      - web-gpt/1172-review-target-shadow-evidence
+    paths:
+      - .github/workflows/web-gpt-1172-converge.yml
+
+permissions:
+  contents: write
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: glm-worker/go.mod
+      - name: Apply bounded convergence patch
+        run: python3 .github/web-gpt-1172-converge.py
+      - name: Format changed Go files
+        run: |
+          gofmt -w \
+            glm-worker/internal/shadoweval/input.go \
+            glm-worker/internal/shadoweval/fixed_range_review_test.go \
+            glm-worker/internal/workflow/internal_review_targets.go \
+            glm-worker/internal/workflow/internal_review_targets_test.go \
+            glm-worker/internal/workflow/internal_review_producer_failclosed_test.go \
+            glm-worker/internal/workflow/workflow.go \
+            glm-worker/internal/workflow/parent_validation.go \
+            glm-worker/internal/workflow/parent_validation_test.go \
+            glm-worker/internal/workflow/quality_gate.go \
+            glm-worker/internal/workflow/quality_surface_approval.go \
+            glm-worker/internal/workflow/quality_surface_parent_approval_test.go \
+            glm-worker/internal/workflow/risk_floor_parent_evidence_test.go \
+            glm-worker/internal/workflow/risk_floor_test.go \
+            glm-worker/internal/workflow/workflow_snapshot_test.go \
+            glm-worker/internal/workflow/workflow_test.go
+      - name: Focused tests
+        working-directory: glm-worker
+        run: go test ./internal/workflow ./internal/shadoweval
+      - name: Commit converged diff and remove temporary runner
+        run: |
+          git rm .github/web-gpt-1172-converge.py .github/workflows/web-gpt-1172-converge.yml
+          git config user.name web-gpt
+          git config user.email web-gpt@users.noreply.github.com
+          git add glm-worker/internal/workflow glm-worker/internal/shadoweval
+          git commit -m "fix: converge #1172 on producer semantics"
+          git push origin HEAD:web-gpt/1172-review-target-shadow-evidence
