@@ -125,11 +125,7 @@ func newMutationWorkflow(t *testing.T, repoRoot string, steps []runnerStep, muta
 func newMutationWorkflowShell(t *testing.T, st *state.StateStore) *Workflow {
 	t.Helper()
 	pinRepositoryHarnessActiveT(t, st)
-	w := newWorkflowT(t, st, &scriptedRunner{})
-	w.collectChangedPaths = func(repoRoot, _ string) ([]string, error) {
-		return collectTaskChangedPaths(repoRoot, st)
-	}
-	return w
+	return newWorkflowT(t, st, &scriptedRunner{})
 }
 
 func requireReviewEndFailClosed(t *testing.T, w *Workflow, r *mutatingRunner, out *bytes.Buffer) {
