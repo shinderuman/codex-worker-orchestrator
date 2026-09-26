@@ -123,6 +123,9 @@ func TestDiagnosticRecordsSnapshotMismatch(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"diagnostic.go"}, nil
+	}
 	workerEnd := state.GitSnapshot{Head: "a", IndexDigest: "a", WorktreeDigest: "a"}
 	reviewStart := state.GitSnapshot{Head: "b", IndexDigest: "b", WorktreeDigest: "b"}
 	calls := 0
@@ -175,6 +178,9 @@ func TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"diagnostic.go"}, nil
+	}
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
 		return state.GitSnapshot{}, errors.New("snapshot unavailable")
 	}
@@ -500,6 +506,9 @@ func TestDiagnosticSnapshotSaveFailureNotMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := newWorkflowT(t, st, &scriptedRunner{})
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"diagnostic.go"}, nil
+	}
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
 		return state.GitSnapshot{Head: "a", IndexDigest: "a", WorktreeDigest: "a"}, nil
 	}
