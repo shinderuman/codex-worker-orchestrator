@@ -287,26 +287,30 @@ func projectEventEvidence(record state.TaskEventRecord) EventEvidence {
 		}
 		evidence.Blocks = append(evidence.Blocks, projected)
 	}
-	if record.Validation != nil {
-		validation := record.Validation
-		evidence.Validation = &EventValidationEvidence{
-			Attribution: boundedPacketText(validation.Attribution),
-			Source:      boundedPacketText(validation.Source),
-			Form:        boundedPacketText(validation.Form),
-			GateClass:   boundedPacketText(validation.GateClass),
-			Suite:       boundedPacketText(validation.Suite),
-			SnapshotID:  boundedPacketText(validation.SnapshotID),
-			Phase:       boundedPacketText(validation.Phase),
-			Attempt:     boundedPacketText(validation.Attempt),
-			Scope:       boundedPacketText(validation.Scope),
-			Result:      boundedPacketText(validation.Result),
-			ExitCode:    validation.ExitCode,
-			ExitSource:  boundedPacketText(validation.ExitSource),
-			DurationMS:  validation.DurationMS,
-			Evidence:    boundedPacketText(validation.Evidence),
-		}
-	}
+	evidence.Validation = projectEventValidation(record.Validation)
 	return evidence
+}
+
+func projectEventValidation(validation *state.TaskValidationEvent) *EventValidationEvidence {
+	if validation == nil {
+		return nil
+	}
+	return &EventValidationEvidence{
+		Attribution: boundedPacketText(validation.Attribution),
+		Source:      boundedPacketText(validation.Source),
+		Form:        boundedPacketText(validation.Form),
+		GateClass:   boundedPacketText(validation.GateClass),
+		Suite:       boundedPacketText(validation.Suite),
+		SnapshotID:  boundedPacketText(validation.SnapshotID),
+		Phase:       boundedPacketText(validation.Phase),
+		Attempt:     boundedPacketText(validation.Attempt),
+		Scope:       boundedPacketText(validation.Scope),
+		Result:      boundedPacketText(validation.Result),
+		ExitCode:    validation.ExitCode,
+		ExitSource:  boundedPacketText(validation.ExitSource),
+		DurationMS:  validation.DurationMS,
+		Evidence:    boundedPacketText(validation.Evidence),
+	}
 }
 
 func toolUseCountsByCall(records []state.TaskEventRecord) map[string]map[string]int {

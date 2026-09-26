@@ -398,6 +398,11 @@ func (w *Workflow) writeLastReview(value packet.Result) error {
 }
 
 func (w *Workflow) emitResult(value packet.Result) error {
+	normalized, err := w.canonicalizeInternalReviewResult(value)
+	if err != nil {
+		return err
+	}
+	value = normalized
 	report, err := machineReport(value)
 	if err != nil {
 		return err

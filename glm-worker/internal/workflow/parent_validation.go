@@ -146,6 +146,10 @@ func (w *Workflow) finishParentValidationNonConvergence(failure packet.Result) e
 		return err
 	}
 	result := parentValidationNonConvergedResult(failure)
+	result, err := w.canonicalizeInternalReviewResult(result)
+	if err != nil {
+		return err
+	}
 	if err := w.state.FinishParentValidationNonConvergence(result, w.lastProducer); err != nil {
 		return err
 	}
