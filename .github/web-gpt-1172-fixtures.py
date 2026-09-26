@@ -142,7 +142,7 @@ for name in [
     inject_after_constructor(
         'glm-worker/internal/workflow/review_end_snapshot_test.go',
         name,
-        ['newMutationWorkflow'],
+        ['newMutationWorkflow', 'newMutationWorkflowShell'],
         actual_diff_body,
     )
 
@@ -182,6 +182,6 @@ for name in [
     inject_after_constructor(
         'glm-worker/internal/workflow/plan_file_guard_test.go',
         name,
-        ['newMutationWorkflow'],
+        ['newMutationWorkflow', 'newMutationWorkflowShell'],
         actual_diff_body,
     )
