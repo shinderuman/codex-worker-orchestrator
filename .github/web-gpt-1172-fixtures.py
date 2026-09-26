@@ -171,9 +171,15 @@ for name in [
         fixed_target_body,
     )
 
+inject_after_constructor(
+    'glm-worker/internal/workflow/report_only_snapshot_test.go',
+    'TestReportOnlyTransientRecoveryStillEnforcesInvariant',
+    ['newReportOnlyWorkflow'],
+    actual_diff_body,
+)
+
 for name in [
     'TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot',
-    'TestReportOnlyTransientRecoveryStillEnforcesInvariant',
     'TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot',
     'TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls',
 ]:
