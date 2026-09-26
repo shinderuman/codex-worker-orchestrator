@@ -42,6 +42,11 @@ jobs:
           \ttargets, err := w.resultOrCurrentReviewTargets(reviewResult)
           ''',
           )
+          replace_once(
+              'glm-worker/internal/workflow/workflow.go',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"\n',
+              '',
+          )
 
           p = Path('glm-worker/internal/workflow/parent_validation.go')
           text = p.read_text()
