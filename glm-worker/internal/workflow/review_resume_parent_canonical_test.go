@@ -69,6 +69,9 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 	r3 := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out3 bytes.Buffer
 	w3 := newReviewResumeWorkflow(t, st, r3, &out3)
+	w3.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{state.ParentPlanFile}, nil
+	}
 	w3.captureSnapshot = func(string) (state.GitSnapshot, error) { return tampered, nil }
 	if err := w3.ExecuteResume(); err != nil {
 		t.Fatal(err)
