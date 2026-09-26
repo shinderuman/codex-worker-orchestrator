@@ -303,6 +303,9 @@ func TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun(t *testing.T)
 		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
 		{structured: needsSolReviewPacket()},
 	}, nil)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"tracked.txt"}, nil
+	}
 	realCapture := w.captureSnapshot
 	calls := 0
 	w.captureSnapshot = func(root string) (state.GitSnapshot, error) {
@@ -344,6 +347,9 @@ func TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun(t *testing.T) {
 	w.output = out
 	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"tracked.txt"}, nil
+	}
 	reviewPacket := resultFromBody(`{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["PACKET"]}`)
 
 	if err := w.handleReviewResult("request", resultFromBody(workerPacket()), reviewPacket, 1, 0); err != nil {
@@ -380,6 +386,9 @@ func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
 	w.config.RepoRoot = repoRoot
 	w.temp = t.TempDir()
 	w.captureSnapshot = state.CaptureGitSnapshot
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"tracked.txt"}, nil
+	}
 	reviewPacket := resultFromBody(`{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["PACKET"]}`)
 
 	if err := w.handleReviewResult("request", resultFromBody(workerPacket()), reviewPacket, 1, 0); err != nil {
@@ -422,6 +431,9 @@ func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T)
 			return state.GitSnapshot{}, errors.New("report-only end capture unavailable")
 		}
 		return realCapture(root)
+	}
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"tracked.txt"}, nil
 	}
 	reviewPacket := resultFromBody(`{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["PACKET"]}`)
 
@@ -498,6 +510,9 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 	rw.captureSnapshot = func(root string) (state.GitSnapshot, error) {
 		captures++
 		return realCapture(root)
+	}
+	rw.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"tracked.txt"}, nil
 	}
 
 	if err := rw.ExecuteResume(); err != nil {
@@ -641,6 +656,9 @@ func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *test
 		captures++
 		return realCapture(root)
 	}
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"tracked.txt"}, nil
+	}
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
@@ -700,6 +718,9 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 	w.captureSnapshot = func(root string) (state.GitSnapshot, error) {
 		captures++
 		return realCapture(root)
+	}
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"tracked.txt"}, nil
 	}
 
 	if err := w.ExecuteResume(); err != nil {
