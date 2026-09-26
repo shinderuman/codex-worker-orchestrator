@@ -428,6 +428,9 @@ func TestReviewResumeLegacyStateFailsClosed(t *testing.T) {
 			r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 			var out bytes.Buffer
 			w := newReviewResumeWorkflow(t, st, r, &out)
+			w.collectChangedPaths = func(string, string) ([]string, error) {
+				return []string{state.ParentPlanFile}, nil
+			}
 			repoRoot := w.config.RepoRoot
 			writeRepoParentPlan(t, repoRoot, "p0\n")
 			base := repoParentStates(t, repoRoot)
@@ -463,6 +466,9 @@ func TestReviewResumeParentUpdateThenReviewerMutationFailsClosed(t *testing.T) {
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
 	w := newReviewResumeWorkflow(t, st, r, &out)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{state.ParentPlanFile}, nil
+	}
 	repoRoot := w.config.RepoRoot
 	writeRepoParentPlan(t, repoRoot, "p0\n")
 	base := repoParentStates(t, repoRoot)
@@ -522,6 +528,9 @@ func TestFailedResumeCallRecapturesStopParentStates(t *testing.T) {
 	r2 := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out2 bytes.Buffer
 	w2 := newReviewResumeWorkflow(t, st, r2, &out2)
+	w2.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{state.ParentPlanFile}, nil
+	}
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
