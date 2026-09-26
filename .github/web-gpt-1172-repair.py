@@ -10,79 +10,42 @@ def replace_once(path, old, new):
     p.write_text(text.replace(old, new, 1))
 
 
-workflow = "glm-worker/internal/workflow/workflow.go"
-replace_once(
-    workflow,
-    "\tcollectChangedPaths     func(repoRoot, baselineHead string) ([]string, error)\n",
-    "\tcollectChangedPaths       func(repoRoot, baselineHead string) ([]string, error)\n\tcollectReviewTargetPaths func(repoRoot, baselineHead string) ([]string, error)\n",
-)
-
-review_targets = "glm-worker/internal/workflow/internal_review_targets.go"
-replace_once(
-    review_targets,
-    '''func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
-\tif w.collectChangedPaths == nil {
-\t\treturn nil, fmt.Errorf("current task review targets: changed-path collector is unavailable")
-\t}
-\tpaths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
-''',
-    '''func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
-\tcollect := w.collectChangedPaths
-\tif w.collectReviewTargetPaths != nil {
-\t\tcollect = w.collectReviewTargetPaths
-\t}
-\tif collect == nil {
-\t\treturn nil, fmt.Errorf("current task review targets: changed-path collector is unavailable")
-\t}
-\tpaths, err := collect(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
-''',
-)
-
-workflow_test = "glm-worker/internal/workflow/workflow_test.go"
-replace_once(
-    workflow_test,
-    '''\tw.collectChangedPaths = func(string, string) ([]string, error) {
-\t\treturn []string{"tracked.go"}, nil
-\t}
-\tclock := newFakeClock()
-''',
-    '''\tw.collectChangedPaths = func(string, string) ([]string, error) {
-\t\treturn nil, nil
-\t}
-\tw.collectReviewTargetPaths = func(string, string) ([]string, error) {
-\t\treturn []string{"tracked.go"}, nil
-\t}
-\tclock := newFakeClock()
-''',
-)
-
-snapshot_test = "glm-worker/internal/workflow/workflow_snapshot_test.go"
-replace_once(
-    snapshot_test,
-    '''\tw.collectChangedPaths = func(string, string) ([]string, error) {
-\t\treturn []string{"tracked.go"}, nil
-\t}
-''',
-    '''\tw.collectReviewTargetPaths = func(string, string) ([]string, error) {
-\t\treturn []string{"tracked.go"}, nil
-\t}
-''',
-)
-
-for path in [
-    "glm-worker/internal/workflow/internal_review_targets_test.go",
-    "glm-worker/internal/workflow/internal_review_producer_failclosed_test.go",
-]:
-    p = Path(path)
-    text = p.read_text()
-    if "w.collectChangedPaths =" not in text:
-        raise SystemExit(f"{path}: no review-target collector assignments found")
-    p.write_text(text.replace("w.collectChangedPaths =", "w.collectReviewTargetPaths ="))
-
-risk_test = "glm-worker/internal/workflow/risk_floor_parent_evidence_test.go"
-p = Path(risk_test)
+# Risk-floor tests that intentionally inject semantic task paths must inject
+# the shared review-target collector now that it owns risk-floor TARGETS too.
+p = Path("glm-worker/internal/workflow/risk_floor_test.go")
 text = p.read_text()
 needle = "w.collectChangedPaths = func(string, string) ([]string, error)"
-if text.count(needle) != 2:
-    raise SystemExit(f"{risk_test}: expected 2 collector assignments, found {text.count(needle)}")
+if text.count(needle) < 1:
+    raise SystemExit("risk_floor_test.go: no changed-path fixtures found")
 p.write_text(text.replace(needle, "w.collectReviewTargetPaths = func(string, string) ([]string, error)"))
+
+# #1172 intentionally replaces inherited failure TARGETS with actual current-task
+# diff TARGETS for terminal parent-validation non-convergence.
+replace_once(
+    "glm-worker/internal/workflow/parent_validation_test.go",
+    "func TestParentValidationBudgetExhaustionKeepsFailureTargets(t *testing.T) {",
+    "func TestParentValidationBudgetExhaustionUsesCurrentTaskTargets(t *testing.T) {",
+)
+replace_once(
+    "glm-worker/internal/workflow/parent_validation_test.go",
+    '''\tif !strings.Contains(emitted, `"targets":["a.go:@diff"]`) {
+\t\tt.Fatalf("terminal packet must keep the harnesslint failure targets: %s", emitted)
+\t}''',
+    '''\tif !strings.Contains(emitted, `"targets":["tracked.go:@diff"]`) {
+\t\tt.Fatalf("terminal packet must use the actual current-task review target: %s", emitted)
+\t}''',
+)
+
+# This test isolates quality-surface accepted-scope lifecycle. Keep its synthetic
+# current-task target explicit so the new review-target guard does not change the
+# lifecycle axis under test.
+replace_once(
+    "glm-worker/internal/workflow/quality_surface_parent_approval_test.go",
+    '''\tw := NewWorkflow(cfg, st, nil, io.Discard)
+\tw.temp = t.TempDir()
+''',
+    '''\tw := NewWorkflow(cfg, st, nil, io.Discard)
+\tw.collectReviewTargetPaths = func(string, string) ([]string, error) { return []string{"commentlint"}, nil }
+\tw.temp = t.TempDir()
+''',
+)
