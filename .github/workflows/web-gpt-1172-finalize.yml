@@ -19,100 +19,30 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: glm-worker/go.mod
-      - name: Align strict target fixtures
+      - name: Align shared target fixtures
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          generic_tests = {
-              'TestDiagnosticRecordsSnapshotMismatch',
-              'TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch',
-              'TestDiagnosticSnapshotSaveFailureNotMismatch',
-              'TestAutoFixRoundsDoNotRecordParentOutcome',
-              'TestExplicitFixRecordsOutcomeOnceDespiteReexecution',
-              'TestParentValidationBudgetExhaustionKeepsSameTaskContinuable',
-              'TestParentValidationNonConvergenceFixRerunsGateBeforeReview',
-              'TestPlanFileReviewerMutationUsesExistingSnapshotInvariant',
-              'TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant',
-              'TestQualityFixRejectsUnprovenFixedReport',
-              'TestQualityViolationWithoutFixRejectsExternalChangeBeforeAutoFix',
-              'TestQualityPassWithoutFixDoesNotRebaseExternalChange',
-              'TestReportOnlyWorktreeMutationFailsClosedBeforeReview',
-              'TestReportOnlyIndexMutationFailsClosedBeforeReview',
-              'TestReportOnlyHeadMutationFailsClosedBeforeReview',
-              'TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun',
-              'TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun',
-              'TestReportOnlyComparisonSaveFailureFailsClosed',
-              'TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch',
-              'TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot',
-              'TestReportOnlyTransientRecoveryStillEnforcesInvariant',
-              'TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot',
-              'TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls',
-              'TestReviewResumeInactiveHarnessRejectsCoincidentalParentPathChange',
-              'TestReviewEndWorktreeMutationRejectsPass',
-              'TestReviewEndUntrackedMutationRejectsPass',
-              'TestReviewEndIndexMutationRejectsPass',
-              'TestReviewEndHeadMutationRejectsPass',
-              'TestReviewEndMutationRejectsFixRequired',
-              'TestReviewEndMutationRejectsNeedsSolReview',
-              'TestReviewEndMutationAfterRateLimitResumeRejectsPass',
-              'TestReviewEndMutationOnRiskFloorReemitRejects',
-              'TestReviewResumeCrashWindowTamperFailsClosed',
-              'TestReviewResumeRepositoryDriftDuringStopIsRejected',
-              'TestReviewResumeReviewerMutationIsRejected',
-              'TestReviewResumeLegacyStateFailsClosed',
-              'TestReviewResumeParentUpdateThenReviewerMutationFailsClosed',
-              'TestFailedResumeCallRecapturesStopParentStates',
-              'TestAutoFixNonConvergence',
-              'TestSnapshotComparisonSaveFailureFailsClosed',
-              'TestSnapshotReviewResumeDriftFailsClosed',
-          }
-          quality_tests = {
-              'TestQualitySurfaceChangeStopsBeforeReviewer',
-              'TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction',
-          }
+          files = [
+              'glm-worker/internal/workflow/parent_validation_test.go',
+              'glm-worker/internal/workflow/plan_file_guard_test.go',
+              'glm-worker/internal/workflow/report_only_snapshot_test.go',
+              'glm-worker/internal/workflow/repository_boundary_activation_test.go',
+              'glm-worker/internal/workflow/review_end_snapshot_test.go',
+              'glm-worker/internal/workflow/review_resume_parent_canonical_test.go',
+              'glm-worker/internal/workflow/review_resume_parent_test.go',
+              'glm-worker/internal/workflow/workflow_snapshot_test.go',
+          ]
 
-          def function_span(text, name):
-              m = re.search(r'^func\s+' + re.escape(name) + r'\s*\(', text, re.M)
-              if not m:
-                  return None
-              brace = text.find('{', m.start())
-              if brace < 0:
-                  return None
+          def call_end(text, paren):
               depth = 0
               in_string = False
               escape = False
-              for i in range(brace, len(text)):
+              for i in range(paren, len(text)):
                   ch = text[i]
-                  if in_string:
-                      if escape:
-                          escape = False
-                      elif ch == '\\':
-                          escape = True
-                      elif ch == '"':
-                          in_string = False
-                      continue
-                  if ch == '"':
-                      in_string = True
-                  elif ch == '{':
-                      depth += 1
-                  elif ch == '}':
-                      depth -= 1
-                      if depth == 0:
-                          return (m.start(), i + 1)
-              return None
-
-          def assignment_end(body, start):
-              paren = body.find('(', start)
-              if paren < 0:
-                  return None
-              depth = 0
-              in_string = False
-              escape = False
-              for i in range(paren, len(body)):
-                  ch = body[i]
                   if in_string:
                       if escape:
                           escape = False
@@ -131,55 +61,46 @@ jobs:
                           return i + 1
               return None
 
-          def patch_function(text, name, path):
-              span = function_span(text, name)
-              if span is None:
-                  return text, False
-              start, end = span
-              body = text[start:end]
-              matches = list(re.finditer(r'(?m)^(\s*)([A-Za-z_]\w*)\s*:=\s*(?:NewWorkflow|newWorkflow\w*)\s*\(', body))
-              changed = False
-              offset = 0
-              for m in matches:
-                  var = m.group(2)
-                  if re.search(r'(?m)^\s*' + re.escape(var) + r'\.collectChangedPaths\s*=', body):
-                      continue
-                  endpos = assignment_end(body, m.start() + offset)
-                  if endpos is None:
-                      continue
-                  indent = m.group(1)
-                  injection = f'\n{indent}{var}.collectChangedPaths = func(string, string) ([]string, error) {{ return []string{{"{path}"}}, nil }}'
-                  body = body[:endpos] + injection + body[endpos:]
-                  offset += len(injection)
-                  changed = True
-              if not changed:
-                  return text, False
-              return text[:start] + body + text[end:], True
-
-          changed_files = []
-          for p in Path('glm-worker/internal/workflow').glob('*_test.go'):
+          changed = []
+          for filename in files:
+              p = Path(filename)
               text = p.read_text()
               original = text
-              for name in generic_tests:
-                  text, _ = patch_function(text, name, 'fixture.go')
-              for name in quality_tests:
-                  text, _ = patch_function(text, name, 'commentlint')
+              pos = 0
+              while True:
+                  m = re.search(r'(?m)^(\s*)([A-Za-z_]\w*)\s*:=\s*(?:NewWorkflow|newWorkflow\w*)\s*\(', text[pos:])
+                  if not m:
+                      break
+                  absolute = pos + m.start()
+                  paren = text.find('(', absolute)
+                  end = call_end(text, paren)
+                  if end is None:
+                      raise SystemExit(f'{filename}: cannot locate constructor call end')
+                  var = m.group(2)
+                  indent = m.group(1)
+                  tail = text[end:end+240]
+                  if re.match(r'\s*\n\s*' + re.escape(var) + r'\.collectChangedPaths\s*=', tail):
+                      pos = end
+                      continue
+                  injection = f'\n{indent}{var}.collectChangedPaths = func(string, string) ([]string, error) {{ return []string{{"fixture.go"}}, nil }}'
+                  text = text[:end] + injection + text[end:]
+                  pos = end + len(injection)
               if text != original:
                   p.write_text(text)
-                  changed_files.append(str(p))
+                  changed.append(filename)
 
-          if not changed_files:
-              raise SystemExit('no strict target fixtures were patched')
-          print('\n'.join(changed_files))
+          if not changed:
+              raise SystemExit('no shared workflow fixtures were patched')
+          print('\n'.join(changed))
           PY
           gofmt -w glm-worker/internal/workflow/*_test.go
-      - name: Commit fixture alignment
+      - name: Commit shared fixture alignment
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add glm-worker/internal/workflow
-          git commit -m 'test: align strict review target fixtures'
+          git commit -m 'test: align shared review target fixtures'
           git push origin HEAD:web-gpt/1172-review-target-shadow-evidence
       - name: Focused workflow tests
         working-directory: glm-worker
