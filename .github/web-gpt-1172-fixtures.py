@@ -182,6 +182,6 @@ for name in [
     inject_after_constructor(
         'glm-worker/internal/workflow/plan_file_guard_test.go',
         name,
-        ['newMutationWorkflow', 'newMutationWorkflowShell'],
+        ['newPlanFileWorkflow'],
         actual_diff_body,
     )
