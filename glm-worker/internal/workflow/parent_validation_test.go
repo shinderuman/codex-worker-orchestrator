@@ -292,7 +292,7 @@ func TestParentValidationBudgetExhaustionKeepsFailureTargets(t *testing.T) {
 		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
 	}
 	emitted := output.String()
-	if !strings.Contains(emitted, `"targets":["a.go"]`) {
+	if !strings.Contains(emitted, `"targets":["a.go:@diff"]`) {
 		t.Fatalf("terminal packet must keep the harnesslint failure targets: %s", emitted)
 	}
 	if !strings.Contains(emitted, "worker fix budget exhausted: machine quality gate") {

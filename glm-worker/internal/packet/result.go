@@ -125,11 +125,6 @@ func (e *ParentValidationEvidence) ResolvedFor(form string) bool {
 }
 
 func (r Result) MachineJSON() ([]byte, error) {
-	if r.Status == StatusNeedsSolReview {
-		if err := validateTargets(r); err != nil {
-			return nil, fmt.Errorf("NEEDS_SOL_REVIEW machine result: %w", err)
-		}
-	}
 	object := map[string]any{
 		string(fieldStatus): string(r.Status),
 		string(fieldRisk):   string(r.Risk),

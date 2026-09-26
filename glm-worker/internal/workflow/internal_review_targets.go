@@ -4,33 +4,30 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
-const internalReviewNoTarget = "none"
+const (
+	internalReviewNoTarget     = "none"
+	internalReviewPacketTarget = "PACKET"
+)
 
-func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
-	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
-	if err != nil {
-		return nil, fmt.Errorf("collect current review targets: %w", err)
-	}
-	return canonicalReviewTargets(paths)
-}
-
-func canonicalReviewTargets(values []string) ([]string, error) {
+func canonicalReviewTargets(values []string) []string {
 	targets := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, raw := range values {
 		value := strings.TrimSpace(raw)
-		if value == "" || value == internalReviewNoTarget {
+		if value == "" || value == internalReviewNoTarget || value == internalReviewPacketTarget {
 			continue
 		}
 		target := value
 		if _, _, err := reviewtarget.Parse(target); err != nil {
+			if !strings.Contains(value, "/") && !strings.Contains(value, ".") {
+				continue
+			}
 			target = fmt.Sprintf("%s:%s", value, reviewtarget.WholeFileDiffLocator)
 			if _, _, parseErr := reviewtarget.Parse(target); parseErr != nil {
-				return nil, fmt.Errorf("review target %q is not repository-addressable: %w", value, parseErr)
+				continue
 			}
 		}
 		if _, duplicate := seen[target]; duplicate {
@@ -39,27 +36,24 @@ func canonicalReviewTargets(values []string) ([]string, error) {
 		seen[target] = struct{}{}
 		targets = append(targets, target)
 	}
-	if len(targets) == 0 {
-		return nil, fmt.Errorf("review target set is empty")
-	}
-	return targets, nil
+	return targets
 }
 
-func (w *Workflow) reviewTargetsOrCurrent(values []string) ([]string, error) {
-	if targets, err := canonicalReviewTargets(values); err == nil {
-		return targets, nil
+func reviewTargetsOrFallback(values, fallback []string) []string {
+	if targets := canonicalReviewTargets(values); len(targets) > 0 {
+		return targets
 	}
-	return w.currentReviewDiffTargets()
+	return canonicalReviewTargets(fallback)
 }
 
-func (w *Workflow) canonicalizeInternalReviewResult(value packet.Result) (packet.Result, error) {
-	if value.Status != packet.StatusNeedsSolReview {
-		return value, nil
+func (w *Workflow) currentReviewDiffTargetsOrFallback(fallback []string) []string {
+	if w.collectChangedPaths != nil {
+		paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+		if err == nil {
+			if targets := canonicalReviewTargets(paths); len(targets) > 0 {
+				return targets
+			}
+		}
 	}
-	targets, err := w.reviewTargetsOrCurrent(value.Targets)
-	if err != nil {
-		return packet.Result{}, err
-	}
-	value.Targets = targets
-	return value, nil
+	return canonicalReviewTargets(fallback)
 }

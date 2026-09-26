@@ -398,11 +398,6 @@ func (w *Workflow) writeLastReview(value packet.Result) error {
 }
 
 func (w *Workflow) emitResult(value packet.Result) error {
-	normalized, err := w.canonicalizeInternalReviewResult(value)
-	if err != nil {
-		return err
-	}
-	value = normalized
 	report, err := machineReport(value)
 	if err != nil {
 		return err
@@ -775,12 +770,22 @@ func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
 
 func (w *Workflow) failClosedSnapshot(stage state.SnapshotStage, workerEnd, reviewStart state.GitSnapshot, reason string, cause error) error {
 	w.recordSnapshotEvent(state.ReviewerRole, stage, workerEnd, reviewStart, reason, cause)
-	return w.failClosedStopped(stage, reason, cause, snapshotFailClosedResult)
+	targets := w.currentReviewDiffTargetsOrFallback([]string{"glm-worker/internal/state/snapshot.go:@diff"})
+	return w.failClosedStopped(stage, reason, cause, func(stage state.SnapshotStage, reason string) packet.Result {
+		result := snapshotFailClosedResult(stage, reason)
+		result.Targets = targets
+		return result
+	})
 }
 
 func (w *Workflow) failClosedReportOnlySnapshot(stage state.SnapshotStage, start, current state.GitSnapshot, reason string, cause error) error {
 	w.recordSnapshotEvent(state.WorkerRole, stage, start, current, reason, cause)
-	return w.failClosedStopped(stage, reason, cause, reportOnlySnapshotFailClosedResult)
+	targets := w.currentReviewDiffTargetsOrFallback([]string{"glm-worker/internal/workflow/workflow.go:@diff"})
+	return w.failClosedStopped(stage, reason, cause, func(stage state.SnapshotStage, reason string) packet.Result {
+		result := reportOnlySnapshotFailClosedResult(stage, reason)
+		result.Targets = targets
+		return result
+	})
 }
 
 func (w *Workflow) failClosedStopped(stage state.SnapshotStage, reason string, cause error, build func(state.SnapshotStage, string) packet.Result) error {
@@ -835,7 +840,7 @@ func snapshotFailClosedResult(stage state.SnapshotStage, reason string) packet.R
 		TestEvidence:        "HEAD/index/worktree snapshotの比較・取得結果で不一致または失敗を検出",
 		Issues:              reason,
 		ResidualRisk:        "reviewerがworkerと別の状態をreviewする可能性を排除できなかった",
-		Targets:             []string{"repository HEAD/index/worktreeの現在状態と保存済みsnapshot state file"},
+		Targets:             []string{"glm-worker/internal/state/snapshot.go:@diff"},
 		SolQuestion:         "worker終了状態とreview開始状態の差異・外部変更の有無をSolが判断する",
 	}
 }
@@ -850,12 +855,16 @@ func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string
 		TestEvidence:        "開始前保存snapshotと終了後snapshotの比較で不一致または取得失敗を検出",
 		Issues:              reason,
 		ResidualRisk:        "report-only workerがrepositoryを変更した可能性とその意図を排除できなかった",
-		Targets:             []string{"repository HEAD/index/worktreeの現在状態とreport-only開始前snapshot・telemetry記録"},
+		Targets:             []string{"glm-worker/internal/workflow/workflow.go:@diff"},
 		SolQuestion:         "report-only workerによる変更の意図有無と追跡・修正方針をSolが判断する",
 	}
 }
 
 func nonConvergedResult(reviewResult packet.Result) packet.Result {
+	targets := reviewTargetsOrFallback(
+		reviewResult.Targets,
+		[]string{"glm-worker/internal/workflow/review_flow.go:@diff"},
+	)
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
@@ -865,7 +874,7 @@ func nonConvergedResult(reviewResult packet.Result) packet.Result {
 		TestEvidence:        "直近worker/reviewerで検証実施",
 		Issues:              reviewResult.Issues,
 		ResidualRisk:        "reviewer指摘が残っている可能性",
-		Targets:             []string{"最終diffと直近reviewer指摘に限定"},
+		Targets:             targets,
 		Artifacts:           append([]string(nil), reviewResult.Artifacts...),
 		SolQuestion:         "未解決問題の修正方針を判断する",
 	}

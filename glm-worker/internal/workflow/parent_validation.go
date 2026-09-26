@@ -146,10 +146,6 @@ func (w *Workflow) finishParentValidationNonConvergence(failure packet.Result) e
 		return err
 	}
 	result := parentValidationNonConvergedResult(failure)
-	result, err := w.canonicalizeInternalReviewResult(result)
-	if err != nil {
-		return err
-	}
 	if err := w.state.FinishParentValidationNonConvergence(result, w.lastProducer); err != nil {
 		return err
 	}
@@ -164,10 +160,10 @@ func (w *Workflow) finishParentValidationNonConvergence(failure packet.Result) e
 }
 
 func parentValidationNonConvergedResult(failure packet.Result) packet.Result {
-	targets := failure.Targets
-	if len(targets) == 0 || (len(targets) == 1 && targets[0] == "none") {
-		targets = []string{"the failed gate evidence and the current diff"}
-	}
+	targets := reviewTargetsOrFallback(
+		failure.Targets,
+		[]string{"glm-worker/internal/workflow/parent_validation.go:@diff"},
+	)
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
