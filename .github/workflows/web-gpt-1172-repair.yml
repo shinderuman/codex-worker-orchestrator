@@ -21,21 +21,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: glm-worker/go.mod
-      - name: Apply review-target test seam repair
+      - name: Apply focused fixture corrections
         run: |
           python3 .github/web-gpt-1172-repair.py
           gofmt -w \
-            glm-worker/internal/workflow/workflow.go \
-            glm-worker/internal/workflow/internal_review_targets.go \
-            glm-worker/internal/workflow/workflow_test.go \
-            glm-worker/internal/workflow/workflow_snapshot_test.go \
-            glm-worker/internal/workflow/internal_review_targets_test.go \
-            glm-worker/internal/workflow/internal_review_producer_failclosed_test.go \
-            glm-worker/internal/workflow/risk_floor_parent_evidence_test.go
+            glm-worker/internal/workflow/risk_floor_test.go \
+            glm-worker/internal/workflow/parent_validation_test.go \
+            glm-worker/internal/workflow/quality_surface_parent_approval_test.go
           git config user.name web-gpt
           git config user.email web-gpt@users.noreply.github.com
           git add glm-worker/internal/workflow
-          git commit -m "test: isolate review target fixtures"
+          git commit -m "test: align fixtures with current-task review targets"
           git push origin HEAD:web-gpt/1172-review-target-shadow-evidence
       - name: Focused tests
         run: |
