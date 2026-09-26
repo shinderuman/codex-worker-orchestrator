@@ -56,7 +56,7 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
 	enforced, err := w.riskFloorFailClosedResult(passPkt)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 
 func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
 	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"],"sol_question":"q"}`)
 	resolved, err := w.resolveRiskFloorReemit(compliant)
 	if err != nil || resolved.Status != packet.StatusNeedsSolReview {
@@ -308,7 +308,7 @@ func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) {
+	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
 	}
 
@@ -411,7 +411,7 @@ func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
 	}
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) {
+	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
 	}
 

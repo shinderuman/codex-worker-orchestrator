@@ -308,9 +308,6 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return nil, nil
 	}
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) {
-		return []string{"tracked.go"}, nil
-	}
 	clock := newFakeClock()
 	w.now = clock.nowFunc
 	w.sleep = clock.sleepFunc

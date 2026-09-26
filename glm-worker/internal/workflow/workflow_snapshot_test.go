@@ -42,9 +42,6 @@ func newSnapshotWorkflow(st *state.StateStore, r *scriptedRunner, out io.Writer)
 		RoutineEffort:         "high",
 		MaxAutoFixRounds:      2,
 	}, st, r, out)
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) {
-		return []string{"tracked.go"}, nil
-	}
 	w.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {
 		snapshot, err := w.captureSnapshot(repoRoot)
 		if err != nil {

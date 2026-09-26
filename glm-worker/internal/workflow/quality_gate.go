@@ -161,10 +161,7 @@ func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
 }
 
 func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) error {
-	targets, err := w.currentReviewDiffTargets()
-	if err != nil {
-		return fmt.Errorf("quality-surface review targets: %w", err)
-	}
+	targets := w.currentQualitySurfaceReviewTargets()
 	if err := w.state.WaitForQualitySurfaceReview(phase); err != nil {
 		return err
 	}
@@ -172,6 +169,21 @@ func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) e
 		reason = fmt.Sprintf("%s: %v", reason, cause)
 	}
 	return w.emitResult(qualitySurfaceFailClosedResult(phase, reason, targets))
+}
+
+func (w *Workflow) currentQualitySurfaceReviewTargets() []string {
+	qualityPaths := []string(nil)
+	if w.collectChangedPaths != nil {
+		paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+		if err == nil {
+			for _, path := range paths {
+				if IsQualitySurface(path) {
+					qualityPaths = append(qualityPaths, path)
+				}
+			}
+		}
+	}
+	return reviewTargetsOrFallback(qualityPaths, []string{"glm-worker/internal/workflow/quality_gate.go:@diff"})
 }
 
 func qualitySurfaceFailClosedResult(phase, reason string, targets []string) packet.Result {

@@ -60,11 +60,11 @@ func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
 func TestRiskFloorFailClosedDoesNotSubstituteFallbackTarget(t *testing.T) {
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) { return nil, nil }
+	w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }
 	if _, err := w.riskFloorFailClosedResult(passPkt); err == nil || !strings.Contains(err.Error(), "no changed paths") {
 		t.Fatalf("empty task diff should fail closed without substitute target: %v", err)
 	}
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) { return nil, errors.New("changed paths unavailable") }
+	w.collectChangedPaths = func(string, string) ([]string, error) { return nil, errors.New("changed paths unavailable") }
 	if _, err := w.riskFloorFailClosedResult(passPkt); err == nil || !strings.Contains(err.Error(), "changed paths unavailable") {
 		t.Fatalf("changed-path failure should propagate instead of substituting target: %v", err)
 	}

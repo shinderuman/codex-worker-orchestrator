@@ -13,6 +13,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -23,21 +24,20 @@ type ModelRunner interface {
 }
 
 type Workflow struct {
-	config                   config.AppConfig
-	state                    *state.StateStore
-	runner                   ModelRunner
-	output                   io.Writer
-	temp                     string
-	captureSnapshot          func(repoRoot string) (state.GitSnapshot, error)
-	captureBoundarySnapshot  func(repoRoot string) (state.GitSnapshot, error)
-	collectChangedPaths      func(repoRoot, baselineHead string) ([]string, error)
-	collectReviewTargetPaths func(repoRoot, baselineHead string) ([]string, error)
-	now                      func() time.Time
-	sleep                    func(time.Duration)
-	jitter                   func(base time.Duration) time.Duration
-	qualityGate              func(root string) (harnesslint.Report, error)
-	captureQualitySurface    func(root string) (string, error)
-	repoSearch               repoSearchFunc
+	config                  config.AppConfig
+	state                   *state.StateStore
+	runner                  ModelRunner
+	output                  io.Writer
+	temp                    string
+	captureSnapshot         func(repoRoot string) (state.GitSnapshot, error)
+	captureBoundarySnapshot func(repoRoot string) (state.GitSnapshot, error)
+	collectChangedPaths     func(repoRoot, baselineHead string) ([]string, error)
+	now                     func() time.Time
+	sleep                   func(time.Duration)
+	jitter                  func(base time.Duration) time.Duration
+	qualityGate             func(root string) (harnesslint.Report, error)
+	captureQualitySurface   func(root string) (string, error)
+	repoSearch              repoSearchFunc
 
 	stop *runner.StopController
 
