@@ -85,16 +85,8 @@ def inject_after_constructor(path, test_name, constructors, body):
     p.write_text(text[:start] + segment + text[end:])
 
 
-# Review-resume fixtures are synthetic snapshot fixtures. Keep the changed-path
-# override in this test helper only; production still has one authority.
-patch(
-    'glm-worker/internal/workflow/review_resume_parent_test.go',
-    '''\tw := newWorkflowT(t, st, r)\n\tw.output = out\n''',
-    '''\tw := newWorkflowT(t, st, r)\n\tw.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.go"}, nil }\n\tw.output = out\n''',
-)
-
 # Synthetic snapshot/diagnostic tests explicitly provide the semantic target
-# that their synthetic snapshots represent.
+# that their synthetic snapshots represent. No shared production/test seam.
 for name in [
     'TestDiagnosticRecordsSnapshotMismatch',
     'TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch',
@@ -124,11 +116,10 @@ for name in [
 inject_test_collector('glm-worker/internal/workflow/task_lifecycle_test.go', 'TestAutoFixNonConvergence', 'tracked.go')
 inject_test_collector('glm-worker/internal/workflow/parent_validation_test.go', 'exhaustParentValidationFixBudget', 'tracked.go')
 
-# Tests that synthesize snapshot failures on mutation workflows set the existing
-# collector on that test instance only. Do not modify newMutationWorkflowShell.
 actual_diff_body = 'w.collectChangedPaths = func(repoRoot, _ string) ([]string, error) { return collectTaskChangedPaths(repoRoot, w.state) }'
 fixed_target_body = 'w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }'
 
+# New-task review-end mutation tests can resolve the actual fixture diff.
 for name in [
     'TestReviewEndWorktreeMutationRejectsPass',
     'TestReviewEndUntrackedMutationRejectsPass',
@@ -136,15 +127,23 @@ for name in [
     'TestReviewEndHeadMutationRejectsPass',
     'TestReviewEndMutationRejectsFixRequired',
     'TestReviewEndMutationRejectsNeedsSolReview',
-    'TestReviewEndMutationAfterRateLimitResumeRejectsPass',
     'TestReviewEndMutationOnRiskFloorReemitRejects',
 ]:
     inject_after_constructor(
         'glm-worker/internal/workflow/review_end_snapshot_test.go',
         name,
-        ['newMutationWorkflow', 'newMutationWorkflowShell'],
+        ['newMutationWorkflow'],
         actual_diff_body,
     )
+
+# Resume fixture intentionally has no task-baseline record; set the semantic
+# target directly on that test instance rather than changing a shared helper.
+inject_after_constructor(
+    'glm-worker/internal/workflow/review_end_snapshot_test.go',
+    'TestReviewEndMutationAfterRateLimitResumeRejectsPass',
+    ['newMutationWorkflowShell'],
+    fixed_target_body,
+)
 
 for name in [
     'TestReportOnlyWorktreeMutationFailsClosedBeforeReview',
@@ -158,11 +157,23 @@ for name in [
         actual_diff_body,
     )
 
+# New-task synthetic report-only failures target their explicit task fixture.
 for name in [
     'TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun',
     'TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun',
     'TestReportOnlyComparisonSaveFailureFailsClosed',
     'TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch',
+]:
+    inject_after_constructor(
+        'glm-worker/internal/workflow/report_only_snapshot_test.go',
+        name,
+        ['newReportOnlyWorkflow'],
+        fixed_target_body,
+    )
+
+# Resume report-only tests must set the collector on the resumed workflow, not
+# the earlier workflow used to create the checkpoint.
+for name in [
     'TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot',
     'TestReportOnlyTransientRecoveryStillEnforcesInvariant',
     'TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot',
@@ -171,7 +182,7 @@ for name in [
     inject_after_constructor(
         'glm-worker/internal/workflow/report_only_snapshot_test.go',
         name,
-        ['newReportOnlyWorkflow', 'newMutationWorkflowShell'],
+        ['newMutationWorkflowShell'],
         fixed_target_body,
     )
 
