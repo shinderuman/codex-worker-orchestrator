@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -57,15 +59,14 @@ func (r *ClaudeRunner) Decide(model, effort, schema, prompt string) (DecisionCal
 	}
 	defer func() { _ = os.RemoveAll(decisionDir) }()
 
-	output, stderr, devNull, rawOutputPath, _, err := openProbeFiles(decisionDir)
+	output, stderr, rawOutputPath, err := openDecisionFiles(decisionDir)
 	if err != nil {
 		return DecisionCallResult{}, err
 	}
-	defer func() { _ = devNull.Close() }()
 
-	command := newProcessGroupCmd(r.config.ClaudeBin, decisionArgs(model, effort, schema, isolationArgs, prompt)...)
+	command := newProcessGroupCmd(r.config.ClaudeBin, decisionArgs(model, effort, schema, isolationArgs)...)
 	command.Dir = decisionDir
-	command.Stdin = devNull
+	command.Stdin = strings.NewReader(prompt)
 	command.Stdout = output
 	command.Stderr = stderr
 	additions := claudeInvocationEnvDefaults()
@@ -74,6 +75,20 @@ func (r *ClaudeRunner) Decide(model, effort, schema, prompt string) (DecisionCal
 
 	runErr := closeProbeOutputs(r.runProbeCommand(command, time.Now().Add(r.decisionTimeout)), output, stderr)
 	return finishDecision(model, rawOutputPath, settingEnv, runErr)
+}
+
+func openDecisionFiles(decisionDir string) (output, stderr *os.File, rawOutputPath string, err error) {
+	rawOutputPath = filepath.Join(decisionDir, "probe.json")
+	output, err = createPrivateFile(rawOutputPath)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	stderr, err = createPrivateFile(filepath.Join(decisionDir, "probe.stderr"))
+	if err != nil {
+		_ = output.Close()
+		return nil, nil, "", err
+	}
+	return output, stderr, rawOutputPath, nil
 }
 
 func finishDecision(model, rawOutputPath string, settingEnv map[string]string, runErr error) (DecisionCallResult, error) {
@@ -118,7 +133,7 @@ func decisionRunFailureReason(runErr error) string {
 	return "command-failure"
 }
 
-func decisionArgs(model, effort, schema, isolationArgs, prompt string) []string {
+func decisionArgs(model, effort, schema, isolationArgs string) []string {
 	return []string{
 		"-p", "--safe-mode", "--setting-sources", "",
 		"--no-session-persistence",
@@ -132,6 +147,5 @@ func decisionArgs(model, effort, schema, isolationArgs, prompt string) []string 
 		"--tools", "",
 		"--settings", isolationArgs,
 		"--json-schema", schema,
-		prompt,
 	}
 }

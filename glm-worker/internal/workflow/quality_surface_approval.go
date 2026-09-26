@@ -25,6 +25,7 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	if err := w.validateCompletedGuardResult(result); err != nil {
 		return true, err
 	}
+	targets := w.currentQualitySurfaceReviewTargets()
 
 	checkpoint.QualitySurfaceApprovalPending = true
 	checkpoint.CompletedResult = &result
@@ -34,7 +35,7 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	if err := w.state.EnterQualitySurfaceApprovalWait(checkpoint); err != nil {
 		return true, err
 	}
-	return true, w.emitResult(qualitySurfaceFailClosedResult(checkpoint.Phase, reason))
+	return true, w.emitResult(qualitySurfaceFailClosedResult(checkpoint.Phase, reason, targets))
 }
 
 func (w *Workflow) ExecuteQualitySurfaceApproval(acceptedScope string) error {

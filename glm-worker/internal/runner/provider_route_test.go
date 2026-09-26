@@ -51,6 +51,8 @@ func TestManagedProviderRouteRejectsDefaultAnthropicExposure(t *testing.T) {
 		{name: "missing base url", env: map[string]any{"API_TIMEOUT_MS": "3000000"}, want: "fallbackを拒否"},
 		{name: "anthropic host", env: map[string]any{anthropicBaseURLEnv: "https://api.anthropic.com"}, want: "unsupported Anthropic provider"},
 		{name: "anthropic subdomain", env: map[string]any{anthropicBaseURLEnv: "https://proxy.anthropic.com/v1"}, want: "unsupported Anthropic provider"},
+		{name: "host without scheme", env: map[string]any{anthropicBaseURLEnv: "api.anthropic.com"}, want: "解釈できません"},
+		{name: "malformed scheme", env: map[string]any{anthropicBaseURLEnv: "https//api.anthropic.com"}, want: "解釈できません"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

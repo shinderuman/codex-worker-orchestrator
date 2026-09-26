@@ -1,9 +1,6 @@
 package shadoweval
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "fmt"
 
 type ShadowFailure struct {
 	Kind   string `json:"kind"`
@@ -193,10 +190,9 @@ func correctnessBrier(input ShadowInput, byCall map[string]Decision, labels map[
 }
 
 func thresholdRows(input ShadowInput, byCall map[string]Decision, labels map[string]ReferenceLabel) []ComparisonThreshold {
-	totalBytes := inputItemBytes(input)
 	rows := make([]ComparisonThreshold, 0, len(comparisonThresholds))
 	for _, threshold := range comparisonThresholds {
-		rows = append(rows, thresholdRow(input, byCall, labels, threshold, totalBytes))
+		rows = append(rows, thresholdRow(input, byCall, labels, threshold, input.SourceEvidenceBytes))
 	}
 	return rows
 }
@@ -219,7 +215,7 @@ func thresholdRow(input ShadowInput, byCall map[string]Decision, labels map[stri
 		}
 		row.Candidates++
 		row.CandidateCallIDs = append(row.CandidateCallIDs, item.CallID)
-		candidateBytes += itemByteLen(item)
+		candidateBytes += item.SourceEvidenceBytes
 		tallyCandidateReference(&row, labels, item.CallID)
 	}
 	if len(input.Items) > 0 {
@@ -292,20 +288,4 @@ func decisionsWithReference(input ShadowInput, byCall map[string]Decision, label
 		rows = append(rows, row)
 	}
 	return rows
-}
-
-func inputItemBytes(input ShadowInput) int {
-	total := 0
-	for _, item := range input.Items {
-		total += itemByteLen(item)
-	}
-	return total
-}
-
-func itemByteLen(item InputItem) int {
-	data, err := json.Marshal(item)
-	if err != nil {
-		return 0
-	}
-	return len(data)
 }

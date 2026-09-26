@@ -161,16 +161,32 @@ func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
 }
 
 func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) error {
+	targets := w.currentQualitySurfaceReviewTargets()
 	if err := w.state.WaitForQualitySurfaceReview(phase); err != nil {
 		return err
 	}
 	if cause != nil {
 		reason = fmt.Sprintf("%s: %v", reason, cause)
 	}
-	return w.emitResult(qualitySurfaceFailClosedResult(phase, reason))
+	return w.emitResult(qualitySurfaceFailClosedResult(phase, reason, targets))
 }
 
-func qualitySurfaceFailClosedResult(phase, reason string) packet.Result {
+func (w *Workflow) currentQualitySurfaceReviewTargets() []string {
+	qualityPaths := []string(nil)
+	if w.collectChangedPaths != nil {
+		paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+		if err == nil {
+			for _, path := range paths {
+				if IsQualitySurface(path) {
+					qualityPaths = append(qualityPaths, path)
+				}
+			}
+		}
+	}
+	return reviewTargetsOrFallback(qualityPaths, []string{"glm-worker/internal/workflow/quality_gate.go:@diff"})
+}
+
+func qualitySurfaceFailClosedResult(phase, reason string, targets []string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
@@ -180,7 +196,7 @@ func qualitySurfaceFailClosedResult(phase, reason string) packet.Result {
 		TestEvidence:        "worker開始時quality surface digestとworker結果受理前digestを比較",
 		Issues:              reason,
 		ResidualRisk:        "quality policy変更の意図とtask差分をSol/GPTが直接確認する必要がある",
-		Targets:             []string{".golangci.yml, harnesslint/commentlint implementation and wrappers"},
+		Targets:             targets,
 		SolQuestion:         "quality policy変更を通常taskから除外するか、親がcurrent diffを明示承認して同一taskのfix/review経路へ進める",
 	}
 }
