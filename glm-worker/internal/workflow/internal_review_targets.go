@@ -22,21 +22,14 @@ func canonicalReviewTargets(values []string) []string {
 		if value == "" || value == internalReviewNoTarget || value == internalReviewPacketTarget {
 			continue
 		}
-		target := value
-		if _, _, err := reviewtarget.Parse(target); err != nil {
-			if !strings.Contains(value, "/") && !strings.Contains(value, ".") {
-				continue
-			}
-			target = fmt.Sprintf("%s:%s", value, reviewtarget.WholeFileDiffLocator)
-			if _, _, parseErr := reviewtarget.Parse(target); parseErr != nil {
-				continue
-			}
-		}
-		if _, duplicate := seen[target]; duplicate {
+		if _, _, err := reviewtarget.Parse(value); err != nil {
 			continue
 		}
-		seen[target] = struct{}{}
-		targets = append(targets, target)
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		targets = append(targets, value)
 	}
 	return targets
 }
