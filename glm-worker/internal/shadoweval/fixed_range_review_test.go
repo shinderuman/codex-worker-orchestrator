@@ -62,6 +62,76 @@ func TestBuildInputProjectsMachineReadableEventEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildInputRetainsLateHighSignalEvidenceWithinBound(t *testing.T) {
+	logs := []state.ModelCallLog{{
+		Version:   state.ModelCallLogVersion,
+		CallType:  state.CallTypeTask,
+		CallID:    "call-a",
+		TaskID:    "task-1",
+		Role:      state.ReviewerRole,
+		Phase:     "reviewer-1",
+		Outcome:   "success",
+		StartedAt: time.Date(2026, 9, 24, 1, 0, 0, 0, time.UTC),
+	}}
+	records := make([]state.TaskEventRecord, 0, 42)
+	for seq := 1; seq <= 40; seq++ {
+		records = append(records, state.TaskEventRecord{
+			Version: 1, TaskID: "task-1", CallID: "call-a", Role: "reviewer", Phase: "reviewer-1",
+			Seq: seq, Kind: "assistant", Subtype: "message",
+		})
+	}
+	records = append(records,
+		state.TaskEventRecord{
+			Version: 1, TaskID: "task-1", CallID: "call-a", Role: "reviewer", Phase: "reviewer-1",
+			Seq: 41, Kind: "assistant", Subtype: "tool-result",
+			Validation: &state.TaskValidationEvent{
+				Attribution: "reviewer", Source: "tool", Form: "go-test", Suite: "./...", Scope: "repository",
+				Result: state.ValidationResultFail, Evidence: "late validation failure",
+			},
+		},
+		state.TaskEventRecord{
+			Version: 1, TaskID: "task-1", CallID: "call-a", Role: "reviewer", Phase: "reviewer-1",
+			Seq: 42, Kind: "assistant", Subtype: "tool-result", IsError: true,
+			SearchPaths: []string{"late.go"},
+			Blocks: []state.TaskBlockSummary{{
+				Type: "tool_result", Name: "go test", OperationCategory: state.OperationCategoryTest, IsError: true,
+			}},
+		},
+	)
+
+	first, err := BuildInput("task-1", logs, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BuildInput("task-1", logs, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ItemsSHA256 != second.ItemsSHA256 {
+		t.Fatalf("bounded selection is not deterministic: %s != %s", first.ItemsSHA256, second.ItemsSHA256)
+	}
+	if len(first.Items) != 1 || len(first.Items[0].Events) != eventEvidenceMaxItems {
+		t.Fatalf("bounded event count = %#v", first.Items)
+	}
+	var validationSeen, errorSeen bool
+	previousSeq := 0
+	for _, event := range first.Items[0].Events {
+		if event.Seq <= previousSeq {
+			t.Fatalf("selected events lost chronological order: previous=%d current=%d", previousSeq, event.Seq)
+		}
+		previousSeq = event.Seq
+		if event.Seq == 41 && event.Validation != nil && event.Validation.Result == state.ValidationResultFail {
+			validationSeen = true
+		}
+		if event.Seq == 42 && event.IsError && len(event.Blocks) == 1 && event.Blocks[0].IsError && len(event.SearchPaths) == 1 {
+			errorSeen = true
+		}
+	}
+	if !validationSeen || !errorSeen {
+		t.Fatalf("late correctness evidence was dropped: validation=%v error=%v events=%#v", validationSeen, errorSeen, first.Items[0].Events)
+	}
+}
+
 func TestReductionEstimateUsesCanonicalSourceEvidenceBytes(t *testing.T) {
 	input := ShadowInput{
 		Schema:              InputSchema,

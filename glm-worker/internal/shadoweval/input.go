@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -235,14 +236,94 @@ func sourceEvidenceByteCounts(logs []state.ModelCallLog, records []state.TaskEve
 }
 
 func eventEvidenceByCall(records []state.TaskEventRecord) map[string][]EventEvidence {
-	result := make(map[string][]EventEvidence)
+	byCall := make(map[string][]state.TaskEventRecord)
 	for _, record := range records {
-		if record.CallID == "" || len(result[record.CallID]) >= eventEvidenceMaxItems {
+		if record.CallID == "" {
 			continue
 		}
-		result[record.CallID] = append(result[record.CallID], projectEventEvidence(record))
+		byCall[record.CallID] = append(byCall[record.CallID], record)
+	}
+	result := make(map[string][]EventEvidence, len(byCall))
+	for callID, callRecords := range byCall {
+		selected := selectEventEvidence(callRecords)
+		projected := make([]EventEvidence, 0, len(selected))
+		for _, record := range selected {
+			projected = append(projected, projectEventEvidence(record))
+		}
+		result[callID] = projected
 	}
 	return result
+}
+
+func selectEventEvidence(records []state.TaskEventRecord) []state.TaskEventRecord {
+	if len(records) <= eventEvidenceMaxItems {
+		return append([]state.TaskEventRecord(nil), records...)
+	}
+	selectedIndexes := make([]int, 0, eventEvidenceMaxItems)
+	selected := make([]bool, len(records))
+	for priority := 3; priority >= 0 && len(selectedIndexes) < eventEvidenceMaxItems; priority-- {
+		for index := len(records) - 1; index >= 0 && len(selectedIndexes) < eventEvidenceMaxItems; index-- {
+			if selected[index] || eventEvidencePriority(records[index]) != priority {
+				continue
+			}
+			selected[index] = true
+			selectedIndexes = append(selectedIndexes, index)
+		}
+	}
+	sort.Ints(selectedIndexes)
+	result := make([]state.TaskEventRecord, 0, len(selectedIndexes))
+	for _, index := range selectedIndexes {
+		result = append(result, records[index])
+	}
+	return result
+}
+
+func eventEvidencePriority(record state.TaskEventRecord) int {
+	if record.IsError || validationHasCorrectnessSignal(record.Validation) {
+		return 3
+	}
+	priority := 0
+	if record.Validation != nil {
+		priority = 2
+	} else if len(record.SearchPaths) > 0 {
+		priority = 1
+	}
+	for _, block := range record.Blocks {
+		blockPriority := eventBlockPriority(block)
+		if blockPriority == 3 {
+			return 3
+		}
+		if blockPriority > priority {
+			priority = blockPriority
+		}
+	}
+	return priority
+}
+
+func eventBlockPriority(block state.TaskBlockSummary) int {
+	if block.IsError {
+		return 3
+	}
+	for _, observation := range block.Validation {
+		if validationResultHasCorrectnessSignal(observation.Result) {
+			return 3
+		}
+	}
+	if len(block.Validation) > 0 {
+		return 2
+	}
+	if block.OperationCategory != "" {
+		return 1
+	}
+	return 0
+}
+
+func validationHasCorrectnessSignal(validation *state.TaskValidationEvent) bool {
+	return validation != nil && validationResultHasCorrectnessSignal(validation.Result)
+}
+
+func validationResultHasCorrectnessSignal(result string) bool {
+	return result == state.ValidationResultFail || result == state.ValidationResultUnknown
 }
 
 func projectEventEvidence(record state.TaskEventRecord) EventEvidence {

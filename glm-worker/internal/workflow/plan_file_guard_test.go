@@ -611,6 +611,9 @@ func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},
 	}, "", 0, mutatePlanFile)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{implementationPlanFile}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -835,6 +838,9 @@ func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) 
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},
 	}, "", 0, mutateHistoryFile)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{implementationHistoryFile}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)

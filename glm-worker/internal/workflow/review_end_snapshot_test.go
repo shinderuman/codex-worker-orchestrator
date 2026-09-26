@@ -128,6 +128,12 @@ func newMutationWorkflowShell(t *testing.T, st *state.StateStore) *Workflow {
 	return newWorkflowT(t, st, &scriptedRunner{})
 }
 
+func setCurrentTaskChangedPath(w *Workflow, path string) {
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{path}, nil
+	}
+}
+
 func requireReviewEndFailClosed(t *testing.T, w *Workflow, r *mutatingRunner, out *bytes.Buffer) {
 	t.Helper()
 	if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -167,6 +173,7 @@ func TestReviewEndWorktreeMutationRejectsPass(t *testing.T) {
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
+	setCurrentTaskChangedPath(w, "tracked.txt")
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -193,6 +200,7 @@ func TestReviewEndUntrackedMutationRejectsPass(t *testing.T) {
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "generated.go"), []byte("package x\n"), 0o644)
 	})
+	setCurrentTaskChangedPath(w, "generated.go")
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -218,6 +226,7 @@ func TestReviewEndIndexMutationRejectsPass(t *testing.T) {
 		gitIn(t, root, "add", "tracked.txt")
 		return nil
 	})
+	setCurrentTaskChangedPath(w, "tracked.txt")
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -245,6 +254,7 @@ func TestReviewEndHeadMutationRejectsPass(t *testing.T) {
 		gitIn(t, root, "commit", "-q", "-m", "reviewer commit")
 		return nil
 	})
+	setCurrentTaskChangedPath(w, "tracked.txt")
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -267,6 +277,7 @@ func TestReviewEndMutationRejectsFixRequired(t *testing.T) {
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
+	setCurrentTaskChangedPath(w, "tracked.txt")
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -285,6 +296,7 @@ func TestReviewEndMutationRejectsNeedsSolReview(t *testing.T) {
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
+	setCurrentTaskChangedPath(w, "tracked.txt")
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -390,6 +402,7 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 	w.output = out
 	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
+	setCurrentTaskChangedPath(w, "tracked.txt")
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
@@ -430,6 +443,7 @@ func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
 	w.output = out
 	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
+	setCurrentTaskChangedPath(w, "tracked.txt")
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)

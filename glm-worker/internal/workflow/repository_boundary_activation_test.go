@@ -100,6 +100,9 @@ func TestReviewResumeInactiveHarnessRejectsCoincidentalParentPathChange(t *testi
 	var out bytes.Buffer
 	w := newReviewResumeWorkflow(t, st, r, &out)
 	pinRepositoryHarnessInactiveT(t, st)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{state.ParentPlanFile}, nil
+	}
 
 	writeRepoParentPlan(t, w.config.RepoRoot, "foreign-plan-at-review-start\n")
 	saved := reviewResumeSnapshot("worktree-0", "excluding-1", nil)

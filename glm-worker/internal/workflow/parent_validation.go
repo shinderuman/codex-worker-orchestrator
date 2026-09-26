@@ -145,7 +145,10 @@ func (w *Workflow) finishParentValidationNonConvergence(failure packet.Result) e
 	if err := w.writeLastReview(failure); err != nil {
 		return err
 	}
-	result := parentValidationNonConvergedResult(failure)
+	result, err := w.parentValidationNonConvergedResult(failure)
+	if err != nil {
+		return err
+	}
 	if err := w.state.FinishParentValidationNonConvergence(result, w.lastProducer); err != nil {
 		return err
 	}
@@ -159,11 +162,15 @@ func (w *Workflow) finishParentValidationNonConvergence(failure packet.Result) e
 	return errParentValidationNonConverged
 }
 
-func parentValidationNonConvergedResult(failure packet.Result) packet.Result {
-	targets := reviewTargetsOrFallback(
-		failure.Targets,
-		[]string{"glm-worker/internal/workflow/parent_validation.go:@diff"},
-	)
+func (w *Workflow) parentValidationNonConvergedResult(failure packet.Result) (packet.Result, error) {
+	targets, err := w.resultOrCurrentReviewTargets(failure)
+	if err != nil {
+		return packet.Result{}, fmt.Errorf("parent validation non-convergence review targets: %w", err)
+	}
+	return buildParentValidationNonConvergedResult(failure, targets), nil
+}
+
+func buildParentValidationNonConvergedResult(failure packet.Result, targets []string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,

@@ -320,7 +320,11 @@ func (w *Workflow) handleFixRequiredReview(
 	autoFixes int,
 ) error {
 	if autoFixes >= w.config.MaxAutoFixRounds {
-		return w.finishReview(state.TaskStatusWaitingSolReview, nonConvergedResult(reviewResult))
+		result, err := w.nonConvergedResult(reviewResult)
+		if err != nil {
+			return err
+		}
+		return w.finishReview(state.TaskStatusWaitingSolReview, result)
 	}
 
 	checkpoint, err := w.prepareAutoFixCheckpoint(request, reviewResult, reviewNumber, autoFixes+1)

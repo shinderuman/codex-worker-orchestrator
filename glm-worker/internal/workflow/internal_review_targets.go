@@ -2,8 +2,10 @@ package workflow
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
@@ -20,15 +22,38 @@ func canonicalReviewTargets(values []string) []string {
 		if value == "" || value == internalReviewNoTarget || value == internalReviewPacketTarget {
 			continue
 		}
-		target := value
+		if _, _, err := reviewtarget.Parse(value); err != nil {
+			continue
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		targets = append(targets, value)
+	}
+	return targets
+}
+
+func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
+	if w.collectChangedPaths == nil {
+		return nil, fmt.Errorf("current task review targets: changed-path collector is unavailable")
+	}
+	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+	if err != nil {
+		return nil, fmt.Errorf("current task review targets: %w", err)
+	}
+	paths = append([]string(nil), paths...)
+	sort.Strings(paths)
+	targets := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, raw := range paths {
+		path := strings.TrimSpace(raw)
+		if path == "" {
+			continue
+		}
+		target := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
 		if _, _, err := reviewtarget.Parse(target); err != nil {
-			if !strings.Contains(value, "/") && !strings.Contains(value, ".") {
-				continue
-			}
-			target = fmt.Sprintf("%s:%s", value, reviewtarget.WholeFileDiffLocator)
-			if _, _, parseErr := reviewtarget.Parse(target); parseErr != nil {
-				continue
-			}
+			return nil, fmt.Errorf("current task review targets: changed path %q cannot be represented as a review target: %w", path, err)
 		}
 		if _, duplicate := seen[target]; duplicate {
 			continue
@@ -36,24 +61,15 @@ func canonicalReviewTargets(values []string) []string {
 		seen[target] = struct{}{}
 		targets = append(targets, target)
 	}
-	return targets
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("current task review targets: current task has no changed paths")
+	}
+	return targets, nil
 }
 
-func reviewTargetsOrFallback(values, fallback []string) []string {
-	if targets := canonicalReviewTargets(values); len(targets) > 0 {
-		return targets
+func (w *Workflow) resultOrCurrentReviewTargets(result packet.Result) ([]string, error) {
+	if targets := canonicalReviewTargets(result.Targets); len(targets) > 0 {
+		return targets, nil
 	}
-	return canonicalReviewTargets(fallback)
-}
-
-func (w *Workflow) currentReviewDiffTargetsOrFallback(fallback []string) []string {
-	if w.collectChangedPaths != nil {
-		paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
-		if err == nil {
-			if targets := canonicalReviewTargets(paths); len(targets) > 0 {
-				return targets
-			}
-		}
-	}
-	return canonicalReviewTargets(fallback)
+	return w.currentReviewDiffTargets()
 }

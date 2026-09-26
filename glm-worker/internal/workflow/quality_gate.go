@@ -13,6 +13,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
@@ -161,7 +162,10 @@ func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
 }
 
 func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) error {
-	targets := w.currentQualitySurfaceReviewTargets()
+	targets, err := w.currentQualitySurfaceReviewTargets()
+	if err != nil {
+		return fmt.Errorf("quality-surface review targets: %w", err)
+	}
 	if err := w.state.WaitForQualitySurfaceReview(phase); err != nil {
 		return err
 	}
@@ -171,19 +175,35 @@ func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) e
 	return w.emitResult(qualitySurfaceFailClosedResult(phase, reason, targets))
 }
 
-func (w *Workflow) currentQualitySurfaceReviewTargets() []string {
-	qualityPaths := []string(nil)
-	if w.collectChangedPaths != nil {
-		paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
-		if err == nil {
-			for _, path := range paths {
-				if IsQualitySurface(path) {
-					qualityPaths = append(qualityPaths, path)
-				}
-			}
-		}
+func (w *Workflow) currentQualitySurfaceReviewTargets() ([]string, error) {
+	if w.collectChangedPaths == nil {
+		return nil, fmt.Errorf("quality surface changed-path collector is unavailable")
 	}
-	return reviewTargetsOrFallback(qualityPaths, []string{"glm-worker/internal/workflow/quality_gate.go:@diff"})
+	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+	if err != nil {
+		return nil, fmt.Errorf("collect quality surface changed paths: %w", err)
+	}
+	targets := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, raw := range paths {
+		path := strings.TrimSpace(raw)
+		if path == "" || !IsQualitySurface(path) {
+			continue
+		}
+		target := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
+		if _, _, err := reviewtarget.Parse(target); err != nil {
+			return nil, fmt.Errorf("quality surface changed path %q cannot be represented as a review target: %w", path, err)
+		}
+		if _, duplicate := seen[target]; duplicate {
+			continue
+		}
+		seen[target] = struct{}{}
+		targets = append(targets, target)
+	}
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("quality surface has no changed paths")
+	}
+	return targets, nil
 }
 
 func qualitySurfaceFailClosedResult(phase, reason string, targets []string) packet.Result {
@@ -206,13 +226,14 @@ func qualityGateFixResult(report harnesslint.Report) packet.Result {
 	targetSet := make(map[string]struct{}, len(report.Violations))
 	for _, violation := range report.Violations {
 		issues = append(issues, fmt.Sprintf("%s %s:%d:%d %s", violation.Rule, violation.Path, violation.Line, violation.Column, violation.Message))
-		if violation.Path != "" {
-			targetSet[violation.Path] = struct{}{}
+		path := strings.TrimSpace(violation.Path)
+		if path != "" {
+			targetSet[fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)] = struct{}{}
 		}
 	}
 	targets := make([]string, 0, len(targetSet))
-	for path := range targetSet {
-		targets = append(targets, path)
+	for target := range targetSet {
+		targets = append(targets, target)
 	}
 	sort.Strings(targets)
 	return packet.Result{

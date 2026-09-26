@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -516,20 +515,7 @@ func (w *Workflow) riskFloorFailClosedResult(reemitResult packet.Result) (packet
 }
 
 func (w *Workflow) riskFloorReviewTargets() ([]string, error) {
-	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
-	if err != nil {
-		return nil, fmt.Errorf("risk floor review targets: %w", err)
-	}
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("risk floor review targets: current task has no changed paths")
-	}
-	paths = append([]string(nil), paths...)
-	sort.Strings(paths)
-	targets := make([]string, 0, len(paths))
-	for _, path := range paths {
-		targets = append(targets, fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator))
-	}
-	return targets, nil
+	return w.currentReviewDiffTargets()
 }
 
 func (w *Workflow) captureWorkerEndSnapshot() (state.GitSnapshot, bool, error) {
@@ -770,21 +756,23 @@ func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
 
 func (w *Workflow) failClosedSnapshot(stage state.SnapshotStage, workerEnd, reviewStart state.GitSnapshot, reason string, cause error) error {
 	w.recordSnapshotEvent(state.ReviewerRole, stage, workerEnd, reviewStart, reason, cause)
-	targets := w.currentReviewDiffTargetsOrFallback([]string{"glm-worker/internal/state/snapshot.go:@diff"})
+	targets, err := w.currentReviewDiffTargets()
+	if err != nil {
+		return fmt.Errorf("snapshot fail-closed review targets: %w", err)
+	}
 	return w.failClosedStopped(stage, reason, cause, func(stage state.SnapshotStage, reason string) packet.Result {
-		result := snapshotFailClosedResult(stage, reason)
-		result.Targets = targets
-		return result
+		return snapshotFailClosedResult(stage, reason, targets)
 	})
 }
 
 func (w *Workflow) failClosedReportOnlySnapshot(stage state.SnapshotStage, start, current state.GitSnapshot, reason string, cause error) error {
 	w.recordSnapshotEvent(state.WorkerRole, stage, start, current, reason, cause)
-	targets := w.currentReviewDiffTargetsOrFallback([]string{"glm-worker/internal/workflow/workflow.go:@diff"})
+	targets, err := w.currentReviewDiffTargets()
+	if err != nil {
+		return fmt.Errorf("report-only snapshot fail-closed review targets: %w", err)
+	}
 	return w.failClosedStopped(stage, reason, cause, func(stage state.SnapshotStage, reason string) packet.Result {
-		result := reportOnlySnapshotFailClosedResult(stage, reason)
-		result.Targets = targets
-		return result
+		return reportOnlySnapshotFailClosedResult(stage, reason, targets)
 	})
 }
 
@@ -830,7 +818,7 @@ func snapshotDiagnosticPtr(diag state.SnapshotDiagnostic) *state.SnapshotDiagnos
 	return &diag
 }
 
-func snapshotFailClosedResult(stage state.SnapshotStage, reason string) packet.Result {
+func snapshotFailClosedResult(stage state.SnapshotStage, reason string, targets []string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
@@ -840,12 +828,12 @@ func snapshotFailClosedResult(stage state.SnapshotStage, reason string) packet.R
 		TestEvidence:        "HEAD/index/worktree snapshotの比較・取得結果で不一致または失敗を検出",
 		Issues:              reason,
 		ResidualRisk:        "reviewerがworkerと別の状態をreviewする可能性を排除できなかった",
-		Targets:             []string{"glm-worker/internal/state/snapshot.go:@diff"},
+		Targets:             targets,
 		SolQuestion:         "worker終了状態とreview開始状態の差異・外部変更の有無をSolが判断する",
 	}
 }
 
-func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string) packet.Result {
+func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string, targets []string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
@@ -855,16 +843,20 @@ func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string
 		TestEvidence:        "開始前保存snapshotと終了後snapshotの比較で不一致または取得失敗を検出",
 		Issues:              reason,
 		ResidualRisk:        "report-only workerがrepositoryを変更した可能性とその意図を排除できなかった",
-		Targets:             []string{"glm-worker/internal/workflow/workflow.go:@diff"},
+		Targets:             targets,
 		SolQuestion:         "report-only workerによる変更の意図有無と追跡・修正方針をSolが判断する",
 	}
 }
 
-func nonConvergedResult(reviewResult packet.Result) packet.Result {
-	targets := reviewTargetsOrFallback(
-		reviewResult.Targets,
-		[]string{"glm-worker/internal/workflow/review_flow.go:@diff"},
-	)
+func (w *Workflow) nonConvergedResult(reviewResult packet.Result) (packet.Result, error) {
+	targets, err := w.resultOrCurrentReviewTargets(reviewResult)
+	if err != nil {
+		return packet.Result{}, fmt.Errorf("non-convergence review targets: %w", err)
+	}
+	return buildNonConvergedResult(reviewResult, targets), nil
+}
+
+func buildNonConvergedResult(reviewResult packet.Result, targets []string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,

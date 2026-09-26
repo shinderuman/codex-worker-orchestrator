@@ -5,12 +5,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func TestQualityGateFixResultUsesCanonicalViolationTargets(t *testing.T) {
+	result := qualityGateFixResult(harnesslint.Report{Status: "fail", Violations: []harnesslint.Violation{
+		{Rule: "funlen", Path: "b.go", Line: 9, Column: 1, Message: "too long"},
+		{Rule: "revive", Path: "a.go", Line: 3, Column: 2, Message: "bad name"},
+		{Rule: "other", Path: "b.go", Line: 10, Column: 1, Message: "duplicate path"},
+	}})
+	want := []string{"a.go:@diff", "b.go:@diff"}
+	if !reflect.DeepEqual(result.Targets, want) {
+		t.Fatalf("quality gate targets = %#v want %#v", result.Targets, want)
+	}
+}
 
 func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 	st := newStateStoreT(t)
@@ -18,6 +32,9 @@ func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &out)
 	runQualityGateGit(t, w.config.RepoRoot, "init")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{".golangci.yml"}, nil
+	}
 	calls := 0
 	w.captureQualitySurface = func(string) (string, error) {
 		calls++
@@ -48,6 +65,9 @@ func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testin
 	}
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, &scriptedRunner{}, &out)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{".golangci.yml"}, nil
+	}
 	w.captureQualitySurface = func(string) (string, error) { return "current", nil }
 
 	stopped, err := w.verifyQualitySurfaceBaseline("worker-new")
