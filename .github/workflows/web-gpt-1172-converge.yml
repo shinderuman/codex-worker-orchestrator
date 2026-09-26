@@ -1,5 +1,5 @@
 name: Web GPT 1172 converge
-# retry: 10
+# retry: 11
 
 on:
   push:
@@ -48,6 +48,8 @@ jobs:
             glm-worker/internal/workflow/task_lifecycle_test.go \
             glm-worker/internal/workflow/review_end_snapshot_test.go \
             glm-worker/internal/workflow/review_resume_parent_test.go \
+            glm-worker/internal/workflow/review_resume_parent_canonical_test.go \
+            glm-worker/internal/workflow/repository_boundary_activation_test.go \
             glm-worker/internal/workflow/report_only_snapshot_test.go \
             glm-worker/internal/workflow/plan_file_guard_test.go
       - name: Focused tests
