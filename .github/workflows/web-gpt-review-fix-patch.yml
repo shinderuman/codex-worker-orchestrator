@@ -1,0 +1,101 @@
+name: Web GPT Review Fix Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/review-fix/c2b6893-deb8a18
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/review-fix/c2b6893-deb8a18
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.4'
+          cache: false
+      - name: Apply exact review-fix patches
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'glm-worker/internal/workflow/workflow.go',
+              '''func (w *Workflow) emitResult(value packet.Result) error {\n\treport, err := machineReport(value)\n''',
+              '''func (w *Workflow) emitResult(value packet.Result) error {\n\tnormalized, err := w.canonicalizeInternalReviewResult(value)\n\tif err != nil {\n\t\treturn err\n\t}\n\tvalue = normalized\n\treport, err := machineReport(value)\n''',
+          )
+
+          replace_once(
+              'glm-worker/internal/workflow/parent_validation.go',
+              '''\tresult := parentValidationNonConvergedResult(failure)\n\tif err := w.state.FinishParentValidationNonConvergence(result, w.lastProducer); err != nil {\n''',
+              '''\tresult := parentValidationNonConvergedResult(failure)\n\tresult, err := w.canonicalizeInternalReviewResult(result)\n\tif err != nil {\n\t\treturn err\n\t}\n\tif err := w.state.FinishParentValidationNonConvergence(result, w.lastProducer); err != nil {\n''',
+          )
+
+          p = Path('glm-worker/internal/workflow/internal_review_targets.go')
+          text = p.read_text()
+          old_import = '''\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"\n)\n'''
+          new_import = '''\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"\n)\n\nconst internalReviewNoTarget = "none"\n'''
+          if text.count(old_import) != 1:
+              raise SystemExit('internal_review_targets.go: import anchor mismatch')
+          text = text.replace(old_import, new_import, 1)
+          if text.count('value == "none"') != 1:
+              raise SystemExit('internal_review_targets.go: none anchor mismatch')
+          text = text.replace('value == "none"', 'value == internalReviewNoTarget', 1)
+          append = '''\nfunc (w *Workflow) canonicalizeInternalReviewResult(value packet.Result) (packet.Result, error) {\n\tif value.Status != packet.StatusNeedsSolReview {\n\t\treturn value, nil\n\t}\n\ttargets, err := w.reviewTargetsOrCurrent(value.Targets)\n\tif err != nil {\n\t\treturn packet.Result{}, err\n\t}\n\tvalue.Targets = targets\n\treturn value, nil\n}\n'''
+          if 'func (w *Workflow) canonicalizeInternalReviewResult' in text:
+              raise SystemExit('internal_review_targets.go: canonicalizer already present')
+          p.write_text(text + append)
+
+          p = Path('glm-worker/internal/shadoweval/input.go')
+          text = p.read_text()
+          old = '''\tif record.Validation != nil {\n\t\tvalidation := record.Validation\n\t\tevidence.Validation = &EventValidationEvidence{\n\t\t\tAttribution: boundedPacketText(validation.Attribution),\n\t\t\tSource:      boundedPacketText(validation.Source),\n\t\t\tForm:        boundedPacketText(validation.Form),\n\t\t\tGateClass:   boundedPacketText(validation.GateClass),\n\t\t\tSuite:       boundedPacketText(validation.Suite),\n\t\t\tSnapshotID:  boundedPacketText(validation.SnapshotID),\n\t\t\tPhase:       boundedPacketText(validation.Phase),\n\t\t\tAttempt:     boundedPacketText(validation.Attempt),\n\t\t\tScope:       boundedPacketText(validation.Scope),\n\t\t\tResult:      boundedPacketText(validation.Result),\n\t\t\tExitCode:    validation.ExitCode,\n\t\t\tExitSource:  boundedPacketText(validation.ExitSource),\n\t\t\tDurationMS:  validation.DurationMS,\n\t\t\tEvidence:    boundedPacketText(validation.Evidence),\n\t\t}\n\t}\n\treturn evidence\n}\n'''
+          new = '''\tevidence.Validation = projectEventValidation(record.Validation)\n\treturn evidence\n}\n\nfunc projectEventValidation(validation *state.TaskValidationEvent) *EventValidationEvidence {\n\tif validation == nil {\n\t\treturn nil\n\t}\n\treturn &EventValidationEvidence{\n\t\tAttribution: boundedPacketText(validation.Attribution),\n\t\tSource:      boundedPacketText(validation.Source),\n\t\tForm:        boundedPacketText(validation.Form),\n\t\tGateClass:   boundedPacketText(validation.GateClass),\n\t\tSuite:       boundedPacketText(validation.Suite),\n\t\tSnapshotID:  boundedPacketText(validation.SnapshotID),\n\t\tPhase:       boundedPacketText(validation.Phase),\n\t\tAttempt:     boundedPacketText(validation.Attempt),\n\t\tScope:       boundedPacketText(validation.Scope),\n\t\tResult:      boundedPacketText(validation.Result),\n\t\tExitCode:    validation.ExitCode,\n\t\tExitSource:  boundedPacketText(validation.ExitSource),\n\t\tDurationMS:  validation.DurationMS,\n\t\tEvidence:    boundedPacketText(validation.Evidence),\n\t}\n}\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'input.go: validation projection anchor mismatch ({text.count(old)})')
+          p.write_text(text.replace(old, new, 1))
+          PY
+
+          gofmt -w \
+            glm-worker/internal/workflow/workflow.go \
+            glm-worker/internal/workflow/parent_validation.go \
+            glm-worker/internal/workflow/internal_review_targets.go \
+            glm-worker/internal/shadoweval/input.go
+
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          "$quality_bin/codex-worker-orchestrator-shfmt-3.13.1" -w scripts/manage-pull-hook.sh
+          printf '\n' >> scripts/manage-pull-hook.sh.tmp
+          rm -f scripts/manage-pull-hook.sh.tmp
+
+          rm .github/workflows/web-gpt-review-fix-patch.yml
+          git diff --check
+      - name: Commit patched branch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/workflow/workflow.go \
+                  glm-worker/internal/workflow/parent_validation.go \
+                  glm-worker/internal/workflow/internal_review_targets.go \
+                  glm-worker/internal/shadoweval/input.go \
+                  scripts/manage-pull-hook.sh \
+                  .github/workflows/web-gpt-review-fix-patch.yml
+          git diff --cached --quiet && { echo 'expected patch produced no diff' >&2; exit 1; }
+          git commit -m 'Finish canonical review target and lint fixes'
+          git push origin HEAD:web-gpt/review-fix/c2b6893-deb8a18
