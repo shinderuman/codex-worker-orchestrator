@@ -23,25 +23,13 @@ jobs:
           go-version-file: glm-worker/go.mod
       - name: Update common workflow fixture
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('glm-worker/internal/workflow/workflow_test.go')
-          text = path.read_text()
-          old = '''\tw.collectChangedPaths = func(string, string) ([]string, error) {
-\t\treturn nil, nil
-\t}'''
-          new = '''\tw.collectChangedPaths = func(string, string) ([]string, error) {
-\t\treturn []string{"tracked.go"}, nil
-\t}'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one default collectChangedPaths fixture, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
-          PY
+          perl -0pi -e 's/return nil, nil\n\t}/return []string{"tracked.go"}, nil\n\t}/' glm-worker/internal/workflow/workflow_test.go
           gofmt -w glm-worker/internal/workflow/workflow_test.go
+          grep -A2 'w.collectChangedPaths = func' glm-worker/internal/workflow/workflow_test.go | head -3
           git config user.name web-gpt
           git config user.email web-gpt@users.noreply.github.com
           git add glm-worker/internal/workflow/workflow_test.go
-          git commit -m "test: provide default review target fixture"
+          git diff --cached --quiet || git commit -m "test: provide default review target fixture"
           git push origin HEAD:web-gpt/1172-review-target-shadow-evidence
       - name: Focused tests
         run: |
