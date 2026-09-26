@@ -14,14 +14,14 @@ func TestBuildInputProjectsMachineReadableEventEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	logs := []state.ModelCallLog{{
-		Version: state.ModelCallLogVersion,
-		CallType: state.CallTypeTask,
-		CallID:   "call-a",
-		TaskID:   "task-1",
-		Role:     state.ReviewerRole,
-		Phase:    "reviewer-1",
-		Outcome:  "success",
-		Response: string(response),
+		Version:   state.ModelCallLogVersion,
+		CallType:  state.CallTypeTask,
+		CallID:    "call-a",
+		TaskID:    "task-1",
+		Role:      state.ReviewerRole,
+		Phase:     "reviewer-1",
+		Outcome:   "success",
+		Response:  string(response),
 		StartedAt: time.Date(2026, 9, 24, 1, 0, 0, 0, time.UTC),
 	}}
 	records := []state.TaskEventRecord{
@@ -64,8 +64,8 @@ func TestBuildInputProjectsMachineReadableEventEvidence(t *testing.T) {
 
 func TestReductionEstimateUsesCanonicalSourceEvidenceBytes(t *testing.T) {
 	input := ShadowInput{
-		Schema: InputSchema,
-		TaskID: "task-1",
+		Schema:              InputSchema,
+		TaskID:              "task-1",
 		SourceEvidenceBytes: 1000,
 		Items: []InputItem{
 			{CallID: "noise", SourceEvidenceBytes: 100, Summary: "this text size must not drive the estimate"},
