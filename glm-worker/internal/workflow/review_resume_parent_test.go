@@ -22,6 +22,7 @@ type reviewResumeDeltaCase struct {
 	taskAtReviewStart string
 	taskAtStop        string
 	taskAtResume      string
+	reviewTarget      string
 	mutateCurrent     func(snap *state.GitSnapshot)
 }
 
@@ -235,15 +236,10 @@ func runReviewResumeDeltaCase(t *testing.T, tt reviewResumeDeltaCase) reviewResu
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	out := &bytes.Buffer{}
 	w := newReviewResumeWorkflow(t, st, r, out)
-	w.collectChangedPaths = func(string, string) ([]string, error) {
-		paths := make([]string, 0, 2)
-		if tt.planAtReviewStart != "" || tt.planAtStop != "" || tt.planAtResume != "" {
-			paths = append(paths, state.ParentPlanFile)
+	if tt.reviewTarget != "" {
+		w.collectChangedPaths = func(string, string) ([]string, error) {
+			return []string{tt.reviewTarget}, nil
 		}
-		if tt.taskAtReviewStart != "" || tt.taskAtStop != "" || tt.taskAtResume != "" {
-			paths = append(paths, activeTaskRepoPath)
-		}
-		return paths, nil
 	}
 	repoRoot := w.config.RepoRoot
 	if tt.planAtReviewStart != "" {
@@ -333,6 +329,7 @@ func TestReviewResumeRepositoryDriftDuringStopIsRejected(t *testing.T) {
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
 			planAtResume:      "p1\n",
+			reviewTarget:      state.ParentPlanFile,
 			mutateCurrent:     func(snap *state.GitSnapshot) { snap.WorktreeDigestExcludingParent = "excluding-2" },
 		},
 		{
@@ -340,6 +337,7 @@ func TestReviewResumeRepositoryDriftDuringStopIsRejected(t *testing.T) {
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
 			planAtResume:      "p1\n",
+			reviewTarget:      state.ParentPlanFile,
 			mutateCurrent:     func(snap *state.GitSnapshot) { snap.Head = "head-2" },
 		},
 		{
@@ -347,12 +345,14 @@ func TestReviewResumeRepositoryDriftDuringStopIsRejected(t *testing.T) {
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
 			planAtResume:      "p1\n",
+			reviewTarget:      state.ParentPlanFile,
 			mutateCurrent:     func(snap *state.GitSnapshot) { snap.IndexDigest = "index-2" },
 		},
 		{
 			name:              "parent deletion during stop rejected",
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
+			reviewTarget:      state.ParentPlanFile,
 		},
 		{
 			name:              "active task file deletion during stop rejected",
@@ -361,6 +361,7 @@ func TestReviewResumeRepositoryDriftDuringStopIsRejected(t *testing.T) {
 			planAtResume:      "p0\n",
 			taskAtReviewStart: "t0\n",
 			taskAtStop:        "t0\n",
+			reviewTarget:      activeTaskRepoPath,
 		},
 	}
 	for _, tt := range tests {
@@ -378,17 +379,20 @@ func TestReviewResumeReviewerMutationIsRejected(t *testing.T) {
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p1\n",
 			planAtResume:      "p1\n",
+			reviewTarget:      state.ParentPlanFile,
 		},
 		{
 			name:              "reviewer change plus stop-period change on same file rejected",
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p1\n",
 			planAtResume:      "p2\n",
+			reviewTarget:      state.ParentPlanFile,
 		},
 		{
 			name:         "creation during reviewer call then stop-period change rejected",
 			planAtStop:   "p1\n",
 			planAtResume: "p2\n",
+			reviewTarget: state.ParentPlanFile,
 		},
 		{
 			name:              "active task file reviewer change plus stop-period change rejected",
@@ -398,6 +402,7 @@ func TestReviewResumeReviewerMutationIsRejected(t *testing.T) {
 			taskAtReviewStart: "t0\n",
 			taskAtStop:        "t1\n",
 			taskAtResume:      "t2\n",
+			reviewTarget:      activeTaskRepoPath,
 		},
 	}
 	for _, tt := range tests {
