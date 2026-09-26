@@ -75,6 +75,7 @@ func TestQualityFixRejectsUnprovenFixedReport(t *testing.T) {
 			st := newStateStoreT(t)
 			r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 			w := newWorkflowT(t, st, r)
+			w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 			path := filepath.Join(w.config.RepoRoot, "fixture.go")
 			if err := os.WriteFile(path, []byte("package fixture\n"), 0o644); err != nil {
 				t.Fatal(err)
@@ -108,6 +109,7 @@ func TestQualityViolationWithoutFixRejectsExternalChangeBeforeAutoFix(t *testing
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	path := filepath.Join(w.config.RepoRoot, "fixture.go")
 	if err := os.WriteFile(path, []byte("package fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -142,6 +144,7 @@ func TestQualityPassWithoutFixDoesNotRebaseExternalChange(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	path := filepath.Join(w.config.RepoRoot, "fixture.go")
 	if err := os.WriteFile(path, []byte("package fixture\n"), 0o644); err != nil {
 		t.Fatal(err)

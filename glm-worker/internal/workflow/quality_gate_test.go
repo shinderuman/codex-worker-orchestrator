@@ -17,6 +17,7 @@ func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &out)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"commentlint"}, nil }
 	runQualityGateGit(t, w.config.RepoRoot, "init")
 	calls := 0
 	w.captureQualitySurface = func(string) (string, error) {
@@ -48,6 +49,7 @@ func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testin
 	}
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, &scriptedRunner{}, &out)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"commentlint"}, nil }
 	w.captureQualitySurface = func(string) (string, error) { return "current", nil }
 
 	stopped, err := w.verifyQualitySurfaceBaseline("worker-new")

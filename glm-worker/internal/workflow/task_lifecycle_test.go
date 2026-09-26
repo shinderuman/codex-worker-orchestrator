@@ -175,6 +175,7 @@ func TestAutoFixNonConvergence(t *testing.T) {
 		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.config.MaxAutoFixRounds = 1
 
 	if err := w.ExecuteNewTask("request"); err != nil {

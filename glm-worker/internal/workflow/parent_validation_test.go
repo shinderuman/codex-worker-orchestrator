@@ -200,6 +200,7 @@ func TestParentValidationNonConvergenceFixRerunsGateBeforeReview(t *testing.T) {
 	}}
 	var fixOutput bytes.Buffer
 	fixWorkflow := newWorkflowTWithOutput(t, st, fixRunner, &fixOutput)
+	fixWorkflow.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	fixWorkflow.temp = t.TempDir()
 	fixWorkflow.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil

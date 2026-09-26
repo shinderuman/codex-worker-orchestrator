@@ -67,6 +67,7 @@ func TestAutoFixRoundsDoNotRecordParentOutcome(t *testing.T) {
 		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.config.MaxAutoFixRounds = 1
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -93,6 +94,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, setup)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.config.MaxAutoFixRounds = 1
 	var workerErr *WorkerError
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -101,6 +103,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 
 	failed := &scriptedRunner{steps: []runnerStep{{runErr: errors.New("boom")}}}
 	wf := newWorkflowT(t, st, failed)
+	wf.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	err := wf.ExecuteExplicitFixWithExecutionMilestones("境界値を修正する", state.ParentOriginGLMReviewer, "", "")
 	if err == nil || !errors.As(err, &workerErr) {
@@ -116,6 +119,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 
 	retry := &scriptedRunner{steps: []runnerStep{{runErr: errors.New("boom again")}}}
 	wf2 := newWorkflowT(t, st, retry)
+	wf2.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	err = wf2.ExecuteExplicitFixWithExecutionMilestones("境界値を修正する", state.ParentOriginGLMReviewer, "", "")
 	if err == nil || !strings.Contains(err.Error(), "--fix is only available after NEEDS_SOL_REVIEW") {
 		t.Fatalf("status activeでの同一fix再実行はgateで拒否: %v", err)
