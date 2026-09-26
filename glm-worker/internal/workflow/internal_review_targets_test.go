@@ -23,12 +23,14 @@ func TestCanonicalInternalReviewTargets(t *testing.T) {
 
 func TestCurrentReviewDiffTargetsUsesActualTaskPaths(t *testing.T) {
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-	w.collectReviewTargetPaths = func(string, string) ([]string, error) { return []string{"z.go", "a.go", "z.go"}, nil }
+	w.collectReviewTargetPaths = func(string, string) ([]string, error) {
+		return []string{"z.go", "commentlint", "a.go", "z.go"}, nil
+	}
 	targets, err := w.currentReviewDiffTargets()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"a.go:@diff", "z.go:@diff"}
+	want := []string{"a.go:@diff", "commentlint:@diff", "z.go:@diff"}
 	if !reflect.DeepEqual(targets, want) {
 		t.Fatalf("targets = %#v want %#v", targets, want)
 	}
