@@ -137,6 +137,7 @@ func seedReviewResumeStop(t *testing.T, st *state.StateStore, saved state.GitSna
 func newReviewResumeWorkflow(t *testing.T, st *state.StateStore, r *scriptedRunner, out io.Writer) *Workflow {
 	t.Helper()
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.output = out
 	w.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {
 		snapshot, err := w.captureSnapshot(repoRoot)

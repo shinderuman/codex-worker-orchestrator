@@ -84,6 +84,7 @@ func TestReportOnlyDispatchCapabilityAndBaselineOrdering(t *testing.T) {
 		}
 	}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -122,6 +123,7 @@ func TestImplementationAutoFixKeepsWriteCapabilityAndBaselineFlow(t *testing.T) 
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)

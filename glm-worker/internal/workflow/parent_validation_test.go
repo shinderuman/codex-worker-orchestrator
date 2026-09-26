@@ -32,6 +32,7 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.temp = t.TempDir()
 	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
 	if err := os.MkdirAll(workingDir, 0o700); err != nil {
@@ -116,6 +117,7 @@ func exhaustParentValidationFixBudget(t *testing.T, st *state.StateStore) (strin
 	}}
 	var output bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &output)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.temp = t.TempDir()
 	w.config.MaxAutoFixRounds = 1
 	w.qualityGate = func(string) (harnesslint.Report, error) {
@@ -274,6 +276,7 @@ func TestParentValidationBudgetExhaustionUsesCurrentTaskTargets(t *testing.T) {
 	}}
 	var output bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &output)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.temp = t.TempDir()
 	w.config.MaxAutoFixRounds = 1
 	w.qualityGate = func(string) (harnesslint.Report, error) {
@@ -333,6 +336,7 @@ func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
 func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, &scriptedRunner{})
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
 	if err := os.MkdirAll(workingDir, 0o700); err != nil {
 		t.Fatal(err)

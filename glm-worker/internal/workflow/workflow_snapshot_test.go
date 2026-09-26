@@ -42,6 +42,7 @@ func newSnapshotWorkflow(st *state.StateStore, r *scriptedRunner, out io.Writer)
 		RoutineEffort:         "high",
 		MaxAutoFixRounds:      2,
 	}, st, r, out)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 	w.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {
 		snapshot, err := w.captureSnapshot(repoRoot)
 		if err != nil {
@@ -216,6 +217,7 @@ func TestSnapshotMatchReachesReviewer(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -320,6 +322,7 @@ func TestSnapshotReviewResumeMatchResumesReviewer(t *testing.T) {
 	}
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
@@ -355,6 +358,7 @@ func TestSnapshotCapturedOnDecisionPath(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteDecision("A案で進める"); err != nil {
 		t.Fatal(err)
@@ -380,6 +384,7 @@ func TestSnapshotCapturedOnAutoFixPath(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -409,6 +414,7 @@ func TestSnapshotCapturedOnExplicitFixPath(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteExplicitFixWithExecutionMilestones("境界値を修正する", "", "", ""); err != nil {
 		t.Fatal(err)
@@ -448,6 +454,7 @@ func TestSnapshotCapturedOnWorkerResumePath(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"fixture.go"}, nil }
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
