@@ -226,13 +226,14 @@ func qualityGateFixResult(report harnesslint.Report) packet.Result {
 	targetSet := make(map[string]struct{}, len(report.Violations))
 	for _, violation := range report.Violations {
 		issues = append(issues, fmt.Sprintf("%s %s:%d:%d %s", violation.Rule, violation.Path, violation.Line, violation.Column, violation.Message))
-		if violation.Path != "" {
-			targetSet[violation.Path] = struct{}{}
+		path := strings.TrimSpace(violation.Path)
+		if path != "" {
+			targetSet[fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)] = struct{}{}
 		}
 	}
 	targets := make([]string, 0, len(targetSet))
-	for path := range targetSet {
-		targets = append(targets, path)
+	for target := range targetSet {
+		targets = append(targets, target)
 	}
 	sort.Strings(targets)
 	return packet.Result{
