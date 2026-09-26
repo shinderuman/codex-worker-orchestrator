@@ -25,7 +25,7 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	if err := w.validateCompletedGuardResult(result); err != nil {
 		return true, err
 	}
-	targets, err := w.currentReviewDiffTargets()
+	targets, err := w.currentQualitySurfaceReviewTargets()
 	if err != nil {
 		return true, fmt.Errorf("quality-surface approval review targets: %w", err)
 	}
