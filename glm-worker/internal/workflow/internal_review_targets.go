@@ -46,6 +46,10 @@ func reviewTargetsOrFallback(values, fallback []string) []string {
 	return canonicalReviewTargets(fallback)
 }
 
+func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
+	return w.riskFloorReviewTargets()
+}
+
 func (w *Workflow) currentReviewDiffTargetsOrFallback(fallback []string) []string {
 	if w.collectChangedPaths != nil {
 		paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
