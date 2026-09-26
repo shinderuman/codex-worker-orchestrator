@@ -16,6 +16,11 @@ func newReportOnlyWorkflow(t *testing.T, repoRoot string, steps []runnerStep, mu
 	t.Helper()
 	w, r, out := newMutationWorkflow(t, repoRoot, steps, mutate)
 	r.mutatePhase = "worker-report-only-1"
+	if mutate != nil {
+		w.collectChangedPaths = func(string, string) ([]string, error) {
+			return []string{"tracked.txt"}, nil
+		}
+	}
 	return w, r, out
 }
 
