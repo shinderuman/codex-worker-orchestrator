@@ -167,7 +167,7 @@ for name in [
     inject_after_constructor(
         'glm-worker/internal/workflow/report_only_snapshot_test.go',
         name,
-        ['newReportOnlyWorkflow'],
+        ['newReportOnlyWorkflow', 'newMutationWorkflowShell'],
         fixed_target_body,
     )
 
