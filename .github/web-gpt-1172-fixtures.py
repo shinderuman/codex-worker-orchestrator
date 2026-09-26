@@ -85,8 +85,6 @@ def inject_after_constructor(path, test_name, constructors, body):
     p.write_text(text[:start] + segment + text[end:])
 
 
-# Synthetic snapshot/diagnostic tests explicitly provide the semantic target
-# that their synthetic snapshots represent. No shared production/test seam.
 for name in [
     'TestDiagnosticRecordsSnapshotMismatch',
     'TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch',
@@ -119,7 +117,6 @@ inject_test_collector('glm-worker/internal/workflow/parent_validation_test.go', 
 actual_diff_body = 'w.collectChangedPaths = func(repoRoot, _ string) ([]string, error) { return collectTaskChangedPaths(repoRoot, w.state) }'
 fixed_target_body = 'w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"tracked.txt"}, nil }'
 
-# New-task review-end mutation tests can resolve the actual fixture diff.
 for name in [
     'TestReviewEndWorktreeMutationRejectsPass',
     'TestReviewEndUntrackedMutationRejectsPass',
@@ -127,7 +124,6 @@ for name in [
     'TestReviewEndHeadMutationRejectsPass',
     'TestReviewEndMutationRejectsFixRequired',
     'TestReviewEndMutationRejectsNeedsSolReview',
-    'TestReviewEndMutationOnRiskFloorReemitRejects',
 ]:
     inject_after_constructor(
         'glm-worker/internal/workflow/review_end_snapshot_test.go',
@@ -136,8 +132,13 @@ for name in [
         actual_diff_body,
     )
 
-# Resume fixture intentionally has no task-baseline record; set the semantic
-# target directly on that test instance rather than changing a shared helper.
+inject_after_constructor(
+    'glm-worker/internal/workflow/review_end_snapshot_test.go',
+    'TestReviewEndMutationOnRiskFloorReemitRejects',
+    ['newMutationWorkflowShell'],
+    actual_diff_body,
+)
+
 inject_after_constructor(
     'glm-worker/internal/workflow/review_end_snapshot_test.go',
     'TestReviewEndMutationAfterRateLimitResumeRejectsPass',
@@ -157,7 +158,6 @@ for name in [
         actual_diff_body,
     )
 
-# New-task synthetic report-only failures target their explicit task fixture.
 for name in [
     'TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun',
     'TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun',
@@ -171,8 +171,6 @@ for name in [
         fixed_target_body,
     )
 
-# Resume report-only tests must set the collector on the resumed workflow, not
-# the earlier workflow used to create the checkpoint.
 for name in [
     'TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot',
     'TestReportOnlyTransientRecoveryStillEnforcesInvariant',
