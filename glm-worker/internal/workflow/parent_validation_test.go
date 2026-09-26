@@ -116,6 +116,9 @@ func exhaustParentValidationFixBudget(t *testing.T, st *state.StateStore) (strin
 	}}
 	var output bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &output)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/parent_validation_test.go"}, nil
+	}
 	w.temp = t.TempDir()
 	w.config.MaxAutoFixRounds = 1
 	w.qualityGate = func(string) (harnesslint.Report, error) {
