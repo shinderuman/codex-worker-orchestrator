@@ -23,7 +23,15 @@ Squash Merge時にコミットコメントはちゃんと書け
 
 ## Amendments
 
-none
+- 2026-09-27 priority correction:
+
+```text
+いや022の前はおかしいだろ
+```
+
+```text
+せめて105の前だろ
+```
 
 ## Resolved references
 
@@ -31,6 +39,7 @@ none
 - 現行 `glm-worker/internal/app/execution.go` のself-resume loopは、予定時刻にcheckpointを検証してresumeし、再度 `ZaiRateLimitError` を得ると同じloopへ戻る。ただし同じ既過去reset boundaryを再取得した場合、算出されたresume予定時刻が未来でなくなり、`five-hour self-resume reset boundary is not in the future` で自動継続が終了し得る。
 - ユーザー提案の「数秒のバッファ」「10秒リトライ」は、reset反映遅延を固定2分待機で吸収するのではなく、短い初期待機と既知5h-limitに限定した短周期retryで吸収する方向を指す。
 - 本改善はSystem-Oneより後に実施する低優先度改善であり、現在のSystem-One作業を割り込ませない。
+- `105-session-rotation.md` は既にfulfilledで現行NEXTには存在しないため、最新priority correctionは、105後の最終reevaluationである `post-105-codex-efficiency-reevaluation.md` より前へ本taskを置き、022直前まで先送りしないscheduleとして反映する。
 
 ## Purpose
 
