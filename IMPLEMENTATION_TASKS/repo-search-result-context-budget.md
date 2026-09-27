@@ -25,6 +25,7 @@ none
 - 参考: https://parallel.ai/products/search
 - current repositoryでは `glm-worker/internal/reposearch/` がranked resultとsnippetを生成し、automatic worker/reviewer navigationとstandalone parent repo-searchが利用する。実装開始時にcurrent Gitでowner / caller / output contractを再確認する。
 - historical #742 はautomatic BM25 navigation経路そのもののKEEP / REMOVE / SIMPLIFY価値測定を所有したが、result-set全体のmodel-visible budget allocationは対象外。#313はstructured machine evidenceのbounded projectionであり、raw source/navigation snippet allocationとは別境界。
+- 2026-09-27に追加した `IMPLEMENTATION_TASKS/repo-search-system-one-relevance-filter-eval.md` は、取得済みcandidateをSystem-Oneでsemantic filteringする別評価境界である。本taskは引き続きzero-model-callのdeterministic result-set budget / dedupだけを所有し、そのTaskのJev/System-One call、threshold、false-negative評価を吸収しない。
 
 ## Purpose
 
@@ -54,6 +55,7 @@ Exa / Parallel等の外部search serviceは、agent向けretrievalでdocument単
 - Top-N件を機械的に短くするだけでCodex Reduction成立とみなさない。
 - relevant sourceを失わせるsilent truncation、false proof、exhaustive-search弱体化を行わない。
 - retrieval budgetのために追加model call、embedding service、外部search依存、generic retrieval frameworkを導入しない。
+- `repo-search-system-one-relevance-filter-eval.md` のsemantic relevance filteringを本taskへ統合しない。
 - external serviceの公開ベンチマーク削減率をrepository固有の削減率として扱わない。
 - raw LOC / snippet lengthだけをQuality Deltaの代替指標にしない。
 

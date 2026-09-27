@@ -25,6 +25,7 @@ none
 - 参考: https://exa.ai/blog/dynamic-highlights
 - current repositoryでは `glm-worker/internal/reposearch/` とworker/reviewer navigation wiringがlexical query / scopeを扱う。実装開始時にcurrent Gitでquery seed生成、known target、path/symbol scope、reviewer diff-first navigation、parent standalone searchを再確認する。
 - このFindingは `IMPLEMENTATION_TASKS/repo-search-result-context-budget.md` と独立する。前者は取得済みresultへの有限context配分、こちらはretrieval intent表現と追加search/readの削減可能性を扱う。
+- 2026-09-27に追加した `IMPLEMENTATION_TASKS/repo-search-system-one-relevance-filter-eval.md` は取得済みcandidateへのsemantic relevance/evidence-usability判定をSystem-Oneで評価する別境界である。本taskはzero-model-callでsemantic objectiveとlexical queryを分離できるかだけを所有し、System-One classifier/rerankerを実装しない。
 
 ## Purpose
 
@@ -53,6 +54,7 @@ Parallel等のagent-oriented searchはobjectiveとsearch queryを別入力とし
 - lexical BM25の弱点という一般論だけで実装を採用しない。
 - objective fieldを追加するだけでCodex Reductionとみなさない。
 - `repo-search-result-context-budget.md` のresult-set budget問題と同一実装へ混ぜない。
+- `repo-search-system-one-relevance-filter-eval.md` のSystem-One semantic filteringを本taskへ混ぜない。
 - quality-required exhaustive proofやexact source inspectionを省略しない。
 
 ## Acceptance criteria
