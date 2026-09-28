@@ -89,6 +89,14 @@ func TestPublicationParentValidationGateAcceptsExactPromotedSnapshot(t *testing.
 	writePublicationQualityRun(t, filepath.Join(dir, "run.json"), record)
 
 	gate, required := publicationParentValidationGate(st, cfg.RepoRoot, candidate)
+	if !required || gate.Status != publicationGateMissing || !strings.Contains(gate.Reason, "finalization evidence") {
+		t.Fatalf("validation without finalization evidence = %#v required=%v", gate, required)
+	}
+	if err := st.SaveFinalizationEvidence(state.NewFinalizationEvidence(candidate.TaskID, form, runID, promotedSnapshotID)); err != nil {
+		t.Fatal(err)
+	}
+
+	gate, required = publicationParentValidationGate(st, cfg.RepoRoot, candidate)
 	if !required || gate.Status != publicationGatePass || gate.ValidationRunID != runID || gate.SnapshotID != promotedSnapshotID {
 		t.Fatalf("promoted validation gate = %#v required=%v", gate, required)
 	}
