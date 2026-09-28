@@ -271,10 +271,7 @@ func publicationValidationEvent(st *state.StateStore, candidate state.Publicatio
 		if err != nil {
 			return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
 		}
-		if record.Validation == nil ||
-			record.Validation.Form != form ||
-			record.Validation.ValidationRunID != evidence.ValidationRunID ||
-			record.Validation.SnapshotID != evidence.SnapshotID {
+		if !publicationValidationMatchesFinalization(record.Validation, evidence, form) {
 			continue
 		}
 		return *record.Validation, boundSnapshot, nil
@@ -283,6 +280,13 @@ func publicationValidationEvent(st *state.StateStore, candidate state.Publicatio
 		return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
 	}
 	return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("finalization evidence has no matching quality gate event")
+}
+
+func publicationValidationMatchesFinalization(validation *state.TaskValidationEvent, evidence state.FinalizationEvidence, form string) bool {
+	return validation != nil &&
+		validation.Form == form &&
+		validation.ValidationRunID == evidence.ValidationRunID &&
+		validation.SnapshotID == evidence.SnapshotID
 }
 
 func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
