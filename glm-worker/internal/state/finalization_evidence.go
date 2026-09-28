@@ -35,18 +35,18 @@ func (s *StateStore) SaveFinalizationEvidence(evidence FinalizationEvidence) err
 	if err := validateFinalizationEvidence(evidence); err != nil {
 		return err
 	}
-	taskID, err := s.TaskID()
+	currentTaskID, err := s.TaskID()
 	if err != nil {
 		return err
 	}
-	if evidence.TaskID != taskID {
-		return fmt.Errorf("finalization evidence task %s does not match current task %s", evidence.TaskID, taskID)
+	if evidence.TaskID != currentTaskID {
+		return fmt.Errorf("finalization evidence task %s does not match current task %s", evidence.TaskID, currentTaskID)
 	}
 	data, err := json.Marshal(evidence)
 	if err != nil {
 		return fmt.Errorf("finalization evidenceをJSON化できません: %w", err)
 	}
-	if err := writeFileAtomic(s.Path(finalizationEvidenceFile), append(data, '\n'), 0o600); err != nil {
+	if err := s.Write(finalizationEvidenceFile, string(data)); err != nil {
 		return fmt.Errorf("finalization evidenceを書き込めません: %w", err)
 	}
 	return nil
