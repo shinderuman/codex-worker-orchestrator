@@ -248,6 +248,17 @@ func publicationValidationSnapshots(repoRoot string, candidate state.Publication
 }
 
 func publicationValidationEvent(st *state.StateStore, candidate state.PublicationCandidate, form string, snapshots map[string]state.SnapshotDigest) (state.TaskValidationEvent, state.SnapshotDigest, error) {
+	evidence, err := st.LoadFinalizationEvidence()
+	if err != nil {
+		return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("finalization evidence is unavailable: %w", err)
+	}
+	if evidence.TaskID != candidate.TaskID || evidence.Form != form {
+		return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("finalization evidence does not match publication candidate")
+	}
+	boundSnapshot, ok := snapshots[evidence.SnapshotID]
+	if !ok {
+		return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("finalization evidence snapshot is stale for publication candidate")
+	}
 	file, err := os.Open(st.TaskEventLogPath(candidate.TaskID))
 	if err != nil {
 		return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
@@ -255,34 +266,23 @@ func publicationValidationEvent(st *state.StateStore, candidate state.Publicatio
 	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	var found *state.TaskValidationEvent
-	var foundSnapshot state.SnapshotDigest
 	for scanner.Scan() {
 		record, err := state.ParseTaskEventLine(scanner.Bytes())
 		if err != nil {
 			return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
 		}
-		if record.Validation == nil || record.Validation.Form != form {
+		if record.Validation == nil ||
+			record.Validation.Form != form ||
+			record.Validation.ValidationRunID != evidence.ValidationRunID ||
+			record.Validation.SnapshotID != evidence.SnapshotID {
 			continue
 		}
-		snapshot, ok := snapshots[record.Validation.SnapshotID]
-		if !ok {
-			continue
-		}
-		copy := *record.Validation
-		found = &copy
-		foundSnapshot = snapshot
+		return *record.Validation, boundSnapshot, nil
 	}
 	if err := scanner.Err(); err != nil {
 		return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
 	}
-	if found == nil {
-		return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("no %s validation matches an admitted publication snapshot", form)
-	}
-	if found.ValidationRunID == "" {
-		return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("matching %s validation has no run identity", form)
-	}
-	return *found, foundSnapshot, nil
+	return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("finalization evidence has no matching quality gate event")
 }
 
 func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
