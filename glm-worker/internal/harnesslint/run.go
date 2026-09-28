@@ -55,7 +55,7 @@ func run(root string, fix bool, runner commandRunner) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	external, err := runExternalChecks(root, paths, runner)
+	external, err := runExternalChecks(root, paths, newCrossPlatformGolangCIRunner(runner))
 	if err != nil {
 		return Report{}, err
 	}
