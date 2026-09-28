@@ -16,11 +16,11 @@ GLMは使わずこのリポジトリの総合的なレビューしてほしい
 
 ## Amendments
 
-none
+- 2026-09-28: ユーザーは今回に限り、この既存Task `IMPLEMENTATION_TASKS/parent-review-target-evidence-coverage.md` をinterrupt Task `606ea457-6950-40d2-8c54-b3a860ba5581` を塞ぐbounded blocker ownerとして実行することを許可した。新しいrepair Taskや同根の別Taskを作らず、606のworktree・未commit diff・review stateを保持し、F11の独立ownership/1 commit/terminal/正規integration後に606へ戻る。stage、先行commit、index操作、review target言い換え、guard迂回で606を無理にacceptさせない。正規machine workflowが欠ける場合は停止する。
 
 ## Resolved references
 
-- 共通の追加要求は `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md` の `2026-09-23 Finding保存の優先と計画化・Pushの要求` を参照する。今回は計画化とPushまでで、実装修正の開始ではない。
+- 共通の追加要求は `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md` の `2026-09-23 Finding保存の優先と計画化・Pushの要求` を参照する。当初は計画化とPushまでで実装修正の開始ではなかったが、2026-09-28 Amendmentは今回のbounded blockerに限って実装修正開始を明示許可する。
 - 調査根拠は `Review.md` の F11。実装ownerは `glm-worker/internal/parentevidence/review.go の BuildReviewManifest / reviewSourceCoversTarget / reviewDiffHunkCurrentRange と projector.go の captureDiff / projectSource`。
 - 再現資料: `review-evidence/target_audit_test.go.txt`。対象test: `TestAuditReviewUntrackedSymbolCanBeProven`, `TestAuditReviewDeletedNumericTargetCanBeProven`.
 

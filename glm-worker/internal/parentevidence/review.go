@@ -2,6 +2,9 @@ package parentevidence
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"sort"
 	"strconv"
@@ -145,8 +148,58 @@ func reviewSourceCoversTarget(target string, source SourceBody) bool {
 		return false
 	}
 	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
-	start, end, ok := NumericRange(locator)
-	return ok && source.LineStart <= start && source.LineEnd >= end
+	if start, end, ok := NumericRange(locator); ok {
+		return source.LineStart <= start && source.LineEnd >= end
+	}
+	return sourceCoversSymbol(locator, source.Path, source.Content)
+}
+
+func sourceCoversSymbol(locator, path, content string) bool {
+	if locator == "" || locator == reviewtarget.WholeFileDiffLocator || !strings.HasSuffix(path, ".go") {
+		return false
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), path, content, parser.SkipObjectResolution)
+	if err != nil {
+		return false
+	}
+	_, declared := declaredSymbolNames(file)[locator]
+	return declared
+}
+
+func declaredSymbolNames(file *ast.File) map[string]struct{} {
+	names := map[string]struct{}{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch declaration := node.(type) {
+		case *ast.FuncDecl:
+			names[declaration.Name.Name] = struct{}{}
+		case *ast.TypeSpec:
+			names[declaration.Name.Name] = struct{}{}
+			collectTypeMemberNames(declaration.Type, names)
+		case *ast.ValueSpec:
+			for _, name := range declaration.Names {
+				names[name.Name] = struct{}{}
+			}
+		}
+		return true
+	})
+	return names
+}
+
+func collectTypeMemberNames(typ ast.Expr, names map[string]struct{}) {
+	switch t := typ.(type) {
+	case *ast.StructType:
+		for _, field := range t.Fields.List {
+			for _, name := range field.Names {
+				names[name.Name] = struct{}{}
+			}
+		}
+	case *ast.InterfaceType:
+		for _, method := range t.Methods.List {
+			for _, name := range method.Names {
+				names[name.Name] = struct{}{}
+			}
+		}
+	}
 }
 
 func ReviewDiffCoversTarget(target string, diff DiffBody) bool {
@@ -195,8 +248,9 @@ func ReviewDiffFileSection(body, path string) string {
 }
 
 func reviewDiffSectionCoversLines(section string, start, end int) bool {
+	deleted := reviewDiffSectionDeletesFile(section)
 	for _, line := range strings.Split(section, "\n") {
-		hunkStart, hunkEnd, ok := reviewDiffHunkCurrentRange(line)
+		hunkStart, hunkEnd, ok := reviewDiffHunkRange(line, deleted)
 		if ok && start >= hunkStart && end <= hunkEnd {
 			return true
 		}
@@ -204,15 +258,33 @@ func reviewDiffSectionCoversLines(section string, start, end int) bool {
 	return false
 }
 
-func reviewDiffHunkCurrentRange(line string) (int, int, bool) {
+func reviewDiffSectionDeletesFile(section string) bool {
+	for _, line := range strings.Split(section, "\n") {
+		if strings.HasPrefix(line, "+++ ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "+++ ")) == "/dev/null"
+		}
+	}
+	return false
+}
+
+func reviewDiffHunkRange(line string, oldSide bool) (int, int, bool) {
 	if !strings.HasPrefix(line, "@@ ") {
 		return 0, 0, false
 	}
 	fields := strings.Fields(line)
-	if len(fields) < 3 || !strings.HasPrefix(fields[2], "+") {
+	if len(fields) < 3 {
 		return 0, 0, false
 	}
-	value := strings.TrimPrefix(fields[2], "+")
+	token := fields[2]
+	prefix := "+"
+	if oldSide {
+		token = fields[1]
+		prefix = "-"
+	}
+	if !strings.HasPrefix(token, prefix) {
+		return 0, 0, false
+	}
+	value := strings.TrimPrefix(token, prefix)
 	parts := strings.SplitN(value, ",", 2)
 	start, ok := positiveLine(parts[0])
 	if !ok {

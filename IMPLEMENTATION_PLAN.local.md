@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/system-one-adoption-evidence-gate.md`
+- `IMPLEMENTATION_TASKS/parent-review-target-evidence-coverage.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/system-one-adoption-evidence-gate.md`
 - `IMPLEMENTATION_TASKS/system-one-review-feedback-eval.md`
 - `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 - `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
@@ -21,7 +22,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/repo-search-system-one-relevance-filter-eval.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-locator-identity.md`
 - `IMPLEMENTATION_TASKS/parent-review-evidence-coverage-accumulation.md`
-- `IMPLEMENTATION_TASKS/parent-review-target-evidence-coverage.md`
 - `IMPLEMENTATION_TASKS/codex-install-interruption-recovery.md`
 - `IMPLEMENTATION_TASKS/cli-install-interruption-recovery.md`
 - `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
