@@ -20,11 +20,12 @@ const (
 var quotedLongText = regexp.MustCompile(`'([^']{32,})'|"([^"]{32,})"`)
 
 var markdownBudgets = map[string]int{
-	"codex/AGENTS.md":                      8000,
-	"codex/instructions/glm-execution.md":  19000,
-	"codex/glm-worker/prompts/WORKER.md":   10000,
-	"codex/glm-worker/prompts/REVIEWER.md": 10000,
-	"README.md":                            14000,
+	"codex/AGENTS.md":                                   8000,
+	"codex/instructions/glm-execution.md":               19000,
+	"codex/glm-worker/prompts/WORKER.md":                10000,
+	"codex/glm-worker/prompts/REVIEWER.md":              10000,
+	"codex/glm-worker/prompts/FAILURE_PATH_REVIEWER.md": 10000,
+	"README.md": 14000,
 }
 
 func scanTextRules(root string, paths []string) ([]Violation, error) {

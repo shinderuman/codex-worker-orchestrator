@@ -171,6 +171,8 @@ func newTaskCanonicalStateFileNames() []string {
 		"worker.ready",
 		"reviewer.id",
 		"reviewer.ready",
+		"failure-path-reviewer.id",
+		"failure-path-reviewer.ready",
 		parentEvidenceLedgerPath,
 		parentEvidenceLeasePath,
 		taskDispositionStateFile,

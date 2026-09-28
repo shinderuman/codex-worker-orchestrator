@@ -46,7 +46,7 @@ func TestInvalidateSessionRemovesOnlyRequestedRolePair(t *testing.T) {
 
 func TestInvalidateAllSessionsRemovesBothRolePairs(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
-	for _, role := range []SessionRole{WorkerRole, ReviewerRole} {
+	for _, role := range []SessionRole{WorkerRole, ReviewerRole, FailurePathReviewerRole} {
 		if _, _, err := st.SessionID(role); err != nil {
 			t.Fatal(err)
 		}
@@ -58,7 +58,11 @@ func TestInvalidateAllSessionsRemovesBothRolePairs(t *testing.T) {
 	if err := st.InvalidateAllSessions(); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"worker.id", "worker.ready", "reviewer.id", "reviewer.ready"} {
+	for _, name := range []string{
+		"worker.id", "worker.ready",
+		"reviewer.id", "reviewer.ready",
+		"failure-path-reviewer.id", "failure-path-reviewer.ready",
+	} {
 		if st.Exists(name) {
 			t.Fatalf("session state %s remains after invalidation", name)
 		}

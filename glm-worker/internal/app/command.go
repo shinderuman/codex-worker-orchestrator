@@ -86,6 +86,7 @@ const (
 	ModeCodexWakePlan
 	ModeCodexWakeResponse
 	ModeShadowEval
+	ModeFailurePathTrial
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -107,6 +108,8 @@ const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3
 const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
 
 const shadowEvalUsage = "usage: glm-worker --shadow-eval <task-id> [--reference <reference.json>]"
+
+const failurePathTrialUsage = "usage: glm-worker --failure-path-trial [--labels <labels.json>]"
 
 var commandParsers = map[string]commandParser{
 	"--decision-stdin": func(args []string) (Command, error) {
@@ -184,9 +187,10 @@ var commandParsers = map[string]commandParser{
 	"--codex-limit": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
 	},
-	"--repo-search": repoSearchCommand,
-	"--evidence":    evidenceCommand,
-	"--shadow-eval": shadowEvalCommand,
+	"--repo-search":        repoSearchCommand,
+	"--evidence":           evidenceCommand,
+	"--shadow-eval":        shadowEvalCommand,
+	"--failure-path-trial": failurePathTrialCommand,
 	"--repo-search-eval": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeRepoSearchEval, "usage: glm-worker --repo-search-eval")
 	},
@@ -261,6 +265,16 @@ func shadowEvalCommand(args []string) (Command, error) {
 		command.ReferencePath = args[index+1]
 	}
 	return command, nil
+}
+
+func failurePathTrialCommand(args []string) (Command, error) {
+	if len(args) == 1 {
+		return Command{Mode: ModeFailurePathTrial}, nil
+	}
+	if len(args) == 3 && args[1] == "--labels" && args[2] != "" {
+		return Command{Mode: ModeFailurePathTrial, ReferencePath: args[2]}, nil
+	}
+	return Command{}, machinecli.UsageErrorf("%s", failurePathTrialUsage)
 }
 
 func parentHandoffCommand(args []string) (Command, error) {

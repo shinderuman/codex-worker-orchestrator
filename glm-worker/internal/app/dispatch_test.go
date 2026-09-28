@@ -3,7 +3,7 @@ package app
 import "testing"
 
 func TestCommandDispatchOwnersCoverAllModes(t *testing.T) {
-	for mode := ModeNewTask; mode <= ModeShadowEval; mode++ {
+	for mode := ModeNewTask; mode <= ModeFailurePathTrial; mode++ {
 		if _, err := commandDispatchOwnerFor(mode); err != nil {
 			t.Fatalf("mode %d has no dispatch owner: %v", mode, err)
 		}
@@ -31,6 +31,7 @@ func TestCommandDispatchOwnersSeparateRuntimeAndReadOnly(t *testing.T) {
 		ModeEvidence,
 		ModeReviewGap,
 		ModeShadowEval,
+		ModeFailurePathTrial,
 	} {
 		owner, err := commandDispatchOwnerFor(mode)
 		if err != nil {

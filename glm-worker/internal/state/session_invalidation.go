@@ -11,5 +11,8 @@ func (s *StateStore) InvalidateAllSessions() error {
 	if err := s.InvalidateSession(WorkerRole); err != nil {
 		return err
 	}
-	return s.InvalidateSession(ReviewerRole)
+	if err := s.InvalidateSession(ReviewerRole); err != nil {
+		return err
+	}
+	return s.InvalidateSession(FailurePathReviewerRole)
 }

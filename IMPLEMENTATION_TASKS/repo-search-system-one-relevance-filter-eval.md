@@ -46,8 +46,7 @@ current repo-searchが取得したcandidate群に対して、低costのSystem-On
 ## External feasibility
 
 status: observation
-
-外部Jev/RAG事例は、狭い独立判定のbatch処理、usable-evidence基準のrelevance filtering、discarded positiveの監査、早期answerability gateに実現可能性があることを示す。一方で本repositoryのBM25 navigation、review flow、source-proof境界で同じQuality Delta / reductionが成立する証拠ではない。
+assumption: 外部Jev/RAG事例が示す狭い独立判定のbatch処理、usable-evidence基準のrelevance filtering、discarded positiveの監査、早期answerability gateが、本repositoryのBM25 navigation、review flow、source-proof境界でもQuality Deltaを維持しながらCodex/Sol消費を削減できるかは未検証。
 
 ## Contract
 

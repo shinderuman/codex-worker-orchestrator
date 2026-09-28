@@ -47,6 +47,7 @@ type TaskStats struct {
 	OutputTokensByResolvedModel             map[string]int64 `json:"output_tokens_by_resolved_model,omitempty"`
 	WorkerCalls                             int              `json:"worker_calls"`
 	ReviewerCalls                           int              `json:"reviewer_calls"`
+	FailurePathReviewerCalls                int              `json:"failure_path_reviewer_calls"`
 	DecisionCommands                        int              `json:"decision_commands"`
 	FixCommands                             int              `json:"fix_commands"`
 	ResumeCommands                          int              `json:"resume_commands"`
@@ -436,9 +437,12 @@ func (s *StateStore) RecordModelCall(role SessionRole, model string) {
 			stats.ModelCallsByAlias = make(map[string]int)
 		}
 		stats.ModelCallsByAlias[model]++
-		if role == ReviewerRole {
+		switch role {
+		case ReviewerRole:
 			stats.ReviewerCalls++
-		} else {
+		case FailurePathReviewerRole:
+			stats.FailurePathReviewerCalls++
+		default:
 			stats.WorkerCalls++
 		}
 	})

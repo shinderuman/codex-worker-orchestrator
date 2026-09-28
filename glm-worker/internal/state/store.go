@@ -21,8 +21,9 @@ type StateStore struct {
 }
 
 const (
-	WorkerRole   SessionRole = "worker"
-	ReviewerRole SessionRole = "reviewer"
+	WorkerRole              SessionRole = "worker"
+	ReviewerRole            SessionRole = "reviewer"
+	FailurePathReviewerRole SessionRole = "failure-path-reviewer"
 
 	TaskStatusActive                   TaskStatus = "active"
 	TaskStatusWaitingDecision          TaskStatus = "waiting-decision"

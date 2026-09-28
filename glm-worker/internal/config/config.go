@@ -42,6 +42,13 @@ type AppConfig struct {
 	MaxAutoFixRounds      int
 	TelemetryContent      bool
 	RepoSearch            bool
+	FailurePathTrial      bool
+}
+
+type boolFlags struct {
+	telemetryContent bool
+	repoSearch       bool
+	failurePathTrial bool
 }
 
 func RepoHashFor(root string) string {
@@ -75,11 +82,7 @@ func Load() (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
-	telemetryContent, err := boolEnv("GLM_WORKER_TELEMETRY_CONTENT", true)
-	if err != nil {
-		return AppConfig{}, err
-	}
-	repoSearch, err := boolEnv("GLM_WORKER_REPO_SEARCH", true)
+	flags, err := loadBoolFlags()
 	if err != nil {
 		return AppConfig{}, err
 	}
@@ -105,9 +108,26 @@ func Load() (AppConfig, error) {
 		RoutineEffort:          envOrDefault("GLM_WORKER_EFFORT", "high"),
 		EscalatedEffort:        envOrDefault("GLM_WORKER_ESCALATED_EFFORT", "max"),
 		MaxAutoFixRounds:       rounds,
-		TelemetryContent:       telemetryContent,
-		RepoSearch:             repoSearch,
+		TelemetryContent:       flags.telemetryContent,
+		RepoSearch:             flags.repoSearch,
+		FailurePathTrial:       flags.failurePathTrial,
 	}, nil
+}
+
+func loadBoolFlags() (boolFlags, error) {
+	telemetryContent, err := boolEnv("GLM_WORKER_TELEMETRY_CONTENT", true)
+	if err != nil {
+		return boolFlags{}, err
+	}
+	repoSearch, err := boolEnv("GLM_WORKER_REPO_SEARCH", true)
+	if err != nil {
+		return boolFlags{}, err
+	}
+	failurePathTrial, err := boolEnv("GLM_WORKER_FAILURE_PATH_TRIAL", true)
+	if err != nil {
+		return boolFlags{}, err
+	}
+	return boolFlags{telemetryContent: telemetryContent, repoSearch: repoSearch, failurePathTrial: failurePathTrial}, nil
 }
 
 func resolveRepoRoot() (string, error) {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathtrial"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -130,12 +131,15 @@ var (
 	workerSchemaOnce            sync.Once
 	reviewerSchemaOnce          sync.Once
 	riskFloorReviewerSchemaOnce sync.Once
+	failurePathSchemaOnce       sync.Once
 	workerSchemaValue           string
 	workerSchemaErr             error
 	reviewerSchemaVal           string
 	reviewerSchemaFail          error
 	riskFloorReviewerSchemaVal  string
 	riskFloorReviewerSchemaErr  error
+	failurePathSchemaValue      string
+	failurePathSchemaErr        error
 )
 
 var essentialSettingEnvKeys = []string{
@@ -185,6 +189,12 @@ func structuredSchema(role state.SessionRole, phase string) (string, error) {
 		})
 		return reviewerSchemaVal, reviewerSchemaFail
 	}
+	if role == state.FailurePathReviewerRole {
+		failurePathSchemaOnce.Do(func() {
+			failurePathSchemaValue, failurePathSchemaErr = failurepathtrial.ShadowSchemaJSON()
+		})
+		return failurePathSchemaValue, failurePathSchemaErr
+	}
 	workerSchemaOnce.Do(func() {
 		workerSchemaValue, workerSchemaErr = packet.WorkerSchemaJSON()
 	})
@@ -208,6 +218,36 @@ func (r *ClaudeRunner) Run(
 	prompt string,
 	outputPath string,
 ) (RunResult, error) {
+	return r.runSession(role, phase, model, readOnly, effort, prompt, outputPath, time.Time{}, nil)
+}
+
+func (r *ClaudeRunner) RunWithDeadline(
+	role state.SessionRole,
+	phase string,
+	model string,
+	readOnly bool,
+	effort string,
+	prompt string,
+	outputPath string,
+	deadline time.Time,
+) (RunResult, error) {
+	if deadline.IsZero() {
+		return RunResult{}, fmt.Errorf("deadline付きrun呼出には非零deadlineが必要です: %s", phase)
+	}
+	return r.runSession(role, phase, model, readOnly, effort, prompt, outputPath, deadline, nil)
+}
+
+func (r *ClaudeRunner) runSession(
+	role state.SessionRole,
+	phase string,
+	model string,
+	readOnly bool,
+	effort string,
+	prompt string,
+	outputPath string,
+	deadline time.Time,
+	admit func() error,
+) (RunResult, error) {
 	result, taskID, sessionID, ready, err := r.prepareRunSession(role, phase, model)
 	if err != nil {
 		return result, err
@@ -225,7 +265,7 @@ func (r *ClaudeRunner) Run(
 	}
 	versionScope := r.beginClaudeVersionScope(sessionID)
 	ingester, stderrPath, runErr, err := r.executeRunCommand(
-		role, phase, model, taskID, sessionID, callID, ready, args, inputs, outputPath,
+		role, phase, model, taskID, sessionID, callID, ready, args, inputs, outputPath, deadline, admit,
 	)
 	if err != nil {
 		return result, err
@@ -348,6 +388,8 @@ func (r *ClaudeRunner) executeRunCommand(
 	args []string,
 	inputs runInputs,
 	outputPath string,
+	deadline time.Time,
+	admit func() error,
 ) (*streamEventIngester, string, error, error) {
 	stderrPath := outputPath + ".stderr"
 	stderr, err := createPrivateFile(stderrPath)
@@ -374,7 +416,18 @@ func (r *ClaudeRunner) executeRunCommand(
 	}
 	command.Env = buildChildEnv(r.config.EnvAllowlist, inputs.settingEnv, additions, inputs.envDeletes)
 
-	runErr := r.runCommand(command)
+	if admit != nil {
+		if admitErr := admit(); admitErr != nil {
+			_ = stderr.Close()
+			return nil, stderrPath, nil, admitErr
+		}
+	}
+	var runErr error
+	if deadline.IsZero() {
+		runErr = r.runCommand(command)
+	} else {
+		runErr = r.runProbeCommand(command, deadline)
+	}
 	ingester.flush()
 	if closeErr := stderr.Close(); runErr == nil && closeErr != nil {
 		runErr = closeErr
@@ -650,10 +703,14 @@ func resolveClaudeConfigDir(claudeConfigDir string) (string, error) {
 }
 
 func promptFileName(role state.SessionRole) string {
-	if role == state.ReviewerRole {
+	switch role {
+	case state.ReviewerRole:
 		return "REVIEWER.md"
+	case state.FailurePathReviewerRole:
+		return "FAILURE_PATH_REVIEWER.md"
+	default:
+		return "WORKER.md"
 	}
-	return "WORKER.md"
 }
 
 func (r *ClaudeRunner) sessionName(role state.SessionRole, taskID string) string {
