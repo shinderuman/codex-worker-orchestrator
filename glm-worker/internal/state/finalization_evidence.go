@@ -7,18 +7,29 @@ import (
 )
 
 type FinalizationEvidence struct {
-	Version           int    `json:"version"`
-	TaskID            string `json:"task_id"`
-	Form              string `json:"form"`
-	ValidationRunID   string `json:"validation_run_id"`
-	SnapshotID        string `json:"snapshot_id"`
-	RepositoryLint    string `json:"repository_lint"`
+	Version         int    `json:"version"`
+	TaskID          string `json:"task_id"`
+	Form            string `json:"form"`
+	ValidationRunID string `json:"validation_run_id"`
+	SnapshotID      string `json:"snapshot_id"`
+	RepositoryLint  string `json:"repository_lint"`
 }
 
 const (
 	finalizationEvidenceFile    = "finalization-evidence.json"
 	finalizationEvidenceVersion = 1
 )
+
+func NewFinalizationEvidence(taskID, form, validationRunID, snapshotID string) FinalizationEvidence {
+	return FinalizationEvidence{
+		Version:         finalizationEvidenceVersion,
+		TaskID:          taskID,
+		Form:            form,
+		ValidationRunID: validationRunID,
+		SnapshotID:      snapshotID,
+		RepositoryLint:  ValidationResultPass,
+	}
+}
 
 func (s *StateStore) SaveFinalizationEvidence(evidence FinalizationEvidence) error {
 	if err := validateFinalizationEvidence(evidence); err != nil {
