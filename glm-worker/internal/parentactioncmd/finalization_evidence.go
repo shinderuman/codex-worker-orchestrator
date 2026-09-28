@@ -48,7 +48,7 @@ func persistManagedFinalizationEvidence(repoRoot string, output finalizationChec
 	}
 	var bound finalizationEvidenceValidationProbe
 	for _, candidate := range handoff.Validations {
-		if candidate.ValidationRunID == validation.ValidationRunID && candidate.Status == finalizationValidationStatusPass {
+		if candidate.ValidationRunID == validation.ValidationRunID && candidate.Form == output.Form && candidate.Status == finalizationValidationStatusPass {
 			bound = candidate
 			break
 		}
