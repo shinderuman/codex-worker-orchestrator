@@ -11,6 +11,7 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 - ACTIVE taskがある場合は`Derived Contract vs Original instruction`と`Implementation vs Contract`を別々に確認する。
 - 永続状態・設定・cache・manifest・sidecar/local file変更では、fresh/current状態、2回目以降、解除後、unsupported old stateの拒否・skip・reset・rebuild・delete・non-resumable境界、rollback/recoveryを`state-transitions.md`に従って確認する。old stateのmigrationやpromotionを既定要件にしない。
 - health/probe/readiness/validation/retry gateから本処理へ進む変更は、exit codeや非空応答だけで成功とせずfalse-positive境界を直接検証する。
+- 外部model呼出、metric・reduction会計、外部出力の永続化、routing/lifecycle変更では、provider/schema失敗・partial output・required field欠落が成功値やReductionとして計上される失敗経路を確認する。今回のdiffで変更していない既存のpinning test・deterministic gateが固定した条件は機械側を正として再実行・再検査せず、未機械化の失敗経路と会計の意味十分性だけを確認する。diffがtest・gate・quality wiring自体を変更する場合は、そのassertion・coverage・弱体化をmachine PASSと別個に独立reviewする。未確定の閾値・品質policyはreviewで確定しない。
 - `harnesslint`を含むmachine quality gateはreviewer開始前に通過済みである。reviewerはLinter本体、`.golangci.yml`、exclude、threshold、`nolint`、gate wiringを弱体化してPASSさせない。
 - installer behavior変更では必要に応じて`tests/install_smoke.sh`を確認する。通常reviewで実GLM/Z.ai接続を要求しない。provider/isolation変更だけlive integration smokeを対象にする。
 - test/lint/buildの実行結果はworker/machine gateからの継承証拠として扱い、reviewer自身が再実行したとは扱わない。read-only inspectionだけでvalidation不足を解消できない場合は、その不足を`ISSUES`/`RESIDUAL_RISK`へ残す。

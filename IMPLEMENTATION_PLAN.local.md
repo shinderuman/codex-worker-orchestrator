@@ -8,10 +8,9 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/system-one-sol-finding-feedback-gate.md`
+- `IMPLEMENTATION_TASKS/conditional-adversarial-failure-path-reviewer-trial.md`
 
 ## NEXT（優先順）
-- `IMPLEMENTATION_TASKS/conditional-adversarial-failure-path-reviewer-trial.md`
 - `IMPLEMENTATION_TASKS/repo-search-system-one-relevance-filter-eval.md`
 - `IMPLEMENTATION_TASKS/system-one-semantic-workload-closure-eval.md`
 - `IMPLEMENTATION_TASKS/system-one-bounded-production-adoption.md`
