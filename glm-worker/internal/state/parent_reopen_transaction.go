@@ -34,6 +34,7 @@ func parentReopenSnapshotStateFiles() []string {
 		"task.status",
 		publicationCandidateStateFile,
 		runtimeInstallEvidenceFile,
+		finalizationEvidenceFile,
 		publicationReopenLineageStateFile,
 		publicationInvalidatingFindingStateFile,
 	}

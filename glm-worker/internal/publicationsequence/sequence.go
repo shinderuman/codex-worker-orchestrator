@@ -383,6 +383,16 @@ func publicationValidationFormMissing(st *state.StateStore, candidate state.Publ
 }
 
 func publicationValidationEventSatisfied(st *state.StateStore, taskID, form string, snapshotIDs []string) (bool, error) {
+	evidence, err := st.LoadFinalizationEvidence()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !publicationFinalizationEvidenceAdmitted(evidence, taskID, form, snapshotIDs) {
+		return false, nil
+	}
 	file, err := os.Open(st.TaskEventLogPath(taskID))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -398,16 +408,31 @@ func publicationValidationEventSatisfied(st *state.StateStore, taskID, form stri
 		if err != nil {
 			return false, err
 		}
-		if record.Validation == nil || record.Validation.Form != form || record.Validation.Result != state.ValidationResultPass || record.Validation.ValidationRunID == "" {
-			continue
-		}
-		for _, id := range snapshotIDs {
-			if record.Validation.SnapshotID == id {
-				return true, nil
-			}
+		if publicationValidationMatchesFinalization(record.Validation, evidence, form) {
+			return true, nil
 		}
 	}
 	return false, scanner.Err()
+}
+
+func publicationFinalizationEvidenceAdmitted(evidence state.FinalizationEvidence, taskID, form string, snapshotIDs []string) bool {
+	if evidence.TaskID != taskID || evidence.Form != form {
+		return false
+	}
+	for _, id := range snapshotIDs {
+		if evidence.SnapshotID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func publicationValidationMatchesFinalization(validation *state.TaskValidationEvent, evidence state.FinalizationEvidence, form string) bool {
+	return validation != nil &&
+		validation.Form == form &&
+		validation.Result == state.ValidationResultPass &&
+		validation.ValidationRunID == evidence.ValidationRunID &&
+		validation.SnapshotID == evidence.SnapshotID
 }
 
 func publicationRuntimeInstallSatisfied(repoRoot string, st *state.StateStore, candidate state.PublicationCandidate) (bool, error) {

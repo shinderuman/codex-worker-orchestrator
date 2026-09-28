@@ -83,6 +83,9 @@ func (s *StateStore) applyReopenTransition(completion ParentCompletionOutcome, c
 	if err := s.ClearRuntimeInstallEvidence(); err != nil {
 		return err
 	}
+	if err := s.ClearFinalizationEvidence(); err != nil {
+		return err
+	}
 	if err := s.ClearPublicationInvalidatingFinding(); err != nil {
 		return err
 	}
