@@ -8,15 +8,18 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/system-one-review-feedback-eval.md`
+- `IMPLEMENTATION_TASKS/review-failure-path-deadline-gate.md`
 
 ## NEXT（優先順）
+- `IMPLEMENTATION_TASKS/system-one-sol-finding-feedback-gate.md`
+- `IMPLEMENTATION_TASKS/conditional-adversarial-failure-path-reviewer-trial.md`
+- `IMPLEMENTATION_TASKS/repo-search-system-one-relevance-filter-eval.md`
+- `IMPLEMENTATION_TASKS/system-one-semantic-workload-closure-eval.md`
 - `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 - `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
 - `IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
 - `IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`
-- `IMPLEMENTATION_TASKS/repo-search-system-one-relevance-filter-eval.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-locator-identity.md`
 - `IMPLEMENTATION_TASKS/parent-review-evidence-coverage-accumulation.md`
 - `IMPLEMENTATION_TASKS/codex-install-interruption-recovery.md`
