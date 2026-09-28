@@ -84,6 +84,10 @@ Z.ai 5h limit解除後のself-resumeで固定2分を常に待つ遅延を減ら�
 
 ## Dependencies
 
+none
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/system-one-review-feedback-eval.md`
 
 ## External feasibility
