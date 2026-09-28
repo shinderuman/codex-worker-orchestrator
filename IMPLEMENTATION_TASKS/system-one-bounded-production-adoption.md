@@ -1,4 +1,4 @@
-# Task: bounded System-One semantic pathのproduction adoption
+# Task: System-One production adoption closure gate
 
 ## Original instruction
 
@@ -8,11 +8,11 @@
 
 ## Amendments
 
-none
+2026-09-29 ユーザー指示（役割変更）: 本Taskは複数candidateのimplementationを所有しない。closure evalでGoとなったcandidateごとのbounded adoption Taskがすべてterminalになった後に、未実装Goが残らないこと、各pathの通常execution・fallback・rollback・Dogfood測定を確認する全体closure gateとする。System-One系列終了後の通常Taskをproduction Dogfood cohortとして扱う。
 
 ## Purpose
 
-評価でGoとしたbounded decision classを通常のproduction executionへ導入し、Codex / Sol実消費の削減とQuality Deltaを測定可能にする。
+個別Taskでproduction導入したすべてのSystem-One Go candidateについて、系列完了条件と通常TaskでのDogfood継続条件を確認する。
 
 ## External feasibility
 
@@ -20,16 +20,16 @@ status: not-applicable
 
 ## Contract
 
-- `system-one-semantic-workload-closure-eval.md`と先行評価のevidenceから、最初のadoption対象となるdecision class / execution pathを1つ明示する。候補が未確定なら推測で実装せず、先行評価の結果を要求する。
-- cheap semantic modelのbounded input、structured result、routingをproduction pathへ接続する。deterministicで処理できる判断はdeterministic gateに残す。
-- safe / clear caseだけを低cost経路へ送り、ambiguous / high-risk / high-leverage tailをSol Highへ戻す。provider / schema failure、partial output、uncertain resultはfail-openまたはhigher-authority pathへ戻す。
-- canonical source proof、reviewer independence、既存安全境界を維持する。
-- hit率、fail-open率、false negative / escaped finding、Quality Delta、System-One追加cost、Codex / Sol実消費、review / fix / re-entry削減、latency、human interventionをDogfoodで観測できるようにする。
-- rollback可能なbounded rolloutとし、初回adoption後のDogfood結果によるscope拡大・縮小・調整を追跡可能にする。
+- closure evalの分類と、Go候補ごとの独立Taskのterminal / Git / runtime evidenceを突合する。各Go候補はproduction adoption済み、または後続evidenceによって明示的にNo-Goへ変更済みでなければならない。
+- 未実装のGo候補と合理的な未分類候補が残っていないことを確認する。
+- deterministic / System-One / Sol Highのrouting境界、bounded input / structured output、通常executionでの実使用、provider / schema failure・partial output・uncertain result時のhigher-authority fallback、rollbackを各production pathで確認する。
+- shadow-only / trial-onlyの経路をproduction adoption済みとして数えず、canonical source proof、reviewer independence、安全境界の維持を確認する。
+- 通常TaskをDogfood cohortとして使い、hit率、fail-open率、false negative / escaped finding、Quality Delta、System-One追加cost、Codex / Sol実消費、review / fix / re-entry削減、latency、human interventionを継続測定できることを確認する。scope拡大・縮小はそのevidenceで判断する。
 
 ## Must not
 
-- shadow-onlyの実装で完了しない。
+- 本Taskへ別decision classのproduction実装を混ぜない。未実装Goを残して完了しない。
+- shadow-only / trial-onlyの経路をproduction adoption済みとして数えない。
 - 個別candidateのNo-GoをSystem-One全体のNo-Goにしない。
 - 不適格なcandidateを採用数のためにproductionへ昇格しない。
 - reviewer / source proof / safety境界を弱めない。
@@ -37,8 +37,9 @@ status: not-applicable
 
 ## Acceptance criteria
 
-- 1つ以上のbounded semantic execution pathでSystem-Oneがproduction executionに使われる。
-- failure時のhigher-authority fallback、Quality DeltaとCodex / Sol削減の測定、rollbackとDogfood継続の手段が確認できる。
+- closure evalの全Go候補について、個別adoption Taskがterminal済みか、後続evidenceにより明示No-Goへ変更済みであり、未処理Goがない。
+- production pathが通常executionで実際に使用され、deterministic / System-One / Sol High境界とfailure時のhigher-authority fallback、rollbackが確認できる。
+- Quality DeltaとCodex / Sol実消費削減を含むDogfood測定を、系列完了後の通常Taskで継続できる。
 - 通常のreview、validation、publicationを経て1 Task = 1 commitでterminalになる。
 
 ## Historical invariants
@@ -47,5 +48,9 @@ status: not-applicable
 - Sol Highには曖昧・高risk・高レバレッジなsemantic tailを残す。
 
 ## Dependencies
+
+- `IMPLEMENTATION_TASKS/system-one-failure-path-advisory-adoption.md`
+
+## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/system-one-semantic-workload-closure-eval.md`

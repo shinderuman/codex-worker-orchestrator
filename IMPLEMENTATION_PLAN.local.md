@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/system-one-semantic-workload-closure-eval.md`
+- `IMPLEMENTATION_TASKS/system-one-failure-path-advisory-adoption.md`
 
 ## NEXT（優先順）
 - `IMPLEMENTATION_TASKS/system-one-bounded-production-adoption.md`
