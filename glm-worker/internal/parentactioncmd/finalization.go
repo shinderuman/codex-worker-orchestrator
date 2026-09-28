@@ -111,6 +111,9 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 	if err != nil {
 		return err
 	}
+	if failure := clearManagedFinalizationEvidence(repoRoot); failure != nil {
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
+	}
 	worker, err := resolveGLMWorker()
 	if err != nil {
 		return err
@@ -119,7 +122,21 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 	if failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
 	}
-	return runFinalizationCheckWithWorker(worker, repoRoot, routing.SelectedDir, form, routing, stdout)
+	var aggregate bytes.Buffer
+	if err := runFinalizationCheckWithWorker(worker, repoRoot, routing.SelectedDir, form, routing, &aggregate); err != nil {
+		return err
+	}
+	var output finalizationCheckOutput
+	if err := json.Unmarshal(bytes.TrimSpace(aggregate.Bytes()), &output); err != nil {
+		return fmt.Errorf("decode finalize-check aggregate: %w", err)
+	}
+	if output.Status == "ready_for_parent_decision" {
+		if failure := persistManagedFinalizationEvidence(repoRoot, output); failure != nil {
+			output.Status = "blocked"
+			output.Failure = failure
+		}
+	}
+	return writeFinalizationOutput(stdout, output)
 }
 
 func finalizationRoutingDecision(worker, repoRoot, callerDir, form string) (*finalizationRoutingSummary, *finalizationFailure) {
