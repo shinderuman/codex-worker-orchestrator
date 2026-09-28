@@ -91,6 +91,7 @@ type finalizationHandoffProbe struct {
 const (
 	finalizationDiagnosticLimit          = 2048
 	finalizationValidationStatusPass     = "pass"
+	finalizationStatusBlocked            = publicationPrepareStatusBlocked
 	finalizationRoutingBasisValidation   = "current_task_validation"
 	finalizationRoutingBasisCaller       = "caller_cwd"
 	finalizationGoModFile                = "go.mod"
@@ -112,7 +113,7 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 		return err
 	}
 	if failure := clearManagedFinalizationEvidence(repoRoot); failure != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form, Failure: failure})
 	}
 	worker, err := resolveGLMWorker()
 	if err != nil {
@@ -120,7 +121,7 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 	}
 	routing, failure := finalizationRoutingDecision(worker, repoRoot, validatedDir, form)
 	if failure != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form, Failure: failure})
 	}
 	var aggregate bytes.Buffer
 	if err := runFinalizationCheckWithWorker(worker, repoRoot, routing.SelectedDir, form, routing, &aggregate); err != nil {
@@ -132,7 +133,7 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 	}
 	if output.Status == "ready_for_parent_decision" {
 		if failure := persistManagedFinalizationEvidence(repoRoot, output); failure != nil {
-			output.Status = "blocked"
+			output.Status = finalizationStatusBlocked
 			output.Failure = failure
 		}
 	}
@@ -262,36 +263,36 @@ func finalizationValidationDir(repoRoot, validationDir string) (string, error) {
 func runFinalizationCheckWithWorker(worker, repoRoot, validationDir, form string, routing *finalizationRoutingSummary, stdout io.Writer) error {
 	validation, validationProbe, failure := collectFinalizationValidation(worker, validationDir, form)
 	if failure != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Routing: routing, Failure: failure})
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form, Routing: routing, Failure: failure})
 	}
 	repositoryLint, failure := collectFinalizationRepositoryLint(repoRoot)
 	if failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Failure: failure,
+			Status: finalizationStatusBlocked, Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Failure: failure,
 		})
 	}
 	handoff, handoffProbe, failure := collectFinalizationHandoff(worker, repoRoot)
 	if failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Failure: failure,
+			Status: finalizationStatusBlocked, Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Failure: failure,
 		})
 	}
 	if !handoffProbe.Consistent {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Handoff: handoff,
+			Status: finalizationStatusBlocked, Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Handoff: handoff,
 			Failure: &finalizationFailure{Stage: "handoff", Reason: "lifecycle_inconsistent"},
 		})
 	}
 	if !handoffContainsValidation(handoffProbe, validationProbe.ValidationRunID) {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Handoff: handoff,
+			Status: finalizationStatusBlocked, Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Handoff: handoff,
 			Failure: &finalizationFailure{Stage: "snapshot", Reason: "validation_not_current_for_snapshot"},
 		})
 	}
 	gitSummary, err := readFinalizationGitSummary(repoRoot)
 	if err != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Handoff: handoff,
+			Status: finalizationStatusBlocked, Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Handoff: handoff,
 			Failure: &finalizationFailure{Stage: "git", Reason: "git_summary_unavailable", Detail: compactFinalizationDiagnostic(err.Error())},
 		})
 	}
