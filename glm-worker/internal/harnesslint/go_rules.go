@@ -71,6 +71,7 @@ func scanGoRules(root string, paths []string) ([]Violation, error) {
 		violations = append(violations, scenarioSelfTestViolations(set, file, path, data)...)
 		violations = append(violations, testSizeViolations(set, file, path)...)
 		violations = append(violations, thinWrapperViolations(set, file, path, data)...)
+		violations = append(violations, modelDeadlineViolations(set, file, path, data)...)
 	}
 	return violations, nil
 }

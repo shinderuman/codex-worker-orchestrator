@@ -15,8 +15,55 @@ import (
 
 func TestProbeWithDeadlineTerminatesHungProcessGroup(t *testing.T) {
 	r, _, _ := newProbeFixture(t)
-	pidPath := filepath.Join(t.TempDir(), "probe.pid")
-	commandPath := filepath.Join(t.TempDir(), "hanging-probe")
+	commandPath, pidPath := writeHangingProbeCommand(t)
+	t.Setenv("GLM_PROBE_PID", pidPath)
+	r.config.ClaudeBin = commandPath
+	r.config.EnvAllowlist = append(r.config.EnvAllowlist, "GLM_PROBE_PID")
+
+	deadline := time.Now().Add(2 * time.Second)
+	_, err := r.ProbeWithDeadline("opus", deadline)
+	if !errors.Is(err, ErrProbeDeadlineExceeded) {
+		t.Fatalf("ErrProbeDeadlineExceededを期待: %v", err)
+	}
+	requireProbeProcessGroupTerminated(t, pidPath)
+}
+
+func TestProbeWithDeadlineRejectsZeroDeadlineBeforeLaunch(t *testing.T) {
+	r, _, argumentsPath := newProbeFixture(t)
+
+	_, err := r.ProbeWithDeadline("opus", time.Time{})
+	if !errors.Is(err, ErrProbeDeadlineExceeded) {
+		t.Fatalf("ErrProbeDeadlineExceededを期待: %v", err)
+	}
+	if _, statErr := os.Stat(argumentsPath); !os.IsNotExist(statErr) {
+		t.Fatalf("zero deadlineのprobeは対象processを起動前に拒否すべきです: %v", statErr)
+	}
+}
+
+func TestProbeDefaultDeadlinePropagatesToTargetTermination(t *testing.T) {
+	r, _, _ := newProbeFixture(t)
+	commandPath, pidPath := writeHangingProbeCommand(t)
+	t.Setenv("GLM_PROBE_PID", pidPath)
+	r.config.ClaudeBin = commandPath
+	r.config.EnvAllowlist = append(r.config.EnvAllowlist, "GLM_PROBE_PID")
+	r.probeTimeout = 2 * time.Second
+
+	startedAt := time.Now()
+	_, err := r.Probe("opus")
+	elapsed := time.Since(startedAt)
+	if !errors.Is(err, ErrProbeDeadlineExceeded) {
+		t.Fatalf("ErrProbeDeadlineExceededを期待: %v", err)
+	}
+	if elapsed < r.probeTimeout {
+		t.Fatalf("probeが規定期限前に失敗しました: elapsed=%s timeout=%s", elapsed, r.probeTimeout)
+	}
+	requireProbeProcessGroupTerminated(t, pidPath)
+}
+
+func writeHangingProbeCommand(t *testing.T) (commandPath, pidPath string) {
+	t.Helper()
+	pidPath = filepath.Join(t.TempDir(), "probe.pid")
+	commandPath = filepath.Join(t.TempDir(), "hanging-probe")
 	script := `#!/bin/sh
 trap '' TERM
 echo $$ > "$GLM_PROBE_PID"
@@ -29,16 +76,11 @@ while :; do sleep 0.2; done
 	if err := os.WriteFile(commandPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GLM_PROBE_PID", pidPath)
-	r.config.ClaudeBin = commandPath
-	r.config.EnvAllowlist = append(r.config.EnvAllowlist, "GLM_PROBE_PID")
+	return commandPath, pidPath
+}
 
-	deadline := time.Now().Add(2 * time.Second)
-	_, err := r.ProbeWithDeadline("opus", deadline)
-	if !errors.Is(err, ErrProbeDeadlineExceeded) {
-		t.Fatalf("ErrProbeDeadlineExceededを期待: %v", err)
-	}
-
+func requireProbeProcessGroupTerminated(t *testing.T, pidPath string) {
+	t.Helper()
 	data, readErr := os.ReadFile(pidPath)
 	if readErr != nil {
 		t.Fatalf("probe pidを読めません: %v", readErr)

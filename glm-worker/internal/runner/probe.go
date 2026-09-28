@@ -31,10 +31,12 @@ const (
 	ProbePrompt   = "Reply with exactly GLM_WORKER_PROBE_OK and nothing else."
 )
 
+const defaultProbeTimeout = 120 * time.Second
+
 var ErrProbeDeadlineExceeded = errors.New("probe recovery deadline exceeded")
 
 func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
-	return r.ProbeWithDeadline(model, time.Time{})
+	return r.ProbeWithDeadline(model, time.Now().Add(r.probeTimeout))
 }
 
 func (r *ClaudeRunner) ProbeWithDeadline(model string, deadline time.Time) (ProbeResult, error) {
@@ -93,9 +95,6 @@ func (r *ClaudeRunner) runProbeCommand(command *exec.Cmd, deadline time.Time) er
 	if err := r.probeCommandPreflight(deadline); err != nil {
 		return err
 	}
-	if r.stop == nil && deadline.IsZero() {
-		return command.Run()
-	}
 	if err := command.Start(); err != nil {
 		return err
 	}
@@ -122,7 +121,7 @@ func (r *ClaudeRunner) probeCommandPreflight(deadline time.Time) error {
 	if r.stop != nil && r.stop.StopRequested() {
 		return &InterruptedCallError{}
 	}
-	if !deadline.IsZero() && !time.Now().Before(deadline) {
+	if deadline.IsZero() || !time.Now().Before(deadline) {
 		return ErrProbeDeadlineExceeded
 	}
 	return nil

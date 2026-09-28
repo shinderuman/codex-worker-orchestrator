@@ -69,8 +69,16 @@ func TestFinalizationCheckRunsRepositoryLintAtRepositoryRootBetweenValidationAnd
 		t.Fatal(err)
 	}
 	qualityMarker := filepath.Join(t.TempDir(), "quality-called")
-	t.Setenv("EXPECTED_VALIDATION_DIR", moduleDir)
-	t.Setenv("EXPECTED_REPO_ROOT", repo)
+	resolvedModuleDir, err := filepath.EvalSymlinks(moduleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EXPECTED_VALIDATION_DIR", resolvedModuleDir)
+	t.Setenv("EXPECTED_REPO_ROOT", resolvedRepo)
 	t.Setenv("QUALITY_MARKER", qualityMarker)
 	worker := writeFinalizationWorker(t, `
 case "$1" in
