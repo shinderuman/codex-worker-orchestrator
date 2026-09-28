@@ -12,6 +12,8 @@ type crossPlatformGolangCIRunner struct {
 	hostGOOS string
 }
 
+const golangCILintToolName = "golangci-lint"
+
 var golangCIPlatformConfigs = []golangCIPlatformConfig{
 	{goos: "linux", goarch: "amd64"},
 	{goos: "darwin", goarch: "arm64"},
@@ -23,7 +25,7 @@ func newCrossPlatformGolangCIRunner(runner commandRunner) commandRunner {
 
 func (r crossPlatformGolangCIRunner) run(dir, name string, args ...string) (commandResult, error) {
 	native, err := r.commandRunner.run(dir, name, args...)
-	if err != nil || name != "golangci-lint" || native.exitCode != 0 {
+	if err != nil || name != golangCILintToolName || native.exitCode != 0 {
 		return native, err
 	}
 	for _, config := range golangCIPlatformConfigs {
