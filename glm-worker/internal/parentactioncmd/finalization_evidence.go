@@ -38,33 +38,39 @@ func persistManagedFinalizationEvidence(repoRoot string, output finalizationChec
 	if failure != nil || !managed {
 		return failure
 	}
-	var validation finalizationValidationProbe
-	if err := json.Unmarshal(output.Validation, &validation); err != nil || validation.ValidationRunID == "" {
-		return &finalizationFailure{Stage: "finalization_evidence", Reason: "validation_identity_unavailable", Detail: compactFinalizationDiagnostic(string(output.Validation))}
-	}
-	var handoff finalizationEvidenceHandoffProbe
-	if err := json.Unmarshal(output.Handoff, &handoff); err != nil {
-		return &finalizationFailure{Stage: "finalization_evidence", Reason: "handoff_identity_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
-	}
-	var bound finalizationEvidenceValidationProbe
-	for _, candidate := range handoff.Validations {
-		if candidate.ValidationRunID == validation.ValidationRunID && candidate.Form == output.Form && candidate.Status == finalizationValidationStatusPass {
-			bound = candidate
-			break
-		}
-	}
-	snapshotID := state.ValidationSnapshotID(bound.Head, bound.IndexDigest, bound.WorktreeDigest)
-	if snapshotID == "" {
-		return &finalizationFailure{Stage: "finalization_evidence", Reason: "snapshot_identity_unavailable"}
+	validationRunID, snapshotID, failure := finalizationEvidenceIdentity(output)
+	if failure != nil {
+		return failure
 	}
 	taskID, err := st.TaskID()
 	if err != nil {
 		return &finalizationFailure{Stage: "finalization_evidence", Reason: "task_identity_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
 	}
-	if err := st.SaveFinalizationEvidence(state.NewFinalizationEvidence(taskID, output.Form, validation.ValidationRunID, snapshotID)); err != nil {
+	if err := st.SaveFinalizationEvidence(state.NewFinalizationEvidence(taskID, output.Form, validationRunID, snapshotID)); err != nil {
 		return &finalizationFailure{Stage: "finalization_evidence", Reason: "persist_failed", Detail: compactFinalizationDiagnostic(err.Error())}
 	}
 	return nil
+}
+
+func finalizationEvidenceIdentity(output finalizationCheckOutput) (string, string, *finalizationFailure) {
+	var validation finalizationValidationProbe
+	if err := json.Unmarshal(output.Validation, &validation); err != nil || validation.ValidationRunID == "" {
+		return "", "", &finalizationFailure{Stage: "finalization_evidence", Reason: "validation_identity_unavailable", Detail: compactFinalizationDiagnostic(string(output.Validation))}
+	}
+	var handoff finalizationEvidenceHandoffProbe
+	if err := json.Unmarshal(output.Handoff, &handoff); err != nil {
+		return "", "", &finalizationFailure{Stage: "finalization_evidence", Reason: "handoff_identity_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
+	}
+	for _, candidate := range handoff.Validations {
+		if candidate.ValidationRunID != validation.ValidationRunID || candidate.Form != output.Form || candidate.Status != finalizationValidationStatusPass {
+			continue
+		}
+		snapshotID := state.ValidationSnapshotID(candidate.Head, candidate.IndexDigest, candidate.WorktreeDigest)
+		if snapshotID != "" {
+			return validation.ValidationRunID, snapshotID, nil
+		}
+	}
+	return "", "", &finalizationFailure{Stage: "finalization_evidence", Reason: "snapshot_identity_unavailable"}
 }
 
 func managedFinalizationState(repoRoot string) (*state.StateStore, bool, *finalizationFailure) {
