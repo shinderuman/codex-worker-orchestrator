@@ -156,6 +156,32 @@ func TestSourceSymbolCoverageAcceptsGoDeclarationKinds(t *testing.T) {
 	}
 }
 
+func TestSourceSymbolCoverageCommaSeparatedSymbols(t *testing.T) {
+	declared := SourceBody{Path: "probe_test.go", LineStart: 1, LineEnd: 3, Content: "package review\nfunc FirstProbe() {}\nfunc SecondProbe() {}\n"}
+	if !reviewSourceCoversTarget("probe_test.go:FirstProbe,SecondProbe", declared) {
+		t.Fatal("comma-separated symbols all declared in the projected source were not proven")
+	}
+	unproven := []struct {
+		name   string
+		source SourceBody
+		target string
+	}{
+		{name: "one symbol missing", source: declared, target: "probe_test.go:FirstProbe,MissingProbe"},
+		{name: "all symbols missing", source: declared, target: "probe_test.go:MissingProbe,OtherMissingProbe"},
+		{name: "trailing empty element", source: declared, target: "probe_test.go:FirstProbe,"},
+		{name: "leading empty element", source: declared, target: "probe_test.go:,FirstProbe"},
+		{name: "inner empty element", source: declared, target: "probe_test.go:FirstProbe,,SecondProbe"},
+		{name: "symbols declared in another file", source: SourceBody{Path: "other.go", LineStart: 1, LineEnd: 3, Content: "package review\nfunc FirstProbe() {}\nfunc SecondProbe() {}\n"}, target: "probe_test.go:FirstProbe,SecondProbe"},
+		{name: "partial source without one declaration", source: SourceBody{Path: "probe_test.go", LineStart: 1, LineEnd: 2, Content: "package review\nfunc FirstProbe() {}\n"}, target: "probe_test.go:FirstProbe,SecondProbe"},
+		{name: "single missing symbol still unproven", source: declared, target: "probe_test.go:MissingProbe"},
+	}
+	for _, tc := range unproven {
+		if reviewSourceCoversTarget(tc.target, tc.source) {
+			t.Fatalf("%s counted as source proof: %q", tc.name, tc.target)
+		}
+	}
+}
+
 func TestUntrackedSymbolWithoutDeclarationStaysUnproven(t *testing.T) {
 	repoRoot, st := newReviewCoverageStore(t)
 	if err := os.WriteFile(filepath.Join(repoRoot, "new.go"), []byte("package review\nvar caller = NewAPI()\n"), 0o600); err != nil {

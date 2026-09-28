@@ -186,6 +186,7 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 			return err
 		}
 		prompt += exhaustiveContext
+		prompt = withObservationExecutionRoute(prompt, pocStage)
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-new",
@@ -277,6 +278,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		}
 
 		prompt := decisionPrompt(request, decision, activeTaskPath)
+		prompt = withObservationExecutionRoute(prompt, pocStage) + w.observationExecutionResultsBlock()
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-decision",

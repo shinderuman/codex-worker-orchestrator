@@ -38,6 +38,7 @@ const (
 	ParentActionResume                      ParentAction = "resume"
 	ParentActionPark                        ParentAction = "park"
 	ParentActionUnpark                      ParentAction = "unpark"
+	ParentActionObservationExecute          ParentAction = "observation-execute"
 	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
 )
@@ -171,7 +172,7 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 		return ParentActionPlan{}, err
 	}
 	if status == TaskStatusWaitingDecision && plan.RequiredAction != ParentActionUnpark && s.ObservationNoGoEligible() {
-		plan.AllowedActions = append(plan.AllowedActions, ParentActionNoGo)
+		plan.AllowedActions = append(plan.AllowedActions, ParentActionObservationExecute, ParentActionNoGo)
 	}
 	return plan, nil
 }

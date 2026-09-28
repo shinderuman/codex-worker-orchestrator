@@ -21,6 +21,19 @@ func TestProjectPreservesCurrentActionSpecs(t *testing.T) {
 			want:   Spec{Kind: "staged", PrepareCommand: []string{Binary, "prepare", "decision"}},
 		},
 		{
+			name:   "observation execute",
+			action: string(state.ParentActionObservationExecute),
+			want: Spec{
+				Kind:               "staged",
+				PrepareCommand:     []string{Binary, "prepare", string(state.ParentActionObservationExecute)},
+				RequiredParameters: []string{"operation"},
+				OptionalParameters: []string{"reference", "working-dir", "deadline-ms"},
+				Choices: map[string][]string{
+					"operation": []string{"shadow-eval", "go-test", "go-test-race"},
+				},
+			},
+		},
+		{
 			name:   "revise milestones",
 			action: string(parentaction.ActionReviseMilestones),
 			want:   Spec{Kind: "staged", PrepareCommand: []string{Binary, "prepare", "revise-milestones"}},

@@ -23,11 +23,12 @@ type parentActionTerminalEnvelopePayload struct {
 type terminalHandoffLoader func() (json.RawMessage, error)
 
 const (
-	actionAccept = "accept"
-	actionPark   = "park"
-	actionReopen = "reopen"
-	actionResume = "resume"
-	actionUnpark = "unpark"
+	actionAccept             = "accept"
+	actionPark               = "park"
+	actionReopen             = "reopen"
+	actionResume             = "resume"
+	actionUnpark             = "unpark"
+	actionObservationExecute = "observation-execute"
 )
 
 func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {

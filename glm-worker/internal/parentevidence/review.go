@@ -162,8 +162,16 @@ func sourceCoversSymbol(locator, path, content string) bool {
 	if err != nil {
 		return false
 	}
-	_, declared := declaredSymbolNames(file)[locator]
-	return declared
+	declared := declaredSymbolNames(file)
+	for _, symbol := range strings.Split(locator, ",") {
+		if symbol == "" {
+			return false
+		}
+		if _, ok := declared[symbol]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func declaredSymbolNames(file *ast.File) map[string]struct{} {

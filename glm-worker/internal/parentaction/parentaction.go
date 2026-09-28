@@ -35,6 +35,18 @@ const decisionTemplate = decisionExecutionUnitPrefix + executionUnitPlaceholder 
 	decisionMilestonesPrefix + "{\"milestones\":[]}\n" +
 	decisionMarker + "\n" + decisionPlaceholder + "\n"
 
+const (
+	observationOperationPlaceholder  = "__GLM_OBSERVATION_OPERATION__"
+	observationReferencePlaceholder  = "__GLM_OBSERVATION_REFERENCE__"
+	observationWorkingDirPlaceholder = "__GLM_OBSERVATION_WORKING_DIR__"
+	observationDeadlinePlaceholder   = "__GLM_OBSERVATION_DEADLINE_MS__"
+)
+
+const observationExecuteTemplate = "OPERATION: " + observationOperationPlaceholder + "\n" +
+	"REFERENCE: " + observationReferencePlaceholder + "\n" +
+	"WORKING_DIR: " + observationWorkingDirPlaceholder + "\n" +
+	"DEADLINE_MS: " + observationDeadlinePlaceholder + "\n"
+
 func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
 		return Prepared{}, fmt.Errorf("unsupported parent payload action %q", action)
@@ -55,6 +67,9 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 	payloadTemplate := placeholder
 	if action == string(ActionDecision) {
 		payloadTemplate = decisionTemplate
+	}
+	if action == string(ActionObservationExecute) {
+		payloadTemplate = observationExecuteTemplate
 	}
 	initial := tokenHeader(token) + payloadTemplate
 	if _, err := io.WriteString(file, initial); err != nil {
@@ -143,7 +158,11 @@ func decodePayload(raw []byte, token string) ([]byte, error) {
 	if len(payload) == 0 ||
 		bytes.Contains(payload, []byte(placeholder)) ||
 		bytes.Contains(payload, []byte(decisionPlaceholder)) ||
-		bytes.Contains(payload, []byte(executionUnitPlaceholder)) {
+		bytes.Contains(payload, []byte(executionUnitPlaceholder)) ||
+		bytes.Contains(payload, []byte(observationOperationPlaceholder)) ||
+		bytes.Contains(payload, []byte(observationReferencePlaceholder)) ||
+		bytes.Contains(payload, []byte(observationWorkingDirPlaceholder)) ||
+		bytes.Contains(payload, []byte(observationDeadlinePlaceholder)) {
 		return nil, fmt.Errorf("parent action payload was not supplied completely")
 	}
 	return payload, nil
@@ -220,8 +239,10 @@ func payloadPath(stageDir, action, token string) string {
 }
 
 func validPayloadAction(action string) bool {
-	_, ok := LookupPayloadAction(action)
-	return ok
+	if _, ok := LookupPayloadAction(action); ok {
+		return true
+	}
+	return Action(action) == ActionObservationExecute
 }
 
 func newToken() (string, error) {

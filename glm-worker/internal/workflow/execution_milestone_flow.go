@@ -113,6 +113,7 @@ func (w *Workflow) executionMilestoneDecisionCheckpoint(
 		return state.ResumeCheckpoint{}, err
 	}
 	prompt += searchContext
+	prompt = withObservationExecutionRoute(prompt, context.pocStage) + w.observationExecutionResultsBlock()
 	return state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: "worker-decision", Role: state.WorkerRole,
 		Model: w.config.WorkerModel, ReadOnly: context.pocStage, Effort: w.config.EscalatedEffort,
@@ -329,6 +330,7 @@ func (w *Workflow) newExecutionMilestoneCheckpoint(
 		return state.ResumeCheckpoint{}, err
 	}
 	prompt += contextBlock
+	prompt = withObservationExecutionRoute(prompt, readOnly)
 	return state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: phase, Role: state.WorkerRole,
 		Model: w.config.WorkerModel, ReadOnly: readOnly, Effort: effort,

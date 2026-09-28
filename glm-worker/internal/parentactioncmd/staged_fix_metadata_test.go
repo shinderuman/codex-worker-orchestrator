@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
 
@@ -15,7 +16,7 @@ func TestPrepareFixBindsValidatedMetadataIntoNextCommand(t *testing.T) {
 	repoRoot := t.TempDir()
 	var output bytes.Buffer
 	options := []string{"--origin", "glm-reviewer", "--cause", "cross-cutting-invariant"}
-	if err := prepare(repoRoot, append([]string{"prepare", "fix"}, options...), &output); err != nil {
+	if err := prepare(config.AppConfig{RepoRoot: repoRoot}, append([]string{"prepare", "fix"}, options...), &output); err != nil {
 		t.Fatal(err)
 	}
 	var prepared struct {
@@ -34,7 +35,7 @@ func TestPrepareFixBindsValidatedMetadataIntoNextCommand(t *testing.T) {
 func TestPrepareFixWithoutMetadataKeepsExistingPath(t *testing.T) {
 	repoRoot := t.TempDir()
 	var output bytes.Buffer
-	if err := prepare(repoRoot, []string{"prepare", "fix"}, &output); err != nil {
+	if err := prepare(config.AppConfig{RepoRoot: repoRoot}, []string{"prepare", "fix"}, &output); err != nil {
 		t.Fatal(err)
 	}
 	var prepared struct {
@@ -54,7 +55,7 @@ func TestPrepareFixPreservesAcceptedScopeInNextCommand(t *testing.T) {
 	repoRoot := t.TempDir()
 	var output bytes.Buffer
 	options := []string{"--accepted-scope", "current-diff", "--origin", "glm-reviewer", "--cause", "cross-cutting-invariant"}
-	if err := prepare(repoRoot, append([]string{"prepare", "fix"}, options...), &output); err != nil {
+	if err := prepare(config.AppConfig{RepoRoot: repoRoot}, append([]string{"prepare", "fix"}, options...), &output); err != nil {
 		t.Fatal(err)
 	}
 	var prepared struct {
@@ -78,7 +79,7 @@ func TestPrepareFixRejectsInvalidMetadataBeforeStaging(t *testing.T) {
 	} {
 		repoRoot := t.TempDir()
 		var output bytes.Buffer
-		if err := prepare(repoRoot, append([]string{"prepare", "fix"}, options...), &output); err == nil {
+		if err := prepare(config.AppConfig{RepoRoot: repoRoot}, append([]string{"prepare", "fix"}, options...), &output); err == nil {
 			t.Fatalf("invalid metadata was accepted: %#v", options)
 		}
 		if _, err := os.Stat(filepath.Join(repoRoot, parentaction.StageDirName)); !os.IsNotExist(err) {

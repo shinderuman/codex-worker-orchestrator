@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/observationexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
@@ -26,7 +27,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | park | unpark | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | park | unpark | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -54,12 +55,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if args[0] == "prepare" {
-		return prepare(cfg.RepoRoot, args, stdout)
+		return prepare(cfg, args, stdout)
 	}
 	return executeWithTerminalEnvelope(cfg, args, stdout, stderr)
 }
 
-func prepare(repoRoot string, args []string, stdout io.Writer) error {
+func prepare(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	if len(args) < 2 {
 		return fmt.Errorf("%s", usage)
 	}
@@ -73,7 +74,12 @@ func prepare(repoRoot string, args []string, stdout io.Writer) error {
 			return err
 		}
 	}
-	prepared, err := parentaction.Prepare(repoRoot, action)
+	if action == actionObservationExecute {
+		if err := prepareObservationExecuteAdmission(cfg); err != nil {
+			return err
+		}
+	}
+	prepared, err := parentaction.Prepare(cfg.RepoRoot, action)
 	if err != nil {
 		return err
 	}
@@ -91,7 +97,27 @@ func encodePreparedProjection(stdout io.Writer, prepared parentaction.Prepared, 
 	}
 	nextCommand := []string{"glm-parent-action", prepared.Action, prepared.Token}
 	projection["next_command"] = append(nextCommand, options...)
+	if prepared.Action == actionObservationExecute {
+		projection["slots"] = observationExecuteSlots()
+	}
 	return json.NewEncoder(stdout).Encode(projection)
+}
+
+func observationExecuteSlots() map[string]any {
+	return map[string]any{
+		"OPERATION":   observationOperationsProjection(),
+		"REFERENCE":   "shadow-eval時のみtask artifact dir相対の参照file(未指定は-)",
+		"WORKING_DIR": "go-test系でのみrepository相対module dir(未指定は-)",
+		"DEADLINE_MS": fmt.Sprintf("defaultまたは%d..%d", observationexec.MinDeadlineMS, observationexec.MaxDeadlineMS),
+	}
+}
+
+func observationOperationsProjection() []string {
+	return []string{
+		string(observationexec.OperationShadowEval),
+		string(observationexec.OperationGoTest),
+		string(observationexec.OperationGoTestRace),
+	}
 }
 
 func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {

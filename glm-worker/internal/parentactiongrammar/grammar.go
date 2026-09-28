@@ -3,6 +3,7 @@ package parentactiongrammar
 import (
 	"fmt"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/observationexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -44,6 +45,8 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	switch state.ParentAction(action) {
 	case state.ParentActionDecision:
 		return staged(action), true
+	case state.ParentActionObservationExecute:
+		return projectObservationExecute(), true
 	case state.ParentActionFix:
 		return projectFix(requiredParameters)
 	case state.ParentActionImprovementDisposition:
@@ -138,6 +141,18 @@ func validateImprovementDispositionTarget(disposition, targetTask string) error 
 
 func staged(action string) Spec {
 	return Spec{Kind: "staged", PrepareCommand: []string{Binary, "prepare", action}}
+}
+
+func projectObservationExecute() Spec {
+	return Spec{
+		Kind:               "staged",
+		PrepareCommand:     []string{Binary, "prepare", string(state.ParentActionObservationExecute)},
+		RequiredParameters: []string{"operation"},
+		OptionalParameters: []string{"reference", "working-dir", "deadline-ms"},
+		Choices: map[string][]string{
+			"operation": observationexec.Operations(),
+		},
+	}
 }
 
 func direct(action string) Spec {

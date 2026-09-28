@@ -35,3 +35,7 @@ ACTIVE task fileの`## External feasibility`宣言について、status/field sh
 PoC/observation結果のGo/No-Go・観測継続は親Codexが判断する。Goは実producer evidenceと親Go判断をtask authorityへ記録して同じtaskをimplementationとして再開し、No-Goはmachine handoffが許すcanonical terminal pathを使う。GLMだけでimplementationへ昇格させない。
 
 `not-applicable`の真偽やcritical assumptionの見落としは機械検証できない。これは親Codexの残余責任であり、Sol review・escaped review検知を第二防御とする。
+
+## PoC/observation実行の機械経路
+
+PoC/observation workerはproduction implementationを行えずread-onlyのままでよい。実測・test・artifact生成のような実行が必要な場合は、workerの`NEEDS_SOL_DECISION`に必要operationを表示させ、親Codexが`glm-parent-action prepare observation-execute`でslot(operation閉enum・入力locator・bounded parameter)を受け取り`observation-execute <token>`で実行する。operationはshadow-evalとgo-test/go-test-raceに閉じ、実行のadmission・入力locator・deadline・書込範囲・typed結果保存は`control:observation-execute-routing`が機械強制する。結果は同一taskのdecision継続へtyped注入され、同一roundの同一parameter再実行は機械が拒否する。親Codexは結果の意味判断とGo/No-Goを保持し、親自身のshell実行や自由文の結果往復をこの経路の代替にしない。

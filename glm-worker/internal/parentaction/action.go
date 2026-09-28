@@ -8,10 +8,11 @@ type PayloadAction struct {
 }
 
 const (
-	ActionDecision         Action = "decision"
-	ActionFix              Action = "fix"
-	ActionStartMilestones  Action = "start-milestones"
-	ActionReviseMilestones Action = "revise-milestones"
+	ActionDecision           Action = "decision"
+	ActionFix                Action = "fix"
+	ActionStartMilestones    Action = "start-milestones"
+	ActionReviseMilestones   Action = "revise-milestones"
+	ActionObservationExecute Action = "observation-execute"
 )
 
 var payloadActions = map[Action]PayloadAction{

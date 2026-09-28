@@ -35,6 +35,7 @@ const (
 	parentActionExecutionPreflightDecision
 	parentActionExecutionDefectRegistration
 	parentActionExecutionImprovementDisposition
+	parentActionExecutionObservationExecute
 )
 
 var parentActionCommands = map[string]parentActionCommandDescriptor{
@@ -123,6 +124,10 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		Action:  "finalize-check",
 		Execute: parentActionExecutionGitEvidence,
 	},
+	actionObservationExecute: {
+		Action:  actionObservationExecute,
+		Execute: parentActionExecutionObservationExecute,
+	},
 	"push-binding": {
 		Action:  "push-binding",
 		Execute: parentActionExecutionGitEvidence,
@@ -200,9 +205,20 @@ func executeStandardParentAction(
 	stdout io.Writer,
 	stderr io.Writer,
 ) (error, bool) {
+	if err, handled := executeLifecycleParentAction(cfg, execution, args, stdout, stderr); handled {
+		return err, true
+	}
+	return executeInterfaceParentAction(cfg, descriptor, execution, args, stdout, stderr)
+}
+
+func executeLifecycleParentAction(
+	cfg config.AppConfig,
+	execution parentActionExecutionKind,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) (error, bool) {
 	switch execution {
-	case parentActionExecutionPayload:
-		return executeStagedPayloadAction(cfg, descriptor.Payload, args, stdout, stderr), true
 	case parentActionExecutionSessionRotation:
 		return executeSessionRotationAction(cfg, args, stdout), true
 	case parentActionExecutionLifecycle:
@@ -211,6 +227,22 @@ func executeStandardParentAction(
 		return executeComplete(cfg, args, stdout), true
 	case parentActionExecutionInstall:
 		return executeInstall(cfg, args, stdout, stderr), true
+	default:
+		return nil, false
+	}
+}
+
+func executeInterfaceParentAction(
+	cfg config.AppConfig,
+	descriptor parentActionCommandDescriptor,
+	execution parentActionExecutionKind,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) (error, bool) {
+	switch execution {
+	case parentActionExecutionPayload:
+		return executeStagedPayloadAction(cfg, descriptor.Payload, args, stdout, stderr), true
 	case parentActionExecutionWait:
 		return executeParentWait(cfg, args, stdout, stderr), true
 	case parentActionExecutionContinuationOrApprove:
@@ -221,6 +253,8 @@ func executeStandardParentAction(
 		return executeParentReadOrParkAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionGitEvidence:
 		return executeGitEvidenceAction(cfg, args, stdout), true
+	case parentActionExecutionObservationExecute:
+		return executeObservationExecuteAction(cfg, args, stdout), true
 	default:
 		return nil, false
 	}

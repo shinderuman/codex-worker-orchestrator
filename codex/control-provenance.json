@@ -232,6 +232,55 @@
       "boundary": "Goal satisfaction is not reducible to structural state or command success."
     },
     {
+      "id": "observation-execute-routing",
+      "classification": "machine-enforced",
+      "purpose": "Route PoC/observation execution needs through a staged parent action over a closed operation registry with bounded inputs, deadline, write scope, and typed results instead of granting the read-only worker execution tools.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/state/observation_execution.go",
+          "symbol": "StateStore.ObservationExecuteAdmission"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/observation_execute.go",
+          "symbol": "executeObservationExecuteAction"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/state/observation_execution_test.go",
+          "symbol": "TestObservationExecuteAdmissionRequiresPendingObservationDecision"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/observation_execute_test.go",
+          "symbol": "TestObservationExecuteRunsIsolatedGoTestAndRecordsTypedResult"
+        },
+        {
+          "path": "glm-worker/internal/observationexec/gotest_test.go",
+          "symbol": "TestRunIsolatedGoTestPassesAndWritesOnlyArtifactLog"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/observationexec/gotest.go",
+          "symbol": "RunIsolatedGoTest"
+        },
+        {
+          "path": "glm-worker/internal/state/observation_execution.go",
+          "symbol": "StateStore.AppendObservationExecution"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/feasibility-gate.md",
+          "forbidden_tokens": [
+            "observation_execute_admitted",
+            "observation_execute_forbidden"
+          ]
+        }
+      ],
+      "residual_parent_judgment": "The parent judges which observation operation is semantically required and interprets typed execution results; the machine only bounds admission, execution, and storage."
+    },
+    {
       "id": "packet-schema-result",
       "classification": "machine-enforced",
       "purpose": "Constrain worker and reviewer structured results to the machine packet schema and validation contract.",
