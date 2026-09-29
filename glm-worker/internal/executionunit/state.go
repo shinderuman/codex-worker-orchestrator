@@ -19,7 +19,10 @@ type Disposition struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
-const DispositionVersion = 1
+const (
+	DispositionVersion = 1
+	DispositionEnv     = "GLM_EXECUTION_UNIT_DISPOSITION"
+)
 
 func RecordDisposition(st *state.StateStore, activeTaskPath, executionUnit string, now time.Time) error {
 	if executionUnit != ExecutionUnitSingle && executionUnit != ExecutionUnitMilestones {
