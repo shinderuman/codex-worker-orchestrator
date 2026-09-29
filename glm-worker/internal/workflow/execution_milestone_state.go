@@ -18,7 +18,10 @@ func (w *Workflow) initializeExecutionMilestones(definitions []executionunit.Mil
 		return err
 	}
 	plan := executionmilestone.NewPlan(taskID, activeTaskPath, digest, definitions, w.now().UTC())
-	return executionmilestone.Save(w.state, plan)
+	if err := executionmilestone.Save(w.state, plan); err != nil {
+		return err
+	}
+	return executionunit.RecordDisposition(w.state, activeTaskPath, executionunit.ExecutionUnitMilestones, w.now().UTC())
 }
 
 func (w *Workflow) completeCurrentExecutionMilestone(plan *executionmilestone.Plan, result packet.Result) error {
