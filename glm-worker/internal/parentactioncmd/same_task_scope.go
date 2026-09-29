@@ -66,6 +66,15 @@ func currentReviewTargetsBoundToTaskDiff(repoRoot string, st *state.StateStore) 
 	if binding == nil || len(binding.Targets) == 0 {
 		return false, nil
 	}
+	current, err := state.CaptureGitSnapshot(repoRoot)
+	if err != nil {
+		return false, err
+	}
+	if binding.Snapshot.Head != current.Head ||
+		binding.Snapshot.IndexDigest != current.IndexDigest ||
+		binding.Snapshot.WorktreeDigest != current.WorktreeDigest {
+		return false, nil
+	}
 	paths, available, err := taskdiff.ChangedPaths(repoRoot, st)
 	if err != nil {
 		return false, err
