@@ -12,13 +12,6 @@ import (
 
 const explicitSingleStartUsage = "usage: glm-parent-action start --execution-unit single [--rotation-claim <claim-id>]"
 
-func executeStartCompatAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	if len(args) == 1 || (len(args) == 3 && args[1] == "--rotation-claim") {
-		return executeDirectWorkerAction(cfg, actionStart, args, stdout, stderr)
-	}
-	return executeStartSingleAction(cfg, args, stdout, stderr)
-}
-
 func executeStartSingleAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	extraEnv, err := explicitSingleStartEnv(args, startIdentityEnv(actionStart))
 	if err != nil {
