@@ -94,7 +94,8 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 	},
 	actionStart: {
 		Action:           actionStart,
-		Execute:          parentActionExecutionStartSingle,
+		Execute:          parentActionExecutionDirectWorker,
+		TerminalExecute:  parentActionExecutionStartSingle,
 		TerminalEnvelope: true,
 	},
 	actionAccept: {
