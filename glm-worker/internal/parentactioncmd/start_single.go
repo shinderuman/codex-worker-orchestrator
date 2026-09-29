@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
@@ -23,7 +24,23 @@ func executeStartSingleAction(cfg config.AppConfig, args []string, stdout, stder
 	} else {
 		return fmt.Errorf("%s", explicitSingleStartUsage)
 	}
-	return withParentWaitLease(cfg, func() error {
+
+	runErr := withParentWaitLease(cfg, func() error {
 		return runWorker(cfg.RepoRoot, directWorkerArgs(actionStart), nil, stdout, stderr, extraEnv)
 	})
+	recordErr := recordSingleExecutionUnitDisposition(cfg)
+	if runErr != nil {
+		return runErr
+	}
+	return recordErr
+}
+
+func recordSingleExecutionUnitDisposition(cfg config.AppConfig) error {
+	st := state.AttachStateStore(cfg)
+	return executionunit.RecordDisposition(
+		st,
+		st.ReadOr("active-task", ""),
+		executionunit.ExecutionUnitSingle,
+		time.Now().UTC(),
+	)
 }
