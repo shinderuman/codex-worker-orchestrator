@@ -174,7 +174,7 @@ func TestExecuteStartOwnsParentWaitLeaseUntilWorkerTerminal(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	done := make(chan error, 1)
-	go func() { done <- execute(cfg, []string{"start"}, &stdout, &stderr) }()
+	go func() { done <- execute(cfg, []string{"start", "--execution-unit", "single"}, &stdout, &stderr) }()
 	waitForFile(t, entered)
 
 	lock, err := repolock.Acquire(st.Path(parentWaitLockFile))
