@@ -2,12 +2,14 @@ package parentactioncmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -16,6 +18,16 @@ import (
 )
 
 const sameTaskScopeRegistrationHint = "same-task scope is not proven; preserve current ACTIVE and register the independent or ambiguous finding with glm-parent-action record-defect-finding --task <IMPLEMENTATION_TASKS/...md>"
+
+func executeScopedFixAction(cfg config.AppConfig, descriptor parentaction.PayloadAction, args []string, stdout, stderr io.Writer) error {
+	if len(args) < 2 {
+		return executeStagedPayloadAction(cfg, descriptor, args, stdout, stderr)
+	}
+	if err := validateSameTaskFixAdmission(cfg, args[2:]); err != nil {
+		return err
+	}
+	return executeStagedPayloadAction(cfg, descriptor, args, stdout, stderr)
+}
 
 func validateSameTaskFixAdmission(cfg config.AppConfig, optionArgs []string) error {
 	options, remaining, err := parentfix.Extract(optionArgs)
