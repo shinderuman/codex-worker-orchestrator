@@ -1,0 +1,182 @@
+package parentactioncmd
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
+)
+
+const sameTaskScopeRegistrationHint = "same-task scope is not proven; preserve current ACTIVE and register the independent or ambiguous finding with glm-parent-action record-defect-finding --task <IMPLEMENTATION_TASKS/...md>"
+
+func validateSameTaskFixAdmission(cfg config.AppConfig, optionArgs []string) error {
+	options, remaining, err := parentfix.Extract(optionArgs)
+	if err != nil || len(remaining) != 0 {
+		return fmt.Errorf("invalid fix options")
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		return err
+	}
+	return validateSameTaskScopeAdmission(cfg.RepoRoot, st, options.TaskLocator)
+}
+
+func validateSameTaskScopeAdmission(repoRoot string, st *state.StateStore, taskLocator string) error {
+	if taskLocator != "" {
+		if err := validateCurrentTaskContractLocator(repoRoot, st, taskLocator); err != nil {
+			return fmt.Errorf("same-task task locator rejected: %w; %s", err, sameTaskScopeRegistrationHint)
+		}
+		return nil
+	}
+	bound, err := currentReviewTargetsBoundToTaskDiff(repoRoot, st)
+	if err != nil {
+		return fmt.Errorf("same-task review provenance unavailable: %w; %s", err, sameTaskScopeRegistrationHint)
+	}
+	if !bound {
+		return fmt.Errorf("%s", sameTaskScopeRegistrationHint)
+	}
+	return nil
+}
+
+func currentReviewTargetsBoundToTaskDiff(repoRoot string, st *state.StateStore) (bool, error) {
+	binding, err := st.CurrentParentReviewBinding()
+	if err != nil {
+		return false, err
+	}
+	if binding == nil || len(binding.Targets) == 0 {
+		return false, nil
+	}
+	paths, available, err := taskdiff.ChangedPaths(repoRoot, st)
+	if err != nil {
+		return false, err
+	}
+	if !available || len(paths) == 0 {
+		return false, nil
+	}
+	changed := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		changed[filepath.ToSlash(strings.TrimSpace(path))] = struct{}{}
+	}
+	activeTask := filepath.ToSlash(strings.TrimSpace(st.ReadOr("active-task", "")))
+	for _, target := range binding.Targets {
+		path, _, err := reviewtarget.Parse(target)
+		if err != nil {
+			return false, err
+		}
+		path = filepath.ToSlash(path)
+		if path == activeTask {
+			return false, nil
+		}
+		if _, ok := changed[path]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func validateCurrentTaskContractLocator(repoRoot string, st *state.StateStore, target string) error {
+	activeTask := filepath.ToSlash(strings.TrimSpace(st.ReadOr("active-task", "")))
+	if activeTask == "" {
+		return fmt.Errorf("current ACTIVE task binding is missing")
+	}
+	if err := taskcontract.ValidateActiveTaskPath(activeTask); err != nil {
+		return err
+	}
+	path, locator, err := reviewtarget.Parse(target)
+	if err != nil {
+		return err
+	}
+	if filepath.ToSlash(path) != activeTask {
+		return fmt.Errorf("task locator path %q does not match current ACTIVE task %q", path, activeTask)
+	}
+	start, end, err := parseTaskLineLocator(locator)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(activeTask)))
+	if err != nil {
+		return fmt.Errorf("read current ACTIVE task: %w", err)
+	}
+	lines := strings.Split(string(data), "\n")
+	if start < 1 || end > len(lines) {
+		return fmt.Errorf("task locator %s is outside current ACTIVE task", locator)
+	}
+	sections := taskSectionByLine(lines)
+	substantive := false
+	for line := start; line <= end; line++ {
+		section := sections[line-1]
+		if section != "## Contract" && section != "## Acceptance criteria" && section != "## Acceptance" {
+			return fmt.Errorf("task locator %s is outside Contract/Acceptance", locator)
+		}
+		trimmed := strings.TrimSpace(lines[line-1])
+		if trimmed != "" && !strings.HasPrefix(trimmed, "## ") {
+			substantive = true
+		}
+	}
+	if !substantive {
+		return fmt.Errorf("task locator %s does not identify a concrete Contract/Acceptance line", locator)
+	}
+	return nil
+}
+
+func parseTaskLineLocator(locator string) (int, int, error) {
+	parts := strings.Split(locator, "-")
+	if len(parts) != 1 && len(parts) != 2 {
+		return 0, 0, fmt.Errorf("task locator must be a line or line range")
+	}
+	start, err := strconv.Atoi(parts[0])
+	if err != nil || start < 1 {
+		return 0, 0, fmt.Errorf("task locator must be a positive line or line range")
+	}
+	end := start
+	if len(parts) == 2 {
+		end, err = strconv.Atoi(parts[1])
+		if err != nil || end < start {
+			return 0, 0, fmt.Errorf("task locator range is invalid")
+		}
+	}
+	return start, end, nil
+}
+
+func taskSectionByLine(lines []string) []string {
+	sections := make([]string, len(lines))
+	section := ""
+	fence := 0
+	for index, line := range lines {
+		backticks := leadingTaskFenceBackticks(line)
+		if fence != 0 {
+			sections[index] = section
+			if backticks >= fence {
+				fence = 0
+			}
+			continue
+		}
+		if backticks >= 3 {
+			fence = backticks
+			sections[index] = section
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			section = strings.TrimSpace(line)
+		}
+		sections[index] = section
+	}
+	return sections
+}
+
+func leadingTaskFenceBackticks(line string) int {
+	line = strings.TrimLeft(line, " \t")
+	count := 0
+	for count < len(line) && line[count] == '`' {
+		count++
+	}
+	return count
+}
