@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -34,6 +35,18 @@ func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole st
 		return indeterminateExecutionProgress(phaseStage, "machine-state", "milestone-state-unavailable")
 	}
 	if plan == nil || len(plan.Milestones) == 0 {
+		disposition, dispositionErr := executionunit.CurrentDisposition(st)
+		if dispositionErr != nil {
+			return indeterminateExecutionProgress(phaseStage, "machine-state", "execution-unit-disposition-unavailable")
+		}
+		if disposition != nil {
+			switch disposition.ExecutionUnit {
+			case executionunit.ExecutionUnitSingle:
+				return indeterminateExecutionProgress(phaseStage, "explicit-single-execution-unit", "single-execution-unit")
+			case executionunit.ExecutionUnitMilestones:
+				return indeterminateExecutionProgress(phaseStage, "machine-state", "milestone-state-missing")
+			}
+		}
 		return indeterminateExecutionProgress(phaseStage, "single-or-untracked-execution-unit", "no-execution-milestones")
 	}
 	taskStatus := st.TaskStatus()
@@ -95,10 +108,8 @@ func executionProgressPlanInconsistency(st *state.StateStore, plan *executionmil
 
 func executionProgressMilestonesConsistent(plan *executionmilestone.Plan) bool {
 	for index, milestone := range plan.Milestones {
-		if strings.TrimSpace(milestone.ID) == "" {
-			return false
-		}
-		if index < plan.CurrentIndex {
+		switch {
+		case index < plan.CurrentIndex:
 			if milestone.Status != executionmilestone.StatusComplete || milestone.Completion == nil {
 				return false
 			}
