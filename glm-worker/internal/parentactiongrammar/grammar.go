@@ -22,6 +22,7 @@ type Spec struct {
 const (
 	Binary = "glm-parent-action"
 
+	StartAction                  = "start"
 	RecordDefectFindingAction    = "record-defect-finding"
 	ImprovementDispositionAction = "improvement-disposition"
 
@@ -35,10 +36,17 @@ const (
 	SignalKindOption    = "--signal-kind"
 	SourceCallIDOption  = "--source-call-id"
 	DispositionOption   = "--disposition"
+	ExecutionUnitOption = "--execution-unit"
 )
 
 func Project(action string, requiredParameters map[string]string) (Spec, bool) {
-	if parentaction.Action(action) == parentaction.ActionReviseMilestones {
+	if action == StartAction {
+		return Spec{
+			Kind:    "direct",
+			Command: []string{Binary, StartAction, ExecutionUnitOption, "single"},
+		}, true
+	}
+	if parentaction.Action(action) == parentaction.ActionStartMilestones || parentaction.Action(action) == parentaction.ActionReviseMilestones {
 		return staged(action), true
 	}
 
