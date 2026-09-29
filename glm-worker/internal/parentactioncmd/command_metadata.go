@@ -22,6 +22,7 @@ type parentActionCommandDescriptor struct {
 const (
 	parentActionExecutionUnsupported parentActionExecutionKind = iota
 	parentActionExecutionPayload
+	parentActionExecutionScopedFix
 	parentActionExecutionSessionRotation
 	parentActionExecutionLifecycle
 	parentActionExecutionComplete
@@ -160,8 +161,11 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 func lookupParentActionCommand(action string) (parentActionCommandDescriptor, bool) {
 	if payload, ok := parentaction.LookupPayloadAction(action); ok {
 		terminalExecute := parentActionExecutionPayload
-		if payload.Action == parentaction.ActionDecision {
+		switch payload.Action {
+		case parentaction.ActionDecision:
 			terminalExecute = parentActionExecutionPreflightDecision
+		case parentaction.ActionFix:
+			terminalExecute = parentActionExecutionScopedFix
 		}
 		return parentActionCommandDescriptor{
 			Action:           action,
@@ -245,6 +249,8 @@ func executeInterfaceParentAction(
 	switch execution {
 	case parentActionExecutionPayload:
 		return executeStagedPayloadAction(cfg, descriptor.Payload, args, stdout, stderr), true
+	case parentActionExecutionScopedFix:
+		return executeScopedFixAction(cfg, descriptor.Payload, args, stdout, stderr), true
 	case parentActionExecutionWait:
 		return executeParentWait(cfg, args, stdout, stderr), true
 	case parentActionExecutionContinuationOrApprove:
