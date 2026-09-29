@@ -47,7 +47,7 @@ func (w *Workflow) reviewUntilStable(
 	if err := w.writeLastReview(reviewResult); err != nil {
 		return err
 	}
-	w.observeFailurePathTrial(request, reviewResult, reviewNumber)
+	reviewResult = w.attachFailurePathAdvisory(request, reviewResult, reviewNumber)
 	return w.handleReviewResult(request, workerResult, reviewResult, reviewNumber, autoFixes)
 }
 

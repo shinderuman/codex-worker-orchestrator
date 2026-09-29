@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathtrial"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathadvisory"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -191,7 +191,7 @@ func structuredSchema(role state.SessionRole, phase string) (string, error) {
 	}
 	if role == state.FailurePathReviewerRole {
 		failurePathSchemaOnce.Do(func() {
-			failurePathSchemaValue, failurePathSchemaErr = failurepathtrial.ShadowSchemaJSON()
+			failurePathSchemaValue, failurePathSchemaErr = failurepathadvisory.StructuredSchemaJSON()
 		})
 		return failurePathSchemaValue, failurePathSchemaErr
 	}

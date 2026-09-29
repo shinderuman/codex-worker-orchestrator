@@ -49,8 +49,9 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/system-one-failure-path-advisory-adoption.md`
+none
 
 ## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/system-one-semantic-workload-closure-eval.md`
+- `IMPLEMENTATION_TASKS/system-one-failure-path-advisory-adoption.md`

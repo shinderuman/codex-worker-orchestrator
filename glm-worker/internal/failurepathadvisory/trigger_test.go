@@ -1,4 +1,4 @@
-package failurepathtrial
+package failurepathadvisory
 
 import (
 	"os"
@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTriggerRepo(t *testing.T, baselineFiles map[string]string) (string, string) {
@@ -162,5 +163,107 @@ func TestClassifyTriggerDiffFailureIsUndecidable(t *testing.T) {
 	_, err := ClassifyTrigger(root, "definitely-not-a-commit", []string{"glm-worker/internal/runner/call.go"})
 	if err == nil {
 		t.Fatal("不正baselineでerrorが返りませんでした")
+	}
+}
+
+func TestDiffTextForPathsReturnsBaselineDiff(t *testing.T) {
+	root, baseline := newTriggerRepo(t, map[string]string{
+		"glm-worker/internal/runner/call.go": "package runner\n",
+	})
+	writeTriggerFile(t, root, "glm-worker/internal/runner/call.go", "package runner\n\nvar callSite = newProcessGroupCmd\n")
+
+	text, err := DiffTextForPaths(root, baseline, []string{"glm-worker/internal/runner/call.go"}, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "newProcessGroupCmd") || !strings.Contains(text, "glm-worker/internal/runner/call.go") {
+		t.Fatalf("diff text = %q", text)
+	}
+}
+
+func TestDiffTextForPathsUntrackedOverLimitFails(t *testing.T) {
+	root, baseline := newTriggerRepo(t, map[string]string{"README.md": "readme\n"})
+	writeTriggerFile(t, root, "glm-worker/internal/runner/big.go", "package runner\n\nvar big = \""+strings.Repeat("x", 5000)+"\"\n")
+
+	if _, err := DiffTextForPaths(root, baseline, []string{"glm-worker/internal/runner/big.go"}, 1024); err == nil || !strings.Contains(err.Error(), "読取上限") {
+		t.Fatalf("untracked読取上限超過 = %v", err)
+	}
+}
+
+func TestDiffTextForPathsTrackedDiffOverLimitFails(t *testing.T) {
+	root, baseline := newTriggerRepo(t, map[string]string{
+		"glm-worker/internal/runner/call.go": "package runner\n",
+	})
+	writeTriggerFile(t, root, "glm-worker/internal/runner/call.go", "package runner\n\nvar big = \""+strings.Repeat("x", 5000)+"\"\n")
+
+	if _, err := DiffTextForPaths(root, baseline, []string{"glm-worker/internal/runner/call.go"}, 1024); err == nil || !strings.Contains(err.Error(), "読取上限") {
+		t.Fatalf("tracked diff読取上限超過 = %v", err)
+	}
+}
+
+func TestDiffTextForPathsWithinLimitReturnsWholeDiff(t *testing.T) {
+	root, baseline := newTriggerRepo(t, map[string]string{"README.md": "readme\n"})
+	content := "package runner\n\nvar big = \"" + strings.Repeat("x", 900) + "\"\n"
+	writeTriggerFile(t, root, "glm-worker/internal/runner/big.go", content)
+
+	text, err := DiffTextForPaths(root, baseline, []string{"glm-worker/internal/runner/big.go"}, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, content) {
+		t.Fatalf("上限内のdiff全文が取得できていません: size = %d", len(text))
+	}
+}
+
+func TestDiffTextForPathsCommandDeadlineFails(t *testing.T) {
+	root, baseline := newTriggerRepo(t, map[string]string{
+		"glm-worker/internal/runner/call.go": "package runner\n",
+	})
+	previous := diffCommandTimeout
+	diffCommandTimeout = time.Nanosecond
+	defer func() { diffCommandTimeout = previous }()
+
+	if _, err := DiffTextForPaths(root, baseline, []string{"glm-worker/internal/runner/call.go"}, 4096); err == nil {
+		t.Fatal("git deadline超過でerrorが返りませんでした")
+	}
+}
+
+func TestDiffTextForPathsInvalidBaselineFails(t *testing.T) {
+	root, _ := newTriggerRepo(t, map[string]string{"README.md": "readme\n"})
+	if _, err := DiffTextForPaths(root, "definitely-not-a-commit", []string{"glm-worker/internal/runner/call.go"}, 1024); err == nil {
+		t.Fatal("不正baseline(snapshot不一致)でerrorが返りませんでした")
+	}
+}
+
+func TestDiffTextForPathsTrackedAtCapWithUntrackedChangeFails(t *testing.T) {
+	root, baseline := newTriggerRepo(t, map[string]string{
+		"glm-worker/internal/runner/call.go": "package runner\n",
+	})
+	writeTriggerFile(t, root, "glm-worker/internal/runner/call.go", "package runner\n\nvar big = \""+strings.Repeat("x", 2000)+"\"\n")
+	writeTriggerFile(t, root, "glm-worker/internal/abeval/usage_extra.go", "package abeval\n\nvar usage = Usage{Tokens: 1}\n")
+	paths := []string{"glm-worker/internal/runner/call.go", "glm-worker/internal/abeval/usage_extra.go"}
+	diffOut := runTriggerGit(t, root, append([]string{"diff", "--no-renames", baseline, "--"}, paths...)...)
+
+	if _, err := DiffTextForPaths(root, baseline, paths, len(diffOut)); err == nil || !strings.Contains(err.Error(), "読取上限") {
+		t.Fatalf("budget使い切り後の未取得untracked変更 = %v", err)
+	}
+}
+
+func TestDiffTextForPathsTrackedAtCapWithoutMissingChangeSucceeds(t *testing.T) {
+	root, baseline := newTriggerRepo(t, map[string]string{
+		"glm-worker/internal/runner/call.go": "package runner\n",
+		"glm-worker/internal/state/stats.go": "package state\n",
+	})
+	writeTriggerFile(t, root, "glm-worker/internal/runner/call.go", "package runner\n\nvar callSite = newProcessGroupCmd\n")
+	writeTriggerFile(t, root, "glm-worker/internal/state/stats.go", "package state\n\nvar usage = Usage{Tokens: 1}\n")
+	paths := []string{"glm-worker/internal/runner/call.go", "glm-worker/internal/state/stats.go"}
+	diffOut := runTriggerGit(t, root, append([]string{"diff", "--no-renames", baseline, "--"}, paths...)...)
+
+	text, err := DiffTextForPaths(root, baseline, paths, len(diffOut))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "newProcessGroupCmd") || !strings.Contains(text, "Usage{Tokens: 1}") {
+		t.Fatalf("capちょうどで両tracked変更が取得できていません: size = %d", len(text))
 	}
 }

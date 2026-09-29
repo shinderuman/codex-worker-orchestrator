@@ -31,6 +31,7 @@ type Workflow struct {
 	captureSnapshot         func(repoRoot string) (state.GitSnapshot, error)
 	captureBoundarySnapshot func(repoRoot string) (state.GitSnapshot, error)
 	collectChangedPaths     func(repoRoot, baselineHead string) ([]string, error)
+	fetchAdvisoryDiff       func(repoRoot, baselineHead string, paths []string) (string, error)
 	now                     func() time.Time
 	sleep                   func(time.Duration)
 	jitter                  func(base time.Duration) time.Duration
@@ -120,6 +121,7 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		collectChangedPaths: func(repoRoot, _ string) ([]string, error) {
 			return collectTaskChangedPaths(repoRoot, st)
 		},
+		fetchAdvisoryDiff:     fetchFailurePathAdvisoryDiff,
 		now:                   time.Now,
 		sleep:                 time.Sleep,
 		jitter:                boundedBackoffJitter,

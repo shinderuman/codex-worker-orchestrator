@@ -1,12 +1,15 @@
-package failurepathtrial
+package failurepathadvisory
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type TriggerDecision struct {
@@ -32,6 +35,10 @@ const (
 const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 const diffReadBoundBytes = 512 * 1024
+
+const lsFilesBoundBytes = 4096
+
+var diffCommandTimeout = 30 * time.Second
 
 var Classes = []string{
 	ClassExternalModelInvocation,
@@ -124,7 +131,7 @@ func ClassifyTrigger(repoRoot, baselineHead string, changedPaths []string) (Trig
 		if len(candidates) == 0 {
 			continue
 		}
-		text, err := changedPathDiffText(repoRoot, base, candidates)
+		text, err := changedPathDiffText(repoRoot, base, candidates, diffReadBoundBytes)
 		if err != nil {
 			return TriggerDecision{}, err
 		}
@@ -181,56 +188,88 @@ func diffConfirmsClass(text string, tokens []string) bool {
 	return false
 }
 
-func changedPathDiffText(repoRoot, base string, paths []string) (string, error) {
-	tracked, err := gitOutput(repoRoot, append([]string{"diff", "--no-renames", base, "--"}, paths...)...)
+func DiffTextForPaths(repoRoot, baselineHead string, paths []string, readBoundBytes int) (string, error) {
+	base := strings.TrimSpace(baselineHead)
+	if base == "" {
+		base = emptyTreeObject
+	}
+	return changedPathDiffText(repoRoot, base, paths, readBoundBytes)
+}
+
+func changedPathDiffText(repoRoot, base string, paths []string, readBoundBytes int) (string, error) {
+	tracked, err := gitOutput(repoRoot, readBoundBytes, append([]string{"diff", "--no-renames", base, "--"}, paths...)...)
 	if err != nil {
 		return "", err
 	}
 	var builder strings.Builder
-	builder.WriteString(boundText(tracked, diffReadBoundBytes))
+	builder.WriteString(tracked)
 	for _, path := range paths {
-		if builder.Len() >= diffReadBoundBytes {
-			break
-		}
-		content, included, err := untrackedFileContent(repoRoot, path)
+		content, included, err := untrackedFileContent(repoRoot, path, readBoundBytes-builder.Len())
 		if err != nil {
 			return "", err
 		}
 		if !included {
 			continue
 		}
-		builder.WriteString(boundText(content, diffReadBoundBytes-builder.Len()))
+		builder.WriteString(content)
 	}
 	return builder.String(), nil
 }
 
-func untrackedFileContent(repoRoot, path string) (string, bool, error) {
-	tracked, err := gitOutput(repoRoot, "ls-files", "--", path)
+func untrackedFileContent(repoRoot, path string, limitBytes int) (string, bool, error) {
+	tracked, err := gitOutput(repoRoot, lsFilesBoundBytes, "ls-files", "--", path)
 	if err != nil {
 		return "", false, err
 	}
 	if strings.TrimSpace(tracked) != "" {
 		return "", false, nil
 	}
-	data, err := os.ReadFile(filepath.Join(repoRoot, path))
+	file, err := os.Open(filepath.Join(repoRoot, path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", false, nil
 		}
-		return "", false, fmt.Errorf("failure-path trial対象file %sを読めません: %w", path, err)
+		return "", false, fmt.Errorf("failure-path advisory対象file %sを読めません: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, int64(limitBytes)+1))
+	if err != nil {
+		return "", false, fmt.Errorf("failure-path advisory対象file %sを読めません: %w", path, err)
+	}
+	if len(data) > limitBytes {
+		return "", false, fmt.Errorf("failure-path advisory対象file %sが読取上限%d bytesを超えました", path, limitBytes)
 	}
 	return string(data), true, nil
 }
 
-func gitOutput(repoRoot string, args ...string) (string, error) {
-	command := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
+func gitOutput(repoRoot string, limitBytes int, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), diffCommandTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", append([]string{"-C", repoRoot}, args...)...)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
-	output, err := command.Output()
+	pipe, err := command.StdoutPipe()
 	if err != nil {
-		return "", fmt.Errorf("failure-path trialのgit %sが失敗しました: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("failure-path advisoryのgit %sを準備できません: %w", args[0], err)
 	}
-	return string(output), nil
+	if err := command.Start(); err != nil {
+		return "", fmt.Errorf("failure-path advisoryのgit %sが失敗しました: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+	}
+	data, err := io.ReadAll(io.LimitReader(pipe, int64(limitBytes)+1))
+	if err != nil {
+		return "", fmt.Errorf("failure-path advisoryのgit %s出力を読めません: %w", args[0], err)
+	}
+	if len(data) > limitBytes {
+		if command.Process != nil {
+			_ = command.Process.Kill()
+		}
+		_ = command.Wait()
+		return "", fmt.Errorf("failure-path advisoryのgit %s出力が読取上限%d bytesを超えました", args[0], limitBytes)
+	}
+	if err := command.Wait(); err != nil {
+		return "", fmt.Errorf("failure-path advisoryのgit %sが失敗しました: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+	}
+	return string(data), nil
 }
 
 func appendUniquePaths(paths []string, additions ...string) []string {

@@ -71,6 +71,43 @@ func TestBoolEnv(t *testing.T) {
 	}
 }
 
+func TestFailurePathAdvisoryFlagPriority(t *testing.T) {
+	cases := []struct {
+		name      string
+		advisory  string
+		trial     string
+		want      bool
+		wantError bool
+	}{
+		{name: "両方未設定ならdefault-on", want: true},
+		{name: "旧flag明示falseのみで停止意図を引き継ぐ", trial: "false", want: false},
+		{name: "旧flag明示trueはdefault-onのまま", trial: "true", want: true},
+		{name: "新flag明示falseのrollbackが最優先", advisory: "false", trial: "true", want: false},
+		{name: "新flag明示trueは旧flagfalseに勝る", advisory: "true", trial: "false", want: true},
+		{name: "新flagの不正値は拒否", advisory: "invalid", wantError: true},
+		{name: "旧flagの不正値も拒否", trial: "invalid", wantError: true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("GLM_WORKER_FAILURE_PATH_ADVISORY", testCase.advisory)
+			t.Setenv("GLM_WORKER_FAILURE_PATH_TRIAL", testCase.trial)
+			got, err := failurePathAdvisoryFlag()
+			if testCase.wantError {
+				if err == nil {
+					t.Fatal("不正な真偽値を拒否する必要があります")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != testCase.want {
+				t.Fatalf("failure path advisory = %t, want %t", got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	repository := filepath.Join(t.TempDir(), "repository")
 	if err := os.MkdirAll(repository, 0o700); err != nil {

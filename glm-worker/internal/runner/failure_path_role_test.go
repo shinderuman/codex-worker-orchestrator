@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathtrial"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathadvisory"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -29,7 +29,7 @@ func TestFailurePathReviewerPromptFileAndSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, class := range failurepathtrial.Classes {
+	for _, class := range failurepathadvisory.Classes {
 		if !strings.Contains(schema, class) {
 			t.Fatalf("schemaにclass %sがありません", class)
 		}

@@ -1,4 +1,4 @@
-package failurepathtrial
+package failurepathadvisory
 
 import (
 	"bytes"
@@ -11,13 +11,21 @@ import (
 type Finding struct {
 	Target   string        `json:"target"`
 	Class    string        `json:"class"`
-	Issue    string        `json:"issue"`
+	Issue    string        `json:"issue,omitempty"`
 	Evidence string        `json:"evidence,omitempty"`
+	Status   string        `json:"status"`
 	Label    *FindingLabel `json:"label,omitempty"`
 }
 
 type FindingLabel struct {
 	Disposition string `json:"disposition"`
+}
+
+type AdvisoryOutcome struct {
+	Status        string `json:"status"`
+	FindingsShown int    `json:"findings_shown,omitempty"`
+	Indeterminate int    `json:"indeterminate,omitempty"`
+	Truncated     bool   `json:"truncated,omitempty"`
 }
 
 type AddedGLMUsage struct {
@@ -40,27 +48,31 @@ type UsageComparison struct {
 
 type SolAssessment struct {
 	AvoidedReviewFixWaves int              `json:"avoided_review_fix_waves,omitempty"`
+	FalseNegatives        *int             `json:"false_negatives,omitempty"`
+	EscapedFindings       *int             `json:"escaped_findings,omitempty"`
+	HumanInterventions    *int             `json:"human_interventions,omitempty"`
 	QualityDeltaNote      string           `json:"quality_delta_note,omitempty"`
 	Usage                 *UsageComparison `json:"usage,omitempty"`
 }
 
 type Record struct {
-	TaskID             string         `json:"task_id"`
-	ReviewNumber       int            `json:"review_number"`
-	Phase              string         `json:"phase,omitempty"`
-	Outcome            string         `json:"outcome"`
-	Classes            []string       `json:"classes,omitempty"`
-	AmbiguousClasses   []string       `json:"ambiguous_classes,omitempty"`
-	TriggerPaths       []string       `json:"trigger_paths,omitempty"`
-	CallID             string         `json:"call_id,omitempty"`
-	ReviewPacketStatus string         `json:"review_packet_status,omitempty"`
-	ReviewIssues       string         `json:"review_issues,omitempty"`
-	ReviewTargets      []string       `json:"review_targets,omitempty"`
-	Findings           []Finding      `json:"findings,omitempty"`
-	AddedGLM           *AddedGLMUsage `json:"added_glm,omitempty"`
-	Assessment         *SolAssessment `json:"sol_assessment,omitempty"`
-	Detail             string         `json:"detail,omitempty"`
-	RecordedAt         string         `json:"recorded_at"`
+	TaskID             string           `json:"task_id"`
+	ReviewNumber       int              `json:"review_number"`
+	Phase              string           `json:"phase,omitempty"`
+	Outcome            string           `json:"outcome"`
+	Classes            []string         `json:"classes,omitempty"`
+	AmbiguousClasses   []string         `json:"ambiguous_classes,omitempty"`
+	TriggerPaths       []string         `json:"trigger_paths,omitempty"`
+	CallID             string           `json:"call_id,omitempty"`
+	ReviewPacketStatus string           `json:"review_packet_status,omitempty"`
+	ReviewIssues       string           `json:"review_issues,omitempty"`
+	ReviewTargets      []string         `json:"review_targets,omitempty"`
+	Findings           []Finding        `json:"findings,omitempty"`
+	Advisory           *AdvisoryOutcome `json:"advisory,omitempty"`
+	AddedGLM           *AddedGLMUsage   `json:"added_glm,omitempty"`
+	Assessment         *SolAssessment   `json:"sol_assessment,omitempty"`
+	Detail             string           `json:"detail,omitempty"`
+	RecordedAt         string           `json:"recorded_at"`
 }
 
 type Registry struct {
@@ -73,6 +85,9 @@ type LabelInput struct {
 	TaskID                string                    `json:"task_id"`
 	FindingDispositions   []FindingDispositionInput `json:"finding_dispositions"`
 	AvoidedReviewFixWaves int                       `json:"avoided_review_fix_waves,omitempty"`
+	FalseNegatives        *int                      `json:"false_negatives,omitempty"`
+	EscapedFindings       *int                      `json:"escaped_findings,omitempty"`
+	HumanInterventions    *int                      `json:"human_interventions,omitempty"`
 	QualityDeltaNote      string                    `json:"quality_delta_note,omitempty"`
 	Usage                 *UsageComparison          `json:"usage,omitempty"`
 }
@@ -82,11 +97,11 @@ type FindingDispositionInput struct {
 	Disposition string `json:"disposition"`
 }
 
-const TrialSchema = "failure-path-trial/v1"
+const AdvisorySchema = "failure-path-advisory/v1"
 
-const LabelsSchema = "failure-path-trial-labels/v1"
+const LabelsSchema = "failure-path-advisory-labels/v1"
 
-const RegistryFile = "failure-path-trial.json"
+const RegistryFile = "failure-path-advisory.json"
 
 const CohortCap = 20
 
@@ -100,9 +115,23 @@ const (
 	OutcomeMissingPartial        = "missing-partial"
 	OutcomeMissingInterrupted    = "missing-interrupted"
 	OutcomeMissingRunUnavailable = "missing-run-unavailable"
+	OutcomeMissingDiff           = "missing-diff"
 	OutcomeCapped                = "capped"
 	OutcomeAmbiguous             = "ambiguous"
 	OutcomeClassificationMissing = "classification-missing"
+)
+
+const (
+	FindingStatusVerified      = "finding"
+	FindingStatusIndeterminate = "indeterminate"
+)
+
+const (
+	AdvisoryShown           = "shown"
+	AdvisoryOmittedNoFind   = "omitted-no-findings"
+	AdvisoryOmittedFailOpen = "omitted-fail-open"
+	AdvisoryOmittedBound    = "omitted-packet-bound"
+	AdvisoryOmittedRegistry = "omitted-registry-failure"
 )
 
 const (
@@ -141,36 +170,36 @@ func LoadRegistry(path string) (Registry, error) {
 		if os.IsNotExist(err) {
 			return Registry{}, nil
 		}
-		return Registry{}, fmt.Errorf("failure-path trial registryを読めません: %w", err)
+		return Registry{}, fmt.Errorf("failure-path advisory registryを読めません: %w", err)
 	}
 	var registry Registry
 	if err := json.Unmarshal(data, &registry); err != nil {
-		return Registry{}, fmt.Errorf("failure-path trial registryを解析できません: %w", err)
+		return Registry{}, fmt.Errorf("failure-path advisory registryを解析できません: %w", err)
 	}
-	if registry.Schema != TrialSchema {
-		return Registry{}, fmt.Errorf("failure-path trial registryのschemaが不正です: %q", registry.Schema)
+	if registry.Schema != AdvisorySchema {
+		return Registry{}, fmt.Errorf("failure-path advisory registryのschemaが不正です: %q", registry.Schema)
 	}
 	return registry, nil
 }
 
 func SaveRegistry(path string, registry Registry) error {
-	registry.Schema = TrialSchema
+	registry.Schema = AdvisorySchema
 	if registry.Records == nil {
 		registry.Records = []Record{}
 	}
 	data, err := json.Marshal(registry)
 	if err != nil {
-		return fmt.Errorf("failure-path trial registryをJSON化できません: %w", err)
+		return fmt.Errorf("failure-path advisory registryをJSON化できません: %w", err)
 	}
 	temporary := path + ".tmp"
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("failure-path trial registry dirを作成できません: %w", err)
+		return fmt.Errorf("failure-path advisory registry dirを作成できません: %w", err)
 	}
 	if err := os.WriteFile(temporary, append(data, '\n'), 0o600); err != nil {
-		return fmt.Errorf("failure-path trial registryを書けません: %w", err)
+		return fmt.Errorf("failure-path advisory registryを書けません: %w", err)
 	}
 	if err := os.Rename(temporary, path); err != nil {
-		return fmt.Errorf("failure-path trial registryを保存できません: %w", err)
+		return fmt.Errorf("failure-path advisory registryを保存できません: %w", err)
 	}
 	return nil
 }
@@ -203,13 +232,13 @@ func (r Registry) WithRecord(record Record) Registry {
 func LoadLabels(path string) (LabelInput, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return LabelInput{}, fmt.Errorf("failure-path trial labelsを読めません: %w", err)
+		return LabelInput{}, fmt.Errorf("failure-path advisory labelsを読めません: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var input LabelInput
 	if err := decoder.Decode(&input); err != nil {
-		return LabelInput{}, fmt.Errorf("failure-path trial labelsを解析できません: %w", err)
+		return LabelInput{}, fmt.Errorf("failure-path advisory labelsを解析できません: %w", err)
 	}
 	if err := validateLabels(input); err != nil {
 		return LabelInput{}, err
@@ -219,22 +248,34 @@ func LoadLabels(path string) (LabelInput, error) {
 
 func validateLabels(input LabelInput) error {
 	if input.Schema != LabelsSchema {
-		return fmt.Errorf("failure-path trial labelsのschemaが不正です: %q", input.Schema)
+		return fmt.Errorf("failure-path advisory labelsのschemaが不正です: %q", input.Schema)
 	}
 	if input.TaskID == "" {
-		return fmt.Errorf("failure-path trial labelsのtask_idが空です")
+		return fmt.Errorf("failure-path advisory labelsのtask_idが空です")
 	}
 	seen := make(map[int]struct{}, len(input.FindingDispositions))
 	for index, disposition := range input.FindingDispositions {
 		if disposition.Index < 0 {
-			return fmt.Errorf("failure-path trial labels[%d]のindexが負です", index)
+			return fmt.Errorf("failure-path advisory labels[%d]のindexが負です", index)
 		}
 		if _, duplicate := seen[disposition.Index]; duplicate {
-			return fmt.Errorf("failure-path trial labelsのindex %dが重複しています", disposition.Index)
+			return fmt.Errorf("failure-path advisory labelsのindex %dが重複しています", disposition.Index)
 		}
 		seen[disposition.Index] = struct{}{}
 		if !dispositionValues[disposition.Disposition] {
-			return fmt.Errorf("failure-path trial labels[%d]のdispositionが不正です: %q", index, disposition.Disposition)
+			return fmt.Errorf("failure-path advisory labels[%d]のdispositionが不正です: %q", index, disposition.Disposition)
+		}
+	}
+	for _, count := range []struct {
+		name  string
+		value *int
+	}{
+		{"false_negatives", input.FalseNegatives},
+		{"escaped_findings", input.EscapedFindings},
+		{"human_interventions", input.HumanInterventions},
+	} {
+		if count.value != nil && *count.value < 0 {
+			return fmt.Errorf("failure-path advisory labelsの%sが負です: %d", count.name, *count.value)
 		}
 	}
 	return nil
@@ -252,20 +293,23 @@ func ApplyLabels(registry Registry, input LabelInput) (Registry, error) {
 		}
 	}
 	if recordIndex < 0 {
-		return Registry{}, fmt.Errorf("failure-path trial labelsのtask %sがregistryに存在しません", input.TaskID)
+		return Registry{}, fmt.Errorf("failure-path advisory labelsのtask %sがregistryに存在しません", input.TaskID)
 	}
 	record := registry.Records[recordIndex]
 	if record.Outcome != OutcomeObserved {
-		return Registry{}, fmt.Errorf("failure-path trial labelsはobserved record以外へ適用できません: %s", record.Outcome)
+		return Registry{}, fmt.Errorf("failure-path advisory labelsはobserved record以外へ適用できません: %s", record.Outcome)
 	}
 	for _, disposition := range input.FindingDispositions {
 		if disposition.Index >= len(record.Findings) {
-			return Registry{}, fmt.Errorf("failure-path trial labelsのindex %dがfindings範囲外です", disposition.Index)
+			return Registry{}, fmt.Errorf("failure-path advisory labelsのindex %dがfindings範囲外です", disposition.Index)
 		}
 		record.Findings[disposition.Index].Label = &FindingLabel{Disposition: disposition.Disposition}
 	}
 	record.Assessment = &SolAssessment{
 		AvoidedReviewFixWaves: input.AvoidedReviewFixWaves,
+		FalseNegatives:        input.FalseNegatives,
+		EscapedFindings:       input.EscapedFindings,
+		HumanInterventions:    input.HumanInterventions,
 		QualityDeltaNote:      boundText(input.QualityDeltaNote, detailTextBoundBytes),
 		Usage:                 input.Usage,
 	}

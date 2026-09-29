@@ -54,6 +54,7 @@ const (
 	fieldSolQuestion                machineField = "sol_question"
 	fieldTargets                    machineField = "targets"
 	fieldArtifacts                  machineField = "artifacts"
+	fieldFailurePathAdvisory        machineField = "failure_path_advisory"
 )
 
 const (

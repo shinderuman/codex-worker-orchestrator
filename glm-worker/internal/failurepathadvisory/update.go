@@ -1,4 +1,4 @@
-package failurepathtrial
+package failurepathadvisory
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 
 type RegistryUpdate func(Registry) (Registry, error)
 
-var ErrCohortFull = errors.New("failure-path trial cohort上限に到達しているためrecordをregistryへ追加できません")
+var ErrCohortFull = errors.New("failure-path advisory cohort上限に到達しているためrecordをregistryへ追加できません")
 
 var registryLockWait = 2 * time.Second
 
@@ -56,10 +56,10 @@ func acquireRegistryLock(path string) (*repolock.Lock, error) {
 			return lock, nil
 		}
 		if !errors.Is(err, repolock.ErrRepoLockHeld) {
-			return nil, fmt.Errorf("failure-path trial registry lockを取得できません: %w", err)
+			return nil, fmt.Errorf("failure-path advisory registry lockを取得できません: %w", err)
 		}
 		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("failure-path trial registry lock競合(上限%s): %w", registryLockWait, repolock.ErrRepoLockHeld)
+			return nil, fmt.Errorf("failure-path advisory registry lock競合(上限%s): %w", registryLockWait, repolock.ErrRepoLockHeld)
 		}
 		time.Sleep(registryLockRetryInterval)
 	}

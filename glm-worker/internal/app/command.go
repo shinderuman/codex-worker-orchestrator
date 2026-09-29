@@ -86,7 +86,7 @@ const (
 	ModeCodexWakePlan
 	ModeCodexWakeResponse
 	ModeShadowEval
-	ModeFailurePathTrial
+	ModeFailurePathAdvisory
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -109,7 +109,7 @@ const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-t
 
 const shadowEvalUsage = "usage: glm-worker --shadow-eval <task-id> [--reference <reference.json>]"
 
-const failurePathTrialUsage = "usage: glm-worker --failure-path-trial [--labels <labels.json>]"
+const failurePathAdvisoryUsage = "usage: glm-worker --failure-path-advisory [--labels <labels.json>]"
 
 var commandParsers = map[string]commandParser{
 	"--decision-stdin": func(args []string) (Command, error) {
@@ -187,10 +187,10 @@ var commandParsers = map[string]commandParser{
 	"--codex-limit": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
 	},
-	"--repo-search":        repoSearchCommand,
-	"--evidence":           evidenceCommand,
-	"--shadow-eval":        shadowEvalCommand,
-	"--failure-path-trial": failurePathTrialCommand,
+	"--repo-search":           repoSearchCommand,
+	"--evidence":              evidenceCommand,
+	"--shadow-eval":           shadowEvalCommand,
+	"--failure-path-advisory": failurePathAdvisoryCommand,
 	"--repo-search-eval": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeRepoSearchEval, "usage: glm-worker --repo-search-eval")
 	},
@@ -267,14 +267,14 @@ func shadowEvalCommand(args []string) (Command, error) {
 	return command, nil
 }
 
-func failurePathTrialCommand(args []string) (Command, error) {
+func failurePathAdvisoryCommand(args []string) (Command, error) {
 	if len(args) == 1 {
-		return Command{Mode: ModeFailurePathTrial}, nil
+		return Command{Mode: ModeFailurePathAdvisory}, nil
 	}
 	if len(args) == 3 && args[1] == "--labels" && args[2] != "" {
-		return Command{Mode: ModeFailurePathTrial, ReferencePath: args[2]}, nil
+		return Command{Mode: ModeFailurePathAdvisory, ReferencePath: args[2]}, nil
 	}
-	return Command{}, machinecli.UsageErrorf("%s", failurePathTrialUsage)
+	return Command{}, machinecli.UsageErrorf("%s", failurePathAdvisoryUsage)
 }
 
 func parentHandoffCommand(args []string) (Command, error) {

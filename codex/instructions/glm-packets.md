@@ -12,6 +12,7 @@ worker/reviewer packet、`glm-parent-action`のterminal envelope、またはboun
 - `action_specs`のdirect actionはexact `command`、staged actionはexact `prepare_command`をtransport authorityとする。prepare後はmachine-declared `slots`だけをsemantic値へ置換し、`next_command`を実行する。path/token/placeholder/argument orderを親で組み立てない。
 - terminal transport/parse/projection failureで子stateが不明なら、最初にread-only `glm-worker --handoff recovery`だけをbounded recovery入口として使う。`semantic_result.availability:"available"`なら同梱`packet`を失われたreviewer semantic resultとして扱い、`state_key`と`call_id`をexact source locatorとする。同じsemantic resultを`--status`、timeline、telemetry、session transcript、artifact inventoryから再探索しない。`semantic_result.availability:"unavailable"`は同梱`reason`のunknown/errorを維持し、whole-document/corpus探索へ自動fallbackしない。`last_material`、guard/quality failure projection等で足りる事実もtelemetry/session/artifact全体から再探索しない。不足が残る場合だけexact locatorに限定して追加evidenceを読む。
 - 同一decision leaseのduplicate projection拒否はmachine dedupであり、同じbodyを再取得する理由にしない。複数surfaceが必要ならmachineのevidence batchを使う。
+- review packetの`failure_path_advisory`はmachine専有のfailure-path advisoryである。通常reviewerのstatus・採否・source proofとは独立した、Sol Highが検証する候補に過ぎず、advisoryだけでacceptやfixを変更しない。`findings`の`target`に限定して確認し、true positive / duplicate / false positiveのlabelと最終採否はSol判断として`--failure-path-advisory --labels`へ記録する。`indeterminate`と`truncated`は成功findingではないため、hitやQuality成功値へ数えない。
 - `artifacts`は必要な成果物だけ記載pathから読む。packetへ全内容を転載しない。原因不明runtime failureは`~/.codex/instructions/failure-evidence.md`のbounded evidence条件に従う。
 
 ## `"status":"NEEDS_SOL_DECISION"`

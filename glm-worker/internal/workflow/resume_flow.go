@@ -294,6 +294,7 @@ func (w *Workflow) routeReviewResumeResult(checkpoint state.ResumeCheckpoint, re
 	if err := w.writeLastReview(reviewResult); err != nil {
 		return err
 	}
+	reviewResult = w.attachFailurePathAdvisory(checkpoint.Request, reviewResult, checkpoint.ReviewNumber)
 	return w.handleReviewResult(
 		checkpoint.Request,
 		workerResult,

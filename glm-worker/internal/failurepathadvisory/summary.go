@@ -1,4 +1,4 @@
-package failurepathtrial
+package failurepathadvisory
 
 import "fmt"
 
@@ -6,6 +6,11 @@ type UsageComparisonStatus struct {
 	Owner         string `json:"owner"`
 	MeasuredTasks int    `json:"measured_tasks"`
 	PendingTasks  int    `json:"pending_tasks"`
+}
+
+type MeasuredCount struct {
+	MeasuredTasks int `json:"measured_tasks"`
+	Total         int `json:"total"`
 }
 
 type Summary struct {
@@ -20,10 +25,16 @@ type Summary struct {
 	ClassificationMissingRecords int                   `json:"classification_missing_records"`
 	AddedGLM                     AddedGLMUsage         `json:"added_glm"`
 	FindingsTotal                int                   `json:"findings_total"`
+	IndeterminateFindings        int                   `json:"indeterminate_findings"`
 	LabeledFindings              int                   `json:"labeled_findings"`
 	UnlabeledFindings            int                   `json:"unlabeled_findings"`
 	DispositionCounts            map[string]int        `json:"disposition_counts"`
 	TruePositiveAdversarialOnly  int                   `json:"true_positive_adversarial_only"`
+	FalseNegatives               MeasuredCount         `json:"false_negatives"`
+	EscapedFindings              MeasuredCount         `json:"escaped_findings"`
+	HumanInterventions           MeasuredCount         `json:"human_interventions"`
+	AdvisoryShownRecords         int                   `json:"advisory_shown_records"`
+	AdvisoryOmittedCounts        map[string]int        `json:"advisory_omitted_counts"`
 	EarlyStopEligible            bool                  `json:"early_stop_eligible"`
 	EarlyStopBasis               string                `json:"early_stop_basis"`
 	UsageComparison              UsageComparisonStatus `json:"usage_comparison"`
@@ -32,15 +43,16 @@ type Summary struct {
 
 func BuildSummary(registry Registry) Summary {
 	summary := Summary{
-		Schema:             TrialSchema,
-		CohortSize:         registry.CohortSize(),
-		CohortCap:          CohortCap,
-		CohortOpen:         registry.CohortSize() < CohortCap,
-		OutcomeCounts:      map[string]int{},
-		TriggerClassCounts: map[string]int{},
-		DispositionCounts:  map[string]int{},
-		UsageComparison:    UsageComparisonStatus{Owner: "parent"},
-		Records:            registry.Records,
+		Schema:                AdvisorySchema,
+		CohortSize:            registry.CohortSize(),
+		CohortCap:             CohortCap,
+		CohortOpen:            registry.CohortSize() < CohortCap,
+		OutcomeCounts:         map[string]int{},
+		TriggerClassCounts:    map[string]int{},
+		DispositionCounts:     map[string]int{},
+		AdvisoryOmittedCounts: map[string]int{},
+		UsageComparison:       UsageComparisonStatus{Owner: "parent"},
+		Records:               registry.Records,
 	}
 	if summary.Records == nil {
 		summary.Records = []Record{}
@@ -63,6 +75,8 @@ func BuildSummary(registry Registry) Summary {
 		}
 		accumulateAddedGLM(&summary, record)
 		accumulateFindings(&summary, record)
+		accumulateAdvisory(&summary, record)
+		accumulateAssessmentCounts(&summary, record)
 	}
 	if summary.CohortSize >= EarlyStopMinimumCohort &&
 		summary.TruePositiveAdversarialOnly == 0 && summary.UnlabeledFindings == 0 {
@@ -93,6 +107,9 @@ func accumulateAddedGLM(summary *Summary, record Record) {
 func accumulateFindings(summary *Summary, record Record) {
 	summary.FindingsTotal += len(record.Findings)
 	for _, finding := range record.Findings {
+		if finding.Status == FindingStatusIndeterminate {
+			summary.IndeterminateFindings++
+		}
 		if finding.Label == nil {
 			summary.UnlabeledFindings++
 			continue
@@ -109,5 +126,36 @@ func accumulateFindings(summary *Summary, record Record) {
 	}
 	if record.Outcome == OutcomeObserved {
 		summary.UsageComparison.PendingTasks++
+	}
+}
+
+func accumulateAdvisory(summary *Summary, record Record) {
+	if record.Advisory == nil {
+		return
+	}
+	if record.Advisory.Status == AdvisoryShown {
+		summary.AdvisoryShownRecords++
+		return
+	}
+	summary.AdvisoryOmittedCounts[record.Advisory.Status]++
+}
+
+func accumulateAssessmentCounts(summary *Summary, record Record) {
+	if record.Assessment == nil {
+		return
+	}
+	for _, count := range []struct {
+		value       *int
+		observation *MeasuredCount
+	}{
+		{record.Assessment.FalseNegatives, &summary.FalseNegatives},
+		{record.Assessment.EscapedFindings, &summary.EscapedFindings},
+		{record.Assessment.HumanInterventions, &summary.HumanInterventions},
+	} {
+		if count.value == nil {
+			continue
+		}
+		count.observation.MeasuredTasks++
+		count.observation.Total += *count.value
 	}
 }

@@ -1,4 +1,4 @@
-package failurepathtrial
+package failurepathadvisory
 
 import (
 	"bytes"
@@ -6,12 +6,12 @@ import (
 	"fmt"
 )
 
-type shadowOutput struct {
+type advisoryOutput struct {
 	Findings []Finding `json:"findings"`
 	Summary  string    `json:"summary"`
 }
 
-func ShadowSchemaJSON() (string, error) {
+func StructuredSchemaJSON() (string, error) {
 	schema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -24,8 +24,9 @@ func ShadowSchemaJSON() (string, error) {
 						"class":    map[string]any{"type": "string", "enum": Classes},
 						"issue":    map[string]any{"type": "string"},
 						"evidence": map[string]any{"type": "string"},
+						"status":   map[string]any{"type": "string", "enum": []string{FindingStatusVerified, FindingStatusIndeterminate}},
 					},
-					"required":             []string{"target", "class", "issue"},
+					"required":             []string{"target", "class", "issue", "status"},
 					"additionalProperties": false,
 				},
 			},
@@ -36,18 +37,18 @@ func ShadowSchemaJSON() (string, error) {
 	}
 	data, err := json.Marshal(schema)
 	if err != nil {
-		return "", fmt.Errorf("failure-path trial schemaをJSON化できません: %w", err)
+		return "", fmt.Errorf("failure-path advisory schemaをJSON化できません: %w", err)
 	}
 	return string(data), nil
 }
 
-func ParseShadowOutput(raw []byte) ([]Finding, error) {
+func ParseStructuredOutput(raw []byte) ([]Finding, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, fmt.Errorf("failure-path reviewerの出力が空です")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	var output shadowOutput
+	var output advisoryOutput
 	if err := decoder.Decode(&output); err != nil {
 		return nil, fmt.Errorf("failure-path reviewerの出力を解析できません: %w", err)
 	}
@@ -58,6 +59,10 @@ func ParseShadowOutput(raw []byte) ([]Finding, error) {
 	for _, class := range Classes {
 		classes[class] = struct{}{}
 	}
+	statuses := map[string]struct{}{
+		FindingStatusVerified:      {},
+		FindingStatusIndeterminate: {},
+	}
 	for index, finding := range output.Findings {
 		if finding.Target == "" {
 			return nil, fmt.Errorf("failure-path reviewerのfindings[%d].targetが空です", index)
@@ -67,6 +72,9 @@ func ParseShadowOutput(raw []byte) ([]Finding, error) {
 		}
 		if finding.Issue == "" {
 			return nil, fmt.Errorf("failure-path reviewerのfindings[%d].issueが空です", index)
+		}
+		if _, known := statuses[finding.Status]; !known {
+			return nil, fmt.Errorf("failure-path reviewerのfindings[%d].statusが不正です: %q", index, finding.Status)
 		}
 		output.Findings[index].Target = boundText(finding.Target, findingTextBoundBytes)
 		output.Findings[index].Issue = boundText(finding.Issue, findingTextBoundBytes)

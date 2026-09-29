@@ -180,11 +180,20 @@ func rejectCategoryForMessage(msg string) string {
 }
 
 func ValidateWorkerResult(result Result) error {
+	return validateResultConstraints(result, workerMachineContract, validateParentValidation)
+}
+
+func validateResultConstraints(result Result, contract machineContract, roleChecks ...func(Result) error) error {
 	collector := newConstraintCollector()
-	if err := collector.add(validateMachineStatusRisk(result, workerMachineContract)); err != nil {
+	if err := collector.add(validateMachineStatusRisk(result, contract)); err != nil {
 		return err
 	}
-	if err := collector.add(validateParentValidation(result)); err != nil {
+	for _, check := range roleChecks {
+		if err := collector.add(check(result)); err != nil {
+			return err
+		}
+	}
+	if err := collector.add(validateFailurePathAdvisoryField(result)); err != nil {
 		return err
 	}
 	if err := collector.add(validateFields(result, resultFieldsForStatus(result.Status))); err != nil {
@@ -194,6 +203,13 @@ func ValidateWorkerResult(result Result) error {
 		return err
 	}
 	return collector.err()
+}
+
+func validateFailurePathAdvisoryField(result Result) error {
+	if result.FailurePathAdvisory != nil {
+		return newConstraintError("failure-path-advisory", "failure_path_advisoryはmachine専有fieldです")
+	}
+	return nil
 }
 
 func validateParentValidation(result Result) error {
@@ -231,20 +247,7 @@ func validateParentValidationWorkingDir(workingDir string) error {
 }
 
 func ValidateReviewerResult(result Result) error {
-	collector := newConstraintCollector()
-	if err := collector.add(validateMachineStatusRisk(result, reviewerMachineContract)); err != nil {
-		return err
-	}
-	if err := collector.add(validateReviewerParentValidation(result)); err != nil {
-		return err
-	}
-	if err := collector.add(validateFields(result, resultFieldsForStatus(result.Status))); err != nil {
-		return err
-	}
-	if err := collector.add(validateTargets(result)); err != nil {
-		return err
-	}
-	return collector.err()
+	return validateResultConstraints(result, reviewerMachineContract, validateReviewerParentValidation)
 }
 
 func validateReviewerParentValidation(result Result) error {

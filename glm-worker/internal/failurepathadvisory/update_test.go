@@ -1,4 +1,4 @@
-package failurepathtrial
+package failurepathadvisory
 
 import (
 	"errors"

@@ -42,14 +42,19 @@ type AppConfig struct {
 	MaxAutoFixRounds      int
 	TelemetryContent      bool
 	RepoSearch            bool
-	FailurePathTrial      bool
+	FailurePathAdvisory   bool
 }
 
 type boolFlags struct {
-	telemetryContent bool
-	repoSearch       bool
-	failurePathTrial bool
+	telemetryContent    bool
+	repoSearch          bool
+	failurePathAdvisory bool
 }
+
+const (
+	failurePathAdvisoryEnv = "GLM_WORKER_FAILURE_PATH_ADVISORY"
+	failurePathTrialEnv    = "GLM_WORKER_FAILURE_PATH_TRIAL"
+)
 
 func RepoHashFor(root string) string {
 	sum := sha256.Sum256([]byte(root))
@@ -110,7 +115,7 @@ func Load() (AppConfig, error) {
 		MaxAutoFixRounds:       rounds,
 		TelemetryContent:       flags.telemetryContent,
 		RepoSearch:             flags.repoSearch,
-		FailurePathTrial:       flags.failurePathTrial,
+		FailurePathAdvisory:    flags.failurePathAdvisory,
 	}, nil
 }
 
@@ -123,11 +128,21 @@ func loadBoolFlags() (boolFlags, error) {
 	if err != nil {
 		return boolFlags{}, err
 	}
-	failurePathTrial, err := boolEnv("GLM_WORKER_FAILURE_PATH_TRIAL", true)
+	failurePathAdvisory, err := failurePathAdvisoryFlag()
 	if err != nil {
 		return boolFlags{}, err
 	}
-	return boolFlags{telemetryContent: telemetryContent, repoSearch: repoSearch, failurePathTrial: failurePathTrial}, nil
+	return boolFlags{telemetryContent: telemetryContent, repoSearch: repoSearch, failurePathAdvisory: failurePathAdvisory}, nil
+}
+
+func failurePathAdvisoryFlag() (bool, error) {
+	if os.Getenv(failurePathAdvisoryEnv) != "" {
+		return boolEnv(failurePathAdvisoryEnv, true)
+	}
+	if os.Getenv(failurePathTrialEnv) != "" {
+		return boolEnv(failurePathTrialEnv, true)
+	}
+	return true, nil
 }
 
 func resolveRepoRoot() (string, error) {
