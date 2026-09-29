@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -21,8 +22,9 @@ func TestExplicitSingleStartEnvRequiresExecutionUnitDisposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, base) {
-		t.Fatalf("env = %#v want %#v", got, base)
+	want := []string{"BASE=1", executionunit.DispositionEnv + "=" + executionunit.ExecutionUnitSingle}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("env = %#v want %#v", got, want)
 	}
 }
 
@@ -32,7 +34,11 @@ func TestExplicitSingleStartEnvPreservesRotationClaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"BASE=1", state.SessionRotationClaimIDEnv + "=" + claim}
+	want := []string{
+		"BASE=1",
+		executionunit.DispositionEnv + "=" + executionunit.ExecutionUnitSingle,
+		state.SessionRotationClaimIDEnv + "=" + claim,
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("env = %#v want %#v", got, want)
 	}
