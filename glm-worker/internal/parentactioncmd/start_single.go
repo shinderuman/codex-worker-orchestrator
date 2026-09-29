@@ -10,7 +10,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const explicitSingleStartUsage = "usage: glm-parent-action start --execution-unit single [--rotation-claim <claim-id>]"
+const (
+	explicitSingleStartUsage = "usage: glm-parent-action start --execution-unit single [--rotation-claim <claim-id>]"
+	rotationClaimOption      = "--rotation-claim"
+)
 
 func executeStartSingleAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	extraEnv, err := explicitSingleStartEnv(args, startIdentityEnv(actionStart))
@@ -28,7 +31,7 @@ func explicitSingleStartEnv(args, baseEnv []string) ([]string, error) {
 	}
 	if len(args) == 5 &&
 		args[1] == parentactiongrammar.ExecutionUnitOption && args[2] == executionunit.ExecutionUnitSingle &&
-		args[3] == "--rotation-claim" && state.ValidGeneratedUUID(args[4]) {
+		args[3] == rotationClaimOption && state.ValidGeneratedUUID(args[4]) {
 		return append(baseEnv,
 			executionunit.DispositionEnv+"="+executionunit.ExecutionUnitSingle,
 			state.SessionRotationClaimIDEnv+"="+args[4],
