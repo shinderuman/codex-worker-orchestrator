@@ -21,10 +21,10 @@ rotation要否の評価・directive projectionはmachineが一貫したevidence/
 1. `pending` projectionの`directive.directive_id`だけを使い、`glm-parent-action rotation-claim <directive-id>`を実行する。返された`claim_id`をそのまま保持する。claimしないまま通常startを選べるが、pending recommendationをretireするのは通常startのadmission成功後だけであり、admission失敗時は`pending`を保持する。
 2. claimした場合だけexternal threadを同じsaved project / local checkoutで1件作成する。別clone/worktreeへ切り替えない。
 3. 作成成功時だけ旧threadで`glm-parent-action rotation-bind <directive-id> <claim-id> <new-thread-id>`を実行する。作成失敗が確定した場合だけ`glm-parent-action rotation-fail <directive-id> <claim-id> --creation-result-json <json>`へ事実を渡す。結果不明をfailureへ読み替えず、重複thread作成で補わない。
-4. 新threadではrepository authorityとcurrent Gitを再読し、旧会話自由文を要求正本として複製しない。通常startは`glm-parent-action start --rotation-claim <claim-id>`を使う。milestone startがsemanticに必要なら既存staging surfaceを使い、rotation claim以外のtoken/JSON手順を本文から再構成しない。
+4. 新threadではrepository authorityとcurrent Gitを再読し、旧会話自由文を要求正本として複製しない。single-unit startを選ぶ場合は`glm-parent-action start --execution-unit single --rotation-claim <claim-id>`を使う。milestone startがsemanticに必要なら既存staging surfaceを使い、rotation claim以外のtoken/JSON手順を本文から再構成しない。
 5. machineがclaimをacknowledgeしてdirectiveをretireした後に旧parent sessionを終了する。
 
-作成順を崩して新threadを先に作ってしまった場合、まだ`pending`でrotationを採用するなら旧threadで`rotation-claim`し、作成済みthreadを対象に`rotation-bind`して新threadで`start --rotation-claim`を使う。すでに`claimed` / `bound`へ入った後は同じ正規transactionだけで復旧し、通常startでbypassしない。旧threadへの指示送信はuser承認が必要な外部操作であり、必要性と対象操作は`session_rotation.incomplete_rotations`の持ち主thread・state・IDから一度に提示する。重複thread作成へfallbackしない。
+作成順を崩して新threadを先に作ってしまった場合、まだ`pending`でrotationを採用するなら旧threadで`rotation-claim`し、作成済みthreadを対象に`rotation-bind`して新threadでexplicit execution-unit startへ同じ`--rotation-claim`を付ける。すでに`claimed` / `bound`へ入った後は同じ正規transactionだけで復旧し、通常startでbypassしない。旧threadへの指示送信はuser承認が必要な外部操作であり、必要性と対象操作は`session_rotation.incomplete_rotations`の持ち主thread・state・IDから一度に提示する。重複thread作成へfallbackしない。
 
 上記のdirective/claim/thread ID以外のtrigger evidence、transaction admission条件、retry可否、ack timing、state遷移はproduction state machineを正とする。
 
