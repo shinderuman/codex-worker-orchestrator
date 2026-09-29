@@ -16,6 +16,7 @@ const (
 	QualitySurfaceBaselineStateFile      = "quality-surface-baseline"
 	RepositoryHarnessActivationStateFile = "repository-harness"
 	InstructionSurfaceBaselineStateFile  = "instruction-surface-baseline-v1"
+	ExecutionUnitDispositionStateFile    = "execution-unit-disposition.json"
 )
 
 var taskBoundStatePolicies = []taskBoundStatePolicy{
@@ -37,6 +38,7 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: baselineUntrackedFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "accepted-fix-scope.json", lifetime: taskBoundStateFreshTaskClear},
 	{name: ExecutionMilestonesStateFile, lifetime: taskBoundStateFreshTaskClear},
+	{name: ExecutionUnitDispositionStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: ResultCorrectionStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: stopWorktreePatchFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: stopIndexPatchFile, lifetime: taskBoundStateFreshTaskClear},
