@@ -9,6 +9,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func TestStartCommandUsesStrictTerminalExecutionBoundary(t *testing.T) {
+	descriptor, ok := lookupParentActionCommand(actionStart)
+	if !ok {
+		t.Fatal("start command descriptor missing")
+	}
+	if descriptor.Execute != parentActionExecutionDirectWorker || descriptor.TerminalExecute != parentActionExecutionStartSingle || !descriptor.TerminalEnvelope {
+		t.Fatalf("start descriptor = %#v", descriptor)
+	}
+}
+
 func TestExplicitSingleStartEnvRequiresExecutionUnitDisposition(t *testing.T) {
 	if _, err := explicitSingleStartEnv([]string{"start"}, nil); err == nil || !strings.Contains(err.Error(), "--execution-unit single") {
 		t.Fatalf("bare start error = %v", err)
