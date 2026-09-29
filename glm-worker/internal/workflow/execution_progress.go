@@ -108,8 +108,10 @@ func executionProgressPlanInconsistency(st *state.StateStore, plan *executionmil
 
 func executionProgressMilestonesConsistent(plan *executionmilestone.Plan) bool {
 	for index, milestone := range plan.Milestones {
-		switch {
-		case index < plan.CurrentIndex:
+		if strings.TrimSpace(milestone.ID) == "" {
+			return false
+		}
+		if index < plan.CurrentIndex {
 			if milestone.Status != executionmilestone.StatusComplete || milestone.Completion == nil {
 				return false
 			}
