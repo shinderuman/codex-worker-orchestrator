@@ -10,19 +10,21 @@ type Options struct {
 	Origin        string
 	Cause         string
 	AcceptedScope string
+	TaskLocator   string
 }
 
 const (
 	OriginOption             = "--origin"
 	CauseOption              = "--cause"
 	AcceptedScopeOption      = "--accepted-scope"
+	TaskLocatorOption        = "--task-locator"
 	AcceptedScopeCurrentDiff = "current-diff"
 )
 
 var ErrInvalidOptions = errors.New("invalid parent fix options")
 
 func OptionalArgumentNames(acceptedScopeBound bool) []string {
-	options := []string{OriginOption, CauseOption}
+	options := []string{OriginOption, CauseOption, TaskLocatorOption}
 	if !acceptedScopeBound {
 		options = append(options, AcceptedScopeOption)
 	}
@@ -74,6 +76,12 @@ func applySemanticPair(options *Options, name, value string) (bool, error) {
 			return true, ErrInvalidOptions
 		}
 		options.AcceptedScope = value
+		return true, nil
+	case TaskLocatorOption:
+		if options.TaskLocator != "" || value == "" {
+			return true, ErrInvalidOptions
+		}
+		options.TaskLocator = value
 		return true, nil
 	default:
 		return false, nil
