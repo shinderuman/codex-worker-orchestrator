@@ -49,7 +49,6 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: reportOnlyStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: poCStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: snapshotComparisonFile, lifetime: taskBoundStateFreshTaskClear},
-	{name: guardRepairStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: runtimeInstallEvidenceFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: finalizationEvidenceFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: publicationCandidateStateFile, lifetime: taskBoundStateFreshTaskClear},
