@@ -193,6 +193,23 @@ func executeParentActionCommand(
 	if terminal {
 		execution = descriptor.TerminalExecute
 	}
+	operation := func() error {
+		return executeAdmittedParentActionCommand(cfg, descriptor, execution, args, stdout, stderr)
+	}
+	if parentActionNeedsControllerGuard(descriptor, execution) {
+		return executeControllerGuardedParentMutation(cfg, descriptor, execution, operation)
+	}
+	return operation()
+}
+
+func executeAdmittedParentActionCommand(
+	cfg config.AppConfig,
+	descriptor parentActionCommandDescriptor,
+	execution parentActionExecutionKind,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
 	if err, handled := executeStandardParentAction(cfg, descriptor, execution, args, stdout, stderr); handled {
 		return err
 	}
