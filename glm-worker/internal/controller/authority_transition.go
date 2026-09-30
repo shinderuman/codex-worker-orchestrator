@@ -11,6 +11,11 @@ func (s *Store) BeginAuthorityTransition(intent TransitionIntent) (TransitionRec
 	if intent.Kind == "" {
 		return TransitionRecord{}, fmt.Errorf("transition kind is required")
 	}
+	lock, err := s.acquireMutationLock()
+	if err != nil {
+		return TransitionRecord{}, err
+	}
+	defer func() { _ = lock.Close() }()
 	if err := s.validateTransitionSource(intent); err != nil {
 		return TransitionRecord{}, err
 	}
