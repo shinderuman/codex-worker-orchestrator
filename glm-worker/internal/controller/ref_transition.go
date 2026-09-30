@@ -126,6 +126,11 @@ func (s *Store) commitRefTransition(
 	if after.ID != predicted.ID {
 		return Admission{}, s.failClosedRefTransition(record, admission, observation.values, "ref transition reached unexpected workspace snapshot")
 	}
+	lock, err := s.acquireMutationLock()
+	if err != nil {
+		return Admission{}, err
+	}
+	defer func() { _ = lock.Close() }()
 	if err := s.MarkTransitionApplied(record, observation.values); err != nil {
 		return Admission{}, err
 	}
@@ -149,6 +154,11 @@ func (s *Store) abortRefTransition(
 	command string,
 	applyErr error,
 ) error {
+	lock, err := s.acquireMutationLock()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 	if _, err := s.CancelTransition(record, observed); err != nil {
 		if applyErr != nil {
 			return errors.Join(applyErr, fmt.Errorf("cancel ref transition: %w", err))
@@ -168,6 +178,11 @@ func (s *Store) abortRefTransition(
 }
 
 func (s *Store) failClosedRefTransition(record TransitionRecord, admission Admission, observed map[string]string, reason string) error {
+	lock, err := s.acquireMutationLock()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 	actual, captureErr := CaptureWorkspaceSnapshot(admission.Workspace.Root)
 	if captureErr != nil {
 		actual = admission.Snapshot
