@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -95,7 +96,7 @@ func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
-	refDigest, err := captureRefDigest(repoRoot)
+	refs, err := captureRefs(repoRoot)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
@@ -103,19 +104,73 @@ func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {
 		Head:           snapshot.Head,
 		IndexDigest:    snapshot.IndexDigest,
 		WorktreeDigest: snapshot.WorktreeDigest,
-		RefDigest:      refDigest,
+		RefDigest:      digestRefs(refs),
 	}
-	result.ID = digestStrings("workspace-snapshot-v1", result.Head, result.IndexDigest, result.WorktreeDigest, result.RefDigest)
+	result.ID = workspaceSnapshotID(result)
 	return result, nil
 }
 
-func captureRefDigest(repoRoot string) (string, error) {
+func PredictRefTransitionSnapshot(repoRoot string, before WorkspaceSnapshot, refName, expectedOld, expectedNew string) (WorkspaceSnapshot, error) {
+	refs, err := captureRefs(repoRoot)
+	if err != nil {
+		return WorkspaceSnapshot{}, err
+	}
+	if refs[refName] != expectedOld {
+		return WorkspaceSnapshot{}, fmt.Errorf("ref %s changed before transition prediction: got=%s want=%s", refName, refs[refName], expectedOld)
+	}
+	if expectedNew == "" {
+		delete(refs, refName)
+	} else {
+		refs[refName] = expectedNew
+	}
+	result := before
+	result.RefDigest = digestRefs(refs)
+	symbolicHead, err := gitTrimmed(repoRoot, "symbolic-ref", "-q", "HEAD")
+	if err == nil && symbolicHead == refName {
+		result.Head = expectedNew
+	}
+	result.ID = workspaceSnapshotID(result)
+	return result, nil
+}
+
+func captureRefs(repoRoot string) (map[string]string, error) {
 	command := exec.Command("git", "-C", repoRoot, "for-each-ref", "--sort=refname", "--format=%(refname)%00%(objectname)")
 	output, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("capture repository refs: %w", err)
+		return nil, fmt.Errorf("capture repository refs: %w", err)
 	}
-	return digestBytes(output), nil
+	refs := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\x00", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return nil, fmt.Errorf("repository ref snapshot is malformed")
+		}
+		refs[parts[0]] = parts[1]
+	}
+	return refs, nil
+}
+
+func digestRefs(refs map[string]string) string {
+	names := make([]string, 0, len(refs))
+	for name := range refs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	hash := sha256.New()
+	for _, name := range names {
+		_, _ = hash.Write([]byte(name))
+		_, _ = hash.Write([]byte{0})
+		_, _ = hash.Write([]byte(refs[name]))
+		_, _ = hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func workspaceSnapshotID(snapshot WorkspaceSnapshot) string {
+	return digestStrings("workspace-snapshot-v1", snapshot.Head, snapshot.IndexDigest, snapshot.WorktreeDigest, snapshot.RefDigest)
 }
 
 func ResolveSemanticTaskRef(repoRoot, pinnedPath string) (SemanticTaskRef, error) {
