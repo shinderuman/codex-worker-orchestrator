@@ -1,0 +1,43 @@
+name: Web GPT controller gofmt fix
+
+on:
+  push:
+    branches:
+      - web-gpt/1210-bound-same-task-defect-scope
+
+permissions:
+  contents: write
+
+jobs:
+  gofmt:
+    if: github.event.head_commit.message != 'Apply controller gofmt'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/1210-bound-same-task-defect-scope
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.4'
+          cache: false
+      - name: Format controller files
+        run: |
+          gofmt -w glm-worker/internal/controller/store.go glm-worker/internal/controller/transition_mutation.go
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('glm-worker/internal/controller/store.go')
+          text = path.read_text()
+          text = text.replace('func (_ *Store) ClassifyTransition(', 'func (*Store) ClassifyTransition(')
+          path.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/controller/store.go
+      - name: Commit formatting if needed
+        run: |
+          if git diff --quiet -- glm-worker/internal/controller/store.go glm-worker/internal/controller/transition_mutation.go; then
+            exit 0
+          fi
+          git config user.name 'web-gpt'
+          git config user.email 'web-gpt@users.noreply.github.com'
+          git add glm-worker/internal/controller/store.go glm-worker/internal/controller/transition_mutation.go
+          git commit -m 'Apply controller gofmt'
+          git push origin HEAD:web-gpt/1210-bound-same-task-defect-scope
