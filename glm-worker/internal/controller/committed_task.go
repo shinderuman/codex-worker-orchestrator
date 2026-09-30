@@ -72,28 +72,58 @@ func ResolveCommittedTaskAuthority(repoRoot string) (CommittedTaskAuthority, err
 }
 
 func committedTaskCorpus(repoRoot, head string) ([]taskcontract.TaskCorpusEntry, []SemanticTaskRef, map[string][]byte, error) {
+	entries, err := committedTaskEntries(repoRoot, head)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	refs, contents, err := loadCommittedTasks(repoRoot, head, entries)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return entries, refs, contents, nil
+}
+
+func committedTaskEntries(repoRoot, head string) ([]taskcontract.TaskCorpusEntry, error) {
 	command := exec.Command("git", "-C", repoRoot, "ls-tree", "-r", "-z", head, "--", taskcontract.TasksDir)
 	output, err := command.Output()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("enumerate committed task corpus: %w", err)
+		return nil, fmt.Errorf("enumerate committed task corpus: %w", err)
 	}
 	var entries []taskcontract.TaskCorpusEntry
 	for _, record := range strings.Split(string(output), "\x00") {
-		if record == "" {
-			continue
+		entry, include, err := parseCommittedTaskEntry(record)
+		if err != nil {
+			return nil, err
 		}
-		metadata, path, found := strings.Cut(record, "\t")
-		if !found || !strings.HasSuffix(path, ".md") {
-			continue
+		if include {
+			entries = append(entries, entry)
 		}
-		fields := strings.Fields(metadata)
-		if len(fields) < 2 {
-			return nil, nil, nil, fmt.Errorf("committed task corpus entry %q is malformed", record)
-		}
-		regular := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
-		entries = append(entries, taskcontract.TaskCorpusEntry{Path: filepath.ToSlash(path), Regular: regular})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	return entries, nil
+}
+
+func parseCommittedTaskEntry(record string) (taskcontract.TaskCorpusEntry, bool, error) {
+	if record == "" {
+		return taskcontract.TaskCorpusEntry{}, false, nil
+	}
+	metadata, path, found := strings.Cut(record, "\t")
+	if !found || !strings.HasSuffix(path, ".md") {
+		return taskcontract.TaskCorpusEntry{}, false, nil
+	}
+	fields := strings.Fields(metadata)
+	if len(fields) < 2 {
+		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("committed task corpus entry %q is malformed", record)
+	}
+	regular := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
+	return taskcontract.TaskCorpusEntry{Path: filepath.ToSlash(path), Regular: regular}, true, nil
+}
+
+func loadCommittedTasks(
+	repoRoot string,
+	head string,
+	entries []taskcontract.TaskCorpusEntry,
+) ([]SemanticTaskRef, map[string][]byte, error) {
 	refs := make([]SemanticTaskRef, 0, len(entries))
 	contents := make(map[string][]byte, len(entries))
 	for _, entry := range entries {
@@ -102,12 +132,12 @@ func committedTaskCorpus(repoRoot, head string) ([]taskcontract.TaskCorpusEntry,
 		}
 		content, err := readCommittedObject(repoRoot, head, entry.Path)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("read committed semantic task %s: %w", entry.Path, err)
+			return nil, nil, fmt.Errorf("read committed semantic task %s: %w", entry.Path, err)
 		}
 		contents[entry.Path] = content
 		refs = append(refs, SemanticTaskRef{TaskPath: entry.Path, ContractDigest: digestBytes(content)})
 	}
-	return entries, refs, contents, nil
+	return refs, contents, nil
 }
 
 func scheduleEntries(schedule taskcontract.PlanSchedule) []string {
