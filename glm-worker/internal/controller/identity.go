@@ -108,29 +108,6 @@ func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {
 	return result, nil
 }
 
-func PredictRefTransitionSnapshot(repoRoot string, before WorkspaceSnapshot, refName, expectedOld, expectedNew string) (WorkspaceSnapshot, error) {
-	refs, err := captureRefs(repoRoot)
-	if err != nil {
-		return WorkspaceSnapshot{}, err
-	}
-	if refs[refName] != expectedOld {
-		return WorkspaceSnapshot{}, fmt.Errorf("ref %s changed before transition prediction: got=%s want=%s", refName, refs[refName], expectedOld)
-	}
-	if expectedNew == "" {
-		delete(refs, refName)
-	} else {
-		refs[refName] = expectedNew
-	}
-	result := before
-	result.RefDigest = digestRefs(refs)
-	symbolicHead, err := gitTrimmed(repoRoot, "symbolic-ref", "-q", "HEAD")
-	if err == nil && symbolicHead == refName {
-		result.Head = expectedNew
-	}
-	result.ID = workspaceSnapshotID(result)
-	return result, nil
-}
-
 func captureRefs(repoRoot string) (map[string]string, error) {
 	command := exec.Command("git", "-C", repoRoot, "for-each-ref", "--sort=refname", "--format=%(refname)%00%(objectname)")
 	output, err := command.Output()
