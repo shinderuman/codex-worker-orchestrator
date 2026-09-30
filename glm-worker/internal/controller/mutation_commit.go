@@ -11,5 +11,5 @@ func (s *Store) RecordAdmittedMutation(
 		return Admission{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	return s.RecordMutation(admission, command, outcome, after)
+	return s.recordMutationLocked(admission, command, outcome, after)
 }
