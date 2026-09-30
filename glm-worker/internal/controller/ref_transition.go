@@ -61,11 +61,17 @@ func (s *Store) prepareRefTransition(
 		ExpectedOld: expectedOld,
 		ExpectedNew: expectedNew,
 	}
+	targetLease, err := s.prepareContinuationLease(current.Lease, predicted, current.Head.ControllerGeneration+3)
+	if err != nil {
+		return WorkspaceSnapshot{}, EffectExpectation{}, TransitionRecord{}, err
+	}
+	target := authorityFromAdmission(current, predicted)
+	target.LeaseID = targetLease.LeaseID
 	record, err := s.BeginAuthorityTransition(TransitionIntent{
 		Kind:               kind,
 		ExpectedGeneration: current.Head.ControllerGeneration,
 		Source:             current,
-		Target:             authorityFromAdmission(current, predicted),
+		Target:             target,
 		Effects:            []EffectExpectation{effect},
 	})
 	if err != nil {
@@ -131,20 +137,37 @@ func (s *Store) commitRefTransition(
 		return Admission{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	if err := s.MarkTransitionApplied(record, observation.values); err != nil {
-		return Admission{}, err
-	}
-	if _, err := s.CommitTransition(record, observation.values, false, nil); err != nil {
-		return Admission{}, err
-	}
-	if _, err := s.FinalizeTransition(record); err != nil {
-		return Admission{}, err
-	}
-	advanced, err := s.RecordTransitionMutation(admission, command, "success", after)
+	targetLease, err := s.loadLease(record.TargetLeaseID)
 	if err != nil {
 		return Admission{}, err
 	}
-	return advanced, observation.applyErr
+	if targetLease.AttemptID != record.SourceAttemptID || targetLease.WorkspaceID != record.TargetWorkspaceID ||
+		targetLease.ControllerGeneration != record.TargetGeneration || targetLease.ExpectedWorkspaceSnapshotID != after.ID {
+		return Admission{}, fmt.Errorf("ref transition target lease does not match journal authority")
+	}
+	if err := s.MarkTransitionApplied(record, observation.values); err != nil {
+		return Admission{}, err
+	}
+	if _, err := s.commitAuthorityTransitionLocked(record, observation.values, false, func(next *RepositoryControllerHead) error {
+		next.LiveLeaseID = record.TargetLeaseID
+		return nil
+	}); err != nil {
+		return Admission{}, err
+	}
+	finalHead, err := s.finalizeAuthorityTransitionLocked(record)
+	if err != nil {
+		return Admission{}, err
+	}
+	if err := s.writeTransitionMutationProvenance(record, record.TargetLeaseID, command, "success", admission.Snapshot, after); err != nil {
+		return Admission{}, err
+	}
+	return Admission{
+		Head:      finalHead,
+		Attempt:   admission.Attempt,
+		Lease:     targetLease,
+		Workspace: admission.Workspace,
+		Snapshot:  after,
+	}, observation.applyErr
 }
 
 func (s *Store) abortRefTransition(
@@ -159,15 +182,19 @@ func (s *Store) abortRefTransition(
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	if _, err := s.CancelTransition(record, observed); err != nil {
+	abortLease, err := s.prepareContinuationLease(admission.Lease, admission.Snapshot, record.TargetGeneration)
+	if err != nil {
+		return err
+	}
+	if _, err := s.abortAuthorityTransitionLocked(record, observed, abortLease.LeaseID); err != nil {
 		if applyErr != nil {
-			return errors.Join(applyErr, fmt.Errorf("cancel ref transition: %w", err))
+			return errors.Join(applyErr, fmt.Errorf("abort ref transition: %w", err))
 		}
 		return err
 	}
-	if _, err := s.RecordTransitionMutation(admission, command, "aborted", admission.Snapshot); err != nil {
+	if err := s.writeTransitionMutationProvenance(record, abortLease.LeaseID, command, "aborted", admission.Snapshot, admission.Snapshot); err != nil {
 		if applyErr != nil {
-			return errors.Join(applyErr, fmt.Errorf("refresh aborted ref transition lease: %w", err))
+			return errors.Join(applyErr, fmt.Errorf("record aborted ref transition: %w", err))
 		}
 		return err
 	}
