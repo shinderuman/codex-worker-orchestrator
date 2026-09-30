@@ -7,6 +7,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -18,6 +19,14 @@ func executeControllerGuardedStateBacked(
 	rf RunnerFactory,
 	stdout io.Writer,
 ) error {
+	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return executeLegacyStateBacked(cmd, owner, cfg, st, rf, stdout)
+	}
+
 	controllerStore, err := controller.Open(cfg)
 	if err != nil {
 		return err
@@ -75,6 +84,25 @@ func executeControllerGuardedStateBacked(
 	return operationErr
 }
 
+func executeLegacyStateBacked(
+	cmd Command,
+	owner commandDispatchOwner,
+	cfg config.AppConfig,
+	st *state.StateStore,
+	rf RunnerFactory,
+	stdout io.Writer,
+) error {
+	lock, err := AcquireRepoLock(st.LockPath())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := admitParentCommand(cmd, st); err != nil {
+		return err
+	}
+	return executeControllerAdmittedCommand(cmd, owner, cfg, st, rf, stdout)
+}
+
 func admitControllerMutation(
 	cmd Command,
 	cfg config.AppConfig,
@@ -124,7 +152,7 @@ func executeControllerAdmittedCommand(
 	case dispatchWorkflow:
 		return executeWorkflow(cmd, cfg, st, rf, stdout)
 	default:
-		return fmt.Errorf("unsupported controller-admitted dispatch owner: %d", owner)
+		return fmt.Errorf("unsupported state-backed dispatch owner: %d", owner)
 	}
 }
 
