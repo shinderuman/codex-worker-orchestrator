@@ -2,7 +2,6 @@ package parentactioncmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -10,35 +9,28 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestExecuteRecordPublicationFindingForcesReopen(t *testing.T) {
+func TestExecuteRecordPublicationFindingRejectsUnprovenSameTaskScope(t *testing.T) {
 	fixture := newCompleteFixture(t)
 	ensureCompleteFixturePublicationAuthority(t, fixture)
-	candidate, err := fixture.st.LoadPublicationCandidate()
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	var stdout bytes.Buffer
-	if err := execute(fixture.cfg, []string{
+	err := execute(fixture.cfg, []string{
 		actionRecordPublicationFinding,
 		"--origin", state.ParentOriginCodexReview,
 		"--cause", state.ParentCauseProductionWiring,
-	}, &stdout, io.Discard); err != nil {
-		t.Fatal(err)
+	}, &bytes.Buffer{}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), sameTaskScopeRegistrationHint) {
+		t.Fatalf("unproven publication finding error = %v", err)
 	}
-
-	var output publicationFindingOutput
-	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
-		t.Fatalf("publication finding output is not JSON: %v: %s", err, stdout.String())
+	finding, findingErr := fixture.st.CurrentPublicationInvalidatingFinding()
+	if findingErr != nil || finding != nil {
+		t.Fatalf("rejected publication finding persisted state: finding=%#v err=%v", finding, findingErr)
 	}
-	if output.Status != "recorded" || output.RequiredAction != state.ParentActionReopen {
-		t.Fatalf("publication finding output = %#v", output)
+	plan, planErr := fixture.st.ParentActionPlan()
+	if planErr != nil {
+		t.Fatal(planErr)
 	}
-	if !state.ValidGeneratedUUID(output.Finding.FindingID) || output.Finding.TaskID != candidate.TaskID || output.Finding.CandidateCommitOID != candidate.CommitOID || output.Finding.CandidateSnapshotID != candidate.SnapshotID || output.Finding.Disposition != state.PublicationFindingCorrectnessDefect {
-		t.Fatalf("publication finding = %#v candidate=%#v", output.Finding, candidate)
-	}
-	if len(output.AllowedActions) != 1 || output.AllowedActions[0] != state.ParentActionReopen {
-		t.Fatalf("publication finding allowed actions = %#v", output.AllowedActions)
+	if plan.RequiredAction != state.ParentActionComplete || plan.Allows(state.ParentActionReopen) {
+		t.Fatalf("rejected publication finding changed plan = %#v", plan)
 	}
 }
 
