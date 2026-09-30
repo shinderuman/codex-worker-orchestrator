@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -42,7 +43,7 @@ func (s *Store) AdmitMutationOrFailClosed(task SemanticTaskRef, workspace Worksp
 	}
 	expected := WorkspaceSnapshot{ID: lease.ExpectedWorkspaceSnapshotID, Head: lease.ExpectedBaseOID}
 	if _, failErr := s.FailClosed("unattributed mutation changed the live execution workspace", "", workspace, expected, snapshot, nil); failErr != nil {
-		return Admission{}, fmt.Errorf("%w; repository controller fail-close failed: %v", err, failErr)
+		return Admission{}, errors.Join(err, fmt.Errorf("repository controller fail-close failed: %w", failErr))
 	}
 	return Admission{}, fmt.Errorf("%w; repository controller entered fail-closed state", err)
 }
