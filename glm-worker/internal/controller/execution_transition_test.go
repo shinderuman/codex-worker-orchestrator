@@ -9,7 +9,7 @@ import (
 func TestExecutionAuthorityTransitionPreservesRootAndRevokesSourceLease(t *testing.T) {
 	repo, _ := newControllerLinkedWorktree(t)
 	childPath := "IMPLEMENTATION_TASKS/child.md"
-	if err := os.WriteFile(filepath.Join(repo, childPath), []byte("# child\n\n## Contract\n\nchild execution\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, childPath), []byte("# child\n\n## Contract\n\nchild execution\n\n## Dependencies\n\nnone\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	plan := "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/child.md`\n"
