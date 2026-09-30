@@ -145,7 +145,7 @@ func (s *Store) commitRefTransition(
 		targetLease.ControllerGeneration != record.TargetGeneration || targetLease.ExpectedWorkspaceSnapshotID != after.ID {
 		return Admission{}, fmt.Errorf("ref transition target lease does not match journal authority")
 	}
-	if err := s.MarkTransitionApplied(record, observation.values); err != nil {
+	if err := s.markTransitionApplied(record, observation.values); err != nil {
 		return Admission{}, err
 	}
 	if _, err := s.commitAuthorityTransitionLocked(record, observation.values, false, func(next *RepositoryControllerHead) error {
@@ -214,7 +214,7 @@ func (s *Store) failClosedRefTransition(record TransitionRecord, admission Admis
 	if captureErr != nil {
 		actual = admission.Snapshot
 	}
-	_, failErr := s.FailClosed(reason, record.TransitionID, admission.Workspace, admission.Snapshot, actual, observed)
+	_, failErr := s.failClosedLocked(reason, record.TransitionID, admission.Workspace, admission.Snapshot, actual, observed)
 	if failErr != nil {
 		return fmt.Errorf("%s; fail-close failed: %w", reason, failErr)
 	}
