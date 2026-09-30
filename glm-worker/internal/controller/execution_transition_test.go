@@ -6,7 +6,101 @@ import (
 	"testing"
 )
 
-func TestExecutionAuthorityTransitionPreservesRootAndRevokesSourceLease(t *testing.T) {
+type executionSwitchFixture struct {
+	store         *Store
+	workspace     WorkspaceIdentity
+	snapshot      WorkspaceSnapshot
+	authority     CommittedTaskAuthority
+	source        Admission
+	child         SemanticTaskRef
+	targetAttempt AttemptRecord
+	targetLease   ExecutionLease
+	record        TransitionRecord
+}
+
+func TestExecutionAuthorityTransitionJournalBindsRootAndExecution(t *testing.T) {
+	fixture := newExecutionSwitchFixture(t)
+	record := fixture.record
+
+	if !record.SourceRootTaskRef.Equal(fixture.authority.Task) || !record.TargetRootTaskRef.Equal(fixture.authority.Task) {
+		t.Fatalf("root authority changed during execution transition: %#v", record)
+	}
+	if !record.SourceExecutionTaskRef.Equal(fixture.authority.Task) || !record.TargetExecutionTaskRef.Equal(fixture.child) {
+		t.Fatalf("execution authority not machine-bound: %#v", record)
+	}
+	if record.SourceAttemptID != fixture.source.Attempt.AttemptID || record.SourceLeaseID != fixture.source.Lease.LeaseID ||
+		record.TargetAttemptID != fixture.targetAttempt.AttemptID || record.TargetLeaseID != fixture.targetLease.LeaseID {
+		t.Fatalf("attempt/lease transition authority is incomplete: %#v", record)
+	}
+	if record.SourceWorkspaceID != fixture.workspace.ID || record.TargetWorkspaceID != fixture.workspace.ID ||
+		record.ProjectSnapshotOld != fixture.source.Head.ProjectSnapshotID || record.ProjectSnapshotNew != fixture.source.Head.ProjectSnapshotID {
+		t.Fatalf("workspace/project transition authority is incomplete: %#v", record)
+	}
+}
+
+func TestExecutionAuthorityTransitionFinalizesTargetAndRevokesSourceLease(t *testing.T) {
+	fixture := newExecutionSwitchFixture(t)
+	store := fixture.store
+	record := fixture.record
+
+	lock, err := store.acquireMutationLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.markTransitionApplied(record, nil); err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	committed, err := store.commitAuthorityTransitionLocked(record, nil, false, func(next *RepositoryControllerHead) error {
+		root := record.TargetRootTaskRef
+		execution := record.TargetExecutionTaskRef
+		next.ProjectSnapshotID = record.ProjectSnapshotNew
+		next.RootTaskRef = &root
+		next.ExecutionTaskRef = &execution
+		next.LiveAttemptID = record.TargetAttemptID
+		next.LiveLeaseID = record.TargetLeaseID
+		return nil
+	})
+	if err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	if committed.ControllerGeneration != record.CommittedGeneration || committed.PendingTransitionID != record.TransitionID {
+		_ = lock.Close()
+		t.Fatalf("committed transition authority = %#v", committed)
+	}
+	finalHead, err := store.finalizeAuthorityTransitionLocked(record)
+	closeErr := lock.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	fixture.targetAttempt.AttemptState = AttemptStateLive
+	if err := store.writeAttempt(fixture.targetAttempt); err != nil {
+		t.Fatal(err)
+	}
+
+	if finalHead.RootTaskRef == nil || !finalHead.RootTaskRef.Equal(fixture.authority.Task) {
+		t.Fatalf("finalized transition lost root authority: %#v", finalHead)
+	}
+	if finalHead.ExecutionTaskRef == nil || !finalHead.ExecutionTaskRef.Equal(fixture.child) {
+		t.Fatalf("finalized transition did not select child execution authority: %#v", finalHead)
+	}
+	if finalHead.LiveLeaseID != fixture.targetLease.LeaseID || finalHead.LiveAttemptID != fixture.targetAttempt.AttemptID {
+		t.Fatalf("finalized transition selected unexpected attempt/lease: %#v", finalHead)
+	}
+	if _, err := store.AdmitMutation(fixture.source.Lease.SemanticTaskRef, fixture.source.Workspace, fixture.source.Snapshot); err == nil {
+		t.Fatal("source lease remained admissible after execution authority changed")
+	}
+	if _, err := store.AdmitMutation(fixture.child, fixture.workspace, fixture.snapshot); err != nil {
+		t.Fatalf("target execution authority was not admissible: %v", err)
+	}
+}
+
+func newExecutionSwitchFixture(t *testing.T) executionSwitchFixture {
+	t.Helper()
 	repo, _ := newControllerLinkedWorktree(t)
 	childPath := "IMPLEMENTATION_TASKS/child.md"
 	if err := os.WriteFile(filepath.Join(repo, childPath), []byte("# child\n\n## Contract\n\nchild execution\n\n## Dependencies\n\nnone\n"), 0o644); err != nil {
@@ -43,17 +137,10 @@ func TestExecutionAuthorityTransitionPreservesRootAndRevokesSourceLease(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	var child SemanticTaskRef
-	for _, task := range project.Tasks {
-		if task.TaskPath == childPath {
-			child = task
-			break
-		}
-	}
+	child := findProjectTask(project, childPath)
 	if child.Empty() {
 		t.Fatal("child task missing from committed project snapshot")
 	}
-
 	targetAttempt, targetLease, err := newExecutionRecords(
 		child,
 		source.Attempt.RootTaskRef,
@@ -73,7 +160,7 @@ func TestExecutionAuthorityTransitionPreservesRootAndRevokesSourceLease(t *testi
 	if err := store.writeLease(targetLease); err != nil {
 		t.Fatal(err)
 	}
-	targetAuthority := TransitionAuthority{
+	target := TransitionAuthority{
 		ProjectSnapshotID: project.SnapshotID,
 		RootTaskRef:       source.Attempt.RootTaskRef,
 		ExecutionTaskRef:  child,
@@ -88,78 +175,22 @@ func TestExecutionAuthorityTransitionPreservesRootAndRevokesSourceLease(t *testi
 		Kind:               "execution-authority:blocker-execution",
 		ExpectedGeneration: source.Head.ControllerGeneration,
 		Source:             source,
-		Target:             targetAuthority,
+		Target:             target,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !record.SourceRootTaskRef.Equal(authority.Task) || !record.TargetRootTaskRef.Equal(authority.Task) {
-		t.Fatalf("root authority changed during execution transition: %#v", record)
+	return executionSwitchFixture{
+		store: store, workspace: workspace, snapshot: snapshot, authority: authority,
+		source: source, child: child, targetAttempt: targetAttempt, targetLease: targetLease, record: record,
 	}
-	if !record.SourceExecutionTaskRef.Equal(authority.Task) || !record.TargetExecutionTaskRef.Equal(child) {
-		t.Fatalf("execution authority not machine-bound: %#v", record)
-	}
-	if record.SourceAttemptID != source.Attempt.AttemptID || record.SourceLeaseID != source.Lease.LeaseID ||
-		record.TargetAttemptID != targetAttempt.AttemptID || record.TargetLeaseID != targetLease.LeaseID {
-		t.Fatalf("attempt/lease transition authority is incomplete: %#v", record)
-	}
-	if record.SourceWorkspaceID != workspace.ID || record.TargetWorkspaceID != workspace.ID ||
-		record.ProjectSnapshotOld != project.SnapshotID || record.ProjectSnapshotNew != project.SnapshotID {
-		t.Fatalf("workspace/project transition authority is incomplete: %#v", record)
-	}
+}
 
-	lock, err := store.acquireMutationLock()
-	if err != nil {
-		t.Fatal(err)
+func findProjectTask(project ProjectSnapshot, taskPath string) SemanticTaskRef {
+	for _, task := range project.Tasks {
+		if task.TaskPath == taskPath {
+			return task
+		}
 	}
-	if err := store.markTransitionApplied(record, nil); err != nil {
-		_ = lock.Close()
-		t.Fatal(err)
-	}
-	committed, err := store.commitAuthorityTransitionLocked(record, nil, false, func(next *RepositoryControllerHead) error {
-		root := record.TargetRootTaskRef
-		execution := record.TargetExecutionTaskRef
-		next.ProjectSnapshotID = record.ProjectSnapshotNew
-		next.RootTaskRef = &root
-		next.ExecutionTaskRef = &execution
-		next.LiveAttemptID = record.TargetAttemptID
-		next.LiveLeaseID = record.TargetLeaseID
-		return nil
-	})
-	if err != nil {
-		_ = lock.Close()
-		t.Fatal(err)
-	}
-	if committed.ControllerGeneration != record.CommittedGeneration || committed.PendingTransitionID != record.TransitionID {
-		_ = lock.Close()
-		t.Fatalf("committed transition authority = %#v", committed)
-	}
-	finalHead, err := store.finalizeAuthorityTransitionLocked(record)
-	closeErr := lock.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if closeErr != nil {
-		t.Fatal(closeErr)
-	}
-	targetAttempt.AttemptState = AttemptStateLive
-	if err := store.writeAttempt(targetAttempt); err != nil {
-		t.Fatal(err)
-	}
-	target := Admission{Head: finalHead, Attempt: targetAttempt, Lease: targetLease, Workspace: workspace, Snapshot: snapshot}
-	if target.Head.RootTaskRef == nil || !target.Head.RootTaskRef.Equal(authority.Task) {
-		t.Fatalf("finalized transition lost root authority: %#v", target.Head)
-	}
-	if target.Head.ExecutionTaskRef == nil || !target.Head.ExecutionTaskRef.Equal(child) {
-		t.Fatalf("finalized transition did not select child execution authority: %#v", target.Head)
-	}
-	if target.Lease.LeaseID != targetLease.LeaseID || target.Attempt.AttemptID != targetAttempt.AttemptID {
-		t.Fatalf("finalized transition selected unexpected attempt/lease: %#v", target)
-	}
-	if _, err := store.AdmitMutation(source.Lease.SemanticTaskRef, source.Workspace, source.Snapshot); err == nil {
-		t.Fatal("source lease remained admissible after execution authority changed")
-	}
-	if _, err := store.AdmitMutation(child, workspace, snapshot); err != nil {
-		t.Fatalf("target execution authority was not admissible: %v", err)
-	}
+	return SemanticTaskRef{}
 }
