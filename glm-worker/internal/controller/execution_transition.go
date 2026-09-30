@@ -101,7 +101,7 @@ func (s *Store) CommitExecutionAuthorityTransition(
 	if lease.ControllerGeneration != record.TargetGeneration || lease.ExpectedWorkspaceSnapshotID != record.WorkspaceSnapshotNew.ID {
 		return Admission{}, fmt.Errorf("target execution lease generation or workspace snapshot is stale")
 	}
-	if err := s.MarkTransitionApplied(record, actual); err != nil {
+	if err := s.markTransitionApplied(record, actual); err != nil {
 		return Admission{}, err
 	}
 	head, err := s.commitAuthorityTransitionLocked(record, actual, true, func(next *RepositoryControllerHead) error {
