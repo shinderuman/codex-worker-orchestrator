@@ -6,34 +6,46 @@ import (
 )
 
 func (s *Store) RotateExecution(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, purpose string) (Admission, error) {
-	head, err := s.LoadHead()
+	head, authority, err := s.executionRotationAuthority(task, workspace, purpose)
 	if err != nil {
 		return Admission{}, err
-	}
-	if head.Status != ControllerStatusActive || head.PendingTransitionID != "" {
-		return Admission{}, fmt.Errorf("repository controller is not available for execution rotation")
-	}
-	if workspace.Root != s.identity.PrimaryRoot || workspace.RepositoryID != s.identity.LineageID {
-		return Admission{}, fmt.Errorf("execution rotation requires the verified primary worktree")
-	}
-	if purpose == "" {
-		return Admission{}, fmt.Errorf("execution rotation purpose is required")
-	}
-	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
-	if err != nil {
-		return Admission{}, err
-	}
-	if !authority.Task.Equal(task) {
-		return Admission{}, fmt.Errorf("requested execution task does not match committed repository authority")
-	}
-	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil {
-		return Admission{}, fmt.Errorf("execution rotation requires an existing live execution lease")
 	}
 	current, err := s.AdmitMutation(*head.ExecutionTaskRef, workspace, snapshot)
 	if err != nil {
 		return Admission{}, err
 	}
 	return s.rotateAdmittedExecution(current, authority, purpose)
+}
+
+func (s *Store) executionRotationAuthority(
+	task SemanticTaskRef,
+	workspace WorkspaceIdentity,
+	purpose string,
+) (RepositoryControllerHead, CommittedTaskAuthority, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return RepositoryControllerHead{}, CommittedTaskAuthority{}, err
+	}
+	if head.Status != ControllerStatusActive || head.PendingTransitionID != "" {
+		return RepositoryControllerHead{}, CommittedTaskAuthority{}, fmt.Errorf("repository controller is not available for execution rotation")
+	}
+	if workspace.Root != s.identity.PrimaryRoot || workspace.RepositoryID != s.identity.LineageID {
+		return RepositoryControllerHead{}, CommittedTaskAuthority{}, fmt.Errorf("execution rotation requires the verified primary worktree")
+	}
+	if purpose == "" {
+		return RepositoryControllerHead{}, CommittedTaskAuthority{}, fmt.Errorf("execution rotation purpose is required")
+	}
+	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	if err != nil {
+		return RepositoryControllerHead{}, CommittedTaskAuthority{}, err
+	}
+	if !authority.Task.Equal(task) {
+		return RepositoryControllerHead{}, CommittedTaskAuthority{}, fmt.Errorf("requested execution task does not match committed repository authority")
+	}
+	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil {
+		return RepositoryControllerHead{}, CommittedTaskAuthority{}, fmt.Errorf("execution rotation requires an existing live execution lease")
+	}
+	return head, authority, nil
 }
 
 func (s *Store) rotateAdmittedExecution(
