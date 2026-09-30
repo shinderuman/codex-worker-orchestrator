@@ -52,8 +52,9 @@ func (s *Store) ApplyRefTransition(
 	if classification == EffectUnexpected {
 		return Admission{}, s.failClosedRefTransition(record, admission, observed, "ref state changed before apply")
 	}
+	var applyErr error
 	if classification == EffectExpectedOld {
-		applyErr := apply()
+		applyErr = apply()
 		observed, err = observeRefEffect(admission.Workspace.Root, effect)
 		if err != nil {
 			return Admission{}, err
@@ -83,7 +84,11 @@ func (s *Store) ApplyRefTransition(
 	if _, err := s.FinalizeTransition(record); err != nil {
 		return Admission{}, err
 	}
-	return s.RecordTransitionMutation(admission, command, "success", after)
+	advanced, err := s.RecordTransitionMutation(admission, command, "success", after)
+	if err != nil {
+		return Admission{}, err
+	}
+	return advanced, applyErr
 }
 
 func (s *Store) abortRefTransition(
