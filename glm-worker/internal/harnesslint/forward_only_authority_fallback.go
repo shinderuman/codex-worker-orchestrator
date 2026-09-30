@@ -209,9 +209,9 @@ func forwardOnlyReadinessName(name string) bool {
 
 func forwardOnlyAuthorityNames(function *forwardOnlySemanticFunction) map[string]bool {
 	names := make(map[string]bool)
-	forwardOnlyCollectControlTypedNames(function.decl.Recv, names)
+	forwardOnlyCollectTypedNames(function.decl.Recv, names, forwardOnlyNodeHasControlSemantic)
 	if function.decl.Type != nil {
-		forwardOnlyCollectControlTypedNames(function.decl.Type.Params, names)
+		forwardOnlyCollectTypedNames(function.decl.Type.Params, names, forwardOnlyNodeHasControlSemantic)
 	}
 	ast.Inspect(function.decl.Body, func(node ast.Node) bool {
 		switch typed := node.(type) {
@@ -225,12 +225,12 @@ func forwardOnlyAuthorityNames(function *forwardOnlySemanticFunction) map[string
 	return names
 }
 
-func forwardOnlyCollectControlTypedNames(fields *ast.FieldList, names map[string]bool) {
+func forwardOnlyCollectTypedNames(fields *ast.FieldList, names map[string]bool, predicate func(ast.Node) bool) {
 	if fields == nil {
 		return
 	}
 	for _, field := range fields.List {
-		if !forwardOnlyNodeHasControlSemantic(field.Type) {
+		if !predicate(field.Type) {
 			continue
 		}
 		for _, name := range field.Names {
@@ -377,9 +377,9 @@ func forwardOnlyRetiredAuthorityCallKinds(call *ast.CallExpr, stateVars map[stri
 
 func forwardOnlyStateStoreVariables(function *forwardOnlySemanticFunction) map[string]bool {
 	names := make(map[string]bool)
-	forwardOnlyCollectStateStoreTypedNames(function.decl.Recv, names)
+	forwardOnlyCollectTypedNames(function.decl.Recv, names, forwardOnlyStateStoreType)
 	if function.decl.Type != nil {
-		forwardOnlyCollectStateStoreTypedNames(function.decl.Type.Params, names)
+		forwardOnlyCollectTypedNames(function.decl.Type.Params, names, forwardOnlyStateStoreType)
 	}
 	ast.Inspect(function.decl.Body, func(node ast.Node) bool {
 		switch typed := node.(type) {
@@ -393,24 +393,12 @@ func forwardOnlyStateStoreVariables(function *forwardOnlySemanticFunction) map[s
 	return names
 }
 
-func forwardOnlyCollectStateStoreTypedNames(fields *ast.FieldList, names map[string]bool) {
-	if fields == nil {
-		return
-	}
-	for _, field := range fields.List {
-		if !forwardOnlyTypeHasName(field.Type, "statestore") {
-			continue
-		}
-		for _, name := range field.Names {
-			if name.Name != "_" {
-				names[name.Name] = true
-			}
-		}
-	}
+func forwardOnlyStateStoreType(node ast.Node) bool {
+	return forwardOnlyTypeHasName(node, "statestore")
 }
 
 func forwardOnlyCollectStateStoreValueSpec(spec *ast.ValueSpec, names map[string]bool) {
-	if forwardOnlyTypeHasName(spec.Type, "statestore") {
+	if forwardOnlyStateStoreType(spec.Type) {
 		for _, name := range spec.Names {
 			if name.Name != "_" {
 				names[name.Name] = true
