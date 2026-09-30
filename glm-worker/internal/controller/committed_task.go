@@ -16,17 +16,17 @@ type CommittedTaskAuthority struct {
 
 func ResolveCommittedTaskAuthority(repoRoot string) (CommittedTaskAuthority, error) {
 	head, err := gitTrimmed(repoRoot, "rev-parse", "--verify", "HEAD")
-	if err != nil || head == "" {
+	if err != nil {
 		return CommittedTaskAuthority{}, fmt.Errorf("resolve committed repository HEAD: %w", err)
+	}
+	if head == "" {
+		return CommittedTaskAuthority{}, fmt.Errorf("committed repository HEAD is empty")
 	}
 	plan, err := readCommittedObject(repoRoot, head, "IMPLEMENTATION_PLAN.local.md")
 	if err != nil {
 		return CommittedTaskAuthority{}, fmt.Errorf("read committed implementation plan: %w", err)
 	}
-	schedule, err := taskcontract.ParsePlanSchedule(string(plan))
-	if err != nil {
-		return CommittedTaskAuthority{}, err
-	}
+	schedule := taskcontract.ParsePlanSchedule(string(plan))
 	path, err := schedule.ActiveTask()
 	if err != nil {
 		return CommittedTaskAuthority{}, err
