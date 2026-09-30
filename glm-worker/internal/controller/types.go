@@ -76,32 +76,32 @@ type EffectExpectation struct {
 }
 
 type TransitionRecord struct {
-	SchemaVersion          int                 `json:"schema_version"`
-	TransitionID           string              `json:"transition_id"`
-	Kind                   string              `json:"kind"`
-	SourceGeneration       uint64              `json:"source_generation"`
-	PreparedGeneration     uint64              `json:"prepared_generation"`
-	TargetGeneration       uint64              `json:"target_generation"`
-	SourceEpisodeID        string              `json:"source_episode_id,omitempty"`
-	SourceEpisodeRevision  uint64              `json:"source_episode_revision,omitempty"`
-	SourceAttemptID        string              `json:"source_attempt_id,omitempty"`
-	SourceLeaseID          string              `json:"source_lease_id,omitempty"`
-	WorkspaceID            string              `json:"workspace_id,omitempty"`
-	WorkspaceSnapshotOld   WorkspaceSnapshot   `json:"workspace_snapshot_old"`
-	WorkspaceSnapshotNew   WorkspaceSnapshot   `json:"workspace_snapshot_new"`
-	ProjectSnapshotOld     string              `json:"project_snapshot_old,omitempty"`
-	ProjectSnapshotNew     string              `json:"project_snapshot_new,omitempty"`
-	Effects                []EffectExpectation `json:"effects,omitempty"`
-	CreatedAt              time.Time           `json:"created_at"`
+	SchemaVersion         int                 `json:"schema_version"`
+	TransitionID          string              `json:"transition_id"`
+	Kind                  string              `json:"kind"`
+	SourceGeneration      uint64              `json:"source_generation"`
+	PreparedGeneration    uint64              `json:"prepared_generation"`
+	TargetGeneration      uint64              `json:"target_generation"`
+	SourceEpisodeID       string              `json:"source_episode_id,omitempty"`
+	SourceEpisodeRevision uint64              `json:"source_episode_revision,omitempty"`
+	SourceAttemptID       string              `json:"source_attempt_id,omitempty"`
+	SourceLeaseID         string              `json:"source_lease_id,omitempty"`
+	WorkspaceID           string              `json:"workspace_id,omitempty"`
+	WorkspaceSnapshotOld  WorkspaceSnapshot   `json:"workspace_snapshot_old"`
+	WorkspaceSnapshotNew  WorkspaceSnapshot   `json:"workspace_snapshot_new"`
+	ProjectSnapshotOld    string              `json:"project_snapshot_old,omitempty"`
+	ProjectSnapshotNew    string              `json:"project_snapshot_new,omitempty"`
+	Effects               []EffectExpectation `json:"effects,omitempty"`
+	CreatedAt             time.Time           `json:"created_at"`
 }
 
 type TransitionState struct {
-	SchemaVersion   int                            `json:"schema_version"`
-	TransitionID    string                         `json:"transition_id"`
-	Phase           TransitionPhase                `json:"phase"`
-	Observed        map[string]string              `json:"observed,omitempty"`
+	SchemaVersion   int                             `json:"schema_version"`
+	TransitionID    string                          `json:"transition_id"`
+	Phase           TransitionPhase                 `json:"phase"`
+	Observed        map[string]string               `json:"observed,omitempty"`
 	Classifications map[string]EffectClassification `json:"classifications,omitempty"`
-	UpdatedAt       time.Time                      `json:"updated_at"`
+	UpdatedAt       time.Time                       `json:"updated_at"`
 }
 
 type MutationRecord struct {

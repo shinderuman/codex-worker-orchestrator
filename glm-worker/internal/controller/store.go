@@ -13,12 +13,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const controllerSchemaVersion = 1
-
 type Store struct {
 	dir      string
 	identity RepositoryIdentity
 }
+
+const controllerSchemaVersion = 1
 
 func Open(cfg config.AppConfig) (*Store, error) {
 	identity, err := ResolveRepositoryIdentity(cfg.RepoRoot)
@@ -82,115 +82,11 @@ func (s *Store) LoadHead() (RepositoryControllerHead, error) {
 }
 
 func (s *Store) BootstrapExecution(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
-	head, err := s.LoadHead()
-	if err != nil {
-		return Admission{}, err
-	}
-	if head.Status != ControllerStatusActive || head.PendingTransitionID != "" {
-		return Admission{}, fmt.Errorf("repository controller is not available for execution bootstrap")
-	}
-	if head.LiveLeaseID != "" || head.LiveAttemptID != "" {
-		return s.AdmitMutation(task, workspace, snapshot)
-	}
-	if workspace.Root != s.identity.PrimaryRoot {
-		return Admission{}, fmt.Errorf("only the verified primary worktree may bootstrap repository mutation authority")
-	}
-	if workspace.RepositoryID != s.identity.LineageID {
-		return Admission{}, fmt.Errorf("workspace repository identity does not match controller")
-	}
-	attemptID, err := state.NewUUID()
-	if err != nil {
-		return Admission{}, err
-	}
-	leaseID, err := state.NewUUID()
-	if err != nil {
-		return Admission{}, err
-	}
-	nextGeneration := head.ControllerGeneration + 1
-	root := task
-	attempt := AttemptRecord{
-		SchemaVersion:             controllerSchemaVersion,
-		AttemptID:                 attemptID,
-		SemanticTaskRef:           task,
-		RootTaskRef:               root,
-		ExecutionBaseOID:          snapshot.Head,
-		BaselineSnapshotID:        snapshot.ID,
-		WorkspaceSnapshotID:       snapshot.ID,
-		StartControllerGeneration: nextGeneration,
-		AttemptState:              AttemptStateLive,
-		CreatedAt:                 time.Now().UTC(),
-	}
-	lease := ExecutionLease{
-		SchemaVersion:               controllerSchemaVersion,
-		LeaseID:                     leaseID,
-		AttemptID:                   attemptID,
-		SemanticTaskRef:             task,
-		Purpose:                     "root-execution",
-		ControllerGeneration:        nextGeneration,
-		WorkspaceID:                 workspace.ID,
-		ExpectedBaseOID:             snapshot.Head,
-		ExpectedWorkspaceSnapshotID: snapshot.ID,
-		CreatedAt:                   time.Now().UTC(),
-	}
-	if err := s.writeAttempt(attempt); err != nil {
-		return Admission{}, err
-	}
-	if err := s.writeLease(lease); err != nil {
-		return Admission{}, err
-	}
-	next := head
-	next.ControllerGeneration = nextGeneration
-	next.RootTaskRef = &root
-	next.ExecutionTaskRef = &task
-	next.LiveAttemptID = attemptID
-	next.LiveLeaseID = leaseID
-	if err := s.writeHeadCAS(head.ControllerGeneration, next); err != nil {
-		return Admission{}, err
-	}
-	return Admission{Head: next, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
+	return s.bootstrapExecution(task, workspace, snapshot)
 }
 
 func (s *Store) AdmitMutation(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
-	head, err := s.LoadHead()
-	if err != nil {
-		return Admission{}, err
-	}
-	if head.Status != ControllerStatusActive {
-		return Admission{}, fmt.Errorf("repository controller is fail-closed")
-	}
-	if head.PendingTransitionID != "" {
-		return Admission{}, fmt.Errorf("repository controller has pending transition %s", head.PendingTransitionID)
-	}
-	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil {
-		return Admission{}, fmt.Errorf("repository controller has no live execution lease")
-	}
-	if !head.ExecutionTaskRef.Equal(task) {
-		return Admission{}, fmt.Errorf("semantic execution task does not match repository controller authority")
-	}
-	attempt, err := s.loadAttempt(head.LiveAttemptID)
-	if err != nil {
-		return Admission{}, err
-	}
-	lease, err := s.loadLease(head.LiveLeaseID)
-	if err != nil {
-		return Admission{}, err
-	}
-	if attempt.AttemptState != AttemptStateLive || attempt.AttemptID != lease.AttemptID || attempt.AttemptID != head.LiveAttemptID {
-		return Admission{}, fmt.Errorf("live attempt/lease identity is inconsistent")
-	}
-	if !attempt.SemanticTaskRef.Equal(task) || !lease.SemanticTaskRef.Equal(task) {
-		return Admission{}, fmt.Errorf("live attempt/lease semantic task is stale")
-	}
-	if lease.ControllerGeneration != head.ControllerGeneration {
-		return Admission{}, fmt.Errorf("execution lease generation is stale: lease=%d controller=%d", lease.ControllerGeneration, head.ControllerGeneration)
-	}
-	if workspace.RepositoryID != head.RepositoryIdentity || workspace.ID != lease.WorkspaceID {
-		return Admission{}, fmt.Errorf("execution workspace does not match live lease")
-	}
-	if snapshot.Head != lease.ExpectedBaseOID || snapshot.ID != lease.ExpectedWorkspaceSnapshotID {
-		return Admission{}, fmt.Errorf("execution workspace snapshot does not match live lease")
-	}
-	return Admission{Head: head, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
+	return s.admitMutation(task, workspace, snapshot)
 }
 
 func (s *Store) RecordMutation(admission Admission, command, outcome string, after WorkspaceSnapshot) (Admission, error) {
@@ -297,7 +193,7 @@ func (s *Store) BeginTransition(kind string, expectedGeneration uint64, effects 
 	return record, nil
 }
 
-func (s *Store) ClassifyTransition(record TransitionRecord, actual map[string]string) map[string]EffectClassification {
+func (_ *Store) ClassifyTransition(record TransitionRecord, actual map[string]string) map[string]EffectClassification {
 	result := make(map[string]EffectClassification, len(record.Effects))
 	for _, effect := range record.Effects {
 		observed := actual[effect.Key()]
@@ -357,11 +253,11 @@ func (s *Store) CommitTransition(record TransitionRecord, actual map[string]stri
 	}
 	transitionState := TransitionState{
 		SchemaVersion:    controllerSchemaVersion,
-		TransitionID:    record.TransitionID,
-		Phase:           TransitionPhaseCommitted,
-		Observed:        cloneMap(actual),
+		TransitionID:     record.TransitionID,
+		Phase:            TransitionPhaseCommitted,
+		Observed:         cloneMap(actual),
 		Classifications: classifications,
-		UpdatedAt:       time.Now().UTC(),
+		UpdatedAt:        time.Now().UTC(),
 	}
 	if finalize {
 		transitionState.Phase = TransitionPhaseFinalized
