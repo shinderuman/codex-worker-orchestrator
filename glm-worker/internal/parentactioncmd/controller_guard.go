@@ -51,46 +51,62 @@ func executeControllerGuardedParentMutation(
 	}
 	defer func() { _ = lock.Close() }()
 
-	workspace, err := controller.ResolveWorkspaceIdentity(cfg.RepoRoot, controllerStore.Identity())
+	admission, err := admitParentControllerMutation(cfg, st, controllerStore)
 	if err != nil {
 		return err
+	}
+	operationErr := operation()
+	return finalizeParentControllerMutation(cfg, descriptor, execution, controllerStore, admission, operationErr)
+}
+
+func admitParentControllerMutation(
+	cfg config.AppConfig,
+	st *state.StateStore,
+	controllerStore *controller.Store,
+) (controller.Admission, error) {
+	workspace, err := controller.ResolveWorkspaceIdentity(cfg.RepoRoot, controllerStore.Identity())
+	if err != nil {
+		return controller.Admission{}, err
 	}
 	before, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
 	if err != nil {
-		return err
+		return controller.Admission{}, err
 	}
 	task, err := controller.ResolveSemanticTaskRef(cfg.RepoRoot, st.ReadOr("active-task", ""))
 	if err != nil {
-		return err
+		return controller.Admission{}, err
 	}
 	head, err := controllerStore.LoadHead()
 	if err != nil {
-		return err
+		return controller.Admission{}, err
 	}
-	var admission controller.Admission
 	if head.LiveLeaseID == "" {
-		admission, err = controllerStore.BootstrapExecution(task, workspace, before)
-	} else {
-		admission, err = controllerStore.AdmitMutationOrFailClosed(task, workspace, before)
+		return controllerStore.BootstrapExecution(task, workspace, before)
 	}
-	if err != nil {
-		return err
-	}
+	return controllerStore.AdmitMutationOrFailClosed(task, workspace, before)
+}
 
-	operationErr := operation()
+func finalizeParentControllerMutation(
+	cfg config.AppConfig,
+	descriptor parentActionCommandDescriptor,
+	execution parentActionExecutionKind,
+	controllerStore *controller.Store,
+	admission controller.Admission,
+	operationErr error,
+) error {
 	after, snapshotErr := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
 	if snapshotErr != nil {
 		_, failErr := controllerStore.FailClosed(
 			"workspace snapshot became unreadable after admitted parent mutation",
 			"",
-			workspace,
-			before,
+			admission.Workspace,
+			admission.Snapshot,
 			controller.WorkspaceSnapshot{},
 			nil,
 		)
 		return errors.Join(operationErr, snapshotErr, failErr)
 	}
-	if operationErr != nil && after.ID == before.ID {
+	if operationErr != nil && after.ID == admission.Snapshot.ID {
 		return operationErr
 	}
 	outcome := "success"
@@ -102,8 +118,8 @@ func executeControllerGuardedParentMutation(
 		_, failErr := controllerStore.FailClosed(
 			"admitted parent mutation could not commit repository provenance",
 			"",
-			workspace,
-			before,
+			admission.Workspace,
+			admission.Snapshot,
 			after,
 			nil,
 		)
