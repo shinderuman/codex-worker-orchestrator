@@ -31,6 +31,9 @@ func (s *Store) bootstrapExecution(task SemanticTaskRef, workspace WorkspaceIden
 	if !authority.Task.Equal(task) {
 		return Admission{}, fmt.Errorf("requested bootstrap task does not match committed repository authority")
 	}
+	if snapshot.Head != authority.Snapshot.HeadOID {
+		return Admission{}, fmt.Errorf("bootstrap workspace HEAD does not match committed project snapshot")
+	}
 	return s.bootstrapFreshExecution(head, authority, workspace, snapshot)
 }
 
@@ -50,6 +53,9 @@ func (s *Store) bootstrapFreshExecution(
 	workspace WorkspaceIdentity,
 	snapshot WorkspaceSnapshot,
 ) (Admission, error) {
+	if err := s.writeProjectSnapshot(authority.Snapshot); err != nil {
+		return Admission{}, err
+	}
 	nextGeneration := head.ControllerGeneration + 1
 	attempt, lease, err := newExecutionRecords(
 		authority.Task,
@@ -108,11 +114,17 @@ func (s *Store) loadAdmissibleHead(task SemanticTaskRef) (RepositoryControllerHe
 	if head.PendingTransitionID != "" {
 		return RepositoryControllerHead{}, fmt.Errorf("repository controller has pending transition %s", head.PendingTransitionID)
 	}
-	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil {
-		return RepositoryControllerHead{}, fmt.Errorf("repository controller has no live execution lease")
+	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil || head.RootTaskRef == nil {
+		return RepositoryControllerHead{}, fmt.Errorf("repository controller has no complete live execution authority")
 	}
 	if !head.ExecutionTaskRef.Equal(task) {
 		return RepositoryControllerHead{}, fmt.Errorf("semantic execution task does not match repository controller authority")
+	}
+	if head.ProjectSnapshotID == "" {
+		return RepositoryControllerHead{}, fmt.Errorf("repository controller has no project snapshot authority")
+	}
+	if _, err := s.LoadProjectSnapshot(head.ProjectSnapshotID); err != nil {
+		return RepositoryControllerHead{}, err
 	}
 	return head, nil
 }
@@ -142,6 +154,9 @@ func validateLiveAuthority(
 	}
 	if !attempt.SemanticTaskRef.Equal(task) || !lease.SemanticTaskRef.Equal(task) {
 		return fmt.Errorf("live attempt/lease semantic task is stale")
+	}
+	if head.RootTaskRef == nil || !attempt.RootTaskRef.Equal(*head.RootTaskRef) {
+		return fmt.Errorf("live attempt root task does not match repository controller authority")
 	}
 	if lease.ControllerGeneration != head.ControllerGeneration {
 		return fmt.Errorf("execution lease generation is stale: lease=%d controller=%d", lease.ControllerGeneration, head.ControllerGeneration)

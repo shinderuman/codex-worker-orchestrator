@@ -17,6 +17,21 @@ type SemanticTaskRef struct {
 	ContractDigest string `json:"contract_digest"`
 }
 
+type ProjectSnapshot struct {
+	SchemaVersion       int               `json:"schema_version"`
+	SnapshotID          string            `json:"snapshot_id"`
+	RepositoryIdentity  string            `json:"repository_identity"`
+	HeadOID             string            `json:"head_oid"`
+	PlanDigest          string            `json:"plan_digest"`
+	TaskCorpusDigest    string            `json:"task_corpus_digest"`
+	SemanticGraphDigest string            `json:"semantic_graph_digest"`
+	ScheduleDigest      string            `json:"schedule_digest"`
+	Active              []string          `json:"active"`
+	Next                []string          `json:"next,omitempty"`
+	Blocked             []string          `json:"blocked,omitempty"`
+	Tasks               []SemanticTaskRef `json:"tasks"`
+}
+
 type RepositoryControllerHead struct {
 	SchemaVersion         int              `json:"schema_version"`
 	RepositoryIdentity    string           `json:"repository_identity"`
