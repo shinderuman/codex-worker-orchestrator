@@ -8,6 +8,11 @@ import (
 )
 
 func (s *Store) bootstrapExecution(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
+	lock, err := s.acquireMutationLock()
+	if err != nil {
+		return Admission{}, err
+	}
+	defer func() { _ = lock.Close() }()
 	head, err := s.LoadHead()
 	if err != nil {
 		return Admission{}, err
