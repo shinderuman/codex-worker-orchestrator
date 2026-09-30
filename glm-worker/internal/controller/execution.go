@@ -24,6 +24,29 @@ func (s *Store) RotateExecution(task SemanticTaskRef, workspace WorkspaceIdentit
 	return s.mintExecution(head, task, workspace, snapshot, purpose)
 }
 
+func (s *Store) AdmitMutationOrFailClosed(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
+	admission, err := s.AdmitMutation(task, workspace, snapshot)
+	if err == nil {
+		return admission, nil
+	}
+	head, headErr := s.LoadHead()
+	if headErr != nil || head.Status != ControllerStatusActive || head.LiveLeaseID == "" {
+		return Admission{}, err
+	}
+	lease, leaseErr := s.loadLease(head.LiveLeaseID)
+	if leaseErr != nil || lease.WorkspaceID != workspace.ID {
+		return Admission{}, err
+	}
+	if snapshot.Head == lease.ExpectedBaseOID && snapshot.ID == lease.ExpectedWorkspaceSnapshotID {
+		return Admission{}, err
+	}
+	expected := WorkspaceSnapshot{ID: lease.ExpectedWorkspaceSnapshotID, Head: lease.ExpectedBaseOID}
+	if _, failErr := s.FailClosed("unattributed mutation changed the live execution workspace", "", workspace, expected, snapshot, nil); failErr != nil {
+		return Admission{}, fmt.Errorf("%w; repository controller fail-close failed: %v", err, failErr)
+	}
+	return Admission{}, fmt.Errorf("%w; repository controller entered fail-closed state", err)
+}
+
 func (s *Store) mintExecution(head RepositoryControllerHead, task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, purpose string) (Admission, error) {
 	attemptID, err := state.NewUUID()
 	if err != nil {
