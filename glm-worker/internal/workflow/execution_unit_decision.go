@@ -24,9 +24,6 @@ func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error
 
 	switch input.ExecutionUnit {
 	case executionunit.ExecutionUnitSingle:
-		if err := w.recordExecutionUnitDisposition(executionunit.ExecutionUnitSingle); err != nil {
-			return err
-		}
 		return w.ExecuteDecision(input.Decision)
 	case executionunit.ExecutionUnitMilestones:
 		return w.executeMilestoneExecutionUnitDecision(input, active)
@@ -42,9 +39,6 @@ func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionunit.Dec
 		if err != nil {
 			return err
 		}
-		if err := w.recordExecutionUnitDisposition(executionunit.ExecutionUnitMilestones); err != nil {
-			return err
-		}
 		if activating && input.Milestones[revision.CurrentIndex].FreshWorker {
 			if err := w.state.InvalidateSession(state.WorkerRole); err != nil {
 				return err
@@ -56,13 +50,4 @@ func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionunit.Dec
 		return fmt.Errorf("execution-unit milestones requires 2-8 milestone definitions or an existing pending milestone plan")
 	}
 	return w.ExecuteDecisionWithExecutionMilestones(input.Decision)
-}
-
-func (w *Workflow) recordExecutionUnitDisposition(executionUnit string) error {
-	return executionunit.RecordDisposition(
-		w.state,
-		w.state.ReadOr(activeTaskStateKey, ""),
-		executionUnit,
-		w.now().UTC(),
-	)
 }

@@ -29,7 +29,6 @@ const (
 	parentActionExecutionWait
 	parentActionExecutionContinuationOrApprove
 	parentActionExecutionDirectWorker
-	parentActionExecutionStartSingle
 	parentActionExecutionReadOrPark
 	parentActionExecutionGitEvidence
 	parentActionExecutionReviewEvidence
@@ -95,7 +94,6 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 	actionStart: {
 		Action:           actionStart,
 		Execute:          parentActionExecutionDirectWorker,
-		TerminalExecute:  parentActionExecutionStartSingle,
 		TerminalEnvelope: true,
 	},
 	actionAccept: {
@@ -251,8 +249,6 @@ func executeInterfaceParentAction(
 		return executeContinuationOrApproveAction(cfg, descriptor.Action, args, stdout, stderr), true
 	case parentActionExecutionDirectWorker:
 		return executeDirectWorkerAction(cfg, descriptor.Action, args, stdout, stderr), true
-	case parentActionExecutionStartSingle:
-		return executeStartSingleAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionReadOrPark:
 		return executeParentReadOrParkAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionGitEvidence:
