@@ -1,10 +1,12 @@
 package parentactioncmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -14,10 +16,10 @@ type publicationFindingOptions struct {
 }
 
 type publicationFindingOutput struct {
-	Status         string                                `json:"status"`
+	Status         string                               `json:"status"`
 	Finding        state.PublicationInvalidatingFinding `json:"finding"`
-	RequiredAction state.ParentAction                    `json:"required_action"`
-	AllowedActions []state.ParentAction                  `json:"allowed_actions"`
+	RequiredAction state.ParentAction                   `json:"required_action"`
+	AllowedActions []state.ParentAction                 `json:"allowed_actions"`
 }
 
 const (
@@ -26,27 +28,40 @@ const (
 )
 
 func executeRecordPublicationFinding(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	if _, err := parsePublicationFindingOptions(args); err != nil {
+	options, err := parsePublicationFindingOptions(args)
+	if err != nil {
+		return err
+	}
+	if err := persistParentCodexIdentity(cfg); err != nil {
 		return err
 	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		return err
 	}
-	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
-		return fmt.Errorf("publication invalidating finding requires %s, got %s", state.TaskStatusAwaitingParentCompletion, st.TaskStatus())
-	}
-	completion, err := st.CurrentParentCompletionOutcome()
+	lock, err := repolock.Acquire(st.LockPath())
 	if err != nil {
 		return err
 	}
-	if completion == nil || completion.Terminal != state.SessionRotationTerminalAccept {
-		return fmt.Errorf("publication invalidating finding requires an accepted parent completion outcome")
+	defer func() { _ = lock.Close() }()
+
+	finding, err := st.RecordPublicationInvalidatingFinding(options.origin, options.cause)
+	if err != nil {
+		return err
 	}
-	if _, err := st.LoadPublicationCandidate(); err != nil {
-		return fmt.Errorf("publication invalidating finding requires current publication candidate: %w", err)
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("publication finding has no machine-owned same-task scope evidence; %s", sameTaskScopeRegistrationHint)
+	if plan.RequiredAction != state.ParentActionReopen || !plan.Allows(state.ParentActionReopen) || plan.Allows(state.ParentActionComplete) {
+		return fmt.Errorf("recorded publication finding did not force machine-required reopen")
+	}
+	return json.NewEncoder(stdout).Encode(publicationFindingOutput{
+		Status:         "recorded",
+		Finding:        finding,
+		RequiredAction: plan.RequiredAction,
+		AllowedActions: plan.AllowedActions,
+	})
 }
 
 func parsePublicationFindingOptions(args []string) (publicationFindingOptions, error) {
@@ -62,9 +77,6 @@ func parsePublicationFindingOptions(args []string) (publicationFindingOptions, e
 			return publicationFindingOptions{}, err
 		}
 	}
-	if options.origin == state.ParentOriginCodexReview && options.cause == "" {
-		return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
-	}
 	return options, nil
 }
 
@@ -72,14 +84,8 @@ func setPublicationFindingOption(options *publicationFindingOptions, name, value
 	var target *string
 	switch name {
 	case "--origin":
-		if !state.ValidParentOrigin(value) {
-			return fmt.Errorf("%s", publicationFindingUsage)
-		}
 		target = &options.origin
 	case "--cause":
-		if !state.ValidParentCause(value) {
-			return fmt.Errorf("%s", publicationFindingUsage)
-		}
 		target = &options.cause
 	default:
 		return fmt.Errorf("%s", publicationFindingUsage)
