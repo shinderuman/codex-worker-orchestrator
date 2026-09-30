@@ -10,6 +10,11 @@ func (s *Store) AdmitMutationOrFailClosed(task SemanticTaskRef, workspace Worksp
 	if err == nil {
 		return admission, nil
 	}
+	lock, lockErr := s.acquireMutationLock()
+	if lockErr != nil {
+		return Admission{}, errors.Join(err, lockErr)
+	}
+	defer func() { _ = lock.Close() }()
 	head, headErr := s.LoadHead()
 	if headErr != nil || head.Status != ControllerStatusActive || head.LiveLeaseID == "" {
 		return Admission{}, err
