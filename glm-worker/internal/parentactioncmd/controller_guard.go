@@ -114,7 +114,17 @@ func finalizeParentControllerMutation(
 		outcome = "error"
 	}
 	command := fmt.Sprintf("glm-parent-action:%s:%d", descriptor.Action, execution)
-	if _, provenanceErr := controllerStore.RecordMutation(admission, command, outcome, after); provenanceErr != nil {
+	head, headErr := controllerStore.LoadHead()
+	if headErr != nil {
+		return errors.Join(operationErr, headErr)
+	}
+	var provenanceErr error
+	if head.ControllerGeneration > admission.Head.ControllerGeneration {
+		_, provenanceErr = controllerStore.RecordTransitionMutation(admission, command, outcome, after)
+	} else {
+		_, provenanceErr = controllerStore.RecordMutation(admission, command, outcome, after)
+	}
+	if provenanceErr != nil {
 		_, failErr := controllerStore.FailClosed(
 			"admitted parent mutation could not commit repository provenance",
 			"",
