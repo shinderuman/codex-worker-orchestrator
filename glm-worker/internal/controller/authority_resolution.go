@@ -88,3 +88,42 @@ func (s *Store) finalizeAuthorityTransitionLocked(record TransitionRecord) (Repo
 	}
 	return next, nil
 }
+
+func (s *Store) abortAuthorityTransitionLocked(
+	record TransitionRecord,
+	actual map[string]string,
+	abortLeaseID string,
+) (RepositoryControllerHead, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return RepositoryControllerHead{}, err
+	}
+	if head.PendingTransitionID != record.TransitionID || head.ControllerGeneration != record.PreparedGeneration {
+		return RepositoryControllerHead{}, fmt.Errorf("transition %s no longer owns controller CAS", record.TransitionID)
+	}
+	classifications := s.ClassifyTransition(record, actual)
+	for _, classification := range classifications {
+		if classification != EffectExpectedOld {
+			return RepositoryControllerHead{}, fmt.Errorf("transition %s no-effect abort is not proven", record.TransitionID)
+		}
+	}
+	next := head
+	next.ControllerGeneration = record.TargetGeneration
+	next.PendingTransitionID = ""
+	next.LiveLeaseID = abortLeaseID
+	if err := s.writeHeadCAS(head.ControllerGeneration, next); err != nil {
+		return RepositoryControllerHead{}, err
+	}
+	stateRecord := TransitionState{
+		SchemaVersion:   controllerSchemaVersion,
+		TransitionID:    record.TransitionID,
+		Phase:           TransitionPhaseAborted,
+		Observed:        cloneMap(actual),
+		Classifications: classifications,
+		UpdatedAt:       time.Now().UTC(),
+	}
+	if err := s.writeTransitionState(stateRecord); err != nil {
+		return RepositoryControllerHead{}, err
+	}
+	return next, nil
+}
