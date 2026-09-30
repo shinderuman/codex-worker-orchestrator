@@ -216,7 +216,7 @@ func forwardOnlyAuthorityNames(function *forwardOnlySemanticFunction) map[string
 	ast.Inspect(function.decl.Body, func(node ast.Node) bool {
 		switch typed := node.(type) {
 		case *ast.AssignStmt:
-			forwardOnlyCollectAuthorityAssignment(typed, names)
+			forwardOnlyCollectAssignmentNames(typed, names, forwardOnlyAuthoritySource)
 		case *ast.ValueSpec:
 			forwardOnlyCollectAuthorityValueSpec(typed, names)
 		}
@@ -241,13 +241,13 @@ func forwardOnlyCollectControlTypedNames(fields *ast.FieldList, names map[string
 	}
 }
 
-func forwardOnlyCollectAuthorityAssignment(assignment *ast.AssignStmt, names map[string]bool) {
+func forwardOnlyCollectAssignmentNames(assignment *ast.AssignStmt, names map[string]bool, predicate func(ast.Expr, map[string]bool) bool) {
 	for index, target := range assignment.Lhs {
 		identifier, ok := forwardOnlyUnparen(target).(*ast.Ident)
 		if !ok || identifier.Name == "_" || names[identifier.Name] {
 			continue
 		}
-		if forwardOnlyAssignmentSource(assignment.Rhs, index, len(assignment.Lhs), names, forwardOnlyAuthoritySource) {
+		if forwardOnlyAssignmentSource(assignment.Rhs, index, len(assignment.Lhs), names, predicate) {
 			names[identifier.Name] = true
 		}
 	}
@@ -357,7 +357,7 @@ func forwardOnlyDirectRetiredAuthorityMutation(function *forwardOnlySemanticFunc
 		stateMutation = stateMutation || mutation
 		stateLock = stateLock || lock
 		stateAdmission = stateAdmission || admission
-		return !(stateMutation || stateLock && stateAdmission)
+		return !stateMutation && (!stateLock || !stateAdmission)
 	})
 	return stateMutation || stateLock && stateAdmission
 }
@@ -372,7 +372,7 @@ func forwardOnlyRetiredAuthorityCallKinds(call *ast.CallExpr, stateVars map[stri
 	lower := strings.ToLower(name)
 	lock := strings.Contains(lower, "acquirerepolock") || strings.Contains(lower, "repolock")
 	admission := strings.Contains(lower, "admit") || strings.Contains(lower, "admission")
-	return mutation || forwardOnlyStateMutationName(name), lock, admission
+	return mutation, lock, admission
 }
 
 func forwardOnlyStateStoreVariables(function *forwardOnlySemanticFunction) map[string]bool {
@@ -384,7 +384,7 @@ func forwardOnlyStateStoreVariables(function *forwardOnlySemanticFunction) map[s
 	ast.Inspect(function.decl.Body, func(node ast.Node) bool {
 		switch typed := node.(type) {
 		case *ast.AssignStmt:
-			forwardOnlyCollectStateStoreAssignment(typed, names)
+			forwardOnlyCollectAssignmentNames(typed, names, forwardOnlyStateStoreSource)
 		case *ast.ValueSpec:
 			forwardOnlyCollectStateStoreValueSpec(typed, names)
 		}
@@ -405,18 +405,6 @@ func forwardOnlyCollectStateStoreTypedNames(fields *ast.FieldList, names map[str
 			if name.Name != "_" {
 				names[name.Name] = true
 			}
-		}
-	}
-}
-
-func forwardOnlyCollectStateStoreAssignment(assignment *ast.AssignStmt, names map[string]bool) {
-	for index, target := range assignment.Lhs {
-		identifier, ok := forwardOnlyUnparen(target).(*ast.Ident)
-		if !ok || identifier.Name == "_" || names[identifier.Name] {
-			continue
-		}
-		if forwardOnlyAssignmentSource(assignment.Rhs, index, len(assignment.Lhs), names, forwardOnlyStateStoreSource) {
-			names[identifier.Name] = true
 		}
 	}
 }
