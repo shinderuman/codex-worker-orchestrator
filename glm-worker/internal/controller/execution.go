@@ -3,9 +3,6 @@ package controller
 import (
 	"errors"
 	"fmt"
-	"time"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func (s *Store) RotateExecution(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, purpose string) (Admission, error) {
@@ -22,7 +19,73 @@ func (s *Store) RotateExecution(task SemanticTaskRef, workspace WorkspaceIdentit
 	if purpose == "" {
 		return Admission{}, fmt.Errorf("execution rotation purpose is required")
 	}
-	return s.mintExecution(head, task, workspace, snapshot, purpose)
+	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	if !authority.Task.Equal(task) {
+		return Admission{}, fmt.Errorf("requested execution task does not match committed repository authority")
+	}
+	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil {
+		return Admission{}, fmt.Errorf("execution rotation requires an existing live execution lease")
+	}
+	current, err := s.AdmitMutation(*head.ExecutionTaskRef, workspace, snapshot)
+	if err != nil {
+		return Admission{}, err
+	}
+	return s.rotateAdmittedExecution(current, authority, purpose)
+}
+
+func (s *Store) rotateAdmittedExecution(
+	current Admission,
+	authority CommittedTaskAuthority,
+	purpose string,
+) (Admission, error) {
+	transition, err := s.BeginTransition("execution-rotation:"+purpose, current.Head.ControllerGeneration, nil)
+	if err != nil {
+		return Admission{}, err
+	}
+	attempt, lease, err := newExecutionRecords(
+		authority.Task,
+		authority.Task,
+		current.Workspace,
+		current.Snapshot,
+		transition.TargetGeneration,
+		purpose,
+	)
+	if err != nil {
+		return Admission{}, err
+	}
+	if err := s.writeAttempt(attempt); err != nil {
+		return Admission{}, err
+	}
+	if err := s.writeLease(lease); err != nil {
+		return Admission{}, err
+	}
+	root := authority.Task
+	next, err := s.CommitTransition(transition, map[string]string{}, true, func(head *RepositoryControllerHead) error {
+		if head.LiveLeaseID != current.Lease.LeaseID || head.LiveAttemptID != current.Attempt.AttemptID {
+			return fmt.Errorf("live execution authority changed during rotation")
+		}
+		head.ProjectSnapshotID = authority.ProjectSnapshotID
+		head.RootTaskRef = &root
+		head.ExecutionTaskRef = &root
+		head.LiveAttemptID = attempt.AttemptID
+		head.LiveLeaseID = lease.LeaseID
+		head.ActiveEpisodeID = ""
+		head.ActiveEpisodeRevision = 0
+		return nil
+	})
+	if err != nil {
+		return Admission{}, err
+	}
+	return Admission{
+		Head:      next,
+		Attempt:   attempt,
+		Lease:     lease,
+		Workspace: current.Workspace,
+		Snapshot:  current.Snapshot,
+	}, nil
 }
 
 func (s *Store) AdmitMutationOrFailClosed(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
@@ -46,59 +109,4 @@ func (s *Store) AdmitMutationOrFailClosed(task SemanticTaskRef, workspace Worksp
 		return Admission{}, errors.Join(err, fmt.Errorf("repository controller fail-close failed: %w", failErr))
 	}
 	return Admission{}, fmt.Errorf("%w; repository controller entered fail-closed state", err)
-}
-
-func (s *Store) mintExecution(head RepositoryControllerHead, task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, purpose string) (Admission, error) {
-	attemptID, err := state.NewUUID()
-	if err != nil {
-		return Admission{}, err
-	}
-	leaseID, err := state.NewUUID()
-	if err != nil {
-		return Admission{}, err
-	}
-	nextGeneration := head.ControllerGeneration + 1
-	root := task
-	attempt := AttemptRecord{
-		SchemaVersion:             controllerSchemaVersion,
-		AttemptID:                 attemptID,
-		SemanticTaskRef:           task,
-		RootTaskRef:               root,
-		ExecutionBaseOID:          snapshot.Head,
-		BaselineSnapshotID:        snapshot.ID,
-		WorkspaceSnapshotID:       snapshot.ID,
-		StartControllerGeneration: nextGeneration,
-		AttemptState:              AttemptStateLive,
-		CreatedAt:                 time.Now().UTC(),
-	}
-	lease := ExecutionLease{
-		SchemaVersion:               controllerSchemaVersion,
-		LeaseID:                     leaseID,
-		AttemptID:                   attemptID,
-		SemanticTaskRef:             task,
-		Purpose:                     purpose,
-		ControllerGeneration:        nextGeneration,
-		WorkspaceID:                 workspace.ID,
-		ExpectedBaseOID:             snapshot.Head,
-		ExpectedWorkspaceSnapshotID: snapshot.ID,
-		CreatedAt:                   time.Now().UTC(),
-	}
-	if err := s.writeAttempt(attempt); err != nil {
-		return Admission{}, err
-	}
-	if err := s.writeLease(lease); err != nil {
-		return Admission{}, err
-	}
-	next := head
-	next.ControllerGeneration = nextGeneration
-	next.RootTaskRef = &root
-	next.ExecutionTaskRef = &task
-	next.LiveAttemptID = attemptID
-	next.LiveLeaseID = leaseID
-	next.ActiveEpisodeID = ""
-	next.ActiveEpisodeRevision = 0
-	if err := s.writeHeadCAS(head.ControllerGeneration, next); err != nil {
-		return Admission{}, err
-	}
-	return Admission{Head: next, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
 }

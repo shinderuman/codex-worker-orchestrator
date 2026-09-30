@@ -16,12 +16,22 @@ func (s *Store) bootstrapExecution(task SemanticTaskRef, workspace WorkspaceIden
 		return Admission{}, fmt.Errorf("repository controller is not available for execution bootstrap")
 	}
 	if head.LiveLeaseID != "" || head.LiveAttemptID != "" {
-		return s.AdmitMutation(task, workspace, snapshot)
+		if head.ExecutionTaskRef == nil {
+			return Admission{}, fmt.Errorf("repository controller has no execution task authority")
+		}
+		return s.AdmitMutation(*head.ExecutionTaskRef, workspace, snapshot)
 	}
 	if err := s.validateBootstrapWorkspace(workspace); err != nil {
 		return Admission{}, err
 	}
-	return s.bootstrapFreshExecution(head, task, workspace, snapshot)
+	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	if !authority.Task.Equal(task) {
+		return Admission{}, fmt.Errorf("requested bootstrap task does not match committed repository authority")
+	}
+	return s.bootstrapFreshExecution(head, authority, workspace, snapshot)
 }
 
 func (s *Store) validateBootstrapWorkspace(workspace WorkspaceIdentity) error {
@@ -36,43 +46,21 @@ func (s *Store) validateBootstrapWorkspace(workspace WorkspaceIdentity) error {
 
 func (s *Store) bootstrapFreshExecution(
 	head RepositoryControllerHead,
-	task SemanticTaskRef,
+	authority CommittedTaskAuthority,
 	workspace WorkspaceIdentity,
 	snapshot WorkspaceSnapshot,
 ) (Admission, error) {
-	attemptID, err := state.NewUUID()
-	if err != nil {
-		return Admission{}, err
-	}
-	leaseID, err := state.NewUUID()
-	if err != nil {
-		return Admission{}, err
-	}
 	nextGeneration := head.ControllerGeneration + 1
-	root := task
-	attempt := AttemptRecord{
-		SchemaVersion:             controllerSchemaVersion,
-		AttemptID:                 attemptID,
-		SemanticTaskRef:           task,
-		RootTaskRef:               root,
-		ExecutionBaseOID:          snapshot.Head,
-		BaselineSnapshotID:        snapshot.ID,
-		WorkspaceSnapshotID:       snapshot.ID,
-		StartControllerGeneration: nextGeneration,
-		AttemptState:              AttemptStateLive,
-		CreatedAt:                 time.Now().UTC(),
-	}
-	lease := ExecutionLease{
-		SchemaVersion:               controllerSchemaVersion,
-		LeaseID:                     leaseID,
-		AttemptID:                   attemptID,
-		SemanticTaskRef:             task,
-		Purpose:                     "root-execution",
-		ControllerGeneration:        nextGeneration,
-		WorkspaceID:                 workspace.ID,
-		ExpectedBaseOID:             snapshot.Head,
-		ExpectedWorkspaceSnapshotID: snapshot.ID,
-		CreatedAt:                   time.Now().UTC(),
+	attempt, lease, err := newExecutionRecords(
+		authority.Task,
+		authority.Task,
+		workspace,
+		snapshot,
+		nextGeneration,
+		"root-execution",
+	)
+	if err != nil {
+		return Admission{}, err
 	}
 	if err := s.writeAttempt(attempt); err != nil {
 		return Admission{}, err
@@ -80,12 +68,14 @@ func (s *Store) bootstrapFreshExecution(
 	if err := s.writeLease(lease); err != nil {
 		return Admission{}, err
 	}
+	root := authority.Task
 	next := head
 	next.ControllerGeneration = nextGeneration
+	next.ProjectSnapshotID = authority.ProjectSnapshotID
 	next.RootTaskRef = &root
-	next.ExecutionTaskRef = &task
-	next.LiveAttemptID = attemptID
-	next.LiveLeaseID = leaseID
+	next.ExecutionTaskRef = &root
+	next.LiveAttemptID = attempt.AttemptID
+	next.LiveLeaseID = lease.LeaseID
 	if err := s.writeHeadCAS(head.ControllerGeneration, next); err != nil {
 		return Admission{}, err
 	}
@@ -163,4 +153,48 @@ func validateLiveAuthority(
 		return fmt.Errorf("execution workspace snapshot does not match live lease")
 	}
 	return nil
+}
+
+func newExecutionRecords(
+	task SemanticTaskRef,
+	root SemanticTaskRef,
+	workspace WorkspaceIdentity,
+	snapshot WorkspaceSnapshot,
+	generation uint64,
+	purpose string,
+) (AttemptRecord, ExecutionLease, error) {
+	attemptID, err := state.NewUUID()
+	if err != nil {
+		return AttemptRecord{}, ExecutionLease{}, err
+	}
+	leaseID, err := state.NewUUID()
+	if err != nil {
+		return AttemptRecord{}, ExecutionLease{}, err
+	}
+	now := time.Now().UTC()
+	attempt := AttemptRecord{
+		SchemaVersion:             controllerSchemaVersion,
+		AttemptID:                 attemptID,
+		SemanticTaskRef:           task,
+		RootTaskRef:               root,
+		ExecutionBaseOID:          snapshot.Head,
+		BaselineSnapshotID:        snapshot.ID,
+		WorkspaceSnapshotID:       snapshot.ID,
+		StartControllerGeneration: generation,
+		AttemptState:              AttemptStateLive,
+		CreatedAt:                 now,
+	}
+	lease := ExecutionLease{
+		SchemaVersion:               controllerSchemaVersion,
+		LeaseID:                     leaseID,
+		AttemptID:                   attemptID,
+		SemanticTaskRef:             task,
+		Purpose:                     purpose,
+		ControllerGeneration:        generation,
+		WorkspaceID:                 workspace.ID,
+		ExpectedBaseOID:             snapshot.Head,
+		ExpectedWorkspaceSnapshotID: snapshot.ID,
+		CreatedAt:                   now,
+	}
+	return attempt, lease, nil
 }
