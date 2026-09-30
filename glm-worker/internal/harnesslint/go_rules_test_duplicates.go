@@ -13,11 +13,11 @@ import (
 )
 
 type duplicateTestBody struct {
-	path    string
-	line    int
-	name    string
+	path        string
+	line        int
+	name        string
 	packageName string
-	body    string
+	body        string
 }
 
 func duplicateTestBodyViolations(root string, paths []string) ([]Violation, error) {
