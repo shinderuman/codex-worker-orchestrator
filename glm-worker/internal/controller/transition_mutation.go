@@ -28,12 +28,12 @@ func (s *Store) CancelTransition(record TransitionRecord, actual map[string]stri
 		return RepositoryControllerHead{}, err
 	}
 	transitionState := TransitionState{
-		SchemaVersion:    controllerSchemaVersion,
-		TransitionID:     record.TransitionID,
-		Phase:            TransitionPhaseAborted,
-		Observed:         cloneMap(actual),
+		SchemaVersion:   controllerSchemaVersion,
+		TransitionID:    record.TransitionID,
+		Phase:           TransitionPhaseAborted,
+		Observed:        cloneMap(actual),
 		Classifications: classifications,
-		UpdatedAt:        time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
 	}
 	if err := s.writeTransitionState(transitionState); err != nil {
 		return RepositoryControllerHead{}, err

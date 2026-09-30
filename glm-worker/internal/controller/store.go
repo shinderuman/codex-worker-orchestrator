@@ -159,7 +159,7 @@ func (s *Store) BeginTransition(kind string, expectedGeneration uint64, effects 
 		return TransitionRecord{}, err
 	}
 	record := TransitionRecord{
-		SchemaVersion:          controllerSchemaVersion,
+		SchemaVersion:         controllerSchemaVersion,
 		TransitionID:          transitionID,
 		Kind:                  kind,
 		SourceGeneration:      expectedGeneration,
@@ -177,9 +177,9 @@ func (s *Store) BeginTransition(kind string, expectedGeneration uint64, effects 
 	}
 	transitionState := TransitionState{
 		SchemaVersion: controllerSchemaVersion,
-		TransitionID: transitionID,
-		Phase:        TransitionPhasePrepared,
-		UpdatedAt:    time.Now().UTC(),
+		TransitionID:  transitionID,
+		Phase:         TransitionPhasePrepared,
+		UpdatedAt:     time.Now().UTC(),
 	}
 	if err := s.writeTransitionState(transitionState); err != nil {
 		return TransitionRecord{}, err
@@ -193,7 +193,7 @@ func (s *Store) BeginTransition(kind string, expectedGeneration uint64, effects 
 	return record, nil
 }
 
-func (_ *Store) ClassifyTransition(record TransitionRecord, actual map[string]string) map[string]EffectClassification {
+func (*Store) ClassifyTransition(record TransitionRecord, actual map[string]string) map[string]EffectClassification {
 	result := make(map[string]EffectClassification, len(record.Effects))
 	for _, effect := range record.Effects {
 		observed := actual[effect.Key()]
@@ -252,12 +252,12 @@ func (s *Store) CommitTransition(record TransitionRecord, actual map[string]stri
 		return RepositoryControllerHead{}, err
 	}
 	transitionState := TransitionState{
-		SchemaVersion:    controllerSchemaVersion,
-		TransitionID:     record.TransitionID,
-		Phase:            TransitionPhaseCommitted,
-		Observed:         cloneMap(actual),
+		SchemaVersion:   controllerSchemaVersion,
+		TransitionID:    record.TransitionID,
+		Phase:           TransitionPhaseCommitted,
+		Observed:        cloneMap(actual),
 		Classifications: classifications,
-		UpdatedAt:        time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
 	}
 	if finalize {
 		transitionState.Phase = TransitionPhaseFinalized
