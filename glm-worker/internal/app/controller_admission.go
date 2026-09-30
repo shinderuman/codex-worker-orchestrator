@@ -40,7 +40,6 @@ func executeControllerGuardedStateBacked(
 	if err := preflightControllerWorkspace(cmd, cfg, controllerStore); err != nil {
 		return err
 	}
-
 	legacyLock, err := AcquireRepoLock(st.LockPath())
 	if err != nil {
 		return err
@@ -55,6 +54,16 @@ func executeControllerGuardedStateBacked(
 		return err
 	}
 	operationErr := executeControllerAdmittedCommand(cmd, owner, cfg, st, rf, stdout)
+	return finalizeControllerGuardedMutation(cmd, cfg, controllerStore, admission, operationErr)
+}
+
+func finalizeControllerGuardedMutation(
+	cmd Command,
+	cfg config.AppConfig,
+	controllerStore *controller.Store,
+	admission controller.Admission,
+	operationErr error,
+) error {
 	after, snapshotErr := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
 	if snapshotErr != nil {
 		_, failErr := controllerStore.FailClosed(
