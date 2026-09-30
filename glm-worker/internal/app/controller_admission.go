@@ -83,7 +83,7 @@ func finalizeControllerGuardedMutation(
 	if operationErr != nil {
 		outcome = "error"
 	}
-	if _, provenanceErr := controllerStore.RecordMutation(admission, controllerCommandIdentity(cmd), outcome, after); provenanceErr != nil {
+	if _, provenanceErr := controllerStore.RecordGuardedMutation(admission, controllerCommandIdentity(cmd), outcome, after); provenanceErr != nil {
 		_, failErr := controllerStore.FailClosed(
 			"admitted mutation could not commit repository provenance",
 			"",
