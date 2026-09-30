@@ -7,24 +7,10 @@ import (
 )
 
 func (s *Store) BindModelCall(admission Admission) (Admission, error) {
-	callID, err := state.NewUUID()
+	targetLease, target, err := s.prepareModelCallTarget(admission)
 	if err != nil {
 		return Admission{}, err
 	}
-	targetLease, err := s.prepareContinuationLease(
-		admission.Lease,
-		admission.Snapshot,
-		admission.Head.ControllerGeneration+3,
-	)
-	if err != nil {
-		return Admission{}, err
-	}
-	targetLease.InFlightCallID = callID
-	if err := s.writeLease(targetLease); err != nil {
-		return Admission{}, err
-	}
-	target := authorityFromAdmission(admission, admission.Snapshot)
-	target.LeaseID = targetLease.LeaseID
 	record, err := s.BeginAuthorityTransition(TransitionIntent{
 		Kind:               "model-call-admission",
 		ExpectedGeneration: admission.Head.ControllerGeneration,
@@ -34,13 +20,50 @@ func (s *Store) BindModelCall(admission Admission) (Admission, error) {
 	if err != nil {
 		return Admission{}, err
 	}
-	persisted, transitionState, err := s.LoadTransition(record.TransitionID)
-	if err != nil {
+	if err := s.verifyPreparedModelCallTransition(record); err != nil {
 		return Admission{}, err
 	}
-	if persisted.TransitionID != record.TransitionID || transitionState.Phase != TransitionPhasePrepared {
-		return Admission{}, fmt.Errorf("model-call admission transition is not durably prepared")
+	return s.finalizeModelCallTransition(admission, record, targetLease)
+}
+
+func (s *Store) prepareModelCallTarget(admission Admission) (ExecutionLease, TransitionAuthority, error) {
+	callID, err := state.NewUUID()
+	if err != nil {
+		return ExecutionLease{}, TransitionAuthority{}, err
 	}
+	targetLease, err := s.prepareContinuationLease(
+		admission.Lease,
+		admission.Snapshot,
+		admission.Head.ControllerGeneration+3,
+	)
+	if err != nil {
+		return ExecutionLease{}, TransitionAuthority{}, err
+	}
+	targetLease.InFlightCallID = callID
+	if err := s.writeLease(targetLease); err != nil {
+		return ExecutionLease{}, TransitionAuthority{}, err
+	}
+	target := authorityFromAdmission(admission, admission.Snapshot)
+	target.LeaseID = targetLease.LeaseID
+	return targetLease, target, nil
+}
+
+func (s *Store) verifyPreparedModelCallTransition(record TransitionRecord) error {
+	persisted, transitionState, err := s.LoadTransition(record.TransitionID)
+	if err != nil {
+		return err
+	}
+	if persisted.TransitionID != record.TransitionID || transitionState.Phase != TransitionPhasePrepared {
+		return fmt.Errorf("model-call admission transition is not durably prepared")
+	}
+	return nil
+}
+
+func (s *Store) finalizeModelCallTransition(
+	admission Admission,
+	record TransitionRecord,
+	targetLease ExecutionLease,
+) (Admission, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return Admission{}, err
