@@ -68,6 +68,10 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	duplicateTestViolations, err := duplicateTestBodyViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
 	forwardOnlyViolations, err := scanForwardOnlyCompatibilityRule(root, paths)
 	if err != nil {
 		return nil, err
@@ -105,6 +109,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 		return nil, err
 	}
 	violations := append([]Violation{}, goViolations...)
+	violations = append(violations, duplicateTestViolations...)
 	violations = append(violations, forwardOnlyViolations...)
 	violations = append(violations, proseDataViolations...)
 	violations = append(violations, textViolations...)
