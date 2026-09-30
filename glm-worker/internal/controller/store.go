@@ -263,18 +263,18 @@ func (s *Store) BeginTransition(kind string, expectedGeneration uint64, effects 
 		return TransitionRecord{}, err
 	}
 	record := TransitionRecord{
-		SchemaVersion:       controllerSchemaVersion,
-		TransitionID:        transitionID,
-		Kind:                kind,
-		SourceGeneration:    expectedGeneration,
-		PreparedGeneration:  expectedGeneration + 1,
-		TargetGeneration:    expectedGeneration + 2,
-		SourceEpisodeID:     head.ActiveEpisodeID,
+		SchemaVersion:          controllerSchemaVersion,
+		TransitionID:          transitionID,
+		Kind:                  kind,
+		SourceGeneration:      expectedGeneration,
+		PreparedGeneration:    expectedGeneration + 1,
+		TargetGeneration:      expectedGeneration + 2,
+		SourceEpisodeID:       head.ActiveEpisodeID,
 		SourceEpisodeRevision: head.ActiveEpisodeRevision,
-		SourceLeaseID:       head.LiveLeaseID,
-		ProjectSnapshotOld:  head.ProjectSnapshotID,
-		Effects:             append([]EffectExpectation(nil), effects...),
-		CreatedAt:           time.Now().UTC(),
+		SourceLeaseID:         head.LiveLeaseID,
+		ProjectSnapshotOld:    head.ProjectSnapshotID,
+		Effects:               append([]EffectExpectation(nil), effects...),
+		CreatedAt:             time.Now().UTC(),
 	}
 	if err := writeJSONAtomic(s.transitionPath(transitionID), record); err != nil {
 		return TransitionRecord{}, err
@@ -356,12 +356,12 @@ func (s *Store) CommitTransition(record TransitionRecord, actual map[string]stri
 		return RepositoryControllerHead{}, err
 	}
 	transitionState := TransitionState{
-		SchemaVersion:   controllerSchemaVersion,
-		TransitionID:   record.TransitionID,
-		Phase:          TransitionPhaseCommitted,
-		Observed:       cloneMap(actual),
+		SchemaVersion:    controllerSchemaVersion,
+		TransitionID:    record.TransitionID,
+		Phase:           TransitionPhaseCommitted,
+		Observed:        cloneMap(actual),
 		Classifications: classifications,
-		UpdatedAt:      time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
 	}
 	if finalize {
 		transitionState.Phase = TransitionPhaseFinalized
@@ -524,6 +524,9 @@ func changedSurfaces(before, after WorkspaceSnapshot) []MutationSurface {
 	if before.Head != after.Head {
 		set[MutationSurfaceHead] = true
 		set[MutationSurfaceHistory] = true
+	}
+	if before.RefDigest != after.RefDigest {
+		set[MutationSurfaceRef] = true
 	}
 	result := make([]MutationSurface, 0, len(set))
 	for surface := range set {
