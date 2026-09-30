@@ -154,6 +154,18 @@ func validateLiveAuthority(
 	attempt AttemptRecord,
 	lease ExecutionLease,
 ) error {
+	if err := validateLiveRecordIdentity(head, task, attempt, lease); err != nil {
+		return err
+	}
+	return validateLiveLeaseBinding(head, workspace, snapshot, lease)
+}
+
+func validateLiveRecordIdentity(
+	head RepositoryControllerHead,
+	task SemanticTaskRef,
+	attempt AttemptRecord,
+	lease ExecutionLease,
+) error {
 	if attempt.AttemptState != AttemptStateLive || attempt.AttemptID != lease.AttemptID || attempt.AttemptID != head.LiveAttemptID {
 		return fmt.Errorf("live attempt/lease identity is inconsistent")
 	}
@@ -163,6 +175,15 @@ func validateLiveAuthority(
 	if head.RootTaskRef == nil || !attempt.RootTaskRef.Equal(*head.RootTaskRef) {
 		return fmt.Errorf("live attempt root task does not match repository controller authority")
 	}
+	return nil
+}
+
+func validateLiveLeaseBinding(
+	head RepositoryControllerHead,
+	workspace WorkspaceIdentity,
+	snapshot WorkspaceSnapshot,
+	lease ExecutionLease,
+) error {
 	if lease.ControllerGeneration != head.ControllerGeneration {
 		return fmt.Errorf("execution lease generation is stale: lease=%d controller=%d", lease.ControllerGeneration, head.ControllerGeneration)
 	}
