@@ -4,14 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type RepositoryIdentity struct {
@@ -171,34 +169,6 @@ func digestRefs(refs map[string]string) string {
 
 func workspaceSnapshotID(snapshot WorkspaceSnapshot) string {
 	return digestStrings("workspace-snapshot-v1", snapshot.Head, snapshot.IndexDigest, snapshot.WorktreeDigest, snapshot.RefDigest)
-}
-
-func ResolveSemanticTaskRef(repoRoot, pinnedPath string) (SemanticTaskRef, error) {
-	path := filepath.ToSlash(strings.TrimSpace(pinnedPath))
-	if path == "" {
-		plan, err := os.ReadFile(filepath.Join(repoRoot, "IMPLEMENTATION_PLAN.local.md"))
-		if err != nil {
-			if os.IsNotExist(err) {
-				return SemanticTaskRef{}, nil
-			}
-			return SemanticTaskRef{}, fmt.Errorf("read implementation plan: %w", err)
-		}
-		path, err = taskcontract.ParsePlanSchedule(string(plan)).ActiveTask()
-		if err != nil {
-			return SemanticTaskRef{}, err
-		}
-	}
-	if path == "" {
-		return SemanticTaskRef{}, nil
-	}
-	if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
-		return SemanticTaskRef{}, err
-	}
-	content, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(path)))
-	if err != nil {
-		return SemanticTaskRef{}, fmt.Errorf("read semantic task %s: %w", path, err)
-	}
-	return SemanticTaskRef{TaskPath: path, ContractDigest: digestBytes(content)}, nil
 }
 
 func primaryWorktree(commonDir string) (string, error) {
