@@ -37,6 +37,10 @@ func executeControllerGuardedStateBacked(
 	}
 	defer func() { _ = controllerLock.Close() }()
 
+	if err := preflightControllerWorkspace(cmd, cfg, controllerStore); err != nil {
+		return err
+	}
+
 	legacyLock, err := AcquireRepoLock(st.LockPath())
 	if err != nil {
 		return err
@@ -82,6 +86,20 @@ func executeControllerGuardedStateBacked(
 		return errors.Join(operationErr, provenanceErr, failErr)
 	}
 	return operationErr
+}
+
+func preflightControllerWorkspace(cmd Command, cfg config.AppConfig, controllerStore *controller.Store) error {
+	if cmd.Mode != ModeNewTask {
+		return nil
+	}
+	workspace, err := controller.ResolveWorkspaceIdentity(cfg.RepoRoot, controllerStore.Identity())
+	if err != nil {
+		return err
+	}
+	if workspace.Root != controllerStore.Identity().PrimaryRoot {
+		return fmt.Errorf("new task requires the verified primary worktree")
+	}
+	return nil
 }
 
 func executeLegacyStateBacked(
