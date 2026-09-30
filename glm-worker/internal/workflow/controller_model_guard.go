@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -46,6 +47,10 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 	if err != nil {
 		return controllerModelCallGuard{}, err
 	}
+	admission, err = store.BindModelCall(admission)
+	if err != nil {
+		return controllerModelCallGuard{}, err
+	}
 	return controllerModelCallGuard{store: store, admission: admission, before: before, active: true}, nil
 }
 
@@ -77,18 +82,18 @@ func (w *Workflow) captureControllerModelCallAfter(guard controllerModelCallGuar
 		return after, nil
 	}
 	if failErr := guard.store.FailClosedAdmission(guard.admission, "model call post-state could not be captured", controller.WorkspaceSnapshot{}); failErr != nil {
-		return controller.WorkspaceSnapshot{}, fmt.Errorf("capture model call controller snapshot: %w; fail-close: %v", err, failErr)
+		return controller.WorkspaceSnapshot{}, errors.Join(fmt.Errorf("capture model call controller snapshot: %w", err), fmt.Errorf("controller fail-close: %w", failErr))
 	}
 	return controller.WorkspaceSnapshot{}, fmt.Errorf("capture model call controller snapshot: %w", err)
 }
 
-func (w *Workflow) commitControllerModelCall(
+func (*Workflow) commitControllerModelCall(
 	guard controllerModelCallGuard,
 	after controller.WorkspaceSnapshot,
 	checkpoint state.ResumeCheckpoint,
 	runErr error,
 ) error {
-	if !guard.active || after.ID == guard.before.ID {
+	if !guard.active {
 		return nil
 	}
 	outcome := "success"
@@ -100,12 +105,12 @@ func (w *Workflow) commitControllerModelCall(
 	return err
 }
 
-func (w *Workflow) failControllerModelCall(
+func (*Workflow) failControllerModelCall(
 	guard controllerModelCallGuard,
 	after controller.WorkspaceSnapshot,
 	reason string,
 ) error {
-	if !guard.active || after.ID == guard.before.ID {
+	if !guard.active {
 		return nil
 	}
 	if reason == "" {
