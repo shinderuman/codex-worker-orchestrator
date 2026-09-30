@@ -31,6 +31,7 @@ type WorkspaceSnapshot struct {
 	Head           string `json:"head"`
 	IndexDigest    string `json:"index_digest"`
 	WorktreeDigest string `json:"worktree_digest"`
+	RefDigest      string `json:"ref_digest"`
 }
 
 func ResolveRepositoryIdentity(repoRoot string) (RepositoryIdentity, error) {
@@ -94,13 +95,27 @@ func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
+	refDigest, err := captureRefDigest(repoRoot)
+	if err != nil {
+		return WorkspaceSnapshot{}, err
+	}
 	result := WorkspaceSnapshot{
 		Head:           snapshot.Head,
 		IndexDigest:    snapshot.IndexDigest,
 		WorktreeDigest: snapshot.WorktreeDigest,
+		RefDigest:      refDigest,
 	}
-	result.ID = digestStrings("workspace-snapshot-v1", result.Head, result.IndexDigest, result.WorktreeDigest)
+	result.ID = digestStrings("workspace-snapshot-v1", result.Head, result.IndexDigest, result.WorktreeDigest, result.RefDigest)
 	return result, nil
+}
+
+func captureRefDigest(repoRoot string) (string, error) {
+	command := exec.Command("git", "-C", repoRoot, "for-each-ref", "--sort=refname", "--format=%(refname)%00%(objectname)")
+	output, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("capture repository refs: %w", err)
+	}
+	return digestBytes(output), nil
 }
 
 func ResolveSemanticTaskRef(repoRoot, pinnedPath string) (SemanticTaskRef, error) {
