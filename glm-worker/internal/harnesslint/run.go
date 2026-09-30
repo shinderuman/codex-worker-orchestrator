@@ -64,11 +64,7 @@ func run(root string, fix bool, runner commandRunner) (Report, error) {
 }
 
 func checkRules(root string, paths []string) ([]Violation, error) {
-	goViolations, err := scanGoRules(root, paths)
-	if err != nil {
-		return nil, err
-	}
-	duplicateTestViolations, err := duplicateTestBodyViolations(root, paths)
+	goViolations, err := scanGoAndDuplicateTestRules(root, paths)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +105,6 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 		return nil, err
 	}
 	violations := append([]Violation{}, goViolations...)
-	violations = append(violations, duplicateTestViolations...)
 	violations = append(violations, forwardOnlyViolations...)
 	violations = append(violations, proseDataViolations...)
 	violations = append(violations, textViolations...)
@@ -119,6 +114,18 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	violations = append(violations, activeTaskViolations...)
 	violations = append(violations, closureViolations...)
 	return append(violations, provenanceViolations...), nil
+}
+
+func scanGoAndDuplicateTestRules(root string, paths []string) ([]Violation, error) {
+	violations, err := scanGoRules(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	duplicateViolations, err := duplicateTestBodyViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	return append(violations, duplicateViolations...), nil
 }
 
 func fixGoFormatting(root string, paths []string) error {
