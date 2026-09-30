@@ -25,6 +25,10 @@ func (s *Store) ApplyRefTransition(
 	if current.Lease.LeaseID != admission.Lease.LeaseID {
 		return Admission{}, fmt.Errorf("execution lease changed before ref transition")
 	}
+	predicted, err := PredictRefTransitionSnapshot(admission.Workspace.Root, admission.Snapshot, refName, expectedOld, expectedNew)
+	if err != nil {
+		return Admission{}, err
+	}
 	effect := EffectExpectation{
 		Surface:     MutationSurfaceRef,
 		Resource:    refName,
@@ -58,17 +62,8 @@ func (s *Store) ApplyRefTransition(
 			return Admission{}, err
 		}
 		classification = s.ClassifyTransition(record, observed)[effect.Key()]
-		if classification == EffectExpectedOld && applyErr != nil {
-			if abortErr := s.abortPreparedTransition(record, observed); abortErr != nil {
-				return Admission{}, fmt.Errorf("ref transition apply failed: %w; abort failed: %v", applyErr, abortErr)
-			}
-			return Admission{}, applyErr
-		}
 		if classification == EffectExpectedOld {
-			if abortErr := s.abortPreparedTransition(record, observed); abortErr != nil {
-				return Admission{}, abortErr
-			}
-			return Admission{}, fmt.Errorf("ref transition did not reach expected-new state")
+			return Admission{}, s.abortRefTransition(record, admission, observed, command, applyErr)
 		}
 		if classification == EffectUnexpected {
 			return Admission{}, s.failClosedRefTransition(record, admission, observed, "ref state became unexpected after apply")
@@ -79,8 +74,8 @@ func (s *Store) ApplyRefTransition(
 	if err != nil {
 		return Admission{}, err
 	}
-	if predicted, predictErr := PredictRefTransitionSnapshot(admission.Workspace.Root, admission.Snapshot, refName, expectedNew, expectedNew); predictErr == nil {
-		_ = predicted
+	if after.ID != predicted.ID {
+		return Admission{}, s.failClosedRefTransition(record, admission, observed, "ref transition reached unexpected workspace snapshot")
 	}
 	if err := s.MarkTransitionApplied(record, observed); err != nil {
 		return Admission{}, err
@@ -173,6 +168,31 @@ func (s *Store) rotateLeaseAfterTransition(admission Admission, command, outcome
 		return Admission{}, err
 	}
 	return Admission{Head: nextHead, Attempt: admission.Attempt, Lease: nextLease, Workspace: admission.Workspace, Snapshot: after}, nil
+}
+
+func (s *Store) abortRefTransition(
+	record TransitionRecord,
+	admission Admission,
+	observed map[string]string,
+	command string,
+	applyErr error,
+) error {
+	if err := s.abortPreparedTransition(record, observed); err != nil {
+		if applyErr != nil {
+			return fmt.Errorf("ref transition apply failed: %w; abort failed: %v", applyErr, err)
+		}
+		return err
+	}
+	if _, err := s.rotateLeaseAfterTransition(admission, command, "aborted", admission.Snapshot); err != nil {
+		if applyErr != nil {
+			return fmt.Errorf("ref transition apply failed: %w; lease refresh failed: %v", applyErr, err)
+		}
+		return err
+	}
+	if applyErr != nil {
+		return applyErr
+	}
+	return fmt.Errorf("ref transition did not reach expected-new state")
 }
 
 func (s *Store) abortPreparedTransition(record TransitionRecord, observed map[string]string) error {
