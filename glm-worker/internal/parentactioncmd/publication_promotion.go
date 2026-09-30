@@ -2,6 +2,7 @@ package parentactioncmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -68,7 +71,7 @@ func promoteReadyPublicationCandidate(cfg config.AppConfig, candidate state.Publ
 	}
 	if headOID == candidate.CommitOID {
 		if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure != nil {
-			return rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, failure)
+			return rollbackPublicationPromotionControlled(cfg, candidate, branchRef, failure)
 		}
 		return publicationPromotionOutput{Status: publicationPromotionStatusPromoted, CandidateOID: candidate.CommitOID, BranchRef: branchRef}
 	}
@@ -78,11 +81,11 @@ func promoteReadyPublicationCandidate(cfg config.AppConfig, candidate state.Publ
 	if failure := verifyPublicationCandidateCommit(cfg.RepoRoot, candidate); failure != nil {
 		return publicationPromotionOutput{Status: publicationPromotionStatusBlocked, CandidateOID: candidate.CommitOID, BranchRef: branchRef, Failure: failure}
 	}
-	if err := updatePublicationRef(cfg.RepoRoot, candidate, branchRef, candidate.CommitOID, candidate.BaseHead); err != nil {
+	if err := updatePublicationRefControlled(cfg, candidate, branchRef, candidate.CommitOID, candidate.BaseHead); err != nil {
 		return blockedPublicationPromotion(candidate.CommitOID, publicationFailurePromotionRef, err.Error())
 	}
 	if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure != nil {
-		return rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, failure)
+		return rollbackPublicationPromotionControlled(cfg, candidate, branchRef, failure)
 	}
 	return publicationPromotionOutput{Status: publicationPromotionStatusPromoted, CandidateOID: candidate.CommitOID, BranchRef: branchRef}
 }
@@ -97,6 +100,24 @@ func publicationPromotionPostcondition(repoRoot string, candidate state.Publicat
 		detail = "promoted candidate source is not clean"
 	}
 	return publicationReadinessFailure(publicationFailurePromotionHead, detail)
+}
+
+func rollbackPublicationPromotionControlled(cfg config.AppConfig, candidate state.PublicationCandidate, branchRef string, cause *finalizationFailure) publicationPromotionOutput {
+	if err := updatePublicationRefControlled(cfg, candidate, branchRef, candidate.BaseHead, candidate.CommitOID); err != nil {
+		detail := publicationFailureDetail(cause) + "; rollback failed: " + err.Error()
+		return publicationPromotionOutput{
+			Status:       publicationPromotionStatusBlocked,
+			CandidateOID: candidate.CommitOID,
+			BranchRef:    branchRef,
+			Failure:      publicationReadinessFailure(publicationFailurePromotionRollback, detail),
+		}
+	}
+	return publicationPromotionOutput{
+		Status:       publicationPromotionStatusBlocked,
+		CandidateOID: candidate.CommitOID,
+		BranchRef:    branchRef,
+		Failure:      cause,
+	}
 }
 
 func rollbackPublicationPromotion(repoRoot string, candidate state.PublicationCandidate, branchRef string, cause *finalizationFailure) publicationPromotionOutput {
@@ -115,6 +136,93 @@ func rollbackPublicationPromotion(repoRoot string, candidate state.PublicationCa
 		BranchRef:    branchRef,
 		Failure:      cause,
 	}
+}
+
+func updatePublicationRefControlled(cfg config.AppConfig, candidate state.PublicationCandidate, branchRef, newOID, oldOID string) error {
+	st := state.AttachStateStore(cfg)
+	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return updatePublicationRef(cfg.RepoRoot, candidate, branchRef, newOID, oldOID)
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return err
+	}
+	workspace, err := controller.ResolveWorkspaceIdentity(cfg.RepoRoot, store.Identity())
+	if err != nil {
+		return err
+	}
+	before, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
+	if err != nil {
+		return err
+	}
+	task, err := controller.ResolveSemanticTaskRef(cfg.RepoRoot, st.ReadOr("active-task", ""))
+	if err != nil {
+		return err
+	}
+	admission, err := store.AdmitMutation(task, workspace, before)
+	if err != nil {
+		return err
+	}
+	effect := controller.EffectExpectation{
+		Surface:     controller.MutationSurfaceRef,
+		Resource:    branchRef,
+		ExpectedOld: oldOID,
+		ExpectedNew: newOID,
+	}
+	record, err := store.BeginTransition("publication-ref-update", admission.Head.ControllerGeneration, []controller.EffectExpectation{effect})
+	if err != nil {
+		return err
+	}
+	applyErr := updatePublicationRef(cfg.RepoRoot, candidate, branchRef, newOID, oldOID)
+	observed, observeErr := gitFinalizationOutput(cfg.RepoRoot, "rev-parse", "--verify", branchRef)
+	observed = strings.TrimSpace(observed)
+	actual := map[string]string{effect.Key(): observed}
+	if markErr := store.MarkTransitionApplied(record, actual); markErr != nil {
+		return errors.Join(applyErr, observeErr, markErr)
+	}
+	loaded, _, loadErr := store.LoadTransition(record.TransitionID)
+	if loadErr != nil {
+		return errors.Join(applyErr, observeErr, loadErr)
+	}
+	after, snapshotErr := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
+	if snapshotErr != nil {
+		return errors.Join(applyErr, observeErr, snapshotErr)
+	}
+	classification := store.ClassifyTransition(loaded, actual)[effect.Key()]
+	switch classification {
+	case controller.EffectExpectedNew:
+		if _, commitErr := store.CommitTransition(loaded, actual, false, nil); commitErr != nil {
+			return errors.Join(applyErr, observeErr, commitErr)
+		}
+		if _, finalizeErr := store.FinalizeTransition(loaded); finalizeErr != nil {
+			return errors.Join(applyErr, observeErr, finalizeErr)
+		}
+	case controller.EffectExpectedOld:
+		if applyErr == nil {
+			_, failErr := store.FailClosed("publication ref update reported success without expected ref effect", loaded.TransitionID, workspace, before, after, actual)
+			return errors.Join(fmt.Errorf("publication ref update did not apply expected effect"), failErr)
+		}
+		if _, cancelErr := store.CancelTransition(loaded, actual); cancelErr != nil {
+			return errors.Join(applyErr, observeErr, cancelErr)
+		}
+	case controller.EffectUnexpected:
+		_, failErr := store.FailClosed("publication ref update reached unexpected ref state", loaded.TransitionID, workspace, before, after, actual)
+		return errors.Join(applyErr, observeErr, fmt.Errorf("publication ref update reached unexpected state"), failErr)
+	default:
+		return errors.Join(applyErr, observeErr, fmt.Errorf("publication ref transition classification is unavailable"))
+	}
+	outcome := "success"
+	if applyErr != nil {
+		outcome = "error"
+	}
+	if _, provenanceErr := store.RecordTransitionMutation(admission, "publication-ref-update:"+branchRef, outcome, after); provenanceErr != nil {
+		return errors.Join(applyErr, observeErr, provenanceErr)
+	}
+	return errors.Join(applyErr, observeErr)
 }
 
 func updatePublicationRef(repoRoot string, candidate state.PublicationCandidate, branchRef, newOID, oldOID string) error {
