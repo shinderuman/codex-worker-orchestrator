@@ -20,7 +20,7 @@ func TestRefMutationInvalidatesLeaseAndRecordsRefProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/root.md", ContractDigest: strings.Repeat("d", 64)}
+	task := controllerTestTask(t, repo)
 	admission, err := store.BootstrapExecution(task, workspace, before)
 	if err != nil {
 		t.Fatal(err)
