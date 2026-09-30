@@ -26,8 +26,16 @@ func (s *Store) BeginAuthorityTransition(intent TransitionIntent) (TransitionRec
 	if err != nil {
 		return TransitionRecord{}, err
 	}
+	record := buildTransitionRecord(intent, transitionID)
+	if err := s.persistPreparedTransition(record, intent.Source.Head); err != nil {
+		return TransitionRecord{}, err
+	}
+	return record, nil
+}
+
+func buildTransitionRecord(intent TransitionIntent, transitionID string) TransitionRecord {
 	source := intent.Source
-	record := TransitionRecord{
+	return TransitionRecord{
 		SchemaVersion:          controllerSchemaVersion,
 		TransitionID:           transitionID,
 		Kind:                   intent.Kind,
@@ -56,25 +64,25 @@ func (s *Store) BeginAuthorityTransition(intent TransitionIntent) (TransitionRec
 		Effects:                append([]EffectExpectation(nil), intent.Effects...),
 		CreatedAt:              time.Now().UTC(),
 	}
-	if err := writeJSONAtomic(s.transitionPath(transitionID), record); err != nil {
-		return TransitionRecord{}, err
+}
+
+func (s *Store) persistPreparedTransition(record TransitionRecord, sourceHead RepositoryControllerHead) error {
+	if err := writeJSONAtomic(s.transitionPath(record.TransitionID), record); err != nil {
+		return err
 	}
 	transitionState := TransitionState{
 		SchemaVersion: controllerSchemaVersion,
-		TransitionID:  transitionID,
+		TransitionID:  record.TransitionID,
 		Phase:         TransitionPhasePrepared,
 		UpdatedAt:     time.Now().UTC(),
 	}
 	if err := s.writeTransitionState(transitionState); err != nil {
-		return TransitionRecord{}, err
+		return err
 	}
-	next := source.Head
+	next := sourceHead
 	next.ControllerGeneration = record.PreparedGeneration
-	next.PendingTransitionID = transitionID
-	if err := s.writeHeadCAS(source.Head.ControllerGeneration, next); err != nil {
-		return TransitionRecord{}, err
-	}
-	return record, nil
+	next.PendingTransitionID = record.TransitionID
+	return s.writeHeadCAS(sourceHead.ControllerGeneration, next)
 }
 
 func (s *Store) validateTransitionSource(intent TransitionIntent) error {
