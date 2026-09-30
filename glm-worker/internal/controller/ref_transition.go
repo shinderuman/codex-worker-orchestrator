@@ -1,10 +1,17 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 )
+
+type refTransitionObservation struct {
+	values         map[string]string
+	classification EffectClassification
+	applyErr       error
+}
 
 func (s *Store) ApplyRefTransition(
 	admission Admission,
@@ -22,9 +29,31 @@ func (s *Store) ApplyRefTransition(
 	if current.Lease.LeaseID != admission.Lease.LeaseID {
 		return Admission{}, fmt.Errorf("execution lease changed before ref transition")
 	}
-	predicted, err := PredictRefTransitionSnapshot(admission.Workspace.Root, admission.Snapshot, refName, expectedOld, expectedNew)
+	predicted, effect, record, err := s.prepareRefTransition(admission, current, kind, refName, expectedOld, expectedNew)
 	if err != nil {
 		return Admission{}, err
+	}
+	observation, err := s.applyRefTransitionEffect(record, effect, admission, apply)
+	if err != nil {
+		return Admission{}, err
+	}
+	if observation.classification == EffectExpectedOld {
+		return Admission{}, s.abortRefTransition(record, admission, observation.values, command, observation.applyErr)
+	}
+	return s.commitRefTransition(record, admission, observation, predicted, command)
+}
+
+func (s *Store) prepareRefTransition(
+	admission Admission,
+	current Admission,
+	kind string,
+	refName string,
+	expectedOld string,
+	expectedNew string,
+) (WorkspaceSnapshot, EffectExpectation, TransitionRecord, error) {
+	predicted, err := PredictRefTransitionSnapshot(admission.Workspace.Root, admission.Snapshot, refName, expectedOld, expectedNew)
+	if err != nil {
+		return WorkspaceSnapshot{}, EffectExpectation{}, TransitionRecord{}, err
 	}
 	effect := EffectExpectation{
 		Surface:     MutationSurfaceRef,
@@ -34,51 +63,67 @@ func (s *Store) ApplyRefTransition(
 	}
 	record, err := s.BeginTransition(kind, current.Head.ControllerGeneration, []EffectExpectation{effect})
 	if err != nil {
-		return Admission{}, err
+		return WorkspaceSnapshot{}, EffectExpectation{}, TransitionRecord{}, err
 	}
 	persisted, transitionState, err := s.LoadTransition(record.TransitionID)
 	if err != nil {
-		return Admission{}, err
+		return WorkspaceSnapshot{}, EffectExpectation{}, TransitionRecord{}, err
 	}
 	if persisted.TransitionID != record.TransitionID || transitionState.Phase != TransitionPhasePrepared {
-		return Admission{}, fmt.Errorf("ref transition prepare record is not durable")
+		return WorkspaceSnapshot{}, EffectExpectation{}, TransitionRecord{}, fmt.Errorf("ref transition prepare record is not durable")
 	}
+	return predicted, effect, record, nil
+}
 
+func (s *Store) applyRefTransitionEffect(
+	record TransitionRecord,
+	effect EffectExpectation,
+	admission Admission,
+	apply func() error,
+) (refTransitionObservation, error) {
 	observed, err := observeRefEffect(admission.Workspace.Root, effect)
 	if err != nil {
-		return Admission{}, err
+		return refTransitionObservation{}, err
 	}
 	classification := s.ClassifyTransition(record, observed)[effect.Key()]
 	if classification == EffectUnexpected {
-		return Admission{}, s.failClosedRefTransition(record, admission, observed, "ref state changed before apply")
+		return refTransitionObservation{}, s.failClosedRefTransition(record, admission, observed, "ref state changed before apply")
 	}
-	var applyErr error
-	if classification == EffectExpectedOld {
-		applyErr = apply()
-		observed, err = observeRefEffect(admission.Workspace.Root, effect)
-		if err != nil {
-			return Admission{}, err
-		}
-		classification = s.ClassifyTransition(record, observed)[effect.Key()]
-		if classification == EffectExpectedOld {
-			return Admission{}, s.abortRefTransition(record, admission, observed, command, applyErr)
-		}
-		if classification == EffectUnexpected {
-			return Admission{}, s.failClosedRefTransition(record, admission, observed, "ref state became unexpected after apply")
-		}
+	observation := refTransitionObservation{values: observed, classification: classification}
+	if classification == EffectExpectedNew {
+		return observation, nil
 	}
+	observation.applyErr = apply()
+	observed, err = observeRefEffect(admission.Workspace.Root, effect)
+	if err != nil {
+		return refTransitionObservation{}, err
+	}
+	observation.values = observed
+	observation.classification = s.ClassifyTransition(record, observed)[effect.Key()]
+	if observation.classification == EffectUnexpected {
+		return refTransitionObservation{}, s.failClosedRefTransition(record, admission, observed, "ref state became unexpected after apply")
+	}
+	return observation, nil
+}
 
+func (s *Store) commitRefTransition(
+	record TransitionRecord,
+	admission Admission,
+	observation refTransitionObservation,
+	predicted WorkspaceSnapshot,
+	command string,
+) (Admission, error) {
 	after, err := CaptureWorkspaceSnapshot(admission.Workspace.Root)
 	if err != nil {
 		return Admission{}, err
 	}
 	if after.ID != predicted.ID {
-		return Admission{}, s.failClosedRefTransition(record, admission, observed, "ref transition reached unexpected workspace snapshot")
+		return Admission{}, s.failClosedRefTransition(record, admission, observation.values, "ref transition reached unexpected workspace snapshot")
 	}
-	if err := s.MarkTransitionApplied(record, observed); err != nil {
+	if err := s.MarkTransitionApplied(record, observation.values); err != nil {
 		return Admission{}, err
 	}
-	if _, err := s.CommitTransition(record, observed, false, nil); err != nil {
+	if _, err := s.CommitTransition(record, observation.values, false, nil); err != nil {
 		return Admission{}, err
 	}
 	if _, err := s.FinalizeTransition(record); err != nil {
@@ -88,7 +133,7 @@ func (s *Store) ApplyRefTransition(
 	if err != nil {
 		return Admission{}, err
 	}
-	return advanced, applyErr
+	return advanced, observation.applyErr
 }
 
 func (s *Store) abortRefTransition(
@@ -100,13 +145,13 @@ func (s *Store) abortRefTransition(
 ) error {
 	if _, err := s.CancelTransition(record, observed); err != nil {
 		if applyErr != nil {
-			return fmt.Errorf("ref transition apply failed: %w; cancel failed: %v", applyErr, err)
+			return errors.Join(applyErr, fmt.Errorf("cancel ref transition: %w", err))
 		}
 		return err
 	}
 	if _, err := s.RecordTransitionMutation(admission, command, "aborted", admission.Snapshot); err != nil {
 		if applyErr != nil {
-			return fmt.Errorf("ref transition apply failed: %w; lease refresh failed: %v", applyErr, err)
+			return errors.Join(applyErr, fmt.Errorf("refresh aborted ref transition lease: %w", err))
 		}
 		return err
 	}
