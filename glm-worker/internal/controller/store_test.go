@@ -97,14 +97,14 @@ func TestExecutionLeaseRejectsLinkedWorkspaceAndStaleSnapshot(t *testing.T) {
 	if _, err := store.AdmitMutation(task, primaryWorkspace, changed); err == nil || !strings.Contains(err.Error(), "snapshot") {
 		t.Fatalf("stale lease admitted changed workspace snapshot: %v", err)
 	}
-	advanced, err := store.RecordMutation(admission, "test-mutation", "success", changed)
+	advanced, err := store.RecordAdmittedMutation(admission, "test-mutation", "success", changed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if advanced.Head.ControllerGeneration <= admission.Head.ControllerGeneration || advanced.Lease.LeaseID == admission.Lease.LeaseID {
 		t.Fatalf("mutation did not advance lease authority: before=%#v after=%#v", admission.Lease, advanced.Lease)
 	}
-	if _, err := store.RecordMutation(admission, "stale-reuse", "success", changed); err == nil {
+	if _, err := store.RecordAdmittedMutation(admission, "stale-reuse", "success", changed); err == nil {
 		t.Fatal("stale lease was reused after controller generation advanced")
 	}
 }
