@@ -102,6 +102,19 @@ func publicationPromotionPostcondition(repoRoot string, candidate state.Publicat
 }
 
 func rollbackPublicationPromotionControlled(cfg config.AppConfig, candidate state.PublicationCandidate, branchRef string, cause *finalizationFailure) publicationPromotionOutput {
+	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, state.AttachStateStore(cfg))
+	if err != nil {
+		detail := publicationFailureDetail(cause) + "; rollback controller state unavailable: " + err.Error()
+		return publicationPromotionOutput{
+			Status:       publicationPromotionStatusBlocked,
+			CandidateOID: candidate.CommitOID,
+			BranchRef:    branchRef,
+			Failure:      publicationReadinessFailure(publicationFailurePromotionRollback, detail),
+		}
+	}
+	if !active {
+		return rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, cause)
+	}
 	if err := updatePublicationRefControlled(cfg, candidate, branchRef, candidate.BaseHead, candidate.CommitOID); err != nil {
 		detail := publicationFailureDetail(cause) + "; rollback failed: " + err.Error()
 		return publicationPromotionOutput{
