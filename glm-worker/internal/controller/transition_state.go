@@ -3,6 +3,8 @@ package controller
 import (
 	"fmt"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func (*Store) ClassifyTransition(record TransitionRecord, actual map[string]string) map[string]EffectClassification {
@@ -48,7 +50,7 @@ func (s *Store) failClosedLocked(
 	if err != nil {
 		return FailureRecord{}, err
 	}
-	failureID, err := newControllerID()
+	failureID, err := state.NewUUID()
 	if err != nil {
 		return FailureRecord{}, err
 	}
