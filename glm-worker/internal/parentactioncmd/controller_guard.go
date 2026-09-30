@@ -118,6 +118,11 @@ func finalizeParentControllerMutation(
 	if headErr != nil {
 		return errors.Join(operationErr, headErr)
 	}
+	if head.ControllerGeneration > admission.Head.ControllerGeneration {
+		if _, admittedErr := controllerStore.AdmitMutation(admission.Lease.SemanticTaskRef, admission.Workspace, after); admittedErr == nil {
+			return operationErr
+		}
+	}
 	var provenanceErr error
 	if head.ControllerGeneration > admission.Head.ControllerGeneration {
 		_, provenanceErr = controllerStore.RecordTransitionMutation(admission, command, outcome, after)
