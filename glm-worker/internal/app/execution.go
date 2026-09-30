@@ -117,24 +117,7 @@ func executeStateBacked(
 	if owner == dispatchStateCommand {
 		return executeStateCommand(cmd, cfg, st, stdout)
 	}
-
-	lock, err := AcquireRepoLock(st.LockPath())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = lock.Close() }()
-	if err := admitParentCommand(cmd, st); err != nil {
-		return err
-	}
-
-	switch owner {
-	case dispatchLockedMutation:
-		return executeLockedMutation(cmd, cfg, st, stdout)
-	case dispatchWorkflow:
-		return executeWorkflow(cmd, cfg, st, rf, stdout)
-	default:
-		return fmt.Errorf("unsupported state-backed dispatch owner: %d", owner)
-	}
+	return executeControllerGuardedStateBacked(cmd, owner, cfg, st, rf, stdout)
 }
 
 func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer) error {
