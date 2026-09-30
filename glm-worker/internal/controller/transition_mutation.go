@@ -30,7 +30,7 @@ func (s *Store) CancelTransition(record TransitionRecord, actual map[string]stri
 	transitionState := TransitionState{
 		SchemaVersion:    controllerSchemaVersion,
 		TransitionID:    record.TransitionID,
-		Phase:           TransitionPhaseFinalized,
+		Phase:           TransitionPhaseAborted,
 		Observed:        cloneMap(actual),
 		Classifications: classifications,
 		UpdatedAt:       time.Now().UTC(),
@@ -39,6 +39,41 @@ func (s *Store) CancelTransition(record TransitionRecord, actual map[string]stri
 		return RepositoryControllerHead{}, err
 	}
 	return next, nil
+}
+
+func (s *Store) RecordGuardedMutation(
+	admission Admission,
+	command string,
+	outcome string,
+	after WorkspaceSnapshot,
+) (Admission, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return Admission{}, err
+	}
+	if head.ControllerGeneration == admission.Head.ControllerGeneration {
+		return s.RecordMutation(admission, command, outcome, after)
+	}
+	if head.Status != ControllerStatusActive || head.PendingTransitionID != "" || head.LiveLeaseID == "" || head.LiveAttemptID == "" {
+		return Admission{}, fmt.Errorf("controller changed without a finalized live lease")
+	}
+	if head.LiveLeaseID == admission.Lease.LeaseID {
+		return s.RecordTransitionMutation(admission, command, outcome, after)
+	}
+	lease, err := s.loadLease(head.LiveLeaseID)
+	if err != nil {
+		return Admission{}, err
+	}
+	attempt, err := s.loadAttempt(head.LiveAttemptID)
+	if err != nil {
+		return Admission{}, err
+	}
+	if attempt.AttemptID != admission.Attempt.AttemptID || lease.AttemptID != admission.Attempt.AttemptID ||
+		!lease.SemanticTaskRef.Equal(admission.Lease.SemanticTaskRef) || lease.WorkspaceID != admission.Workspace.ID ||
+		lease.ControllerGeneration != head.ControllerGeneration || lease.ExpectedWorkspaceSnapshotID != after.ID || lease.ExpectedBaseOID != after.Head {
+		return Admission{}, fmt.Errorf("controller changed without matching transitioned mutation provenance")
+	}
+	return Admission{Head: head, Attempt: attempt, Lease: lease, Workspace: admission.Workspace, Snapshot: after}, nil
 }
 
 func (s *Store) RecordTransitionMutation(
