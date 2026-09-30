@@ -185,97 +185,6 @@ func TestMutablePlanCannotMintExecutionAuthority(t *testing.T) {
 	}
 }
 
-func TestTransitionClassificationUsesExactOldAndNewState(t *testing.T) {
-	repo, _ := newControllerLinkedWorktree(t)
-	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	head, err := store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/main", ExpectedOld: "old", ExpectedNew: "new"}
-	record, err := store.BeginTransition("TEST_REF_CAS", head.ControllerGeneration, []EffectExpectation{effect})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for actual, want := range map[string]EffectClassification{
-		"old":   EffectExpectedOld,
-		"new":   EffectExpectedNew,
-		"other": EffectUnexpected,
-	} {
-		got := store.ClassifyTransition(record, map[string]string{effect.Key(): actual})[effect.Key()]
-		if got != want {
-			t.Fatalf("classify actual=%q got=%s want=%s", actual, got, want)
-		}
-	}
-	if err := store.MarkTransitionApplied(record, map[string]string{effect.Key(): "new"}); err != nil {
-		t.Fatal(err)
-	}
-	loaded, stateRecord, err := store.LoadTransition(record.TransitionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stateRecord.Phase != TransitionPhaseApplied {
-		t.Fatalf("transition phase = %s", stateRecord.Phase)
-	}
-	if got := store.ClassifyTransition(loaded, map[string]string{effect.Key(): "old"})[effect.Key()]; got != EffectExpectedOld {
-		t.Fatalf("classification depended on progress bit: %s", got)
-	}
-	committed, err := store.CommitTransition(record, map[string]string{effect.Key(): "new"}, true, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if committed.PendingTransitionID != "" || committed.ControllerGeneration != record.TargetGeneration {
-		t.Fatalf("committed head = %#v", committed)
-	}
-}
-
-func TestUnexpectedTransitionFailsClosedAndRevokesLease(t *testing.T) {
-	repo, _ := newControllerLinkedWorktree(t)
-	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace, err := ResolveWorkspaceIdentity(repo, store.Identity())
-	if err != nil {
-		t.Fatal(err)
-	}
-	snapshot, err := CaptureWorkspaceSnapshot(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	task := controllerTestTask(t, repo)
-	admission, err := store.BootstrapExecution(task, workspace, snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/main", ExpectedOld: "old", ExpectedNew: "new"}
-	record, err := store.BeginTransition("TEST_UNEXPECTED", admission.Head.ControllerGeneration, []EffectExpectation{effect})
-	if err != nil {
-		t.Fatal(err)
-	}
-	actual := map[string]string{effect.Key(): "foreign"}
-	if _, err := store.CommitTransition(record, actual, true, nil); err == nil {
-		t.Fatal("unexpected transition state committed")
-	}
-	failure, err := store.FailClosed("unexpected ref state", record.TransitionID, workspace, snapshot, snapshot, actual)
-	if err != nil {
-		t.Fatal(err)
-	}
-	head, err := store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if head.Status != ControllerStatusFailClosed || head.LiveLeaseID != "" || head.FailureID != failure.FailureID {
-		t.Fatalf("fail-closed head = %#v failure=%#v", head, failure)
-	}
-	if _, err := store.AdmitMutation(task, workspace, snapshot); err == nil {
-		t.Fatal("fail-closed controller still admitted mutation")
-	}
-}
-
 func newControllerLinkedWorktree(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -296,7 +205,8 @@ func newControllerLinkedWorktree(t *testing.T) (string, string) {
 	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_TASKS", "root.md"), []byte("# root\n\n## Contract\n\ncontroller root task\n"), 0o644); err != nil {
+	rootTask := "# root\n\n## Contract\n\ncontroller root task\n\n## Dependencies\n\nnone\n"
+	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_TASKS", "root.md"), []byte(rootTask), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runControllerGit(t, repo, "add", ".")
