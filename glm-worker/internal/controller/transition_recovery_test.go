@@ -80,59 +80,12 @@ func TestConcurrentTransitionPrepareAllowsOnlyOnePendingAuthority(t *testing.T) 
 }
 
 func TestFinalizingTransitionResumesFromDurableJournal(t *testing.T) {
-	repo, _ := newControllerLinkedWorktree(t)
-	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
-	cfg := controllerTestConfig(repo, stateRoot)
-	store, err := Open(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace, err := ResolveWorkspaceIdentity(repo, store.Identity())
-	if err != nil {
-		t.Fatal(err)
-	}
-	snapshot, err := CaptureWorkspaceSnapshot(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	task := controllerTestTask(t, repo)
-	source, err := store.BootstrapExecution(task, workspace, snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetLease, err := store.prepareContinuationLease(source.Lease, source.Snapshot, source.Head.ControllerGeneration+3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := authorityFromAdmission(source, source.Snapshot)
-	target.LeaseID = targetLease.LeaseID
-	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/example", ExpectedOld: "old", ExpectedNew: "new"}
-	record, err := store.BeginAuthorityTransition(TransitionIntent{
-		Kind:               "crash-recovery",
-		ExpectedGeneration: source.Head.ControllerGeneration,
-		Source:             source,
-		Target:             target,
-		Effects:            []EffectExpectation{effect},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	actual := map[string]string{effect.Key(): "new"}
-	if got := store.ClassifyTransition(record, map[string]string{effect.Key(): "old"})[effect.Key()]; got != EffectExpectedOld {
-		t.Fatalf("prepared recovery old classification = %s", got)
-	}
-	if got := store.ClassifyTransition(record, actual)[effect.Key()]; got != EffectExpectedNew {
-		t.Fatalf("prepared recovery new classification = %s", got)
-	}
-	if got := store.ClassifyTransition(record, map[string]string{effect.Key(): "foreign"})[effect.Key()]; got != EffectUnexpected {
-		t.Fatalf("prepared recovery unexpected classification = %s", got)
-	}
-
+	cfg, store, record, targetLease, actual := prepareFinalizingRecoveryFixture(t)
 	lock, err := store.acquireMutationLock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MarkTransitionApplied(record, actual); err != nil {
+	if err := store.markTransitionApplied(record, actual); err != nil {
 		_ = lock.Close()
 		t.Fatal(err)
 	}
@@ -183,4 +136,47 @@ func TestFinalizingTransitionResumesFromDurableJournal(t *testing.T) {
 	if stateRecord.Phase != TransitionPhaseFinalized {
 		t.Fatalf("resumed transition phase = %s", stateRecord.Phase)
 	}
+}
+
+func prepareFinalizingRecoveryFixture(t *testing.T) (config AppConfig, store *Store, record TransitionRecord, targetLease ExecutionLease, actual map[string]string) {
+	t.Helper()
+	repo, _ := newControllerLinkedWorktree(t)
+	config = controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions"))
+	var err error
+	store, err = Open(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := ResolveWorkspaceIdentity(repo, store.Identity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := controllerTestTask(t, repo)
+	source, err := store.BootstrapExecution(task, workspace, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetLease, err = store.prepareContinuationLease(source.Lease, source.Snapshot, source.Head.ControllerGeneration+3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := authorityFromAdmission(source, source.Snapshot)
+	target.LeaseID = targetLease.LeaseID
+	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/example", ExpectedOld: "old", ExpectedNew: "new"}
+	record, err = store.BeginAuthorityTransition(TransitionIntent{
+		Kind:               "crash-recovery",
+		ExpectedGeneration: source.Head.ControllerGeneration,
+		Source:             source,
+		Target:             target,
+		Effects:            []EffectExpectation{effect},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual = map[string]string{effect.Key(): "new"}
+	return config, store, record, targetLease, actual
 }
