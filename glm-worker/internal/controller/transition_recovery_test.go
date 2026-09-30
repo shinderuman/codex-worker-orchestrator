@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
 func TestConcurrentTransitionPrepareAllowsOnlyOnePendingAuthority(t *testing.T) {
@@ -138,12 +140,12 @@ func TestFinalizingTransitionResumesFromDurableJournal(t *testing.T) {
 	}
 }
 
-func prepareFinalizingRecoveryFixture(t *testing.T) (config AppConfig, store *Store, record TransitionRecord, targetLease ExecutionLease, actual map[string]string) {
+func prepareFinalizingRecoveryFixture(t *testing.T) (cfg config.AppConfig, store *Store, record TransitionRecord, targetLease ExecutionLease, actual map[string]string) {
 	t.Helper()
 	repo, _ := newControllerLinkedWorktree(t)
-	config = controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions"))
+	cfg = controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions"))
 	var err error
-	store, err = Open(config)
+	store, err = Open(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,5 +180,5 @@ func prepareFinalizingRecoveryFixture(t *testing.T) (config AppConfig, store *St
 		t.Fatal(err)
 	}
 	actual = map[string]string{effect.Key(): "new"}
-	return config, store, record, targetLease, actual
+	return cfg, store, record, targetLease, actual
 }
