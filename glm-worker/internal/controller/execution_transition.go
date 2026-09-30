@@ -27,7 +27,7 @@ func (s *Store) PrepareExecutionAuthorityTransition(
 	if targetWorkspace.RepositoryID != s.identity.LineageID {
 		return TransitionRecord{}, AttemptRecord{}, ExecutionLease{}, fmt.Errorf("execution target workspace belongs to a different repository lineage")
 	}
-	targetGeneration := source.Head.ControllerGeneration + 2
+	targetGeneration := source.Head.ControllerGeneration + 3
 	attempt, lease, err := newExecutionRecords(
 		targetTask,
 		source.Attempt.RootTaskRef,
@@ -104,7 +104,7 @@ func (s *Store) CommitExecutionAuthorityTransition(
 	if err := s.MarkTransitionApplied(record, actual); err != nil {
 		return Admission{}, err
 	}
-	head, err := s.CommitTransition(record, actual, true, func(next *RepositoryControllerHead) error {
+	head, err := s.commitAuthorityTransitionLocked(record, actual, true, func(next *RepositoryControllerHead) error {
 		root := record.TargetRootTaskRef
 		execution := record.TargetExecutionTaskRef
 		next.ProjectSnapshotID = record.ProjectSnapshotNew
