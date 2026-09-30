@@ -61,7 +61,13 @@ func (s *Store) prepareRefTransition(
 		ExpectedOld: expectedOld,
 		ExpectedNew: expectedNew,
 	}
-	record, err := s.BeginTransition(kind, current.Head.ControllerGeneration, []EffectExpectation{effect})
+	record, err := s.BeginAuthorityTransition(TransitionIntent{
+		Kind:               kind,
+		ExpectedGeneration: current.Head.ControllerGeneration,
+		Source:             current,
+		Target:             authorityFromAdmission(current, predicted),
+		Effects:            []EffectExpectation{effect},
+	})
 	if err != nil {
 		return WorkspaceSnapshot{}, EffectExpectation{}, TransitionRecord{}, err
 	}
