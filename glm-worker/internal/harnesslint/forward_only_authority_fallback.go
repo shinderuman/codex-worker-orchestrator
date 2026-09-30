@@ -179,7 +179,7 @@ func forwardOnlyAuthorityNames(function *forwardOnlySemanticFunction) map[string
 	names := make(map[string]bool)
 	forwardOnlyCollectAuthorityTypedNames(function.decl.Recv, names)
 	if function.decl.Type != nil && function.decl.Type.Params != nil {
-		forwardOnlyCollectAuthorityTypedNames(function.decl.Type.Params.List, names)
+		forwardOnlyCollectAuthorityTypedNames(function.decl.Type.Params, names)
 	}
 	for changed := true; changed; {
 		changed = false
@@ -343,7 +343,7 @@ func forwardOnlyStateStoreVariables(function *forwardOnlySemanticFunction) map[s
 	names := make(map[string]bool)
 	forwardOnlyCollectStateStoreTypedNames(function.decl.Recv, names)
 	if function.decl.Type != nil && function.decl.Type.Params != nil {
-		forwardOnlyCollectStateStoreTypedNames(function.decl.Type.Params.List, names)
+		forwardOnlyCollectStateStoreTypedNames(function.decl.Type.Params, names)
 	}
 	for changed := true; changed; {
 		changed = false
