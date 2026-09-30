@@ -1,0 +1,116 @@
+name: Web GPT K1 model guard patch
+
+on:
+  push:
+    branches:
+      - web-gpt/1210-bound-same-task-defect-scope
+    paths:
+      - .github/workflows/web-gpt-k1-model-guard-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/1210-bound-same-task-defect-scope
+          fetch-depth: 1
+      - name: Apply exact model guard patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("glm-worker/internal/workflow/model_call.go")
+          text = path.read_text()
+          old = '''func (w *Workflow) invokeModelCall(
+          checkpoint state.ResumeCheckpoint,
+          outputPath string,
+          guardBefore parentFileGuard,
+          ) (modelCallExecution, error) {
+          execution := modelCallExecution{startedAt: w.now().UTC()}
+          w.modelCallAttempts++
+          execution.runResult, execution.runErr = w.runner.Run(
+          checkpoint.Role,
+          checkpoint.Phase,
+          checkpoint.Model,
+          checkpoint.ReadOnly,
+          checkpoint.Effort,
+          checkpoint.Prompt,
+          outputPath,
+          )
+          execution.completedAt = w.now().UTC()
+          w.state.RecordModelDuration(checkpoint.Model, execution.completedAt.Sub(execution.startedAt))
+          if stopped, err := w.verifyParentFileAfterCall(
+          checkpoint,
+          guardBefore,
+          execution.runResult,
+          execution.startedAt,
+          execution.completedAt,
+          execution.runErr,
+          outputPath,
+          ); stopped {
+          return execution, err
+          }
+          return execution, nil
+          }
+          '''
+          new = '''func (w *Workflow) invokeModelCall(
+          checkpoint state.ResumeCheckpoint,
+          outputPath string,
+          guardBefore parentFileGuard,
+          ) (modelCallExecution, error) {
+          execution := modelCallExecution{startedAt: w.now().UTC()}
+          controllerGuard, err := w.admitControllerModelCall(checkpoint)
+          if err != nil {
+          return execution, err
+          }
+          w.modelCallAttempts++
+          execution.runResult, execution.runErr = w.runner.Run(
+          checkpoint.Role,
+          checkpoint.Phase,
+          checkpoint.Model,
+          checkpoint.ReadOnly,
+          checkpoint.Effort,
+          checkpoint.Prompt,
+          outputPath,
+          )
+          execution.completedAt = w.now().UTC()
+          w.state.RecordModelDuration(checkpoint.Model, execution.completedAt.Sub(execution.startedAt))
+          after, controllerErr := w.captureControllerModelCallAfter(controllerGuard)
+          if controllerErr != nil {
+          return execution, controllerErr
+          }
+          if stopped, err := w.verifyParentFileAfterCall(
+          checkpoint,
+          guardBefore,
+          execution.runResult,
+          execution.startedAt,
+          execution.completedAt,
+          execution.runErr,
+          outputPath,
+          ); stopped {
+          if failErr := w.failControllerModelCall(controllerGuard, after, "parent file guard rejected model call"); failErr != nil {
+          return execution, errors.Join(err, failErr)
+          }
+          return execution, err
+          }
+          if err := w.commitControllerModelCall(controllerGuard, after, checkpoint, execution.runErr); err != nil {
+          return execution, err
+          }
+          return execution, nil
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one invokeModelCall block, got {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+      - name: Commit patch
+        run: |
+          git config user.name "Web GPT"
+          git config user.email "web-gpt@users.noreply.github.com"
+          git add glm-worker/internal/workflow/model_call.go
+          git diff --cached --exit-code && exit 1 || true
+          git commit -m "Bind mutating model calls to controller leases"
+          git push origin HEAD:web-gpt/1210-bound-same-task-defect-scope
