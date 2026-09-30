@@ -35,7 +35,7 @@ func TestTransitionClassificationUsesExactOldAndNewState(t *testing.T) {
 			t.Fatalf("classify actual=%q got=%s want=%s", actual, got, want)
 		}
 	}
-	if err := store.MarkTransitionApplied(record, map[string]string{effect.Key(): "new"}); err != nil {
+	if err := store.markTransitionApplied(record, map[string]string{effect.Key(): "new"}); err != nil {
 		t.Fatal(err)
 	}
 	loaded, stateRecord, err := store.LoadTransition(record.TransitionID)
@@ -97,7 +97,7 @@ func TestUnexpectedTransitionFailsClosedAndRevokesLease(t *testing.T) {
 		_ = lock.Close()
 		t.Fatal("unexpected transition state committed")
 	}
-	failure, err := store.FailClosed("unexpected ref state", record.TransitionID, source.Workspace, source.Snapshot, source.Snapshot, actual)
+	failure, err := store.failClosedLocked("unexpected ref state", record.TransitionID, source.Workspace, source.Snapshot, source.Snapshot, actual)
 	closeErr := lock.Close()
 	if err != nil {
 		t.Fatal(err)
