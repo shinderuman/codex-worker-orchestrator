@@ -208,17 +208,26 @@ func forwardOnlyReadinessName(name string) bool {
 }
 
 func forwardOnlyAuthorityNames(function *forwardOnlySemanticFunction) map[string]bool {
+	return forwardOnlyTrackedNames(function, forwardOnlyNodeHasControlSemantic, forwardOnlyAuthoritySource, forwardOnlyCollectAuthorityValueSpec)
+}
+
+func forwardOnlyTrackedNames(
+	function *forwardOnlySemanticFunction,
+	typePredicate func(ast.Node) bool,
+	sourcePredicate func(ast.Expr, map[string]bool) bool,
+	valueCollector func(*ast.ValueSpec, map[string]bool),
+) map[string]bool {
 	names := make(map[string]bool)
-	forwardOnlyCollectTypedNames(function.decl.Recv, names, forwardOnlyNodeHasControlSemantic)
+	forwardOnlyCollectTypedNames(function.decl.Recv, names, typePredicate)
 	if function.decl.Type != nil {
-		forwardOnlyCollectTypedNames(function.decl.Type.Params, names, forwardOnlyNodeHasControlSemantic)
+		forwardOnlyCollectTypedNames(function.decl.Type.Params, names, typePredicate)
 	}
 	ast.Inspect(function.decl.Body, func(node ast.Node) bool {
 		switch typed := node.(type) {
 		case *ast.AssignStmt:
-			forwardOnlyCollectAssignmentNames(typed, names, forwardOnlyAuthoritySource)
+			forwardOnlyCollectAssignmentNames(typed, names, sourcePredicate)
 		case *ast.ValueSpec:
-			forwardOnlyCollectAuthorityValueSpec(typed, names)
+			valueCollector(typed, names)
 		}
 		return true
 	})
@@ -376,21 +385,7 @@ func forwardOnlyRetiredAuthorityCallKinds(call *ast.CallExpr, stateVars map[stri
 }
 
 func forwardOnlyStateStoreVariables(function *forwardOnlySemanticFunction) map[string]bool {
-	names := make(map[string]bool)
-	forwardOnlyCollectTypedNames(function.decl.Recv, names, forwardOnlyStateStoreType)
-	if function.decl.Type != nil {
-		forwardOnlyCollectTypedNames(function.decl.Type.Params, names, forwardOnlyStateStoreType)
-	}
-	ast.Inspect(function.decl.Body, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.AssignStmt:
-			forwardOnlyCollectAssignmentNames(typed, names, forwardOnlyStateStoreSource)
-		case *ast.ValueSpec:
-			forwardOnlyCollectStateStoreValueSpec(typed, names)
-		}
-		return true
-	})
-	return names
+	return forwardOnlyTrackedNames(function, forwardOnlyStateStoreType, forwardOnlyStateStoreSource, forwardOnlyCollectStateStoreValueSpec)
 }
 
 func forwardOnlyStateStoreType(node ast.Node) bool {
