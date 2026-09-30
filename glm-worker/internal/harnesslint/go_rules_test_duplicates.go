@@ -13,14 +13,15 @@ import (
 )
 
 type duplicateTestBody struct {
-	path string
-	line int
-	name string
-	body string
+	path    string
+	line    int
+	name    string
+	packageName string
+	body    string
 }
 
 func duplicateTestBodyViolations(root string, paths []string) ([]Violation, error) {
-	byDirectory := make(map[string][]duplicateTestBody)
+	byOwner := make(map[string][]duplicateTestBody)
 	for _, path := range goFiles(paths) {
 		if !strings.HasSuffix(path, "_test.go") {
 			continue
@@ -29,12 +30,14 @@ func duplicateTestBodyViolations(root string, paths []string) ([]Violation, erro
 		if err != nil {
 			return nil, err
 		}
-		directory := filepath.ToSlash(filepath.Dir(path))
-		byDirectory[directory] = append(byDirectory[directory], entries...)
+		for _, entry := range entries {
+			owner := filepath.ToSlash(filepath.Dir(path)) + "\x00" + entry.packageName
+			byOwner[owner] = append(byOwner[owner], entry)
+		}
 	}
 	var violations []Violation
-	for _, directory := range sortedDuplicateTestDirectories(byDirectory) {
-		violations = append(violations, duplicateTestDirectoryViolations(byDirectory[directory])...)
+	for _, owner := range sortedDuplicateTestOwners(byOwner) {
+		violations = append(violations, duplicateTestOwnerViolations(byOwner[owner])...)
 	}
 	return violations, nil
 }
@@ -52,7 +55,7 @@ func duplicateTestBodiesInFile(root, path string) ([]duplicateTestBody, error) {
 	var entries []duplicateTestBody
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Body == nil || !isGoTestEntrypoint(function.Name.Name) {
+		if !ok || function.Body == nil || !strings.HasPrefix(function.Name.Name, "Test") {
 			continue
 		}
 		body, err := duplicateTestBodyText(set, function.Body)
@@ -60,10 +63,11 @@ func duplicateTestBodiesInFile(root, path string) ([]duplicateTestBody, error) {
 			return nil, fmt.Errorf("format test body %s.%s: %w", path, function.Name.Name, err)
 		}
 		entries = append(entries, duplicateTestBody{
-			path: path,
-			line: set.Position(function.Pos()).Line,
-			name: function.Name.Name,
-			body: body,
+			path:        path,
+			line:        set.Position(function.Pos()).Line,
+			name:        function.Name.Name,
+			packageName: file.Name.Name,
+			body:        body,
 		})
 	}
 	return entries, nil
@@ -77,16 +81,16 @@ func duplicateTestBodyText(set *token.FileSet, body *ast.BlockStmt) (string, err
 	return buffer.String(), nil
 }
 
-func sortedDuplicateTestDirectories(byDirectory map[string][]duplicateTestBody) []string {
-	directories := make([]string, 0, len(byDirectory))
-	for directory := range byDirectory {
-		directories = append(directories, directory)
+func sortedDuplicateTestOwners(byOwner map[string][]duplicateTestBody) []string {
+	owners := make([]string, 0, len(byOwner))
+	for owner := range byOwner {
+		owners = append(owners, owner)
 	}
-	sort.Strings(directories)
-	return directories
+	sort.Strings(owners)
+	return owners
 }
 
-func duplicateTestDirectoryViolations(entries []duplicateTestBody) []Violation {
+func duplicateTestOwnerViolations(entries []duplicateTestBody) []Violation {
 	sort.Slice(entries, func(left, right int) bool {
 		if entries[left].path != entries[right].path {
 			return entries[left].path < entries[right].path
