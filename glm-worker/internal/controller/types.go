@@ -90,6 +90,26 @@ type EffectExpectation struct {
 	ExpectedNew string          `json:"expected_new"`
 }
 
+type TransitionAuthority struct {
+	ProjectSnapshotID string            `json:"project_snapshot_id"`
+	RootTaskRef       SemanticTaskRef   `json:"root_task_ref"`
+	ExecutionTaskRef  SemanticTaskRef   `json:"execution_task_ref"`
+	EpisodeID         string            `json:"episode_id,omitempty"`
+	EpisodeRevision   uint64            `json:"episode_revision,omitempty"`
+	AttemptID         string            `json:"attempt_id"`
+	LeaseID           string            `json:"lease_id"`
+	WorkspaceID       string            `json:"workspace_id"`
+	WorkspaceSnapshot WorkspaceSnapshot `json:"workspace_snapshot"`
+}
+
+type TransitionIntent struct {
+	Kind              string
+	ExpectedGeneration uint64
+	Source            Admission
+	Target            TransitionAuthority
+	Effects           []EffectExpectation
+}
+
 type TransitionRecord struct {
 	SchemaVersion         int                 `json:"schema_version"`
 	TransitionID          string              `json:"transition_id"`
@@ -99,13 +119,22 @@ type TransitionRecord struct {
 	TargetGeneration      uint64              `json:"target_generation"`
 	SourceEpisodeID       string              `json:"source_episode_id,omitempty"`
 	SourceEpisodeRevision uint64              `json:"source_episode_revision,omitempty"`
-	SourceAttemptID       string              `json:"source_attempt_id,omitempty"`
-	SourceLeaseID         string              `json:"source_lease_id,omitempty"`
-	WorkspaceID           string              `json:"workspace_id,omitempty"`
+	TargetEpisodeID       string              `json:"target_episode_id,omitempty"`
+	TargetEpisodeRevision uint64              `json:"target_episode_revision,omitempty"`
+	SourceAttemptID       string              `json:"source_attempt_id"`
+	TargetAttemptID       string              `json:"target_attempt_id"`
+	SourceLeaseID         string              `json:"source_lease_id"`
+	TargetLeaseID         string              `json:"target_lease_id"`
+	SourceWorkspaceID     string              `json:"source_workspace_id"`
+	TargetWorkspaceID     string              `json:"target_workspace_id"`
+	SourceRootTaskRef     SemanticTaskRef     `json:"source_root_task_ref"`
+	TargetRootTaskRef     SemanticTaskRef     `json:"target_root_task_ref"`
+	SourceExecutionTaskRef SemanticTaskRef    `json:"source_execution_task_ref"`
+	TargetExecutionTaskRef SemanticTaskRef    `json:"target_execution_task_ref"`
 	WorkspaceSnapshotOld  WorkspaceSnapshot   `json:"workspace_snapshot_old"`
 	WorkspaceSnapshotNew  WorkspaceSnapshot   `json:"workspace_snapshot_new"`
-	ProjectSnapshotOld    string              `json:"project_snapshot_old,omitempty"`
-	ProjectSnapshotNew    string              `json:"project_snapshot_new,omitempty"`
+	ProjectSnapshotOld    string              `json:"project_snapshot_old"`
+	ProjectSnapshotNew    string              `json:"project_snapshot_new"`
 	Effects               []EffectExpectation `json:"effects,omitempty"`
 	CreatedAt             time.Time           `json:"created_at"`
 }
