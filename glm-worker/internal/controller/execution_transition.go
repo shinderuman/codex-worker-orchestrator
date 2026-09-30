@@ -79,6 +79,11 @@ func (s *Store) CommitExecutionAuthorityTransition(
 	if targetWorkspace.RepositoryID != s.identity.LineageID || targetWorkspace.ID != record.TargetWorkspaceID {
 		return Admission{}, fmt.Errorf("verified target workspace does not match transition authority")
 	}
+	lock, err := s.acquireMutationLock()
+	if err != nil {
+		return Admission{}, err
+	}
+	defer func() { _ = lock.Close() }()
 	attempt, err := s.loadAttempt(record.TargetAttemptID)
 	if err != nil {
 		return Admission{}, err
