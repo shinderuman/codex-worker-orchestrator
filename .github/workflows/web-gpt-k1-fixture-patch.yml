@@ -1,0 +1,62 @@
+name: Web GPT K1 fixture patch
+
+on:
+  push:
+    branches:
+      - web-gpt/1210-bound-same-task-defect-scope
+    paths:
+      - .github/workflows/web-gpt-k1-fixture-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/1210-bound-same-task-defect-scope
+          fetch-depth: 1
+      - name: Patch activated repository fixtures
+        shell: python
+        run: |
+          from pathlib import Path
+
+          plan = Path("glm-worker/internal/workflow/plan_file_guard_test.go")
+          text = plan.read_text()
+          old = 'activeTaskGuardSeed = "# ACTIVE task\\n\\n## External feasibility\\n\\nstatus: not-applicable\\n\\n## Contract\\n\\n- guard検証用seed\\n"'
+          new = 'activeTaskGuardSeed = "# ACTIVE task\\n\\n## External feasibility\\n\\nstatus: not-applicable\\n\\n## Contract\\n\\n- guard検証用seed\\n\\n## Dependencies\\n\\nnone\\n"'
+          if text.count(old) != 1:
+              raise SystemExit(f"activeTaskGuardSeed matches={text.count(old)}")
+          plan.write_text(text.replace(old, new, 1))
+
+          review = Path("glm-worker/internal/workflow/review_end_snapshot_test.go")
+          text = review.read_text()
+          old = '''\tif err := os.WriteFile(filepath.Join(repoRoot, "tracked.txt"), []byte("base\\n"), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \ttrackRepositoryHarnessMarker(t, repoRoot)
+          '''
+          new = '''\tif err := os.WriteFile(filepath.Join(repoRoot, "tracked.txt"), []byte("base\\n"), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \twritePlanFileContent(t, repoRoot, planGuardSeed)
+          \ttrackRepositoryHarnessMarker(t, repoRoot)
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"initMutationRepo block matches={text.count(old)}")
+          review.write_text(text.replace(old, new, 1))
+      - name: Format and commit fixture patch
+        run: |
+          gofmt -w \
+            glm-worker/internal/workflow/plan_file_guard_test.go \
+            glm-worker/internal/workflow/review_end_snapshot_test.go
+          git config user.name "Web GPT"
+          git config user.email "web-gpt@users.noreply.github.com"
+          git add \
+            glm-worker/internal/workflow/plan_file_guard_test.go \
+            glm-worker/internal/workflow/review_end_snapshot_test.go
+          git diff --cached --exit-code && exit 1 || true
+          git commit -m "Give activated workflow fixtures committed task authority"
+          git push origin HEAD:web-gpt/1210-bound-same-task-defect-scope
