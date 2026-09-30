@@ -97,6 +97,35 @@ func TestExecuteResetRequiresDispositionBeforePassAcceptance(t *testing.T) {
 	}
 }
 
+func TestExecuteResetAbandonAllowsVerifiedNewTaskAdmission(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := Execute(Command{Mode: ModeReset, Payload: "abandon"}, cfg, nil, &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var got dispositionResetOutput
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "reset" || got.Disposition != state.TaskDispositionAbandon {
+		t.Fatalf("reset output = %#v", got)
+	}
+	if err := admitParentCommand(Command{Mode: ModeNewTask}, st); err != nil {
+		t.Fatalf("new task rejected after explicit disposition: %v", err)
+	}
+}
+
 func TestExecuteResetRetryRepairsDispositionLifecycle(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -129,7 +158,7 @@ func TestExecuteResetRetryRepairsDispositionLifecycle(t *testing.T) {
 		t.Fatalf("reset retry lost disposition provenance: %#v", got)
 	}
 	if err := st.ValidateResetDispositionForNewTask(); err != nil {
-		t.Fatalf("reset retry left disposition provenance invalid: %v", err)
+		t.Fatalf("reset retry left new-task admission blocked: %v", err)
 	}
 }
 
@@ -158,5 +187,33 @@ func TestExecuteResetPreservesRecoverableResetPath(t *testing.T) {
 	}
 	if got.Disposition != state.TaskDispositionRecovery {
 		t.Fatalf("recoverable reset output = %#v", got)
+	}
+	if err := admitParentCommand(Command{Mode: ModeNewTask}, st); err != nil {
+		t.Fatalf("new task rejected after recovery reset: %v", err)
+	}
+}
+
+func TestNewTaskAdmissionFailsClosedOnUnreadableResetDisposition(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ResetWithDisposition("abandon"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path("task-disposition.json"), []byte("{not-json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err = admitParentCommand(Command{Mode: ModeNewTask}, st)
+	if err == nil || !strings.Contains(err.Error(), "cannot verify reset disposition") {
+		t.Fatalf("new task admitted with unreadable disposition: %v", err)
 	}
 }

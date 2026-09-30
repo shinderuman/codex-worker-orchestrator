@@ -5,7 +5,6 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -22,7 +21,6 @@ func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 		output.PendingDecision,
 		output.AllowedActions,
 	)
-	projected.AllowedActions = withNewTaskExecutionUnitActions(output.ParentRequest, projected.AllowedActions)
 	improvementSignal := projectImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffOutputAlias
@@ -43,7 +41,6 @@ func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 		output.PendingDecision,
 		output.AllowedActions,
 	)
-	projected.AllowedActions = withNewTaskExecutionUnitActions(output.ParentRequest, projected.AllowedActions)
 	improvementSignal := projectRecoveryImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffRecoveryOutputAlias
@@ -54,28 +51,6 @@ func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 		ActionSpecs:                      parentActionSpecs(projected.AllowedActions, projected.RequiredActionParameters),
 		ImprovementSignal:                improvementSignal,
 	})
-}
-
-func withNewTaskExecutionUnitActions(parentRequest *ParentRequestCompletionProjection, actions []string) []string {
-	projected := append([]string(nil), actions...)
-	if parentRequest == nil || parentRequest.TaskAttribution.LegalNextAction != repositoryproject.ActionStart {
-		return projected
-	}
-	for _, action := range []string{parentactiongrammar.StartAction, string(parentaction.ActionStartMilestones)} {
-		if !containsParentAction(projected, action) {
-			projected = append(projected, action)
-		}
-	}
-	return projected
-}
-
-func containsParentAction(actions []string, target string) bool {
-	for _, action := range actions {
-		if action == target {
-			return true
-		}
-	}
-	return false
 }
 
 func withExecutionMilestoneReconsideration(

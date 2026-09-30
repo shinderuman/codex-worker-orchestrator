@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -35,7 +34,7 @@ func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole st
 		return indeterminateExecutionProgress(phaseStage, "machine-state", "milestone-state-unavailable")
 	}
 	if plan == nil || len(plan.Milestones) == 0 {
-		return projectNonMilestoneExecutionProgress(st, phaseStage)
+		return indeterminateExecutionProgress(phaseStage, "single-or-untracked-execution-unit", "no-execution-milestones")
 	}
 	taskStatus := st.TaskStatus()
 	if reason := executionProgressPlanInconsistency(st, plan, taskStatus); reason != "" {
@@ -69,24 +68,6 @@ func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole st
 		projection.Precision = "exact"
 	}
 	return projection
-}
-
-func projectNonMilestoneExecutionProgress(st *state.StateStore, phaseStage string) ExecutionProgressProjection {
-	disposition, err := executionunit.CurrentDisposition(st)
-	if err != nil {
-		return indeterminateExecutionProgress(phaseStage, "machine-state", "execution-unit-disposition-unavailable")
-	}
-	if disposition == nil {
-		return indeterminateExecutionProgress(phaseStage, "single-or-untracked-execution-unit", "no-execution-milestones")
-	}
-	switch disposition.ExecutionUnit {
-	case executionunit.ExecutionUnitSingle:
-		return indeterminateExecutionProgress(phaseStage, "explicit-single-execution-unit", "single-execution-unit")
-	case executionunit.ExecutionUnitMilestones:
-		return indeterminateExecutionProgress(phaseStage, "machine-state", "milestone-state-missing")
-	default:
-		return indeterminateExecutionProgress(phaseStage, "machine-state", "execution-unit-disposition-unavailable")
-	}
 }
 
 func indeterminateExecutionProgress(phaseStage, basis, reason string) ExecutionProgressProjection {

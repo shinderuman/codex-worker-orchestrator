@@ -27,6 +27,7 @@ func TestTaskBoundStatePoliciesDriveFreshTaskCleanup(t *testing.T) {
 		baselineUntrackedFile:                taskBoundStateFreshTaskClear,
 		parentActionBeginStateFile:           taskBoundStateFreshTaskClear,
 		poCStartSnapshotFile:                 taskBoundStateFreshTaskClear,
+		guardRepairStateFile:                 taskBoundStateFreshTaskClear,
 		QualitySurfaceBaselineStateFile:      taskBoundStateFreshTaskClear,
 		RepositoryHarnessActivationStateFile: taskBoundStateFreshTaskClear,
 		InstructionSurfaceBaselineStateFile:  taskBoundStateTaskIDBound,
@@ -55,6 +56,9 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 	if err := st.Write(RepositoryHarnessActivationStateFile, "1"); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.Write(guardRepairStateFile, "old-guard-repair"); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Write(parentActionBeginStateFile, "old-parent-action-begin"); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +78,7 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 	if _, err := st.LoadPoCStartSnapshot(); !os.IsNotExist(err) {
 		t.Fatalf("prior task PoC snapshot remains visible: %v", err)
 	}
-	for _, name := range []string{baselineUntrackedFile, QualitySurfaceBaselineStateFile, RepositoryHarnessActivationStateFile, parentActionBeginStateFile} {
+	for _, name := range []string{baselineUntrackedFile, QualitySurfaceBaselineStateFile, RepositoryHarnessActivationStateFile, guardRepairStateFile, parentActionBeginStateFile} {
 		if st.Exists(name) {
 			t.Fatalf("prior task state survived fresh-task cleanup: %s", name)
 		}

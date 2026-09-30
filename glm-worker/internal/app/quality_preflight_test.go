@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"os/exec"
@@ -13,7 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 )
 
 func stubQualityPreflight(t *testing.T, fn qualityPreflightFunc) {
@@ -145,7 +145,7 @@ func TestExecuteNewTaskOnFreshStoreRecordsPreflightFailure(t *testing.T) {
 	}
 }
 
-func TestExecuteNewTaskPreflightFailureLeavesRetryStateUnchanged(t *testing.T) {
+func TestExecuteNewTaskIsAdmissibleAgainAfterPreflightRepair(t *testing.T) {
 	cfg := newQualityContractConfig(t)
 	st, taskID := seedPreflightTaskID(t, cfg)
 	rejected := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
@@ -165,6 +165,9 @@ func TestExecuteNewTaskPreflightFailureLeavesRetryStateUnchanged(t *testing.T) {
 	}
 	if st.ReadOr("task.id", "") != taskID {
 		t.Fatalf("preflight失敗でtask identityが変わりました: %s", st.ReadOr("task.id", ""))
+	}
+	if err := admitParentCommand(Command{Mode: ModeNewTask}, st); err != nil {
+		t.Fatalf("修復後の同じadmission再実行が拒否されました: %v", err)
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
@@ -58,14 +57,7 @@ func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 		return "", err
 	}
 	if w.activeTaskStateSet() {
-		activeTaskPath, err := w.resolvePinnedActiveTask(harnessActive)
-		if err != nil {
-			return "", err
-		}
-		if err := w.recordInitialExecutionUnitDisposition(activeTaskPath); err != nil {
-			return "", err
-		}
-		return activeTaskPath, nil
+		return w.resolvePinnedActiveTask(harnessActive)
 	}
 	if !harnessActive {
 		if err := w.state.Write(activeTaskStateKey, ""); err != nil {
@@ -80,28 +72,7 @@ func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
 		return "", err
 	}
-	if err := w.recordInitialExecutionUnitDisposition(activeTaskPath); err != nil {
-		return "", err
-	}
 	return activeTaskPath, nil
-}
-
-func (w *Workflow) recordInitialExecutionUnitDisposition(activeTaskPath string) error {
-	executionUnit := os.Getenv(executionunit.DispositionEnv)
-	if executionUnit == "" || activeTaskPath == "" {
-		return nil
-	}
-	existing, err := executionunit.CurrentDisposition(w.state)
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		if existing.ExecutionUnit != executionUnit {
-			return fmt.Errorf("execution-unit disposition changed during task start: current=%q requested=%q", existing.ExecutionUnit, executionUnit)
-		}
-		return nil
-	}
-	return executionunit.RecordDisposition(w.state, activeTaskPath, executionUnit, w.now().UTC())
 }
 
 func (w *Workflow) resolvePinnedActiveTask(harnessActive bool) (string, error) {

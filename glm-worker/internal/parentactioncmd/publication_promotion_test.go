@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -60,6 +61,32 @@ func TestPublicationPromotionRejectsMissingRequiredInstallEvidence(t *testing.T)
 	}
 }
 
+func TestPublicationPromotionRollsBackAfterPostconditionFailure(t *testing.T) {
+	cfg, st, candidate, branchRef := publicationPromotionAtomicityFixture(t)
+	publicationGit(t, cfg.RepoRoot, "update-ref", branchRef, candidate.CommitOID, candidate.BaseHead)
+	if got := publicationGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"); got != candidate.CommitOID {
+		t.Fatalf("precondition HEAD = %s, want candidate %s", got, candidate.CommitOID)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "README.md"), []byte("post-promotion mutation\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate)
+	if failure == nil {
+		t.Fatal("post-promotion mutation did not invalidate promotion")
+	}
+
+	output := rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, failure)
+	if output.Status != publicationPromotionStatusBlocked || output.Failure == nil || output.Failure.Reason != publicationFailurePromotionHead {
+		t.Fatalf("rollback result = %#v", output)
+	}
+	if got := publicationGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"); got != candidate.BaseHead {
+		t.Fatalf("blocked promotion left advanced HEAD: %s != base %s", got, candidate.BaseHead)
+	}
+	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("rollback changed task status: %s", st.TaskStatus())
+	}
+}
+
 func TestPublicationPromotionReadyReentryRollsBackInvalidCandidate(t *testing.T) {
 	cfg, _, candidate, branchRef := publicationPromotionAtomicityFixture(t)
 	publicationGit(t, cfg.RepoRoot, "update-ref", branchRef, candidate.CommitOID, candidate.BaseHead)
@@ -79,6 +106,28 @@ func TestPublicationPromotionReadyReentryRollsBackInvalidCandidate(t *testing.T)
 	}
 	if got := publicationGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"); got != candidate.BaseHead {
 		t.Fatalf("blocked reentry left advanced HEAD: %s != base %s", got, candidate.BaseHead)
+	}
+}
+
+func TestPublicationPromotionRollbackDoesNotOverwriteConcurrentRefMutation(t *testing.T) {
+	cfg, _, candidate, branchRef := publicationPromotionAtomicityFixture(t)
+	publicationGit(t, cfg.RepoRoot, "update-ref", branchRef, candidate.CommitOID, candidate.BaseHead)
+	concurrentOID := publicationGitOutput(t, cfg.RepoRoot, "commit-tree", candidate.TreeOID, "-p", candidate.CommitOID, "-m", "concurrent ref mutation")
+	publicationGit(t, cfg.RepoRoot, "-c", "core.hooksPath=/dev/null", "update-ref", branchRef, concurrentOID, candidate.CommitOID)
+	cause := publicationPromotionPostcondition(cfg.RepoRoot, candidate)
+	if cause == nil {
+		t.Fatal("concurrent ref mutation did not invalidate promotion")
+	}
+
+	output := rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, cause)
+	if output.Status != publicationPromotionStatusBlocked || output.Failure == nil || output.Failure.Reason != publicationFailurePromotionRollback {
+		t.Fatalf("rollback failure = %#v", output)
+	}
+	if !strings.Contains(output.Failure.Detail, "rollback failed") {
+		t.Fatalf("rollback failure detail = %q", output.Failure.Detail)
+	}
+	if got := publicationGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"); got != concurrentOID {
+		t.Fatalf("rollback overwrote concurrent ref: %s != %s", got, concurrentOID)
 	}
 }
 

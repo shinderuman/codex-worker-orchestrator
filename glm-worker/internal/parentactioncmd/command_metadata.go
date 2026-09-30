@@ -29,7 +29,6 @@ const (
 	parentActionExecutionWait
 	parentActionExecutionContinuationOrApprove
 	parentActionExecutionDirectWorker
-	parentActionExecutionStartSingle
 	parentActionExecutionReadOrPark
 	parentActionExecutionGitEvidence
 	parentActionExecutionReviewEvidence
@@ -95,7 +94,6 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 	actionStart: {
 		Action:           actionStart,
 		Execute:          parentActionExecutionDirectWorker,
-		TerminalExecute:  parentActionExecutionStartSingle,
 		TerminalEnvelope: true,
 	},
 	actionAccept: {
@@ -193,23 +191,6 @@ func executeParentActionCommand(
 	if terminal {
 		execution = descriptor.TerminalExecute
 	}
-	operation := func() error {
-		return executeAdmittedParentActionCommand(cfg, descriptor, execution, args, stdout, stderr)
-	}
-	if parentActionNeedsControllerGuard(descriptor, execution) {
-		return executeControllerGuardedParentMutation(cfg, descriptor, execution, operation)
-	}
-	return operation()
-}
-
-func executeAdmittedParentActionCommand(
-	cfg config.AppConfig,
-	descriptor parentActionCommandDescriptor,
-	execution parentActionExecutionKind,
-	args []string,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
 	if err, handled := executeStandardParentAction(cfg, descriptor, execution, args, stdout, stderr); handled {
 		return err
 	}
@@ -268,8 +249,6 @@ func executeInterfaceParentAction(
 		return executeContinuationOrApproveAction(cfg, descriptor.Action, args, stdout, stderr), true
 	case parentActionExecutionDirectWorker:
 		return executeDirectWorkerAction(cfg, descriptor.Action, args, stdout, stderr), true
-	case parentActionExecutionStartSingle:
-		return executeStartSingleAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionReadOrPark:
 		return executeParentReadOrParkAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionGitEvidence:
