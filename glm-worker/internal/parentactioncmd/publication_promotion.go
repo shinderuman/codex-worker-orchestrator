@@ -10,8 +10,6 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -39,11 +37,6 @@ func runPublicationPromotion(cfg config.AppConfig, args []string, stdout io.Writ
 	if err != nil {
 		return err
 	}
-	lock, err := repolock.Acquire(st.LockPath())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = lock.Close() }()
 	return json.NewEncoder(stdout).Encode(promotePublicationCandidate(cfg, st))
 }
 
@@ -102,19 +95,6 @@ func publicationPromotionPostcondition(repoRoot string, candidate state.Publicat
 }
 
 func rollbackPublicationPromotionControlled(cfg config.AppConfig, candidate state.PublicationCandidate, branchRef string, cause *finalizationFailure) publicationPromotionOutput {
-	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, state.AttachStateStore(cfg))
-	if err != nil {
-		detail := publicationFailureDetail(cause) + "; rollback controller state unavailable: " + err.Error()
-		return publicationPromotionOutput{
-			Status:       publicationPromotionStatusBlocked,
-			CandidateOID: candidate.CommitOID,
-			BranchRef:    branchRef,
-			Failure:      publicationReadinessFailure(publicationFailurePromotionRollback, detail),
-		}
-	}
-	if !active {
-		return rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, cause)
-	}
 	if err := updatePublicationRefControlled(cfg, candidate, branchRef, candidate.BaseHead, candidate.CommitOID); err != nil {
 		detail := publicationFailureDetail(cause) + "; rollback failed: " + err.Error()
 		return publicationPromotionOutput{
@@ -132,33 +112,7 @@ func rollbackPublicationPromotionControlled(cfg config.AppConfig, candidate stat
 	}
 }
 
-func rollbackPublicationPromotion(repoRoot string, candidate state.PublicationCandidate, branchRef string, cause *finalizationFailure) publicationPromotionOutput {
-	if err := updatePublicationRef(repoRoot, candidate, branchRef, candidate.BaseHead, candidate.CommitOID); err != nil {
-		detail := publicationFailureDetail(cause) + "; rollback failed: " + err.Error()
-		return publicationPromotionOutput{
-			Status:       publicationPromotionStatusBlocked,
-			CandidateOID: candidate.CommitOID,
-			BranchRef:    branchRef,
-			Failure:      publicationReadinessFailure(publicationFailurePromotionRollback, detail),
-		}
-	}
-	return publicationPromotionOutput{
-		Status:       publicationPromotionStatusBlocked,
-		CandidateOID: candidate.CommitOID,
-		BranchRef:    branchRef,
-		Failure:      cause,
-	}
-}
-
 func updatePublicationRefControlled(cfg config.AppConfig, candidate state.PublicationCandidate, branchRef, newOID, oldOID string) error {
-	st := state.AttachStateStore(cfg)
-	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
-	if err != nil {
-		return err
-	}
-	if !active {
-		return updatePublicationRef(cfg.RepoRoot, candidate, branchRef, newOID, oldOID)
-	}
 	store, err := controller.Open(cfg)
 	if err != nil {
 		return err
@@ -171,11 +125,14 @@ func updatePublicationRefControlled(cfg config.AppConfig, candidate state.Public
 	if err != nil {
 		return err
 	}
-	task, err := controller.ResolveSemanticTaskRef(cfg.RepoRoot, st.ReadOr("active-task", ""))
+	head, err := store.LoadHead()
 	if err != nil {
 		return err
 	}
-	admission, err := store.AdmitMutation(task, workspace, before)
+	if head.ExecutionTaskRef == nil {
+		return fmt.Errorf("repository controller has no execution task authority")
+	}
+	admission, err := store.AdmitMutation(*head.ExecutionTaskRef, workspace, before)
 	if err != nil {
 		return err
 	}
