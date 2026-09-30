@@ -74,7 +74,11 @@ func (s *Store) PrepareExecutionAuthorityTransition(
 func (s *Store) CommitExecutionAuthorityTransition(
 	record TransitionRecord,
 	actual map[string]string,
+	targetWorkspace WorkspaceIdentity,
 ) (Admission, error) {
+	if targetWorkspace.RepositoryID != s.identity.LineageID || targetWorkspace.ID != record.TargetWorkspaceID {
+		return Admission{}, fmt.Errorf("verified target workspace does not match transition authority")
+	}
 	attempt, err := s.loadAttempt(record.TargetAttemptID)
 	if err != nil {
 		return Admission{}, err
@@ -114,15 +118,11 @@ func (s *Store) CommitExecutionAuthorityTransition(
 	if err := s.writeAttempt(attempt); err != nil {
 		return Admission{}, err
 	}
-	workspace := WorkspaceIdentity{
-		ID:           record.TargetWorkspaceID,
-		RepositoryID: head.RepositoryIdentity,
-	}
 	return Admission{
 		Head:      head,
 		Attempt:   attempt,
 		Lease:     lease,
-		Workspace: workspace,
+		Workspace: targetWorkspace,
 		Snapshot:  record.WorkspaceSnapshotNew,
 	}, nil
 }
