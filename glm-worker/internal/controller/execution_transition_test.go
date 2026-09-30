@@ -54,15 +54,42 @@ func TestExecutionAuthorityTransitionPreservesRootAndRevokesSourceLease(t *testi
 		t.Fatal("child task missing from committed project snapshot")
 	}
 
-	record, targetAttempt, targetLease, err := store.PrepareExecutionAuthorityTransition(
-		source,
-		project.SnapshotID,
+	targetAttempt, targetLease, err := newExecutionRecords(
 		child,
+		source.Attempt.RootTaskRef,
 		workspace,
 		snapshot,
+		source.Head.ControllerGeneration+3,
 		"blocker-execution",
-		nil,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetAttempt.AttemptState = AttemptStatePrepared
+	targetAttempt.PredecessorAttemptID = source.Attempt.AttemptID
+	if err := store.writeAttempt(targetAttempt); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.writeLease(targetLease); err != nil {
+		t.Fatal(err)
+	}
+	targetAuthority := TransitionAuthority{
+		ProjectSnapshotID: project.SnapshotID,
+		RootTaskRef:       source.Attempt.RootTaskRef,
+		ExecutionTaskRef:  child,
+		EpisodeID:         source.Head.ActiveEpisodeID,
+		EpisodeRevision:   source.Head.ActiveEpisodeRevision,
+		AttemptID:         targetAttempt.AttemptID,
+		LeaseID:           targetLease.LeaseID,
+		WorkspaceID:       workspace.ID,
+		WorkspaceSnapshot: snapshot,
+	}
+	record, err := store.BeginAuthorityTransition(TransitionIntent{
+		Kind:               "execution-authority:blocker-execution",
+		ExpectedGeneration: source.Head.ControllerGeneration,
+		Source:             source,
+		Target:             targetAuthority,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,18 +108,53 @@ func TestExecutionAuthorityTransitionPreservesRootAndRevokesSourceLease(t *testi
 		t.Fatalf("workspace/project transition authority is incomplete: %#v", record)
 	}
 
-	target, err := store.CommitExecutionAuthorityTransition(record, nil, workspace)
+	lock, err := store.acquireMutationLock()
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.markTransitionApplied(record, nil); err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	committed, err := store.commitAuthorityTransitionLocked(record, nil, false, func(next *RepositoryControllerHead) error {
+		root := record.TargetRootTaskRef
+		execution := record.TargetExecutionTaskRef
+		next.ProjectSnapshotID = record.ProjectSnapshotNew
+		next.RootTaskRef = &root
+		next.ExecutionTaskRef = &execution
+		next.LiveAttemptID = record.TargetAttemptID
+		next.LiveLeaseID = record.TargetLeaseID
+		return nil
+	})
+	if err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	if committed.ControllerGeneration != record.CommittedGeneration || committed.PendingTransitionID != record.TransitionID {
+		_ = lock.Close()
+		t.Fatalf("committed transition authority = %#v", committed)
+	}
+	finalHead, err := store.finalizeAuthorityTransitionLocked(record)
+	closeErr := lock.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	targetAttempt.AttemptState = AttemptStateLive
+	if err := store.writeAttempt(targetAttempt); err != nil {
+		t.Fatal(err)
+	}
+	target := Admission{Head: finalHead, Attempt: targetAttempt, Lease: targetLease, Workspace: workspace, Snapshot: snapshot}
 	if target.Head.RootTaskRef == nil || !target.Head.RootTaskRef.Equal(authority.Task) {
-		t.Fatalf("committed transition lost root authority: %#v", target.Head)
+		t.Fatalf("finalized transition lost root authority: %#v", target.Head)
 	}
 	if target.Head.ExecutionTaskRef == nil || !target.Head.ExecutionTaskRef.Equal(child) {
-		t.Fatalf("committed transition did not select child execution authority: %#v", target.Head)
+		t.Fatalf("finalized transition did not select child execution authority: %#v", target.Head)
 	}
 	if target.Lease.LeaseID != targetLease.LeaseID || target.Attempt.AttemptID != targetAttempt.AttemptID {
-		t.Fatalf("committed transition selected unexpected attempt/lease: %#v", target)
+		t.Fatalf("finalized transition selected unexpected attempt/lease: %#v", target)
 	}
 	if _, err := store.AdmitMutation(source.Lease.SemanticTaskRef, source.Workspace, source.Snapshot); err == nil {
 		t.Fatal("source lease remained admissible after execution authority changed")
