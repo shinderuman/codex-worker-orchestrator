@@ -41,13 +41,17 @@ type repositoryHarnessDecision struct { Active bool }
 type StateStore struct{}
 
 func execute(cfg Config) error {
-	decision := repositoryHarnessDecision{Active: true}
+	decision, err := evaluateRepositoryHarness(cfg)
+	if err != nil { return err }
 	if decision.Active {
 		return executeController(cfg)
 	}
 	return executeStateBacked(cfg)
 }
 
+func evaluateRepositoryHarness(Config) (repositoryHarnessDecision, error) {
+	return repositoryHarnessDecision{Active: true}, nil
+}
 func executeController(Config) error { return nil }
 func executeStateBacked(cfg Config) error {
 	st, err := NewStateStore(cfg)
