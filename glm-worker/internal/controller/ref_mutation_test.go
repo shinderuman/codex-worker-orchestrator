@@ -41,7 +41,7 @@ func TestRefMutationInvalidatesLeaseAndRecordsRefProvenance(t *testing.T) {
 		t.Fatalf("ref-mutated workspace retained stale lease authority: %v", err)
 	}
 
-	advanced, err := store.RecordMutation(admission, "test-ref-mutation", "success", after)
+	advanced, err := store.RecordAdmittedMutation(admission, "test-ref-mutation", "success", after)
 	if err != nil {
 		t.Fatal(err)
 	}
