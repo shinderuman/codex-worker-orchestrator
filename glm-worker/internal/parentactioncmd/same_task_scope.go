@@ -1,15 +1,17 @@
 package parentactioncmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -30,7 +32,7 @@ func executeScopedFixAction(cfg config.AppConfig, descriptor parentaction.Payloa
 }
 
 func validateSameTaskFixAdmission(cfg config.AppConfig, optionArgs []string) error {
-	options, remaining, err := parentfix.Extract(optionArgs)
+	_, remaining, err := parentfix.Extract(optionArgs)
 	if err != nil || len(remaining) != 0 {
 		return fmt.Errorf("invalid fix options")
 	}
@@ -38,89 +40,83 @@ func validateSameTaskFixAdmission(cfg config.AppConfig, optionArgs []string) err
 	if err != nil {
 		return err
 	}
-	return validateSameTaskScopeAdmission(cfg.RepoRoot, st, options.TaskLocator)
-}
-
-func validateSameTaskScopeAdmission(repoRoot string, st *state.StateStore, taskLocator string) error {
-	if taskLocator != "" {
-		if err := validateCurrentTaskContractLocator(repoRoot, st, taskLocator); err != nil {
-			return fmt.Errorf("same-task task locator rejected: %w; %s", err, sameTaskScopeRegistrationHint)
-		}
-		return nil
-	}
-	bound, err := currentReviewTargetsBoundToTaskDiff(repoRoot, st)
-	if err != nil {
-		return fmt.Errorf("same-task review provenance unavailable: %w; %s", err, sameTaskScopeRegistrationHint)
-	}
-	if !bound {
-		return fmt.Errorf("%s", sameTaskScopeRegistrationHint)
+	if err := validateSameTaskScopeAdmission(cfg.RepoRoot, st); err != nil {
+		return fmt.Errorf("same-task fix rejected: %w", err)
 	}
 	return nil
 }
 
-func currentReviewTargetsBoundToTaskDiff(repoRoot string, st *state.StateStore) (bool, error) {
+func validateSameTaskScopeAdmission(repoRoot string, st *state.StateStore) error {
 	binding, err := st.CurrentParentReviewBinding()
 	if err != nil {
-		return false, err
+		return fmt.Errorf("current review binding is unavailable: %w; %s", err, sameTaskScopeRegistrationHint)
 	}
-	if binding == nil || len(binding.Targets) == 0 {
-		return false, nil
+	if binding == nil || len(binding.Targets) == 0 || binding.Proof == nil {
+		return fmt.Errorf("current machine-owned review evidence is unavailable; %s", sameTaskScopeRegistrationHint)
 	}
-	current, err := state.CaptureGitSnapshot(repoRoot)
+	ready, err := st.ParentReviewAcceptReady()
 	if err != nil {
-		return false, err
+		return fmt.Errorf("current review proof cannot be validated: %w; %s", err, sameTaskScopeRegistrationHint)
 	}
-	if binding.Snapshot.Head != current.Head ||
-		binding.Snapshot.IndexDigest != current.IndexDigest ||
-		binding.Snapshot.WorktreeDigest != current.WorktreeDigest {
-		return false, nil
+	if !ready {
+		return fmt.Errorf("current review proof is not bound to the exact current snapshot; %s", sameTaskScopeRegistrationHint)
 	}
-	paths, available, err := taskdiff.ChangedPaths(repoRoot, st)
-	if err != nil {
-		return false, err
-	}
-	if !available || len(paths) == 0 {
-		return false, nil
-	}
-	changed := make(map[string]struct{}, len(paths))
-	for _, path := range paths {
-		changed[filepath.ToSlash(strings.TrimSpace(path))] = struct{}{}
-	}
+
 	activeTask := filepath.ToSlash(strings.TrimSpace(st.ReadOr("active-task", "")))
+	if activeTask == "" {
+		return fmt.Errorf("current ACTIVE task binding is missing; %s", sameTaskScopeRegistrationHint)
+	}
+	if err := taskcontract.ValidateActiveTaskPath(activeTask); err != nil {
+		return fmt.Errorf("current ACTIVE task binding is invalid: %w", err)
+	}
+
+	diff, available, err := taskdiff.Capture(repoRoot, st)
+	if err != nil {
+		return fmt.Errorf("current task diff cannot be captured: %w; %s", err, sameTaskScopeRegistrationHint)
+	}
 	for _, target := range binding.Targets {
-		path, _, err := reviewtarget.Parse(target)
+		path, locator, err := reviewtarget.Parse(target)
 		if err != nil {
-			return false, err
+			return fmt.Errorf("current review target is invalid: %w", err)
 		}
 		path = filepath.ToSlash(path)
 		if path == activeTask {
-			return false, nil
+			if err := validateMachineBoundTaskAuthorityTarget(repoRoot, activeTask, locator); err != nil {
+				return fmt.Errorf("current review target is not a concrete Task Contract/Acceptance locus: %w; %s", err, sameTaskScopeRegistrationHint)
+			}
+			continue
 		}
-		if _, ok := changed[path]; !ok {
-			return false, nil
+		if !available || !taskDiffCoversReviewTarget(target, diff) {
+			return fmt.Errorf("current review target %q is not covered by the current Task-produced diff; %s", target, sameTaskScopeRegistrationHint)
 		}
 	}
-	return true, nil
+	return nil
 }
 
-func validateCurrentTaskContractLocator(repoRoot string, st *state.StateStore, target string) error {
-	activeTask := filepath.ToSlash(strings.TrimSpace(st.ReadOr("active-task", "")))
-	if activeTask == "" {
-		return fmt.Errorf("current ACTIVE task binding is missing")
+func taskDiffCoversReviewTarget(target string, diff []byte) bool {
+	path, _, err := reviewtarget.Parse(target)
+	if err != nil || len(diff) == 0 {
+		return false
 	}
-	if err := taskcontract.ValidateActiveTaskPath(activeTask); err != nil {
-		return err
+	section := parentevidence.ReviewDiffFileSection(string(diff), path)
+	if section == "" {
+		return false
 	}
-	path, locator, err := reviewtarget.Parse(target)
-	if err != nil {
-		return err
-	}
-	if filepath.ToSlash(path) != activeTask {
-		return fmt.Errorf("task locator path %q does not match current ACTIVE task %q", path, activeTask)
-	}
-	start, end, err := parseTaskLineLocator(locator)
-	if err != nil {
-		return err
+	digest := sha256.Sum256([]byte(section))
+	return parentevidence.ReviewDiffCoversTarget(target, parentevidence.DiffBody{
+		Files: []parentevidence.DiffFile{{
+			Path:        path,
+			Status:      "M",
+			WorktreeSHA: hex.EncodeToString(digest[:]),
+		}},
+		Body: string(diff),
+	})
+}
+
+func validateMachineBoundTaskAuthorityTarget(repoRoot, activeTask, locator string) error {
+	start, end, ok := parentevidence.NumericRange(locator)
+	if !ok {
+		return fmt.Errorf("Task authority target must use a concrete line or line range")
 	}
 	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(activeTask)))
 	if err != nil {
@@ -128,14 +124,14 @@ func validateCurrentTaskContractLocator(repoRoot string, st *state.StateStore, t
 	}
 	lines := strings.Split(string(data), "\n")
 	if start < 1 || end > len(lines) {
-		return fmt.Errorf("task locator %s is outside current ACTIVE task", locator)
+		return fmt.Errorf("Task authority target %s is outside current ACTIVE task", locator)
 	}
 	sections := taskSectionByLine(lines)
 	substantive := false
 	for line := start; line <= end; line++ {
 		section := sections[line-1]
 		if section != "## Contract" && section != "## Acceptance criteria" && section != "## Acceptance" {
-			return fmt.Errorf("task locator %s is outside Contract/Acceptance", locator)
+			return fmt.Errorf("Task authority target %s is outside Contract/Acceptance", locator)
 		}
 		trimmed := strings.TrimSpace(lines[line-1])
 		if trimmed != "" && !strings.HasPrefix(trimmed, "## ") {
@@ -143,28 +139,9 @@ func validateCurrentTaskContractLocator(repoRoot string, st *state.StateStore, t
 		}
 	}
 	if !substantive {
-		return fmt.Errorf("task locator %s does not identify a concrete Contract/Acceptance line", locator)
+		return fmt.Errorf("Task authority target %s does not identify a concrete Contract/Acceptance line", locator)
 	}
 	return nil
-}
-
-func parseTaskLineLocator(locator string) (int, int, error) {
-	parts := strings.Split(locator, "-")
-	if len(parts) != 1 && len(parts) != 2 {
-		return 0, 0, fmt.Errorf("task locator must be a line or line range")
-	}
-	start, err := strconv.Atoi(parts[0])
-	if err != nil || start < 1 {
-		return 0, 0, fmt.Errorf("task locator must be a positive line or line range")
-	}
-	end := start
-	if len(parts) == 2 {
-		end, err = strconv.Atoi(parts[1])
-		if err != nil || end < start {
-			return 0, 0, fmt.Errorf("task locator range is invalid")
-		}
-	}
-	return start, end, nil
 }
 
 func taskSectionByLine(lines []string) []string {
