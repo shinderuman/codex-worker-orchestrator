@@ -2,7 +2,6 @@ package parentactioncmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -167,62 +166,18 @@ func updatePublicationRefControlled(cfg config.AppConfig, candidate state.Public
 	if err != nil {
 		return err
 	}
-	effect := controller.EffectExpectation{
-		Surface:     controller.MutationSurfaceRef,
-		Resource:    branchRef,
-		ExpectedOld: oldOID,
-		ExpectedNew: newOID,
-	}
-	record, err := store.BeginTransition("publication-ref-update", admission.Head.ControllerGeneration, []controller.EffectExpectation{effect})
-	if err != nil {
-		return err
-	}
-	applyErr := updatePublicationRef(cfg.RepoRoot, candidate, branchRef, newOID, oldOID)
-	observed, observeErr := gitFinalizationOutput(cfg.RepoRoot, "rev-parse", "--verify", branchRef)
-	observed = strings.TrimSpace(observed)
-	actual := map[string]string{effect.Key(): observed}
-	if markErr := store.MarkTransitionApplied(record, actual); markErr != nil {
-		return errors.Join(applyErr, observeErr, markErr)
-	}
-	loaded, _, loadErr := store.LoadTransition(record.TransitionID)
-	if loadErr != nil {
-		return errors.Join(applyErr, observeErr, loadErr)
-	}
-	after, snapshotErr := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
-	if snapshotErr != nil {
-		return errors.Join(applyErr, observeErr, snapshotErr)
-	}
-	classification := store.ClassifyTransition(loaded, actual)[effect.Key()]
-	switch classification {
-	case controller.EffectExpectedNew:
-		if _, commitErr := store.CommitTransition(loaded, actual, false, nil); commitErr != nil {
-			return errors.Join(applyErr, observeErr, commitErr)
-		}
-		if _, finalizeErr := store.FinalizeTransition(loaded); finalizeErr != nil {
-			return errors.Join(applyErr, observeErr, finalizeErr)
-		}
-	case controller.EffectExpectedOld:
-		if applyErr == nil {
-			_, failErr := store.FailClosed("publication ref update reported success without expected ref effect", loaded.TransitionID, workspace, before, after, actual)
-			return errors.Join(fmt.Errorf("publication ref update did not apply expected effect"), failErr)
-		}
-		if _, cancelErr := store.CancelTransition(loaded, actual); cancelErr != nil {
-			return errors.Join(applyErr, observeErr, cancelErr)
-		}
-	case controller.EffectUnexpected:
-		_, failErr := store.FailClosed("publication ref update reached unexpected ref state", loaded.TransitionID, workspace, before, after, actual)
-		return errors.Join(applyErr, observeErr, fmt.Errorf("publication ref update reached unexpected state"), failErr)
-	default:
-		return errors.Join(applyErr, observeErr, fmt.Errorf("publication ref transition classification is unavailable"))
-	}
-	outcome := "success"
-	if applyErr != nil {
-		outcome = "error"
-	}
-	if _, provenanceErr := store.RecordTransitionMutation(admission, "publication-ref-update:"+branchRef, outcome, after); provenanceErr != nil {
-		return errors.Join(applyErr, observeErr, provenanceErr)
-	}
-	return errors.Join(applyErr, observeErr)
+	_, err = store.ApplyRefTransition(
+		admission,
+		"publication-ref-update",
+		branchRef,
+		oldOID,
+		newOID,
+		"publication-ref-update:"+branchRef,
+		func() error {
+			return updatePublicationRef(cfg.RepoRoot, candidate, branchRef, newOID, oldOID)
+		},
+	)
+	return err
 }
 
 func updatePublicationRef(repoRoot string, candidate state.PublicationCandidate, branchRef, newOID, oldOID string) error {
