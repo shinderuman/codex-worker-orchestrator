@@ -16,7 +16,8 @@ func parentActionNeedsControllerGuard(descriptor parentActionCommandDescriptor, 
 		parentActionExecutionComplete,
 		parentActionExecutionInstall,
 		parentActionExecutionDefectRegistration,
-		parentActionExecutionImprovementDisposition:
+		parentActionExecutionImprovementDisposition,
+		parentActionExecutionObservationExecute:
 		return true
 	case parentActionExecutionGitEvidence:
 		return descriptor.Action == "push-binding"
