@@ -7,7 +7,6 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -19,14 +18,6 @@ func executeControllerGuardedStateBacked(
 	rf RunnerFactory,
 	stdout io.Writer,
 ) error {
-	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
-	if err != nil {
-		return err
-	}
-	if !active {
-		return executeLegacyStateBacked(cmd, owner, cfg, st, rf, stdout)
-	}
-
 	controllerStore, err := controller.Open(cfg)
 	if err != nil {
 		return err
@@ -40,16 +31,7 @@ func executeControllerGuardedStateBacked(
 	if err := preflightControllerWorkspace(cmd, cfg, controllerStore); err != nil {
 		return err
 	}
-	legacyLock, err := AcquireRepoLock(st.LockPath())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = legacyLock.Close() }()
-	if err := admitParentCommand(cmd, st); err != nil {
-		return err
-	}
-
-	admission, err := admitControllerMutation(cmd, cfg, st, controllerStore)
+	admission, err := admitControllerMutation(cmd, cfg, controllerStore)
 	if err != nil {
 		return err
 	}
@@ -111,29 +93,9 @@ func preflightControllerWorkspace(cmd Command, cfg config.AppConfig, controllerS
 	return nil
 }
 
-func executeLegacyStateBacked(
-	cmd Command,
-	owner commandDispatchOwner,
-	cfg config.AppConfig,
-	st *state.StateStore,
-	rf RunnerFactory,
-	stdout io.Writer,
-) error {
-	lock, err := AcquireRepoLock(st.LockPath())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = lock.Close() }()
-	if err := admitParentCommand(cmd, st); err != nil {
-		return err
-	}
-	return executeControllerAdmittedCommand(cmd, owner, cfg, st, rf, stdout)
-}
-
 func admitControllerMutation(
 	cmd Command,
 	cfg config.AppConfig,
-	st *state.StateStore,
 	controllerStore *controller.Store,
 ) (controller.Admission, error) {
 	workspace, err := controller.ResolveWorkspaceIdentity(cfg.RepoRoot, controllerStore.Identity())
@@ -144,25 +106,24 @@ func admitControllerMutation(
 	if err != nil {
 		return controller.Admission{}, err
 	}
-	pinnedTask := st.ReadOr("active-task", "")
-	if cmd.Mode == ModeNewTask {
-		pinnedTask = ""
-	}
-	task, err := controller.ResolveSemanticTaskRef(cfg.RepoRoot, pinnedTask)
-	if err != nil {
-		return controller.Admission{}, err
-	}
 	head, err := controllerStore.LoadHead()
 	if err != nil {
 		return controller.Admission{}, err
 	}
-	if head.LiveLeaseID == "" {
-		return controllerStore.BootstrapExecution(task, workspace, snapshot)
+	if head.LiveLeaseID == "" || cmd.Mode == ModeNewTask {
+		authority, authorityErr := controller.ResolveCommittedTaskAuthority(controllerStore.Identity().PrimaryRoot)
+		if authorityErr != nil {
+			return controller.Admission{}, authorityErr
+		}
+		if head.LiveLeaseID == "" {
+			return controllerStore.BootstrapExecution(authority.Task, workspace, snapshot)
+		}
+		return controllerStore.RotateExecution(authority.Task, workspace, snapshot, "new-task")
 	}
-	if cmd.Mode == ModeNewTask {
-		return controllerStore.RotateExecution(task, workspace, snapshot, "new-task")
+	if head.ExecutionTaskRef == nil {
+		return controller.Admission{}, fmt.Errorf("repository controller has no execution task authority")
 	}
-	return controllerStore.AdmitMutationOrFailClosed(task, workspace, snapshot)
+	return controllerStore.AdmitMutationOrFailClosed(*head.ExecutionTaskRef, workspace, snapshot)
 }
 
 func executeControllerAdmittedCommand(

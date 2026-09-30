@@ -7,8 +7,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func parentActionNeedsControllerGuard(descriptor parentActionCommandDescriptor, execution parentActionExecutionKind) bool {
@@ -33,14 +31,6 @@ func executeControllerGuardedParentMutation(
 	execution parentActionExecutionKind,
 	operation func() error,
 ) error {
-	st := state.AttachStateStore(cfg)
-	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
-	if err != nil {
-		return err
-	}
-	if !active {
-		return operation()
-	}
 	controllerStore, err := controller.Open(cfg)
 	if err != nil {
 		return err
@@ -51,7 +41,7 @@ func executeControllerGuardedParentMutation(
 	}
 	defer func() { _ = lock.Close() }()
 
-	admission, err := admitParentControllerMutation(cfg, st, controllerStore)
+	admission, err := admitParentControllerMutation(cfg, controllerStore)
 	if err != nil {
 		return err
 	}
@@ -61,7 +51,6 @@ func executeControllerGuardedParentMutation(
 
 func admitParentControllerMutation(
 	cfg config.AppConfig,
-	st *state.StateStore,
 	controllerStore *controller.Store,
 ) (controller.Admission, error) {
 	workspace, err := controller.ResolveWorkspaceIdentity(cfg.RepoRoot, controllerStore.Identity())
@@ -72,18 +61,21 @@ func admitParentControllerMutation(
 	if err != nil {
 		return controller.Admission{}, err
 	}
-	task, err := controller.ResolveSemanticTaskRef(cfg.RepoRoot, st.ReadOr("active-task", ""))
-	if err != nil {
-		return controller.Admission{}, err
-	}
 	head, err := controllerStore.LoadHead()
 	if err != nil {
 		return controller.Admission{}, err
 	}
 	if head.LiveLeaseID == "" {
-		return controllerStore.BootstrapExecution(task, workspace, before)
+		authority, authorityErr := controller.ResolveCommittedTaskAuthority(controllerStore.Identity().PrimaryRoot)
+		if authorityErr != nil {
+			return controller.Admission{}, authorityErr
+		}
+		return controllerStore.BootstrapExecution(authority.Task, workspace, before)
 	}
-	return controllerStore.AdmitMutationOrFailClosed(task, workspace, before)
+	if head.ExecutionTaskRef == nil {
+		return controller.Admission{}, fmt.Errorf("repository controller has no execution task authority")
+	}
+	return controllerStore.AdmitMutationOrFailClosed(*head.ExecutionTaskRef, workspace, before)
 }
 
 func finalizeParentControllerMutation(
