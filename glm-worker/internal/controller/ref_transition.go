@@ -137,37 +137,7 @@ func (s *Store) commitRefTransition(
 		return Admission{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	targetLease, err := s.loadLease(record.TargetLeaseID)
-	if err != nil {
-		return Admission{}, err
-	}
-	if targetLease.AttemptID != record.SourceAttemptID || targetLease.WorkspaceID != record.TargetWorkspaceID ||
-		targetLease.ControllerGeneration != record.TargetGeneration || targetLease.ExpectedWorkspaceSnapshotID != after.ID {
-		return Admission{}, fmt.Errorf("ref transition target lease does not match journal authority")
-	}
-	if err := s.markTransitionApplied(record, observation.values); err != nil {
-		return Admission{}, err
-	}
-	if _, err := s.commitAuthorityTransitionLocked(record, observation.values, false, func(next *RepositoryControllerHead) error {
-		next.LiveLeaseID = record.TargetLeaseID
-		return nil
-	}); err != nil {
-		return Admission{}, err
-	}
-	finalHead, err := s.finalizeAuthorityTransitionLocked(record)
-	if err != nil {
-		return Admission{}, err
-	}
-	if err := s.writeTransitionMutationProvenance(record, record.TargetLeaseID, command, "success", admission.Snapshot, after); err != nil {
-		return Admission{}, err
-	}
-	return Admission{
-		Head:      finalHead,
-		Attempt:   admission.Attempt,
-		Lease:     targetLease,
-		Workspace: admission.Workspace,
-		Snapshot:  after,
-	}, observation.applyErr
+	return s.commitRefTransitionLocked(record, admission, observation, after, command)
 }
 
 func (s *Store) abortRefTransition(
