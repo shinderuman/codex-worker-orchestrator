@@ -132,7 +132,7 @@ run_repository_lint() {
 }
 
 run_go_package_test() {
-	if ! printf '%s\n' "$validation_scope" | grep -Eq '^\./([A-Za-z0-9_.-]+/)*([A-Za-z0-9_.-]+|\.\.\.)$'; then
+	if ! printf '%s\n' "$validation_scope" | grep -Eq '^\./[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$'; then
 		reject invalid_package_scope
 	fi
 	go -C "$target_root/glm-worker" test "$validation_scope"
