@@ -14,14 +14,16 @@ import (
 type controllerSemanticAction string
 
 type controllerSemanticCommand struct {
-	Action            controllerSemanticAction            `json:"action"`
-	Observation       *controller.FindingObservationInput `json:"observation,omitempty"`
-	AttemptID         string                              `json:"attempt_id,omitempty"`
-	ProjectSnapshotID string                              `json:"project_snapshot_id,omitempty"`
-	FindingID         string                              `json:"finding_id,omitempty"`
-	Decision          *controller.FindingDecision         `json:"decision,omitempty"`
-	EpisodeID         string                              `json:"episode_id,omitempty"`
-	EpisodeRevision   uint64                              `json:"episode_revision,omitempty"`
+	Action                       controllerSemanticAction            `json:"action"`
+	Observation                  *controller.FindingObservationInput `json:"observation,omitempty"`
+	AttemptID                    string                              `json:"attempt_id,omitempty"`
+	ProjectSnapshotID            string                              `json:"project_snapshot_id,omitempty"`
+	FindingID                    string                              `json:"finding_id,omitempty"`
+	Decision                     *controller.FindingDecision         `json:"decision,omitempty"`
+	EpisodeID                    string                              `json:"episode_id,omitempty"`
+	EpisodeRevision              uint64                              `json:"episode_revision,omitempty"`
+	ExpectedControllerGeneration uint64                              `json:"expected_controller_generation,omitempty"`
+	SatisfiedTaskRef             *controller.SemanticTaskRef         `json:"satisfied_task_ref,omitempty"`
 }
 
 type controllerSemanticOutput struct {
@@ -36,6 +38,7 @@ const (
 	controllerSemanticObserveTerminal controllerSemanticAction = "observe-terminal-finding"
 	controllerSemanticResolve         controllerSemanticAction = "resolve-finding"
 	controllerSemanticSchedule        controllerSemanticAction = "schedule-episode"
+	controllerSemanticSatisfy         controllerSemanticAction = "satisfy-episode-task"
 )
 
 func runControllerSemantic(
@@ -115,6 +118,8 @@ func executeControllerSemantic(
 		return executeControllerSemanticResolve(store, command)
 	case controllerSemanticSchedule:
 		return executeControllerSemanticSchedule(store, command)
+	case controllerSemanticSatisfy:
+		return executeControllerSemanticSatisfy(store, command)
 	default:
 		return controllerSemanticOutput{}, fmt.Errorf("unsupported controller semantic action %q", command.Action)
 	}
@@ -199,6 +204,26 @@ func executeControllerSemanticSchedule(
 		return controllerSemanticOutput{}, fmt.Errorf("episode scheduling requires episode identity and revision")
 	}
 	result, err := store.ScheduleEpisode(command.EpisodeID, command.EpisodeRevision)
+	if err != nil {
+		return controllerSemanticOutput{}, err
+	}
+	return controllerSemanticOutput{Action: command.Action, Schedule: &result}, nil
+}
+
+func executeControllerSemanticSatisfy(
+	store *controller.Store,
+	command controllerSemanticCommand,
+) (controllerSemanticOutput, error) {
+	if command.EpisodeID == "" || command.EpisodeRevision == 0 || command.ProjectSnapshotID == "" || command.SatisfiedTaskRef == nil {
+		return controllerSemanticOutput{}, fmt.Errorf("episode satisfaction requires episode, project snapshot, and satisfied task authority")
+	}
+	result, err := store.SatisfyEpisodeTask(controller.EpisodeSatisfactionInput{
+		EpisodeID:                    command.EpisodeID,
+		ExpectedRevision:             command.EpisodeRevision,
+		ExpectedControllerGeneration: command.ExpectedControllerGeneration,
+		ProjectSnapshotID:            command.ProjectSnapshotID,
+		SatisfiedTaskRef:             *command.SatisfiedTaskRef,
+	})
 	if err != nil {
 		return controllerSemanticOutput{}, err
 	}
