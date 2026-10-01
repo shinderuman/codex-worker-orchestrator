@@ -66,7 +66,7 @@ func newCleanupProofFixture(t *testing.T, publishEpisode bool) (*Store, Evidence
 			DependencyGraphSnapshotID: "dependency-snapshot-cleanup",
 			AdmittedClosureTaskRefs:   []SemanticTaskRef{seal.SemanticTaskRef},
 			TaskIndexHeads: []EvidenceSubjectHead{{
-				SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef),
+				SubjectID:   taskEvidenceSubjectID(seal.SemanticTaskRef),
 				RevisionRef: taskRef,
 			}},
 			AttemptSeals:         []EvidenceObjectRef{sealRef},

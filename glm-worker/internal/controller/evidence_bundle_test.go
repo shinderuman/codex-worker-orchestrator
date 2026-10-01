@@ -158,7 +158,7 @@ func TestTaskAndEpisodeBundlesIncludeSemanticEvidenceLinks(t *testing.T) {
 		DependencyGraphSnapshotID: "dependency-graph-1",
 		AdmittedClosureTaskRefs:   []SemanticTaskRef{seal.SemanticTaskRef},
 		TaskIndexHeads: []EvidenceSubjectHead{{
-			SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef),
+			SubjectID:   taskEvidenceSubjectID(seal.SemanticTaskRef),
 			RevisionRef: taskRef,
 		}},
 		AttemptSeals:         []EvidenceObjectRef{sealRef},
@@ -186,8 +186,8 @@ func TestTaskAndEpisodeBundlesIncludeSemanticEvidenceLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, ref := range map[string]EvidenceObjectRef{
-		"finding": findingRef,
-		"dependency": dependencyRef,
+		"finding":     findingRef,
+		"dependency":  dependencyRef,
 		"publication": publicationRef,
 	} {
 		if !bundleContainsRef(taskBundle, ref) {
@@ -195,8 +195,8 @@ func TestTaskAndEpisodeBundlesIncludeSemanticEvidenceLinks(t *testing.T) {
 		}
 	}
 	for name, ref := range map[string]EvidenceObjectRef{
-		"finding": findingRef,
-		"transition": transitionRef,
+		"finding":     findingRef,
+		"transition":  transitionRef,
 		"integration": integrationRef,
 	} {
 		if !bundleContainsRef(episodeBundle, ref) {
@@ -240,8 +240,8 @@ func storeBundleAttemptSeal(t *testing.T, store *Store, source, attemptID, taskP
 	record := AttemptSeal{
 		SchemaVersion: evidenceSchemaVersion, RepositoryIdentity: store.Identity().LineageID,
 		SemanticTaskRef: SemanticTaskRef{TaskPath: taskPath, ContractDigest: attemptID + "-contract"},
-		RootTaskRef: SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root-contract"},
-		AttemptID: attemptID, EpisodeID: episodeID, EpisodeRevision: 1, ControllerGeneration: generation,
+		RootTaskRef:     SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root-contract"},
+		AttemptID:       attemptID, EpisodeID: episodeID, EpisodeRevision: 1, ControllerGeneration: generation,
 		SealingTransitionID: bundleTransitionID(generation), RevokedLeaseID: "lease-" + attemptID,
 		WorkspaceID: "workspace-" + attemptID, ExecutionPurpose: "blocker-execution",
 		StartedAt: time.Unix(5000+int64(generation), 0).UTC(), SealedAt: time.Unix(5100+int64(generation), 0).UTC(),
@@ -282,7 +282,7 @@ func storeBundleEpisodeRevision(t *testing.T, store *Store, seal AttemptSeal, ta
 		DependencyGraphSnapshotID: fmt.Sprintf("dependency-graph-%d", generation),
 		AdmittedClosureTaskRefs:   []SemanticTaskRef{seal.SemanticTaskRef},
 		TaskIndexHeads: []EvidenceSubjectHead{{
-			SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef),
+			SubjectID:   taskEvidenceSubjectID(seal.SemanticTaskRef),
 			RevisionRef: taskRef,
 		}},
 		AttemptSeals:         seals,
