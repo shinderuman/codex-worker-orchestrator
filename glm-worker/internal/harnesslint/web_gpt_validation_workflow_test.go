@@ -73,7 +73,7 @@ func TestWebGPTValidationControllerEmitsBoundedResult(t *testing.T) {
 		"reported_control_sha=$control_sha",
 		"reported_artifact_locator=$artifact_locator",
 	})
-	if !strings.Contains(text, "invalid_package_scope") || !strings.Contains(text, "^[A-Za-z0-9_]") {
+	if !strings.Contains(text, "invalid_package_scope") || !strings.Contains(text, "^\\./[A-Za-z0-9_]") {
 		t.Fatal("focused package scope grammar is not bounded")
 	}
 }
