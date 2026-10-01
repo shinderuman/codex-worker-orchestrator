@@ -266,7 +266,6 @@ func (s *Store) findEvidenceBundlePublication(
 		}
 		if ok {
 			match = index
-		} else if match >= 0 {
 			break
 		}
 	}
