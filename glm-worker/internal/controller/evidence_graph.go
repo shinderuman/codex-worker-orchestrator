@@ -8,9 +8,10 @@ import (
 )
 
 type evidenceGraphWalker struct {
-	store    *Store
-	refs     map[string]EvidenceObjectRef
-	expanded map[string]bool
+	store              *Store
+	refs               map[string]EvidenceObjectRef
+	expanded           map[string]bool
+	publishedTaskHeads map[string]EvidenceObjectRef
 }
 
 func (s *Store) validateEvidenceGraphRoots(
@@ -115,6 +116,10 @@ func (w *evidenceGraphWalker) walkEvidenceHead(
 	}
 	if head.ControllerGeneration != ledger.ControllerGeneration || head.ProjectSnapshotID != ledger.ProjectSnapshotID {
 		return EvidenceHead{}, evidenceGraphError(ref, "evidence head authority does not match ledger authority")
+	}
+	w.publishedTaskHeads = make(map[string]EvidenceObjectRef, len(head.TaskHeads))
+	for _, taskHead := range head.TaskHeads {
+		w.publishedTaskHeads[taskHead.SubjectID] = taskHead.RevisionRef
 	}
 	if err := w.walkTaskHeads(head.TaskHeads, head.ControllerGeneration); err != nil {
 		return EvidenceHead{}, err
@@ -260,6 +265,13 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionEvidence(subject string, revisi
 
 func (w *evidenceGraphWalker) walkEpisodeTaskIndexHeads(revision EpisodeIndexRevision) error {
 	for _, head := range revision.TaskIndexHeads {
+		publishedRef, ok := w.publishedTaskHeads[head.SubjectID]
+		if !ok {
+			return evidenceGraphError(head.RevisionRef, "episode task index head is not published task authority")
+		}
+		if err := w.store.validatePublishedTaskRevision(head.SubjectID, publishedRef, head.RevisionRef); err != nil {
+			return err
+		}
 		if err := w.walkTaskRevisionChain(head.SubjectID, head.RevisionRef, revision.ControllerGeneration); err != nil {
 			return err
 		}

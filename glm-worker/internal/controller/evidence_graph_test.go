@@ -122,6 +122,145 @@ func TestEvidenceGraphRejectsBrokenLedgerSequence(t *testing.T) {
 	}
 }
 
+func TestEvidenceGraphRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(t *testing.T) {
+	store := newEvidenceTestStore(t)
+	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"}
+	published := testTaskIndexRevision(task, 2, "transition-2", time.Unix(3300, 0).UTC())
+	publishedRef, _, err := store.StoreTaskIndexRevision(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unpublished := testTaskIndexRevision(task, 2, "transition-2", time.Unix(3301, 0).UTC())
+	unpublishedRef, _, err := store.StoreTaskIndexRevision(unpublished)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episode := EpisodeIndexRevision{
+		SchemaVersion:             evidenceSchemaVersion,
+		EpisodeID:                 "episode-unpublished-task",
+		RootTaskRef:               task,
+		EpisodeRevision:           1,
+		DependencyGraphSnapshotID: "dependency-episode-unpublished-task",
+		AdmittedClosureTaskRefs:   []SemanticTaskRef{task},
+		TaskIndexHeads: []EvidenceSubjectHead{{
+			SubjectID:   taskEvidenceSubjectID(task),
+			RevisionRef: unpublishedRef,
+		}},
+		State:                "open",
+		ControllerGeneration: 2,
+		TransitionID:         "transition-2",
+		CreatedAt:            time.Unix(3302, 0).UTC(),
+	}
+	episodeRef, _, err := store.StoreEpisodeIndexRevision(episode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headRef, _, err := store.StoreEvidenceHead(EvidenceHead{
+		SchemaVersion:      evidenceSchemaVersion,
+		RepositoryIdentity: store.identity.LineageID,
+		TaskHeads: []EvidenceSubjectHead{{
+			SubjectID:   taskEvidenceSubjectID(task),
+			RevisionRef: publishedRef,
+		}},
+		EpisodeHeads: []EvidenceSubjectHead{{
+			SubjectID:   episode.EpisodeID,
+			RevisionRef: episodeRef,
+		}},
+		ControllerGeneration: 2,
+		ProjectSnapshotID:    "snapshot-2",
+		CreatedAt:            time.Unix(3303, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledgerRef, _, err := store.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
+		SchemaVersion:        evidenceSchemaVersion,
+		Sequence:             1,
+		RepositoryIdentity:   store.identity.LineageID,
+		ControllerGeneration: 2,
+		TransitionID:         "transition-2",
+		ProjectSnapshotID:    "snapshot-2",
+		EvidenceHeadRef:      headRef,
+		CreatedAt:            time.Unix(3304, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.validateEvidenceGraphRoots(ledgerRef, headRef, 1); err == nil {
+		t.Fatal("evidence graph accepted episode TaskIndexHead outside published Task authority")
+	}
+}
+
+func TestEvidenceGraphAcceptsHistoricalEpisodeTaskHeadReachableFromPublishedAuthority(t *testing.T) {
+	store := newEvidenceTestStore(t)
+	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"}
+	first := testTaskIndexRevision(task, 1, "transition-1", time.Unix(3400, 0).UTC())
+	firstRef, _, err := store.StoreTaskIndexRevision(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := testTaskIndexRevision(task, 2, "transition-2", time.Unix(3401, 0).UTC())
+	second.PreviousRevision = &firstRef
+	secondRef, _, err := store.StoreTaskIndexRevision(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episode := EpisodeIndexRevision{
+		SchemaVersion:             evidenceSchemaVersion,
+		EpisodeID:                 "episode-history",
+		RootTaskRef:               task,
+		EpisodeRevision:           1,
+		DependencyGraphSnapshotID: "dependency-episode-history",
+		AdmittedClosureTaskRefs:   []SemanticTaskRef{task},
+		TaskIndexHeads: []EvidenceSubjectHead{{
+			SubjectID:   taskEvidenceSubjectID(task),
+			RevisionRef: firstRef,
+		}},
+		State:                "open",
+		ControllerGeneration: 2,
+		TransitionID:         "transition-2",
+		CreatedAt:            time.Unix(3402, 0).UTC(),
+	}
+	episodeRef, _, err := store.StoreEpisodeIndexRevision(episode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headRef, _, err := store.StoreEvidenceHead(EvidenceHead{
+		SchemaVersion:      evidenceSchemaVersion,
+		RepositoryIdentity: store.identity.LineageID,
+		TaskHeads: []EvidenceSubjectHead{{
+			SubjectID:   taskEvidenceSubjectID(task),
+			RevisionRef: secondRef,
+		}},
+		EpisodeHeads: []EvidenceSubjectHead{{
+			SubjectID:   episode.EpisodeID,
+			RevisionRef: episodeRef,
+		}},
+		ControllerGeneration: 2,
+		ProjectSnapshotID:    "snapshot-2",
+		CreatedAt:            time.Unix(3403, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledgerRef, _, err := store.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
+		SchemaVersion:        evidenceSchemaVersion,
+		Sequence:             1,
+		RepositoryIdentity:   store.identity.LineageID,
+		ControllerGeneration: 2,
+		TransitionID:         "transition-2",
+		ProjectSnapshotID:    "snapshot-2",
+		EvidenceHeadRef:      headRef,
+		CreatedAt:            time.Unix(3404, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.validateEvidenceGraphRoots(ledgerRef, headRef, 1); err != nil {
+		t.Fatalf("historical episode TaskIndexHead reachable from published Task authority was rejected: %v", err)
+	}
+}
+
 func storeSingleTaskEvidenceAuthority(
 	t *testing.T,
 	store *Store,
