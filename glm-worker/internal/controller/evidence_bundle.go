@@ -69,11 +69,11 @@ func (s *Store) BuildAttemptEvidenceBundle(sealRef EvidenceObjectRef) (EvidenceB
 	if err := collector.addAttemptFinalizations(taskRef, sealRef); err != nil {
 		return EvidenceBundleProjection{}, err
 	}
-	if err := collector.addRef(taskRef); err != nil {
+	if err := collector.addTaskRevision(taskRef); err != nil {
 		return EvidenceBundleProjection{}, err
 	}
 	if episodeRef != nil {
-		if err := collector.addRef(*episodeRef); err != nil {
+		if err := collector.addEpisodeRevision(*episodeRef); err != nil {
 			return EvidenceBundleProjection{}, err
 		}
 	}
@@ -109,7 +109,11 @@ func (s *Store) BuildEpisodeEvidenceBundle(rootRef EvidenceObjectRef) (EvidenceB
 	if err != nil {
 		return EvidenceBundleProjection{}, err
 	}
-	publication, err := s.findEvidenceBundlePublication(authority, nil, []EvidenceObjectRef{rootRef})
+	taskRefs, err := s.episodeTaskIndexRefs(rootRef)
+	if err != nil {
+		return EvidenceBundleProjection{}, err
+	}
+	publication, err := s.findEvidenceBundlePublication(authority, taskRefs, []EvidenceObjectRef{rootRef})
 	if err != nil {
 		return EvidenceBundleProjection{}, err
 	}
@@ -117,8 +121,10 @@ func (s *Store) BuildEpisodeEvidenceBundle(rootRef EvidenceObjectRef) (EvidenceB
 	if err := collector.addEpisodeRevisionChain(rootRef); err != nil {
 		return EvidenceBundleProjection{}, err
 	}
-	if err := collector.addEpisodeTaskHistory(publication.head, rootRef); err != nil {
-		return EvidenceBundleProjection{}, err
+	for _, taskRef := range taskRefs {
+		if err := collector.addTaskRevisionChain(taskRef); err != nil {
+			return EvidenceBundleProjection{}, err
+		}
 	}
 	return collector.finishBundle(evidenceBundleEpisode, rootRef, root.EpisodeID, publication)
 }
@@ -364,6 +370,29 @@ func (s *Store) episodeRevisionChainContains(headRef, target EvidenceObjectRef) 
 	}
 }
 
+func (s *Store) episodeTaskIndexRefs(root EvidenceObjectRef) ([]EvidenceObjectRef, error) {
+	seen := map[string]EvidenceObjectRef{}
+	current := root
+	for {
+		revision, err := s.LoadEpisodeIndexRevision(current)
+		if err != nil {
+			return nil, err
+		}
+		for _, head := range revision.TaskIndexHeads {
+			seen[evidenceRefKey(head.RevisionRef)] = head.RevisionRef
+		}
+		if revision.PreviousRevision == nil {
+			break
+		}
+		current = *revision.PreviousRevision
+	}
+	refs := make([]EvidenceObjectRef, 0, len(seen))
+	for _, ref := range seen {
+		refs = append(refs, ref)
+	}
+	return canonicalEvidenceRefs(refs), nil
+}
+
 func newEvidenceBundleCollector(store *Store) *evidenceBundleCollector {
 	return &evidenceBundleCollector{store: store, refs: map[string]EvidenceObjectRef{}}
 }
@@ -463,17 +492,40 @@ func (c *evidenceBundleCollector) addAttemptFinalizations(taskRoot, sealRef Evid
 	}
 }
 
+func (c *evidenceBundleCollector) addTaskRevision(ref EvidenceObjectRef) error {
+	if err := c.addRef(ref); err != nil {
+		return err
+	}
+	revision, err := c.store.LoadTaskIndexRevision(ref)
+	if err != nil {
+		return err
+	}
+	if err := c.addIndexEvidence(revision.AttemptSeals, revision.Finalizations); err != nil {
+		return err
+	}
+	if err := c.addRefs(revision.FindingRecords); err != nil {
+		return err
+	}
+	if err := c.addRefs(revision.DependencyEdgeRecords); err != nil {
+		return err
+	}
+	if err := c.addRefs(revision.PublicationLineageRecords); err != nil {
+		return err
+	}
+	if revision.TerminalRecord != nil {
+		return c.addRef(*revision.TerminalRecord)
+	}
+	return nil
+}
+
 func (c *evidenceBundleCollector) addTaskRevisionChain(root EvidenceObjectRef) error {
 	current := root
 	for {
-		if err := c.addRef(current); err != nil {
+		if err := c.addTaskRevision(current); err != nil {
 			return err
 		}
 		revision, err := c.store.LoadTaskIndexRevision(current)
 		if err != nil {
-			return err
-		}
-		if err := c.addIndexEvidence(revision.AttemptSeals, revision.Finalizations); err != nil {
 			return err
 		}
 		if revision.PreviousRevision == nil {
@@ -483,17 +535,40 @@ func (c *evidenceBundleCollector) addTaskRevisionChain(root EvidenceObjectRef) e
 	}
 }
 
+func (c *evidenceBundleCollector) addEpisodeRevision(ref EvidenceObjectRef) error {
+	if err := c.addRef(ref); err != nil {
+		return err
+	}
+	revision, err := c.store.LoadEpisodeIndexRevision(ref)
+	if err != nil {
+		return err
+	}
+	if err := c.addIndexEvidence(revision.AttemptSeals, revision.Finalizations); err != nil {
+		return err
+	}
+	if err := c.addRefs(revision.FindingRecords); err != nil {
+		return err
+	}
+	if err := c.addRefs(revision.TransitionRecords); err != nil {
+		return err
+	}
+	if err := c.addRefs(revision.IntegrationHistory); err != nil {
+		return err
+	}
+	if revision.CloseRecord != nil {
+		return c.addRef(*revision.CloseRecord)
+	}
+	return nil
+}
+
 func (c *evidenceBundleCollector) addEpisodeRevisionChain(root EvidenceObjectRef) error {
 	current := root
 	for {
-		if err := c.addRef(current); err != nil {
+		if err := c.addEpisodeRevision(current); err != nil {
 			return err
 		}
 		revision, err := c.store.LoadEpisodeIndexRevision(current)
 		if err != nil {
-			return err
-		}
-		if err := c.addIndexEvidence(revision.AttemptSeals, revision.Finalizations); err != nil {
 			return err
 		}
 		if revision.PreviousRevision == nil {
@@ -517,52 +592,13 @@ func (c *evidenceBundleCollector) addIndexEvidence(seals, finalizations []Eviden
 	return nil
 }
 
-func (c *evidenceBundleCollector) addEpisodeTaskHistory(head EvidenceHead, episodeRoot EvidenceObjectRef) error {
-	sealRefs, err := c.episodeSealRefs(episodeRoot)
-	if err != nil {
-		return err
-	}
-	subjects := map[string]bool{}
-	for _, sealRef := range sealRefs {
-		seal, err := c.store.LoadAttemptSeal(sealRef)
-		if err != nil {
-			return err
-		}
-		subjects[taskEvidenceSubjectID(seal.SemanticTaskRef)] = true
-	}
-	for subject := range subjects {
-		taskHead, ok := evidenceSubjectHead(head.TaskHeads, subject)
-		if !ok {
-			return fmt.Errorf("episode Bundle task %s is absent from publication evidence head", subject)
-		}
-		if err := c.addTaskRevisionChain(taskHead.RevisionRef); err != nil {
+func (c *evidenceBundleCollector) addRefs(refs []EvidenceObjectRef) error {
+	for _, ref := range refs {
+		if err := c.addRef(ref); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (c *evidenceBundleCollector) episodeSealRefs(root EvidenceObjectRef) ([]EvidenceObjectRef, error) {
-	seen := map[string]EvidenceObjectRef{}
-	current := root
-	for {
-		revision, err := c.store.LoadEpisodeIndexRevision(current)
-		if err != nil {
-			return nil, err
-		}
-		for _, ref := range revision.AttemptSeals {
-			seen[evidenceRefKey(ref)] = ref
-		}
-		if revision.PreviousRevision == nil {
-			break
-		}
-		current = *revision.PreviousRevision
-	}
-	refs := make([]EvidenceObjectRef, 0, len(seen))
-	for _, ref := range seen {
-		refs = append(refs, ref)
-	}
-	return canonicalEvidenceRefs(refs), nil
 }
 
 func (c *evidenceBundleCollector) finishBundle(kind string, root EvidenceObjectRef, identity string, publication evidenceBundlePublication) (EvidenceBundleProjection, error) {
