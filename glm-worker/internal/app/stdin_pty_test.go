@@ -102,6 +102,7 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 	select {
 	case err := <-markerReady:
 		if err != nil {
+
 			detail, _ := os.ReadFile(outPath)
 			t.Fatalf("run %d: READY marker観測前に失敗: %v result=%q", run, err, detail)
 		}
