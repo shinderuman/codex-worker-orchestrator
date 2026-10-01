@@ -136,7 +136,7 @@ fi
 if [ -n "$status" ]; then
 	reject dirty_checkout
 fi
-if git config --local --get-regexp '^(http\..*\.extraheader|credential\.)' >/dev/null 2>&1; then
+if git config --local --get-regexp '^(http\..*\.extraheader|credential\.|includeIf\.)' >/dev/null 2>&1; then
 	reject persisted_git_credentials
 fi
 
