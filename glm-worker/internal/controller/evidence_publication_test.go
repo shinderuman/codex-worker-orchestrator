@@ -95,6 +95,10 @@ func TestEvidencePublicationAdvancesWithTransitionCommitCAS(t *testing.T) {
 		_ = lock.Close()
 		t.Fatalf("task revision was not published through evidence head: %#v", publication.EvidenceHead.TaskHeads)
 	}
+	if publication.EvidenceGraphDigest == "" {
+		_ = lock.Close()
+		t.Fatal("evidence publication did not produce canonical graph digest")
+	}
 
 	finalHead, err := store.finalizeAuthorityTransitionLocked(record)
 	closeErr := lock.Close()

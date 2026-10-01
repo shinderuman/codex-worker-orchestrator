@@ -13,8 +13,9 @@ type EvidencePublicationInput struct {
 }
 
 type EvidencePublicationResult struct {
-	EvidenceHeadRef EvidenceObjectRef    `json:"evidence_head_ref"`
-	LedgerRecordRef EvidenceObjectRef    `json:"ledger_record_ref"`
-	EvidenceHead    EvidenceHead         `json:"evidence_head"`
-	LedgerRecord    EvidenceLedgerRecord `json:"ledger_record"`
+	EvidenceHeadRef     EvidenceObjectRef    `json:"evidence_head_ref"`
+	LedgerRecordRef     EvidenceObjectRef    `json:"ledger_record_ref"`
+	EvidenceHead        EvidenceHead         `json:"evidence_head"`
+	LedgerRecord        EvidenceLedgerRecord `json:"ledger_record"`
+	EvidenceGraphDigest string               `json:"evidence_graph_digest"`
 }

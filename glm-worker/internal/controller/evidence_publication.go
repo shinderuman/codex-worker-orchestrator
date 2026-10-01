@@ -133,11 +133,16 @@ func (s *Store) prepareEvidencePublication(
 	if previousLedgerRef != nil && storedLedger.Sequence != previousLedger.Sequence+1 {
 		return EvidencePublicationResult{}, &EvidenceIntegrityError{Digest: ledgerRef.Digest, Reason: "evidence ledger sequence did not advance exactly once"}
 	}
+	graphDigest, err := s.validateEvidenceGraphRoots(ledgerRef, headRef, storedLedger.Sequence)
+	if err != nil {
+		return EvidencePublicationResult{}, err
+	}
 	return EvidencePublicationResult{
-		EvidenceHeadRef: headRef,
-		LedgerRecordRef: ledgerRef,
-		EvidenceHead:    storedHead,
-		LedgerRecord:    storedLedger,
+		EvidenceHeadRef:     headRef,
+		LedgerRecordRef:     ledgerRef,
+		EvidenceHead:        storedHead,
+		LedgerRecord:        storedLedger,
+		EvidenceGraphDigest: graphDigest,
 	}, nil
 }
 
