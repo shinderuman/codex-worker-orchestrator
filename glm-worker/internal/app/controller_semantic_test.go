@@ -62,6 +62,49 @@ func TestRunEntryControllerSemanticUsesExplicitLiveAuthority(t *testing.T) {
 	if resolved.Result == nil || resolved.Result.Intent != controller.FindingIntentAwaitingDisposition {
 		t.Fatalf("semantic resolution output is incomplete: %#v", resolved)
 	}
+
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.RootTaskRef == nil {
+		t.Fatal("controller semantic activation has no root task authority")
+	}
+	assertControllerSemanticSatisfactionDispatch(t, loadConfig, head)
+}
+
+func assertControllerSemanticSatisfactionDispatch(
+	t *testing.T,
+	loadConfig func() (config.AppConfig, error),
+	head controller.RepositoryControllerHead,
+) {
+	t.Helper()
+	command := controllerSemanticCommand{
+		Action:                       controllerSemanticSatisfy,
+		EpisodeID:                    "missing-episode",
+		EpisodeRevision:              1,
+		ExpectedControllerGeneration: head.ControllerGeneration,
+		ProjectSnapshotID:            head.ProjectSnapshotID,
+		SatisfiedTaskRef:             head.RootTaskRef,
+	}
+	payload, err := json.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runEntry(
+		[]string{"--authority", "controller-semantic"},
+		loadConfig,
+		nil,
+		bytes.NewReader(payload),
+		io.Discard,
+		io.Discard,
+	); err == nil {
+		t.Fatal("episode satisfaction machine action bypassed episode authority")
+	}
 }
 
 func runControllerSemanticTestCommand(
