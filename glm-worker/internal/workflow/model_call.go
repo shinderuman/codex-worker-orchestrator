@@ -142,6 +142,10 @@ func (w *Workflow) invokeModelCall(
 	guardBefore parentFileGuard,
 ) (modelCallExecution, error) {
 	execution := modelCallExecution{startedAt: w.now().UTC()}
+	controllerGuard, err := w.admitControllerModelCall(checkpoint)
+	if err != nil {
+		return execution, err
+	}
 	w.modelCallAttempts++
 	execution.runResult, execution.runErr = w.runner.Run(
 		checkpoint.Role,
@@ -154,6 +158,10 @@ func (w *Workflow) invokeModelCall(
 	)
 	execution.completedAt = w.now().UTC()
 	w.state.RecordModelDuration(checkpoint.Model, execution.completedAt.Sub(execution.startedAt))
+	after, controllerErr := w.captureControllerModelCallAfter(controllerGuard)
+	if controllerErr != nil {
+		return execution, controllerErr
+	}
 	if stopped, err := w.verifyParentFileAfterCall(
 		checkpoint,
 		guardBefore,
@@ -163,6 +171,12 @@ func (w *Workflow) invokeModelCall(
 		execution.runErr,
 		outputPath,
 	); stopped {
+		if failErr := w.failControllerModelCall(controllerGuard, after, "parent file guard rejected model call"); failErr != nil {
+			return execution, errors.Join(err, failErr)
+		}
+		return execution, err
+	}
+	if err := w.commitControllerModelCall(controllerGuard, after, checkpoint, execution.runErr); err != nil {
 		return execution, err
 	}
 	return execution, nil
