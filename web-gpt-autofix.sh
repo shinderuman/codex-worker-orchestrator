@@ -9,6 +9,8 @@ fi
 target_branch=$1
 expected_head_sha=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
 result_path=${3:-web-gpt-autofix-result.json}
+target_root=$(pwd -P)
+control_root=${WEB_GPT_AUTOFIX_CONTROL_ROOT:-}
 changed=false
 resulting_head=$expected_head_sha
 validation=not_run
@@ -28,6 +30,13 @@ fail_closed() {
 	exit 1
 }
 
+run_harnesslint() {
+	(
+		cd "$control_root"
+		HARNESSLINT_REPO_ROOT="$target_root" ./harnesslint "$@"
+	)
+}
+
 case "$target_branch" in
 web-gpt/*) ;;
 *) fail_closed invalid_target_branch ;;
@@ -43,6 +52,14 @@ fi
 case "$expected_head_sha" in
 *[!0-9a-f]*) fail_closed invalid_expected_head_sha ;;
 esac
+
+case "$control_root" in
+/*) ;;
+*) fail_closed invalid_control_root ;;
+esac
+if [ ! -d "$control_root" ] || [ ! -f "$control_root/harnesslint" ]; then
+	fail_closed invalid_control_root
+fi
 
 if [ -n "$(git status --porcelain)" ]; then
 	fail_closed dirty_checkout
@@ -62,9 +79,9 @@ fi
 git checkout --detach "$expected_head_sha"
 
 set +e
-./harnesslint --fix
+run_harnesslint --fix
 fix_status=$?
-./harnesslint
+run_harnesslint
 lint_status=$?
 set -e
 
