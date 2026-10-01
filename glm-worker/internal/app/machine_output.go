@@ -30,6 +30,8 @@ type structuredLinesOutput struct {
 	pending bytes.Buffer
 }
 
+const controllerAuthorityFlag = "--authority"
+
 func Run(args []string) error {
 	return runEntry(args, config.Load, instructionSurfaceRunnerFactory, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -58,7 +60,7 @@ func runEntry(
 }
 
 func runAuthorityBootstrap(args []string, stdout io.Writer) (bool, error) {
-	if len(args) == 0 || args[0] != "--authority" {
+	if len(args) == 0 || args[0] != controllerAuthorityFlag {
 		return false, nil
 	}
 	output, err := authoritybootstrapcmd.BuildCommand(args[1:])

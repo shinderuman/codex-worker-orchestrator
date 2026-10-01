@@ -14,21 +14,21 @@ import (
 type controllerSemanticAction string
 
 type controllerSemanticCommand struct {
-	Action            controllerSemanticAction           `json:"action"`
+	Action            controllerSemanticAction            `json:"action"`
 	Observation       *controller.FindingObservationInput `json:"observation,omitempty"`
-	AttemptID         string                             `json:"attempt_id,omitempty"`
-	ProjectSnapshotID string                             `json:"project_snapshot_id,omitempty"`
-	FindingID         string                             `json:"finding_id,omitempty"`
-	Decision          *controller.FindingDecision        `json:"decision,omitempty"`
-	EpisodeID         string                             `json:"episode_id,omitempty"`
-	EpisodeRevision   uint64                             `json:"episode_revision,omitempty"`
+	AttemptID         string                              `json:"attempt_id,omitempty"`
+	ProjectSnapshotID string                              `json:"project_snapshot_id,omitempty"`
+	FindingID         string                              `json:"finding_id,omitempty"`
+	Decision          *controller.FindingDecision         `json:"decision,omitempty"`
+	EpisodeID         string                              `json:"episode_id,omitempty"`
+	EpisodeRevision   uint64                              `json:"episode_revision,omitempty"`
 }
 
 type controllerSemanticOutput struct {
-	Action   controllerSemanticAction              `json:"action"`
-	Finding  *controller.FindingRecord              `json:"finding,omitempty"`
-	Result   *controller.FindingDispositionResult   `json:"result,omitempty"`
-	Schedule *controller.EpisodeScheduleResult      `json:"schedule,omitempty"`
+	Action   controllerSemanticAction            `json:"action"`
+	Finding  *controller.FindingRecord            `json:"finding,omitempty"`
+	Result   *controller.FindingDispositionResult `json:"result,omitempty"`
+	Schedule *controller.EpisodeScheduleResult    `json:"schedule,omitempty"`
 }
 
 const (
@@ -44,7 +44,7 @@ func runControllerSemantic(
 	stdin io.Reader,
 	stdout io.Writer,
 ) (bool, error) {
-	if len(args) != 2 || args[0] != "--authority" || args[1] != "controller-semantic" {
+	if len(args) != 2 || args[0] != controllerAuthorityFlag || args[1] != "controller-semantic" {
 		return false, nil
 	}
 	cfg, err := loadConfig()

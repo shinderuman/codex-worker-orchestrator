@@ -24,7 +24,7 @@ func runControllerActivation(
 	loadConfig func() (config.AppConfig, error),
 	stdout io.Writer,
 ) (bool, error) {
-	if len(args) != 2 || args[0] != "--authority" || args[1] != "controller-activate" {
+	if len(args) != 2 || args[0] != controllerAuthorityFlag || args[1] != "controller-activate" {
 		return false, nil
 	}
 	cfg, err := loadConfig()
