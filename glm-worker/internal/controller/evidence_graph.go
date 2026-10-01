@@ -42,26 +42,42 @@ func (w *evidenceGraphWalker) walkLedgerChain(
 		if err != nil {
 			return err
 		}
-		if ledger.PreviousRecord == nil {
-			if expectedSequence != 1 || head.PreviousHead != nil {
-				return evidenceGraphError(currentLedger, "evidence ledger root linkage is inconsistent")
-			}
-			return nil
-		}
-		if expectedSequence <= 1 {
-			return evidenceGraphError(currentLedger, "evidence ledger sequence underflow")
-		}
-		previous, err := w.store.LoadEvidenceLedgerRecord(*ledger.PreviousRecord)
+		nextLedger, nextHead, nextSequence, done, err := w.advanceLedgerChain(currentLedger, ledger, head, expectedSequence)
 		if err != nil {
 			return err
 		}
-		if head.PreviousHead == nil || !evidenceRefsEqual(*head.PreviousHead, previous.EvidenceHeadRef) {
-			return evidenceGraphError(currentLedger, "evidence head chain does not match ledger predecessor")
+		if done {
+			return nil
 		}
-		currentLedger = *ledger.PreviousRecord
-		expectedHead = previous.EvidenceHeadRef
-		expectedSequence--
+		currentLedger = nextLedger
+		expectedHead = nextHead
+		expectedSequence = nextSequence
 	}
+}
+
+func (w *evidenceGraphWalker) advanceLedgerChain(
+	currentLedger EvidenceObjectRef,
+	ledger EvidenceLedgerRecord,
+	head EvidenceHead,
+	expectedSequence uint64,
+) (EvidenceObjectRef, EvidenceObjectRef, uint64, bool, error) {
+	if ledger.PreviousRecord == nil {
+		if expectedSequence != 1 || head.PreviousHead != nil {
+			return EvidenceObjectRef{}, EvidenceObjectRef{}, 0, false, evidenceGraphError(currentLedger, "evidence ledger root linkage is inconsistent")
+		}
+		return EvidenceObjectRef{}, EvidenceObjectRef{}, 0, true, nil
+	}
+	if expectedSequence <= 1 {
+		return EvidenceObjectRef{}, EvidenceObjectRef{}, 0, false, evidenceGraphError(currentLedger, "evidence ledger sequence underflow")
+	}
+	previous, err := w.store.LoadEvidenceLedgerRecord(*ledger.PreviousRecord)
+	if err != nil {
+		return EvidenceObjectRef{}, EvidenceObjectRef{}, 0, false, err
+	}
+	if head.PreviousHead == nil || !evidenceRefsEqual(*head.PreviousHead, previous.EvidenceHeadRef) {
+		return EvidenceObjectRef{}, EvidenceObjectRef{}, 0, false, evidenceGraphError(currentLedger, "evidence head chain does not match ledger predecessor")
+	}
+	return *ledger.PreviousRecord, previous.EvidenceHeadRef, expectedSequence - 1, false, nil
 }
 
 func (w *evidenceGraphWalker) loadLedgerStep(
