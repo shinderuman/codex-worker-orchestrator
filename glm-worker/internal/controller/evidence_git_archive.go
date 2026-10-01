@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-const gitObjectArchiveMediaType = "application/vnd.codex.git-object-archive+json"
-
 type GitObjectArchiveRoot struct {
 	OID  string `json:"oid"`
 	Type string `json:"type"`
@@ -24,6 +22,8 @@ type gitObjectArchiveEnvelope struct {
 	PackDigest    string                 `json:"pack_digest"`
 	Pack          []byte                 `json:"pack"`
 }
+
+const gitObjectArchiveMediaType = "application/vnd.codex.git-object-archive+json"
 
 func (s *Store) CaptureGitObjectArchive(repoPath, logicalIdentity string, rootOIDs []string) (EvidenceObjectRef, []GitObjectArchiveRoot, error) {
 	roots, objectIDs, objectFormat, err := collectGitObjectClosure(repoPath, rootOIDs)
@@ -44,7 +44,7 @@ func (s *Store) CaptureGitObjectArchive(repoPath, logicalIdentity string, rootOI
 	}
 	data, err := json.Marshal(envelope)
 	if err != nil {
-		return EvidenceObjectRef{}, nil, fmt.Errorf("encode Git object archive: %w", err)
+		return EvidenceObjectRef{}, nil, fmt.Errorf("encode git object archive: %w", err)
 	}
 	ref, err := s.PutEvidenceObject("git-object-archive", gitObjectArchiveMediaType, logicalIdentity, true, data)
 	if err != nil {
@@ -58,7 +58,7 @@ func (s *Store) VerifyGitObjectArchive(ref EvidenceObjectRef) ([]GitObjectArchiv
 		return nil, err
 	}
 	if ref.MediaType != gitObjectArchiveMediaType {
-		return nil, gitArchiveIntegrityError(ref, "Git object archive media type is unsupported")
+		return nil, gitArchiveIntegrityError(ref, "git object archive media type is unsupported")
 	}
 	data, err := s.LoadEvidenceObject(ref)
 	if err != nil {
@@ -66,7 +66,7 @@ func (s *Store) VerifyGitObjectArchive(ref EvidenceObjectRef) ([]GitObjectArchiv
 	}
 	var envelope gitObjectArchiveEnvelope
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, gitArchiveIntegrityError(ref, "Git object archive envelope is invalid")
+		return nil, gitArchiveIntegrityError(ref, "git object archive envelope is invalid")
 	}
 	if err := validateGitObjectArchiveEnvelope(ref, envelope); err != nil {
 		return nil, err
@@ -78,43 +78,56 @@ func (s *Store) VerifyGitObjectArchive(ref EvidenceObjectRef) ([]GitObjectArchiv
 }
 
 func collectGitObjectClosure(repoPath string, rootOIDs []string) ([]GitObjectArchiveRoot, []string, string, error) {
-	if strings.TrimSpace(repoPath) == "" {
-		return nil, nil, "", fmt.Errorf("Git object archive repository path is empty")
-	}
-	objectFormatBytes, err := runGitBinary(repoPath, nil, "rev-parse", "--show-object-format")
+	objectFormat, err := resolveGitObjectFormat(repoPath)
 	if err != nil {
 		return nil, nil, "", err
 	}
+	roots, objectSet, err := resolveGitObjectArchiveRoots(repoPath, rootOIDs)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	objectIDs := make([]string, 0, len(objectSet))
+	for oid := range objectSet {
+		objectIDs = append(objectIDs, oid)
+	}
+	sort.Strings(objectIDs)
+	return roots, objectIDs, objectFormat, nil
+}
+
+func resolveGitObjectFormat(repoPath string) (string, error) {
+	if strings.TrimSpace(repoPath) == "" {
+		return "", fmt.Errorf("git object archive repository path is empty")
+	}
+	objectFormatBytes, err := runGitBinary(repoPath, nil, "rev-parse", "--show-object-format")
+	if err != nil {
+		return "", err
+	}
 	objectFormat := strings.TrimSpace(string(objectFormatBytes))
 	if objectFormat == "" {
-		return nil, nil, "", fmt.Errorf("Git object archive object format is empty")
+		return "", fmt.Errorf("git object archive object format is empty")
 	}
+	return objectFormat, nil
+}
 
+func resolveGitObjectArchiveRoots(repoPath string, rootOIDs []string) ([]GitObjectArchiveRoot, map[string]struct{}, error) {
 	rootSet := make(map[string]GitObjectArchiveRoot, len(rootOIDs))
 	objectSet := make(map[string]struct{})
 	for _, rawOID := range rootOIDs {
-		oid := strings.TrimSpace(rawOID)
-		if oid == "" {
-			return nil, nil, "", fmt.Errorf("Git object archive root is empty")
-		}
-		typeBytes, err := runGitBinary(repoPath, nil, "cat-file", "-t", oid)
+		root, err := resolveGitObjectArchiveRoot(repoPath, rawOID)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("resolve Git object archive root %s: %w", oid, err)
+			return nil, nil, err
 		}
-		objectType := strings.TrimSpace(string(typeBytes))
-		root := GitObjectArchiveRoot{OID: oid, Type: objectType}
-		if existing, ok := rootSet[oid]; ok && existing.Type != objectType {
-			return nil, nil, "", fmt.Errorf("Git object archive root %s has conflicting object type", oid)
+		if existing, ok := rootSet[root.OID]; ok && existing.Type != root.Type {
+			return nil, nil, fmt.Errorf("git object archive root %s has conflicting object type", root.OID)
 		}
-		rootSet[oid] = root
+		rootSet[root.OID] = root
 		if err := collectGitRootClosure(repoPath, root, objectSet); err != nil {
-			return nil, nil, "", err
+			return nil, nil, err
 		}
 	}
 	if len(rootSet) == 0 || len(objectSet) == 0 {
-		return nil, nil, "", fmt.Errorf("Git object archive requires at least one root")
+		return nil, nil, fmt.Errorf("git object archive requires at least one root")
 	}
-
 	roots := make([]GitObjectArchiveRoot, 0, len(rootSet))
 	for _, root := range rootSet {
 		roots = append(roots, root)
@@ -125,12 +138,19 @@ func collectGitObjectClosure(repoPath string, rootOIDs []string) ([]GitObjectArc
 		}
 		return roots[i].OID < roots[j].OID
 	})
-	objectIDs := make([]string, 0, len(objectSet))
-	for oid := range objectSet {
-		objectIDs = append(objectIDs, oid)
+	return roots, objectSet, nil
+}
+
+func resolveGitObjectArchiveRoot(repoPath, rawOID string) (GitObjectArchiveRoot, error) {
+	oid := strings.TrimSpace(rawOID)
+	if oid == "" {
+		return GitObjectArchiveRoot{}, fmt.Errorf("git object archive root is empty")
 	}
-	sort.Strings(objectIDs)
-	return roots, objectIDs, objectFormat, nil
+	typeBytes, err := runGitBinary(repoPath, nil, "cat-file", "-t", oid)
+	if err != nil {
+		return GitObjectArchiveRoot{}, fmt.Errorf("resolve git object archive root %s: %w", oid, err)
+	}
+	return GitObjectArchiveRoot{OID: oid, Type: strings.TrimSpace(string(typeBytes))}, nil
 }
 
 func collectGitRootClosure(repoPath string, root GitObjectArchiveRoot, objectSet map[string]struct{}) error {
@@ -139,31 +159,35 @@ func collectGitRootClosure(repoPath string, root GitObjectArchiveRoot, objectSet
 	case "commit", "tag":
 		output, err := runGitBinary(repoPath, nil, "rev-list", "--objects", "--no-object-names", root.OID)
 		if err != nil {
-			return fmt.Errorf("walk Git object archive root %s: %w", root.OID, err)
+			return fmt.Errorf("walk git object archive root %s: %w", root.OID, err)
 		}
 		addGitObjectLines(objectSet, output)
 		return nil
 	case "tree":
-		output, err := runGitBinary(repoPath, nil, "ls-tree", "-r", "-t", "--full-tree", root.OID)
-		if err != nil {
-			return fmt.Errorf("walk Git tree archive root %s: %w", root.OID, err)
-		}
-		for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
-			if line == "" {
-				continue
-			}
-			fields := strings.Fields(strings.SplitN(line, "\t", 2)[0])
-			if len(fields) < 3 {
-				return fmt.Errorf("parse Git tree archive root %s", root.OID)
-			}
-			objectSet[fields[2]] = struct{}{}
-		}
-		return nil
+		return collectGitTreeClosure(repoPath, root.OID, objectSet)
 	case "blob":
 		return nil
 	default:
-		return fmt.Errorf("Git object archive root %s has unsupported object type %q", root.OID, root.Type)
+		return fmt.Errorf("git object archive root %s has unsupported object type %q", root.OID, root.Type)
 	}
+}
+
+func collectGitTreeClosure(repoPath, rootOID string, objectSet map[string]struct{}) error {
+	output, err := runGitBinary(repoPath, nil, "ls-tree", "-r", "-t", "--full-tree", rootOID)
+	if err != nil {
+		return fmt.Errorf("walk git tree archive root %s: %w", rootOID, err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(strings.SplitN(line, "\t", 2)[0])
+		if len(fields) < 3 {
+			return fmt.Errorf("parse git tree archive root %s", rootOID)
+		}
+		objectSet[fields[2]] = struct{}{}
+	}
+	return nil
 }
 
 func addGitObjectLines(objectSet map[string]struct{}, output []byte) {
@@ -177,10 +201,10 @@ func addGitObjectLines(objectSet map[string]struct{}, output []byte) {
 
 func validateGitObjectArchiveEnvelope(ref EvidenceObjectRef, envelope gitObjectArchiveEnvelope) error {
 	if envelope.SchemaVersion != evidenceSchemaVersion || strings.TrimSpace(envelope.ObjectFormat) == "" || len(envelope.Roots) == 0 || len(envelope.Pack) == 0 {
-		return gitArchiveIntegrityError(ref, "Git object archive identity is incomplete")
+		return gitArchiveIntegrityError(ref, "git object archive identity is incomplete")
 	}
 	if digestBytes(envelope.Pack) != envelope.PackDigest {
-		return gitArchiveIntegrityError(ref, "Git object archive pack digest does not match payload")
+		return gitArchiveIntegrityError(ref, "git object archive pack digest does not match payload")
 	}
 	canonical := append([]GitObjectArchiveRoot(nil), envelope.Roots...)
 	sort.Slice(canonical, func(i, j int) bool {
@@ -192,42 +216,43 @@ func validateGitObjectArchiveEnvelope(ref EvidenceObjectRef, envelope gitObjectA
 	seen := make(map[string]struct{}, len(canonical))
 	for index, root := range canonical {
 		if strings.TrimSpace(root.OID) == "" || strings.TrimSpace(root.Type) == "" {
-			return gitArchiveIntegrityError(ref, "Git object archive root identity is incomplete")
+			return gitArchiveIntegrityError(ref, "git object archive root identity is incomplete")
 		}
 		if _, exists := seen[root.OID]; exists {
-			return gitArchiveIntegrityError(ref, "Git object archive contains duplicate roots")
+			return gitArchiveIntegrityError(ref, "git object archive contains duplicate roots")
 		}
 		seen[root.OID] = struct{}{}
 		if envelope.Roots[index] != root {
-			return gitArchiveIntegrityError(ref, "Git object archive roots are not canonical")
+			return gitArchiveIntegrityError(ref, "git object archive roots are not canonical")
 		}
 	}
 	return nil
 }
 
 func verifyGitObjectPack(envelope gitObjectArchiveEnvelope) error {
-	repo := ""
-	var err error
-	if repo, err = os.MkdirTemp("", "controller-evidence-git-archive-"); err != nil {
-		return fmt.Errorf("create Git archive verification repository: %w", err)
+	repo, err := os.MkdirTemp("", "controller-evidence-git-archive-")
+	if err != nil {
+		return fmt.Errorf("create git archive verification repository: %w", err)
 	}
-	defer os.RemoveAll(repo)
+	defer func() {
+		_ = os.RemoveAll(repo)
+	}()
 	if _, err := runGitBinary("", nil, "init", "--bare", "--quiet", "--object-format="+envelope.ObjectFormat, repo); err != nil {
 		return err
 	}
 	if _, err := runGitBinaryWithGitDir(repo, envelope.Pack, "unpack-objects", "-r"); err != nil {
-		return fmt.Errorf("unpack Git object archive: %w", err)
+		return fmt.Errorf("unpack git object archive: %w", err)
 	}
 	for _, root := range envelope.Roots {
 		if _, err := runGitBinaryWithGitDir(repo, nil, "cat-file", "-e", root.OID); err != nil {
-			return fmt.Errorf("Git object archive root %s is missing", root.OID)
+			return fmt.Errorf("git object archive root %s is missing", root.OID)
 		}
 		typeBytes, err := runGitBinaryWithGitDir(repo, nil, "cat-file", "-t", root.OID)
 		if err != nil {
-			return fmt.Errorf("read Git object archive root %s: %w", root.OID, err)
+			return fmt.Errorf("read git object archive root %s: %w", root.OID, err)
 		}
 		if strings.TrimSpace(string(typeBytes)) != root.Type {
-			return fmt.Errorf("Git object archive root %s has wrong object type", root.OID)
+			return fmt.Errorf("git object archive root %s has wrong object type", root.OID)
 		}
 	}
 	return nil
