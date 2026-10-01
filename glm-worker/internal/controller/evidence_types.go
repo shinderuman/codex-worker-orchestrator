@@ -128,16 +128,21 @@ type EvidenceHead struct {
 }
 
 type EvidenceLedgerRecord struct {
-	SchemaVersion        int                `json:"schema_version"`
-	RecordDigest         string             `json:"record_digest"`
-	Sequence             uint64             `json:"sequence"`
-	PreviousRecord       *EvidenceObjectRef `json:"previous_record,omitempty"`
-	RepositoryIdentity   string             `json:"repository_identity"`
-	ControllerGeneration uint64             `json:"controller_generation"`
-	TransitionID         string             `json:"transition_id"`
-	ProjectSnapshotID    string             `json:"project_snapshot_id"`
-	EvidenceHeadRef      EvidenceObjectRef  `json:"evidence_head_ref"`
-	CreatedAt            time.Time          `json:"created_at"`
+	SchemaVersion             int                   `json:"schema_version"`
+	RecordDigest              string                `json:"record_digest"`
+	Sequence                  uint64                `json:"sequence"`
+	PreviousRecord            *EvidenceObjectRef    `json:"previous_record,omitempty"`
+	RepositoryIdentity        string                `json:"repository_identity"`
+	ControllerGeneration      uint64                `json:"controller_generation"`
+	TransitionID              string                `json:"transition_id"`
+	ChangedTaskIndexHeads     []EvidenceSubjectHead `json:"changed_task_index_heads,omitempty"`
+	ChangedEpisodeIndexHeads  []EvidenceSubjectHead `json:"changed_episode_index_heads,omitempty"`
+	AttemptSealsAdded         []EvidenceObjectRef   `json:"attempt_seals_added,omitempty"`
+	FinalizationRecordsAdded  []EvidenceObjectRef   `json:"finalization_records_added,omitempty"`
+	FindingRecordsAdded       []EvidenceObjectRef   `json:"finding_records_added,omitempty"`
+	ProjectSnapshotID         string                `json:"project_snapshot_id"`
+	EvidenceHeadRef           EvidenceObjectRef     `json:"evidence_head_ref"`
+	CreatedAt                 time.Time             `json:"created_at"`
 }
 
 type EvidenceIntegrityError struct {
