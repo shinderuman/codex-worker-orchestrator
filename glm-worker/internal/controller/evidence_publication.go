@@ -48,7 +48,8 @@ func (s *Store) commitAuthorityTransitionWithEvidenceLocked(
 
 func hasEvidencePublicationInput(input EvidencePublicationInput) bool {
 	return len(input.AttemptSeals) != 0 || len(input.Finalizations) != 0 || len(input.TaskRevisions) != 0 || len(input.EpisodeRevisions) != 0 ||
-		len(input.AttemptSealRefs) != 0 || len(input.FinalizationRefs) != 0 || len(input.TaskRevisionRefs) != 0 || len(input.EpisodeRevisionRefs) != 0
+		len(input.AttemptSealRefs) != 0 || len(input.FinalizationRefs) != 0 || len(input.FindingRecordRefs) != 0 ||
+		len(input.TaskRevisionRefs) != 0 || len(input.EpisodeRevisionRefs) != 0
 }
 
 func (s *Store) validateEvidencePublicationAuthority(head RepositoryControllerHead, record TransitionRecord) error {
@@ -65,6 +66,7 @@ func (s *Store) materializeEvidencePublicationInput(input EvidencePublicationInp
 	result := input
 	result.AttemptSealRefs = append([]EvidenceObjectRef(nil), input.AttemptSealRefs...)
 	result.FinalizationRefs = append([]EvidenceObjectRef(nil), input.FinalizationRefs...)
+	result.FindingRecordRefs = append([]EvidenceObjectRef(nil), input.FindingRecordRefs...)
 	result.TaskRevisionRefs = append([]EvidenceObjectRef(nil), input.TaskRevisionRefs...)
 	result.EpisodeRevisionRefs = append([]EvidenceObjectRef(nil), input.EpisodeRevisionRefs...)
 	for _, record := range input.AttemptSeals {
@@ -97,6 +99,7 @@ func (s *Store) materializeEvidencePublicationInput(input EvidencePublicationInp
 	}
 	result.AttemptSealRefs = canonicalEvidenceRefs(result.AttemptSealRefs)
 	result.FinalizationRefs = canonicalEvidenceRefs(result.FinalizationRefs)
+	result.FindingRecordRefs = canonicalEvidenceRefs(result.FindingRecordRefs)
 	result.TaskRevisionRefs = canonicalEvidenceRefs(result.TaskRevisionRefs)
 	result.EpisodeRevisionRefs = canonicalEvidenceRefs(result.EpisodeRevisionRefs)
 	return result, nil
@@ -132,7 +135,7 @@ func (s *Store) prepareEvidencePublication(
 	if err != nil {
 		return EvidencePublicationResult{}, err
 	}
-	ledgerRef, storedLedger, err := s.storeNextEvidenceLedger(previousLedgerRef, controllerHead, record, headRef)
+	ledgerRef, storedLedger, err := s.storeNextEvidenceLedger(previousLedgerRef, controllerHead, record, headRef, input)
 	if err != nil {
 		return EvidencePublicationResult{}, err
 	}
@@ -174,24 +177,23 @@ func (s *Store) storeNextEvidenceLedger(
 	head RepositoryControllerHead,
 	record TransitionRecord,
 	evidenceHeadRef EvidenceObjectRef,
+	input EvidencePublicationInput,
 ) (EvidenceObjectRef, EvidenceLedgerRecord, error) {
-	return s.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
-		SchemaVersion:        evidenceSchemaVersion,
-		Sequence:             head.EvidenceLedgerSequence + 1,
-		PreviousRecord:       previous,
-		RepositoryIdentity:   s.identity.LineageID,
-		ControllerGeneration: record.CommittedGeneration,
-		TransitionID:         record.TransitionID,
-		ProjectSnapshotID:    record.ProjectSnapshotNew,
-		EvidenceHeadRef:      evidenceHeadRef,
-	})
+	ledger, err := s.buildEvidenceLedgerRecord(previous, head, record, evidenceHeadRef, input)
+	if err != nil {
+		return EvidenceObjectRef{}, EvidenceLedgerRecord{}, err
+	}
+	return s.StoreEvidenceLedgerRecord(ledger)
 }
 
 func (s *Store) validatePublicationRefs(record TransitionRecord, input EvidencePublicationInput) error {
 	if err := s.validatePublicationAttemptSeals(record, input.AttemptSealRefs); err != nil {
 		return err
 	}
-	return s.validatePublicationFinalizations(record, input.FinalizationRefs)
+	if err := s.validatePublicationFinalizations(record, input.FinalizationRefs); err != nil {
+		return err
+	}
+	return s.validatePublicationFindingRecords(input.FindingRecordRefs)
 }
 
 func (s *Store) loadPublishedEvidenceAuthority(
@@ -346,7 +348,7 @@ func (s *Store) validatePublicationFinalizations(record TransitionRecord, refs [
 			return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence publication contains duplicate attempt finalization"}
 		}
 		seen[finalization.FinalizationID] = true
-		if finalization.TransitionID != record.TransitionID || finalization.ProjectSnapshotID != record.ProjectSnapshotNew {
+		if finalization.TransitionID != record.TransitionID || finalization.ControllerGeneration != record.CommittedGeneration || finalization.ProjectSnapshotID != record.ProjectSnapshotNew {
 			return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "attempt finalization is bound to different transition authority"}
 		}
 	}
