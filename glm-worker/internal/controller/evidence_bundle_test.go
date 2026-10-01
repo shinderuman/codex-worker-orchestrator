@@ -321,6 +321,22 @@ func publishBundleAuthority(
 	taskHeads, episodeHeads []EvidenceSubjectHead,
 ) (EvidenceObjectRef, EvidenceObjectRef) {
 	t.Helper()
+	previous := EvidenceHead{}
+	if previousHead != nil {
+		loaded, err := store.LoadEvidenceHead(*previousHead)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous = loaded
+	}
+	changedTaskHeads, err := changedEvidenceHeads(previous.TaskHeads, taskHeads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedEpisodeHeads, err := changedEvidenceHeads(previous.EpisodeHeads, episodeHeads)
+	if err != nil {
+		t.Fatal(err)
+	}
 	headRef, _, err := store.StoreEvidenceHead(EvidenceHead{
 		SchemaVersion: evidenceSchemaVersion, RepositoryIdentity: store.Identity().LineageID,
 		PreviousHead: previousHead, TaskHeads: taskHeads, EpisodeHeads: episodeHeads,
@@ -332,7 +348,8 @@ func publishBundleAuthority(
 	ledgerRef, _, err := store.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
 		SchemaVersion: evidenceSchemaVersion, Sequence: generation, PreviousRecord: previousLedger,
 		RepositoryIdentity: store.Identity().LineageID, ControllerGeneration: generation,
-		TransitionID: bundleTransitionID(generation), ProjectSnapshotID: snapshot,
+		TransitionID: bundleTransitionID(generation), ChangedTaskIndexHeads: changedTaskHeads,
+		ChangedEpisodeIndexHeads: changedEpisodeHeads, ProjectSnapshotID: snapshot,
 		EvidenceHeadRef: headRef, CreatedAt: time.Unix(5600+int64(generation), 0).UTC(),
 	})
 	if err != nil {
