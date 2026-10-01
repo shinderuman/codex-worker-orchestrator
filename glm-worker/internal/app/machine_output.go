@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -43,6 +43,9 @@ func runEntry(
 	stderr io.Writer,
 ) error {
 	if handled, err := runControllerActivation(args, loadConfig, stdout); handled {
+		return err
+	}
+	if handled, err := runControllerSemantic(args, loadConfig, stdin, stdout); handled {
 		return err
 	}
 	if handled, err := runAuthorityBootstrap(args, stdout); handled {
