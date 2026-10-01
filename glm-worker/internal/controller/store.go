@@ -82,8 +82,8 @@ func (s *Store) BootstrapExecution(task SemanticTaskRef, workspace WorkspaceIden
 	return s.bootstrapExecution(task, workspace, snapshot)
 }
 
-func (s *Store) AdmitMutation(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
-	return s.admitMutation(task, workspace, snapshot)
+func (s *Store) AdmitMutation(authority MutationAuthority, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
+	return s.admitMutation(authority, workspace, snapshot)
 }
 
 func (s *Store) writeHeadCAS(expected uint64, next RepositoryControllerHead) error {

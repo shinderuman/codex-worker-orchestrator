@@ -90,7 +90,7 @@ func (s *Store) validateTransitionSource(intent TransitionIntent) error {
 	if source.Head.ControllerGeneration != intent.ExpectedGeneration {
 		return fmt.Errorf("transition source generation does not match expected generation")
 	}
-	current, err := s.AdmitMutation(source.Lease.SemanticTaskRef, source.Workspace, source.Snapshot)
+	current, err := s.AdmitMutation(source.MutationAuthority(), source.Workspace, source.Snapshot)
 	if err != nil {
 		return err
 	}

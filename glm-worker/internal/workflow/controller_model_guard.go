@@ -67,10 +67,11 @@ func (w *Workflow) resolveControllerModelAdmission(
 		}
 		return store.BootstrapExecution(authority.Task, workspace, before)
 	}
-	if head.ExecutionTaskRef == nil {
-		return controller.Admission{}, fmt.Errorf("repository controller has live runtime authority without execution task")
+	authority, err := controller.MutationAuthorityFromHead(head)
+	if err != nil {
+		return controller.Admission{}, err
 	}
-	return store.AdmitMutationOrFailClosed(*head.ExecutionTaskRef, workspace, before)
+	return store.AdmitMutationOrFailClosed(authority, workspace, before)
 }
 
 func (w *Workflow) captureControllerModelCallAfter(guard controllerModelCallGuard) (controller.WorkspaceSnapshot, error) {

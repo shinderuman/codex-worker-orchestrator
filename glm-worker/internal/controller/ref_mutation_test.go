@@ -37,7 +37,7 @@ func TestRefMutationInvalidatesLeaseAndRecordsRefProvenance(t *testing.T) {
 	if after.RefDigest == before.RefDigest || after.ID == before.ID {
 		t.Fatalf("ref-only mutation did not change snapshot identity: before=%#v after=%#v", before, after)
 	}
-	if _, err := store.AdmitMutation(task, workspace, after); err == nil || !strings.Contains(err.Error(), "snapshot") {
+	if _, err := store.AdmitMutation(admission.MutationAuthority(), workspace, after); err == nil || !strings.Contains(err.Error(), "snapshot") {
 		t.Fatalf("ref-mutated workspace retained stale lease authority: %v", err)
 	}
 

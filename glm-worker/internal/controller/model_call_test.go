@@ -38,7 +38,7 @@ func TestModelCallLeaseUsesJournalAndClearsInFlightBinding(t *testing.T) {
 	if bound.Lease.ControllerGeneration != bound.Head.ControllerGeneration || bound.Head.LiveLeaseID != bound.Lease.LeaseID {
 		t.Fatalf("model call lease is not the sole live authority: head=%#v lease=%#v", bound.Head, bound.Lease)
 	}
-	if _, err := store.AdmitMutation(source.Lease.SemanticTaskRef, source.Workspace, source.Snapshot); err == nil {
+	if _, err := store.AdmitMutation(source.MutationAuthority(), source.Workspace, source.Snapshot); err == nil {
 		t.Fatal("source lease remained admissible after model call binding")
 	}
 

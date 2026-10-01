@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-func (s *Store) AdmitMutationOrFailClosed(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
-	admission, err := s.AdmitMutation(task, workspace, snapshot)
+func (s *Store) AdmitMutationOrFailClosed(authority MutationAuthority, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
+	admission, err := s.AdmitMutation(authority, workspace, snapshot)
 	if err == nil {
 		return admission, nil
 	}
@@ -17,6 +17,9 @@ func (s *Store) AdmitMutationOrFailClosed(task SemanticTaskRef, workspace Worksp
 	defer func() { _ = lock.Close() }()
 	head, headErr := s.LoadHead()
 	if headErr != nil || head.Status != ControllerStatusActive || head.LiveLeaseID == "" {
+		return Admission{}, err
+	}
+	if claimErr := validateMutationAuthorityClaim(head, authority); claimErr != nil {
 		return Admission{}, err
 	}
 	lease, leaseErr := s.loadLease(head.LiveLeaseID)

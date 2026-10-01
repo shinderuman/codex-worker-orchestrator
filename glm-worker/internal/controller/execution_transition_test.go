@@ -91,10 +91,14 @@ func TestExecutionAuthorityTransitionFinalizesTargetAndRevokesSourceLease(t *tes
 	if finalHead.LiveLeaseID != fixture.targetLease.LeaseID || finalHead.LiveAttemptID != fixture.targetAttempt.AttemptID {
 		t.Fatalf("finalized transition selected unexpected attempt/lease: %#v", finalHead)
 	}
-	if _, err := store.AdmitMutation(fixture.source.Lease.SemanticTaskRef, fixture.source.Workspace, fixture.source.Snapshot); err == nil {
+	if _, err := store.AdmitMutation(fixture.source.MutationAuthority(), fixture.source.Workspace, fixture.source.Snapshot); err == nil {
 		t.Fatal("source lease remained admissible after execution authority changed")
 	}
-	if _, err := store.AdmitMutation(fixture.child, fixture.workspace, fixture.snapshot); err != nil {
+	targetAuthority, err := MutationAuthorityFromHead(finalHead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AdmitMutation(targetAuthority, fixture.workspace, fixture.snapshot); err != nil {
 		t.Fatalf("target execution authority was not admissible: %v", err)
 	}
 }

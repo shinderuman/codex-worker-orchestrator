@@ -83,7 +83,7 @@ func TestExecutionLeaseRejectsLinkedWorkspaceAndStaleSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AdmitMutation(task, linkedWorkspace, linkedSnapshot); err == nil || !strings.Contains(err.Error(), "workspace") {
+	if _, err := store.AdmitMutation(admission.MutationAuthority(), linkedWorkspace, linkedSnapshot); err == nil || !strings.Contains(err.Error(), "workspace") {
 		t.Fatalf("linked workspace obtained live mutation authority: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestExecutionLeaseRejectsLinkedWorkspaceAndStaleSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AdmitMutation(task, primaryWorkspace, changed); err == nil || !strings.Contains(err.Error(), "snapshot") {
+	if _, err := store.AdmitMutation(admission.MutationAuthority(), primaryWorkspace, changed); err == nil || !strings.Contains(err.Error(), "snapshot") {
 		t.Fatalf("stale lease admitted changed workspace snapshot: %v", err)
 	}
 	advanced, err := store.RecordAdmittedMutation(admission, "test-mutation", "success", changed)
@@ -158,7 +158,8 @@ func TestMutablePlanCannotMintExecutionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	committed := controllerTestTask(t, repo)
-	if _, err := store.BootstrapExecution(committed, workspace, snapshot); err != nil {
+	admission, err := store.BootstrapExecution(committed, workspace, snapshot)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -180,7 +181,9 @@ func TestMutablePlanCannotMintExecutionAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AdmitMutation(forged, workspace, changed); err == nil {
+	claim := admission.MutationAuthority()
+	claim.SemanticTaskRef = forged
+	if _, err := store.AdmitMutation(claim, workspace, changed); err == nil {
 		t.Fatal("uncommitted Plan/Task rewrite minted execution authority")
 	}
 }

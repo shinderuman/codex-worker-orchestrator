@@ -21,10 +21,11 @@ func (s *Store) bootstrapExecution(task SemanticTaskRef, workspace WorkspaceIden
 		return Admission{}, fmt.Errorf("repository controller is not available for execution bootstrap")
 	}
 	if head.LiveLeaseID != "" || head.LiveAttemptID != "" {
-		if head.ExecutionTaskRef == nil {
-			return Admission{}, fmt.Errorf("repository controller has no execution task authority")
+		authority, err := MutationAuthorityFromHead(head)
+		if err != nil {
+			return Admission{}, err
 		}
-		return s.AdmitMutation(*head.ExecutionTaskRef, workspace, snapshot)
+		return s.AdmitMutation(authority, workspace, snapshot)
 	}
 	if err := s.validateBootstrapWorkspace(workspace); err != nil {
 		return Admission{}, err
@@ -93,16 +94,19 @@ func (s *Store) bootstrapFreshExecution(
 	return Admission{Head: next, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
 }
 
-func (s *Store) admitMutation(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
-	head, err := s.loadAdmissibleHead(task)
+func (s *Store) admitMutation(authority MutationAuthority, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (Admission, error) {
+	head, err := s.loadAdmissibleHead(authority.SemanticTaskRef)
 	if err != nil {
+		return Admission{}, err
+	}
+	if err := validateMutationAuthorityClaim(head, authority); err != nil {
 		return Admission{}, err
 	}
 	attempt, lease, err := s.loadLiveAttemptAndLease(head)
 	if err != nil {
 		return Admission{}, err
 	}
-	if err := validateLiveAuthority(head, task, workspace, snapshot, attempt, lease); err != nil {
+	if err := validateLiveAuthority(head, authority.SemanticTaskRef, workspace, snapshot, attempt, lease); err != nil {
 		return Admission{}, err
 	}
 	return Admission{Head: head, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil

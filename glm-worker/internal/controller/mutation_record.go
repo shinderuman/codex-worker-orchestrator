@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Store) recordMutationLocked(admission Admission, command, outcome string, after WorkspaceSnapshot) (Admission, error) {
-	current, err := s.AdmitMutation(admission.Lease.SemanticTaskRef, admission.Workspace, admission.Snapshot)
+	current, err := s.AdmitMutation(admission.MutationAuthority(), admission.Workspace, admission.Snapshot)
 	if err != nil {
 		return Admission{}, err
 	}

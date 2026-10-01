@@ -25,7 +25,8 @@ func TestStateStoreRewriteCannotMintExecutionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	committed := controllerTestTask(t, repo)
-	if _, err := store.BootstrapExecution(committed, workspace, snapshot); err != nil {
+	admission, err := store.BootstrapExecution(committed, workspace, snapshot)
+	if err != nil {
 		t.Fatal(err)
 	}
 	before, err := store.LoadHead()
@@ -41,7 +42,9 @@ func TestStateStoreRewriteCannotMintExecutionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	forged := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/forged.md", ContractDigest: strings.Repeat("f", 64)}
-	if _, err := store.AdmitMutation(forged, workspace, snapshot); err == nil {
+	claim := admission.MutationAuthority()
+	claim.SemanticTaskRef = forged
+	if _, err := store.AdmitMutation(claim, workspace, snapshot); err == nil {
 		t.Fatal("StateStore rewrite minted controller authority")
 	}
 	after, err := store.LoadHead()
