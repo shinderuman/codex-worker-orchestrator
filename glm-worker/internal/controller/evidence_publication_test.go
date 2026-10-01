@@ -39,12 +39,12 @@ func TestEvidencePublicationAdvancesWithTransitionCommitCAS(t *testing.T) {
 	store := fixture.store
 	record := fixture.record
 
-	taskRevision := TaskIndexRevision{
-		SchemaVersion:        evidenceSchemaVersion,
-		TaskRef:              fixture.source.Attempt.SemanticTaskRef,
-		ControllerGeneration: record.CommittedGeneration,
-		CreatedAt:            time.Unix(2000, 0).UTC(),
-	}
+	taskRevision := testTaskIndexRevision(
+		fixture.source.Attempt.SemanticTaskRef,
+		record.CommittedGeneration,
+		record.TransitionID,
+		time.Unix(2000, 0).UTC(),
+	)
 
 	lock, err := store.acquireMutationLock()
 	if err != nil {
@@ -118,22 +118,24 @@ func TestEvidencePublicationRejectsUnpublishedIndexPredecessor(t *testing.T) {
 	store := fixture.store
 	record := fixture.record
 
-	firstRef, _, err := store.StoreTaskIndexRevision(TaskIndexRevision{
-		SchemaVersion:        evidenceSchemaVersion,
-		TaskRef:              fixture.source.Attempt.SemanticTaskRef,
-		ControllerGeneration: record.CommittedGeneration,
-		CreatedAt:            time.Unix(2000, 0).UTC(),
-	})
+	first := testTaskIndexRevision(
+		fixture.source.Attempt.SemanticTaskRef,
+		record.CommittedGeneration,
+		record.TransitionID,
+		time.Unix(2000, 0).UTC(),
+	)
+	firstRef, _, err := store.StoreTaskIndexRevision(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondRef, _, err := store.StoreTaskIndexRevision(TaskIndexRevision{
-		SchemaVersion:        evidenceSchemaVersion,
-		TaskRef:              fixture.source.Attempt.SemanticTaskRef,
-		PreviousRevision:     &firstRef,
-		ControllerGeneration: record.CommittedGeneration,
-		CreatedAt:            time.Unix(2001, 0).UTC(),
-	})
+	second := testTaskIndexRevision(
+		fixture.source.Attempt.SemanticTaskRef,
+		record.CommittedGeneration,
+		record.TransitionID,
+		time.Unix(2001, 0).UTC(),
+	)
+	second.PreviousRevision = &firstRef
+	secondRef, _, err := store.StoreTaskIndexRevision(second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,5 +167,16 @@ func TestEvidencePublicationRejectsUnpublishedIndexPredecessor(t *testing.T) {
 	}
 	if head.ControllerGeneration != record.PreparedGeneration || head.EvidenceHeadRef != nil || head.EvidenceLedgerHeadRef != nil {
 		t.Fatalf("rejected evidence publication changed controller authority: %#v", head)
+	}
+}
+
+func testTaskIndexRevision(task SemanticTaskRef, generation uint64, transitionID string, createdAt time.Time) TaskIndexRevision {
+	return TaskIndexRevision{
+		SchemaVersion:        evidenceSchemaVersion,
+		TaskRef:              task,
+		SemanticStatus:       "live",
+		ControllerGeneration: generation,
+		TransitionID:         transitionID,
+		CreatedAt:            createdAt,
 	}
 }
