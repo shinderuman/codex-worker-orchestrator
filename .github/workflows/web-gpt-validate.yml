@@ -1,0 +1,109 @@
+name: Web GPT Focused Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Existing web-gpt/** branch to validate
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact target branch HEAD SHA to validate
+        required: true
+        type: string
+      validation_mode:
+        description: Repository-owned validation mode
+        required: true
+        type: choice
+        options:
+          - repository-lint
+          - go-package-test
+          - full-go-test
+          - build-vet
+      package_scope:
+        description: Go package scope for go-package-test, such as ./internal/workflow
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-gpt-validation-${{ inputs.target_branch }}-${{ inputs.validation_mode }}
+  cancel-in-progress: false
+
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require canonical dispatch ref
+        env:
+          CONTROL_REF: ${{ github.ref }}
+        run: test "$CONTROL_REF" = refs/heads/main
+      - name: Checkout canonical validation control source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout exact target revision without credentials
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+          path: target
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Read canonical quality tool contract
+        id: quality-tools
+        working-directory: control
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Cache canonical quality tools
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: focused-quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('control/quality-tools.yml', 'control/install-quality-tools.sh') }}
+      - name: Install canonical quality tools
+        working-directory: control
+        run: |
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - name: Run bounded validation
+        working-directory: target
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+          VALIDATION_MODE: ${{ inputs.validation_mode }}
+          VALIDATION_SCOPE: ${{ inputs.package_scope }}
+          WEB_GPT_VALIDATION_CONTROL_ROOT: ${{ github.workspace }}/control
+          RESULT_PATH: ${{ runner.temp }}/web-gpt-validation/result.json
+          ARTIFACT_LOCATOR: web-gpt-validation-result-${{ github.run_id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/web-gpt-validation"
+          sh ../control/web-gpt-validate.sh "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$CONTROL_SHA" "$VALIDATION_MODE" "$VALIDATION_SCOPE" "$RESULT_PATH" "$ARTIFACT_LOCATOR"
+      - name: Upload machine-readable validation result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-gpt-validation-result-${{ github.run_id }}
+          path: ${{ runner.temp }}/web-gpt-validation/result.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize validation result
+        if: ${{ always() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/web-gpt-validation/result.json" ]; then
+            printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/web-gpt-validation/result.json" >> "$GITHUB_STEP_SUMMARY"
+            printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
