@@ -24,10 +24,12 @@ var classifiedFiles = map[string]pathClass{
 	"install-quality-tools.sh":               {true, "quality-policy"},
 	"commentlint":                            {true, "comment-policy"},
 	"harnesslint":                            {true, "quality-policy"},
+	"web-gpt-autofix.sh":                     {true, "quality-policy"},
 	".golangci.yml":                          {true, "quality-policy"},
 	"quality-tools.yml":                      {true, "quality-policy"},
 	".github/workflows/ci.yml":               {true, "quality-policy"},
 	".github/workflows/install-smoke.yml":    {true, "quality-policy"},
+	".github/workflows/web-gpt-autofix.yml":  {true, "quality-policy"},
 	".githooks/post-merge":                   {true, "installer"},
 	"claude/settings-managed.json":           {true, "managed-claude-settings"},
 	"codex/config-managed.toml":              {true, "managed-codex-config"},
@@ -109,7 +111,8 @@ func classifyNonCriticalPathPattern(path string) (bool, string) {
 
 func IsQualitySurface(path string) bool {
 	if path == ".golangci.yml" || path == "quality-tools.yml" || path == ".github/workflows/ci.yml" ||
-		path == ".github/workflows/install-smoke.yml" || path == "install-quality-tools.sh" ||
+		path == ".github/workflows/install-smoke.yml" || path == ".github/workflows/web-gpt-autofix.yml" ||
+		path == "install-quality-tools.sh" || path == "web-gpt-autofix.sh" ||
 		path == "harnesslint" || path == "commentlint" ||
 		path == "glm-worker/internal/workflow/quality_gate.go" || path == "glm-worker/internal/workflow/selfprotection.go" {
 		return true
