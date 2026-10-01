@@ -19,6 +19,10 @@ on:
       expected_head_sha:
         required: true
         type: string
+    outputs:
+      changed:
+        description: Whether deterministic Autofix prepared a non-empty patch
+        value: ${{ jobs.prepare.outputs.changed }}
 
 concurrency:
   group: web-gpt-autofix-${{ inputs.target_branch }}
