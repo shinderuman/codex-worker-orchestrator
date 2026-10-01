@@ -8,6 +8,28 @@ import (
 	"strings"
 )
 
+type Request struct {
+	Version         int     `json:"version"`
+	RequestID       string  `json:"request_id"`
+	Operation       string  `json:"operation"`
+	TargetBranch    string  `json:"target_branch"`
+	ExpectedHeadSHA string  `json:"expected_head_sha"`
+	ValidationMode  *string `json:"validation_mode,omitempty"`
+	PackageScope    *string `json:"package_scope,omitempty"`
+}
+
+type OperationRequest struct {
+	Operation       string
+	TargetBranch    string
+	ExpectedHeadSHA string
+	ValidationMode  string
+	PackageScope    string
+}
+
+type ValidationError struct {
+	Code string
+}
+
 const (
 	MailboxIssueNumber = 1236
 	AuthorizedActor    = "shinderuman"
@@ -32,28 +54,6 @@ var (
 	branchPattern       = regexp.MustCompile(`^web-gpt/[A-Za-z0-9._/-]+$`)
 	packageScopePattern = regexp.MustCompile(`^\./[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$`)
 )
-
-type Request struct {
-	Version         int     `json:"version"`
-	RequestID       string  `json:"request_id"`
-	Operation       string  `json:"operation"`
-	TargetBranch    string  `json:"target_branch"`
-	ExpectedHeadSHA string  `json:"expected_head_sha"`
-	ValidationMode  *string `json:"validation_mode,omitempty"`
-	PackageScope    *string `json:"package_scope,omitempty"`
-}
-
-type OperationRequest struct {
-	Operation       string
-	TargetBranch    string
-	ExpectedHeadSHA string
-	ValidationMode  string
-	PackageScope    string
-}
-
-type ValidationError struct {
-	Code string
-}
 
 func (e ValidationError) Error() string {
 	return e.Code
