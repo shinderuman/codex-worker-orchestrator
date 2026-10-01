@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,7 +14,7 @@ func TestAttemptBundleStableAcrossLanePathReuseAndUnrelatedEvidence(t *testing.T
 	source, _ := newControllerLinkedWorktree(t)
 	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "episode-1", 1)
 	taskRef := storeBundleTaskRevision(t, store, seal.SemanticTaskRef, 1, nil, []EvidenceObjectRef{sealRef}, nil)
-	episodeRef := storeBundleEpisodeRevision(t, store, seal.EpisodeID, 1, 1, nil, []EvidenceObjectRef{sealRef}, nil)
+	episodeRef := storeBundleEpisodeRevision(t, store, seal, taskRef, 1, 1, nil, []EvidenceObjectRef{sealRef}, nil)
 	head1, ledger1 := publishBundleAuthority(t, store, 1, "snapshot-1", nil, nil,
 		[]EvidenceSubjectHead{{SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef), RevisionRef: taskRef}},
 		[]EvidenceSubjectHead{{SubjectID: seal.EpisodeID, RevisionRef: episodeRef}},
@@ -76,7 +77,7 @@ func TestAttemptBundleIncludesLaterFinalizationWithoutSealRewrite(t *testing.T) 
 	}
 	finalRef, _, err := store.StoreAttemptFinalization(AttemptFinalizationRecord{
 		SchemaVersion: evidenceSchemaVersion, AttemptSealRef: sealRef, ControllerGeneration: 2,
-		TransitionID: "transition-2", ProjectSnapshotID: "snapshot-2", Kind: "integrated", CreatedAt: time.Unix(5200, 0).UTC(),
+		TransitionID: bundleTransitionID(2), ProjectSnapshotID: "snapshot-2", Kind: "integrated", CreatedAt: time.Unix(5200, 0).UTC(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +110,7 @@ func TestTaskAndEpisodeBundlesProjectHistoricalEvidence(t *testing.T) {
 	source, _ := newControllerLinkedWorktree(t)
 	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "episode-1", 1)
 	taskRef := storeBundleTaskRevision(t, store, seal.SemanticTaskRef, 1, nil, []EvidenceObjectRef{sealRef}, nil)
-	episodeRef := storeBundleEpisodeRevision(t, store, seal.EpisodeID, 1, 1, nil, []EvidenceObjectRef{sealRef}, nil)
+	episodeRef := storeBundleEpisodeRevision(t, store, seal, taskRef, 1, 1, nil, []EvidenceObjectRef{sealRef}, nil)
 	publishBundleAuthority(t, store, 1, "snapshot-1", nil, nil,
 		[]EvidenceSubjectHead{{SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef), RevisionRef: taskRef}},
 		[]EvidenceSubjectHead{{SubjectID: seal.EpisodeID, RevisionRef: episodeRef}},
@@ -127,6 +128,80 @@ func TestTaskAndEpisodeBundlesProjectHistoricalEvidence(t *testing.T) {
 	}
 	if episodeBundle.Kind != evidenceBundleEpisode || !bundleContainsRef(episodeBundle, sealRef) || !bundleContainsRef(episodeBundle, taskRef) {
 		t.Fatalf("Episode Bundle is incomplete: %#v", episodeBundle)
+	}
+}
+
+func TestTaskAndEpisodeBundlesIncludeSemanticEvidenceLinks(t *testing.T) {
+	store := newEvidenceTestStore(t)
+	source, _ := newControllerLinkedWorktree(t)
+	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "episode-1", 1)
+	findingRef := storeBundleSemanticObject(t, store, "finding-record", "finding:f1")
+	dependencyRef := storeBundleSemanticObject(t, store, "dependency-edge", "dependency:d1")
+	publicationRef := storeBundleSemanticObject(t, store, "publication-lineage", "publication:p1")
+	transitionRef := storeBundleSemanticObject(t, store, "transition-record", "transition:t1")
+	integrationRef := storeBundleSemanticObject(t, store, "integration-record", "integration:i1")
+
+	taskRevision := testTaskIndexRevision(seal.SemanticTaskRef, 1, bundleTransitionID(1), time.Unix(5301, 0).UTC())
+	taskRevision.AttemptSeals = []EvidenceObjectRef{sealRef}
+	taskRevision.FindingRecords = []EvidenceObjectRef{findingRef}
+	taskRevision.DependencyEdgeRecords = []EvidenceObjectRef{dependencyRef}
+	taskRevision.PublicationLineageRecords = []EvidenceObjectRef{publicationRef}
+	taskRef, _, err := store.StoreTaskIndexRevision(taskRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episodeRef, _, err := store.StoreEpisodeIndexRevision(EpisodeIndexRevision{
+		SchemaVersion:             evidenceSchemaVersion,
+		EpisodeID:                 seal.EpisodeID,
+		RootTaskRef:               seal.RootTaskRef,
+		EpisodeRevision:           1,
+		DependencyGraphSnapshotID: "dependency-graph-1",
+		AdmittedClosureTaskRefs:   []SemanticTaskRef{seal.SemanticTaskRef},
+		TaskIndexHeads: []EvidenceSubjectHead{{
+			SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef),
+			RevisionRef: taskRef,
+		}},
+		AttemptSeals:         []EvidenceObjectRef{sealRef},
+		FindingRecords:       []EvidenceObjectRef{findingRef},
+		TransitionRecords:    []EvidenceObjectRef{transitionRef},
+		IntegrationHistory:   []EvidenceObjectRef{integrationRef},
+		State:                "open",
+		ControllerGeneration: 1,
+		TransitionID:         bundleTransitionID(1),
+		CreatedAt:            time.Unix(5401, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishBundleAuthority(t, store, 1, "snapshot-1", nil, nil,
+		[]EvidenceSubjectHead{{SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef), RevisionRef: taskRef}},
+		[]EvidenceSubjectHead{{SubjectID: seal.EpisodeID, RevisionRef: episodeRef}},
+	)
+	taskBundle, err := store.BuildTaskEvidenceBundle(taskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episodeBundle, err := store.BuildEpisodeEvidenceBundle(episodeRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, ref := range map[string]EvidenceObjectRef{
+		"finding": findingRef,
+		"dependency": dependencyRef,
+		"publication": publicationRef,
+	} {
+		if !bundleContainsRef(taskBundle, ref) {
+			t.Fatalf("Task Bundle omitted %s semantic evidence", name)
+		}
+	}
+	for name, ref := range map[string]EvidenceObjectRef{
+		"finding": findingRef,
+		"transition": transitionRef,
+		"integration": integrationRef,
+	} {
+		if !bundleContainsRef(episodeBundle, ref) {
+			t.Fatalf("Episode Bundle omitted %s semantic evidence", name)
+		}
 	}
 }
 
@@ -167,7 +242,7 @@ func storeBundleAttemptSeal(t *testing.T, store *Store, source, attemptID, taskP
 		SemanticTaskRef: SemanticTaskRef{TaskPath: taskPath, ContractDigest: attemptID + "-contract"},
 		RootTaskRef: SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root-contract"},
 		AttemptID: attemptID, EpisodeID: episodeID, EpisodeRevision: 1, ControllerGeneration: generation,
-		SealingTransitionID: "transition-" + attemptID, RevokedLeaseID: "lease-" + attemptID,
+		SealingTransitionID: bundleTransitionID(generation), RevokedLeaseID: "lease-" + attemptID,
 		WorkspaceID: "workspace-" + attemptID, ExecutionPurpose: "blocker-execution",
 		StartedAt: time.Unix(5000+int64(generation), 0).UTC(), SealedAt: time.Unix(5100+int64(generation), 0).UTC(),
 		Disposition: "suspended-for-blocker", ExecutionBaseOID: commit,
@@ -185,10 +260,37 @@ func storeBundleAttemptSeal(t *testing.T, store *Store, source, attemptID, taskP
 
 func storeBundleTaskRevision(t *testing.T, store *Store, task SemanticTaskRef, generation uint64, previous *EvidenceObjectRef, seals, finalizations []EvidenceObjectRef) EvidenceObjectRef {
 	t.Helper()
-	ref, _, err := store.StoreTaskIndexRevision(TaskIndexRevision{
-		SchemaVersion: evidenceSchemaVersion, TaskRef: task, PreviousRevision: previous,
-		AttemptSeals: seals, Finalizations: finalizations, ControllerGeneration: generation,
-		CreatedAt: time.Unix(5300+int64(generation), 0).UTC(),
+	revision := testTaskIndexRevision(task, generation, bundleTransitionID(generation), time.Unix(5300+int64(generation), 0).UTC())
+	revision.PreviousRevision = previous
+	revision.AttemptSeals = seals
+	revision.Finalizations = finalizations
+	ref, _, err := store.StoreTaskIndexRevision(revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ref
+}
+
+func storeBundleEpisodeRevision(t *testing.T, store *Store, seal AttemptSeal, taskRef EvidenceObjectRef, episodeRevision, generation uint64, previous *EvidenceObjectRef, seals, finalizations []EvidenceObjectRef) EvidenceObjectRef {
+	t.Helper()
+	ref, _, err := store.StoreEpisodeIndexRevision(EpisodeIndexRevision{
+		SchemaVersion:             evidenceSchemaVersion,
+		EpisodeID:                 seal.EpisodeID,
+		RootTaskRef:               seal.RootTaskRef,
+		EpisodeRevision:           episodeRevision,
+		PreviousRevision:          previous,
+		DependencyGraphSnapshotID: fmt.Sprintf("dependency-graph-%d", generation),
+		AdmittedClosureTaskRefs:   []SemanticTaskRef{seal.SemanticTaskRef},
+		TaskIndexHeads: []EvidenceSubjectHead{{
+			SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef),
+			RevisionRef: taskRef,
+		}},
+		AttemptSeals:         seals,
+		Finalizations:        finalizations,
+		State:                "open",
+		ControllerGeneration: generation,
+		TransitionID:         bundleTransitionID(generation),
+		CreatedAt:            time.Unix(5400+int64(generation), 0).UTC(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -196,13 +298,9 @@ func storeBundleTaskRevision(t *testing.T, store *Store, task SemanticTaskRef, g
 	return ref
 }
 
-func storeBundleEpisodeRevision(t *testing.T, store *Store, episodeID string, episodeRevision, generation uint64, previous *EvidenceObjectRef, seals, finalizations []EvidenceObjectRef) EvidenceObjectRef {
+func storeBundleSemanticObject(t *testing.T, store *Store, kind, logicalIdentity string) EvidenceObjectRef {
 	t.Helper()
-	ref, _, err := store.StoreEpisodeIndexRevision(EpisodeIndexRevision{
-		SchemaVersion: evidenceSchemaVersion, EpisodeID: episodeID, EpisodeRevision: episodeRevision,
-		PreviousRevision: previous, AttemptSeals: seals, Finalizations: finalizations,
-		ControllerGeneration: generation, CreatedAt: time.Unix(5400+int64(generation), 0).UTC(),
-	})
+	ref, err := store.PutEvidenceObject(kind, "application/json", logicalIdentity, true, []byte(`{"id":"evidence"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +327,7 @@ func publishBundleAuthority(
 	ledgerRef, _, err := store.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
 		SchemaVersion: evidenceSchemaVersion, Sequence: generation, PreviousRecord: previousLedger,
 		RepositoryIdentity: store.Identity().LineageID, ControllerGeneration: generation,
-		TransitionID: "transition-ledger-" + snapshot, ProjectSnapshotID: snapshot,
+		TransitionID: bundleTransitionID(generation), ProjectSnapshotID: snapshot,
 		EvidenceHeadRef: headRef, CreatedAt: time.Unix(5600+int64(generation), 0).UTC(),
 	})
 	if err != nil {
@@ -249,6 +347,10 @@ func publishBundleAuthority(
 		t.Fatal(err)
 	}
 	return headRef, ledgerRef
+}
+
+func bundleTransitionID(generation uint64) string {
+	return fmt.Sprintf("transition-bundle-%d", generation)
 }
 
 func bundleContainsRef(bundle EvidenceBundleProjection, target EvidenceObjectRef) bool {
