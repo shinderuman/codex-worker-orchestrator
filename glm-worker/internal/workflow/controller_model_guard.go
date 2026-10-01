@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -20,13 +19,6 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 	if checkpoint.ReadOnly {
 		return controllerModelCallGuard{}, nil
 	}
-	decision, err := repositoryharness.Evaluate(w.config.RepoRoot)
-	if err != nil {
-		return controllerModelCallGuard{}, fmt.Errorf("evaluate repository controller applicability: %w", err)
-	}
-	if !decision.Active {
-		return controllerModelCallGuard{}, nil
-	}
 	exists, err := controller.Exists(w.config)
 	if err != nil {
 		return controllerModelCallGuard{}, fmt.Errorf("inspect repository controller activation: %w", err)
@@ -38,6 +30,13 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 	if err != nil {
 		return controllerModelCallGuard{}, err
 	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return controllerModelCallGuard{}, err
+	}
+	if controller.IsPristine(head) {
+		return controllerModelCallGuard{}, nil
+	}
 	workspace, err := controller.ResolveWorkspaceIdentity(w.config.RepoRoot, store.Identity())
 	if err != nil {
 		return controllerModelCallGuard{}, err
@@ -46,11 +45,11 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 	if err != nil {
 		return controllerModelCallGuard{}, err
 	}
-	head, err := store.LoadHead()
+	authority, err := controller.MutationAuthorityFromHead(head)
 	if err != nil {
 		return controllerModelCallGuard{}, err
 	}
-	admission, err := w.resolveControllerModelAdmission(store, head, workspace, before)
+	admission, err := store.AdmitMutationOrFailClosed(authority, workspace, before)
 	if err != nil {
 		return controllerModelCallGuard{}, err
 	}
@@ -59,26 +58,6 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 		return controllerModelCallGuard{}, err
 	}
 	return controllerModelCallGuard{store: store, admission: admission, before: before, active: true}, nil
-}
-
-func (w *Workflow) resolveControllerModelAdmission(
-	store *controller.Store,
-	head controller.RepositoryControllerHead,
-	workspace controller.WorkspaceIdentity,
-	before controller.WorkspaceSnapshot,
-) (controller.Admission, error) {
-	if head.LiveAttemptID == "" && head.LiveLeaseID == "" {
-		authority, err := controller.ResolveCommittedTaskAuthority(w.config.RepoRoot)
-		if err != nil {
-			return controller.Admission{}, err
-		}
-		return store.BootstrapExecution(authority.Task, workspace, before)
-	}
-	authority, err := controller.MutationAuthorityFromHead(head)
-	if err != nil {
-		return controller.Admission{}, err
-	}
-	return store.AdmitMutationOrFailClosed(authority, workspace, before)
 }
 
 func (w *Workflow) captureControllerModelCallAfter(guard controllerModelCallGuard) (controller.WorkspaceSnapshot, error) {
