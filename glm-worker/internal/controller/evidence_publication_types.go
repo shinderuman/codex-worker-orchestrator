@@ -8,6 +8,7 @@ type EvidencePublicationInput struct {
 
 	AttemptSealRefs     []EvidenceObjectRef `json:"attempt_seal_refs,omitempty"`
 	FinalizationRefs    []EvidenceObjectRef `json:"finalization_refs,omitempty"`
+	FindingRecordRefs   []EvidenceObjectRef `json:"finding_record_refs,omitempty"`
 	TaskRevisionRefs    []EvidenceObjectRef `json:"task_revision_refs,omitempty"`
 	EpisodeRevisionRefs []EvidenceObjectRef `json:"episode_revision_refs,omitempty"`
 }
