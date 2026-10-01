@@ -20,6 +20,7 @@ type webGPTAutofixResult struct {
 
 type webGPTAutofixFixture struct {
 	root     string
+	control  string
 	remote   string
 	branch   string
 	expected string
@@ -27,6 +28,8 @@ type webGPTAutofixFixture struct {
 
 const fakeWebGPTAutofixHarnesslint = `#!/bin/sh
 set -eu
+[ -n "${HARNESSLINT_REPO_ROOT:-}" ]
+cd "$HARNESSLINT_REPO_ROOT"
 case "${AUTOFIX_TEST_MODE:-clean}" in
 clean)
 	exit 0
@@ -130,32 +133,36 @@ func newWebGPTAutofixFixture(t *testing.T) webGPTAutofixFixture {
 	base := t.TempDir()
 	remote := filepath.Join(base, "remote.git")
 	root := filepath.Join(base, "work")
+	control := filepath.Join(base, "control")
 	branch := "web-gpt/autofix-test"
 	runWebGPTAutofixGit(t, base, "init", "--bare", remote)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(control, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	runWebGPTAutofixGit(t, root, "init")
 	runWebGPTAutofixGit(t, root, "config", "user.email", "test@example.com")
 	runWebGPTAutofixGit(t, root, "config", "user.name", "tester")
-	writeWebGPTAutofixFile(t, root, "web-gpt-autofix.sh", readWebGPTAutofixContractFile(t, "../../../web-gpt-autofix.sh"), 0o644)
-	writeWebGPTAutofixFile(t, root, "harnesslint", fakeWebGPTAutofixHarnesslint, 0o755)
+	writeWebGPTAutofixFile(t, control, "web-gpt-autofix.sh", readWebGPTAutofixContractFile(t, "../../../web-gpt-autofix.sh"), 0o644)
+	writeWebGPTAutofixFile(t, control, "harnesslint", fakeWebGPTAutofixHarnesslint, 0o755)
 	writeWebGPTAutofixFile(t, root, "fixture.txt", "bad\n", 0o644)
 	runWebGPTAutofixGit(t, root, "add", ".")
 	runWebGPTAutofixGit(t, root, "commit", "-m", "base")
 	runWebGPTAutofixGit(t, root, "branch", "-M", branch)
 	runWebGPTAutofixGit(t, root, "remote", "add", "origin", remote)
 	runWebGPTAutofixGit(t, root, "push", "-u", "origin", branch)
-	return webGPTAutofixFixture{root: root, remote: remote, branch: branch, expected: runWebGPTAutofixGit(t, root, "rev-parse", "HEAD")}
+	return webGPTAutofixFixture{root: root, control: control, remote: remote, branch: branch, expected: runWebGPTAutofixGit(t, root, "rev-parse", "HEAD")}
 }
 
 func (fixture webGPTAutofixFixture) run(t *testing.T, mode, target, expected string) (webGPTAutofixResult, error) {
 	t.Helper()
 	resultPath := filepath.Join(filepath.Dir(fixture.root), "result.json")
 	_ = os.Remove(resultPath)
-	command := exec.Command("sh", "./web-gpt-autofix.sh", target, expected, resultPath)
+	command := exec.Command("sh", filepath.Join(fixture.control, "web-gpt-autofix.sh"), target, expected, resultPath)
 	command.Dir = fixture.root
-	command.Env = append(os.Environ(), "AUTOFIX_TEST_MODE="+mode)
+	command.Env = append(os.Environ(), "AUTOFIX_TEST_MODE="+mode, "WEB_GPT_AUTOFIX_CONTROL_ROOT="+fixture.control)
 	output, err := command.CombinedOutput()
 	if _, statErr := os.Stat(resultPath); statErr != nil {
 		t.Fatalf("result missing: %v; output: %s", statErr, output)
