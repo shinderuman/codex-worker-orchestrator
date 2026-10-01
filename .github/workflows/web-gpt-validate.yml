@@ -65,17 +65,10 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Cache canonical quality tools
-        continue-on-error: true
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
-          key: focused-quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('control/quality-tools.yml', 'control/install-quality-tools.sh') }}
-      - name: Install canonical quality tools
+      - name: Install canonical quality tools without persistent cache
         working-directory: control
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
-          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
       - name: Run bounded validation
         working-directory: target
@@ -86,6 +79,7 @@ jobs:
           VALIDATION_MODE: ${{ inputs.validation_mode }}
           VALIDATION_SCOPE: ${{ inputs.package_scope }}
           WEB_GPT_VALIDATION_CONTROL_ROOT: ${{ github.workspace }}/control
+          QUALITY_TOOLS_BIN_DIR: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
           RESULT_PATH: ${{ runner.temp }}/web-gpt-validation/result.json
           ARTIFACT_LOCATOR: web-gpt-validation-result-${{ github.run_id }}
         run: |
