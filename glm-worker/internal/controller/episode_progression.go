@@ -38,28 +38,15 @@ func (s *Store) SatisfyEpisodeTask(input EpisodeSatisfactionInput) (EpisodeSched
 func (s *Store) validateEpisodeSatisfaction(
 	input EpisodeSatisfactionInput,
 ) (RepositoryControllerHead, BlockerEpisodeRevision, error) {
-	if input.EpisodeID == "" || input.ExpectedRevision == 0 || input.ProjectSnapshotID == "" || input.SatisfiedTaskRef.Empty() {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf("episode satisfaction authority is incomplete")
+	if err := validateEpisodeSatisfactionInput(input); err != nil {
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
 	}
 	head, err := s.LoadHead()
 	if err != nil {
 		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
 	}
-	if head.Status != ControllerStatusActive {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf("episode satisfaction requires active controller authority")
-	}
-	if head.ControllerGeneration != input.ExpectedControllerGeneration {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf(
-			"episode satisfaction controller generation is stale: got=%d want=%d",
-			input.ExpectedControllerGeneration,
-			head.ControllerGeneration,
-		)
-	}
-	if head.ProjectSnapshotID != input.ProjectSnapshotID {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf("episode satisfaction project snapshot is stale")
-	}
-	if head.ActiveEpisodeID != input.EpisodeID || head.ActiveEpisodeRevision != input.ExpectedRevision {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf("episode satisfaction revision is stale")
+	if err := validateEpisodeSatisfactionHead(head, input); err != nil {
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
 	}
 	if _, err := s.LoadProjectSnapshot(input.ProjectSnapshotID); err != nil {
 		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
@@ -68,16 +55,54 @@ func (s *Store) validateEpisodeSatisfaction(
 	if err != nil {
 		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
 	}
-	if previous.State == EpisodeStateClosed {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf("closed blocker episode cannot accept satisfaction")
-	}
-	if head.RootTaskRef == nil || !head.RootTaskRef.Equal(previous.RootTaskRef) {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf("episode satisfaction root authority does not match controller")
-	}
-	if !taskRefIn(previous.AdmittedClosure, input.SatisfiedTaskRef) {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, fmt.Errorf("satisfied task is outside admitted blocker closure")
+	if err := validateEpisodeSatisfactionRevision(head, previous, input); err != nil {
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
 	}
 	return head, previous, nil
+}
+
+func validateEpisodeSatisfactionInput(input EpisodeSatisfactionInput) error {
+	if input.EpisodeID == "" || input.ExpectedRevision == 0 || input.ProjectSnapshotID == "" || input.SatisfiedTaskRef.Empty() {
+		return fmt.Errorf("episode satisfaction authority is incomplete")
+	}
+	return nil
+}
+
+func validateEpisodeSatisfactionHead(head RepositoryControllerHead, input EpisodeSatisfactionInput) error {
+	if head.Status != ControllerStatusActive {
+		return fmt.Errorf("episode satisfaction requires active controller authority")
+	}
+	if head.ControllerGeneration != input.ExpectedControllerGeneration {
+		return fmt.Errorf(
+			"episode satisfaction controller generation is stale: got=%d want=%d",
+			input.ExpectedControllerGeneration,
+			head.ControllerGeneration,
+		)
+	}
+	if head.ProjectSnapshotID != input.ProjectSnapshotID {
+		return fmt.Errorf("episode satisfaction project snapshot is stale")
+	}
+	if head.ActiveEpisodeID != input.EpisodeID || head.ActiveEpisodeRevision != input.ExpectedRevision {
+		return fmt.Errorf("episode satisfaction revision is stale")
+	}
+	return nil
+}
+
+func validateEpisodeSatisfactionRevision(
+	head RepositoryControllerHead,
+	previous BlockerEpisodeRevision,
+	input EpisodeSatisfactionInput,
+) error {
+	if previous.State == EpisodeStateClosed {
+		return fmt.Errorf("closed blocker episode cannot accept satisfaction")
+	}
+	if head.RootTaskRef == nil || !head.RootTaskRef.Equal(previous.RootTaskRef) {
+		return fmt.Errorf("episode satisfaction root authority does not match controller")
+	}
+	if !taskRefIn(previous.AdmittedClosure, input.SatisfiedTaskRef) {
+		return fmt.Errorf("satisfied task is outside admitted blocker closure")
+	}
+	return nil
 }
 
 func progressedEpisodeRevision(
