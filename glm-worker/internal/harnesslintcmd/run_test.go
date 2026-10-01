@@ -1,15 +1,45 @@
 package harnesslintcmd
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestParseArgs(t *testing.T) {
-	if fix, ok := parseArgs(nil); !ok || fix {
-		t.Fatalf("empty = %v,%v", fix, ok)
+	cases := []struct {
+		name string
+		args []string
+		mode runMode
+		ok   bool
+	}{
+		{name: "check", mode: modeCheck, ok: true},
+		{name: "fix", args: []string{"--fix"}, mode: modeFix, ok: true},
+		{name: "deterministic", args: []string{"--deterministic-fix"}, mode: modeDeterministicFix, ok: true},
+		{name: "controlled", args: []string{"--controlled-check"}, mode: modeControlledCheck, ok: true},
+		{name: "unknown", args: []string{"x"}, mode: modeCheck, ok: false},
 	}
-	if fix, ok := parseArgs([]string{"--fix"}); !ok || !fix {
-		t.Fatalf("fix = %v,%v", fix, ok)
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			mode, ok := parseArgs(item.args)
+			if mode != item.mode || ok != item.ok {
+				t.Fatalf("parseArgs(%v) = %v,%v", item.args, mode, ok)
+			}
+		})
 	}
-	if _, ok := parseArgs([]string{"x"}); ok {
-		t.Fatal("unexpected argument must fail")
+}
+
+func TestControlledRootRequiresAbsolutePath(t *testing.T) {
+	t.Setenv("HARNESSLINT_CONTROL_ROOT", "relative")
+	if _, err := controlledRoot(); err == nil {
+		t.Fatal("relative control root must fail")
+	}
+	absolute := filepath.Join(t.TempDir(), "control")
+	t.Setenv("HARNESSLINT_CONTROL_ROOT", absolute)
+	got, err := controlledRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Clean(absolute) {
+		t.Fatalf("controlledRoot = %q", got)
 	}
 }
