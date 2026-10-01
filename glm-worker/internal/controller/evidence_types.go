@@ -46,8 +46,8 @@ type AttemptSeal struct {
 type AttemptFinalizationRecord struct {
 	SchemaVersion        int                 `json:"schema_version"`
 	FinalizationID       string              `json:"finalization_id"`
-	AttemptSealID        string              `json:"attempt_seal_id"`
-	PreviousFinalization string              `json:"previous_finalization,omitempty"`
+	AttemptSealRef       EvidenceObjectRef   `json:"attempt_seal_ref"`
+	PreviousFinalization *EvidenceObjectRef  `json:"previous_finalization,omitempty"`
 	ControllerGeneration uint64              `json:"controller_generation"`
 	TransitionID         string              `json:"transition_id"`
 	ProjectSnapshotID    string              `json:"project_snapshot_id"`
@@ -57,59 +57,58 @@ type AttemptFinalizationRecord struct {
 }
 
 type TaskIndexRevision struct {
-	SchemaVersion       int             `json:"schema_version"`
-	RevisionID          string          `json:"revision_id"`
-	TaskRef             SemanticTaskRef `json:"task_ref"`
-	PreviousRevisionID  string          `json:"previous_revision_id,omitempty"`
-	AttemptSealIDs      []string        `json:"attempt_seal_ids"`
-	FinalizationIDs     []string        `json:"finalization_ids,omitempty"`
-	Terminal            bool            `json:"terminal"`
-	ControllerGeneration uint64         `json:"controller_generation"`
-	CreatedAt           time.Time       `json:"created_at"`
+	SchemaVersion        int                 `json:"schema_version"`
+	RevisionID           string              `json:"revision_id"`
+	TaskRef              SemanticTaskRef     `json:"task_ref"`
+	PreviousRevision     *EvidenceObjectRef  `json:"previous_revision,omitempty"`
+	AttemptSeals         []EvidenceObjectRef `json:"attempt_seals"`
+	Finalizations        []EvidenceObjectRef `json:"finalizations,omitempty"`
+	Terminal             bool                `json:"terminal"`
+	ControllerGeneration uint64              `json:"controller_generation"`
+	CreatedAt            time.Time           `json:"created_at"`
 }
 
 type EpisodeIndexRevision struct {
-	SchemaVersion        int      `json:"schema_version"`
-	RevisionID           string   `json:"revision_id"`
-	EpisodeID            string   `json:"episode_id"`
-	EpisodeRevision      uint64   `json:"episode_revision"`
-	PreviousRevisionID   string   `json:"previous_revision_id,omitempty"`
-	AttemptSealIDs       []string `json:"attempt_seal_ids"`
-	FinalizationIDs      []string `json:"finalization_ids,omitempty"`
-	Closed               bool     `json:"closed"`
-	ControllerGeneration uint64   `json:"controller_generation"`
-	CreatedAt            time.Time `json:"created_at"`
+	SchemaVersion        int                 `json:"schema_version"`
+	RevisionID           string              `json:"revision_id"`
+	EpisodeID            string              `json:"episode_id"`
+	EpisodeRevision      uint64              `json:"episode_revision"`
+	PreviousRevision     *EvidenceObjectRef  `json:"previous_revision,omitempty"`
+	AttemptSeals         []EvidenceObjectRef `json:"attempt_seals"`
+	Finalizations        []EvidenceObjectRef `json:"finalizations,omitempty"`
+	Closed               bool                `json:"closed"`
+	ControllerGeneration uint64              `json:"controller_generation"`
+	CreatedAt            time.Time           `json:"created_at"`
 }
 
 type EvidenceSubjectHead struct {
-	SubjectID      string `json:"subject_id"`
-	RevisionDigest string `json:"revision_digest"`
+	SubjectID   string            `json:"subject_id"`
+	RevisionRef EvidenceObjectRef `json:"revision_ref"`
 }
 
 type EvidenceHead struct {
-	SchemaVersion       int                   `json:"schema_version"`
-	HeadDigest          string                `json:"head_digest"`
-	RepositoryIdentity  string                `json:"repository_identity"`
-	PreviousHeadDigest  string                `json:"previous_head_digest,omitempty"`
-	LedgerDigest        string                `json:"ledger_digest"`
-	TaskHeads           []EvidenceSubjectHead `json:"task_heads,omitempty"`
-	EpisodeHeads        []EvidenceSubjectHead `json:"episode_heads,omitempty"`
-	ControllerGeneration uint64               `json:"controller_generation"`
-	ProjectSnapshotID   string                `json:"project_snapshot_id"`
-	CreatedAt           time.Time             `json:"created_at"`
+	SchemaVersion        int                   `json:"schema_version"`
+	HeadDigest           string                `json:"head_digest"`
+	RepositoryIdentity   string                `json:"repository_identity"`
+	PreviousHead         *EvidenceObjectRef    `json:"previous_head,omitempty"`
+	TaskHeads            []EvidenceSubjectHead `json:"task_heads,omitempty"`
+	EpisodeHeads         []EvidenceSubjectHead `json:"episode_heads,omitempty"`
+	ControllerGeneration uint64                `json:"controller_generation"`
+	ProjectSnapshotID    string                `json:"project_snapshot_id"`
+	CreatedAt            time.Time             `json:"created_at"`
 }
 
 type EvidenceLedgerRecord struct {
-	SchemaVersion        int       `json:"schema_version"`
-	RecordDigest         string    `json:"record_digest"`
-	Sequence             uint64    `json:"sequence"`
-	PreviousDigest       string    `json:"previous_digest,omitempty"`
-	RepositoryIdentity   string    `json:"repository_identity"`
-	ControllerGeneration uint64    `json:"controller_generation"`
-	TransitionID         string    `json:"transition_id"`
-	ProjectSnapshotID    string    `json:"project_snapshot_id"`
-	EvidenceHeadDigest   string    `json:"evidence_head_digest"`
-	CreatedAt            time.Time `json:"created_at"`
+	SchemaVersion        int                `json:"schema_version"`
+	RecordDigest         string             `json:"record_digest"`
+	Sequence             uint64             `json:"sequence"`
+	PreviousRecord       *EvidenceObjectRef `json:"previous_record,omitempty"`
+	RepositoryIdentity   string             `json:"repository_identity"`
+	ControllerGeneration uint64             `json:"controller_generation"`
+	TransitionID         string             `json:"transition_id"`
+	ProjectSnapshotID    string             `json:"project_snapshot_id"`
+	EvidenceHeadRef      EvidenceObjectRef  `json:"evidence_head_ref"`
+	CreatedAt            time.Time          `json:"created_at"`
 }
 
 type EvidenceIntegrityError struct {
