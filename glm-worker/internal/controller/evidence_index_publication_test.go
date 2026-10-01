@@ -39,7 +39,7 @@ func TestEvidencePublicationRejectsEpisodeIndexBoundToDifferentTransition(t *tes
 	)
 	episode.TransitionID = "different-transition"
 	if _, _, err := commitEvidenceForExecutionSwitch(t, fixture, EvidencePublicationInput{
-		TaskRevisionRefs:  []EvidenceObjectRef{taskRef},
+		TaskRevisionRefs: []EvidenceObjectRef{taskRef},
 		EpisodeRevisions: []EpisodeIndexRevision{episode},
 	}); err == nil {
 		t.Fatal("episode index revision bound to a different transition was published")
