@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
@@ -20,10 +21,19 @@ type errorEnvelope struct {
 	Error errorBody `json:"error"`
 }
 
+type runMode int
+
+const (
+	modeCheck runMode = iota
+	modeFix
+	modeDeterministicFix
+	modeControlledCheck
+)
+
 func Run(args []string, stdout, stderr io.Writer) int {
-	fix, ok := parseArgs(args)
+	mode, ok := parseArgs(args)
 	if !ok {
-		write(stderr, errorEnvelope{Error: errorBody{Kind: "usage", Message: "usage: harnesslint [--fix]"}})
+		write(stderr, errorEnvelope{Error: errorBody{Kind: "usage", Message: "usage: harnesslint [--fix|--deterministic-fix|--controlled-check]"}})
 		return 2
 	}
 	root, err := repositoryRoot()
@@ -31,7 +41,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		write(stderr, errorEnvelope{Error: errorBody{Kind: "internal", Message: err.Error()}})
 		return 1
 	}
-	report, err := harnesslint.Run(root, fix)
+	report, err := runModeReport(root, mode)
 	if err != nil {
 		write(stderr, errorEnvelope{Error: errorBody{Kind: "internal", Message: err.Error()}})
 		return 1
@@ -43,14 +53,41 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func parseArgs(args []string) (bool, bool) {
+func runModeReport(root string, mode runMode) (harnesslint.Report, error) {
+	switch mode {
+	case modeCheck:
+		return harnesslint.Run(root, false)
+	case modeFix:
+		return harnesslint.Run(root, true)
+	case modeDeterministicFix:
+		controlRoot, err := controlledRoot()
+		if err != nil {
+			return harnesslint.Report{}, err
+		}
+		return harnesslint.RunDeterministicAutofix(root, controlRoot)
+	case modeControlledCheck:
+		controlRoot, err := controlledRoot()
+		if err != nil {
+			return harnesslint.Report{}, err
+		}
+		return harnesslint.RunControlled(root, controlRoot)
+	default:
+		return harnesslint.Report{}, fmt.Errorf("unknown harnesslint mode")
+	}
+}
+
+func parseArgs(args []string) (runMode, bool) {
 	switch {
 	case len(args) == 0:
-		return false, true
+		return modeCheck, true
 	case len(args) == 1 && args[0] == "--fix":
-		return true, true
+		return modeFix, true
+	case len(args) == 1 && args[0] == "--deterministic-fix":
+		return modeDeterministicFix, true
+	case len(args) == 1 && args[0] == "--controlled-check":
+		return modeControlledCheck, true
 	default:
-		return false, false
+		return modeCheck, false
 	}
 }
 
@@ -64,6 +101,17 @@ func repositoryRoot() (string, error) {
 		return "", fmt.Errorf("resolve repository root: %w", err)
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+func controlledRoot() (string, error) {
+	root := os.Getenv("HARNESSLINT_CONTROL_ROOT")
+	if root == "" {
+		return "", fmt.Errorf("HARNESSLINT_CONTROL_ROOT is required")
+	}
+	if !filepath.IsAbs(root) {
+		return "", fmt.Errorf("HARNESSLINT_CONTROL_ROOT must be absolute")
+	}
+	return filepath.Clean(root), nil
 }
 
 func write(destination io.Writer, value any) {
