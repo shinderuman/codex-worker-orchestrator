@@ -7,28 +7,48 @@ import (
 
 func TestEvidencePublicationRejectsTaskIndexBoundToDifferentTransition(t *testing.T) {
 	fixture := newExecutionSwitchFixture(t)
-	_, record := prepareExecutionSwitchTransition(t, fixture, 1)
-	actual := executionSwitchActual(fixture, fixture.source)
+	record := fixture.record
 	revision := testTaskIndexRevision(
 		fixture.source.Attempt.SemanticTaskRef,
 		record.CommittedGeneration,
 		"different-transition",
 		time.Unix(8000, 0).UTC(),
 	)
-	if _, _, err := fixture.store.CommitAuthorityTransitionWithEvidence(
-		record,
-		actual,
-		EvidencePublicationInput{TaskRevisions: []TaskIndexRevision{revision}},
-		nil,
-	); err == nil {
+	if _, _, err := commitEvidenceForExecutionSwitch(t, fixture, EvidencePublicationInput{
+		TaskRevisions: []TaskIndexRevision{revision},
+	}); err == nil {
 		t.Fatal("task index revision bound to a different transition was published")
+	}
+}
+
+func TestEvidencePublicationRejectsEpisodeIndexBoundToDifferentTransition(t *testing.T) {
+	fixture := newExecutionSwitchFixture(t)
+	record := fixture.record
+	task := fixture.source.Attempt.SemanticTaskRef
+	taskRevision := testTaskIndexRevision(task, record.CommittedGeneration, record.TransitionID, time.Unix(8050, 0).UTC())
+	taskRef, _, err := fixture.store.StoreTaskIndexRevision(taskRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episode := testEpisodeIndexRevisionForPublication(
+		"episode-wrong-transition",
+		task,
+		record,
+		taskRef,
+		time.Unix(8051, 0).UTC(),
+	)
+	episode.TransitionID = "different-transition"
+	if _, _, err := commitEvidenceForExecutionSwitch(t, fixture, EvidencePublicationInput{
+		TaskRevisionRefs:  []EvidenceObjectRef{taskRef},
+		EpisodeRevisions: []EpisodeIndexRevision{episode},
+	}); err == nil {
+		t.Fatal("episode index revision bound to a different transition was published")
 	}
 }
 
 func TestEvidencePublicationRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(t *testing.T) {
 	fixture := newExecutionSwitchFixture(t)
-	_, record := prepareExecutionSwitchTransition(t, fixture, 1)
-	actual := executionSwitchActual(fixture, fixture.source)
+	record := fixture.record
 	task := fixture.source.Attempt.SemanticTaskRef
 	unpublishedTask := testTaskIndexRevision(task, record.CommittedGeneration, record.TransitionID, time.Unix(8100, 0).UTC())
 	unpublishedTaskRef, _, err := fixture.store.StoreTaskIndexRevision(unpublishedTask)
@@ -42,20 +62,16 @@ func TestEvidencePublicationRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(
 		unpublishedTaskRef,
 		time.Unix(8101, 0).UTC(),
 	)
-	if _, _, err := fixture.store.CommitAuthorityTransitionWithEvidence(
-		record,
-		actual,
-		EvidencePublicationInput{EpisodeRevisions: []EpisodeIndexRevision{episode}},
-		nil,
-	); err == nil {
+	if _, _, err := commitEvidenceForExecutionSwitch(t, fixture, EvidencePublicationInput{
+		EpisodeRevisions: []EpisodeIndexRevision{episode},
+	}); err == nil {
 		t.Fatal("episode task index head outside published task authority was accepted")
 	}
 }
 
 func TestEvidencePublicationAcceptsEpisodeTaskHeadPublishedInSameTransition(t *testing.T) {
 	fixture := newExecutionSwitchFixture(t)
-	_, record := prepareExecutionSwitchTransition(t, fixture, 1)
-	actual := executionSwitchActual(fixture, fixture.source)
+	record := fixture.record
 	task := fixture.source.Attempt.SemanticTaskRef
 	taskRevision := testTaskIndexRevision(task, record.CommittedGeneration, record.TransitionID, time.Unix(8200, 0).UTC())
 	taskRef, _, err := fixture.store.StoreTaskIndexRevision(taskRevision)
@@ -73,15 +89,10 @@ func TestEvidencePublicationAcceptsEpisodeTaskHeadPublishedInSameTransition(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, publication, err := fixture.store.CommitAuthorityTransitionWithEvidence(
-		record,
-		actual,
-		EvidencePublicationInput{
-			TaskRevisionRefs:    []EvidenceObjectRef{taskRef},
-			EpisodeRevisionRefs: []EvidenceObjectRef{episodeRef},
-		},
-		nil,
-	)
+	_, publication, err := commitEvidenceForExecutionSwitch(t, fixture, EvidencePublicationInput{
+		TaskRevisionRefs:    []EvidenceObjectRef{taskRef},
+		EpisodeRevisionRefs: []EvidenceObjectRef{episodeRef},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +140,30 @@ func TestEpisodeTaskHeadPublicationAcceptsHistoricalPublishedTaskRevision(t *tes
 	); err != nil {
 		t.Fatalf("historical published TaskIndex head was rejected: %v", err)
 	}
+}
+
+func commitEvidenceForExecutionSwitch(
+	t *testing.T,
+	fixture executionSwitchFixture,
+	input EvidencePublicationInput,
+) (RepositoryControllerHead, EvidencePublicationResult, error) {
+	t.Helper()
+	store := fixture.store
+	record := fixture.record
+	lock, err := store.acquireMutationLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.markTransitionApplied(record, nil); err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	committed, publication, commitErr := store.commitAuthorityTransitionWithEvidenceLocked(record, nil, input, nil)
+	closeErr := lock.Close()
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	return committed, publication, commitErr
 }
 
 func testEpisodeIndexRevisionForPublication(
