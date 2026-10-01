@@ -1,0 +1,120 @@
+name: Web GPT K2 lint patch
+
+on:
+  push:
+    branches:
+      - web-gpt/1217-finding-disposition-blocker-scheduler
+    paths:
+      - .github/workflows/web-gpt-k2-lint-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/1217-finding-disposition-blocker-scheduler
+          fetch-depth: 1
+      - name: Split finding validation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("glm-worker/internal/controller/finding.go")
+          text = path.read_text()
+          old = '''func (s *Store) validateFindingInput(admission Admission, input FindingObservationInput) error {
+          \tif err := validateFindingInputShape(input); err != nil {
+          \t\treturn err
+          \t}
+          \tswitch input.ProofClass {
+          \tcase FindingProofUnverified:
+          \t\treturn nil
+          \tcase FindingProofAttemptMutation:
+          \t\tif len(input.Evidence) == 0 {
+          \t\t\treturn fmt.Errorf("attempt-mutation proof requires mutation evidence")
+          \t\t}
+          \t\tfor _, ref := range input.Evidence {
+          \t\t\tif ref.Kind != FindingEvidenceMutation || ref.ID == "" {
+          \t\t\t\treturn fmt.Errorf("attempt-mutation proof contains unsupported evidence")
+          \t\t\t}
+          \t\t\tvar mutation MutationRecord
+          \t\t\tif err := readJSON(s.mutationPath(ref.ID), &mutation); err != nil {
+          \t\t\t\treturn fmt.Errorf("read finding mutation evidence %s: %w", ref.ID, err)
+          \t\t\t}
+          \t\t\tif mutation.SchemaVersion != controllerSchemaVersion ||
+          \t\t\t\tmutation.MutationID != ref.ID ||
+          \t\t\t\tmutation.AttemptID != admission.Attempt.AttemptID ||
+          \t\t\t\tmutation.TargetGeneration != admission.Head.ControllerGeneration ||
+          \t\t\t\tmutation.TargetLeaseID != admission.Lease.LeaseID {
+          \t\t\t\treturn fmt.Errorf("finding mutation evidence %s is not bound to the current execution attempt", ref.ID)
+          \t\t\t}
+          \t\t}
+          \t\treturn nil
+          \tdefault:
+          \t\treturn fmt.Errorf("unsupported finding proof class %s", input.ProofClass)
+          \t}
+          }
+          '''
+          new = '''func (s *Store) validateFindingInput(admission Admission, input FindingObservationInput) error {
+          \tif err := validateFindingInputShape(input); err != nil {
+          \t\treturn err
+          \t}
+          \tswitch input.ProofClass {
+          \tcase FindingProofUnverified:
+          \t\treturn nil
+          \tcase FindingProofAttemptMutation:
+          \t\treturn s.validateFindingMutationEvidence(admission, input.Evidence)
+          \tdefault:
+          \t\treturn fmt.Errorf("unsupported finding proof class %s", input.ProofClass)
+          \t}
+          }
+
+          func (s *Store) validateFindingMutationEvidence(admission Admission, evidence []FindingEvidenceRef) error {
+          \tif len(evidence) == 0 {
+          \t\treturn fmt.Errorf("attempt-mutation proof requires mutation evidence")
+          \t}
+          \tfor _, ref := range evidence {
+          \t\tif err := s.validateFindingMutationRef(admission, ref); err != nil {
+          \t\t\treturn err
+          \t\t}
+          \t}
+          \treturn nil
+          }
+
+          func (s *Store) validateFindingMutationRef(admission Admission, ref FindingEvidenceRef) error {
+          \tif ref.Kind != FindingEvidenceMutation || ref.ID == "" {
+          \t\treturn fmt.Errorf("attempt-mutation proof contains unsupported evidence")
+          \t}
+          \tvar mutation MutationRecord
+          \tif err := readJSON(s.mutationPath(ref.ID), &mutation); err != nil {
+          \t\treturn fmt.Errorf("read finding mutation evidence %s: %w", ref.ID, err)
+          \t}
+          \tif mutation.SchemaVersion != controllerSchemaVersion ||
+          \t\tmutation.MutationID != ref.ID ||
+          \t\tmutation.AttemptID != admission.Attempt.AttemptID ||
+          \t\tmutation.TargetGeneration != admission.Head.ControllerGeneration ||
+          \t\tmutation.TargetLeaseID != admission.Lease.LeaseID {
+          \t\treturn fmt.Errorf("finding mutation evidence %s is not bound to the current execution attempt", ref.ID)
+          \t}
+          \treturn nil
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"validateFindingInput matches={text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+      - name: Format and commit K2 lint repair
+        run: |
+          gofmt -w \
+            glm-worker/internal/controller/finding.go \
+            glm-worker/internal/controller/episode.go
+          git config user.name "Web GPT"
+          git config user.email "web-gpt@users.noreply.github.com"
+          git add \
+            glm-worker/internal/controller/finding.go \
+            glm-worker/internal/controller/episode.go
+          git diff --cached --exit-code && exit 1 || true
+          git commit -m "Repair K2 controller lint structure"
+          git push origin HEAD:web-gpt/1217-finding-disposition-blocker-scheduler
