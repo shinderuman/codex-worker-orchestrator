@@ -103,7 +103,7 @@ func (runner controlledCommandRunner) run(dir, name string, args ...string) (com
 	if filepath.Clean(name) == filepath.Join(filepath.Clean(runner.targetRoot), "commentlint") {
 		return runner.runCommentlint(args)
 	}
-	if name == "golangci-lint" {
+	if name == golangCILintToolName {
 		args = controlledGolangCIArgs(args, runner.controlRoot)
 	}
 	return runner.base.run(dir, name, args...)
