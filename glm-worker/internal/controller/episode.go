@@ -20,13 +20,13 @@ type EpisodeDependencyEdge struct {
 }
 
 type BlockerEpisodeRecord struct {
-	SchemaVersion       int             `json:"schema_version"`
-	EpisodeID           string          `json:"episode_id"`
+	SchemaVersion      int             `json:"schema_version"`
+	EpisodeID          string          `json:"episode_id"`
 	RepositoryIdentity string          `json:"repository_identity"`
-	RootTaskRef         SemanticTaskRef `json:"root_task_ref"`
-	ScopeRootTaskRef    SemanticTaskRef `json:"scope_root_task_ref"`
-	OpenedByFindingID   string          `json:"opened_by_finding_id"`
-	CreatedAt           time.Time       `json:"created_at"`
+	RootTaskRef        SemanticTaskRef `json:"root_task_ref"`
+	ScopeRootTaskRef   SemanticTaskRef `json:"scope_root_task_ref"`
+	OpenedByFindingID  string          `json:"opened_by_finding_id"`
+	CreatedAt          time.Time       `json:"created_at"`
 }
 
 type BlockerEpisodeRevision struct {
@@ -55,9 +55,9 @@ type BlockerEpisodeRevision struct {
 
 type EpisodeScheduleResult struct {
 	Episode     BlockerEpisodeRevision `json:"episode"`
-	Intent      FindingIntentKind       `json:"intent"`
-	Reason      string                  `json:"reason,omitempty"`
-	NextTaskRef *SemanticTaskRef        `json:"next_task_ref,omitempty"`
+	Intent      FindingIntentKind      `json:"intent"`
+	Reason      string                 `json:"reason,omitempty"`
+	NextTaskRef *SemanticTaskRef       `json:"next_task_ref,omitempty"`
 }
 
 type episodeClosureWalker struct {
@@ -286,13 +286,13 @@ func (s *Store) persistBlockingRevision(
 	}
 	if previous == nil {
 		record := BlockerEpisodeRecord{
-			SchemaVersion:       controllerSchemaVersion,
-			EpisodeID:           revision.EpisodeID,
-			RepositoryIdentity:  s.identity.LineageID,
-			RootTaskRef:         revision.RootTaskRef,
-			ScopeRootTaskRef:    revision.ScopeRootTaskRef,
-			OpenedByFindingID:   finding.FindingID,
-			CreatedAt:           revision.CreatedAt,
+			SchemaVersion:      controllerSchemaVersion,
+			EpisodeID:          revision.EpisodeID,
+			RepositoryIdentity: s.identity.LineageID,
+			RootTaskRef:        revision.RootTaskRef,
+			ScopeRootTaskRef:   revision.ScopeRootTaskRef,
+			OpenedByFindingID:  finding.FindingID,
+			CreatedAt:          revision.CreatedAt,
 		}
 		if err := s.writeEpisodeRecord(record); err != nil {
 			return err

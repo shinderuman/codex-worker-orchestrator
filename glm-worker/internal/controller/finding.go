@@ -50,8 +50,8 @@ type FindingRecord struct {
 
 type FindingDecision struct {
 	Kind             FindingDecisionKind `json:"kind"`
-	TargetTaskRef    *SemanticTaskRef     `json:"target_task_ref,omitempty"`
-	BlockingBoundary string               `json:"blocking_boundary,omitempty"`
+	TargetTaskRef    *SemanticTaskRef    `json:"target_task_ref,omitempty"`
+	BlockingBoundary string              `json:"blocking_boundary,omitempty"`
 }
 
 type FindingDisposition struct {
@@ -187,29 +187,40 @@ func (s *Store) validateFindingInput(admission Admission, input FindingObservati
 	case FindingProofUnverified:
 		return nil
 	case FindingProofAttemptMutation:
-		if len(input.Evidence) == 0 {
-			return fmt.Errorf("attempt-mutation proof requires mutation evidence")
-		}
-		for _, ref := range input.Evidence {
-			if ref.Kind != FindingEvidenceMutation || ref.ID == "" {
-				return fmt.Errorf("attempt-mutation proof contains unsupported evidence")
-			}
-			var mutation MutationRecord
-			if err := readJSON(s.mutationPath(ref.ID), &mutation); err != nil {
-				return fmt.Errorf("read finding mutation evidence %s: %w", ref.ID, err)
-			}
-			if mutation.SchemaVersion != controllerSchemaVersion ||
-				mutation.MutationID != ref.ID ||
-				mutation.AttemptID != admission.Attempt.AttemptID ||
-				mutation.TargetGeneration != admission.Head.ControllerGeneration ||
-				mutation.TargetLeaseID != admission.Lease.LeaseID {
-				return fmt.Errorf("finding mutation evidence %s is not bound to the current execution attempt", ref.ID)
-			}
-		}
-		return nil
+		return s.validateFindingMutationEvidence(admission, input.Evidence)
 	default:
 		return fmt.Errorf("unsupported finding proof class %s", input.ProofClass)
 	}
+}
+
+func (s *Store) validateFindingMutationEvidence(admission Admission, evidence []FindingEvidenceRef) error {
+	if len(evidence) == 0 {
+		return fmt.Errorf("attempt-mutation proof requires mutation evidence")
+	}
+	for _, ref := range evidence {
+		if err := s.validateFindingMutationRef(admission, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) validateFindingMutationRef(admission Admission, ref FindingEvidenceRef) error {
+	if ref.Kind != FindingEvidenceMutation || ref.ID == "" {
+		return fmt.Errorf("attempt-mutation proof contains unsupported evidence")
+	}
+	var mutation MutationRecord
+	if err := readJSON(s.mutationPath(ref.ID), &mutation); err != nil {
+		return fmt.Errorf("read finding mutation evidence %s: %w", ref.ID, err)
+	}
+	if mutation.SchemaVersion != controllerSchemaVersion ||
+		mutation.MutationID != ref.ID ||
+		mutation.AttemptID != admission.Attempt.AttemptID ||
+		mutation.TargetGeneration != admission.Head.ControllerGeneration ||
+		mutation.TargetLeaseID != admission.Lease.LeaseID {
+		return fmt.Errorf("finding mutation evidence %s is not bound to the current execution attempt", ref.ID)
+	}
+	return nil
 }
 
 func validateFindingInputShape(input FindingObservationInput) error {
