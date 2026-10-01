@@ -13,7 +13,7 @@ import (
 
 const (
 	planGuardSeed       = "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-active.md`\n"
-	activeTaskGuardSeed = "# ACTIVE task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\n- guard検証用seed\n\n## Dependencies\n\nnone\n"
+	activeTaskGuardSeed = "# ACTIVE task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\n- guard検証用seed\n"
 	activeTaskGuardPath = "IMPLEMENTATION_TASKS/001-active.md"
 )
 
