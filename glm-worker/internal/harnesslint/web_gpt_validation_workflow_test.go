@@ -32,10 +32,10 @@ func TestWebGPTValidationControllerUsesBoundedCommands(t *testing.T) {
 	text := readWebGPTAutofixContractFile(t, "../../../web-gpt-validate.sh")
 	requireWebGPTAutofixTokens(t, text, []string{
 		"case \"$validation_mode\" in",
-		"repository-lint) run_repository_lint",
-		"go-package-test) run_go_package_test",
-		"full-go-test) run_full_go_test",
-		"build-vet) run_build_vet",
+		"repository-lint)\n\trun_repository_lint",
+		"go-package-test)\n\trun_go_package_test",
+		"full-go-test)\n\trun_full_go_test",
+		"build-vet)\n\trun_build_vet",
 		"HARNESSLINT_REPO_ROOT=\"$target_root\" HARNESSLINT_CONTROL_ROOT=\"$control_root\" ./harnesslint --controlled-check",
 		"go -C \"$target_root/glm-worker\" test \"$validation_scope\"",
 		"go -C \"$target_root/glm-worker\" test ./...",
@@ -59,6 +59,19 @@ func TestWebGPTValidationControllerEmitsBoundedResult(t *testing.T) {
 			t.Fatalf("machine-readable validation result key missing: %s", key)
 		}
 	}
+	requireWebGPTAutofixTokens(t, text, []string{
+		"reported_branch=''",
+		"reported_sha=''",
+		"reported_control_sha=''",
+		"reported_mode=''",
+		"reported_scope=''",
+		"reported_artifact_locator=''",
+		"\"$reported_branch\" \"$reported_sha\" \"$reported_control_sha\" \"$reported_mode\"",
+		"reported_branch=$target_branch",
+		"reported_sha=$expected_head_sha",
+		"reported_control_sha=$control_sha",
+		"reported_artifact_locator=$artifact_locator",
+	})
 	if !strings.Contains(text, "invalid_package_scope") || !strings.Contains(text, "^[A-Za-z0-9_]") {
 		t.Fatal("focused package scope grammar is not bounded")
 	}
