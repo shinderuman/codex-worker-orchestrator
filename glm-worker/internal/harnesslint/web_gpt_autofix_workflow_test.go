@@ -6,52 +6,58 @@ import (
 	"testing"
 )
 
-func TestWebGPTAutofixWorkflowIsManualAndPinned(t *testing.T) {
+func TestWebGPTAutofixWorkflowSeparatesReadAndWriteCapabilities(t *testing.T) {
 	text := readWebGPTAutofixContractFile(t, "../../../.github/workflows/web-gpt-autofix.yml")
 	requireWebGPTAutofixTokens(t, text, []string{
 		"on:\n  workflow_dispatch:",
 		"target_branch:",
 		"expected_head_sha:",
-		"permissions:\n  contents: write",
-		"group: web-gpt-autofix-${{ inputs.target_branch }}",
-		"CONTROL_REF: ${{ github.ref }}",
-		"run: test \"$CONTROL_REF\" = refs/heads/main",
-		"ref: ${{ github.sha }}\n          path: control\n          persist-credentials: false",
-		"ref: ${{ inputs.expected_head_sha }}\n          path: target",
-		"working-directory: control",
-		"hashFiles('control/quality-tools.yml', 'control/install-quality-tools.sh')",
-		"QUALITY_TOOLS_BIN_DIR=\"$quality_bin\" ./install-quality-tools.sh",
-		"WEB_GPT_AUTOFIX_CONTROL_ROOT: ${{ github.workspace }}/control",
-		"working-directory: target",
-		"sh ../control/web-gpt-autofix.sh \"$TARGET_BRANCH\" \"$EXPECTED_HEAD_SHA\" \"$RUNNER_TEMP/web-gpt-autofix-result.json\"",
+		"prepare:\n    permissions:\n      contents: read",
+		"Checkout target at expected head without credentials",
+		"ref: ${{ inputs.expected_head_sha }}\n          path: target\n          persist-credentials: false",
+		"sh ../control/web-gpt-autofix.sh prepare",
+		"publish:\n    needs: prepare",
+		"needs.prepare.outputs.changed == 'true'",
+		"actions: read\n      contents: write",
+		"Checkout target at expected head for publication",
+		"sh ../control/web-gpt-autofix.sh publish",
 		"uses: actions/upload-artifact@v4",
+		"uses: actions/download-artifact@v4",
 	})
 	for _, forbidden := range []string{"\n  push:", "\n  pull_request:"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("autofix workflow must remain workflow_dispatch-only; found %q", forbidden)
 		}
 	}
+	publish := strings.SplitN(text, "\n  publish:\n", 2)
+	if len(publish) != 2 {
+		t.Fatal("publish job missing")
+	}
+	for _, forbidden := range []string{"harnesslint", "install-quality-tools.sh", "setup-go"} {
+		if strings.Contains(publish[1], forbidden) {
+			t.Fatalf("write-capable publish job must not execute quality tooling: %q", forbidden)
+		}
+	}
 }
 
-func TestWebGPTAutofixHelperFailsClosedAroundPublication(t *testing.T) {
+func TestWebGPTAutofixHelperFailsClosedAroundPreparedPublication(t *testing.T) {
 	text := readWebGPTAutofixContractFile(t, "../../../web-gpt-autofix.sh")
 	requireWebGPTAutofixTokens(t, text, []string{
-		"case \"$target_branch\" in\nweb-gpt/*)",
+		"usage: web-gpt-autofix.sh <prepare|publish>",
+		"case \"$target_branch\" in\n\tweb-gpt/*)",
 		"git check-ref-format \"refs/heads/$target_branch\"",
-		"control_root=${WEB_GPT_AUTOFIX_CONTROL_ROOT:-}",
-		"HARNESSLINT_REPO_ROOT=\"$target_root\" ./harnesslint \"$@\"",
-		"*) fail_closed invalid_control_root ;;",
-		"remote_head=$(git ls-remote --exit-code origin \"refs/heads/$target_branch\"",
-		"if [ \"$remote_head\" != \"$expected_head_sha\" ]",
-		"run_harnesslint --fix",
-		"run_harnesslint",
-		"git ls-files --others --exclude-standard",
-		"git add -u",
-		"git commit -m 'Apply deterministic repository autofixes'",
-		"remote_before_publish=$(git ls-remote --exit-code origin \"refs/heads/$target_branch\"",
-		"if [ \"$remote_before_publish\" != \"$expected_head_sha\" ]",
+		"run_controlled_harnesslint --deterministic-fix",
+		"run_controlled_harnesslint --controlled-check",
+		"capture_patch \"$patch_path\"",
+		"cmp -s \"$patch_path\" \"$validation_patch\"",
+		"validation_mutated_target",
+		"git apply --check \"$patch_path\"",
+		"git apply --index \"$patch_path\"",
+		"git commit --no-verify -m 'Apply deterministic repository autofixes'",
+		"remote_before_publish=$(git ls-remote --exit-code origin",
 		"git push origin \"HEAD:refs/heads/$target_branch\"",
 		"publication=pushed",
+		"unexpected_failure",
 		"\"before_sha\"",
 		"\"changed\"",
 		"\"resulting_head\"",
@@ -59,6 +65,25 @@ func TestWebGPTAutofixHelperFailsClosedAroundPublication(t *testing.T) {
 	})
 	if strings.Contains(text, "--force") {
 		t.Fatal("autofix helper must never force-push")
+	}
+	if strings.Contains(text, "run_controlled_harnesslint --fix") {
+		t.Fatal("autofix helper must not call broad harnesslint --fix")
+	}
+}
+
+func TestControlledAutofixUsesControlPolicyOnly(t *testing.T) {
+	text := readWebGPTAutofixContractFile(t, "controlled_autofix.go")
+	requireWebGPTAutofixTokens(t, text, []string{
+		"newRealCommandRunner(controlRoot)",
+		"commentlint.Run(runner.targetRoot, fix)",
+		"controlled[index+1] = filepath.Join(controlRoot, \".golangci.yml\")",
+		"fixGoFormatting(root, paths)",
+		"runDeterministicShellFixes(root, paths, runner)",
+	})
+	for _, forbidden := range []string{"runExternalFixers(", "\"run\", \"--fix\", \"--config\""} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("controlled autofix must not use broad external fixer: %q", forbidden)
+		}
 	}
 }
 
