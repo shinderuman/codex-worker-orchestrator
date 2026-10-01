@@ -189,7 +189,7 @@ func executeControllerSemanticResolve(
 	if command.FindingID == "" || command.Decision == nil {
 		return controllerSemanticOutput{}, fmt.Errorf("finding resolution requires finding identity and decision")
 	}
-	result, err := store.ResolveFinding(command.FindingID, *command.Decision)
+	result, err := store.ResolveFindingWithProjectAuthority(command.FindingID, *command.Decision)
 	if err != nil {
 		return controllerSemanticOutput{}, err
 	}
@@ -203,7 +203,7 @@ func executeControllerSemanticSchedule(
 	if command.EpisodeID == "" || command.EpisodeRevision == 0 {
 		return controllerSemanticOutput{}, fmt.Errorf("episode scheduling requires episode identity and revision")
 	}
-	result, err := store.ScheduleEpisode(command.EpisodeID, command.EpisodeRevision)
+	result, err := store.ScheduleEpisodeWithProjectAuthority(command.EpisodeID, command.EpisodeRevision)
 	if err != nil {
 		return controllerSemanticOutput{}, err
 	}
