@@ -3,7 +3,6 @@ package webgptdispatch
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -80,7 +79,7 @@ func ParseMailbox(r io.Reader) (Request, error) {
 	operation := OperationRequest{
 		Operation:       request.Operation,
 		TargetBranch:    request.TargetBranch,
-		ExpectedHeadSHA: strings.ToLower(request.ExpectedHeadSHA),
+		ExpectedHeadSHA: request.ExpectedHeadSHA,
 	}
 	if request.ValidationMode != nil {
 		operation.ValidationMode = *request.ValidationMode
@@ -91,7 +90,7 @@ func ParseMailbox(r io.Reader) (Request, error) {
 	if err := ValidateOperation(operation); err != nil {
 		return Request{}, err
 	}
-	request.ExpectedHeadSHA = operation.ExpectedHeadSHA
+	request.ExpectedHeadSHA, _ = NormalizeSHA(operation.ExpectedHeadSHA)
 	return request, nil
 }
 
@@ -99,8 +98,8 @@ func ValidateOperation(request OperationRequest) error {
 	if err := validateTargetBranch(request.TargetBranch); err != nil {
 		return err
 	}
-	if !shaPattern.MatchString(strings.ToLower(request.ExpectedHeadSHA)) {
-		return ValidationError{Code: "invalid_expected_head_sha"}
+	if _, err := NormalizeSHA(request.ExpectedHeadSHA); err != nil {
+		return err
 	}
 	switch request.Operation {
 	case OperationAutofix:
@@ -115,6 +114,14 @@ func ValidateOperation(request OperationRequest) error {
 		return ValidationError{Code: "invalid_operation"}
 	}
 	return nil
+}
+
+func NormalizeSHA(value string) (string, error) {
+	normalized := strings.ToLower(value)
+	if !shaPattern.MatchString(normalized) {
+		return "", ValidationError{Code: "invalid_expected_head_sha"}
+	}
+	return normalized, nil
 }
 
 func ValidationCode(err error) string {
@@ -152,8 +159,4 @@ func validateValidationFields(mode, scope string) error {
 		return ValidationError{Code: "invalid_validation_mode"}
 	}
 	return nil
-}
-
-func FormatOperation(request OperationRequest) string {
-	return fmt.Sprintf("%s:%s@%s", request.Operation, request.TargetBranch, strings.ToLower(request.ExpectedHeadSHA))
 }
