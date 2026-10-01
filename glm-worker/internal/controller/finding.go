@@ -19,37 +19,6 @@ type FindingDispositionKind string
 
 type FindingIntentKind string
 
-const (
-	FindingProofUnverified      FindingProofClass = "unverified"
-	FindingProofAttemptMutation FindingProofClass = "attempt-mutation"
-
-	FindingEvidenceMutation FindingEvidenceKind = "mutation"
-
-	FindingDecisionAmbiguous              FindingDecisionKind = "ambiguous"
-	FindingDecisionSameTask               FindingDecisionKind = "same-task"
-	FindingDecisionIndependentNonBlocking FindingDecisionKind = "independent-nonblocking"
-	FindingDecisionIndependentBlocking    FindingDecisionKind = "independent-blocking"
-	FindingDecisionDuplicate              FindingDecisionKind = "duplicate-finding"
-	FindingDecisionNonActionable          FindingDecisionKind = "non-actionable"
-
-	FindingDispositionSameTask               FindingDispositionKind = "same-task"
-	FindingDispositionIndependentNonBlocking FindingDispositionKind = "independent-nonblocking"
-	FindingDispositionIndependentBlocking    FindingDispositionKind = "independent-blocking"
-	FindingDispositionDuplicate              FindingDispositionKind = "duplicate-finding"
-	FindingDispositionNonActionable          FindingDispositionKind = "non-actionable"
-
-	FindingIntentAwaitingDisposition  FindingIntentKind = "awaiting-disposition"
-	FindingIntentSameTaskCorrection   FindingIntentKind = "same-task-correction"
-	FindingIntentRegisterNonBlocking  FindingIntentKind = "register-nonblocking"
-	FindingIntentOpenBlockerEpisode   FindingIntentKind = "open-blocker-episode"
-	FindingIntentReplanBlockerEpisode FindingIntentKind = "replan-blocker-episode"
-	FindingIntentDuplicate            FindingIntentKind = "duplicate-finding"
-	FindingIntentNoAction             FindingIntentKind = "no-action"
-	FindingIntentNoRunnable           FindingIntentKind = "no-runnable-dependency"
-	FindingIntentStartBlockerTask     FindingIntentKind = "start-blocker-task"
-	FindingIntentResumeBlockerTask    FindingIntentKind = "resume-blocker-task"
-)
-
 type FindingEvidenceRef struct {
 	Kind FindingEvidenceKind `json:"kind"`
 	ID   string              `json:"id"`
@@ -115,6 +84,37 @@ type findingProblemBinding struct {
 	TargetTaskRef      *SemanticTaskRef `json:"target_task_ref,omitempty"`
 	UpdatedAt          time.Time        `json:"updated_at"`
 }
+
+const (
+	FindingProofUnverified      FindingProofClass = "unverified"
+	FindingProofAttemptMutation FindingProofClass = "attempt-mutation"
+
+	FindingEvidenceMutation FindingEvidenceKind = "mutation"
+
+	FindingDecisionAmbiguous              FindingDecisionKind = "ambiguous"
+	FindingDecisionSameTask               FindingDecisionKind = "same-task"
+	FindingDecisionIndependentNonBlocking FindingDecisionKind = "independent-nonblocking"
+	FindingDecisionIndependentBlocking    FindingDecisionKind = "independent-blocking"
+	FindingDecisionDuplicate              FindingDecisionKind = "duplicate-finding"
+	FindingDecisionNonActionable          FindingDecisionKind = "non-actionable"
+
+	FindingDispositionSameTask               FindingDispositionKind = "same-task"
+	FindingDispositionIndependentNonBlocking FindingDispositionKind = "independent-nonblocking"
+	FindingDispositionIndependentBlocking    FindingDispositionKind = "independent-blocking"
+	FindingDispositionDuplicate              FindingDispositionKind = "duplicate-finding"
+	FindingDispositionNonActionable          FindingDispositionKind = "non-actionable"
+
+	FindingIntentAwaitingDisposition  FindingIntentKind = "awaiting-disposition"
+	FindingIntentSameTaskCorrection   FindingIntentKind = "same-task-correction"
+	FindingIntentRegisterNonBlocking  FindingIntentKind = "register-nonblocking"
+	FindingIntentOpenBlockerEpisode   FindingIntentKind = "open-blocker-episode"
+	FindingIntentReplanBlockerEpisode FindingIntentKind = "replan-blocker-episode"
+	FindingIntentDuplicate            FindingIntentKind = "duplicate-finding"
+	FindingIntentNoAction             FindingIntentKind = "no-action"
+	FindingIntentNoRunnable           FindingIntentKind = "no-runnable-dependency"
+	FindingIntentStartBlockerTask     FindingIntentKind = "start-blocker-task"
+	FindingIntentResumeBlockerTask    FindingIntentKind = "resume-blocker-task"
+)
 
 func (s *Store) ObserveFinding(admission Admission, input FindingObservationInput) (FindingRecord, error) {
 	lock, err := s.acquireMutationLock()
@@ -302,20 +302,25 @@ func (s *Store) ResolveFinding(findingID string, decision FindingDecision) (Find
 		return FindingDispositionResult{}, err
 	}
 	if decision.Kind == FindingDecisionAmbiguous {
-		return FindingDispositionResult{
-			Finding: finding,
-			Intent:  FindingIntentAwaitingDisposition,
-			Reason:  "semantic disposition remains unresolved",
-		}, nil
+		return unresolvedFindingResult(finding, "semantic disposition remains unresolved"), nil
 	}
-
-	head, err := s.LoadHead()
+	head, sourceLive, sourceTerminal, err := s.findingResolutionAuthority(finding)
 	if err != nil {
 		return FindingDispositionResult{}, err
+	}
+	return s.resolveFindingDecision(finding, head, decision, sourceLive, sourceTerminal)
+}
+
+func (s *Store) findingResolutionAuthority(
+	finding FindingRecord,
+) (RepositoryControllerHead, bool, bool, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return RepositoryControllerHead{}, false, false, err
 	}
 	sourceAttempt, err := s.loadAttempt(finding.SourceAttemptID)
 	if err != nil {
-		return FindingDispositionResult{}, err
+		return RepositoryControllerHead{}, false, false, err
 	}
 	sourceLive := sourceAttempt.AttemptState == AttemptStateLive &&
 		head.LiveAttemptID == finding.SourceAttemptID &&
@@ -323,12 +328,22 @@ func (s *Store) ResolveFinding(findingID string, decision FindingDecision) (Find
 		head.ExecutionTaskRef.Equal(finding.SourceSemanticTaskRef)
 	sourceTerminal := sourceAttempt.AttemptState == AttemptStateAccepted
 	if !sourceLive && !sourceTerminal {
-		return FindingDispositionResult{}, fmt.Errorf("finding source attempt is neither current live execution nor accepted terminal history")
+		return RepositoryControllerHead{}, false, false,
+			fmt.Errorf("finding source attempt is neither current live execution nor accepted terminal history")
 	}
 	if sourceLive && head.ControllerGeneration != finding.SourceControllerGeneration {
-		return FindingDispositionResult{}, fmt.Errorf("finding source controller generation is stale")
+		return RepositoryControllerHead{}, false, false, fmt.Errorf("finding source controller generation is stale")
 	}
+	return head, sourceLive, sourceTerminal, nil
+}
 
+func (s *Store) resolveFindingDecision(
+	finding FindingRecord,
+	head RepositoryControllerHead,
+	decision FindingDecision,
+	sourceLive bool,
+	sourceTerminal bool,
+) (FindingDispositionResult, error) {
 	switch decision.Kind {
 	case FindingDecisionSameTask:
 		return s.resolveSameTaskFinding(finding, head, sourceLive)
@@ -336,25 +351,36 @@ func (s *Store) ResolveFinding(findingID string, decision FindingDecision) (Find
 		return s.resolveIndependentFinding(finding, head, decision, false, sourceLive, sourceTerminal)
 	case FindingDecisionIndependentBlocking:
 		if sourceTerminal {
-			return FindingDispositionResult{
-				Finding: finding,
-				Intent:  FindingIntentAwaitingDisposition,
-				Reason:  "accepted terminal work cannot be reopened as blocker interruption",
-			}, nil
+			return unresolvedFindingResult(finding, "accepted terminal work cannot be reopened as blocker interruption"), nil
 		}
 		return s.resolveIndependentFinding(finding, head, decision, true, sourceLive, false)
 	case FindingDecisionDuplicate:
 		return s.resolveDuplicateFinding(finding, head)
 	case FindingDecisionNonActionable:
-		disposition, err := s.commitFindingDisposition(finding, head.ControllerGeneration, FindingDisposition{
-			Kind: FindingDispositionNonActionable,
-		})
-		if err != nil {
-			return FindingDispositionResult{}, err
-		}
-		return FindingDispositionResult{Finding: finding, Disposition: &disposition, Intent: FindingIntentNoAction}, nil
+		return s.resolveNonActionableFinding(finding, head)
 	default:
 		return FindingDispositionResult{}, fmt.Errorf("unsupported finding decision %s", decision.Kind)
+	}
+}
+
+func (s *Store) resolveNonActionableFinding(
+	finding FindingRecord,
+	head RepositoryControllerHead,
+) (FindingDispositionResult, error) {
+	disposition, err := s.commitFindingDisposition(finding, head.ControllerGeneration, FindingDisposition{
+		Kind: FindingDispositionNonActionable,
+	})
+	if err != nil {
+		return FindingDispositionResult{}, err
+	}
+	return FindingDispositionResult{Finding: finding, Disposition: &disposition, Intent: FindingIntentNoAction}, nil
+}
+
+func unresolvedFindingResult(finding FindingRecord, reason string) FindingDispositionResult {
+	return FindingDispositionResult{
+		Finding: finding,
+		Intent:  FindingIntentAwaitingDisposition,
+		Reason:  reason,
 	}
 }
 
@@ -364,18 +390,10 @@ func (s *Store) resolveSameTaskFinding(
 	sourceLive bool,
 ) (FindingDispositionResult, error) {
 	if !sourceLive {
-		return FindingDispositionResult{
-			Finding: finding,
-			Intent:  FindingIntentAwaitingDisposition,
-			Reason:  "same-task correction requires the exact live source attempt",
-		}, nil
+		return unresolvedFindingResult(finding, "same-task correction requires the exact live source attempt"), nil
 	}
 	if finding.ProofClass != FindingProofAttemptMutation {
-		return FindingDispositionResult{
-			Finding: finding,
-			Intent:  FindingIntentAwaitingDisposition,
-			Reason:  "same-task proof is insufficient",
-		}, nil
+		return unresolvedFindingResult(finding, "same-task proof is insufficient"), nil
 	}
 	target := finding.SourceSemanticTaskRef
 	disposition, err := s.commitFindingDisposition(finding, head.ControllerGeneration, FindingDisposition{
@@ -398,31 +416,53 @@ func (s *Store) resolveIndependentFinding(
 	sourceLive bool,
 	sourceTerminal bool,
 ) (FindingDispositionResult, error) {
-	if decision.TargetTaskRef == nil || decision.TargetTaskRef.Empty() {
-		return FindingDispositionResult{}, fmt.Errorf("independent finding requires an exact semantic target task")
+	target, err := s.independentFindingTarget(finding, head, decision, blocking, sourceLive, sourceTerminal)
+	if err != nil {
+		return FindingDispositionResult{}, err
 	}
-	if decision.TargetTaskRef.Equal(finding.SourceSemanticTaskRef) {
-		return FindingDispositionResult{}, fmt.Errorf("independent finding target must differ from source execution task")
+	if blocking {
+		return s.resolveBlockingFinding(finding, head, decision, target)
+	}
+	return s.resolveNonBlockingFinding(finding, head, target)
+}
+
+func (s *Store) independentFindingTarget(
+	finding FindingRecord,
+	head RepositoryControllerHead,
+	decision FindingDecision,
+	blocking bool,
+	sourceLive bool,
+	sourceTerminal bool,
+) (SemanticTaskRef, error) {
+	if decision.TargetTaskRef == nil || decision.TargetTaskRef.Empty() {
+		return SemanticTaskRef{}, fmt.Errorf("independent finding requires an exact semantic target task")
+	}
+	target := *decision.TargetTaskRef
+	if target.Equal(finding.SourceSemanticTaskRef) {
+		return SemanticTaskRef{}, fmt.Errorf("independent finding target must differ from source execution task")
 	}
 	if blocking && (!sourceLive || decision.BlockingBoundary == "") {
-		return FindingDispositionResult{}, fmt.Errorf("blocking finding requires the live source attempt and an exact blocked boundary")
+		return SemanticTaskRef{}, fmt.Errorf("blocking finding requires the live source attempt and an exact blocked boundary")
 	}
-
 	projectID := head.ProjectSnapshotID
 	if sourceTerminal && projectID == "" {
 		projectID = finding.ProjectSnapshotID
 	}
 	project, err := s.LoadProjectSnapshot(projectID)
 	if err != nil {
-		return FindingDispositionResult{}, err
+		return SemanticTaskRef{}, err
 	}
-	if !projectHasTask(project, *decision.TargetTaskRef) {
-		return FindingDispositionResult{}, fmt.Errorf("independent finding target is not in current project authority")
+	if !projectHasTask(project, target) {
+		return SemanticTaskRef{}, fmt.Errorf("independent finding target is not in current project authority")
 	}
-	target := *decision.TargetTaskRef
-	if blocking {
-		return s.resolveBlockingFinding(finding, head, decision, target)
-	}
+	return target, nil
+}
+
+func (s *Store) resolveNonBlockingFinding(
+	finding FindingRecord,
+	head RepositoryControllerHead,
+	target SemanticTaskRef,
+) (FindingDispositionResult, error) {
 	binding, err := s.bindFindingTarget(finding, target)
 	if err != nil {
 		return FindingDispositionResult{}, err
@@ -448,11 +488,7 @@ func (s *Store) resolveDuplicateFinding(
 	head RepositoryControllerHead,
 ) (FindingDispositionResult, error) {
 	if finding.CanonicalFindingID == finding.FindingID {
-		return FindingDispositionResult{
-			Finding: finding,
-			Intent:  FindingIntentAwaitingDisposition,
-			Reason:  "finding is already the canonical observation for its problem identity",
-		}, nil
+		return unresolvedFindingResult(finding, "finding is already the canonical observation for its problem identity"), nil
 	}
 	binding, err := s.loadProblemBinding(finding.ProblemKey)
 	if err != nil {
@@ -692,5 +728,3 @@ func (s *Store) findingDispositionPath(id string) string {
 func (s *Store) findingProblemPath(problemKey string) string {
 	return filepath.Join(s.dir, "finding-problems", digestStrings("finding-problem-v1", problemKey)+".json")
 }
-
-// resolveBlockingFinding is implemented with the episode scheduler owner.

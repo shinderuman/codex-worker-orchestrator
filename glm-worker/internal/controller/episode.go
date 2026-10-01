@@ -20,13 +20,13 @@ type EpisodeDependencyEdge struct {
 }
 
 type BlockerEpisodeRecord struct {
-	SchemaVersion     int             `json:"schema_version"`
-	EpisodeID         string          `json:"episode_id"`
-	RepositoryIdentity string         `json:"repository_identity"`
-	RootTaskRef       SemanticTaskRef `json:"root_task_ref"`
-	ScopeRootTaskRef  SemanticTaskRef `json:"scope_root_task_ref"`
-	OpenedByFindingID string          `json:"opened_by_finding_id"`
-	CreatedAt         time.Time       `json:"created_at"`
+	SchemaVersion       int             `json:"schema_version"`
+	EpisodeID           string          `json:"episode_id"`
+	RepositoryIdentity string          `json:"repository_identity"`
+	RootTaskRef         SemanticTaskRef `json:"root_task_ref"`
+	ScopeRootTaskRef    SemanticTaskRef `json:"scope_root_task_ref"`
+	OpenedByFindingID   string          `json:"opened_by_finding_id"`
+	CreatedAt           time.Time       `json:"created_at"`
 }
 
 type BlockerEpisodeRevision struct {
@@ -60,6 +60,15 @@ type EpisodeScheduleResult struct {
 	NextTaskRef *SemanticTaskRef        `json:"next_task_ref,omitempty"`
 }
 
+type episodeClosureWalker struct {
+	refs                map[string]SemanticTaskRef
+	canonical           map[string][]string
+	episodeDependencies map[string][]string
+	seen                map[string]bool
+	visiting            map[string]bool
+	order               []SemanticTaskRef
+}
+
 const (
 	EpisodeStatePlanned      EpisodeState = "planned"
 	EpisodeStateReplanning   EpisodeState = "replanning"
@@ -75,58 +84,16 @@ func (s *Store) resolveBlockingFinding(
 	decision FindingDecision,
 	target SemanticTaskRef,
 ) (FindingDispositionResult, error) {
-	if head.RootTaskRef == nil || head.ExecutionTaskRef == nil || head.LiveLeaseID == "" {
-		return FindingDispositionResult{}, fmt.Errorf("blocking finding requires complete live controller authority")
-	}
-	lease, err := s.loadLease(head.LiveLeaseID)
+	lease, project, previous, err := s.blockingFindingContext(finding, head, target)
 	if err != nil {
 		return FindingDispositionResult{}, err
 	}
-	if lease.AttemptID != finding.SourceAttemptID || !lease.SemanticTaskRef.Equal(finding.SourceSemanticTaskRef) {
-		return FindingDispositionResult{}, fmt.Errorf("blocking finding source lease is stale")
-	}
-	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+	revision, err := s.planBlockingRevision(finding, target, head, lease, project, previous)
 	if err != nil {
 		return FindingDispositionResult{}, err
 	}
-	previous, err := s.currentEpisodeRevision(head)
-	if err != nil {
+	if err := s.persistBlockingRevision(finding, target, revision, previous); err != nil {
 		return FindingDispositionResult{}, err
-	}
-	binding, err := s.loadProblemBinding(finding.ProblemKey)
-	if err != nil {
-		return FindingDispositionResult{}, err
-	}
-	if binding.TargetTaskRef != nil && !binding.TargetTaskRef.Equal(target) {
-		return FindingDispositionResult{}, fmt.Errorf("finding problem is already bound to a different semantic target")
-	}
-	revision, err := s.planBlockingRevision(finding, decision, target, head, lease, project, previous)
-	if err != nil {
-		return FindingDispositionResult{}, err
-	}
-	if err := s.writeEpisodeRevision(revision); err != nil {
-		return FindingDispositionResult{}, err
-	}
-	if previous == nil {
-		record := BlockerEpisodeRecord{
-			SchemaVersion:       controllerSchemaVersion,
-			EpisodeID:           revision.EpisodeID,
-			RepositoryIdentity:  s.identity.LineageID,
-			RootTaskRef:         revision.RootTaskRef,
-			ScopeRootTaskRef:    revision.ScopeRootTaskRef,
-			OpenedByFindingID:   finding.FindingID,
-			CreatedAt:           revision.CreatedAt,
-		}
-		if err := s.writeEpisodeRecord(record); err != nil {
-			return FindingDispositionResult{}, err
-		}
-	}
-	binding, err = s.bindFindingTarget(finding, target)
-	if err != nil {
-		return FindingDispositionResult{}, err
-	}
-	if binding.TargetTaskRef == nil || !binding.TargetTaskRef.Equal(target) {
-		return FindingDispositionResult{}, fmt.Errorf("finding target binding changed during blocker planning")
 	}
 	disposition, err := s.commitFindingDisposition(finding, head.ControllerGeneration, FindingDisposition{
 		Kind:             FindingDispositionIndependentBlocking,
@@ -138,22 +105,42 @@ func (s *Store) resolveBlockingFinding(
 	if err != nil {
 		return FindingDispositionResult{}, err
 	}
-	schedule := scheduleEpisodeRevision(revision)
-	intent := FindingIntentOpenBlockerEpisode
-	if previous != nil {
-		intent = FindingIntentReplanBlockerEpisode
+	return blockingFindingResult(finding, disposition, revision, previous), nil
+}
+
+func (s *Store) blockingFindingContext(
+	finding FindingRecord,
+	head RepositoryControllerHead,
+	target SemanticTaskRef,
+) (ExecutionLease, ProjectSnapshot, *BlockerEpisodeRevision, error) {
+	if head.RootTaskRef == nil || head.ExecutionTaskRef == nil || head.LiveLeaseID == "" {
+		return ExecutionLease{}, ProjectSnapshot{}, nil,
+			fmt.Errorf("blocking finding requires complete live controller authority")
 	}
-	if schedule.Intent == FindingIntentNoRunnable {
-		intent = FindingIntentNoRunnable
+	lease, err := s.loadLease(head.LiveLeaseID)
+	if err != nil {
+		return ExecutionLease{}, ProjectSnapshot{}, nil, err
 	}
-	return FindingDispositionResult{
-		Finding:     finding,
-		Disposition: &disposition,
-		Intent:      intent,
-		Reason:      schedule.Reason,
-		Episode:     &revision,
-		NextTaskRef: schedule.NextTaskRef,
-	}, nil
+	if lease.AttemptID != finding.SourceAttemptID || !lease.SemanticTaskRef.Equal(finding.SourceSemanticTaskRef) {
+		return ExecutionLease{}, ProjectSnapshot{}, nil, fmt.Errorf("blocking finding source lease is stale")
+	}
+	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+	if err != nil {
+		return ExecutionLease{}, ProjectSnapshot{}, nil, err
+	}
+	previous, err := s.currentEpisodeRevision(head)
+	if err != nil {
+		return ExecutionLease{}, ProjectSnapshot{}, nil, err
+	}
+	binding, err := s.loadProblemBinding(finding.ProblemKey)
+	if err != nil {
+		return ExecutionLease{}, ProjectSnapshot{}, nil, err
+	}
+	if binding.TargetTaskRef != nil && !binding.TargetTaskRef.Equal(target) {
+		return ExecutionLease{}, ProjectSnapshot{}, nil,
+			fmt.Errorf("finding problem is already bound to a different semantic target")
+	}
+	return lease, project, previous, nil
 }
 
 func (s *Store) currentEpisodeRevision(head RepositoryControllerHead) (*BlockerEpisodeRevision, error) {
@@ -175,7 +162,6 @@ func (s *Store) currentEpisodeRevision(head RepositoryControllerHead) (*BlockerE
 
 func (s *Store) planBlockingRevision(
 	finding FindingRecord,
-	decision FindingDecision,
 	target SemanticTaskRef,
 	head RepositoryControllerHead,
 	lease ExecutionLease,
@@ -186,13 +172,38 @@ func (s *Store) planBlockingRevision(
 	if err != nil {
 		return BlockerEpisodeRevision{}, err
 	}
-	if _, ok := refs[target.TaskPath]; !ok || !refs[target.TaskPath].Equal(target) {
-		return BlockerEpisodeRevision{}, fmt.Errorf("blocker target is not present in project dependency authority")
+	if err := validateBlockingAuthority(refs, finding, target); err != nil {
+		return BlockerEpisodeRevision{}, err
 	}
-	if _, ok := refs[finding.SourceSemanticTaskRef.TaskPath]; !ok {
-		return BlockerEpisodeRevision{}, fmt.Errorf("blocker source is not present in project dependency authority")
+	revision, err := s.newBlockingRevision(finding, target, head, lease, project, previous)
+	if err != nil {
+		return BlockerEpisodeRevision{}, err
 	}
+	return completeBlockingRevision(revision, finding, target, refs, dependencies)
+}
 
+func validateBlockingAuthority(
+	refs map[string]SemanticTaskRef,
+	finding FindingRecord,
+	target SemanticTaskRef,
+) error {
+	if ref, ok := refs[target.TaskPath]; !ok || !ref.Equal(target) {
+		return fmt.Errorf("blocker target is not present in project dependency authority")
+	}
+	if ref, ok := refs[finding.SourceSemanticTaskRef.TaskPath]; !ok || !ref.Equal(finding.SourceSemanticTaskRef) {
+		return fmt.Errorf("blocker source is not present in project dependency authority")
+	}
+	return nil
+}
+
+func (s *Store) newBlockingRevision(
+	finding FindingRecord,
+	target SemanticTaskRef,
+	head RepositoryControllerHead,
+	lease ExecutionLease,
+	project ProjectSnapshot,
+	previous *BlockerEpisodeRevision,
+) (BlockerEpisodeRevision, error) {
 	revision := BlockerEpisodeRevision{
 		SchemaVersion:              controllerSchemaVersion,
 		ProjectSnapshotID:          project.SnapshotID,
@@ -210,22 +221,32 @@ func (s *Store) planBlockingRevision(
 		revision.Revision = 1
 		revision.ScopeRootTaskRef = target
 		revision.State = EpisodeStatePlanned
-	} else {
-		if previous.State == EpisodeStateClosed {
-			return BlockerEpisodeRevision{}, fmt.Errorf("closed blocker episode cannot be replanned")
-		}
-		if !previous.RootTaskRef.Equal(*head.RootTaskRef) {
-			return BlockerEpisodeRevision{}, fmt.Errorf("active blocker episode root does not match controller root")
-		}
-		revision.EpisodeID = previous.EpisodeID
-		revision.Revision = previous.Revision + 1
-		revision.PreviousRevisionID = previous.RevisionID
-		revision.ScopeRootTaskRef = previous.ScopeRootTaskRef
-		revision.DependencyEdges = append([]EpisodeDependencyEdge(nil), previous.DependencyEdges...)
-		revision.SatisfiedTaskRefs = append([]SemanticTaskRef(nil), previous.SatisfiedTaskRefs...)
-		revision.ExecutionHistory = append([]SemanticTaskRef(nil), previous.ExecutionHistory...)
-		revision.State = EpisodeStateReplanning
+		return revision, nil
 	}
+	if previous.State == EpisodeStateClosed {
+		return BlockerEpisodeRevision{}, fmt.Errorf("closed blocker episode cannot be replanned")
+	}
+	if !previous.RootTaskRef.Equal(*head.RootTaskRef) {
+		return BlockerEpisodeRevision{}, fmt.Errorf("active blocker episode root does not match controller root")
+	}
+	revision.EpisodeID = previous.EpisodeID
+	revision.Revision = previous.Revision + 1
+	revision.PreviousRevisionID = previous.RevisionID
+	revision.ScopeRootTaskRef = previous.ScopeRootTaskRef
+	revision.DependencyEdges = append([]EpisodeDependencyEdge(nil), previous.DependencyEdges...)
+	revision.SatisfiedTaskRefs = append([]SemanticTaskRef(nil), previous.SatisfiedTaskRefs...)
+	revision.ExecutionHistory = append([]SemanticTaskRef(nil), previous.ExecutionHistory...)
+	revision.State = EpisodeStateReplanning
+	return revision, nil
+}
+
+func completeBlockingRevision(
+	revision BlockerEpisodeRevision,
+	finding FindingRecord,
+	target SemanticTaskRef,
+	refs map[string]SemanticTaskRef,
+	dependencies map[string][]string,
+) (BlockerEpisodeRevision, error) {
 	revision.ExecutionHistory = appendTaskRefUnique(revision.ExecutionHistory, finding.SourceSemanticTaskRef)
 	edge := EpisodeDependencyEdge{
 		BlockedTaskRef:    finding.SourceSemanticTaskRef,
@@ -252,6 +273,63 @@ func (s *Store) planBlockingRevision(
 	revision.AdmittedOrder = order
 	revision.RevisionID = blockerEpisodeRevisionID(revision)
 	return revision, nil
+}
+
+func (s *Store) persistBlockingRevision(
+	finding FindingRecord,
+	target SemanticTaskRef,
+	revision BlockerEpisodeRevision,
+	previous *BlockerEpisodeRevision,
+) error {
+	if err := s.writeEpisodeRevision(revision); err != nil {
+		return err
+	}
+	if previous == nil {
+		record := BlockerEpisodeRecord{
+			SchemaVersion:       controllerSchemaVersion,
+			EpisodeID:           revision.EpisodeID,
+			RepositoryIdentity:  s.identity.LineageID,
+			RootTaskRef:         revision.RootTaskRef,
+			ScopeRootTaskRef:    revision.ScopeRootTaskRef,
+			OpenedByFindingID:   finding.FindingID,
+			CreatedAt:           revision.CreatedAt,
+		}
+		if err := s.writeEpisodeRecord(record); err != nil {
+			return err
+		}
+	}
+	binding, err := s.bindFindingTarget(finding, target)
+	if err != nil {
+		return err
+	}
+	if binding.TargetTaskRef == nil || !binding.TargetTaskRef.Equal(target) {
+		return fmt.Errorf("finding target binding changed during blocker planning")
+	}
+	return nil
+}
+
+func blockingFindingResult(
+	finding FindingRecord,
+	disposition FindingDisposition,
+	revision BlockerEpisodeRevision,
+	previous *BlockerEpisodeRevision,
+) FindingDispositionResult {
+	schedule := scheduleEpisodeRevision(revision)
+	intent := FindingIntentOpenBlockerEpisode
+	if previous != nil {
+		intent = FindingIntentReplanBlockerEpisode
+	}
+	if schedule.Intent == FindingIntentNoRunnable {
+		intent = FindingIntentNoRunnable
+	}
+	return FindingDispositionResult{
+		Finding:     finding,
+		Disposition: &disposition,
+		Intent:      intent,
+		Reason:      schedule.Reason,
+		Episode:     &revision,
+		NextTaskRef: schedule.NextTaskRef,
+	}
 }
 
 func (s *Store) projectDependencyAuthority(
@@ -294,28 +372,28 @@ func validateEpisodeAcyclic(
 		)
 	}
 	states := map[string]uint8{}
-	var visit func(string) error
-	visit = func(path string) error {
-		switch states[path] {
-		case 1:
-			return fmt.Errorf("blocker dependency cycle detected at %s", path)
-		case 2:
-			return nil
-		}
-		states[path] = 1
-		for _, dependency := range adjacency[path] {
-			if err := visit(dependency); err != nil {
-				return err
-			}
-		}
-		states[path] = 2
-		return nil
-	}
 	for path := range adjacency {
-		if err := visit(path); err != nil {
+		if err := visitEpisodeDependency(path, adjacency, states); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func visitEpisodeDependency(path string, adjacency map[string][]string, states map[string]uint8) error {
+	switch states[path] {
+	case 1:
+		return fmt.Errorf("blocker dependency cycle detected at %s", path)
+	case 2:
+		return nil
+	}
+	states[path] = 1
+	for _, dependency := range adjacency[path] {
+		if err := visitEpisodeDependency(dependency, adjacency, states); err != nil {
+			return err
+		}
+	}
+	states[path] = 2
 	return nil
 }
 
@@ -332,52 +410,62 @@ func buildEpisodeClosure(
 	if _, ok := refs[root.TaskPath]; !ok {
 		return nil, nil, fmt.Errorf("blocker episode scope root is outside project authority")
 	}
-	episodeDependencies := map[string][]string{}
+	walker := episodeClosureWalker{
+		refs:                refs,
+		canonical:           canonical,
+		episodeDependencies: buildEpisodeDependencies(edges, satisfied),
+		seen:                map[string]bool{},
+		visiting:            map[string]bool{},
+	}
+	if err := walker.walk(root.TaskPath); err != nil {
+		return nil, nil, err
+	}
+	closure := append([]SemanticTaskRef(nil), walker.order...)
+	sort.Slice(closure, func(i, j int) bool { return closure[i].TaskPath < closure[j].TaskPath })
+	return closure, walker.order, nil
+}
+
+func buildEpisodeDependencies(
+	edges []EpisodeDependencyEdge,
+	satisfied []SemanticTaskRef,
+) map[string][]string {
+	dependencies := map[string][]string{}
 	for _, edge := range edges {
 		if taskRefIn(satisfied, edge.DependencyTaskRef) {
 			continue
 		}
-		episodeDependencies[edge.BlockedTaskRef.TaskPath] = appendUniqueString(
-			episodeDependencies[edge.BlockedTaskRef.TaskPath],
+		dependencies[edge.BlockedTaskRef.TaskPath] = appendUniqueString(
+			dependencies[edge.BlockedTaskRef.TaskPath],
 			edge.DependencyTaskRef.TaskPath,
 		)
 	}
-	seen := map[string]bool{}
-	visiting := map[string]bool{}
-	order := []SemanticTaskRef{}
-	var walk func(string) error
-	walk = func(path string) error {
-		if seen[path] {
-			return nil
-		}
-		if visiting[path] {
-			return fmt.Errorf("blocker episode closure contains a cycle at %s", path)
-		}
-		ref, ok := refs[path]
-		if !ok {
-			return fmt.Errorf("blocker episode dependency %s is outside project authority", path)
-		}
-		visiting[path] = true
-		dependencies := append([]string(nil), canonical[path]...)
-		dependencies = append(dependencies, episodeDependencies[path]...)
-		sort.Strings(dependencies)
-		dependencies = uniqueStrings(dependencies)
-		for _, dependency := range dependencies {
-			if err := walk(dependency); err != nil {
-				return err
-			}
-		}
-		visiting[path] = false
-		seen[path] = true
-		order = append(order, ref)
+	return dependencies
+}
+
+func (w *episodeClosureWalker) walk(path string) error {
+	if w.seen[path] {
 		return nil
 	}
-	if err := walk(root.TaskPath); err != nil {
-		return nil, nil, err
+	if w.visiting[path] {
+		return fmt.Errorf("blocker episode closure contains a cycle at %s", path)
 	}
-	closure := append([]SemanticTaskRef(nil), order...)
-	sort.Slice(closure, func(i, j int) bool { return closure[i].TaskPath < closure[j].TaskPath })
-	return closure, order, nil
+	ref, ok := w.refs[path]
+	if !ok {
+		return fmt.Errorf("blocker episode dependency %s is outside project authority", path)
+	}
+	w.visiting[path] = true
+	dependencies := append([]string(nil), w.canonical[path]...)
+	dependencies = append(dependencies, w.episodeDependencies[path]...)
+	sort.Strings(dependencies)
+	for _, dependency := range uniqueStrings(dependencies) {
+		if err := w.walk(dependency); err != nil {
+			return err
+		}
+	}
+	w.visiting[path] = false
+	w.seen[path] = true
+	w.order = append(w.order, ref)
+	return nil
 }
 
 func scheduleEpisodeRevision(revision BlockerEpisodeRevision) EpisodeScheduleResult {
