@@ -10,12 +10,10 @@ import (
 const evidenceJSONMediaType = "application/json"
 
 func (s *Store) StoreAttemptSeal(record AttemptSeal) (EvidenceObjectRef, AttemptSeal, error) {
+	record = canonicalizeAttemptSeal(record)
 	if err := s.validateAttemptSeal(record); err != nil {
 		return EvidenceObjectRef{}, AttemptSeal{}, err
 	}
-	record.EvidenceRefs = canonicalEvidenceRefs(record.EvidenceRefs)
-	record.Missing = canonicalStrings(record.Missing)
-	record.Unreadable = canonicalStrings(record.Unreadable)
 	record.AttemptSealID = ""
 	id, err := evidenceRecordDigest(record)
 	if err != nil {
@@ -163,7 +161,7 @@ func validateAttemptSealRefs(record AttemptSeal) error {
 	if err := validateTypedEvidenceRef(record.GitObjectArchive, "git-object-archive"); err != nil {
 		return fmt.Errorf("attempt seal git archive reference: %w", err)
 	}
-	for _, ref := range record.EvidenceRefs {
+	for _, ref := range attemptSealGraphEvidenceRefs(record) {
 		if err := validateEvidenceRef(ref); err != nil {
 			return fmt.Errorf("attempt seal evidence reference: %w", err)
 		}
