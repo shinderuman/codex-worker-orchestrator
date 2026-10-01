@@ -105,6 +105,16 @@ func (w *evidenceGraphWalker) validateLedgerChangedEpisodeAuthority(ledger Evide
 }
 
 func (w *evidenceGraphWalker) validateLedgerAddedRecords(ledger EvidenceLedgerRecord) error {
+	if err := w.validateLedgerAttemptSealsAdded(ledger); err != nil {
+		return err
+	}
+	if err := w.validateLedgerFinalizationsAdded(ledger); err != nil {
+		return err
+	}
+	return w.addRefs(ledger.FindingRecordsAdded)
+}
+
+func (w *evidenceGraphWalker) validateLedgerAttemptSealsAdded(ledger EvidenceLedgerRecord) error {
 	for _, ref := range ledger.AttemptSealsAdded {
 		seal, err := w.walkAttemptSeal(ref)
 		if err != nil {
@@ -114,6 +124,10 @@ func (w *evidenceGraphWalker) validateLedgerAddedRecords(ledger EvidenceLedgerRe
 			return evidenceGraphError(ref, "ledger attempt seal authority is inconsistent")
 		}
 	}
+	return nil
+}
+
+func (w *evidenceGraphWalker) validateLedgerFinalizationsAdded(ledger EvidenceLedgerRecord) error {
 	for _, ref := range ledger.FinalizationRecordsAdded {
 		if err := w.addRef(ref); err != nil {
 			return err
@@ -124,11 +138,6 @@ func (w *evidenceGraphWalker) validateLedgerAddedRecords(ledger EvidenceLedgerRe
 		}
 		if finalization.ControllerGeneration != ledger.ControllerGeneration || finalization.TransitionID != ledger.TransitionID || finalization.ProjectSnapshotID != ledger.ProjectSnapshotID {
 			return evidenceGraphError(ref, "ledger finalization authority is inconsistent")
-		}
-	}
-	for _, ref := range ledger.FindingRecordsAdded {
-		if err := w.addRef(ref); err != nil {
-			return err
 		}
 	}
 	return nil
