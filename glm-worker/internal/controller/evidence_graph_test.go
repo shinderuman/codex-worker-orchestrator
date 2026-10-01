@@ -179,9 +179,17 @@ func TestEvidenceGraphRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(t *tes
 		RepositoryIdentity:   store.identity.LineageID,
 		ControllerGeneration: 2,
 		TransitionID:         "transition-2",
-		ProjectSnapshotID:    "snapshot-2",
-		EvidenceHeadRef:      headRef,
-		CreatedAt:            time.Unix(3304, 0).UTC(),
+		ChangedTaskIndexHeads: []EvidenceSubjectHead{{
+			SubjectID:   taskEvidenceSubjectID(task),
+			RevisionRef: publishedRef,
+		}},
+		ChangedEpisodeIndexHeads: []EvidenceSubjectHead{{
+			SubjectID:   episode.EpisodeID,
+			RevisionRef: episodeRef,
+		}},
+		ProjectSnapshotID: "snapshot-2",
+		EvidenceHeadRef:   headRef,
+		CreatedAt:         time.Unix(3304, 0).UTC(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -249,9 +257,17 @@ func TestEvidenceGraphAcceptsHistoricalEpisodeTaskHeadReachableFromPublishedAuth
 		RepositoryIdentity:   store.identity.LineageID,
 		ControllerGeneration: 2,
 		TransitionID:         "transition-2",
-		ProjectSnapshotID:    "snapshot-2",
-		EvidenceHeadRef:      headRef,
-		CreatedAt:            time.Unix(3404, 0).UTC(),
+		ChangedTaskIndexHeads: []EvidenceSubjectHead{{
+			SubjectID:   taskEvidenceSubjectID(task),
+			RevisionRef: secondRef,
+		}},
+		ChangedEpisodeIndexHeads: []EvidenceSubjectHead{{
+			SubjectID:   episode.EpisodeID,
+			RevisionRef: episodeRef,
+		}},
+		ProjectSnapshotID: "snapshot-2",
+		EvidenceHeadRef:   headRef,
+		CreatedAt:         time.Unix(3404, 0).UTC(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -272,10 +288,11 @@ func storeSingleTaskEvidenceAuthority(
 	createdAt time.Time,
 ) (EvidenceObjectRef, EvidenceObjectRef) {
 	t.Helper()
+	head := EvidenceSubjectHead{SubjectID: taskEvidenceSubjectID(task), RevisionRef: taskRef}
 	headRef, _, err := store.StoreEvidenceHead(EvidenceHead{
 		SchemaVersion:        evidenceSchemaVersion,
 		RepositoryIdentity:   store.identity.LineageID,
-		TaskHeads:            []EvidenceSubjectHead{{SubjectID: taskEvidenceSubjectID(task), RevisionRef: taskRef}},
+		TaskHeads:            []EvidenceSubjectHead{head},
 		ControllerGeneration: generation,
 		ProjectSnapshotID:    projectSnapshotID,
 		CreatedAt:            createdAt,
@@ -284,14 +301,15 @@ func storeSingleTaskEvidenceAuthority(
 		t.Fatal(err)
 	}
 	ledgerRef, _, err := store.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
-		SchemaVersion:        evidenceSchemaVersion,
-		Sequence:             1,
-		RepositoryIdentity:   store.identity.LineageID,
-		ControllerGeneration: generation,
-		TransitionID:         transitionID,
-		ProjectSnapshotID:    projectSnapshotID,
-		EvidenceHeadRef:      headRef,
-		CreatedAt:            createdAt.Add(time.Second),
+		SchemaVersion:         evidenceSchemaVersion,
+		Sequence:              1,
+		RepositoryIdentity:    store.identity.LineageID,
+		ControllerGeneration:  generation,
+		TransitionID:          transitionID,
+		ChangedTaskIndexHeads: []EvidenceSubjectHead{head},
+		ProjectSnapshotID:     projectSnapshotID,
+		EvidenceHeadRef:       headRef,
+		CreatedAt:             createdAt.Add(time.Second),
 	})
 	if err != nil {
 		t.Fatal(err)
