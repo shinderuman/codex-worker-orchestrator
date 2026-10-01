@@ -43,6 +43,20 @@ printf 'harnesslint %s\n' "$*" >> "$VALIDATION_LOG"
 const fakeFocusedGo = `#!/bin/sh
 set -eu
 printf 'go %s\n' "$*" >> "$VALIDATION_LOG"
+case "${VALIDATION_MUTATION:-}" in
+	target-dirty)
+		printf 'mutated\n' >> "$EXPECTED_TARGET_ROOT/fixture.txt"
+		;;
+	control-dirty)
+		printf 'mutated\n' >> "$EXPECTED_CONTROL_ROOT/quality-tools.yml"
+		;;
+	target-head)
+		git -C "$EXPECTED_TARGET_ROOT" commit --allow-empty -m post-validation-target-mutation >/dev/null
+		;;
+	control-head)
+		git -C "$EXPECTED_CONTROL_ROOT" commit --allow-empty -m post-validation-control-mutation >/dev/null
+		;;
+esac
 `
 
 func TestWebGPTValidationRunsBoundedModes(t *testing.T) {
@@ -114,6 +128,31 @@ func TestWebGPTValidationRejectsStaleExpectedHead(t *testing.T) {
 	}
 }
 
+func TestWebGPTValidationFailsClosedOnPostExecutionMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		mutation string
+		wantErr  string
+	}{
+		{name: "target tracked content", mutation: "target-dirty", wantErr: "post_validation_target_dirty"},
+		{name: "target head", mutation: "target-head", wantErr: "post_validation_target_head_changed"},
+		{name: "control tracked content", mutation: "control-dirty", wantErr: "post_validation_control_dirty"},
+		{name: "control head", mutation: "control-head", wantErr: "post_validation_control_head_changed"},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			fixture := newWebGPTValidationFixture(t)
+			result, output, err := fixture.runWithMutation(t, "full-go-test", "", fixture.targetSHA, item.mutation)
+			if err == nil {
+				t.Fatalf("validation unexpectedly passed: %#v: %s", result, output)
+			}
+			if result.Result != "fail" || result.Error != item.wantErr {
+				t.Fatalf("result = %#v, want fail/%s: %s", result, item.wantErr, output)
+			}
+		})
+	}
+}
+
 func newWebGPTValidationFixture(t *testing.T) webGPTValidationFixture {
 	t.Helper()
 	base := t.TempDir()
@@ -166,6 +205,11 @@ func initializeFocusedValidationRepo(t *testing.T, root string) {
 
 func (fixture webGPTValidationFixture) run(t *testing.T, mode, scope, expected string) (webGPTValidationResult, []byte, error) {
 	t.Helper()
+	return fixture.runWithMutation(t, mode, scope, expected, "")
+}
+
+func (fixture webGPTValidationFixture) runWithMutation(t *testing.T, mode, scope, expected, mutation string) (webGPTValidationResult, []byte, error) {
+	t.Helper()
 	resultPath := filepath.Join(fixture.base, "result-"+strings.ReplaceAll(mode, "/", "-")+".json")
 	_ = os.Remove(resultPath)
 	command := exec.Command("sh", filepath.Join(fixture.control, "web-gpt-validate.sh"), fixture.branch, expected, fixture.controlSHA, mode, scope, resultPath, "web-gpt-validation-result-1")
@@ -174,6 +218,7 @@ func (fixture webGPTValidationFixture) run(t *testing.T, mode, scope, expected s
 		"PATH="+fixture.bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"WEB_GPT_VALIDATION_CONTROL_ROOT="+fixture.control,
 		"VALIDATION_LOG="+fixture.log,
+		"VALIDATION_MUTATION="+mutation,
 		"EXPECTED_TARGET_ROOT="+fixture.target,
 		"EXPECTED_CONTROL_ROOT="+fixture.control,
 	)
