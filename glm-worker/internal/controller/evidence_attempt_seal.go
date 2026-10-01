@@ -179,7 +179,7 @@ func validateAttemptSealDedicatedRefs(record AttemptSeal) error {
 		}
 	}
 	for category, refs := range map[string][]EvidenceObjectRef{
-		"review/validation": record.ReviewValidationRefs,
+		"review/validation":   record.ReviewValidationRefs,
 		"session association": record.SessionAssociationRefs,
 	} {
 		for _, ref := range refs {
