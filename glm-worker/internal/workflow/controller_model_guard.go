@@ -19,29 +19,11 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 	if checkpoint.ReadOnly {
 		return controllerModelCallGuard{}, nil
 	}
-	present, err := controller.RepositoryPresent(w.config.RepoRoot)
-	if err != nil {
-		return controllerModelCallGuard{}, fmt.Errorf("inspect repository controller applicability: %w", err)
-	}
-	if !present {
-		return controllerModelCallGuard{}, nil
-	}
-	exists, err := controller.Exists(w.config)
-	if err != nil {
-		return controllerModelCallGuard{}, fmt.Errorf("inspect repository controller activation: %w", err)
-	}
-	if !exists {
-		return controllerModelCallGuard{}, nil
-	}
-	store, err := controller.Open(w.config)
+	store, head, active, err := w.liveControllerStore()
 	if err != nil {
 		return controllerModelCallGuard{}, err
 	}
-	head, err := store.LoadHead()
-	if err != nil {
-		return controllerModelCallGuard{}, err
-	}
-	if controller.IsPristine(head) {
+	if !active {
 		return controllerModelCallGuard{}, nil
 	}
 	workspace, err := controller.ResolveWorkspaceIdentity(w.config.RepoRoot, store.Identity())
@@ -65,6 +47,35 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 		return controllerModelCallGuard{}, err
 	}
 	return controllerModelCallGuard{store: store, admission: admission, before: before, active: true}, nil
+}
+
+func (w *Workflow) liveControllerStore() (*controller.Store, controller.RepositoryControllerHead, bool, error) {
+	present, err := controller.RepositoryPresent(w.config.RepoRoot)
+	if err != nil {
+		return nil, controller.RepositoryControllerHead{}, false, fmt.Errorf("inspect repository controller applicability: %w", err)
+	}
+	if !present {
+		return nil, controller.RepositoryControllerHead{}, false, nil
+	}
+	exists, err := controller.Exists(w.config)
+	if err != nil {
+		return nil, controller.RepositoryControllerHead{}, false, fmt.Errorf("inspect repository controller activation: %w", err)
+	}
+	if !exists {
+		return nil, controller.RepositoryControllerHead{}, false, nil
+	}
+	store, err := controller.Open(w.config)
+	if err != nil {
+		return nil, controller.RepositoryControllerHead{}, false, err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return nil, controller.RepositoryControllerHead{}, false, err
+	}
+	if controller.IsPristine(head) {
+		return nil, controller.RepositoryControllerHead{}, false, nil
+	}
+	return store, head, true, nil
 }
 
 func (w *Workflow) captureControllerModelCallAfter(guard controllerModelCallGuard) (controller.WorkspaceSnapshot, error) {
