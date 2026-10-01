@@ -215,14 +215,56 @@ func (w *evidenceGraphWalker) walkTaskRevisionEvidence(subject string, revision 
 	match := func(seal AttemptSeal) bool {
 		return taskEvidenceSubjectID(seal.SemanticTaskRef) == subject
 	}
-	return w.walkIndexEvidence(revision.AttemptSeals, revision.Finalizations, match)
+	if err := w.walkIndexEvidence(revision.AttemptSeals, revision.Finalizations, match); err != nil {
+		return err
+	}
+	if err := w.addRefs(revision.FindingRecords); err != nil {
+		return err
+	}
+	if err := w.addRefs(revision.DependencyEdgeRecords); err != nil {
+		return err
+	}
+	if err := w.addRefs(revision.PublicationLineageRecords); err != nil {
+		return err
+	}
+	if revision.TerminalRecord != nil {
+		return w.addRef(*revision.TerminalRecord)
+	}
+	return nil
 }
 
 func (w *evidenceGraphWalker) walkEpisodeRevisionEvidence(subject string, revision EpisodeIndexRevision) error {
 	match := func(seal AttemptSeal) bool {
 		return seal.EpisodeID == subject
 	}
-	return w.walkIndexEvidence(revision.AttemptSeals, revision.Finalizations, match)
+	if err := w.walkIndexEvidence(revision.AttemptSeals, revision.Finalizations, match); err != nil {
+		return err
+	}
+	if err := w.walkEpisodeTaskIndexHeads(revision); err != nil {
+		return err
+	}
+	if err := w.addRefs(revision.FindingRecords); err != nil {
+		return err
+	}
+	if err := w.addRefs(revision.TransitionRecords); err != nil {
+		return err
+	}
+	if err := w.addRefs(revision.IntegrationHistory); err != nil {
+		return err
+	}
+	if revision.CloseRecord != nil {
+		return w.addRef(*revision.CloseRecord)
+	}
+	return nil
+}
+
+func (w *evidenceGraphWalker) walkEpisodeTaskIndexHeads(revision EpisodeIndexRevision) error {
+	for _, head := range revision.TaskIndexHeads {
+		if err := w.walkTaskRevisionChain(head.SubjectID, head.RevisionRef, revision.ControllerGeneration); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *evidenceGraphWalker) walkIndexEvidence(
