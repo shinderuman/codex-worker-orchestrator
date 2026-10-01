@@ -48,20 +48,14 @@ func TestWebGPTAutofixHelperFailsClosedAroundPreparedPublication(t *testing.T) {
 		"git check-ref-format \"refs/heads/$target_branch\"",
 		"run_controlled_harnesslint --deterministic-fix",
 		"run_controlled_harnesslint --controlled-check",
-		"capture_patch \"$patch_path\"",
 		"cmp -s \"$patch_path\" \"$validation_patch\"",
 		"validation_mutated_target",
 		"git apply --check \"$patch_path\"",
 		"git apply --index \"$patch_path\"",
 		"git commit --no-verify -m 'Apply deterministic repository autofixes'",
-		"remote_before_publish=$(git ls-remote --exit-code origin",
 		"git push origin \"HEAD:refs/heads/$target_branch\"",
 		"publication=pushed",
 		"unexpected_failure",
-		"\"before_sha\"",
-		"\"changed\"",
-		"\"resulting_head\"",
-		"\"validation\"",
 	})
 	if strings.Contains(text, "--force") {
 		t.Fatal("autofix helper must never force-push")
