@@ -33,19 +33,21 @@ type ProjectSnapshot struct {
 }
 
 type RepositoryControllerHead struct {
-	SchemaVersion         int              `json:"schema_version"`
-	RepositoryIdentity    string           `json:"repository_identity"`
-	ControllerGeneration  uint64           `json:"controller_generation"`
-	Status                ControllerStatus `json:"status"`
-	ProjectSnapshotID     string           `json:"project_snapshot_id,omitempty"`
-	RootTaskRef           *SemanticTaskRef `json:"root_task_ref,omitempty"`
-	ExecutionTaskRef      *SemanticTaskRef `json:"execution_task_ref,omitempty"`
-	ActiveEpisodeID       string           `json:"active_episode_id,omitempty"`
-	ActiveEpisodeRevision uint64           `json:"active_episode_revision,omitempty"`
-	LiveAttemptID         string           `json:"live_attempt_id,omitempty"`
-	LiveLeaseID           string           `json:"live_lease_id,omitempty"`
-	PendingTransitionID   string           `json:"pending_transition_id,omitempty"`
-	FailureID             string           `json:"failure_id,omitempty"`
+	SchemaVersion            int              `json:"schema_version"`
+	RepositoryIdentity       string           `json:"repository_identity"`
+	ControllerGeneration     uint64           `json:"controller_generation"`
+	Status                   ControllerStatus `json:"status"`
+	ProjectSnapshotID        string           `json:"project_snapshot_id,omitempty"`
+	RootTaskRef              *SemanticTaskRef `json:"root_task_ref,omitempty"`
+	ExecutionTaskRef         *SemanticTaskRef `json:"execution_task_ref,omitempty"`
+	ActiveEpisodeID          string           `json:"active_episode_id,omitempty"`
+	ActiveEpisodeRevision    uint64           `json:"active_episode_revision,omitempty"`
+	LiveAttemptID            string           `json:"live_attempt_id,omitempty"`
+	LiveLeaseID              string           `json:"live_lease_id,omitempty"`
+	PendingTransitionID      string           `json:"pending_transition_id,omitempty"`
+	FailureID                string           `json:"failure_id,omitempty"`
+	EvidenceHeadDigest       string           `json:"evidence_head_digest,omitempty"`
+	EvidenceLedgerHeadDigest string           `json:"evidence_ledger_head_digest,omitempty"`
 }
 
 type AttemptRecord struct {
