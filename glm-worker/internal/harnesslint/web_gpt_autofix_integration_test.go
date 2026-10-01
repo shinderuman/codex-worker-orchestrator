@@ -183,8 +183,8 @@ func (fixture webGPTAutofixFixture) remoteParent(t *testing.T, sha string) strin
 
 func (fixture webGPTAutofixFixture) prepareCompetingCommit(t *testing.T) string {
 	t.Helper()
-	writeWebGPTAutofixFile(t, fixture.root, "competitor.txt", "competitor\n", 0o644)
-	runWebGPTAutofixGit(t, fixture.root, "add", "competitor.txt")
+	writeWebGPTAutofixFile(t, fixture.root, "fixture.txt", "competitor\n", 0o644)
+	runWebGPTAutofixGit(t, fixture.root, "add", "fixture.txt")
 	runWebGPTAutofixGit(t, fixture.root, "commit", "-m", "competitor")
 	competitor := runWebGPTAutofixGit(t, fixture.root, "rev-parse", "HEAD")
 	runWebGPTAutofixGit(t, fixture.root, "push", "origin", "HEAD:refs/heads/autofix-competitor")
