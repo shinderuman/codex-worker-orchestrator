@@ -112,7 +112,7 @@ func TestUnexpectedTransitionFailsClosedAndRevokesLease(t *testing.T) {
 	if head.Status != ControllerStatusFailClosed || head.LiveLeaseID != "" || head.FailureID != failure.FailureID {
 		t.Fatalf("fail-closed head = %#v failure=%#v", head, failure)
 	}
-	if _, err := store.AdmitMutation(source.Lease.SemanticTaskRef, source.Workspace, source.Snapshot); err == nil {
+	if _, err := store.AdmitMutation(source.MutationAuthority(), source.Workspace, source.Snapshot); err == nil {
 		t.Fatal("fail-closed controller still admitted mutation")
 	}
 }

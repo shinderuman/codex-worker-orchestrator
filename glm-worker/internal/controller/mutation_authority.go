@@ -2,8 +2,6 @@ package controller
 
 import "fmt"
 
-// MutationAuthority is the exact controller-issued runtime identity a caller
-// must present before a mutating operation can be admitted.
 type MutationAuthority struct {
 	ControllerGeneration uint64
 	AttemptID            string
