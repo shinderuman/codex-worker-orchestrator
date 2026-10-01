@@ -1,7 +1,6 @@
 package harnesslintcmd
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -43,5 +42,4 @@ func TestControlledRootRequiresAbsolutePath(t *testing.T) {
 	if got != filepath.Clean(absolute) {
 		t.Fatalf("controlledRoot = %q", got)
 	}
-	_ = os.Unsetenv("HARNESSLINT_CONTROL_ROOT")
 }
