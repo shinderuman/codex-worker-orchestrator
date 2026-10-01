@@ -32,6 +32,7 @@ var classifiedFiles = map[string]pathClass{
 	".github/workflows/install-smoke.yml":    {true, "quality-policy"},
 	".github/workflows/web-gpt-autofix.yml":  {true, "quality-policy"},
 	".github/workflows/web-gpt-validate.yml": {true, "quality-policy"},
+	".github/workflows/web-gpt-mailbox.yml":  {true, "quality-policy"},
 	".githooks/post-merge":                   {true, "installer"},
 	"claude/settings-managed.json":           {true, "managed-claude-settings"},
 	"codex/config-managed.toml":              {true, "managed-codex-config"},
@@ -49,15 +50,17 @@ var classifiedFiles = map[string]pathClass{
 }
 
 var internalPackageCategories = map[string]string{
-	"workflow":    "workflow-package",
-	"packet":      "packet-package",
-	"runner":      "runner-package",
-	"app":         "app-package",
-	"config":      "config-package",
-	"state":       "state-critical",
-	"autoresume":  "autoresume-package",
-	"commentlint": "comment-policy",
-	"harnesslint": "quality-policy",
+	"workflow":          "workflow-package",
+	"packet":            "packet-package",
+	"runner":            "runner-package",
+	"app":               "app-package",
+	"config":            "config-package",
+	"state":             "state-critical",
+	"autoresume":        "autoresume-package",
+	"commentlint":       "comment-policy",
+	"harnesslint":       "quality-policy",
+	"webgptdispatch":    "quality-policy",
+	"webgptdispatchcmd": "quality-policy",
 }
 
 var qualitySurfaceFiles = map[string]struct{}{
@@ -67,6 +70,7 @@ var qualitySurfaceFiles = map[string]struct{}{
 	".github/workflows/install-smoke.yml":            {},
 	".github/workflows/web-gpt-autofix.yml":          {},
 	".github/workflows/web-gpt-validate.yml":         {},
+	".github/workflows/web-gpt-mailbox.yml":          {},
 	"install-quality-tools.sh":                       {},
 	"web-gpt-autofix.sh":                             {},
 	"web-gpt-validate.sh":                            {},
@@ -134,10 +138,13 @@ func IsQualitySurface(path string) bool {
 	for _, prefix := range []string{
 		"glm-worker/cmd/harnesslint/",
 		"glm-worker/cmd/commentlint/",
+		"glm-worker/cmd/web-gpt-dispatch-request/",
 		"glm-worker/internal/harnesslint/",
 		"glm-worker/internal/harnesslintcmd/",
 		"glm-worker/internal/commentlint/",
 		"glm-worker/internal/commentlintcmd/",
+		"glm-worker/internal/webgptdispatch/",
+		"glm-worker/internal/webgptdispatchcmd/",
 	} {
 		if strings.HasPrefix(path, prefix) {
 			return true

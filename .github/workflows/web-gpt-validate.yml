@@ -25,6 +25,21 @@ on:
         required: false
         default: ''
         type: string
+  workflow_call:
+    inputs:
+      target_branch:
+        required: true
+        type: string
+      expected_head_sha:
+        required: true
+        type: string
+      validation_mode:
+        required: true
+        type: string
+      package_scope:
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -48,13 +63,6 @@ jobs:
           path: control
           persist-credentials: false
           fetch-depth: 1
-      - name: Checkout exact target revision without credentials
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.expected_head_sha }}
-          path: target
-          persist-credentials: false
-          fetch-depth: 1
       - name: Read canonical quality tool contract
         id: quality-tools
         working-directory: control
@@ -65,6 +73,21 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
+      - name: Validate canonical operation request
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          VALIDATION_MODE: ${{ inputs.validation_mode }}
+          PACKAGE_SCOPE: ${{ inputs.package_scope }}
+        run: |
+          go -C control/glm-worker run ./cmd/web-gpt-dispatch-request fields validate "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$VALIDATION_MODE" "$PACKAGE_SCOPE"
+      - name: Checkout exact target revision without credentials
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+          path: target
+          persist-credentials: false
+          fetch-depth: 1
       - name: Install canonical quality tools without persistent cache
         working-directory: control
         run: |

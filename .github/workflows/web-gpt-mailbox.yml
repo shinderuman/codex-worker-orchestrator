@@ -1,0 +1,172 @@
+name: Web GPT Issue Mailbox Dispatch
+
+on:
+  issues:
+    types:
+      - edited
+
+permissions:
+  contents: read
+
+jobs:
+  parse:
+    if: ${{ github.event.issue.number == 1236 }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    outputs:
+      request_id: ${{ steps.request.outputs.request_id }}
+      operation: ${{ steps.request.outputs.operation }}
+      target_branch: ${{ steps.request.outputs.target_branch }}
+      expected_head_sha: ${{ steps.request.outputs.expected_head_sha }}
+      validation_mode: ${{ steps.request.outputs.validation_mode }}
+      package_scope: ${{ steps.request.outputs.package_scope }}
+    steps:
+      - name: Require canonical default-branch control
+        env:
+          CONTROL_REF: ${{ github.ref }}
+        run: test "$CONTROL_REF" = refs/heads/main
+      - name: Checkout canonical mailbox control source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Read canonical Go version
+        id: quality-tools
+        working-directory: control
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Materialize mailbox body from event payload
+        run: |
+          mkdir -p "$RUNNER_TEMP/web-gpt-mailbox"
+          jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/web-gpt-mailbox/body.json"
+      - name: Parse and authorize mailbox request
+        id: request
+        env:
+          MAILBOX_ISSUE: ${{ github.event.issue.number }}
+          MAILBOX_ACTOR: ${{ github.actor }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: |
+          go -C control/glm-worker run ./cmd/web-gpt-dispatch-request mailbox \
+            "$RUNNER_TEMP/web-gpt-mailbox/body.json" \
+            "$MAILBOX_ISSUE" \
+            "$MAILBOX_ACTOR" \
+            "$CONTROL_SHA" \
+            "$GITHUB_OUTPUT" \
+            "$RUNNER_TEMP/web-gpt-mailbox/result.json"
+      - name: Upload transport admission result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-gpt-mailbox-admission-${{ github.run_id }}
+          path: ${{ runner.temp }}/web-gpt-mailbox/result.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize transport admission
+        if: ${{ always() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/web-gpt-mailbox/result.json" ]; then
+            printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/web-gpt-mailbox/result.json" >> "$GITHUB_STEP_SUMMARY"
+            printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  autofix:
+    needs: parse
+    if: ${{ needs.parse.result == 'success' && needs.parse.outputs.operation == 'autofix' }}
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/web-gpt-autofix.yml
+    with:
+      target_branch: ${{ needs.parse.outputs.target_branch }}
+      expected_head_sha: ${{ needs.parse.outputs.expected_head_sha }}
+
+  validate:
+    needs: parse
+    if: ${{ needs.parse.result == 'success' && needs.parse.outputs.operation == 'validate' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/web-gpt-validate.yml
+    with:
+      target_branch: ${{ needs.parse.outputs.target_branch }}
+      expected_head_sha: ${{ needs.parse.outputs.expected_head_sha }}
+      validation_mode: ${{ needs.parse.outputs.validation_mode }}
+      package_scope: ${{ needs.parse.outputs.package_scope }}
+
+  result:
+    needs:
+      - parse
+      - autofix
+      - validate
+    if: ${{ always() && needs.parse.result == 'success' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record mailbox operation result
+        env:
+          REQUEST_ID: ${{ needs.parse.outputs.request_id }}
+          OPERATION: ${{ needs.parse.outputs.operation }}
+          TARGET_BRANCH: ${{ needs.parse.outputs.target_branch }}
+          TARGET_SHA: ${{ needs.parse.outputs.expected_head_sha }}
+          VALIDATION_MODE: ${{ needs.parse.outputs.validation_mode }}
+          PACKAGE_SCOPE: ${{ needs.parse.outputs.package_scope }}
+          CONTROL_SHA: ${{ github.sha }}
+          AUTOFIX_RESULT: ${{ needs.autofix.result }}
+          AUTOFIX_CHANGED: ${{ needs.autofix.outputs.changed }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/web-gpt-mailbox-final"
+          case "$OPERATION" in
+            autofix)
+              operation_result=$AUTOFIX_RESULT
+              if [ "$AUTOFIX_CHANGED" = true ]; then
+                operation_artifact="web-gpt-autofix-result-$RUN_ID"
+              else
+                operation_artifact="web-gpt-autofix-prepared-$RUN_ID"
+              fi
+              ;;
+            validate)
+              operation_result=$VALIDATE_RESULT
+              operation_artifact="web-gpt-validation-result-$RUN_ID"
+              ;;
+            *)
+              operation_result=invalid
+              operation_artifact=''
+              ;;
+          esac
+          jq -n \
+            --argjson mailbox_issue 1236 \
+            --arg request_id "$REQUEST_ID" \
+            --arg operation "$OPERATION" \
+            --arg control_sha "$CONTROL_SHA" \
+            --arg target_branch "$TARGET_BRANCH" \
+            --arg target_sha "$TARGET_SHA" \
+            --arg validation_mode "$VALIDATION_MODE" \
+            --arg package_scope "$PACKAGE_SCOPE" \
+            --arg run_id "$RUN_ID" \
+            --arg operation_result "$operation_result" \
+            --arg operation_artifact "$operation_artifact" \
+            '{mailbox_issue:$mailbox_issue,request_id:$request_id,operation:$operation,control_sha:$control_sha,target_branch:$target_branch,target_sha:$target_sha,validation_mode:$validation_mode,package_scope:$package_scope,run_id:$run_id,operation_result:$operation_result,operation_result_artifact:$operation_artifact}' \
+            > "$RUNNER_TEMP/web-gpt-mailbox-final/result.json"
+      - name: Upload transport result
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-gpt-mailbox-result-${{ github.run_id }}
+          path: ${{ runner.temp }}/web-gpt-mailbox-final/result.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize transport result
+        run: |
+          printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/web-gpt-mailbox-final/result.json" >> "$GITHUB_STEP_SUMMARY"
+          printf '```\n' >> "$GITHUB_STEP_SUMMARY"

@@ -10,9 +10,11 @@ func TestWebGPTAutofixWorkflowSeparatesReadAndWriteCapabilities(t *testing.T) {
 	text := readWebGPTAutofixContractFile(t, "../../../.github/workflows/web-gpt-autofix.yml")
 	requireWebGPTAutofixTokens(t, text, []string{
 		"on:\n  workflow_dispatch:",
+		"workflow_call:",
 		"target_branch:",
 		"expected_head_sha:",
 		"prepare:\n    permissions:\n      contents: read",
+		"go -C control/glm-worker run ./cmd/web-gpt-dispatch-request fields autofix",
 		"Checkout target at expected head without credentials",
 		"ref: ${{ inputs.expected_head_sha }}\n          path: target\n          persist-credentials: false",
 		"sh ../control/web-gpt-autofix.sh prepare",
@@ -26,7 +28,7 @@ func TestWebGPTAutofixWorkflowSeparatesReadAndWriteCapabilities(t *testing.T) {
 	})
 	for _, forbidden := range []string{"\n  push:", "\n  pull_request:"} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("autofix workflow must remain workflow_dispatch-only; found %q", forbidden)
+			t.Fatalf("autofix workflow must not gain automatic repository triggers; found %q", forbidden)
 		}
 	}
 	publish := strings.SplitN(text, "\n  publish:\n", 2)

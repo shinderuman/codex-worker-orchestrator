@@ -9,12 +9,14 @@ func TestWebGPTValidationWorkflowPinsReadOnlyCanonicalControl(t *testing.T) {
 	text := readWebGPTAutofixContractFile(t, "../../../.github/workflows/web-gpt-validate.yml")
 	requireWebGPTAutofixTokens(t, text, []string{
 		"on:\n  workflow_dispatch:",
+		"workflow_call:",
 		"validation_mode:\n        description: Repository-owned validation mode\n        required: true\n        type: choice",
 		"- repository-lint",
 		"- go-package-test",
 		"- full-go-test",
 		"- build-vet",
 		"permissions:\n  contents: read",
+		"go -C control/glm-worker run ./cmd/web-gpt-dispatch-request fields validate",
 		"ref: ${{ github.sha }}\n          path: control\n          persist-credentials: false",
 		"ref: ${{ inputs.expected_head_sha }}\n          path: target\n          persist-credentials: false",
 		"WEB_GPT_VALIDATION_CONTROL_ROOT: ${{ github.workspace }}/control",
