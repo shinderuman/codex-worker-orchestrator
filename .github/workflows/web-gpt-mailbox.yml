@@ -117,8 +117,11 @@ jobs:
           OPERATION: ${{ needs.parse.outputs.operation }}
           TARGET_BRANCH: ${{ needs.parse.outputs.target_branch }}
           TARGET_SHA: ${{ needs.parse.outputs.expected_head_sha }}
+          VALIDATION_MODE: ${{ needs.parse.outputs.validation_mode }}
+          PACKAGE_SCOPE: ${{ needs.parse.outputs.package_scope }}
           CONTROL_SHA: ${{ github.sha }}
           AUTOFIX_RESULT: ${{ needs.autofix.result }}
+          AUTOFIX_CHANGED: ${{ needs.autofix.outputs.changed }}
           VALIDATE_RESULT: ${{ needs.validate.result }}
           RUN_ID: ${{ github.run_id }}
         run: |
@@ -126,7 +129,11 @@ jobs:
           case "$OPERATION" in
             autofix)
               operation_result=$AUTOFIX_RESULT
-              operation_artifact="web-gpt-autofix-result-$RUN_ID"
+              if [ "$AUTOFIX_CHANGED" = true ]; then
+                operation_artifact="web-gpt-autofix-result-$RUN_ID"
+              else
+                operation_artifact="web-gpt-autofix-prepared-$RUN_ID"
+              fi
               ;;
             validate)
               operation_result=$VALIDATE_RESULT
@@ -144,10 +151,12 @@ jobs:
             --arg control_sha "$CONTROL_SHA" \
             --arg target_branch "$TARGET_BRANCH" \
             --arg target_sha "$TARGET_SHA" \
+            --arg validation_mode "$VALIDATION_MODE" \
+            --arg package_scope "$PACKAGE_SCOPE" \
             --arg run_id "$RUN_ID" \
             --arg operation_result "$operation_result" \
             --arg operation_artifact "$operation_artifact" \
-            '{mailbox_issue:$mailbox_issue,request_id:$request_id,operation:$operation,control_sha:$control_sha,target_branch:$target_branch,target_sha:$target_sha,run_id:$run_id,operation_result:$operation_result,operation_result_artifact:$operation_artifact}' \
+            '{mailbox_issue:$mailbox_issue,request_id:$request_id,operation:$operation,control_sha:$control_sha,target_branch:$target_branch,target_sha:$target_sha,validation_mode:$validation_mode,package_scope:$package_scope,run_id:$run_id,operation_result:$operation_result,operation_result_artifact:$operation_artifact}' \
             > "$RUNNER_TEMP/web-gpt-mailbox-final/result.json"
       - name: Upload transport result
         uses: actions/upload-artifact@v4
