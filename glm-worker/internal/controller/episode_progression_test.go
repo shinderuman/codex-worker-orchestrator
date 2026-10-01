@@ -3,6 +3,7 @@ package controller
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -12,7 +13,9 @@ type episodeProgressionFixture struct {
 	store        *Store
 	episode      BlockerEpisodeRevision
 	head         RepositoryControllerHead
+	root         SemanticTaskRef
 	b            SemanticTaskRef
+	bAfterC      SemanticTaskRef
 	c            SemanticTaskRef
 	resultAfterC ProjectSnapshot
 }
@@ -50,11 +53,18 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Intent != FindingIntentResumeBlockerTask || first.NextTaskRef == nil || !first.NextTaskRef.Equal(fixture.b) {
+	if first.Intent != FindingIntentResumeBlockerTask || first.NextTaskRef == nil ||
+		!first.NextTaskRef.Equal(fixture.bAfterC) {
 		t.Fatalf("C satisfaction schedule = %#v", first)
 	}
-	if first.Episode.Revision != 2 || !taskRefIn(first.Episode.SatisfiedTaskRefs, fixture.c) {
+	if fixture.bAfterC.Equal(fixture.b) {
+		t.Fatal("B semantic authority did not change after dependency fulfillment")
+	}
+	if first.Episode.Revision != 2 || !taskPathSatisfied(first.Episode.SatisfiedTaskRefs, fixture.c.TaskPath) {
 		t.Fatalf("C satisfaction revision = %#v", first.Episode)
+	}
+	if current := taskRefForPath(first.Episode.AdmittedClosure, fixture.b.TaskPath); !current.Equal(fixture.bAfterC) {
+		t.Fatalf("B was not rebound in episode closure: got=%#v want=%#v", current, fixture.bAfterC)
 	}
 	if taskRefIn(fixture.resultAfterC.Tasks, fixture.c) {
 		t.Fatal("C unexpectedly remains in canonical result project snapshot")
@@ -68,10 +78,23 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 		t.Fatalf("duplicate C satisfaction did not converge: first=%#v retry=%#v", first.Episode, retry.Episode)
 	}
 
-	finalSnapshot := retireProgressionTask(t, fixture.repo, fixture.store, fixture.b.TaskPath, progressionPlan(false, false))
+	finalAuthority := commitProgressionResult(
+		t,
+		fixture.repo,
+		fixture.store,
+		[]string{fixture.b.TaskPath},
+		map[string]string{
+			fixture.root.TaskPath: progressionTaskBody("root", nil, []string{fixture.b.TaskPath}),
+		},
+		progressionPlan(false, false),
+	)
+	if finalAuthority.Task.Equal(fixture.root) {
+		t.Fatal("root semantic authority did not change after blocker fulfillment")
+	}
 	head := fixture.head
 	head.ControllerGeneration++
-	head.ProjectSnapshotID = finalSnapshot.SnapshotID
+	head.ProjectSnapshotID = finalAuthority.ProjectSnapshotID
+	head.RootTaskRef = &finalAuthority.Task
 	head.ActiveEpisodeRevision = first.Episode.Revision
 	if err := fixture.store.writeHeadCAS(fixture.head.ControllerGeneration, head); err != nil {
 		t.Fatal(err)
@@ -81,8 +104,8 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 		EpisodeID:                    fixture.episode.EpisodeID,
 		ExpectedRevision:             first.Episode.Revision,
 		ExpectedControllerGeneration: head.ControllerGeneration,
-		ProjectSnapshotID:            finalSnapshot.SnapshotID,
-		SatisfiedTaskRef:             fixture.b,
+		ProjectSnapshotID:            finalAuthority.ProjectSnapshotID,
+		SatisfiedTaskRef:             fixture.bAfterC,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,10 +114,14 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 		t.Fatalf("B satisfaction schedule = %#v", second)
 	}
 	if second.Episode.Revision != 3 || second.Episode.State != EpisodeStateResumingRoot ||
-		!taskRefIn(second.Episode.SatisfiedTaskRefs, fixture.b) || !taskRefIn(second.Episode.SatisfiedTaskRefs, fixture.c) {
+		!taskPathSatisfied(second.Episode.SatisfiedTaskRefs, fixture.b.TaskPath) ||
+		!taskPathSatisfied(second.Episode.SatisfiedTaskRefs, fixture.c.TaskPath) {
 		t.Fatalf("B satisfaction revision = %#v", second.Episode)
 	}
-	if taskRefIn(finalSnapshot.Tasks, fixture.b) {
+	if !second.Episode.RootTaskRef.Equal(finalAuthority.Task) {
+		t.Fatalf("root semantic authority was not rebound: got=%#v want=%#v", second.Episode.RootTaskRef, finalAuthority.Task)
+	}
+	if taskRefForPath(finalAuthority.Snapshot.Tasks, fixture.b.TaskPath).TaskPath != "" {
 		t.Fatal("B unexpectedly remains in canonical result project snapshot")
 	}
 }
@@ -116,13 +143,17 @@ func TestEpisodeSatisfactionRejectsTaskOutsideClosure(t *testing.T) {
 func newEpisodeProgressionFixture(t *testing.T) episodeProgressionFixture {
 	t.Helper()
 	repo, _ := newControllerLinkedWorktree(t)
-	writeProgressionTask(t, repo, "IMPLEMENTATION_TASKS/b.md", "B")
-	writeProgressionTask(t, repo, "IMPLEMENTATION_TASKS/c.md", "C")
+	rootPath := "IMPLEMENTATION_TASKS/root.md"
+	bPath := "IMPLEMENTATION_TASKS/b.md"
+	cPath := "IMPLEMENTATION_TASKS/c.md"
+	writeProgressionTask(t, repo, rootPath, progressionTaskBody("root", []string{bPath}, nil))
+	writeProgressionTask(t, repo, bPath, progressionTaskBody("B", []string{cPath}, nil))
+	writeProgressionTask(t, repo, cPath, progressionTaskBody("C", nil, nil))
 	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte(progressionPlan(true, true)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runControllerGit(t, repo, "add", ".")
-	runControllerGit(t, repo, "commit", "-q", "-m", "add progression tasks")
+	runControllerGit(t, repo, "commit", "-q", "-m", "add progression dependencies")
 
 	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
 	if err != nil {
@@ -148,32 +179,16 @@ func newEpisodeProgressionFixture(t *testing.T) episodeProgressionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := findProjectTask(project, "IMPLEMENTATION_TASKS/b.md")
-	c := findProjectTask(project, "IMPLEMENTATION_TASKS/c.md")
+	b := findProjectTask(project, bPath)
+	c := findProjectTask(project, cPath)
 	if b.Empty() || c.Empty() {
 		t.Fatal("progression tasks are missing from initial project snapshot")
 	}
 
-	episode := BlockerEpisodeRevision{
-		SchemaVersion:              controllerSchemaVersion,
-		EpisodeID:                  "episode-progression",
-		Revision:                   1,
-		ProjectSnapshotID:          project.SnapshotID,
-		RootTaskRef:                authority.Task,
-		ScopeRootTaskRef:           b,
-		DependencyEdges:            []EpisodeDependencyEdge{{BlockedTaskRef: b, DependencyTaskRef: c, FindingID: "finding-b-c"}},
-		ExecutionHistory:           []SemanticTaskRef{b},
-		AdmittedClosure:            []SemanticTaskRef{b, c},
-		AdmittedOrder:              []SemanticTaskRef{c, b},
-		SourceControllerGeneration: admission.Head.ControllerGeneration,
-		SourceAttemptID:            admission.Attempt.AttemptID,
-		SourceLeaseID:              admission.Lease.LeaseID,
-		SourceWorkspaceID:          admission.Lease.WorkspaceID,
-		SourceWorkspaceSnapshotID:  admission.Lease.ExpectedWorkspaceSnapshotID,
-		State:                      EpisodeStatePlanned,
-		CreatedAt:                  time.Now().UTC(),
+	episode := progressionEpisode(authority.Task, b, c, admission, project)
+	if err := store.writeEpisodeRevision(episode); err != nil {
+		t.Fatal(err)
 	}
-	episode.RevisionID = blockerEpisodeRevisionID(episode)
 	if err := store.writeEpisodeRecord(BlockerEpisodeRecord{
 		SchemaVersion:      controllerSchemaVersion,
 		EpisodeID:          episode.EpisodeID,
@@ -183,9 +198,6 @@ func newEpisodeProgressionFixture(t *testing.T) episodeProgressionFixture {
 		OpenedByFindingID:  "finding-root-b",
 		CreatedAt:          episode.CreatedAt,
 	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.writeEpisodeRevision(episode); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,10 +212,22 @@ func newEpisodeProgressionFixture(t *testing.T) episodeProgressionFixture {
 		t.Fatal(err)
 	}
 
-	resultAfterC := retireProgressionTask(t, repo, store, c.TaskPath, progressionPlan(true, false))
+	resultAfterC := commitProgressionResult(
+		t,
+		repo,
+		store,
+		[]string{cPath},
+		map[string]string{bPath: progressionTaskBody("B", nil, []string{cPath})},
+		progressionPlan(true, false),
+	)
+	bAfterC := findProjectTask(resultAfterC.Snapshot, bPath)
+	if bAfterC.Empty() {
+		t.Fatal("B missing after C retirement")
+	}
 	resultHead := head
 	resultHead.ControllerGeneration++
-	resultHead.ProjectSnapshotID = resultAfterC.SnapshotID
+	resultHead.ProjectSnapshotID = resultAfterC.ProjectSnapshotID
+	resultHead.RootTaskRef = &resultAfterC.Task
 	if err := store.writeHeadCAS(head.ControllerGeneration, resultHead); err != nil {
 		t.Fatal(err)
 	}
@@ -212,28 +236,66 @@ func newEpisodeProgressionFixture(t *testing.T) episodeProgressionFixture {
 		store:        store,
 		episode:      episode,
 		head:         resultHead,
+		root:         authority.Task,
 		b:            b,
+		bAfterC:      bAfterC,
 		c:            c,
-		resultAfterC: resultAfterC,
+		resultAfterC: resultAfterC.Snapshot,
 	}
 }
 
-func retireProgressionTask(
+func progressionEpisode(
+	root SemanticTaskRef,
+	b SemanticTaskRef,
+	c SemanticTaskRef,
+	admission Admission,
+	project ProjectSnapshot,
+) BlockerEpisodeRevision {
+	episode := BlockerEpisodeRevision{
+		SchemaVersion:              controllerSchemaVersion,
+		EpisodeID:                  "episode-progression",
+		Revision:                   1,
+		ProjectSnapshotID:          project.SnapshotID,
+		RootTaskRef:                root,
+		ScopeRootTaskRef:           b,
+		DependencyEdges:            []EpisodeDependencyEdge{{BlockedTaskRef: b, DependencyTaskRef: c, FindingID: "finding-b-c"}},
+		ExecutionHistory:           []SemanticTaskRef{b},
+		AdmittedClosure:            []SemanticTaskRef{b, c},
+		AdmittedOrder:              []SemanticTaskRef{c, b},
+		SourceControllerGeneration: admission.Head.ControllerGeneration,
+		SourceAttemptID:            admission.Attempt.AttemptID,
+		SourceLeaseID:              admission.Lease.LeaseID,
+		SourceWorkspaceID:          admission.Lease.WorkspaceID,
+		SourceWorkspaceSnapshotID:  admission.Lease.ExpectedWorkspaceSnapshotID,
+		State:                      EpisodeStatePlanned,
+		CreatedAt:                  time.Now().UTC(),
+	}
+	episode.RevisionID = blockerEpisodeRevisionID(episode)
+	return episode
+}
+
+func commitProgressionResult(
 	t *testing.T,
 	repo string,
 	store *Store,
-	taskPath string,
+	remove []string,
+	rewrites map[string]string,
 	plan string,
-) ProjectSnapshot {
+) CommittedTaskAuthority {
 	t.Helper()
-	if err := os.Remove(filepath.Join(repo, filepath.FromSlash(taskPath))); err != nil {
-		t.Fatal(err)
+	for _, taskPath := range remove {
+		if err := os.Remove(filepath.Join(repo, filepath.FromSlash(taskPath))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for taskPath, content := range rewrites {
+		writeProgressionTask(t, repo, taskPath, content)
 	}
 	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runControllerGit(t, repo, "add", "-A")
-	runControllerGit(t, repo, "commit", "-q", "-m", "retire progression task")
+	runControllerGit(t, repo, "commit", "-q", "-m", "advance progression metadata")
 	authority, err := ResolveCommittedTaskAuthority(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -241,14 +303,34 @@ func retireProgressionTask(
 	if err := store.writeProjectSnapshot(authority.Snapshot); err != nil {
 		t.Fatal(err)
 	}
-	return authority.Snapshot
+	return authority
 }
 
-func writeProgressionTask(t *testing.T, repo, path, name string) {
+func writeProgressionTask(t *testing.T, repo, path, content string) {
 	t.Helper()
-	content := "# " + name + "\n\n## Contract\n\nprogression task " + name + "\n\n## Dependencies\n\nnone\n"
 	if err := os.WriteFile(filepath.Join(repo, filepath.FromSlash(path)), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func progressionTaskBody(name string, dependencies, fulfilled []string) string {
+	var body strings.Builder
+	body.WriteString("# " + name + "\n\n## Contract\n\nprogression task " + name + "\n\n## Dependencies\n\n")
+	writeProgressionDependencyList(&body, dependencies)
+	if len(fulfilled) != 0 {
+		body.WriteString("\n## Fulfilled dependencies\n\n")
+		writeProgressionDependencyList(&body, fulfilled)
+	}
+	return body.String()
+}
+
+func writeProgressionDependencyList(body *strings.Builder, dependencies []string) {
+	if len(dependencies) == 0 {
+		body.WriteString("none\n")
+		return
+	}
+	for _, dependency := range dependencies {
+		body.WriteString("- `" + dependency + "`\n")
 	}
 }
 
@@ -264,4 +346,13 @@ func progressionPlan(includeB, includeC bool) string {
 		plan += "\n- `IMPLEMENTATION_TASKS/c.md`\n"
 	}
 	return plan
+}
+
+func taskRefForPath(refs []SemanticTaskRef, path string) SemanticTaskRef {
+	for _, ref := range refs {
+		if ref.TaskPath == path {
+			return ref
+		}
+	}
+	return SemanticTaskRef{}
 }
