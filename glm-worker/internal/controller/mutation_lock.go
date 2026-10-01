@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 )
@@ -11,7 +12,7 @@ type mutationLock struct {
 }
 
 func (s *Store) acquireMutationLock() (*mutationLock, error) {
-	lock, err := repolock.AcquireWait(s.LockPath())
+	lock, err := repolock.AcquireWait(filepath.Join(s.dir, "lock"))
 	if err != nil {
 		return nil, fmt.Errorf("acquire repository controller mutation lock: %w", err)
 	}
