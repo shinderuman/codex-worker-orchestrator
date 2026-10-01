@@ -19,6 +19,13 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 	if checkpoint.ReadOnly {
 		return controllerModelCallGuard{}, nil
 	}
+	present, err := controller.RepositoryPresent(w.config.RepoRoot)
+	if err != nil {
+		return controllerModelCallGuard{}, fmt.Errorf("inspect repository controller applicability: %w", err)
+	}
+	if !present {
+		return controllerModelCallGuard{}, nil
+	}
 	exists, err := controller.Exists(w.config)
 	if err != nil {
 		return controllerModelCallGuard{}, fmt.Errorf("inspect repository controller activation: %w", err)
