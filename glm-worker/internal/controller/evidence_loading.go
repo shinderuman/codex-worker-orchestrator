@@ -3,107 +3,109 @@ package controller
 import "fmt"
 
 func (s *Store) LoadAttemptFinalization(ref EvidenceObjectRef) (AttemptFinalizationRecord, error) {
-	var record AttemptFinalizationRecord
-	if err := s.loadEvidenceJSON(ref, "attempt-finalization", &record); err != nil {
-		return AttemptFinalizationRecord{}, err
-	}
-	id := record.FinalizationID
-	record.FinalizationID = ""
-	digest, err := evidenceRecordDigest(record)
-	if err != nil {
-		return AttemptFinalizationRecord{}, err
-	}
-	if id == "" || id != digest || id != ref.LogicalIdentity {
-		return AttemptFinalizationRecord{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "attempt finalization identity is inconsistent"}
-	}
-	record.FinalizationID = id
-	if err := s.validateFinalization(record); err != nil {
-		return AttemptFinalizationRecord{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: err.Error()}
-	}
-	return record, nil
+	return loadEvidenceRecord(
+		s,
+		ref,
+		"attempt-finalization",
+		func(record *AttemptFinalizationRecord) (string, string) {
+			id := record.FinalizationID
+			record.FinalizationID = ""
+			return id, id
+		},
+		func(record *AttemptFinalizationRecord, id string) { record.FinalizationID = id },
+		validateFinalization,
+		"attempt finalization identity is inconsistent",
+	)
 }
 
 func (s *Store) LoadTaskIndexRevision(ref EvidenceObjectRef) (TaskIndexRevision, error) {
-	var record TaskIndexRevision
-	if err := s.loadEvidenceJSON(ref, "task-index-revision", &record); err != nil {
-		return TaskIndexRevision{}, err
-	}
-	id := record.RevisionID
-	record.RevisionID = ""
-	digest, err := evidenceRecordDigest(record)
-	if err != nil {
-		return TaskIndexRevision{}, err
-	}
-	if id == "" || id != digest || taskEvidenceSubjectID(record.TaskRef) != ref.LogicalIdentity {
-		return TaskIndexRevision{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "task index revision identity is inconsistent"}
-	}
-	record.RevisionID = id
-	if err := validateTaskIndexRevision(record); err != nil {
-		return TaskIndexRevision{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: err.Error()}
-	}
-	return record, nil
+	return loadEvidenceRecord(
+		s,
+		ref,
+		"task-index-revision",
+		func(record *TaskIndexRevision) (string, string) {
+			id := record.RevisionID
+			record.RevisionID = ""
+			return id, taskEvidenceSubjectID(record.TaskRef)
+		},
+		func(record *TaskIndexRevision, id string) { record.RevisionID = id },
+		validateTaskIndexRevision,
+		"task index revision identity is inconsistent",
+	)
 }
 
 func (s *Store) LoadEpisodeIndexRevision(ref EvidenceObjectRef) (EpisodeIndexRevision, error) {
-	var record EpisodeIndexRevision
-	if err := s.loadEvidenceJSON(ref, "episode-index-revision", &record); err != nil {
-		return EpisodeIndexRevision{}, err
-	}
-	id := record.RevisionID
-	record.RevisionID = ""
-	digest, err := evidenceRecordDigest(record)
-	if err != nil {
-		return EpisodeIndexRevision{}, err
-	}
-	if id == "" || id != digest || record.EpisodeID != ref.LogicalIdentity {
-		return EpisodeIndexRevision{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "episode index revision identity is inconsistent"}
-	}
-	record.RevisionID = id
-	if err := validateEpisodeIndexRevision(record); err != nil {
-		return EpisodeIndexRevision{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: err.Error()}
-	}
-	return record, nil
+	return loadEvidenceRecord(
+		s,
+		ref,
+		"episode-index-revision",
+		func(record *EpisodeIndexRevision) (string, string) {
+			id := record.RevisionID
+			record.RevisionID = ""
+			return id, record.EpisodeID
+		},
+		func(record *EpisodeIndexRevision, id string) { record.RevisionID = id },
+		validateEpisodeIndexRevision,
+		"episode index revision identity is inconsistent",
+	)
 }
 
 func (s *Store) LoadEvidenceHead(ref EvidenceObjectRef) (EvidenceHead, error) {
-	var record EvidenceHead
-	if err := s.loadEvidenceJSON(ref, "evidence-head", &record); err != nil {
-		return EvidenceHead{}, err
-	}
-	id := record.HeadDigest
-	record.HeadDigest = ""
-	digest, err := evidenceRecordDigest(record)
-	if err != nil {
-		return EvidenceHead{}, err
-	}
-	if id == "" || id != digest || record.RepositoryIdentity != ref.LogicalIdentity {
-		return EvidenceHead{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence head identity is inconsistent"}
-	}
-	record.HeadDigest = id
-	if err := s.validateEvidenceHead(record); err != nil {
-		return EvidenceHead{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: err.Error()}
-	}
-	return record, nil
+	return loadEvidenceRecord(
+		s,
+		ref,
+		"evidence-head",
+		func(record *EvidenceHead) (string, string) {
+			id := record.HeadDigest
+			record.HeadDigest = ""
+			return id, record.RepositoryIdentity
+		},
+		func(record *EvidenceHead, id string) { record.HeadDigest = id },
+		s.validateEvidenceHead,
+		"evidence head identity is inconsistent",
+	)
 }
 
 func (s *Store) LoadEvidenceLedgerRecord(ref EvidenceObjectRef) (EvidenceLedgerRecord, error) {
-	var record EvidenceLedgerRecord
-	if err := s.loadEvidenceJSON(ref, "evidence-ledger-record", &record); err != nil {
-		return EvidenceLedgerRecord{}, err
+	return loadEvidenceRecord(
+		s,
+		ref,
+		"evidence-ledger-record",
+		func(record *EvidenceLedgerRecord) (string, string) {
+			id := record.RecordDigest
+			record.RecordDigest = ""
+			return id, fmt.Sprintf("%s:%d", record.RepositoryIdentity, record.Sequence)
+		},
+		func(record *EvidenceLedgerRecord, id string) { record.RecordDigest = id },
+		s.validateEvidenceLedgerRecord,
+		"evidence ledger identity is inconsistent",
+	)
+}
+
+func loadEvidenceRecord[T any](
+	store *Store,
+	ref EvidenceObjectRef,
+	kind string,
+	identity func(*T) (string, string),
+	restore func(*T, string),
+	validate func(T) error,
+	reason string,
+) (T, error) {
+	var record T
+	if err := store.loadEvidenceJSON(ref, kind, &record); err != nil {
+		return record, err
 	}
-	id := record.RecordDigest
-	record.RecordDigest = ""
+	id, logicalIdentity := identity(&record)
 	digest, err := evidenceRecordDigest(record)
 	if err != nil {
-		return EvidenceLedgerRecord{}, err
+		return record, err
 	}
-	logicalIdentity := fmt.Sprintf("%s:%d", record.RepositoryIdentity, record.Sequence)
 	if id == "" || id != digest || logicalIdentity != ref.LogicalIdentity {
-		return EvidenceLedgerRecord{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence ledger identity is inconsistent"}
+		return record, &EvidenceIntegrityError{Digest: ref.Digest, Reason: reason}
 	}
-	record.RecordDigest = id
-	if err := s.validateEvidenceLedgerRecord(record); err != nil {
-		return EvidenceLedgerRecord{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: err.Error()}
+	restore(&record, id)
+	if err := validate(record); err != nil {
+		return record, &EvidenceIntegrityError{Digest: ref.Digest, Reason: err.Error()}
 	}
 	return record, nil
 }

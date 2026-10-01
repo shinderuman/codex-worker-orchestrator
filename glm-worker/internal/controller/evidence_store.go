@@ -43,11 +43,8 @@ func (s *Store) LoadEvidenceObject(ref EvidenceObjectRef) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read evidence object %s: %w", ref.Digest, err)
 	}
-	if int64(len(data)) != ref.Length {
-		return nil, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "stored length does not match reference"}
-	}
-	if digestBytes(data) != ref.Digest {
-		return nil, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "stored digest does not match reference"}
+	if err := validateEvidenceBytes(ref.Digest, ref.Length, data); err != nil {
+		return nil, err
 	}
 	return data, nil
 }
@@ -61,13 +58,9 @@ func validateEvidenceRef(ref EvidenceObjectRef) error {
 
 func (s *Store) writeEvidenceBytes(digest string, data []byte) error {
 	path := s.evidenceObjectPath(digest)
-	if existing, err := os.ReadFile(path); err == nil {
-		if !bytes.Equal(existing, data) || digestBytes(existing) != digest {
-			return &EvidenceIntegrityError{Digest: digest, Reason: "existing content-addressed object conflicts with requested content"}
-		}
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect evidence object %s: %w", digest, err)
+	handled, err := validateExistingEvidenceObject(path, digest, data)
+	if err != nil || handled {
+		return err
 	}
 	if len(digest) < 2 {
 		return &EvidenceIntegrityError{Digest: digest, Reason: "digest is malformed"}
@@ -75,20 +68,46 @@ func (s *Store) writeEvidenceBytes(digest string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create evidence object directory: %w", err)
 	}
+	return createEvidenceObject(path, digest, data)
+}
+
+func validateExistingEvidenceObject(path, digest string, data []byte) (bool, error) {
+	existing, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect evidence object %s: %w", digest, err)
+	}
+	if err := validateEvidenceBytes(digest, int64(len(data)), existing); err != nil || !bytes.Equal(existing, data) {
+		return true, &EvidenceIntegrityError{Digest: digest, Reason: "existing content-addressed object conflicts with requested content"}
+	}
+	return true, nil
+}
+
+func createEvidenceObject(path, digest string, data []byte) error {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, os.ErrExist) {
-		existing, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return fmt.Errorf("read raced evidence object %s: %w", digest, readErr)
-		}
-		if !bytes.Equal(existing, data) || digestBytes(existing) != digest {
-			return &EvidenceIntegrityError{Digest: digest, Reason: "raced content-addressed object conflicts with requested content"}
-		}
-		return nil
+		return validateRacedEvidenceObject(path, digest, data)
 	}
 	if err != nil {
 		return fmt.Errorf("create evidence object %s: %w", digest, err)
 	}
+	return writeEvidenceObject(file, path, digest, data)
+}
+
+func validateRacedEvidenceObject(path, digest string, data []byte) error {
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read raced evidence object %s: %w", digest, err)
+	}
+	if err := validateEvidenceBytes(digest, int64(len(data)), existing); err != nil || !bytes.Equal(existing, data) {
+		return &EvidenceIntegrityError{Digest: digest, Reason: "raced content-addressed object conflicts with requested content"}
+	}
+	return nil
+}
+
+func writeEvidenceObject(file *os.File, path, digest string, data []byte) error {
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -102,6 +121,16 @@ func (s *Store) writeEvidenceBytes(digest string, data []byte) error {
 	if err := file.Close(); err != nil {
 		_ = os.Remove(path)
 		return fmt.Errorf("close evidence object %s: %w", digest, err)
+	}
+	return nil
+}
+
+func validateEvidenceBytes(digest string, length int64, data []byte) error {
+	if int64(len(data)) != length {
+		return &EvidenceIntegrityError{Digest: digest, Reason: "stored length does not match reference"}
+	}
+	if digestBytes(data) != digest {
+		return &EvidenceIntegrityError{Digest: digest, Reason: "stored digest does not match reference"}
 	}
 	return nil
 }

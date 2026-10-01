@@ -27,28 +27,23 @@ func (s *Store) StoreAttemptSeal(record AttemptSeal) (EvidenceObjectRef, Attempt
 }
 
 func (s *Store) LoadAttemptSeal(ref EvidenceObjectRef) (AttemptSeal, error) {
-	var record AttemptSeal
-	if err := s.loadEvidenceJSON(ref, "attempt-seal", &record); err != nil {
-		return AttemptSeal{}, err
-	}
-	id := record.AttemptSealID
-	record.AttemptSealID = ""
-	digest, err := evidenceRecordDigest(record)
-	if err != nil {
-		return AttemptSeal{}, err
-	}
-	if id == "" || id != digest || id != ref.LogicalIdentity {
-		return AttemptSeal{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "attempt seal identity is inconsistent"}
-	}
-	record.AttemptSealID = id
-	if err := s.validateAttemptSeal(record); err != nil {
-		return AttemptSeal{}, &EvidenceIntegrityError{Digest: ref.Digest, Reason: err.Error()}
-	}
-	return record, nil
+	return loadEvidenceRecord(
+		s,
+		ref,
+		"attempt-seal",
+		func(record *AttemptSeal) (string, string) {
+			id := record.AttemptSealID
+			record.AttemptSealID = ""
+			return id, id
+		},
+		func(record *AttemptSeal, id string) { record.AttemptSealID = id },
+		s.validateAttemptSeal,
+		"attempt seal identity is inconsistent",
+	)
 }
 
 func (s *Store) StoreAttemptFinalization(record AttemptFinalizationRecord) (EvidenceObjectRef, AttemptFinalizationRecord, error) {
-	if err := s.validateFinalization(record); err != nil {
+	if err := validateFinalization(record); err != nil {
 		return EvidenceObjectRef{}, AttemptFinalizationRecord{}, err
 	}
 	record.EvidenceRefs = canonicalEvidenceRefs(record.EvidenceRefs)
@@ -121,18 +116,50 @@ func (s *Store) StoreEvidenceLedgerRecord(record EvidenceLedgerRecord) (Evidence
 }
 
 func (s *Store) validateAttemptSeal(record AttemptSeal) error {
-	if record.SchemaVersion != evidenceSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.SemanticTaskRef.Empty() || record.RootTaskRef.Empty() {
+	if err := validateAttemptSealIdentity(record, s.identity.LineageID); err != nil {
+		return err
+	}
+	if err := validateAttemptSealRuntime(record); err != nil {
+		return err
+	}
+	if err := validateAttemptSealTrees(record); err != nil {
+		return err
+	}
+	if err := validateAttemptSealSemantics(record); err != nil {
+		return err
+	}
+	return validateAttemptSealRefs(record)
+}
+
+func validateAttemptSealIdentity(record AttemptSeal, repositoryIdentity string) error {
+	if record.SchemaVersion != evidenceSchemaVersion || record.RepositoryIdentity != repositoryIdentity || record.SemanticTaskRef.Empty() || record.RootTaskRef.Empty() {
 		return fmt.Errorf("attempt seal repository/task identity is incomplete")
 	}
+	return nil
+}
+
+func validateAttemptSealRuntime(record AttemptSeal) error {
 	if strings.TrimSpace(record.AttemptID) == "" || record.ControllerGeneration == 0 || strings.TrimSpace(record.SealingTransitionID) == "" || strings.TrimSpace(record.RevokedLeaseID) == "" || strings.TrimSpace(record.WorkspaceID) == "" {
 		return fmt.Errorf("attempt seal runtime identity is incomplete")
 	}
+	return nil
+}
+
+func validateAttemptSealTrees(record AttemptSeal) error {
 	if strings.TrimSpace(record.ExecutionBaseOID) == "" || strings.TrimSpace(record.BaselineIndexTree) == "" || strings.TrimSpace(record.BaselineWorktreeTree) == "" || strings.TrimSpace(record.CurrentIndexTree) == "" || strings.TrimSpace(record.CurrentWorktreeTree) == "" {
 		return fmt.Errorf("attempt seal tree identity is incomplete")
 	}
+	return nil
+}
+
+func validateAttemptSealSemantics(record AttemptSeal) error {
 	if strings.TrimSpace(record.ParentAuthorityDigest) == "" || strings.TrimSpace(record.ExecutionPurpose) == "" || strings.TrimSpace(record.Disposition) == "" || strings.TrimSpace(record.Coverage) == "" {
 		return fmt.Errorf("attempt seal semantic identity is incomplete")
 	}
+	return nil
+}
+
+func validateAttemptSealRefs(record AttemptSeal) error {
 	if err := validateTypedEvidenceRef(record.GitObjectArchive, "git-object-archive"); err != nil {
 		return fmt.Errorf("attempt seal git archive reference: %w", err)
 	}
@@ -144,7 +171,7 @@ func (s *Store) validateAttemptSeal(record AttemptSeal) error {
 	return nil
 }
 
-func (s *Store) validateFinalization(record AttemptFinalizationRecord) error {
+func validateFinalization(record AttemptFinalizationRecord) error {
 	if record.SchemaVersion != evidenceSchemaVersion || record.ControllerGeneration == 0 || strings.TrimSpace(record.TransitionID) == "" || strings.TrimSpace(record.ProjectSnapshotID) == "" || strings.TrimSpace(record.Kind) == "" {
 		return fmt.Errorf("attempt finalization identity is incomplete")
 	}

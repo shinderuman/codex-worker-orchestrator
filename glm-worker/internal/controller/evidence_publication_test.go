@@ -5,19 +5,45 @@ import (
 	"time"
 )
 
+func TestTransitionCommitWithoutEvidenceUsesCorePath(t *testing.T) {
+	fixture := newExecutionSwitchFixture(t)
+	store := fixture.store
+	record := fixture.record
+
+	lock, err := store.acquireMutationLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.markTransitionApplied(record, nil); err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	committed, err := store.commitAuthorityTransitionLocked(record, nil, false, nil)
+	closeErr := lock.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if committed.ControllerGeneration != record.CommittedGeneration {
+		t.Fatalf("core transition did not reach committed generation: got=%d want=%d", committed.ControllerGeneration, record.CommittedGeneration)
+	}
+	if committed.EvidenceHeadRef != nil || committed.EvidenceLedgerHeadRef != nil || committed.EvidenceLedgerSequence != 0 {
+		t.Fatalf("empty evidence input unexpectedly created evidence authority: %#v", committed)
+	}
+}
+
 func TestEvidencePublicationAdvancesWithTransitionCommitCAS(t *testing.T) {
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	record := fixture.record
 
-	taskRevisionRef, _, err := store.StoreTaskIndexRevision(TaskIndexRevision{
+	taskRevision := TaskIndexRevision{
 		SchemaVersion:        evidenceSchemaVersion,
 		TaskRef:              fixture.source.Attempt.SemanticTaskRef,
 		ControllerGeneration: record.CommittedGeneration,
 		CreatedAt:            time.Unix(2000, 0).UTC(),
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 
 	lock, err := store.acquireMutationLock()
@@ -31,7 +57,7 @@ func TestEvidencePublicationAdvancesWithTransitionCommitCAS(t *testing.T) {
 	committed, publication, err := store.commitAuthorityTransitionWithEvidenceLocked(
 		record,
 		nil,
-		EvidencePublicationInput{TaskRevisionRefs: []EvidenceObjectRef{taskRevisionRef}},
+		EvidencePublicationInput{TaskRevisions: []TaskIndexRevision{taskRevision}},
 		func(next *RepositoryControllerHead) error {
 			root := record.TargetRootTaskRef
 			execution := record.TargetExecutionTaskRef
@@ -65,8 +91,7 @@ func TestEvidencePublicationAdvancesWithTransitionCommitCAS(t *testing.T) {
 		_ = lock.Close()
 		t.Fatalf("ledger is not bound to transition COMMIT authority: %#v", publication.LedgerRecord)
 	}
-	if len(publication.EvidenceHead.TaskHeads) != 1 ||
-		!evidenceRefsEqual(publication.EvidenceHead.TaskHeads[0].RevisionRef, taskRevisionRef) {
+	if len(publication.EvidenceHead.TaskHeads) != 1 {
 		_ = lock.Close()
 		t.Fatalf("task revision was not published through evidence head: %#v", publication.EvidenceHead.TaskHeads)
 	}

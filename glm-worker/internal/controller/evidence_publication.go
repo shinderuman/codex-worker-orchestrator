@@ -8,18 +8,26 @@ func (s *Store) commitAuthorityTransitionWithEvidenceLocked(
 	input EvidencePublicationInput,
 	mutate func(*RepositoryControllerHead) error,
 ) (RepositoryControllerHead, EvidencePublicationResult, error) {
+	if !hasEvidencePublicationInput(input) {
+		committed, err := s.commitAuthorityTransitionCoreLocked(record, actual, false, mutate)
+		return committed, EvidencePublicationResult{}, err
+	}
 	current, err := s.LoadHead()
 	if err != nil {
 		return RepositoryControllerHead{}, EvidencePublicationResult{}, err
 	}
-	if current.PendingTransitionID != record.TransitionID || current.ControllerGeneration != record.PreparedGeneration {
-		return RepositoryControllerHead{}, EvidencePublicationResult{}, fmt.Errorf("transition %s no longer owns evidence publication CAS", record.TransitionID)
+	if err := s.validateEvidencePublicationAuthority(current, record); err != nil {
+		return RepositoryControllerHead{}, EvidencePublicationResult{}, err
 	}
-	publication, err := s.prepareEvidencePublication(current, record, input)
+	materialized, err := s.materializeEvidencePublicationInput(input)
 	if err != nil {
 		return RepositoryControllerHead{}, EvidencePublicationResult{}, err
 	}
-	committed, err := s.commitAuthorityTransitionLocked(record, actual, false, func(next *RepositoryControllerHead) error {
+	publication, err := s.prepareEvidencePublication(current, record, materialized)
+	if err != nil {
+		return RepositoryControllerHead{}, EvidencePublicationResult{}, err
+	}
+	committed, err := s.commitAuthorityTransitionCoreLocked(record, actual, false, func(next *RepositoryControllerHead) error {
 		if mutate != nil {
 			if err := mutate(next); err != nil {
 				return err
@@ -38,21 +46,67 @@ func (s *Store) commitAuthorityTransitionWithEvidenceLocked(
 	return committed, publication, nil
 }
 
+func hasEvidencePublicationInput(input EvidencePublicationInput) bool {
+	return len(input.AttemptSeals) != 0 || len(input.Finalizations) != 0 || len(input.TaskRevisions) != 0 || len(input.EpisodeRevisions) != 0 ||
+		len(input.AttemptSealRefs) != 0 || len(input.FinalizationRefs) != 0 || len(input.TaskRevisionRefs) != 0 || len(input.EpisodeRevisionRefs) != 0
+}
+
+func (s *Store) validateEvidencePublicationAuthority(head RepositoryControllerHead, record TransitionRecord) error {
+	if record.TransitionID == "" || record.CommittedGeneration == 0 || record.ProjectSnapshotNew == "" {
+		return fmt.Errorf("evidence publication transition authority is incomplete")
+	}
+	if head.RepositoryIdentity != s.identity.LineageID || head.PendingTransitionID != record.TransitionID || head.ControllerGeneration != record.PreparedGeneration {
+		return fmt.Errorf("evidence publication controller authority is stale")
+	}
+	return nil
+}
+
+func (s *Store) materializeEvidencePublicationInput(input EvidencePublicationInput) (EvidencePublicationInput, error) {
+	result := input
+	result.AttemptSealRefs = append([]EvidenceObjectRef(nil), input.AttemptSealRefs...)
+	result.FinalizationRefs = append([]EvidenceObjectRef(nil), input.FinalizationRefs...)
+	result.TaskRevisionRefs = append([]EvidenceObjectRef(nil), input.TaskRevisionRefs...)
+	result.EpisodeRevisionRefs = append([]EvidenceObjectRef(nil), input.EpisodeRevisionRefs...)
+	for _, record := range input.AttemptSeals {
+		ref, _, err := s.StoreAttemptSeal(record)
+		if err != nil {
+			return EvidencePublicationInput{}, err
+		}
+		result.AttemptSealRefs = append(result.AttemptSealRefs, ref)
+	}
+	for _, record := range input.Finalizations {
+		ref, _, err := s.StoreAttemptFinalization(record)
+		if err != nil {
+			return EvidencePublicationInput{}, err
+		}
+		result.FinalizationRefs = append(result.FinalizationRefs, ref)
+	}
+	for _, record := range input.TaskRevisions {
+		ref, _, err := s.StoreTaskIndexRevision(record)
+		if err != nil {
+			return EvidencePublicationInput{}, err
+		}
+		result.TaskRevisionRefs = append(result.TaskRevisionRefs, ref)
+	}
+	for _, record := range input.EpisodeRevisions {
+		ref, _, err := s.StoreEpisodeIndexRevision(record)
+		if err != nil {
+			return EvidencePublicationInput{}, err
+		}
+		result.EpisodeRevisionRefs = append(result.EpisodeRevisionRefs, ref)
+	}
+	result.AttemptSealRefs = canonicalEvidenceRefs(result.AttemptSealRefs)
+	result.FinalizationRefs = canonicalEvidenceRefs(result.FinalizationRefs)
+	result.TaskRevisionRefs = canonicalEvidenceRefs(result.TaskRevisionRefs)
+	result.EpisodeRevisionRefs = canonicalEvidenceRefs(result.EpisodeRevisionRefs)
+	return result, nil
+}
+
 func (s *Store) prepareEvidencePublication(
 	controllerHead RepositoryControllerHead,
 	record TransitionRecord,
 	input EvidencePublicationInput,
 ) (EvidencePublicationResult, error) {
-	if record.TransitionID == "" || record.CommittedGeneration == 0 || record.ProjectSnapshotNew == "" {
-		return EvidencePublicationResult{}, fmt.Errorf("evidence publication transition authority is incomplete")
-	}
-	if controllerHead.RepositoryIdentity != s.identity.LineageID || controllerHead.PendingTransitionID != record.TransitionID || controllerHead.ControllerGeneration != record.PreparedGeneration {
-		return EvidencePublicationResult{}, fmt.Errorf("evidence publication controller authority is stale")
-	}
-	if len(input.TaskRevisionRefs) == 0 && len(input.EpisodeRevisionRefs) == 0 && len(input.AttemptSealRefs) == 0 && len(input.FinalizationRefs) == 0 {
-		return EvidencePublicationResult{}, fmt.Errorf("evidence publication has no graph changes")
-	}
-
 	previousHeadRef, previousLedgerRef, previousHead, previousLedger, err := s.loadPublishedEvidenceAuthority(controllerHead)
 	if err != nil {
 		return EvidencePublicationResult{}, err
@@ -65,37 +119,14 @@ func (s *Store) prepareEvidencePublication(
 	if err != nil {
 		return EvidencePublicationResult{}, err
 	}
-	if err := s.validatePublicationAttemptSeals(record, input.AttemptSealRefs); err != nil {
+	if err := s.validatePublicationRefs(record, input); err != nil {
 		return EvidencePublicationResult{}, err
 	}
-	if err := s.validatePublicationFinalizations(record, input.FinalizationRefs); err != nil {
-		return EvidencePublicationResult{}, err
-	}
-
-	evidenceHead := EvidenceHead{
-		SchemaVersion:        evidenceSchemaVersion,
-		RepositoryIdentity:   s.identity.LineageID,
-		PreviousHead:         previousHeadRef,
-		TaskHeads:            taskHeads,
-		EpisodeHeads:         episodeHeads,
-		ControllerGeneration: record.CommittedGeneration,
-		ProjectSnapshotID:    record.ProjectSnapshotNew,
-	}
-	evidenceHeadRef, storedHead, err := s.StoreEvidenceHead(evidenceHead)
+	headRef, storedHead, err := s.storeNextEvidenceHead(previousHeadRef, taskHeads, episodeHeads, record)
 	if err != nil {
 		return EvidencePublicationResult{}, err
 	}
-	ledger := EvidenceLedgerRecord{
-		SchemaVersion:        evidenceSchemaVersion,
-		Sequence:             controllerHead.EvidenceLedgerSequence + 1,
-		PreviousRecord:       previousLedgerRef,
-		RepositoryIdentity:   s.identity.LineageID,
-		ControllerGeneration: record.CommittedGeneration,
-		TransitionID:         record.TransitionID,
-		ProjectSnapshotID:    record.ProjectSnapshotNew,
-		EvidenceHeadRef:      evidenceHeadRef,
-	}
-	ledgerRef, storedLedger, err := s.StoreEvidenceLedgerRecord(ledger)
+	ledgerRef, storedLedger, err := s.storeNextEvidenceLedger(previousLedgerRef, controllerHead, record, headRef)
 	if err != nil {
 		return EvidencePublicationResult{}, err
 	}
@@ -103,11 +134,53 @@ func (s *Store) prepareEvidencePublication(
 		return EvidencePublicationResult{}, &EvidenceIntegrityError{Digest: ledgerRef.Digest, Reason: "evidence ledger sequence did not advance exactly once"}
 	}
 	return EvidencePublicationResult{
-		EvidenceHeadRef: evidenceHeadRef,
+		EvidenceHeadRef: headRef,
 		LedgerRecordRef: ledgerRef,
 		EvidenceHead:    storedHead,
 		LedgerRecord:    storedLedger,
 	}, nil
+}
+
+func (s *Store) storeNextEvidenceHead(
+	previous *EvidenceObjectRef,
+	taskHeads []EvidenceSubjectHead,
+	episodeHeads []EvidenceSubjectHead,
+	record TransitionRecord,
+) (EvidenceObjectRef, EvidenceHead, error) {
+	return s.StoreEvidenceHead(EvidenceHead{
+		SchemaVersion:        evidenceSchemaVersion,
+		RepositoryIdentity:   s.identity.LineageID,
+		PreviousHead:         previous,
+		TaskHeads:            taskHeads,
+		EpisodeHeads:         episodeHeads,
+		ControllerGeneration: record.CommittedGeneration,
+		ProjectSnapshotID:    record.ProjectSnapshotNew,
+	})
+}
+
+func (s *Store) storeNextEvidenceLedger(
+	previous *EvidenceObjectRef,
+	head RepositoryControllerHead,
+	record TransitionRecord,
+	evidenceHeadRef EvidenceObjectRef,
+) (EvidenceObjectRef, EvidenceLedgerRecord, error) {
+	return s.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
+		SchemaVersion:        evidenceSchemaVersion,
+		Sequence:             head.EvidenceLedgerSequence + 1,
+		PreviousRecord:       previous,
+		RepositoryIdentity:   s.identity.LineageID,
+		ControllerGeneration: record.CommittedGeneration,
+		TransitionID:         record.TransitionID,
+		ProjectSnapshotID:    record.ProjectSnapshotNew,
+		EvidenceHeadRef:      evidenceHeadRef,
+	})
+}
+
+func (s *Store) validatePublicationRefs(record TransitionRecord, input EvidencePublicationInput) error {
+	if err := s.validatePublicationAttemptSeals(record, input.AttemptSealRefs); err != nil {
+		return err
+	}
+	return s.validatePublicationFinalizations(record, input.FinalizationRefs)
 }
 
 func (s *Store) loadPublishedEvidenceAuthority(
@@ -140,7 +213,7 @@ func (s *Store) nextTaskEvidenceHeads(
 	record TransitionRecord,
 	refs []EvidenceObjectRef,
 ) ([]EvidenceSubjectHead, error) {
-	return s.nextEvidenceSubjectHeads(previous, refs, "task-index-revision", func(ref EvidenceObjectRef) (string, *EvidenceObjectRef, uint64, error) {
+	return nextEvidenceSubjectHeads(previous, refs, "task-index-revision", func(ref EvidenceObjectRef) (string, *EvidenceObjectRef, uint64, error) {
 		revision, err := s.LoadTaskIndexRevision(ref)
 		if err != nil {
 			return "", nil, 0, err
@@ -154,7 +227,7 @@ func (s *Store) nextEpisodeEvidenceHeads(
 	record TransitionRecord,
 	refs []EvidenceObjectRef,
 ) ([]EvidenceSubjectHead, error) {
-	return s.nextEvidenceSubjectHeads(previous, refs, "episode-index-revision", func(ref EvidenceObjectRef) (string, *EvidenceObjectRef, uint64, error) {
+	return nextEvidenceSubjectHeads(previous, refs, "episode-index-revision", func(ref EvidenceObjectRef) (string, *EvidenceObjectRef, uint64, error) {
 		revision, err := s.LoadEpisodeIndexRevision(ref)
 		if err != nil {
 			return "", nil, 0, err
@@ -163,7 +236,7 @@ func (s *Store) nextEpisodeEvidenceHeads(
 	}, record)
 }
 
-func (s *Store) nextEvidenceSubjectHeads(
+func nextEvidenceSubjectHeads(
 	previous []EvidenceSubjectHead,
 	refs []EvidenceObjectRef,
 	kind string,
@@ -179,36 +252,58 @@ func (s *Store) nextEvidenceSubjectHeads(
 	}
 	seen := make(map[string]bool, len(refs))
 	for _, ref := range refs {
-		if err := validateTypedEvidenceRef(ref, kind); err != nil {
+		if err := applyEvidenceSubjectRevision(bySubject, seen, ref, kind, load, record); err != nil {
 			return nil, err
 		}
-		subject, previousRef, generation, err := load(ref)
-		if err != nil {
-			return nil, err
-		}
-		if seen[subject] {
-			return nil, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence publication contains duplicate subject revision"}
-		}
-		seen[subject] = true
-		if generation != record.CommittedGeneration {
-			return nil, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence index revision is bound to the wrong controller generation"}
-		}
-		current, exists := bySubject[subject]
-		switch {
-		case exists && previousRef == nil:
-			return nil, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence index revision does not link to current subject head"}
-		case exists && !evidenceRefsEqual(current, *previousRef):
-			return nil, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence index previous revision does not match current subject head"}
-		case !exists && previousRef != nil:
-			return nil, &EvidenceIntegrityError{Digest: ref.Digest, Reason: "first published evidence index revision unexpectedly has a predecessor"}
-		}
-		bySubject[subject] = ref
 	}
 	result := make([]EvidenceSubjectHead, 0, len(bySubject))
 	for subject, ref := range bySubject {
 		result = append(result, EvidenceSubjectHead{SubjectID: subject, RevisionRef: ref})
 	}
 	return canonicalEvidenceHeads(result), nil
+}
+
+func applyEvidenceSubjectRevision(
+	bySubject map[string]EvidenceObjectRef,
+	seen map[string]bool,
+	ref EvidenceObjectRef,
+	kind string,
+	load func(EvidenceObjectRef) (string, *EvidenceObjectRef, uint64, error),
+	record TransitionRecord,
+) error {
+	if err := validateTypedEvidenceRef(ref, kind); err != nil {
+		return err
+	}
+	subject, previousRef, generation, err := load(ref)
+	if err != nil {
+		return err
+	}
+	if seen[subject] {
+		return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence publication contains duplicate subject revision"}
+	}
+	seen[subject] = true
+	if generation != record.CommittedGeneration {
+		return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence index revision is bound to the wrong controller generation"}
+	}
+	current, exists := bySubject[subject]
+	if err := validateEvidenceSubjectPredecessor(ref, current, exists, previousRef); err != nil {
+		return err
+	}
+	bySubject[subject] = ref
+	return nil
+}
+
+func validateEvidenceSubjectPredecessor(ref, current EvidenceObjectRef, exists bool, previous *EvidenceObjectRef) error {
+	switch {
+	case exists && previous == nil:
+		return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence index revision does not link to current subject head"}
+	case exists && !evidenceRefsEqual(current, *previous):
+		return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "evidence index previous revision does not match current subject head"}
+	case !exists && previous != nil:
+		return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "first published evidence index revision unexpectedly has a predecessor"}
+	default:
+		return nil
+	}
 }
 
 func (s *Store) validatePublicationAttemptSeals(record TransitionRecord, refs []EvidenceObjectRef) error {
