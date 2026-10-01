@@ -44,7 +44,7 @@ func TestWebGPTAutofixHelperFailsClosedAroundPreparedPublication(t *testing.T) {
 	text := readWebGPTAutofixContractFile(t, "../../../web-gpt-autofix.sh")
 	requireWebGPTAutofixTokens(t, text, []string{
 		"usage: web-gpt-autofix.sh <prepare|publish>",
-		"case \"$target_branch\" in\n\tweb-gpt/*)",
+		"case \"$target_branch\" in\nweb-gpt/*)",
 		"git check-ref-format \"refs/heads/$target_branch\"",
 		"run_controlled_harnesslint --deterministic-fix",
 		"run_controlled_harnesslint --controlled-check",
