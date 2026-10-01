@@ -116,6 +116,62 @@ func TestFindingBlockingPlansEpisodeWithoutSwitchingExecutionAuthority(t *testin
 	assertFindingHeadUnchanged(t, before, after)
 }
 
+func TestTerminalFindingRegistersNewWorkWithoutReopeningExecution(t *testing.T) {
+	fixture := newFindingAcceptanceFixture(t)
+	before := completeAcceptanceSource(t, fixture)
+	finding, err := fixture.store.ObserveTerminalFinding(
+		fixture.source.Attempt.AttemptID,
+		before.ProjectSnapshotID,
+		FindingObservationInput{Producer: "reviewer-a", ProofClass: FindingProofUnverified, ProblemKey: "later-defect"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := fixture.child
+	result, err := fixture.store.ResolveFinding(finding.FindingID, FindingDecision{
+		Kind: FindingDecisionIndependentNonBlocking, TargetTaskRef: &target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Intent != FindingIntentRegisterNonBlocking || result.Disposition == nil || result.Episode != nil {
+		t.Fatalf("terminal non-blocking disposition = %#v", result)
+	}
+	after, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCompletedFindingHeadUnchanged(t, before, after)
+}
+
+func TestTerminalFindingCannotReopenBlockerInterruption(t *testing.T) {
+	fixture := newFindingAcceptanceFixture(t)
+	before := completeAcceptanceSource(t, fixture)
+	finding, err := fixture.store.ObserveTerminalFinding(
+		fixture.source.Attempt.AttemptID,
+		before.ProjectSnapshotID,
+		FindingObservationInput{Producer: "reviewer-a", ProofClass: FindingProofUnverified, ProblemKey: "late-blocker"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := fixture.child
+	result, err := fixture.store.ResolveFinding(finding.FindingID, FindingDecision{
+		Kind: FindingDecisionIndependentBlocking, TargetTaskRef: &target, BlockingBoundary: "already completed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Intent != FindingIntentAwaitingDisposition || result.Disposition != nil || result.Episode != nil {
+		t.Fatalf("terminal blocking disposition = %#v", result)
+	}
+	after, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCompletedFindingHeadUnchanged(t, before, after)
+}
+
 func newFindingAcceptanceFixture(t *testing.T) findingAcceptanceFixture {
 	t.Helper()
 	repo, _ := newControllerLinkedWorktree(t)
@@ -179,6 +235,24 @@ func observeAcceptanceFinding(
 	return finding
 }
 
+func completeAcceptanceSource(t *testing.T, fixture findingAcceptanceFixture) RepositoryControllerHead {
+	t.Helper()
+	attempt := fixture.source.Attempt
+	attempt.AttemptState = AttemptStateAccepted
+	if err := fixture.store.writeAttempt(attempt); err != nil {
+		t.Fatal(err)
+	}
+	head := fixture.source.Head
+	head.ControllerGeneration++
+	head.ExecutionTaskRef = nil
+	head.LiveAttemptID = ""
+	head.LiveLeaseID = ""
+	if err := fixture.store.writeHeadCAS(fixture.source.Head.ControllerGeneration, head); err != nil {
+		t.Fatal(err)
+	}
+	return head
+}
+
 func assertFindingHeadUnchanged(t *testing.T, before, after RepositoryControllerHead) {
 	t.Helper()
 	if after.ControllerGeneration != before.ControllerGeneration ||
@@ -187,5 +261,14 @@ func assertFindingHeadUnchanged(t *testing.T, before, after RepositoryController
 		after.ExecutionTaskRef == nil || before.ExecutionTaskRef == nil ||
 		!after.ExecutionTaskRef.Equal(*before.ExecutionTaskRef) {
 		t.Fatalf("finding disposition changed controller execution authority: before=%#v after=%#v", before, after)
+	}
+}
+
+func assertCompletedFindingHeadUnchanged(t *testing.T, before, after RepositoryControllerHead) {
+	t.Helper()
+	if after.ControllerGeneration != before.ControllerGeneration || after.LiveAttemptID != "" || after.LiveLeaseID != "" ||
+		after.ExecutionTaskRef != nil || after.ActiveEpisodeID != before.ActiveEpisodeID ||
+		after.ActiveEpisodeRevision != before.ActiveEpisodeRevision {
+		t.Fatalf("terminal finding reopened execution authority: before=%#v after=%#v", before, after)
 	}
 }

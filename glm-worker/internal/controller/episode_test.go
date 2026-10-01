@@ -84,6 +84,61 @@ func TestEpisodeSatisfiedScopeRequestsRootResume(t *testing.T) {
 	}
 }
 
+func TestEpisodeNoRunnableDoesNotFallThroughOutsideClosure(t *testing.T) {
+	a := testSemanticRef("IMPLEMENTATION_TASKS/a.md", "a")
+	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
+	revision := BlockerEpisodeRevision{
+		ScopeRootTaskRef: a,
+		AdmittedClosure:  []SemanticTaskRef{a, b},
+		AdmittedOrder:    []SemanticTaskRef{a},
+		DependencyEdges: []EpisodeDependencyEdge{
+			{BlockedTaskRef: a, DependencyTaskRef: b, FindingID: "finding-a-b"},
+		},
+	}
+	result := scheduleEpisodeRevision(revision)
+	if result.Intent != FindingIntentNoRunnable || result.NextTaskRef != nil || result.Reason == "" {
+		t.Fatalf("no-runnable schedule = %#v", result)
+	}
+}
+
+func TestEpisodeReplanKeepsSingleEpisodeIdentityAndScope(t *testing.T) {
+	root := testSemanticRef("IMPLEMENTATION_TASKS/root.md", "root")
+	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
+	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")
+	previous := BlockerEpisodeRevision{
+		EpisodeID:        "episode-1",
+		Revision:         2,
+		RevisionID:       "revision-2",
+		RootTaskRef:      root,
+		ScopeRootTaskRef: b,
+		State:            EpisodeStatePlanned,
+	}
+	head := RepositoryControllerHead{RootTaskRef: &root, ControllerGeneration: 7}
+	finding := FindingRecord{
+		FindingID:                 "finding-b-c",
+		SourceAttemptID:           "attempt-b",
+		SourceSemanticTaskRef:     b,
+		SourceWorkspaceSnapshotID: "snapshot-b",
+	}
+	lease := ExecutionLease{LeaseID: "lease-b", WorkspaceID: "workspace-b"}
+	project := ProjectSnapshot{SnapshotID: "project-1"}
+	var store Store
+	revision, err := store.newBlockingRevision(finding, c, head, lease, project, &previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := map[string]SemanticTaskRef{b.TaskPath: b, c.TaskPath: c}
+	revision, err = completeBlockingRevision(revision, finding, c, refs, map[string][]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revision.EpisodeID != previous.EpisodeID || revision.Revision != 3 ||
+		revision.PreviousRevisionID != previous.RevisionID || !revision.ScopeRootTaskRef.Equal(b) ||
+		revision.State != EpisodeStateReplanning || len(revision.DependencyEdges) != 1 {
+		t.Fatalf("replanned episode = %#v", revision)
+	}
+}
+
 func testSemanticRef(path, digestSeed string) SemanticTaskRef {
 	return SemanticTaskRef{TaskPath: path, ContractDigest: digestStrings("test-task", digestSeed)}
 }
