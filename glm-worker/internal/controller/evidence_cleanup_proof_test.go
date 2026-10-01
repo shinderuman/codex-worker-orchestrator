@@ -33,9 +33,8 @@ func TestCleanupDurabilityProofRejectsUnindexedSeal(t *testing.T) {
 	store := newEvidenceTestStore(t)
 	sealRef, _ := storeCleanupProofSeal(t, store, "")
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/OTHER.md", ContractDigest: "other"}
-	taskRef, _, err := store.StoreTaskIndexRevision(TaskIndexRevision{
-		SchemaVersion: evidenceSchemaVersion, TaskRef: task, ControllerGeneration: 1, CreatedAt: time.Unix(4200, 0).UTC(),
-	})
+	revision := testTaskIndexRevision(task, 1, "transition-cleanup", time.Unix(4200, 0).UTC())
+	taskRef, _, err := store.StoreTaskIndexRevision(revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,9 +48,10 @@ func newCleanupProofFixture(t *testing.T, publishEpisode bool) (*Store, Evidence
 	t.Helper()
 	store := newEvidenceTestStore(t)
 	sealRef, seal := storeCleanupProofSeal(t, store, "episode-cleanup")
-	taskRef, _, err := store.StoreTaskIndexRevision(TaskIndexRevision{
-		SchemaVersion: evidenceSchemaVersion, TaskRef: seal.SemanticTaskRef, AttemptSeals: []EvidenceObjectRef{sealRef}, ControllerGeneration: 1, CreatedAt: time.Unix(4100, 0).UTC(),
-	})
+	taskRevision := testTaskIndexRevision(seal.SemanticTaskRef, 1, "transition-cleanup", time.Unix(4100, 0).UTC())
+	taskRevision.AttemptSeals = []EvidenceObjectRef{sealRef}
+	taskRevision.SemanticStatus = "blocked"
+	taskRef, _, err := store.StoreTaskIndexRevision(taskRevision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,21 @@ func newCleanupProofFixture(t *testing.T, publishEpisode bool) (*Store, Evidence
 	var episodeHeads []EvidenceSubjectHead
 	if publishEpisode {
 		episodeRef, _, err = store.StoreEpisodeIndexRevision(EpisodeIndexRevision{
-			SchemaVersion: evidenceSchemaVersion, EpisodeID: seal.EpisodeID, EpisodeRevision: seal.EpisodeRevision, AttemptSeals: []EvidenceObjectRef{sealRef}, ControllerGeneration: 1, CreatedAt: time.Unix(4101, 0).UTC(),
+			SchemaVersion:             evidenceSchemaVersion,
+			EpisodeID:                 seal.EpisodeID,
+			RootTaskRef:               seal.RootTaskRef,
+			EpisodeRevision:           seal.EpisodeRevision,
+			DependencyGraphSnapshotID: "dependency-snapshot-cleanup",
+			AdmittedClosureTaskRefs:   []SemanticTaskRef{seal.SemanticTaskRef},
+			TaskIndexHeads: []EvidenceSubjectHead{{
+				SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef),
+				RevisionRef: taskRef,
+			}},
+			AttemptSeals:         []EvidenceObjectRef{sealRef},
+			State:                "open",
+			ControllerGeneration: 1,
+			TransitionID:         "transition-cleanup",
+			CreatedAt:            time.Unix(4101, 0).UTC(),
 		})
 		if err != nil {
 			t.Fatal(err)
