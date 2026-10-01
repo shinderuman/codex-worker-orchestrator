@@ -107,12 +107,18 @@ func (s *Store) prepareEvidencePublication(
 	record TransitionRecord,
 	input EvidencePublicationInput,
 ) (EvidencePublicationResult, error) {
+	if err := s.validatePublicationIndexAuthority(record, input); err != nil {
+		return EvidencePublicationResult{}, err
+	}
 	previousHeadRef, previousLedgerRef, previousHead, previousLedger, err := s.loadPublishedEvidenceAuthority(controllerHead)
 	if err != nil {
 		return EvidencePublicationResult{}, err
 	}
 	taskHeads, err := s.nextTaskEvidenceHeads(previousHead.TaskHeads, record, input.TaskRevisionRefs)
 	if err != nil {
+		return EvidencePublicationResult{}, err
+	}
+	if err := s.validateEpisodeTaskHeadPublication(taskHeads, input.EpisodeRevisionRefs); err != nil {
 		return EvidencePublicationResult{}, err
 	}
 	episodeHeads, err := s.nextEpisodeEvidenceHeads(previousHead.EpisodeHeads, record, input.EpisodeRevisionRefs)
