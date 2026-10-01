@@ -100,6 +100,9 @@ func (w *evidenceGraphWalker) loadLedgerStep(
 	if err != nil {
 		return EvidenceLedgerRecord{}, EvidenceHead{}, err
 	}
+	if err := w.validateLedgerTransitionDelta(ledgerRef, ledger, head); err != nil {
+		return EvidenceLedgerRecord{}, EvidenceHead{}, err
+	}
 	return ledger, head, nil
 }
 
