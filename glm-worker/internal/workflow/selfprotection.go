@@ -58,6 +58,20 @@ var internalPackageCategories = map[string]string{
 	"harnesslint": "quality-policy",
 }
 
+var qualitySurfaceFiles = map[string]struct{}{
+	".golangci.yml":                                 {},
+	"quality-tools.yml":                             {},
+	".github/workflows/ci.yml":                      {},
+	".github/workflows/install-smoke.yml":           {},
+	".github/workflows/web-gpt-autofix.yml":         {},
+	"install-quality-tools.sh":                      {},
+	"web-gpt-autofix.sh":                            {},
+	"harnesslint":                                   {},
+	"commentlint":                                   {},
+	"glm-worker/internal/workflow/quality_gate.go":  {},
+	"glm-worker/internal/workflow/selfprotection.go": {},
+}
+
 func IsCriticalPath(path string) (bool, string) {
 	if path == "" {
 		return false, ""
@@ -110,11 +124,7 @@ func classifyNonCriticalPathPattern(path string) (bool, string) {
 }
 
 func IsQualitySurface(path string) bool {
-	if path == ".golangci.yml" || path == "quality-tools.yml" || path == ".github/workflows/ci.yml" ||
-		path == ".github/workflows/install-smoke.yml" || path == ".github/workflows/web-gpt-autofix.yml" ||
-		path == "install-quality-tools.sh" || path == "web-gpt-autofix.sh" ||
-		path == "harnesslint" || path == "commentlint" ||
-		path == "glm-worker/internal/workflow/quality_gate.go" || path == "glm-worker/internal/workflow/selfprotection.go" {
+	if _, ok := qualitySurfaceFiles[path]; ok {
 		return true
 	}
 	for _, prefix := range []string{
