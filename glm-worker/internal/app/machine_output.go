@@ -42,6 +42,9 @@ func runEntry(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
+	if handled, err := runControllerActivation(args, loadConfig, stdout); handled {
+		return err
+	}
 	if handled, err := runAuthorityBootstrap(args, stdout); handled {
 		return err
 	}
