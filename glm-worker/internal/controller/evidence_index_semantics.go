@@ -80,31 +80,8 @@ func (record *EpisodeIndexRevision) UnmarshalJSON(data []byte) error {
 }
 
 func canonicalEpisodeIndexRevision(record EpisodeIndexRevision) (EpisodeIndexRevision, error) {
-	if record.RootTaskRef.Empty() || strings.TrimSpace(record.DependencyGraphSnapshotID) == "" || strings.TrimSpace(record.State) == "" || strings.TrimSpace(record.TransitionID) == "" {
-		return EpisodeIndexRevision{}, fmt.Errorf("episode evidence index semantic authority is incomplete")
-	}
-	if record.CurrentExecutionTaskRef != nil && record.CurrentExecutionTaskRef.Empty() {
-		return EpisodeIndexRevision{}, fmt.Errorf("episode current execution task identity is incomplete")
-	}
-	if err := validateSemanticTaskRefs(record.AdmittedClosureTaskRefs); err != nil {
+	if err := validateEpisodeIndexAuthority(record); err != nil {
 		return EpisodeIndexRevision{}, err
-	}
-	if err := validateTaskIndexHeads(record.TaskIndexHeads); err != nil {
-		return EpisodeIndexRevision{}, err
-	}
-	if err := validateEvidenceRefs(record.FindingRecords); err != nil {
-		return EpisodeIndexRevision{}, fmt.Errorf("episode finding evidence: %w", err)
-	}
-	if err := validateEvidenceRefs(record.TransitionRecords); err != nil {
-		return EpisodeIndexRevision{}, fmt.Errorf("episode transition evidence: %w", err)
-	}
-	if err := validateEvidenceRefs(record.IntegrationHistory); err != nil {
-		return EpisodeIndexRevision{}, fmt.Errorf("episode integration evidence: %w", err)
-	}
-	if record.CloseRecord != nil {
-		if err := validateEvidenceRef(*record.CloseRecord); err != nil {
-			return EpisodeIndexRevision{}, fmt.Errorf("episode close evidence: %w", err)
-		}
 	}
 	record.AdmittedClosureTaskRefs = canonicalSemanticTaskRefs(record.AdmittedClosureTaskRefs)
 	record.TaskIndexHeads = canonicalEvidenceHeads(record.TaskIndexHeads)
@@ -114,6 +91,40 @@ func canonicalEpisodeIndexRevision(record EpisodeIndexRevision) (EpisodeIndexRev
 	record.TransitionRecords = canonicalEvidenceRefs(record.TransitionRecords)
 	record.IntegrationHistory = canonicalEvidenceRefs(record.IntegrationHistory)
 	return record, nil
+}
+
+func validateEpisodeIndexAuthority(record EpisodeIndexRevision) error {
+	if record.RootTaskRef.Empty() || strings.TrimSpace(record.DependencyGraphSnapshotID) == "" || strings.TrimSpace(record.State) == "" || strings.TrimSpace(record.TransitionID) == "" {
+		return fmt.Errorf("episode evidence index semantic authority is incomplete")
+	}
+	if record.CurrentExecutionTaskRef != nil && record.CurrentExecutionTaskRef.Empty() {
+		return fmt.Errorf("episode current execution task identity is incomplete")
+	}
+	if err := validateSemanticTaskRefs(record.AdmittedClosureTaskRefs); err != nil {
+		return err
+	}
+	if err := validateTaskIndexHeads(record.TaskIndexHeads); err != nil {
+		return err
+	}
+	return validateEpisodeIndexEvidenceRefs(record)
+}
+
+func validateEpisodeIndexEvidenceRefs(record EpisodeIndexRevision) error {
+	if err := validateEvidenceRefs(record.FindingRecords); err != nil {
+		return fmt.Errorf("episode finding evidence: %w", err)
+	}
+	if err := validateEvidenceRefs(record.TransitionRecords); err != nil {
+		return fmt.Errorf("episode transition evidence: %w", err)
+	}
+	if err := validateEvidenceRefs(record.IntegrationHistory); err != nil {
+		return fmt.Errorf("episode integration evidence: %w", err)
+	}
+	if record.CloseRecord != nil {
+		if err := validateEvidenceRef(*record.CloseRecord); err != nil {
+			return fmt.Errorf("episode close evidence: %w", err)
+		}
+	}
+	return nil
 }
 
 func validateEvidenceRefs(refs []EvidenceObjectRef) error {
