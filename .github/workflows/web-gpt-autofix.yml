@@ -23,10 +23,14 @@ jobs:
   autofix:
     runs-on: ubuntu-latest
     steps:
+      - name: Require canonical dispatch ref
+        env:
+          CONTROL_REF: ${{ github.ref }}
+        run: test "$CONTROL_REF" = refs/heads/main
       - name: Checkout canonical autofix control source
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           path: control
           persist-credentials: false
           fetch-depth: 1
@@ -38,7 +42,7 @@ jobs:
           fetch-depth: 0
       - name: Read quality tool contract
         id: quality-tools
-        working-directory: target
+        working-directory: control
         run: |
           GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
           printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
@@ -51,9 +55,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
-          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('target/quality-tools.yml', 'target/install-quality-tools.sh') }}
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('control/quality-tools.yml', 'control/install-quality-tools.sh') }}
       - name: Install quality tools
-        working-directory: target
+        working-directory: control
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
@@ -63,6 +67,7 @@ jobs:
         env:
           TARGET_BRANCH: ${{ inputs.target_branch }}
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          WEB_GPT_AUTOFIX_CONTROL_ROOT: ${{ github.workspace }}/control
         run: |
           sh ../control/web-gpt-autofix.sh "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$RUNNER_TEMP/web-gpt-autofix-result.json"
       - name: Publish machine-readable result
