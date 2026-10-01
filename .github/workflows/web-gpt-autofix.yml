@@ -1,0 +1,71 @@
+name: Web GPT Deterministic Autofix
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Existing web-gpt/** branch to canonicalize
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact current HEAD SHA required before mutation
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-gpt-autofix-${{ inputs.target_branch }}
+  cancel-in-progress: false
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+          fetch-depth: 0
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Cache quality tools
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
+      - name: Install quality tools
+        run: |
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - name: Apply deterministic autofixes
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        run: |
+          sh ./web-gpt-autofix "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$RUNNER_TEMP/web-gpt-autofix-result.json"
+      - name: Publish machine-readable result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-gpt-autofix-result-${{ github.run_id }}
+          path: ${{ runner.temp }}/web-gpt-autofix-result.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Summarize result
+        if: ${{ always() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/web-gpt-autofix-result.json" ]; then
+            printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/web-gpt-autofix-result.json" >> "$GITHUB_STEP_SUMMARY"
+            printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
