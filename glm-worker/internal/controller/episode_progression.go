@@ -20,45 +20,50 @@ func (s *Store) SatisfyEpisodeTask(input EpisodeSatisfactionInput) (EpisodeSched
 	}
 	defer func() { _ = lock.Close() }()
 
-	head, previous, err := s.validateEpisodeSatisfaction(input)
+	head, previous, project, err := s.validateEpisodeSatisfaction(input)
 	if err != nil {
 		return EpisodeScheduleResult{}, err
 	}
-	if taskRefIn(previous.SatisfiedTaskRefs, input.SatisfiedTaskRef) {
-		return scheduleEpisodeRevision(previous), nil
+	if taskPathSatisfied(previous.SatisfiedTaskRefs, input.SatisfiedTaskRef.TaskPath) &&
+		previous.ProjectSnapshotID == input.ProjectSnapshotID {
+		return s.scheduleEpisodeAgainstProject(previous)
 	}
 
-	next := progressedEpisodeRevision(previous, head, input)
+	next, err := progressedEpisodeRevision(previous, head, project, input)
+	if err != nil {
+		return EpisodeScheduleResult{}, err
+	}
 	if err := s.writeEpisodeRevision(next); err != nil {
 		return EpisodeScheduleResult{}, err
 	}
-	return scheduleEpisodeRevision(next), nil
+	return s.scheduleEpisodeAgainstProject(next)
 }
 
 func (s *Store) validateEpisodeSatisfaction(
 	input EpisodeSatisfactionInput,
-) (RepositoryControllerHead, BlockerEpisodeRevision, error) {
+) (RepositoryControllerHead, BlockerEpisodeRevision, ProjectSnapshot, error) {
 	if err := validateEpisodeSatisfactionInput(input); err != nil {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, ProjectSnapshot{}, err
 	}
 	head, err := s.LoadHead()
 	if err != nil {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, ProjectSnapshot{}, err
 	}
 	if err := validateEpisodeSatisfactionHead(head, input); err != nil {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, ProjectSnapshot{}, err
 	}
-	if _, err := s.LoadProjectSnapshot(input.ProjectSnapshotID); err != nil {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
+	project, err := s.LoadProjectSnapshot(input.ProjectSnapshotID)
+	if err != nil {
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, ProjectSnapshot{}, err
 	}
 	previous, err := s.LoadEpisodeRevision(input.EpisodeID, input.ExpectedRevision)
 	if err != nil {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, ProjectSnapshot{}, err
 	}
-	if err := validateEpisodeSatisfactionRevision(head, previous, input); err != nil {
-		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, err
+	if err := validateEpisodeSatisfactionRevision(head, previous, project, input); err != nil {
+		return RepositoryControllerHead{}, BlockerEpisodeRevision{}, ProjectSnapshot{}, err
 	}
-	return head, previous, nil
+	return head, previous, project, nil
 }
 
 func validateEpisodeSatisfactionInput(input EpisodeSatisfactionInput) error {
@@ -91,13 +96,17 @@ func validateEpisodeSatisfactionHead(head RepositoryControllerHead, input Episod
 func validateEpisodeSatisfactionRevision(
 	head RepositoryControllerHead,
 	previous BlockerEpisodeRevision,
+	project ProjectSnapshot,
 	input EpisodeSatisfactionInput,
 ) error {
 	if previous.State == EpisodeStateClosed {
 		return fmt.Errorf("closed blocker episode cannot accept satisfaction")
 	}
-	if head.RootTaskRef == nil || !head.RootTaskRef.Equal(previous.RootTaskRef) {
+	if head.RootTaskRef == nil || head.RootTaskRef.TaskPath != previous.RootTaskRef.TaskPath {
 		return fmt.Errorf("episode satisfaction root authority does not match controller")
+	}
+	if !projectHasTask(project, *head.RootTaskRef) {
+		return fmt.Errorf("episode satisfaction root authority is not in result project snapshot")
 	}
 	if !taskRefIn(previous.AdmittedClosure, input.SatisfiedTaskRef) {
 		return fmt.Errorf("satisfied task is outside admitted blocker closure")
@@ -108,32 +117,129 @@ func validateEpisodeSatisfactionRevision(
 func progressedEpisodeRevision(
 	previous BlockerEpisodeRevision,
 	head RepositoryControllerHead,
+	project ProjectSnapshot,
 	input EpisodeSatisfactionInput,
-) BlockerEpisodeRevision {
-	next := previous
-	next.Revision = previous.Revision + 1
-	next.RevisionID = ""
-	next.PreviousRevisionID = previous.RevisionID
-	next.ProjectSnapshotID = input.ProjectSnapshotID
-	next.TriggerFindingID = ""
-	next.DependencyEdges = append([]EpisodeDependencyEdge(nil), previous.DependencyEdges...)
-	next.SatisfiedTaskRefs = appendTaskRefUnique(
+) (BlockerEpisodeRevision, error) {
+	refs := projectRefsByPath(project)
+	satisfied := appendTaskPathUnique(
 		append([]SemanticTaskRef(nil), previous.SatisfiedTaskRefs...),
 		input.SatisfiedTaskRef,
 	)
-	next.ExecutionHistory = append([]SemanticTaskRef(nil), previous.ExecutionHistory...)
-	next.AdmittedClosure = append([]SemanticTaskRef(nil), previous.AdmittedClosure...)
-	next.AdmittedOrder = append([]SemanticTaskRef(nil), previous.AdmittedOrder...)
+	next, err := rebindProgressedEpisode(previous, refs, satisfied)
+	if err != nil {
+		return BlockerEpisodeRevision{}, err
+	}
+	next.Revision = previous.Revision + 1
+	next.RevisionID = ""
+	next.PreviousRevisionID = previous.RevisionID
+	next.ProjectSnapshotID = project.SnapshotID
+	next.RootTaskRef = *head.RootTaskRef
+	next.TriggerFindingID = ""
+	next.SatisfiedTaskRefs = satisfied
 	next.SourceControllerGeneration = head.ControllerGeneration
 	next.SourceAttemptID = ""
 	next.SourceLeaseID = ""
 	next.SourceWorkspaceID = ""
 	next.SourceWorkspaceSnapshotID = ""
 	next.State = EpisodeStateReplanning
-	if taskRefIn(next.SatisfiedTaskRefs, next.ScopeRootTaskRef) {
+	if taskPathSatisfied(next.SatisfiedTaskRefs, next.ScopeRootTaskRef.TaskPath) {
 		next.State = EpisodeStateResumingRoot
 	}
 	next.CreatedAt = time.Now().UTC()
 	next.RevisionID = blockerEpisodeRevisionID(next)
-	return next
+	return next, nil
+}
+
+func rebindProgressedEpisode(
+	previous BlockerEpisodeRevision,
+	refs map[string]SemanticTaskRef,
+	satisfied []SemanticTaskRef,
+) (BlockerEpisodeRevision, error) {
+	next := previous
+	var err error
+	next.ScopeRootTaskRef, err = rebindEpisodeRef(previous.ScopeRootTaskRef, refs, satisfied)
+	if err != nil {
+		return BlockerEpisodeRevision{}, err
+	}
+	next.DependencyEdges, err = rebindEpisodeEdges(previous.DependencyEdges, refs, satisfied)
+	if err != nil {
+		return BlockerEpisodeRevision{}, err
+	}
+	next.AdmittedClosure, err = rebindEpisodeRefs(previous.AdmittedClosure, refs, satisfied)
+	if err != nil {
+		return BlockerEpisodeRevision{}, err
+	}
+	next.AdmittedOrder, err = rebindEpisodeRefs(previous.AdmittedOrder, refs, satisfied)
+	if err != nil {
+		return BlockerEpisodeRevision{}, err
+	}
+	next.ExecutionHistory = append([]SemanticTaskRef(nil), previous.ExecutionHistory...)
+	return next, nil
+}
+
+func rebindEpisodeEdges(
+	edges []EpisodeDependencyEdge,
+	refs map[string]SemanticTaskRef,
+	satisfied []SemanticTaskRef,
+) ([]EpisodeDependencyEdge, error) {
+	result := make([]EpisodeDependencyEdge, 0, len(edges))
+	for _, edge := range edges {
+		blocked, err := rebindEpisodeRef(edge.BlockedTaskRef, refs, satisfied)
+		if err != nil {
+			return nil, err
+		}
+		dependency, err := rebindEpisodeRef(edge.DependencyTaskRef, refs, satisfied)
+		if err != nil {
+			return nil, err
+		}
+		edge.BlockedTaskRef = blocked
+		edge.DependencyTaskRef = dependency
+		result = append(result, edge)
+	}
+	return result, nil
+}
+
+func rebindEpisodeRefs(
+	previous []SemanticTaskRef,
+	refs map[string]SemanticTaskRef,
+	satisfied []SemanticTaskRef,
+) ([]SemanticTaskRef, error) {
+	result := make([]SemanticTaskRef, 0, len(previous))
+	for _, ref := range previous {
+		rebound, err := rebindEpisodeRef(ref, refs, satisfied)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, rebound)
+	}
+	return result, nil
+}
+
+func rebindEpisodeRef(
+	previous SemanticTaskRef,
+	refs map[string]SemanticTaskRef,
+	satisfied []SemanticTaskRef,
+) (SemanticTaskRef, error) {
+	if current, ok := refs[previous.TaskPath]; ok {
+		return current, nil
+	}
+	if taskPathSatisfied(satisfied, previous.TaskPath) {
+		return previous, nil
+	}
+	return SemanticTaskRef{}, fmt.Errorf("unsatisfied blocker task %s is missing from result project snapshot", previous.TaskPath)
+}
+
+func projectRefsByPath(project ProjectSnapshot) map[string]SemanticTaskRef {
+	refs := make(map[string]SemanticTaskRef, len(project.Tasks))
+	for _, ref := range project.Tasks {
+		refs[ref.TaskPath] = ref
+	}
+	return refs
+}
+
+func appendTaskPathUnique(refs []SemanticTaskRef, candidate SemanticTaskRef) []SemanticTaskRef {
+	if taskPathSatisfied(refs, candidate.TaskPath) {
+		return refs
+	}
+	return append(refs, candidate)
 }
