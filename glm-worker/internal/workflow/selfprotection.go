@@ -59,16 +59,16 @@ var internalPackageCategories = map[string]string{
 }
 
 var qualitySurfaceFiles = map[string]struct{}{
-	".golangci.yml":                                 {},
-	"quality-tools.yml":                             {},
-	".github/workflows/ci.yml":                      {},
-	".github/workflows/install-smoke.yml":           {},
-	".github/workflows/web-gpt-autofix.yml":         {},
-	"install-quality-tools.sh":                      {},
-	"web-gpt-autofix.sh":                            {},
-	"harnesslint":                                   {},
-	"commentlint":                                   {},
-	"glm-worker/internal/workflow/quality_gate.go":  {},
+	".golangci.yml":                                  {},
+	"quality-tools.yml":                              {},
+	".github/workflows/ci.yml":                       {},
+	".github/workflows/install-smoke.yml":            {},
+	".github/workflows/web-gpt-autofix.yml":          {},
+	"install-quality-tools.sh":                       {},
+	"web-gpt-autofix.sh":                             {},
+	"harnesslint":                                    {},
+	"commentlint":                                    {},
+	"glm-worker/internal/workflow/quality_gate.go":   {},
 	"glm-worker/internal/workflow/selfprotection.go": {},
 }
 
