@@ -136,7 +136,6 @@ func appendOutputs(path string, result transportResult) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = file.Close() }()
 	pairs := [][2]string{
 		{"request_id", result.RequestID},
 		{"operation", result.Operation},
@@ -147,6 +146,7 @@ func appendOutputs(path string, result transportResult) error {
 	}
 	for _, pair := range pairs {
 		if _, err := fmt.Fprintf(file, "%s=%s\n", pair[0], pair[1]); err != nil {
+			_ = file.Close()
 			return err
 		}
 	}
