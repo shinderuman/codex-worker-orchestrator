@@ -65,7 +65,7 @@ validate_target() {
 	fi
 	case "$expected_head_sha" in
 	*[!0-9a-f]*) fail_closed invalid_expected_head_sha ;;
-esac
+	esac
 	before_sha=$expected_head_sha
 	resulting_head=$expected_head_sha
 	if ! status=$(git status --porcelain); then
