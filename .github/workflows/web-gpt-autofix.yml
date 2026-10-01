@@ -12,16 +12,17 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-
 concurrency:
   group: web-gpt-autofix-${{ inputs.target_branch }}
   cancel-in-progress: false
 
 jobs:
-  autofix:
+  prepare:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.result.outputs.changed }}
     steps:
       - name: Require canonical dispatch ref
         env:
@@ -34,12 +35,13 @@ jobs:
           path: control
           persist-credentials: false
           fetch-depth: 1
-      - name: Checkout target at expected head
+      - name: Checkout target at expected head without credentials
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.expected_head_sha }}
           path: target
-          fetch-depth: 0
+          persist-credentials: false
+          fetch-depth: 1
       - name: Read quality tool contract
         id: quality-tools
         working-directory: control
@@ -56,33 +58,98 @@ jobs:
         with:
           path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
           key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('control/quality-tools.yml', 'control/install-quality-tools.sh') }}
-      - name: Install quality tools
+      - name: Install canonical quality tools
         working-directory: control
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-      - name: Apply deterministic autofixes
+      - name: Prepare deterministic autofix patch
         working-directory: target
         env:
           TARGET_BRANCH: ${{ inputs.target_branch }}
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
           WEB_GPT_AUTOFIX_CONTROL_ROOT: ${{ github.workspace }}/control
         run: |
-          sh ../control/web-gpt-autofix.sh "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$RUNNER_TEMP/web-gpt-autofix-result.json"
-      - name: Publish machine-readable result
+          mkdir -p "$RUNNER_TEMP/web-gpt-autofix-prepared"
+          : >"$RUNNER_TEMP/web-gpt-autofix-prepared/autofix.patch"
+          sh ../control/web-gpt-autofix.sh prepare "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$RUNNER_TEMP/web-gpt-autofix-prepared/autofix.patch" "$RUNNER_TEMP/web-gpt-autofix-prepared/result.json"
+      - name: Expose prepared result
+        id: result
+        if: ${{ success() }}
+        run: |
+          if grep -q '"changed":true' "$RUNNER_TEMP/web-gpt-autofix-prepared/result.json"; then
+            printf 'changed=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload prepared evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-gpt-autofix-prepared-${{ github.run_id }}
+          path: ${{ runner.temp }}/web-gpt-autofix-prepared
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summarize prepared result
+        if: ${{ always() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/web-gpt-autofix-prepared/result.json" ]; then
+            printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/web-gpt-autofix-prepared/result.json" >> "$GITHUB_STEP_SUMMARY"
+            printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  publish:
+    needs: prepare
+    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.changed == 'true' }}
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require canonical dispatch ref
+        env:
+          CONTROL_REF: ${{ github.ref }}
+        run: test "$CONTROL_REF" = refs/heads/main
+      - name: Checkout canonical publication control source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout target at expected head for publication
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+          path: target
+          fetch-depth: 1
+      - name: Download prepared patch
+        uses: actions/download-artifact@v4
+        with:
+          name: web-gpt-autofix-prepared-${{ github.run_id }}
+          path: prepared
+      - name: Publish prepared autofix commit
+        working-directory: target
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        run: |
+          sh ../control/web-gpt-autofix.sh publish "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "../prepared/autofix.patch" "$RUNNER_TEMP/web-gpt-autofix-published.json"
+      - name: Upload publication result
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: web-gpt-autofix-result-${{ github.run_id }}
-          path: ${{ runner.temp }}/web-gpt-autofix-result.json
-          if-no-files-found: warn
+          path: ${{ runner.temp }}/web-gpt-autofix-published.json
+          if-no-files-found: error
           retention-days: 7
-      - name: Summarize result
+      - name: Summarize publication result
         if: ${{ always() }}
         run: |
-          if [ -f "$RUNNER_TEMP/web-gpt-autofix-result.json" ]; then
+          if [ -f "$RUNNER_TEMP/web-gpt-autofix-published.json" ]; then
             printf '```json\n' >> "$GITHUB_STEP_SUMMARY"
-            cat "$RUNNER_TEMP/web-gpt-autofix-result.json" >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/web-gpt-autofix-published.json" >> "$GITHUB_STEP_SUMMARY"
             printf '```\n' >> "$GITHUB_STEP_SUMMARY"
           fi
