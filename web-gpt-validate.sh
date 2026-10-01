@@ -56,6 +56,14 @@ reject() {
 	exit 1
 }
 
+fail_closed() {
+	error_code=$1
+	result=fail
+	write_result
+	printf 'web-gpt-validation: %s\n' "$error_code" >&2
+	exit 1
+}
+
 validate_sha() {
 	value=$1
 	if [ "${#value}" -ne 40 ]; then
@@ -64,6 +72,33 @@ validate_sha() {
 	case "$value" in
 	*[!0-9a-f]*) return 1 ;;
 	esac
+}
+
+verify_post_validation_integrity() {
+	if ! post_target_head=$(git -C "$target_root" rev-parse HEAD); then
+		fail_closed post_validation_target_head_unavailable
+	fi
+	if [ "$post_target_head" != "$expected_head_sha" ]; then
+		fail_closed post_validation_target_head_changed
+	fi
+	if ! post_target_status=$(git -C "$target_root" status --porcelain); then
+		fail_closed post_validation_target_status_failed
+	fi
+	if [ -n "$post_target_status" ]; then
+		fail_closed post_validation_target_dirty
+	fi
+	if ! post_control_head=$(git -C "$control_root" rev-parse HEAD); then
+		fail_closed post_validation_control_head_unavailable
+	fi
+	if [ "$post_control_head" != "$control_sha" ]; then
+		fail_closed post_validation_control_head_changed
+	fi
+	if ! post_control_status=$(git -C "$control_root" status --porcelain); then
+		fail_closed post_validation_control_status_failed
+	fi
+	if [ -n "$post_control_status" ]; then
+		fail_closed post_validation_control_dirty
+	fi
 }
 
 case "$target_branch" in
@@ -191,6 +226,8 @@ build-vet)
 	;;
 esac
 set -e
+
+verify_post_validation_integrity
 
 if [ "$validation_status" -ne 0 ]; then
 	result=fail
