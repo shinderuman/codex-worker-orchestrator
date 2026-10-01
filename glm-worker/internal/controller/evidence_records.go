@@ -100,6 +100,11 @@ func (s *Store) StoreEvidenceHead(record EvidenceHead) (EvidenceObjectRef, Evide
 }
 
 func (s *Store) StoreEvidenceLedgerRecord(record EvidenceLedgerRecord) (EvidenceObjectRef, EvidenceLedgerRecord, error) {
+	canonical, err := canonicalEvidenceLedgerRecord(record)
+	if err != nil {
+		return EvidenceObjectRef{}, EvidenceLedgerRecord{}, err
+	}
+	record = canonical
 	if err := s.validateEvidenceLedgerRecord(record); err != nil {
 		return EvidenceObjectRef{}, EvidenceLedgerRecord{}, err
 	}
@@ -176,7 +181,7 @@ func validateAttemptSealRefs(record AttemptSeal) error {
 }
 
 func validateFinalization(record AttemptFinalizationRecord) error {
-	if record.SchemaVersion != evidenceSchemaVersion || record.ControllerGeneration == 0 || strings.TrimSpace(record.TransitionID) == "" || strings.TrimSpace(record.ProjectSnapshotID) == "" || strings.TrimSpace(record.Kind) == "" {
+	if record.SchemaVersion != evidenceSchemaVersion || record.ControllerGeneration == 0 || strings.TrimSpace(record.TransitionID) == "" || strings.TrimSpace(record.ProjectSnapshotID) == "" || strings.TrimSpace(record.Kind) == "" || record.CreatedAt.IsZero() {
 		return fmt.Errorf("attempt finalization identity is incomplete")
 	}
 	if err := validateTypedEvidenceRef(record.AttemptSealRef, "attempt-seal"); err != nil {
@@ -249,7 +254,7 @@ func (s *Store) validateEvidenceHead(record EvidenceHead) error {
 }
 
 func (s *Store) validateEvidenceLedgerRecord(record EvidenceLedgerRecord) error {
-	if record.SchemaVersion != evidenceSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.Sequence == 0 || record.ControllerGeneration == 0 || strings.TrimSpace(record.TransitionID) == "" || strings.TrimSpace(record.ProjectSnapshotID) == "" {
+	if record.SchemaVersion != evidenceSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.Sequence == 0 || record.ControllerGeneration == 0 || strings.TrimSpace(record.TransitionID) == "" || strings.TrimSpace(record.ProjectSnapshotID) == "" || record.CreatedAt.IsZero() {
 		return fmt.Errorf("evidence ledger identity is incomplete")
 	}
 	if err := validateTypedEvidenceRef(record.EvidenceHeadRef, "evidence-head"); err != nil {
