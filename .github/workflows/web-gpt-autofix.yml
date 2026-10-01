@@ -52,7 +52,7 @@ jobs:
           TARGET_BRANCH: ${{ inputs.target_branch }}
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
         run: |
-          sh ./web-gpt-autofix "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$RUNNER_TEMP/web-gpt-autofix-result.json"
+          sh ./web-gpt-autofix.sh "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "$RUNNER_TEMP/web-gpt-autofix-result.json"
       - name: Publish machine-readable result
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
