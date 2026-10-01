@@ -17,38 +17,60 @@ type Store struct {
 
 const controllerSchemaVersion = 1
 
+var controllerStoreDirs = []string{
+	"attempts",
+	"leases",
+	"transitions",
+	"transition-state",
+	"mutations",
+	"failures",
+}
+
+func Exists(cfg config.AppConfig) (bool, error) {
+	identity, err := ResolveRepositoryIdentity(cfg.RepoRoot)
+	if err != nil {
+		return false, err
+	}
+	base := controllerStoreDir(cfg, identity)
+	info, err := os.Stat(base)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect repository controller store: %w", err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("repository controller store is not a directory")
+	}
+	if _, err := os.Stat(filepath.Join(base, "head.json")); errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("repository controller store exists without head")
+	} else if err != nil {
+		return false, fmt.Errorf("inspect repository controller head: %w", err)
+	}
+	return true, nil
+}
+
 func Open(cfg config.AppConfig) (*Store, error) {
 	identity, err := ResolveRepositoryIdentity(cfg.RepoRoot)
 	if err != nil {
 		return nil, err
 	}
-	base := filepath.Join(filepath.Dir(cfg.StateBase), "controllers", identity.LineageID)
-	for _, path := range []string{
-		base,
-		filepath.Join(base, "attempts"),
-		filepath.Join(base, "leases"),
-		filepath.Join(base, "transitions"),
-		filepath.Join(base, "transition-state"),
-		filepath.Join(base, "mutations"),
-		filepath.Join(base, "failures"),
-	} {
-		if err := os.MkdirAll(path, 0o700); err != nil {
-			return nil, fmt.Errorf("create repository controller store: %w", err)
-		}
-	}
+	base := controllerStoreDir(cfg, identity)
 	store := &Store{dir: base, identity: identity}
-	if _, err := os.Stat(store.headPath()); errors.Is(err, os.ErrNotExist) {
-		head := RepositoryControllerHead{
-			SchemaVersion:        controllerSchemaVersion,
-			RepositoryIdentity:   identity.LineageID,
-			ControllerGeneration: 0,
-			Status:               ControllerStatusActive,
-		}
-		if err := writeJSONAtomic(store.headPath(), head); err != nil {
+	info, err := os.Stat(base)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if err := initializeControllerStore(store); err != nil {
 			return nil, err
 		}
-	} else if err != nil {
-		return nil, fmt.Errorf("inspect repository controller head: %w", err)
+	case err != nil:
+		return nil, fmt.Errorf("inspect repository controller store: %w", err)
+	case !info.IsDir():
+		return nil, fmt.Errorf("repository controller store is not a directory")
+	default:
+		if err := validateControllerStoreLayout(store); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := store.LoadHead(); err != nil {
 		return nil, err
@@ -56,12 +78,49 @@ func Open(cfg config.AppConfig) (*Store, error) {
 	return store, nil
 }
 
-func (s *Store) Identity() RepositoryIdentity {
-	return s.identity
+func controllerStoreDir(cfg config.AppConfig, identity RepositoryIdentity) string {
+	return filepath.Join(filepath.Dir(cfg.StateBase), "controllers", identity.LineageID)
 }
 
-func (s *Store) LockPath() string {
-	return filepath.Join(s.dir, "lock")
+func initializeControllerStore(store *Store) error {
+	if err := os.MkdirAll(store.dir, 0o700); err != nil {
+		return fmt.Errorf("create repository controller store: %w", err)
+	}
+	for _, name := range controllerStoreDirs {
+		if err := os.Mkdir(filepath.Join(store.dir, name), 0o700); err != nil {
+			return fmt.Errorf("create repository controller store: %w", err)
+		}
+	}
+	head := RepositoryControllerHead{
+		SchemaVersion:        controllerSchemaVersion,
+		RepositoryIdentity:   store.identity.LineageID,
+		ControllerGeneration: 0,
+		Status:               ControllerStatusActive,
+	}
+	if err := writeJSONAtomic(store.headPath(), head); err != nil {
+		return fmt.Errorf("create repository controller head: %w", err)
+	}
+	return nil
+}
+
+func validateControllerStoreLayout(store *Store) error {
+	if _, err := os.Stat(store.headPath()); err != nil {
+		return fmt.Errorf("inspect repository controller head: %w", err)
+	}
+	for _, name := range controllerStoreDirs {
+		info, err := os.Stat(filepath.Join(store.dir, name))
+		if err != nil {
+			return fmt.Errorf("inspect repository controller store layout: %w", err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("repository controller store layout entry %s is not a directory", name)
+		}
+	}
+	return nil
+}
+
+func (s *Store) Identity() RepositoryIdentity {
+	return s.identity
 }
 
 func (s *Store) LoadHead() (RepositoryControllerHead, error) {

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,37 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
+
+func TestControllerExistenceProbeDoesNotActivateStore(t *testing.T) {
+	repo, _ := newControllerLinkedWorktree(t)
+	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
+	cfg := controllerTestConfig(repo, stateRoot)
+	exists, err := Exists(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("controller exists before activation")
+	}
+	identity, err := ResolveRepositoryIdentity(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := controllerStoreDir(cfg, identity)
+	if _, err := os.Stat(base); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("existence probe created controller state: %v", err)
+	}
+	if _, err := Open(cfg); err != nil {
+		t.Fatal(err)
+	}
+	exists, err = Exists(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("activated controller was not detected")
+	}
+}
 
 func TestLinkedWorktreesShareControllerDomain(t *testing.T) {
 	repo, linked := newControllerLinkedWorktree(t)
@@ -27,8 +59,10 @@ func TestLinkedWorktreesShareControllerDomain(t *testing.T) {
 	if primary.Identity().LineageID != secondary.Identity().LineageID {
 		t.Fatalf("linked worktrees have different controller identities: %s != %s", primary.Identity().LineageID, secondary.Identity().LineageID)
 	}
-	if primary.LockPath() != secondary.LockPath() {
-		t.Fatalf("linked worktrees have different controller locks: %s != %s", primary.LockPath(), secondary.LockPath())
+	primaryLock := filepath.Join(primary.dir, "lock")
+	secondaryLock := filepath.Join(secondary.dir, "lock")
+	if primaryLock != secondaryLock {
+		t.Fatalf("linked worktrees have different controller locks: %s != %s", primaryLock, secondaryLock)
 	}
 }
 
@@ -49,8 +83,8 @@ func TestSeparateClonesUseSeparateControllerDomains(t *testing.T) {
 	if first.Identity().LineageID == second.Identity().LineageID {
 		t.Fatal("separate clones unexpectedly share repository controller identity")
 	}
-	if first.LockPath() == second.LockPath() {
-		t.Fatal("separate clones unexpectedly share repository controller lock")
+	if first.dir == second.dir {
+		t.Fatal("separate clones unexpectedly share repository controller store")
 	}
 }
 
