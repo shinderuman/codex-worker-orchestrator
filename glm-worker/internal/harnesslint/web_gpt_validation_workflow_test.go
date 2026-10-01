@@ -18,10 +18,11 @@ func TestWebGPTValidationWorkflowPinsReadOnlyCanonicalControl(t *testing.T) {
 		"ref: ${{ github.sha }}\n          path: control\n          persist-credentials: false",
 		"ref: ${{ inputs.expected_head_sha }}\n          path: target\n          persist-credentials: false",
 		"WEB_GPT_VALIDATION_CONTROL_ROOT: ${{ github.workspace }}/control",
+		"QUALITY_TOOLS_BIN_DIR: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools",
 		"sh ../control/web-gpt-validate.sh",
 		"uses: actions/upload-artifact@v4",
 	})
-	for _, forbidden := range []string{"contents: write", "persist-credentials: true", "secrets.", "\n  push:", "\n  pull_request:"} {
+	for _, forbidden := range []string{"contents: write", "persist-credentials: true", "secrets.", "uses: actions/cache", "$GITHUB_ENV", "\n  push:", "\n  pull_request:"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("focused validation workflow contains forbidden capability: %q", forbidden)
 		}
