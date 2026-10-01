@@ -14,9 +14,12 @@ func TestWebGPTAutofixWorkflowIsManualAndPinned(t *testing.T) {
 		"expected_head_sha:",
 		"permissions:\n  contents: write",
 		"group: web-gpt-autofix-${{ inputs.target_branch }}",
-		"ref: ${{ inputs.expected_head_sha }}",
+		"ref: main\n          path: control\n          persist-credentials: false",
+		"ref: ${{ inputs.expected_head_sha }}\n          path: target",
+		"working-directory: target",
+		"hashFiles('target/quality-tools.yml', 'target/install-quality-tools.sh')",
 		"QUALITY_TOOLS_BIN_DIR=\"$quality_bin\" ./install-quality-tools.sh",
-		"sh ./web-gpt-autofix.sh \"$TARGET_BRANCH\" \"$EXPECTED_HEAD_SHA\" \"$RUNNER_TEMP/web-gpt-autofix-result.json\"",
+		"sh ../control/web-gpt-autofix.sh \"$TARGET_BRANCH\" \"$EXPECTED_HEAD_SHA\" \"$RUNNER_TEMP/web-gpt-autofix-result.json\"",
 		"uses: actions/upload-artifact@v4",
 	})
 	for _, forbidden := range []string{"\n  push:", "\n  pull_request:"} {
