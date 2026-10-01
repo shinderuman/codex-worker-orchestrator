@@ -7,6 +7,16 @@ import (
 	"time"
 )
 
+type episodeProgressionFixture struct {
+	repo         string
+	store        *Store
+	episode      BlockerEpisodeRevision
+	head         RepositoryControllerHead
+	b            SemanticTaskRef
+	c            SemanticTaskRef
+	resultAfterC ProjectSnapshot
+}
+
 func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.T) {
 	fixture := newEpisodeProgressionFixture(t)
 
@@ -101,16 +111,6 @@ func TestEpisodeSatisfactionRejectsTaskOutsideClosure(t *testing.T) {
 	}); err == nil {
 		t.Fatal("task outside admitted closure was accepted as satisfied")
 	}
-}
-
-type episodeProgressionFixture struct {
-	repo         string
-	store        *Store
-	episode      BlockerEpisodeRevision
-	head         RepositoryControllerHead
-	b            SemanticTaskRef
-	c            SemanticTaskRef
-	resultAfterC ProjectSnapshot
 }
 
 func newEpisodeProgressionFixture(t *testing.T) episodeProgressionFixture {
