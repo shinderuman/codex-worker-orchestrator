@@ -62,12 +62,7 @@ func runDeterministicAutofix(root, controlRoot string, base commandRunner) (Repo
 	if err != nil {
 		return Report{}, err
 	}
-	report, err := runControlled(root, controlRoot, base)
-	if err != nil {
-		return Report{}, err
-	}
-	report.Fixed = changedSnapshotCount(before, after)
-	return report, nil
+	return makeReport(changedSnapshotCount(before, after), nil), nil
 }
 
 func runDeterministicShellFixes(root string, paths []string, runner commandRunner) error {
