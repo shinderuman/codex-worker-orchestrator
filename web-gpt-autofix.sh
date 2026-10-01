@@ -65,7 +65,7 @@ validate_target() {
 	fi
 	case "$expected_head_sha" in
 	*[!0-9a-f]*) fail_closed invalid_expected_head_sha ;;
-	esac
+esac
 	before_sha=$expected_head_sha
 	resulting_head=$expected_head_sha
 	if ! status=$(git status --porcelain); then
@@ -95,6 +95,22 @@ run_controlled_harnesslint() {
 	)
 }
 
+capture_patch() {
+	output_path=$1
+	if ! git diff --binary --full-index --no-ext-diff HEAD -- >"$output_path"; then
+		fail_closed patch_generation_failed not_published
+	fi
+}
+
+require_no_untracked() {
+	if ! untracked=$(git ls-files --others --exclude-standard); then
+		fail_closed git_inventory_failed
+	fi
+	if [ -n "$untracked" ]; then
+		fail_closed unexpected_untracked_autofix_output
+	fi
+}
+
 prepare_autofix() {
 	case "$control_root" in
 	/*) ;;
@@ -107,40 +123,38 @@ prepare_autofix() {
 	set +e
 	run_controlled_harnesslint --deterministic-fix
 	fix_status=$?
+	set -e
+	if [ "$fix_status" -ne 0 ]; then
+		validation=fail
+		fail_closed deterministic_fix_failed not_published
+	fi
+	require_no_untracked
+	capture_patch "$patch_path"
+	if [ -s "$patch_path" ]; then
+		changed=true
+	fi
+	set +e
 	run_controlled_harnesslint --controlled-check
 	check_status=$?
 	set -e
-	if ! untracked=$(git ls-files --others --exclude-standard); then
-		fail_closed git_inventory_failed
+	require_no_untracked
+	validation_patch=${patch_path}.validation
+	capture_patch "$validation_patch"
+	if ! cmp -s "$patch_path" "$validation_patch"; then
+		rm -f "$validation_patch"
+		validation=fail
+		fail_closed validation_mutated_target not_published
 	fi
-	if [ -n "$untracked" ]; then
-		fail_closed unexpected_untracked_autofix_output
-	fi
-	if [ "$fix_status" -ne 0 ] || [ "$check_status" -ne 0 ]; then
+	rm -f "$validation_patch"
+	if [ "$check_status" -ne 0 ]; then
 		validation=fail
 		fail_closed lint_validation_failed not_published
 	fi
 	validation=pass
-	if git diff --quiet --; then
-		changed=false
-	else
-		diff_status=$?
-		if [ "$diff_status" -ne 1 ]; then
-			fail_closed git_diff_failed not_published
-		fi
-		changed=true
-	fi
 	if [ "$changed" = false ]; then
-		: >"$patch_path"
 		publication=unchanged
 		write_result
 		return
-	fi
-	if ! git diff --binary --full-index --no-ext-diff --output="$patch_path" --; then
-		fail_closed patch_generation_failed not_published
-	fi
-	if [ ! -s "$patch_path" ]; then
-		fail_closed empty_patch not_published
 	fi
 	publication=prepared
 	write_result
