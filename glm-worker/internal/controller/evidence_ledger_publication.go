@@ -29,6 +29,7 @@ func (s *Store) buildEvidenceLedgerRecord(
 		FindingRecordsAdded:      append([]EvidenceObjectRef(nil), input.FindingRecordRefs...),
 		ProjectSnapshotID:        record.ProjectSnapshotNew,
 		EvidenceHeadRef:          evidenceHeadRef,
+		CreatedAt:                record.CreatedAt,
 	}, nil
 }
 
