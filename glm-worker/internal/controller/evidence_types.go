@@ -57,28 +57,46 @@ type AttemptFinalizationRecord struct {
 }
 
 type TaskIndexRevision struct {
-	SchemaVersion        int                 `json:"schema_version"`
-	RevisionID           string              `json:"revision_id"`
-	TaskRef              SemanticTaskRef     `json:"task_ref"`
-	PreviousRevision     *EvidenceObjectRef  `json:"previous_revision,omitempty"`
-	AttemptSeals         []EvidenceObjectRef `json:"attempt_seals"`
-	Finalizations        []EvidenceObjectRef `json:"finalizations,omitempty"`
-	Terminal             bool                `json:"terminal"`
-	ControllerGeneration uint64              `json:"controller_generation"`
-	CreatedAt            time.Time           `json:"created_at"`
+	SchemaVersion             int                 `json:"schema_version"`
+	RevisionID                string              `json:"revision_id"`
+	TaskRef                   SemanticTaskRef     `json:"task_ref"`
+	PreviousRevision          *EvidenceObjectRef  `json:"previous_revision,omitempty"`
+	AttemptSeals              []EvidenceObjectRef `json:"attempt_seals"`
+	Finalizations             []EvidenceObjectRef `json:"finalizations,omitempty"`
+	FindingRecords            []EvidenceObjectRef `json:"finding_records,omitempty"`
+	DependencyEdgeRecords     []EvidenceObjectRef `json:"dependency_edge_records,omitempty"`
+	PublicationLineageRecords []EvidenceObjectRef `json:"publication_lineage_records,omitempty"`
+	SemanticStatus            string              `json:"semantic_status"`
+	TerminalRecord            *EvidenceObjectRef  `json:"terminal_record,omitempty"`
+	ControllerGeneration      uint64              `json:"controller_generation"`
+	TransitionID              string              `json:"transition_id"`
+	CreatedAt                 time.Time           `json:"created_at"`
 }
 
 type EpisodeIndexRevision struct {
-	SchemaVersion        int                 `json:"schema_version"`
-	RevisionID           string              `json:"revision_id"`
-	EpisodeID            string              `json:"episode_id"`
-	EpisodeRevision      uint64              `json:"episode_revision"`
-	PreviousRevision     *EvidenceObjectRef  `json:"previous_revision,omitempty"`
-	AttemptSeals         []EvidenceObjectRef `json:"attempt_seals"`
-	Finalizations        []EvidenceObjectRef `json:"finalizations,omitempty"`
-	Closed               bool                `json:"closed"`
-	ControllerGeneration uint64              `json:"controller_generation"`
-	CreatedAt            time.Time           `json:"created_at"`
+	SchemaVersion             int                   `json:"schema_version"`
+	RevisionID                string                `json:"revision_id"`
+	EpisodeID                 string                `json:"episode_id"`
+	RootTaskRef               SemanticTaskRef       `json:"root_task_ref"`
+	EpisodeRevision           uint64                `json:"episode_revision"`
+	PreviousRevision          *EvidenceObjectRef    `json:"previous_revision,omitempty"`
+	DependencyGraphSnapshotID string                `json:"dependency_graph_snapshot_id"`
+	AdmittedClosureTaskRefs   []SemanticTaskRef     `json:"admitted_closure_task_refs,omitempty"`
+	TaskIndexHeads            []EvidenceSubjectHead `json:"task_index_heads,omitempty"`
+	AttemptSeals              []EvidenceObjectRef   `json:"attempt_seals"`
+	Finalizations             []EvidenceObjectRef   `json:"finalizations,omitempty"`
+	FindingRecords            []EvidenceObjectRef   `json:"finding_records,omitempty"`
+	TransitionRecords         []EvidenceObjectRef   `json:"transition_records,omitempty"`
+	IntegrationHistory        []EvidenceObjectRef   `json:"integration_history,omitempty"`
+	CurrentExecutionTaskRef   *SemanticTaskRef      `json:"current_execution_task_ref,omitempty"`
+	CurrentAttemptID          string                `json:"current_attempt_id,omitempty"`
+	CurrentLeaseID            string                `json:"current_lease_id,omitempty"`
+	IntegrationTip            string                `json:"integration_tip,omitempty"`
+	State                     string                `json:"state"`
+	CloseRecord               *EvidenceObjectRef    `json:"close_record,omitempty"`
+	ControllerGeneration      uint64                `json:"controller_generation"`
+	TransitionID              string                `json:"transition_id"`
+	CreatedAt                 time.Time             `json:"created_at"`
 }
 
 type EvidenceSubjectHead struct {
