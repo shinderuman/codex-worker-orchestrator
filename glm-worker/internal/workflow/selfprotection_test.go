@@ -17,6 +17,7 @@ func TestIsCriticalPath(t *testing.T) {
 		{"glm-worker/internal/workflow/workflow.go", true, "workflow-package"},
 		{"glm-worker/internal/autoresume/verify.go", true, "autoresume-package"},
 		{"glm-worker/internal/harnesslint/run.go", true, "quality-policy"},
+		{"glm-worker/internal/webgptdispatch/request.go", true, "quality-policy"},
 		{"glm-worker/cmd/harnesslint/main.go", true, "worker-entrypoint"},
 		{"harnesslint", true, "quality-policy"},
 		{"web-gpt-autofix.sh", true, "quality-policy"},
@@ -27,6 +28,7 @@ func TestIsCriticalPath(t *testing.T) {
 		{".github/workflows/install-smoke.yml", true, "quality-policy"},
 		{".github/workflows/web-gpt-autofix.yml", true, "quality-policy"},
 		{".github/workflows/web-gpt-validate.yml", true, "quality-policy"},
+		{".github/workflows/web-gpt-mailbox.yml", true, "quality-policy"},
 		{"install-quality-tools.sh", true, "quality-policy"},
 		{"IMPLEMENTATION_PLAN.local.md", true, "implementation-plan"},
 		{"codex/glm-worker/prompts/WORKER.md", true, "managed-prompts"},
@@ -52,6 +54,7 @@ func TestIsQualitySurface(t *testing.T) {
 		".github/workflows/install-smoke.yml",
 		".github/workflows/web-gpt-autofix.yml",
 		".github/workflows/web-gpt-validate.yml",
+		".github/workflows/web-gpt-mailbox.yml",
 		"install-quality-tools.sh",
 		"web-gpt-autofix.sh",
 		"web-gpt-validate.sh",
@@ -59,7 +62,10 @@ func TestIsQualitySurface(t *testing.T) {
 		"commentlint",
 		"glm-worker/internal/harnesslint/run.go",
 		"glm-worker/internal/commentlint/commentlint.go",
+		"glm-worker/internal/webgptdispatch/request.go",
+		"glm-worker/internal/webgptdispatchcmd/run.go",
 		"glm-worker/cmd/harnesslint/main.go",
+		"glm-worker/cmd/web-gpt-dispatch-request/main.go",
 	} {
 		if !IsQualitySurface(path) {
 			t.Fatalf("quality surface not protected: %s", path)
