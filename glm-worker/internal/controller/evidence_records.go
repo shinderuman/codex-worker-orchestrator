@@ -126,7 +126,13 @@ func (s *Store) validateAttemptSeal(record AttemptSeal) error {
 	if err := validateAttemptSealSemantics(record); err != nil {
 		return err
 	}
-	return validateAttemptSealRefs(record)
+	if err := validateAttemptSealPortable(record); err != nil {
+		return err
+	}
+	if err := validateAttemptSealRefs(record); err != nil {
+		return err
+	}
+	return s.validateAttemptSealArchive(record)
 }
 
 func validateAttemptSealIdentity(record AttemptSeal, repositoryIdentity string) error {
@@ -161,7 +167,7 @@ func validateAttemptSealRefs(record AttemptSeal) error {
 	if err := validateTypedEvidenceRef(record.GitObjectArchive, "git-object-archive"); err != nil {
 		return fmt.Errorf("attempt seal git archive reference: %w", err)
 	}
-	for _, ref := range attemptSealGraphEvidenceRefs(record) {
+	for _, ref := range record.EvidenceRefs {
 		if err := validateEvidenceRef(ref); err != nil {
 			return fmt.Errorf("attempt seal evidence reference: %w", err)
 		}

@@ -229,7 +229,8 @@ func TestBundleFailsLoudlyWhenRequiredHistoricalEvidenceIsMissing(t *testing.T) 
 func storeBundleAttemptSeal(t *testing.T, store *Store, source, attemptID, taskPath, episodeID string, generation uint64) (EvidenceObjectRef, AttemptSeal) {
 	t.Helper()
 	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
-	archive, _, err := store.CaptureGitObjectArchive(source, attemptID+":git", []string{commit})
+	tree := controllerGitOutput(t, source, "rev-parse", "HEAD^{tree}")
+	archive, roots, err := store.CaptureGitObjectArchive(source, attemptID+":git", []string{commit, tree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,19 +238,23 @@ func storeBundleAttemptSeal(t *testing.T, store *Store, source, attemptID, taskP
 	if err != nil {
 		t.Fatal(err)
 	}
+	episodeRevision := uint64(0)
+	if episodeID != "" {
+		episodeRevision = 1
+	}
 	record := AttemptSeal{
 		SchemaVersion: evidenceSchemaVersion, RepositoryIdentity: store.Identity().LineageID,
 		SemanticTaskRef: SemanticTaskRef{TaskPath: taskPath, ContractDigest: attemptID + "-contract"},
 		RootTaskRef:     SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root-contract"},
-		AttemptID:       attemptID, EpisodeID: episodeID, EpisodeRevision: 1, ControllerGeneration: generation,
+		AttemptID:       attemptID, EpisodeID: episodeID, EpisodeRevision: episodeRevision, ControllerGeneration: generation,
 		SealingTransitionID: bundleTransitionID(generation), RevokedLeaseID: "lease-" + attemptID,
-		WorkspaceID: "workspace-" + attemptID, ExecutionPurpose: "blocker-execution",
+		WorkspaceID: "workspace-" + attemptID, ExecutionPurpose: "blocker-execution", SourceProjectSnapshotID: fmt.Sprintf("snapshot-source-%d", generation),
 		StartedAt: time.Unix(5000+int64(generation), 0).UTC(), SealedAt: time.Unix(5100+int64(generation), 0).UTC(),
 		Disposition: "suspended-for-blocker", ExecutionBaseOID: commit,
-		BaselineIndexTree: "baseline-index", BaselineWorktreeTree: "baseline-worktree",
-		CurrentIndexTree: "current-index", CurrentWorktreeTree: "current-worktree",
-		ParentAuthorityDigest: "parent-authority", GitObjectArchive: archive,
-		EvidenceRefs: []EvidenceObjectRef{required}, Coverage: "complete",
+		BaselineIndexTree: tree, BaselineWorktreeTree: tree,
+		CurrentIndexTree: tree, CurrentWorktreeTree: tree,
+		ParentAuthorityDigest: "parent-authority", GitObjectArchive: archive, GitObjectArchiveRoots: roots,
+		EvidenceRefs: []EvidenceObjectRef{required}, Coverage: "complete", RequiredKinds: []string{"git-object-archive", "validation"},
 	}
 	ref, stored, err := store.StoreAttemptSeal(record)
 	if err != nil {
