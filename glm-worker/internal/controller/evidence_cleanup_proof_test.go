@@ -123,7 +123,8 @@ func publishCleanupProofAuthority(t *testing.T, store *Store, taskHeads, episode
 	}
 	ledgerRef, _, err := store.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
 		SchemaVersion: evidenceSchemaVersion, Sequence: 1, RepositoryIdentity: store.Identity().LineageID,
-		ControllerGeneration: 1, TransitionID: "transition-cleanup", ProjectSnapshotID: "snapshot-cleanup", EvidenceHeadRef: headRef, CreatedAt: time.Unix(4301, 0).UTC(),
+		ControllerGeneration: 1, TransitionID: "transition-cleanup", ChangedTaskIndexHeads: taskHeads,
+		ChangedEpisodeIndexHeads: episodeHeads, ProjectSnapshotID: "snapshot-cleanup", EvidenceHeadRef: headRef, CreatedAt: time.Unix(4301, 0).UTC(),
 	})
 	if err != nil {
 		t.Fatal(err)
