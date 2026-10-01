@@ -45,40 +45,55 @@ func runControllerEvidence(
 	if len(args) != 2 || args[0] != controllerAuthorityFlag || args[1] != "controller-evidence" {
 		return false, nil
 	}
+	return true, executeControllerEvidenceRequest(loadConfig, stdin, stdout)
+}
+
+func executeControllerEvidenceRequest(
+	loadConfig func() (config.AppConfig, error),
+	stdin io.Reader,
+	stdout io.Writer,
+) error {
 	cfg, err := loadConfig()
 	if err != nil {
-		return true, err
+		return err
 	}
 	store, err := openControllerSemanticStore(cfg)
 	if err != nil {
-		return true, err
+		return err
 	}
 	command, err := decodeControllerEvidenceCommand(stdin)
 	if err != nil {
-		return true, err
+		return err
 	}
 	output, err := executeControllerEvidence(cfg, store, command)
 	if err != nil {
-		return true, err
+		return err
 	}
-	return true, writeValidatedMachineJSON(stdout, output)
+	return writeValidatedMachineJSON(stdout, output)
 }
 
 func decodeControllerEvidenceCommand(input io.Reader) (controllerEvidenceCommand, error) {
 	decoder := json.NewDecoder(input)
 	decoder.DisallowUnknownFields()
-	var command controllerEvidenceCommand
+	command := controllerEvidenceCommand{}
 	if err := decoder.Decode(&command); err != nil {
-		return controllerEvidenceCommand{}, fmt.Errorf("decode controller evidence command: %w", err)
+		return command, fmt.Errorf("decode controller evidence command: %w", err)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return controllerEvidenceCommand{}, fmt.Errorf("controller evidence command contains trailing JSON")
+	if err := requireControllerEvidenceEOF(decoder); err != nil {
+		return command, err
 	}
 	if command.Action == "" {
-		return controllerEvidenceCommand{}, fmt.Errorf("controller evidence action is required")
+		return command, fmt.Errorf("controller evidence action is required")
 	}
 	return command, nil
+}
+
+func requireControllerEvidenceEOF(decoder *json.Decoder) error {
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("controller evidence command contains trailing JSON")
+	}
+	return nil
 }
 
 func executeControllerEvidence(
@@ -88,67 +103,95 @@ func executeControllerEvidence(
 ) (controllerEvidenceOutput, error) {
 	switch command.Action {
 	case controllerEvidenceCleanup:
-		ref, err := requiredControllerEvidenceRef(command)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		proof, err := store.ProveCleanupDurability(ref)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		return controllerEvidenceOutput{Action: command.Action, CleanupProof: &proof}, nil
+		return executeControllerEvidenceCleanup(store, command)
 	case controllerEvidenceCaptureArchive:
-		if command.LogicalIdentity == "" || len(command.RootOIDs) == 0 {
-			return controllerEvidenceOutput{}, fmt.Errorf("Git object archive capture requires logical identity and roots")
-		}
-		ref, roots, err := store.CaptureGitObjectArchive(cfg.RepoRoot, command.LogicalIdentity, command.RootOIDs)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		return controllerEvidenceOutput{Action: command.Action, ArchiveRef: &ref, ArchiveRoots: roots}, nil
+		return executeControllerEvidenceCaptureArchive(cfg, store, command)
 	case controllerEvidenceVerifyArchive:
-		ref, err := requiredControllerEvidenceRef(command)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		roots, err := store.VerifyGitObjectArchive(ref)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		return controllerEvidenceOutput{Action: command.Action, ArchiveRef: &ref, ArchiveRoots: roots}, nil
+		return executeControllerEvidenceVerifyArchive(store, command)
 	case controllerEvidenceAttemptBundle:
-		ref, err := requiredControllerEvidenceRef(command)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		bundle, err := store.BuildAttemptEvidenceBundle(ref)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		return controllerEvidenceOutput{Action: command.Action, Bundle: &bundle}, nil
+		return executeControllerEvidenceAttemptBundle(store, command)
 	case controllerEvidenceTaskBundle:
-		ref, err := requiredControllerEvidenceRef(command)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		bundle, err := store.BuildTaskEvidenceBundle(ref)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		return controllerEvidenceOutput{Action: command.Action, Bundle: &bundle}, nil
+		return executeControllerEvidenceTaskBundle(store, command)
 	case controllerEvidenceEpisodeBundle:
-		ref, err := requiredControllerEvidenceRef(command)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		bundle, err := store.BuildEpisodeEvidenceBundle(ref)
-		if err != nil {
-			return controllerEvidenceOutput{}, err
-		}
-		return controllerEvidenceOutput{Action: command.Action, Bundle: &bundle}, nil
+		return executeControllerEvidenceEpisodeBundle(store, command)
 	default:
 		return controllerEvidenceOutput{}, fmt.Errorf("unsupported controller evidence action %q", command.Action)
 	}
+}
+
+func executeControllerEvidenceCleanup(store *controller.Store, command controllerEvidenceCommand) (controllerEvidenceOutput, error) {
+	ref, err := requiredControllerEvidenceRef(command)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	proof, err := store.ProveCleanupDurability(ref)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	return controllerEvidenceOutput{Action: command.Action, CleanupProof: &proof}, nil
+}
+
+func executeControllerEvidenceCaptureArchive(
+	cfg config.AppConfig,
+	store *controller.Store,
+	command controllerEvidenceCommand,
+) (controllerEvidenceOutput, error) {
+	if command.LogicalIdentity == "" || len(command.RootOIDs) == 0 {
+		return controllerEvidenceOutput{}, fmt.Errorf("git object archive capture requires logical identity and roots")
+	}
+	ref, roots, err := store.CaptureGitObjectArchive(cfg.RepoRoot, command.LogicalIdentity, command.RootOIDs)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	return controllerEvidenceOutput{Action: command.Action, ArchiveRef: &ref, ArchiveRoots: roots}, nil
+}
+
+func executeControllerEvidenceVerifyArchive(store *controller.Store, command controllerEvidenceCommand) (controllerEvidenceOutput, error) {
+	ref, err := requiredControllerEvidenceRef(command)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	roots, err := store.VerifyGitObjectArchive(ref)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	return controllerEvidenceOutput{Action: command.Action, ArchiveRef: &ref, ArchiveRoots: roots}, nil
+}
+
+func executeControllerEvidenceAttemptBundle(store *controller.Store, command controllerEvidenceCommand) (controllerEvidenceOutput, error) {
+	ref, err := requiredControllerEvidenceRef(command)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	bundle, err := store.BuildAttemptEvidenceBundle(ref)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	return controllerEvidenceOutput{Action: command.Action, Bundle: &bundle}, nil
+}
+
+func executeControllerEvidenceTaskBundle(store *controller.Store, command controllerEvidenceCommand) (controllerEvidenceOutput, error) {
+	ref, err := requiredControllerEvidenceRef(command)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	bundle, err := store.BuildTaskEvidenceBundle(ref)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	return controllerEvidenceOutput{Action: command.Action, Bundle: &bundle}, nil
+}
+
+func executeControllerEvidenceEpisodeBundle(store *controller.Store, command controllerEvidenceCommand) (controllerEvidenceOutput, error) {
+	ref, err := requiredControllerEvidenceRef(command)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	bundle, err := store.BuildEpisodeEvidenceBundle(ref)
+	if err != nil {
+		return controllerEvidenceOutput{}, err
+	}
+	return controllerEvidenceOutput{Action: command.Action, Bundle: &bundle}, nil
 }
 
 func requiredControllerEvidenceRef(command controllerEvidenceCommand) (controller.EvidenceObjectRef, error) {
