@@ -35,8 +35,10 @@ func TestEvidenceObjectRoundTripAndCorruptionFailsLoudly(t *testing.T) {
 }
 
 func TestAttemptSealCanonicalizesEvidenceOrderAndSurvivesMissingRuntimePath(t *testing.T) {
-	store := newEvidenceTestStore(t)
-	archive, err := store.PutEvidenceObject("git-object-archive", "application/x-git-packed-objects", "attempt-a:git", true, []byte("portable-git"))
+	store, repo := newEvidenceTestStoreWithRepo(t)
+	commit := controllerGitOutput(t, repo, "rev-parse", "HEAD")
+	tree := controllerGitOutput(t, repo, "rev-parse", "HEAD^{tree}")
+	archive, roots, err := store.CaptureGitObjectArchive(repo, "attempt-a:git", []string{commit, tree})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,38 +52,46 @@ func TestAttemptSealCanonicalizesEvidenceOrderAndSurvivesMissingRuntimePath(t *t
 	}
 	now := time.Unix(1234, 567).UTC()
 	record := AttemptSeal{
-		SchemaVersion:         evidenceSchemaVersion,
-		RepositoryIdentity:    store.Identity().LineageID,
-		SemanticTaskRef:       SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"},
-		RootTaskRef:           SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root"},
-		AttemptID:             "attempt-a",
-		EpisodeID:             "episode-a",
-		EpisodeRevision:       2,
-		ControllerGeneration:  7,
-		SealingTransitionID:   "transition-a",
-		RevokedLeaseID:        "lease-a",
-		WorkspaceID:           "workspace-a",
-		ExecutionPurpose:      "blocker-execution",
-		StartedAt:             now.Add(-time.Minute),
-		SealedAt:              now,
-		Disposition:           "suspended-for-blocker",
-		ExecutionBaseOID:      "base",
-		BaselineIndexTree:     "baseline-index",
-		BaselineWorktreeTree:  "baseline-worktree",
-		CurrentIndexTree:      "current-index",
-		CurrentWorktreeTree:   "current-worktree",
-		ParentAuthorityDigest: "parent-authority",
-		GitObjectArchive:      archive,
-		EvidenceRefs:          []EvidenceObjectRef{second, first},
-		Coverage:              "complete",
-		Missing:               []string{"z", "a"},
-		Unreadable:            []string{"y", "b"},
+		SchemaVersion:            evidenceSchemaVersion,
+		RepositoryIdentity:       store.Identity().LineageID,
+		SemanticTaskRef:          SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"},
+		RootTaskRef:              SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root"},
+		AttemptID:                "attempt-a",
+		EpisodeID:                "episode-a",
+		EpisodeRevision:          2,
+		ControllerGeneration:     7,
+		SealingTransitionID:      "transition-a",
+		RevokedLeaseID:           "lease-a",
+		WorkspaceID:              "workspace-a",
+		ExecutionPurpose:         "blocker-execution",
+		SourceProjectSnapshotID:  "snapshot-a",
+		StartedAt:                now.Add(-time.Minute),
+		SealedAt:                 now,
+		Disposition:              "suspended-for-blocker",
+		ExecutionBaseOID:         commit,
+		BaselineIndexTree:        tree,
+		BaselineWorktreeTree:     tree,
+		CurrentIndexTree:         tree,
+		CurrentWorktreeTree:      tree,
+		ParentAuthorityDigest:    "parent-authority",
+		GitObjectArchive:         archive,
+		GitObjectArchiveRoots:    roots,
+		EvidenceRefs:             []EvidenceObjectRef{second, first},
+		Coverage:                 "incomplete",
+		RequiredKinds:            []string{"validation", "git-object-archive", "telemetry"},
+		Missing:                  []string{"z", "a"},
+		Unreadable:               []string{"y", "b"},
 	}
 	ref, stored, err := store.StoreAttemptSeal(record)
 	if err != nil {
 		t.Fatal(err)
 	}
 	record.EvidenceRefs = []EvidenceObjectRef{first, second}
+	record.GitObjectArchiveRoots = append([]GitObjectArchiveRoot(nil), roots...)
+	for i, j := 0, len(record.GitObjectArchiveRoots)-1; i < j; i, j = i+1, j-1 {
+		record.GitObjectArchiveRoots[i], record.GitObjectArchiveRoots[j] = record.GitObjectArchiveRoots[j], record.GitObjectArchiveRoots[i]
+	}
+	record.RequiredKinds = []string{"telemetry", "validation", "git-object-archive"}
 	record.Missing = []string{"a", "z"}
 	record.Unreadable = []string{"b", "y"}
 	refAgain, storedAgain, err := store.StoreAttemptSeal(record)
@@ -121,11 +131,17 @@ func TestEvidenceMissingObjectFailsLoudly(t *testing.T) {
 
 func newEvidenceTestStore(t *testing.T) *Store {
 	t.Helper()
+	store, _ := newEvidenceTestStoreWithRepo(t)
+	return store
+}
+
+func newEvidenceTestStoreWithRepo(t *testing.T) (*Store, string) {
+	t.Helper()
 	repo, _ := newControllerLinkedWorktree(t)
 	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
 	store, err := Open(controllerTestConfig(repo, stateRoot))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return store
+	return store, repo
 }

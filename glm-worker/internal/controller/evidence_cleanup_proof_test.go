@@ -30,8 +30,8 @@ func TestCleanupDurabilityProofRejectsEpisodeSealMissingEpisodeIndex(t *testing.
 }
 
 func TestCleanupDurabilityProofRejectsUnindexedSeal(t *testing.T) {
-	store := newEvidenceTestStore(t)
-	sealRef, _ := storeCleanupProofSeal(t, store, "")
+	store, repo := newEvidenceTestStoreWithRepo(t)
+	sealRef, _ := storeCleanupProofSeal(t, store, repo, "")
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/OTHER.md", ContractDigest: "other"}
 	revision := testTaskIndexRevision(task, 1, "transition-cleanup", time.Unix(4200, 0).UTC())
 	taskRef, _, err := store.StoreTaskIndexRevision(revision)
@@ -46,8 +46,8 @@ func TestCleanupDurabilityProofRejectsUnindexedSeal(t *testing.T) {
 
 func newCleanupProofFixture(t *testing.T, publishEpisode bool) (*Store, EvidenceObjectRef, EvidenceObjectRef, EvidenceObjectRef) {
 	t.Helper()
-	store := newEvidenceTestStore(t)
-	sealRef, seal := storeCleanupProofSeal(t, store, "episode-cleanup")
+	store, repo := newEvidenceTestStoreWithRepo(t)
+	sealRef, seal := storeCleanupProofSeal(t, store, repo, "episode-cleanup")
 	taskRevision := testTaskIndexRevision(seal.SemanticTaskRef, 1, "transition-cleanup", time.Unix(4100, 0).UTC())
 	taskRevision.AttemptSeals = []EvidenceObjectRef{sealRef}
 	taskRevision.SemanticStatus = "blocked"
@@ -84,20 +84,26 @@ func newCleanupProofFixture(t *testing.T, publishEpisode bool) (*Store, Evidence
 	return store, sealRef, taskRef, episodeRef
 }
 
-func storeCleanupProofSeal(t *testing.T, store *Store, episodeID string) (EvidenceObjectRef, AttemptSeal) {
+func storeCleanupProofSeal(t *testing.T, store *Store, repo, episodeID string) (EvidenceObjectRef, AttemptSeal) {
 	t.Helper()
-	archive, err := store.PutEvidenceObject("git-object-archive", "application/x-git-packed-objects", "cleanup-attempt:git", true, []byte("portable-git"))
+	commit := controllerGitOutput(t, repo, "rev-parse", "HEAD")
+	tree := controllerGitOutput(t, repo, "rev-parse", "HEAD^{tree}")
+	archive, roots, err := store.CaptureGitObjectArchive(repo, "cleanup-attempt:git", []string{commit, tree})
 	if err != nil {
 		t.Fatal(err)
+	}
+	episodeRevision := uint64(0)
+	if episodeID != "" {
+		episodeRevision = 3
 	}
 	record := AttemptSeal{
 		SchemaVersion: evidenceSchemaVersion, RepositoryIdentity: store.Identity().LineageID,
 		SemanticTaskRef: SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"}, RootTaskRef: SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root"},
-		AttemptID: "cleanup-attempt", EpisodeID: episodeID, EpisodeRevision: 3, ControllerGeneration: 1,
-		SealingTransitionID: "transition-cleanup", RevokedLeaseID: "lease-cleanup", WorkspaceID: "workspace-cleanup", ExecutionPurpose: "blocker-execution",
+		AttemptID: "cleanup-attempt", EpisodeID: episodeID, EpisodeRevision: episodeRevision, ControllerGeneration: 1,
+		SealingTransitionID: "transition-cleanup", RevokedLeaseID: "lease-cleanup", WorkspaceID: "workspace-cleanup", ExecutionPurpose: "blocker-execution", SourceProjectSnapshotID: "snapshot-cleanup-source",
 		StartedAt: time.Unix(4000, 0).UTC(), SealedAt: time.Unix(4001, 0).UTC(), Disposition: "suspended-for-blocker",
-		ExecutionBaseOID: "base", BaselineIndexTree: "baseline-index", BaselineWorktreeTree: "baseline-worktree", CurrentIndexTree: "current-index", CurrentWorktreeTree: "current-worktree",
-		ParentAuthorityDigest: "parent-authority", GitObjectArchive: archive, Coverage: "complete",
+		ExecutionBaseOID: commit, BaselineIndexTree: tree, BaselineWorktreeTree: tree, CurrentIndexTree: tree, CurrentWorktreeTree: tree,
+		ParentAuthorityDigest: "parent-authority", GitObjectArchive: archive, GitObjectArchiveRoots: roots, Coverage: "complete", RequiredKinds: []string{"git-object-archive"},
 	}
 	ref, stored, err := store.StoreAttemptSeal(record)
 	if err != nil {
