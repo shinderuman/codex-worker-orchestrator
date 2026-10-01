@@ -15,13 +15,19 @@ result_path=$6
 artifact_locator=$7
 target_root=$(pwd -P)
 control_root=${WEB_GPT_VALIDATION_CONTROL_ROOT:-}
+reported_branch=''
+reported_sha=''
+reported_control_sha=''
+reported_mode=''
+reported_scope=''
+reported_artifact_locator=''
 result=not_run
 error_code=''
 result_written=false
 
 write_result() {
 	printf '{"tested_branch":"%s","tested_sha":"%s","control_sha":"%s","mode":"%s","result":"%s","scope":"%s","artifact_locator":"%s","error":"%s"}\n' \
-		"$target_branch" "$expected_head_sha" "$control_sha" "$validation_mode" "$result" "$validation_scope" "$artifact_locator" "$error_code" >"$result_path"
+		"$reported_branch" "$reported_sha" "$reported_control_sha" "$reported_mode" "$result" "$reported_scope" "$reported_artifact_locator" "$error_code" >"$result_path"
 	result_written=true
 }
 
@@ -70,15 +76,35 @@ fi
 if ! git check-ref-format "refs/heads/$target_branch" >/dev/null 2>&1; then
 	reject invalid_target_branch
 fi
+reported_branch=$target_branch
 if ! validate_sha "$expected_head_sha"; then
 	reject invalid_expected_head_sha
 fi
+reported_sha=$expected_head_sha
 if ! validate_sha "$control_sha"; then
 	reject invalid_control_sha
 fi
+reported_control_sha=$control_sha
 if ! printf '%s\n' "$artifact_locator" | grep -Eq '^[A-Za-z0-9._-]+$'; then
 	reject invalid_artifact_locator
 fi
+reported_artifact_locator=$artifact_locator
+case "$validation_mode" in
+repository-lint | full-go-test | build-vet)
+	reported_mode=$validation_mode
+	if [ -n "$validation_scope" ]; then
+		reject unexpected_scope
+	fi
+	;;
+go-package-test)
+	reported_mode=$validation_mode
+	if ! printf '%s\n' "$validation_scope" | grep -Eq '^\./[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$'; then
+		reject invalid_package_scope
+	fi
+	reported_scope=$validation_scope
+	;;
+*) reject invalid_validation_mode ;;
+esac
 case "$control_root" in
 /*) ;;
 *) reject invalid_control_root ;;
@@ -122,9 +148,6 @@ export GOTOOLCHAIN="go$go_version"
 export GOCACHE="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/codex-worker-orchestrator-focused-go-$go_version"
 
 run_repository_lint() {
-	if [ -n "$validation_scope" ]; then
-		reject unexpected_scope
-	fi
 	(
 		cd "$control_root"
 		HARNESSLINT_REPO_ROOT="$target_root" HARNESSLINT_CONTROL_ROOT="$control_root" ./harnesslint --controlled-check
@@ -132,34 +155,40 @@ run_repository_lint() {
 }
 
 run_go_package_test() {
-	if ! printf '%s\n' "$validation_scope" | grep -Eq '^\./[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$'; then
-		reject invalid_package_scope
-	fi
 	go -C "$target_root/glm-worker" test "$validation_scope"
 }
 
 run_full_go_test() {
-	if [ -n "$validation_scope" ]; then
-		reject unexpected_scope
-	fi
 	go -C "$target_root/glm-worker" test ./...
 }
 
 run_build_vet() {
-	if [ -n "$validation_scope" ]; then
-		reject unexpected_scope
-	fi
 	go -C "$target_root/glm-worker" vet ./...
 	go -C "$target_root/glm-worker" build ./...
 }
 
 set +e
 case "$validation_mode" in
-repository-lint) run_repository_lint ; validation_status=$? ;;
-go-package-test) run_go_package_test ; validation_status=$? ;;
-full-go-test) run_full_go_test ; validation_status=$? ;;
-build-vet) run_build_vet ; validation_status=$? ;;
-*) set -e; reject invalid_validation_mode ;;
+repository-lint)
+	run_repository_lint
+	validation_status=$?
+	;;
+go-package-test)
+	run_go_package_test
+	validation_status=$?
+	;;
+full-go-test)
+	run_full_go_test
+	validation_status=$?
+	;;
+build-vet)
+	run_build_vet
+	validation_status=$?
+	;;
+*)
+	set -e
+	reject invalid_validation_mode
+	;;
 esac
 set -e
 
