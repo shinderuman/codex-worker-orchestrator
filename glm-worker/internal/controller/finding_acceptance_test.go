@@ -117,6 +117,7 @@ func TestFindingBlockingPlansEpisodeWithoutSwitchingExecutionAuthority(t *testin
 }
 
 func TestTerminalFindingRegistersNewWorkWithoutReopeningExecution(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	before := completeAcceptanceSource(t, fixture)
 	finding, err := fixture.store.ObserveTerminalFinding(
@@ -145,6 +146,7 @@ func TestTerminalFindingRegistersNewWorkWithoutReopeningExecution(t *testing.T) 
 }
 
 func TestTerminalFindingCannotReopenBlockerInterruption(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	before := completeAcceptanceSource(t, fixture)
 	finding, err := fixture.store.ObserveTerminalFinding(
