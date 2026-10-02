@@ -44,7 +44,61 @@ func TestAttemptSealCoverageStatesRemainEvidenceCoverage(t *testing.T) {
 	}
 }
 
-func TestEvidenceLifecycleSeparatesAttemptTaskAndEpisodeTerminality(t *testing.T) {
+func TestCompleteSuspendedSealDoesNotImplyTaskTerminality(t *testing.T) {
+	fixture := newEvidenceLifecycleFixture(t)
+	if fixture.suspended.Coverage != "complete" || fixture.suspended.Disposition != "suspended-for-blocker" {
+		t.Fatalf("suspended seal lifecycle/coverage changed: %#v", fixture.suspended)
+	}
+	if fixture.blocked.SemanticStatus != "blocked" || fixture.blocked.TerminalRecord != nil {
+		t.Fatalf("complete suspended AttemptSeal implied Task terminality: %#v", fixture.blocked)
+	}
+}
+
+func TestAcceptedAttemptRemainsDistinctFromLaterFinalization(t *testing.T) {
+	fixture := newEvidenceLifecycleFixture(t)
+	if fixture.accepted.Disposition != "accepted" || fixture.awaiting.SemanticStatus != "awaiting-publication" {
+		t.Fatalf("accepted attempt was conflated with Task lifecycle: seal=%#v task=%#v", fixture.accepted, fixture.awaiting)
+	}
+	if len(fixture.awaiting.Finalizations) != 0 {
+		t.Fatalf("accepted attempt unexpectedly contained later finalization: %#v", fixture.awaiting.Finalizations)
+	}
+	if fixture.terminal.SemanticStatus != "complete" || fixture.terminal.TerminalRecord == nil || len(fixture.terminal.Finalizations) != 1 {
+		t.Fatalf("later terminal Task evidence is incomplete: %#v", fixture.terminal)
+	}
+}
+
+func TestClosedEpisodeAndLaterFactsDoNotRewriteSuspendedSeal(t *testing.T) {
+	fixture := newEvidenceLifecycleFixture(t)
+	if fixture.closedEpisode.State != "closed" || fixture.closedEpisode.CloseRecord == nil {
+		t.Fatalf("closed Episode evidence is incomplete: %#v", fixture.closedEpisode)
+	}
+	if fixture.closedEpisodeRef.Digest == "" || fixture.suspendedRef.Digest == fixture.acceptedRef.Digest {
+		t.Fatal("lifecycle evidence identities were not kept distinct")
+	}
+	reloaded, err := fixture.store.LoadAttemptSeal(fixture.suspendedRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.AttemptSealID != fixture.suspended.AttemptSealID || reloaded.Disposition != "suspended-for-blocker" {
+		t.Fatal("later Task/Episode/finalization evidence rewrote the immutable suspended AttemptSeal")
+	}
+}
+
+type evidenceLifecycleFixture struct {
+	store            *Store
+	suspendedRef     EvidenceObjectRef
+	suspended        AttemptSeal
+	blocked          TaskIndexRevision
+	acceptedRef      EvidenceObjectRef
+	accepted         AttemptSeal
+	awaiting         TaskIndexRevision
+	terminal         TaskIndexRevision
+	closedEpisodeRef EvidenceObjectRef
+	closedEpisode    EpisodeIndexRevision
+}
+
+func newEvidenceLifecycleFixture(t *testing.T) evidenceLifecycleFixture {
+	t.Helper()
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/B.md", ContractDigest: "task-b"}
 	root := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root"}
@@ -71,12 +125,6 @@ func TestEvidenceLifecycleSeparatesAttemptTaskAndEpisodeTerminality(t *testing.T
 	blockedRef, blockedStored, err := store.StoreTaskIndexRevision(blocked)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if suspendedStored.Coverage != "complete" || suspendedStored.Disposition != "suspended-for-blocker" {
-		t.Fatalf("suspended seal lifecycle/coverage changed: %#v", suspendedStored)
-	}
-	if blockedStored.SemanticStatus != "blocked" || blockedStored.TerminalRecord != nil {
-		t.Fatalf("complete suspended AttemptSeal implied Task terminality: %#v", blockedStored)
 	}
 
 	accepted := validPortableAttemptSeal(t, store, repo)
@@ -106,9 +154,6 @@ func TestEvidenceLifecycleSeparatesAttemptTaskAndEpisodeTerminality(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if acceptedStored.Disposition != "accepted" || awaitingStored.SemanticStatus != "awaiting-publication" || len(awaitingStored.Finalizations) != 0 {
-		t.Fatalf("accepted attempt was conflated with later Task finalization: seal=%#v task=%#v", acceptedStored, awaitingStored)
-	}
 
 	finalizationRef, _, err := store.StoreAttemptFinalization(AttemptFinalizationRecord{
 		SchemaVersion:        evidenceSchemaVersion,
@@ -132,9 +177,6 @@ func TestEvidenceLifecycleSeparatesAttemptTaskAndEpisodeTerminality(t *testing.T
 	terminalRef, terminalStored, err := store.StoreTaskIndexRevision(terminal)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if terminalStored.SemanticStatus != "complete" || terminalStored.TerminalRecord == nil {
-		t.Fatalf("terminal Task evidence is incomplete: %#v", terminalStored)
 	}
 
 	openEpisode, _, err := store.StoreEpisodeIndexRevision(EpisodeIndexRevision{
@@ -181,18 +223,17 @@ func TestEvidenceLifecycleSeparatesAttemptTaskAndEpisodeTerminality(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if closedStored.State != "closed" || closedStored.CloseRecord == nil {
-		t.Fatalf("closed Episode evidence is incomplete: %#v", closedStored)
-	}
-	if closedRef.Digest == "" || suspendedRef.Digest == acceptedRef.Digest {
-		t.Fatal("lifecycle evidence identities were not kept distinct")
-	}
 
-	reloadedSuspended, err := store.LoadAttemptSeal(suspendedRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reloadedSuspended.AttemptSealID != suspendedStored.AttemptSealID || reloadedSuspended.Disposition != "suspended-for-blocker" {
-		t.Fatal("later Task/Episode lifecycle evidence rewrote the immutable suspended AttemptSeal")
+	return evidenceLifecycleFixture{
+		store:            store,
+		suspendedRef:     suspendedRef,
+		suspended:        suspendedStored,
+		blocked:          blockedStored,
+		acceptedRef:      acceptedRef,
+		accepted:         acceptedStored,
+		awaiting:         awaitingStored,
+		terminal:         terminalStored,
+		closedEpisodeRef: closedRef,
+		closedEpisode:    closedStored,
 	}
 }
