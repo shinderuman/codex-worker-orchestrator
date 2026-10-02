@@ -11,6 +11,24 @@ func (s *Store) commitAuthorityTransitionLocked(
 	finalize bool,
 	mutate func(*RepositoryControllerHead) error,
 ) (RepositoryControllerHead, error) {
+	if finalize {
+		return s.commitAuthorityTransitionCoreLocked(record, actual, true, mutate)
+	}
+	committed, _, err := s.commitAuthorityTransitionWithEvidenceLocked(
+		record,
+		actual,
+		EvidencePublicationInput{},
+		mutate,
+	)
+	return committed, err
+}
+
+func (s *Store) commitAuthorityTransitionCoreLocked(
+	record TransitionRecord,
+	actual map[string]string,
+	finalize bool,
+	mutate func(*RepositoryControllerHead) error,
+) (RepositoryControllerHead, error) {
 	head, err := s.LoadHead()
 	if err != nil {
 		return RepositoryControllerHead{}, err
