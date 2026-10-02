@@ -74,6 +74,9 @@ func (s *Store) bootstrapFreshExecution(
 	if err != nil {
 		return Admission{}, err
 	}
+	if err := s.archiveExecutionBaseline(workspace.Root, &attempt); err != nil {
+		return Admission{}, err
+	}
 	if err := s.writeAttempt(attempt); err != nil {
 		return Admission{}, err
 	}
@@ -84,6 +87,7 @@ func (s *Store) bootstrapFreshExecution(
 	next := head
 	next.ControllerGeneration = nextGeneration
 	next.ProjectSnapshotID = authority.ProjectSnapshotID
+	next.IntegrationTip = snapshot.Head
 	next.RootTaskRef = &root
 	next.ExecutionTaskRef = &root
 	next.LiveAttemptID = attempt.AttemptID
@@ -217,6 +221,10 @@ func newExecutionRecords(
 		return AttemptRecord{}, ExecutionLease{}, err
 	}
 	now := time.Now().UTC()
+	trees, err := CaptureExecutionTrees(workspace.Root, snapshot.Head)
+	if err != nil {
+		return AttemptRecord{}, ExecutionLease{}, err
+	}
 	attempt := AttemptRecord{
 		SchemaVersion:             controllerSchemaVersion,
 		AttemptID:                 attemptID,
@@ -224,6 +232,7 @@ func newExecutionRecords(
 		RootTaskRef:               root,
 		ExecutionBaseOID:          snapshot.Head,
 		BaselineSnapshotID:        snapshot.ID,
+		BaselineTrees:             trees,
 		WorkspaceSnapshotID:       snapshot.ID,
 		StartControllerGeneration: generation,
 		AttemptState:              AttemptStateLive,

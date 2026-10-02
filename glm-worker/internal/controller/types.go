@@ -38,6 +38,7 @@ type RepositoryControllerHead struct {
 	ControllerGeneration   uint64             `json:"controller_generation"`
 	Status                 ControllerStatus   `json:"status"`
 	ProjectSnapshotID      string             `json:"project_snapshot_id,omitempty"`
+	IntegrationTip         string             `json:"integration_tip,omitempty"`
 	RootTaskRef            *SemanticTaskRef   `json:"root_task_ref,omitempty"`
 	ExecutionTaskRef       *SemanticTaskRef   `json:"execution_task_ref,omitempty"`
 	ActiveEpisodeID        string             `json:"active_episode_id,omitempty"`
@@ -52,22 +53,24 @@ type RepositoryControllerHead struct {
 }
 
 type AttemptRecord struct {
-	SchemaVersion             int             `json:"schema_version"`
-	AttemptID                 string          `json:"attempt_id"`
-	SemanticTaskRef           SemanticTaskRef `json:"semantic_task_ref"`
-	RootTaskRef               SemanticTaskRef `json:"root_task_ref"`
-	EpisodeID                 string          `json:"episode_id,omitempty"`
-	EpisodeRevision           uint64          `json:"episode_revision,omitempty"`
-	PredecessorAttemptID      string          `json:"predecessor_attempt_id,omitempty"`
-	ResumedFromSealID         string          `json:"resumed_from_seal_id,omitempty"`
-	ExecutionBaseOID          string          `json:"execution_base_oid"`
-	BaselineSnapshotID        string          `json:"baseline_snapshot_id"`
-	WorkspaceSnapshotID       string          `json:"workspace_snapshot_id"`
-	StartControllerGeneration uint64          `json:"start_controller_generation"`
-	PublicationAnchorAtStart  string          `json:"publication_anchor_at_start,omitempty"`
-	AttemptState              AttemptState    `json:"attempt_state"`
-	AttemptSealID             string          `json:"attempt_seal_id,omitempty"`
-	CreatedAt                 time.Time       `json:"created_at"`
+	SchemaVersion             int               `json:"schema_version"`
+	AttemptID                 string            `json:"attempt_id"`
+	SemanticTaskRef           SemanticTaskRef   `json:"semantic_task_ref"`
+	RootTaskRef               SemanticTaskRef   `json:"root_task_ref"`
+	EpisodeID                 string            `json:"episode_id,omitempty"`
+	EpisodeRevision           uint64            `json:"episode_revision,omitempty"`
+	PredecessorAttemptID      string            `json:"predecessor_attempt_id,omitempty"`
+	ResumedFromSealID         string            `json:"resumed_from_seal_id,omitempty"`
+	ExecutionBaseOID          string            `json:"execution_base_oid"`
+	BaselineSnapshotID        string            `json:"baseline_snapshot_id"`
+	BaselineArchive           EvidenceObjectRef `json:"baseline_archive"`
+	BaselineTrees             ExecutionTrees    `json:"baseline_trees"`
+	WorkspaceSnapshotID       string            `json:"workspace_snapshot_id"`
+	StartControllerGeneration uint64            `json:"start_controller_generation"`
+	PublicationAnchorAtStart  string            `json:"publication_anchor_at_start,omitempty"`
+	AttemptState              AttemptState      `json:"attempt_state"`
+	AttemptSealID             string            `json:"attempt_seal_id,omitempty"`
+	CreatedAt                 time.Time         `json:"created_at"`
 }
 
 type ExecutionLease struct {
@@ -117,6 +120,7 @@ type TransitionRecord struct {
 	SchemaVersion          int                 `json:"schema_version"`
 	TransitionID           string              `json:"transition_id"`
 	Kind                   string              `json:"kind"`
+	OperationDigest        string              `json:"operation_digest,omitempty"`
 	SourceGeneration       uint64              `json:"source_generation"`
 	PreparedGeneration     uint64              `json:"prepared_generation"`
 	CommittedGeneration    uint64              `json:"committed_generation"`

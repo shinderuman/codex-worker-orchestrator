@@ -185,6 +185,9 @@ func collectGitTreeClosure(repoPath, rootOID string, objectSet map[string]struct
 		if len(fields) < 3 {
 			return fmt.Errorf("parse git tree archive root %s", rootOID)
 		}
+		if fields[0] == "160000" && fields[1] == "commit" {
+			continue
+		}
 		objectSet[fields[2]] = struct{}{}
 	}
 	return nil

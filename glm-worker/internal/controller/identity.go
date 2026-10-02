@@ -81,12 +81,12 @@ func ResolveWorkspaceIdentity(repoRoot string, repository RepositoryIdentity) (W
 	if err != nil {
 		return WorkspaceIdentity{}, fmt.Errorf("canonicalize workspace git dir: %w", err)
 	}
-	return WorkspaceIdentity{
+	return resolveExecutionWorkspaceNonce(WorkspaceIdentity{
 		ID:           digestStrings("workspace-v1", repository.LineageID, root, gitDir),
 		RepositoryID: repository.LineageID,
 		Root:         root,
 		GitDir:       gitDir,
-	}, nil
+	})
 }
 
 func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {
