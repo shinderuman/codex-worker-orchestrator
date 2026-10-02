@@ -8,9 +8,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
+- `IMPLEMENTATION_TASKS/lossless-suspension-single-lane.md`
 
 ## NEXT（優先順）
+- `IMPLEMENTATION_TASKS/controller-publication-integration.md`
+- `IMPLEMENTATION_TASKS/terminal-task-metadata-transition.md`
+- `IMPLEMENTATION_TASKS/canonical-blocker-cutover.md`
+- `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 - `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
 - `IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
