@@ -38,6 +38,10 @@ type RepositoryControllerHead struct {
 	ControllerGeneration   uint64             `json:"controller_generation"`
 	Status                 ControllerStatus   `json:"status"`
 	ProjectSnapshotID      string             `json:"project_snapshot_id,omitempty"`
+	AcceptedCandidateRef   *EvidenceObjectRef `json:"accepted_candidate_ref,omitempty"`
+	ObservedPrefix         string             `json:"observed_prefix,omitempty"`
+	ObservedRemoteTip      string             `json:"observed_remote_tip,omitempty"`
+	PublicationPolicy      *PublicationPolicy `json:"publication_policy,omitempty"`
 	IntegrationTip         string             `json:"integration_tip,omitempty"`
 	RootTaskRef            *SemanticTaskRef   `json:"root_task_ref,omitempty"`
 	ExecutionTaskRef       *SemanticTaskRef   `json:"execution_task_ref,omitempty"`
@@ -197,12 +201,13 @@ const (
 	ControllerStatusActive     ControllerStatus = "active"
 	ControllerStatusFailClosed ControllerStatus = "failed-closed"
 
-	AttemptStatePrepared            AttemptState = "prepared"
-	AttemptStateLive                AttemptState = "live"
-	AttemptStateQuiescing           AttemptState = "quiescing"
-	AttemptStateSuspendedForBlocker AttemptState = "suspended-for-blocker"
-	AttemptStateAccepted            AttemptState = "accepted"
-	AttemptStateFailedClosed        AttemptState = "failed-closed"
+	AttemptStatePrepared                AttemptState = "prepared"
+	AttemptStateLive                    AttemptState = "live"
+	AttemptStateQuiescing               AttemptState = "quiescing"
+	AttemptStateSuspendedForBlocker     AttemptState = "suspended-for-blocker"
+	AttemptStateSuspendedForAdvancement AttemptState = "suspended-for-advancement"
+	AttemptStateAccepted                AttemptState = "accepted"
+	AttemptStateFailedClosed            AttemptState = "failed-closed"
 
 	TransitionPhasePrepared   TransitionPhase = "prepared"
 	TransitionPhaseApplied    TransitionPhase = "applied"

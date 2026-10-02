@@ -37,13 +37,15 @@ func TestControllerExecutionMachineDispatchPreservesAuthorityOnInvalidInput(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, payload := range []string{`{"action":"materialize","unknown":true}`, `{"action":"cleanup"}{}`, `{"action":"materialize","expected_generation":999}`, `{"action":"recover"}`} {
-		var output bytes.Buffer
-		if err := runEntry([]string{"--authority", "controller-execution"}, load, nil, strings.NewReader(payload), &output, io.Discard); err == nil {
-			t.Fatalf("invalid machine command accepted: %s", payload)
-		}
-		if output.Len() != 0 {
-			t.Fatal("failed machine command emitted success payload")
+	for _, surface := range []string{"controller-execution", "controller-publication"} {
+		for _, payload := range []string{`{"action":"materialize","unknown":true}`, `{"action":"cleanup"}{}`, `{"action":"materialize","expected_generation":999}`, `{"action":"recover"}`} {
+			var output bytes.Buffer
+			if err := runEntry([]string{"--authority", surface}, load, nil, strings.NewReader(payload), &output, io.Discard); err == nil {
+				t.Fatalf("invalid machine command accepted: %s", payload)
+			}
+			if output.Len() != 0 {
+				t.Fatal("failed machine command emitted success payload")
+			}
 		}
 	}
 	after, err := store.LoadHead()

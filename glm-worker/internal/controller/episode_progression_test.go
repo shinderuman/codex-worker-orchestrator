@@ -23,7 +23,7 @@ type episodeProgressionFixture struct {
 func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.T) {
 	fixture := newEpisodeProgressionFixture(t)
 
-	if _, err := fixture.store.SatisfyEpisodeTask(EpisodeSatisfactionInput{
+	if _, err := progressEpisodeGraphForTest(fixture.store, EpisodeSatisfactionInput{
 		EpisodeID:                    fixture.episode.EpisodeID,
 		ExpectedRevision:             fixture.episode.Revision,
 		ExpectedControllerGeneration: fixture.head.ControllerGeneration - 1,
@@ -32,7 +32,7 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 	}); err == nil {
 		t.Fatal("stale controller generation satisfied blocker task")
 	}
-	if _, err := fixture.store.SatisfyEpisodeTask(EpisodeSatisfactionInput{
+	if _, err := progressEpisodeGraphForTest(fixture.store, EpisodeSatisfactionInput{
 		EpisodeID:                    fixture.episode.EpisodeID,
 		ExpectedRevision:             fixture.episode.Revision + 1,
 		ExpectedControllerGeneration: fixture.head.ControllerGeneration,
@@ -49,7 +49,7 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 		ProjectSnapshotID:            fixture.head.ProjectSnapshotID,
 		SatisfiedTaskRef:             fixture.c,
 	}
-	first, err := fixture.store.SatisfyEpisodeTask(input)
+	first, err := progressEpisodeGraphForTest(fixture.store, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 		t.Fatal("C unexpectedly remains in canonical result project snapshot")
 	}
 
-	retry, err := fixture.store.SatisfyEpisodeTask(input)
+	retry, err := progressEpisodeGraphForTest(fixture.store, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 		t.Fatal(err)
 	}
 
-	second, err := fixture.store.SatisfyEpisodeTask(EpisodeSatisfactionInput{
+	second, err := progressEpisodeGraphForTest(fixture.store, EpisodeSatisfactionInput{
 		EpisodeID:                    fixture.episode.EpisodeID,
 		ExpectedRevision:             first.Episode.Revision,
 		ExpectedControllerGeneration: head.ControllerGeneration,
@@ -129,7 +129,7 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 func TestEpisodeSatisfactionRejectsTaskOutsideClosure(t *testing.T) {
 	fixture := newEpisodeProgressionFixture(t)
 	outside := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/outside.md", ContractDigest: digestStrings("outside")}
-	if _, err := fixture.store.SatisfyEpisodeTask(EpisodeSatisfactionInput{
+	if _, err := progressEpisodeGraphForTest(fixture.store, EpisodeSatisfactionInput{
 		EpisodeID:                    fixture.episode.EpisodeID,
 		ExpectedRevision:             fixture.episode.Revision,
 		ExpectedControllerGeneration: fixture.head.ControllerGeneration,
@@ -355,4 +355,29 @@ func taskRefForPath(refs []SemanticTaskRef, path string) SemanticTaskRef {
 		}
 	}
 	return SemanticTaskRef{}
+}
+
+func progressEpisodeGraphForTest(store *Store, input EpisodeSatisfactionInput) (EpisodeScheduleResult, error) {
+	head, previous, project, err := store.validateEpisodeSatisfaction(input)
+	if err != nil {
+		return EpisodeScheduleResult{}, err
+	}
+	if taskPathSatisfied(previous.SatisfiedTaskRefs, input.SatisfiedTaskRef.TaskPath) && previous.ProjectSnapshotID == input.ProjectSnapshotID {
+		return store.scheduleEpisodeAgainstProject(previous)
+	}
+	next, err := progressedEpisodeRevision(previous, head, project, input)
+	if err != nil {
+		return EpisodeScheduleResult{}, err
+	}
+	if err := store.writeEpisodeRevision(next); err != nil {
+		return EpisodeScheduleResult{}, err
+	}
+	return store.scheduleEpisodeAgainstProject(next)
+}
+
+func TestEpisodeSatisfactionCannotForgePublication(t *testing.T) {
+	fixture := newEpisodeProgressionFixture(t)
+	if _, err := fixture.store.SatisfyEpisodeTask(EpisodeSatisfactionInput{EpisodeID: fixture.episode.EpisodeID, ExpectedRevision: fixture.episode.Revision, ExpectedControllerGeneration: fixture.head.ControllerGeneration, ProjectSnapshotID: fixture.head.ProjectSnapshotID, SatisfiedTaskRef: fixture.c}); err == nil {
+		t.Fatal("unpublished Task fulfilled dependency")
+	}
 }

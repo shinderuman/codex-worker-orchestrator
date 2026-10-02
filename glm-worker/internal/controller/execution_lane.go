@@ -78,6 +78,12 @@ func (s *Store) materializationAuthority(input MaterializeExecutionInput) (Repos
 	if err := validateMaterializationHead(head, input); err != nil {
 		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
 	}
+	if input.EpisodeID == "" && head.ActiveEpisodeID == "" {
+		if head.ExecutionTaskRef == nil || input.SuspensionID == "" {
+			return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, fmt.Errorf("ordinary resume requires exact suspended execution")
+		}
+		return head, BlockerEpisodeRevision{}, *head.ExecutionTaskRef, nil
+	}
 	episode, err := s.LoadEpisodeRevision(input.EpisodeID, input.EpisodeRevision)
 	if err != nil {
 		return head, episode, SemanticTaskRef{}, err
@@ -129,7 +135,10 @@ func (s *Store) materializationTrees(head RepositoryControllerHead, task Semanti
 		return ReboundSuspension{}, nil, nil, err
 	}
 	result, err := RebindSuspensionTrees(s.identity.PrimaryRoot, snapshot, head.IntegrationTip)
-	return result, &snapshot, &seal, err
+	if err != nil {
+		return result, &snapshot, &seal, s.preservePublicationConflict(head, &snapshot, err)
+	}
+	return result, &snapshot, &seal, nil
 }
 
 func (s *Store) hasSuspendedExecution(task SemanticTaskRef) bool {
@@ -189,6 +198,9 @@ func laneMaterializationIdentity(workspace WorkspaceIdentity, rebound ReboundSus
 func validateMaterializationHead(head RepositoryControllerHead, input MaterializeExecutionInput) error {
 	if head.Status != ControllerStatusActive || head.ControllerGeneration != input.ExpectedGeneration || head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.RootTaskRef == nil || head.IntegrationTip == "" {
 		return fmt.Errorf("materialization requires exact quiescent controller authority")
+	}
+	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
+		return fmt.Errorf("observed external advancement must be adopted before materialization")
 	}
 	if head.ActiveEpisodeID != input.EpisodeID || head.ActiveEpisodeRevision != input.EpisodeRevision {
 		return fmt.Errorf("materialization episode is stale")

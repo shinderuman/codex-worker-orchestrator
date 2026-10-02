@@ -20,32 +20,39 @@ type controllerExecutionCommand struct {
 	TransitionID       string                        `json:"transition_id,omitempty"`
 }
 
-func runControllerExecution(args []string, loadConfig func() (config.AppConfig, error), stdin io.Reader, stdout io.Writer) (bool, error) {
-	if len(args) != 2 || args[0] != controllerAuthorityFlag || args[1] != "controller-execution" {
+func runControllerOperations(args []string, loadConfig func() (config.AppConfig, error), stdin io.Reader, stdout io.Writer) (bool, error) {
+	if len(args) != 2 || args[0] != controllerAuthorityFlag {
 		return false, nil
 	}
-	cfg, err := loadConfig()
+	var command any
+	switch args[1] {
+	case "controller-execution":
+		command = &controllerExecutionCommand{}
+	case "controller-publication":
+		command = &controllerPublicationCommand{}
+	default:
+		return false, nil
+	}
+	cfg, store, err := decodeControllerCommand(loadConfig, stdin, command)
 	if err != nil {
 		return true, err
 	}
-	store, err := openControllerSemanticStore(cfg)
-	if err != nil {
-		return true, err
-	}
-	decoder := json.NewDecoder(stdin)
-	decoder.DisallowUnknownFields()
-	var command controllerExecutionCommand
-	if err := decoder.Decode(&command); err != nil {
-		return true, err
-	}
-	if err := requireControllerEvidenceEOF(decoder); err != nil {
-		return true, err
-	}
-	result, err := executeControllerExecution(cfg, store, command)
+	result, err := dispatchControllerOperation(cfg, store, command)
 	if err != nil {
 		return true, err
 	}
 	return true, writeValidatedMachineJSON(stdout, result)
+}
+
+func dispatchControllerOperation(cfg config.AppConfig, store *controller.Store, command any) (any, error) {
+	switch value := command.(type) {
+	case *controllerExecutionCommand:
+		return executeControllerExecution(cfg, store, *value)
+	case *controllerPublicationCommand:
+		return executeControllerPublication(cfg, store, *value)
+	default:
+		return nil, fmt.Errorf("unsupported controller command type")
+	}
 }
 
 func executeControllerExecution(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
@@ -88,4 +95,24 @@ func executeControllerSuspend(cfg config.AppConfig, store *controller.Store, com
 		return controller.ExecutionOperationResult{}, err
 	}
 	return store.SuspendExecution(admission, command.EpisodeID, command.EpisodeRevision)
+}
+
+func decodeControllerCommand(loadConfig func() (config.AppConfig, error), stdin io.Reader, command any) (config.AppConfig, *controller.Store, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return cfg, nil, err
+	}
+	store, err := openControllerSemanticStore(cfg)
+	if err != nil {
+		return cfg, nil, err
+	}
+	decoder := json.NewDecoder(stdin)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(command); err != nil {
+		return cfg, nil, err
+	}
+	if err := requireControllerEvidenceEOF(decoder); err != nil {
+		return cfg, nil, err
+	}
+	return cfg, store, nil
 }

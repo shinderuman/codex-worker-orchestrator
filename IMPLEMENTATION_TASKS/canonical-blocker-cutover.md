@@ -95,6 +95,14 @@ Squash Mergeする際はちゃんとコミットコメントを作ること
 CIを発動させるにはブランチの命名規則があるからそれに従うこと
 ````
 
+### 2026-10-02 本配置の対象外化
+
+既存installerによるmerge済みK3と後続K5〜K7の本配置許可確認に対するユーザー回答原文:
+
+````text
+本配置せず実装・PR・CI・Mergeのみ進める
+````
+
 ## Resolved references
 
 - 本Task本文へ保存した要求原文をCodexの実装契約とする。GitHub Issue #1219 は対象解決時の出典であり、可変Issue状態を実装authorityにしない。
@@ -109,6 +117,7 @@ canonical blocker経路への切替と統合検証をcanonical blocker lifecycle
 
 - 通常のmutating lifecycleをK1〜K6へ接続し、旧権限経路と互換shimを撤去する。fault injection、Old-root・606/F11 replay、GC後Bundle再構築、適切なlive Dogfoodで検証する。
 - GLM modelを呼び出さずCodex自身が実装・検証する。
+- 最新Amendmentにより本配置は対象外とし、実装・PR・CI・Mergeだけを行う。
 - web-gpt/**命名規則の専用branchでローカル検証後にPR CIを通し、意味のあるtitle/bodyを明示してSquash Mergeする。
 
 ## Must not
@@ -132,9 +141,12 @@ canonical blocker経路への切替と統合検証をcanonical blocker lifecycle
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/lossless-suspension-single-lane.md`
 - `IMPLEMENTATION_TASKS/controller-publication-integration.md`
 - `IMPLEMENTATION_TASKS/terminal-task-metadata-transition.md`
+
+## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/lossless-suspension-single-lane.md`
 
 ## External feasibility
 
