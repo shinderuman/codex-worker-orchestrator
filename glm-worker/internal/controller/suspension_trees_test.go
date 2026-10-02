@@ -193,6 +193,11 @@ func TestSuspensionGitlinkCapturePreservesCleanAndRejectsDirtySubmodule(t *testi
 	if _, err := CaptureExecutionTrees(repo, base); err == nil {
 		t.Fatal("dirty gitlink accepted")
 	}
+	runControllerGit(t, filepath.Join(repo, "child"), "checkout", "--", "source.txt")
+	runControllerGit(t, filepath.Join(repo, "child"), "-c", "user.name=Test", "-c", "user.email=test@invalid", "commit", "--allow-empty", "-qm", "advanced gitlink")
+	if _, err := CaptureExecutionTrees(repo, base); err == nil {
+		t.Fatal("unstaged gitlink commit accepted without replay support")
+	}
 	runControllerGit(t, repo, "submodule", "deinit", "--force", "child")
 	if _, err := CaptureExecutionTrees(repo, base); err != nil {
 		t.Fatal(err)

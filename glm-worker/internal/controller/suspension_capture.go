@@ -104,6 +104,9 @@ func captureSuspensionGitlink(path string, entry workspaceTreeEntry) (workspaceT
 	if len(dirty) != 0 {
 		return workspaceTreeEntry{}, false, fmt.Errorf("dirty suspension submodule %q", path)
 	}
+	if head != entry.oid {
+		return workspaceTreeEntry{}, false, fmt.Errorf("unstaged submodule commit is not reproducible in a detached lane")
+	}
 	entry.oid = head
 	return entry, true, nil
 }
