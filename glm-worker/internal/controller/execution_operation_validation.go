@@ -18,7 +18,7 @@ func (s *Store) validateExecutionOperation(op ExecutionOperation) error {
 	if op.Transition.OperationDigest == "" || op.Transition.OperationDigest != digest {
 		return fmt.Errorf("execution operation content integrity failed")
 	}
-	if len(op.Transition.Effects) == 0 || (op.Publication == nil && len(op.Transition.Effects) != 1) {
+	if len(op.Transition.Effects) == 0 || (op.Publication == nil && op.Terminal == nil && len(op.Transition.Effects) != 1) {
 		return fmt.Errorf("execution operation effect authority is incomplete")
 	}
 	return s.validateTypedExecutionOperation(op)
@@ -26,6 +26,8 @@ func (s *Store) validateExecutionOperation(op ExecutionOperation) error {
 
 func (s *Store) validateTypedExecutionOperation(op ExecutionOperation) error {
 	switch op.Transition.Kind {
+	case terminalRetire:
+		return s.validateTerminalMetadataOperation(op)
 	case executionSuspend:
 		return s.validateSuspensionOperation(op)
 	case executionMaterialize:
@@ -49,6 +51,8 @@ func executionOperationDigest(op ExecutionOperation) (string, error) {
 
 func (s *Store) verifyCommittedExecutionTarget(op ExecutionOperation, head RepositoryControllerHead) error {
 	switch op.Transition.Kind {
+	case terminalRetire:
+		return s.verifyCommittedTerminalMetadata(op, head)
 	case executionMaterialize:
 		return s.verifyCommittedMaterialization(op, head)
 	case executionSuspend:

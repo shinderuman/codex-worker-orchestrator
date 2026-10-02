@@ -141,10 +141,11 @@ canonical blocker経路への切替と統合検証をcanonical blocker lifecycle
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/controller-publication-integration.md`
 - `IMPLEMENTATION_TASKS/terminal-task-metadata-transition.md`
 
 ## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/controller-publication-integration.md`
 
 - `IMPLEMENTATION_TASKS/lossless-suspension-single-lane.md`
 

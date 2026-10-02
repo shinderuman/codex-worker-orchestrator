@@ -154,15 +154,23 @@ func (s *Store) ObserveTerminalFinding(
 	if err != nil {
 		return FindingRecord{}, err
 	}
-	if attempt.AttemptState != AttemptStateAccepted {
-		return FindingRecord{}, fmt.Errorf("post-completion finding requires an accepted source attempt")
+	terminal, err := s.terminalAttemptProven(attempt)
+	if err != nil {
+		return FindingRecord{}, err
+	}
+	if !terminal {
+		return FindingRecord{}, fmt.Errorf("post-completion finding requires finalized terminal Task proof")
 	}
 	project, err := s.LoadProjectSnapshot(projectSnapshotID)
 	if err != nil {
 		return FindingRecord{}, err
 	}
-	if !projectHasTask(project, attempt.SemanticTaskRef) {
-		return FindingRecord{}, fmt.Errorf("accepted source attempt is not bound to the supplied project snapshot")
+	head, err := s.LoadHead()
+	if err != nil {
+		return FindingRecord{}, err
+	}
+	if project.SnapshotID != head.ProjectSnapshotID {
+		return FindingRecord{}, fmt.Errorf("terminal finding project snapshot is stale")
 	}
 	if err := validateFindingInputShape(input); err != nil {
 		return FindingRecord{}, err
@@ -337,7 +345,10 @@ func (s *Store) findingResolutionAuthority(
 		head.LiveAttemptID == finding.SourceAttemptID &&
 		head.ExecutionTaskRef != nil &&
 		head.ExecutionTaskRef.Equal(finding.SourceSemanticTaskRef)
-	sourceTerminal := sourceAttempt.AttemptState == AttemptStateAccepted
+	sourceTerminal, err := s.terminalAttemptProven(sourceAttempt)
+	if err != nil {
+		return RepositoryControllerHead{}, false, false, err
+	}
 	if !sourceLive && !sourceTerminal {
 		return RepositoryControllerHead{}, false, false,
 			fmt.Errorf("finding source attempt is neither current live execution nor accepted terminal history")

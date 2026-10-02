@@ -117,6 +117,7 @@ func TestFindingBlockingPlansEpisodeWithoutSwitchingExecutionAuthority(t *testin
 }
 
 func TestTerminalFindingRegistersNewWorkWithoutReopeningExecution(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	before := completeAcceptanceSource(t, fixture)
 	finding, err := fixture.store.ObserveTerminalFinding(
@@ -145,6 +146,7 @@ func TestTerminalFindingRegistersNewWorkWithoutReopeningExecution(t *testing.T) 
 }
 
 func TestTerminalFindingCannotReopenBlockerInterruption(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	before := completeAcceptanceSource(t, fixture)
 	finding, err := fixture.store.ObserveTerminalFinding(
@@ -243,20 +245,15 @@ func observeAcceptanceFinding(
 
 func completeAcceptanceSource(t *testing.T, fixture findingAcceptanceFixture) RepositoryControllerHead {
 	t.Helper()
-	attempt := fixture.source.Attempt
-	attempt.AttemptState = AttemptStateAccepted
-	if err := fixture.store.writeAttempt(attempt); err != nil {
+	fixture, policy := configurePublicationTestFixture(t, fixture)
+	source := publicationTestEdit(t, fixture, "completed.txt", "completed result\n")
+	result, candidate := publishTerminalTestSource(t, fixture, policy, source)
+	retired, err := fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: result.Head.ControllerGeneration, ProjectSnapshotID: result.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
+	if err != nil {
 		t.Fatal(err)
 	}
-	head := fixture.source.Head
-	head.ControllerGeneration++
-	head.ExecutionTaskRef = nil
-	head.LiveAttemptID = ""
-	head.LiveLeaseID = ""
-	if err := fixture.store.writeHeadCAS(fixture.source.Head.ControllerGeneration, head); err != nil {
-		t.Fatal(err)
-	}
-	return head
+	return retired.Head
+
 }
 
 func assertFindingHeadUnchanged(t *testing.T, before, after RepositoryControllerHead) {

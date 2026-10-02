@@ -11,18 +11,19 @@ import (
 )
 
 type ExecutionOperation struct {
-	Publication     *PublicationOperation    `json:"publication,omitempty"`
-	Transition      TransitionRecord         `json:"transition"`
-	Source          Admission                `json:"source"`
-	Suspension      *SuspensionSnapshot      `json:"suspension,omitempty"`
-	Episode         *BlockerEpisodeRevision  `json:"episode,omitempty"`
-	Rebound         *ReboundSuspension       `json:"rebound,omitempty"`
-	Workspace       *WorkspaceIdentity       `json:"workspace,omitempty"`
-	Attempt         *AttemptRecord           `json:"attempt,omitempty"`
-	Lease           *ExecutionLease          `json:"lease,omitempty"`
-	SealRef         *EvidenceObjectRef       `json:"seal_ref,omitempty"`
-	CleanupSnapshot *WorkspaceSnapshot       `json:"cleanup_snapshot,omitempty"`
-	Evidence        EvidencePublicationInput `json:"evidence"`
+	Terminal        *TerminalMetadataOperation `json:"terminal,omitempty"`
+	Publication     *PublicationOperation      `json:"publication,omitempty"`
+	Transition      TransitionRecord           `json:"transition"`
+	Source          Admission                  `json:"source"`
+	Suspension      *SuspensionSnapshot        `json:"suspension,omitempty"`
+	Episode         *BlockerEpisodeRevision    `json:"episode,omitempty"`
+	Rebound         *ReboundSuspension         `json:"rebound,omitempty"`
+	Workspace       *WorkspaceIdentity         `json:"workspace,omitempty"`
+	Attempt         *AttemptRecord             `json:"attempt,omitempty"`
+	Lease           *ExecutionLease            `json:"lease,omitempty"`
+	SealRef         *EvidenceObjectRef         `json:"seal_ref,omitempty"`
+	CleanupSnapshot *WorkspaceSnapshot         `json:"cleanup_snapshot,omitempty"`
+	Evidence        EvidencePublicationInput   `json:"evidence"`
 }
 
 type ExecutionOperationResult struct {
@@ -155,6 +156,9 @@ func (s *Store) recoverExecutionOperationLocked(op ExecutionOperation) (Executio
 		if err := s.verifyCommittedExecutionTarget(op, head); err != nil {
 			return ExecutionOperationResult{}, err
 		}
+		if err := s.reconcileFinalizedExecutionPhase(op.Transition); err != nil {
+			return ExecutionOperationResult{}, err
+		}
 		return s.executionOperationResult(op, head)
 	}
 	if head.PendingTransitionID != op.Transition.TransitionID {
@@ -194,6 +198,8 @@ func (s *Store) finalizeCommittedExecution(op ExecutionOperation, head Repositor
 func (s *Store) applyExecutionOperation(op ExecutionOperation) error {
 	var err error
 	switch op.Transition.Kind {
+	case terminalRetire:
+		err = s.applyTerminalMetadata(op)
 	case executionSuspend:
 		err = s.applyExecutionSuspension(op)
 	case executionMaterialize:
@@ -319,6 +325,27 @@ func (s *Store) loadExecutionRecoveryAuthority(op ExecutionOperation) (Repositor
 	if head.Status != ControllerStatusActive {
 		return head, TransitionState{}, fmt.Errorf("execution recovery controller failed closed")
 	}
+	if op.Terminal != nil && head.ControllerGeneration == op.Transition.PreparedGeneration {
+		if err := validateTerminalRecoverySource(op, head); err != nil {
+			return head, TransitionState{}, err
+		}
+	}
 	phase, err := s.loadTransitionState(op.Transition.TransitionID)
 	return head, phase, err
+}
+
+func (s *Store) reconcileFinalizedExecutionPhase(record TransitionRecord) error {
+	phase, err := s.loadTransitionState(record.TransitionID)
+	if err != nil {
+		return err
+	}
+	if phase.Phase == TransitionPhaseFinalized {
+		return nil
+	}
+	if phase.Phase != TransitionPhaseCommitted && phase.Phase != TransitionPhaseFinalizing {
+		return fmt.Errorf("finalized controller disagrees with transition phase")
+	}
+	phase.Phase = TransitionPhaseFinalized
+	phase.UpdatedAt = time.Now().UTC()
+	return s.writeTransitionState(phase)
 }

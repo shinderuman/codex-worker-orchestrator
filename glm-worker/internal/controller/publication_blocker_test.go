@@ -37,6 +37,10 @@ func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	published, err = fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: c.CandidateID, TaskRef: c.TaskRef})
+	if err != nil {
+		t.Fatal(err)
+	}
 	progress, err := fixture.store.LoadEpisodeRevision(episode.EpisodeID, published.Head.ActiveEpisodeRevision)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +63,7 @@ func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head.IntegrationTip != c.CommitOID || remote != c.CommitOID || head.LiveLeaseID != "" {
+	if head.IntegrationTip != published.Head.IntegrationTip || remote != published.Head.IntegrationTip || head.LiveLeaseID != "" {
 		t.Fatal("parent failure rolled back published blocker")
 	}
 	if _, err := os.Lstat(source.Workspace.Root); !os.IsNotExist(err) {

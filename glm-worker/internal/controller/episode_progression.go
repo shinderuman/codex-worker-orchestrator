@@ -112,10 +112,10 @@ func progressedEpisodeRevision(
 	input EpisodeSatisfactionInput,
 ) (BlockerEpisodeRevision, error) {
 	refs := projectRefsByPath(project)
-	satisfied := appendTaskPathUnique(
-		append([]SemanticTaskRef(nil), previous.SatisfiedTaskRefs...),
-		input.SatisfiedTaskRef,
-	)
+	satisfied := append([]SemanticTaskRef(nil), previous.SatisfiedTaskRefs...)
+	if !input.SatisfiedTaskRef.Empty() {
+		satisfied = appendTaskPathUnique(satisfied, input.SatisfiedTaskRef)
+	}
 	next, err := rebindProgressedEpisode(previous, refs, satisfied)
 	if err != nil {
 		return BlockerEpisodeRevision{}, err
