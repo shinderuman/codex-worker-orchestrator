@@ -282,3 +282,7 @@ CIを発動させるにはブランチの命名規則があるからそれに従
 ## Dependencies
 
 none
+
+## External feasibility
+
+status: not-applicable

@@ -135,3 +135,7 @@ canonical blocker経路への切替と統合検証をcanonical blocker lifecycle
 - `IMPLEMENTATION_TASKS/lossless-suspension-single-lane.md`
 - `IMPLEMENTATION_TASKS/controller-publication-integration.md`
 - `IMPLEMENTATION_TASKS/terminal-task-metadata-transition.md`
+
+## External feasibility
+
+status: not-applicable

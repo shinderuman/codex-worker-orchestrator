@@ -134,3 +134,7 @@ CIを発動させるにはブランチの命名規則があるからそれに従
 ## Dependencies
 
 - `IMPLEMENTATION_TASKS/controller-publication-integration.md`
+
+## External feasibility
+
+status: not-applicable

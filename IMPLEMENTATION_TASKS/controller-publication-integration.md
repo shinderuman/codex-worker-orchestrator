@@ -404,3 +404,7 @@ controller所有の公開・統合と外部更新をcanonical blocker lifecycle�
 ## Dependencies
 
 - `IMPLEMENTATION_TASKS/lossless-suspension-single-lane.md`
+
+## External feasibility
+
+status: not-applicable
