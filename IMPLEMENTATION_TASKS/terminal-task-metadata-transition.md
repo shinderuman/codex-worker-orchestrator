@@ -96,6 +96,14 @@ Squash Mergeする際はちゃんとコミットコメントを作ること
 CIを発動させるにはブランチの命名規則があるからそれに従うこと
 ````
 
+### 2026-10-02 本配置の対象外化
+
+既存installerによるmerge済みK3と後続K5〜K7の本配置許可確認に対するユーザー回答原文:
+
+````text
+本配置せず実装・PR・CI・Mergeのみ進める
+````
+
 ## Resolved references
 
 - 本Task本文へ保存した要求原文をCodexの実装契約とする。GitHub Issue #1186 は対象解決時の出典であり、可変Issue状態を実装authorityにしない。
@@ -110,6 +118,7 @@ CIを発動させるにはブランチの命名規則があるからそれに従
 
 - 統合済みterminal TaskだけのTask/schedule/dependency retirementをexact source/result ProjectSnapshotへbindする。blocker retirementではrootを維持し、意味判断を要するschedule変更では停止する。
 - GLM modelを呼び出さずCodex自身が実装・検証する。
+- 最新Amendmentにより本配置は対象外とし、実装・PR・CI・Mergeだけを行う。
 - web-gpt/**命名規則の専用branchでローカル検証後にPR CIを通し、意味のあるtitle/bodyを明示してSquash Mergeする。
 
 ## Must not
