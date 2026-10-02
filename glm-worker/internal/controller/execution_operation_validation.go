@@ -18,9 +18,13 @@ func (s *Store) validateExecutionOperation(op ExecutionOperation) error {
 	if op.Transition.OperationDigest == "" || op.Transition.OperationDigest != digest {
 		return fmt.Errorf("execution operation content integrity failed")
 	}
-	if len(op.Transition.Effects) != 1 {
+	if len(op.Transition.Effects) == 0 || (op.Publication == nil && len(op.Transition.Effects) != 1) {
 		return fmt.Errorf("execution operation effect authority is incomplete")
 	}
+	return s.validateTypedExecutionOperation(op)
+}
+
+func (s *Store) validateTypedExecutionOperation(op ExecutionOperation) error {
 	switch op.Transition.Kind {
 	case executionSuspend:
 		return s.validateSuspensionOperation(op)
@@ -30,6 +34,8 @@ func (s *Store) validateExecutionOperation(op ExecutionOperation) error {
 		return s.validateCleanupOperation(op)
 	case executionGC:
 		return validateSuspensionGCOperation(op)
+	case publicationAccept, publicationPromote, publicationPublish, publicationRebind, publicationAdopt, publicationRevalidate, publicationReenter:
+		return s.validatePublicationOperation(op)
 	default:
 		return fmt.Errorf("unknown execution operation")
 	}
@@ -46,21 +52,15 @@ func (s *Store) verifyCommittedExecutionTarget(op ExecutionOperation, head Repos
 	case executionMaterialize:
 		return s.verifyCommittedMaterialization(op, head)
 	case executionSuspend:
-		actual, err := CaptureWorkspaceSnapshot(op.Source.Workspace.Root)
-		if err != nil {
-			return err
-		}
-		if actual != op.Transition.WorkspaceSnapshotNew || head.LiveLeaseID != "" {
-			return fmt.Errorf("committed suspension state is unexpected")
-		}
-		_, err = s.ProveCleanupDurability(*op.SealRef)
-		return err
+		return s.verifyCommittedSuspension(op, head)
 	case executionCleanup:
 		for _, path := range []string{op.Workspace.Root, op.Workspace.GitDir} {
 			if _, err := os.Lstat(path); !os.IsNotExist(err) {
 				return fmt.Errorf("committed cleanup target was recreated")
 			}
 		}
+	case publicationAccept, publicationPromote, publicationPublish, publicationRebind, publicationAdopt, publicationRevalidate, publicationReenter:
+		return s.verifyCommittedPublication(op, head)
 	case executionGC:
 		_, exists, err := readExecutionRef(s.identity.PrimaryRoot, suspensionRef(op.Suspension.SnapshotID))
 		if err != nil {
@@ -174,4 +174,16 @@ func (s *Store) verifyCommittedMaterialization(op ExecutionOperation, head Repos
 		return fmt.Errorf("committed execution workspace changed unexpectedly")
 	}
 	return nil
+}
+
+func (s *Store) verifyCommittedSuspension(op ExecutionOperation, head RepositoryControllerHead) error {
+	actual, err := CaptureWorkspaceSnapshot(op.Source.Workspace.Root)
+	if err != nil {
+		return err
+	}
+	if actual != op.Transition.WorkspaceSnapshotNew || head.LiveLeaseID != "" {
+		return fmt.Errorf("committed suspension state is unexpected")
+	}
+	_, err = s.ProveCleanupDurability(*op.SealRef)
+	return err
 }

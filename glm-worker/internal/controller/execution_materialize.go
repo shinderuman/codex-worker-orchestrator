@@ -38,6 +38,7 @@ func (s *Store) applyExecutionMaterialization(op ExecutionOperation) error {
 	}
 	actual := map[string]string{op.Transition.Effects[0].Key(): laneMaterializationIdentity(workspace, *op.Rebound)}
 	_, err = s.commitAuthorityTransitionLocked(op.Transition, actual, false, func(next *RepositoryControllerHead) error {
+		next.AcceptedCandidateRef = nil
 		next.LiveAttemptID = attempt.AttemptID
 		next.LiveLeaseID = lease.LeaseID
 		task := attempt.SemanticTaskRef

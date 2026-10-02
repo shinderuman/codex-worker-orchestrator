@@ -20,23 +20,14 @@ func (s *Store) SatisfyEpisodeTask(input EpisodeSatisfactionInput) (EpisodeSched
 	}
 	defer func() { _ = lock.Close() }()
 
-	head, previous, project, err := s.validateEpisodeSatisfaction(input)
+	_, previous, _, err := s.validateEpisodeSatisfaction(input)
 	if err != nil {
 		return EpisodeScheduleResult{}, err
 	}
-	if taskPathSatisfied(previous.SatisfiedTaskRefs, input.SatisfiedTaskRef.TaskPath) &&
-		previous.ProjectSnapshotID == input.ProjectSnapshotID {
-		return s.scheduleEpisodeAgainstProject(previous)
+	if !taskPathSatisfied(previous.SatisfiedTaskRefs, input.SatisfiedTaskRef.TaskPath) {
+		return EpisodeScheduleResult{}, fmt.Errorf("dependency fulfillment requires controller-committed publication")
 	}
-
-	next, err := progressedEpisodeRevision(previous, head, project, input)
-	if err != nil {
-		return EpisodeScheduleResult{}, err
-	}
-	if err := s.writeEpisodeRevision(next); err != nil {
-		return EpisodeScheduleResult{}, err
-	}
-	return s.scheduleEpisodeAgainstProject(next)
+	return s.scheduleEpisodeAgainstProject(previous)
 }
 
 func (s *Store) validateEpisodeSatisfaction(

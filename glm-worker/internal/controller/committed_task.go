@@ -30,6 +30,22 @@ func ResolveCommittedTaskAuthority(repoRoot string) (CommittedTaskAuthority, err
 	if head == "" {
 		return CommittedTaskAuthority{}, fmt.Errorf("committed repository HEAD is empty")
 	}
+	return resolveCommittedTaskAuthority(repoRoot, repository.LineageID, head)
+}
+
+func ResolveCommittedTaskAuthorityAt(repoRoot, revision string) (CommittedTaskAuthority, error) {
+	repository, err := ResolveRepositoryIdentity(repoRoot)
+	if err != nil {
+		return CommittedTaskAuthority{}, err
+	}
+	head, err := gitTrimmed(repoRoot, "rev-parse", "--verify", revision+"^{commit}")
+	if err != nil {
+		return CommittedTaskAuthority{}, err
+	}
+	return resolveCommittedTaskAuthority(repoRoot, repository.LineageID, head)
+}
+
+func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (CommittedTaskAuthority, error) {
 	plan, err := readCommittedObject(repoRoot, head, "IMPLEMENTATION_PLAN.local.md")
 	if err != nil {
 		return CommittedTaskAuthority{}, fmt.Errorf("read committed implementation plan: %w", err)
@@ -56,7 +72,7 @@ func ResolveCommittedTaskAuthority(repoRoot string) (CommittedTaskAuthority, err
 	}
 	snapshot := ProjectSnapshot{
 		SchemaVersion:       controllerSchemaVersion,
-		RepositoryIdentity:  repository.LineageID,
+		RepositoryIdentity:  repositoryID,
 		HeadOID:             head,
 		PlanDigest:          digestBytes(plan),
 		TaskCorpusDigest:    digestTaskRefs(refs),

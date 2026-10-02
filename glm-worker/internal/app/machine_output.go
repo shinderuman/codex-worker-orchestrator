@@ -53,7 +53,7 @@ func runEntry(
 	if handled, err := runControllerEvidence(args, loadConfig, stdin, stdout); handled {
 		return err
 	}
-	if handled, err := runControllerExecution(args, loadConfig, stdin, stdout); handled {
+	if handled, err := runControllerOperations(args, loadConfig, stdin, stdout); handled {
 		return err
 	}
 	if handled, err := runAuthorityBootstrap(args, stdout); handled {

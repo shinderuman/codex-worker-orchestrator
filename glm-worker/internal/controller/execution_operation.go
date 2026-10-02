@@ -11,6 +11,7 @@ import (
 )
 
 type ExecutionOperation struct {
+	Publication     *PublicationOperation    `json:"publication,omitempty"`
 	Transition      TransitionRecord         `json:"transition"`
 	Source          Admission                `json:"source"`
 	Suspension      *SuspensionSnapshot      `json:"suspension,omitempty"`
@@ -29,6 +30,7 @@ type ExecutionOperationResult struct {
 	Head         RepositoryControllerHead `json:"head"`
 	Admission    *Admission               `json:"admission,omitempty"`
 	Suspension   *SuspensionSnapshot      `json:"suspension,omitempty"`
+	CandidateRef *EvidenceObjectRef       `json:"candidate_ref,omitempty"`
 	SealRef      *EvidenceObjectRef       `json:"seal_ref,omitempty"`
 }
 
@@ -142,14 +144,17 @@ func (s *Store) recoverExecutionOperationLocked(op ExecutionOperation) (Executio
 	if err := s.validateExecutionOperation(op); err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	head, err := s.LoadHead()
+	head, phase, err := s.loadExecutionRecoveryAuthority(op)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if head.Status != ControllerStatusActive {
-		return ExecutionOperationResult{}, fmt.Errorf("execution operation controller failed closed")
+	if phase.Phase == TransitionPhaseAborted {
+		return s.finishPublicationAbort(op, head, phase)
 	}
-	if head.PendingTransitionID == "" && head.ControllerGeneration == op.Transition.TargetGeneration {
+	if executionAlreadyFinalized(op, head) {
+		if err := s.verifyCommittedExecutionTarget(op, head); err != nil {
+			return ExecutionOperationResult{}, err
+		}
 		return s.executionOperationResult(op, head)
 	}
 	if head.PendingTransitionID != op.Transition.TransitionID {
@@ -158,7 +163,7 @@ func (s *Store) recoverExecutionOperationLocked(op ExecutionOperation) (Executio
 	if head.ControllerGeneration == op.Transition.CommittedGeneration {
 		return s.finalizeCommittedExecution(op, head)
 	}
-	if head.ControllerGeneration != op.Transition.PreparedGeneration {
+	if !executionPreparedForRecovery(op, head) {
 		return ExecutionOperationResult{}, fmt.Errorf("execution transition generation is unexpected")
 	}
 	err = s.applyExecutionOperation(op)
@@ -197,6 +202,8 @@ func (s *Store) applyExecutionOperation(op ExecutionOperation) error {
 		err = s.applyExecutionCleanup(op)
 	case executionGC:
 		err = s.applySuspensionGC(op)
+	case publicationAccept, publicationPromote, publicationPublish, publicationRebind, publicationAdopt, publicationRevalidate, publicationReenter:
+		err = s.applyPublicationOperation(op)
 	default:
 		err = fmt.Errorf("unsupported execution operation %q", op.Transition.Kind)
 	}
@@ -221,6 +228,9 @@ func (s *Store) reconcileCommittedExecutionPhase(record TransitionRecord) error 
 
 func (s *Store) executionOperationResult(op ExecutionOperation, head RepositoryControllerHead) (ExecutionOperationResult, error) {
 	result := ExecutionOperationResult{TransitionID: op.Transition.TransitionID, Head: head, Suspension: op.Suspension, SealRef: op.SealRef}
+	if op.Publication != nil {
+		result.CandidateRef = op.Publication.After
+	}
 	if op.Transition.Kind != executionMaterialize {
 		return result, nil
 	}
@@ -291,4 +301,24 @@ func executionTransition(head RepositoryControllerHead, kind string) (Transition
 		return TransitionRecord{}, err
 	}
 	return TransitionRecord{SchemaVersion: controllerSchemaVersion, TransitionID: id, Kind: kind, SourceGeneration: head.ControllerGeneration, PreparedGeneration: head.ControllerGeneration + 1, CommittedGeneration: head.ControllerGeneration + 2, TargetGeneration: head.ControllerGeneration + 3, ProjectSnapshotOld: head.ProjectSnapshotID, ProjectSnapshotNew: head.ProjectSnapshotID, SourceEpisodeID: head.ActiveEpisodeID, TargetEpisodeID: head.ActiveEpisodeID, SourceEpisodeRevision: head.ActiveEpisodeRevision, TargetEpisodeRevision: head.ActiveEpisodeRevision, CreatedAt: time.Now().UTC()}, nil
+}
+
+func executionAlreadyFinalized(op ExecutionOperation, head RepositoryControllerHead) bool {
+	return head.PendingTransitionID == "" && head.ControllerGeneration == op.Transition.TargetGeneration
+}
+
+func executionPreparedForRecovery(op ExecutionOperation, head RepositoryControllerHead) bool {
+	return head.Status == ControllerStatusActive && head.ControllerGeneration == op.Transition.PreparedGeneration
+}
+
+func (s *Store) loadExecutionRecoveryAuthority(op ExecutionOperation) (RepositoryControllerHead, TransitionState, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return head, TransitionState{}, err
+	}
+	if head.Status != ControllerStatusActive {
+		return head, TransitionState{}, fmt.Errorf("execution recovery controller failed closed")
+	}
+	phase, err := s.loadTransitionState(op.Transition.TransitionID)
+	return head, phase, err
 }

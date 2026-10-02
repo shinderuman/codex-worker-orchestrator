@@ -23,6 +23,8 @@ type gitObjectArchiveEnvelope struct {
 	Pack          []byte                 `json:"pack"`
 }
 
+const gitCommitObjectType = "commit"
+
 const gitObjectArchiveMediaType = "application/vnd.codex.git-object-archive+json"
 
 func (s *Store) CaptureGitObjectArchive(repoPath, logicalIdentity string, rootOIDs []string) (EvidenceObjectRef, []GitObjectArchiveRoot, error) {
@@ -156,7 +158,7 @@ func resolveGitObjectArchiveRoot(repoPath, rawOID string) (GitObjectArchiveRoot,
 func collectGitRootClosure(repoPath string, root GitObjectArchiveRoot, objectSet map[string]struct{}) error {
 	objectSet[root.OID] = struct{}{}
 	switch root.Type {
-	case "commit", "tag":
+	case gitCommitObjectType, "tag":
 		output, err := runGitBinary(repoPath, nil, "rev-list", "--objects", "--no-object-names", root.OID)
 		if err != nil {
 			return fmt.Errorf("walk git object archive root %s: %w", root.OID, err)
@@ -185,7 +187,7 @@ func collectGitTreeClosure(repoPath, rootOID string, objectSet map[string]struct
 		if len(fields) < 3 {
 			return fmt.Errorf("parse git tree archive root %s", rootOID)
 		}
-		if fields[0] == "160000" && fields[1] == "commit" {
+		if fields[0] == "160000" && fields[1] == gitCommitObjectType {
 			continue
 		}
 		objectSet[fields[2]] = struct{}{}

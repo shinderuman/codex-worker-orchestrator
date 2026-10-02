@@ -11,7 +11,7 @@ func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicat
 	seal := AttemptSeal{
 		SchemaVersion: evidenceSchemaVersion, RepositoryIdentity: s.identity.LineageID,
 		SemanticTaskRef: snapshot.SemanticTaskRef, RootTaskRef: snapshot.RootTaskRef, AttemptID: snapshot.AttemptID,
-		PredecessorAttemptID: op.Source.Attempt.PredecessorAttemptID, EpisodeID: op.Episode.EpisodeID, EpisodeRevision: op.Episode.Revision,
+		PredecessorAttemptID: op.Source.Attempt.PredecessorAttemptID, EpisodeID: snapshot.EpisodeID, EpisodeRevision: snapshot.EpisodeRevision,
 		ControllerGeneration: op.Transition.CommittedGeneration, SealingTransitionID: op.Transition.TransitionID,
 		RevokedLeaseID: op.Source.Lease.LeaseID, WorkspaceID: snapshot.WorkspaceID, ExecutionPurpose: op.Source.Lease.Purpose,
 		SourceProjectSnapshotID: snapshot.SourceProjectSnapshotID, StartedAt: op.Source.Attempt.CreatedAt, SealedAt: op.Transition.CreatedAt,
@@ -20,6 +20,13 @@ func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicat
 		CurrentIndexTree: snapshot.Current.IndexTree, CurrentWorktreeTree: snapshot.Current.WorktreeTree,
 		ParentAuthorityDigest: snapshot.Current.ParentAuthorityDigest, OperationalSnapshotID: snapshot.SnapshotID,
 		GitObjectArchive: archive, GitObjectArchiveRoots: roots, Coverage: "complete",
+	}
+	if op.Transition.Kind == publicationAdopt {
+		seal.Disposition = string(AttemptStateSuspendedForAdvancement)
+	}
+	if op.Episode != nil {
+		seal.EpisodeID = op.Episode.EpisodeID
+		seal.EpisodeRevision = op.Episode.Revision
 	}
 	sealRef, _, err := s.StoreAttemptSeal(seal)
 	if err != nil {
@@ -48,12 +55,18 @@ func (s *Store) appendExecutionSealIndexes(op ExecutionOperation, sealRef Eviden
 	}
 	task.AttemptSeals = append(task.AttemptSeals, sealRef)
 	task.SemanticStatus = "blocked"
+	if op.Transition.Kind == publicationAdopt {
+		task.SemanticStatus = "suspended"
+	}
 	task.ControllerGeneration = op.Transition.CommittedGeneration
 	task.TransitionID = op.Transition.TransitionID
 	task.CreatedAt = op.Transition.CreatedAt
 	taskRef, _, err := s.StoreTaskIndexRevision(task)
 	if err != nil {
 		return EvidencePublicationInput{}, err
+	}
+	if op.Episode == nil {
+		return EvidencePublicationInput{AttemptSealRefs: []EvidenceObjectRef{sealRef}, TaskRevisionRefs: []EvidenceObjectRef{taskRef}}, nil
 	}
 	episode, err := s.suspensionEpisodeIndex(op, previous, sealRef, taskRef)
 	if err != nil {

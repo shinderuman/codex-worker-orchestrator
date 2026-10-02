@@ -220,7 +220,7 @@ func (s *Store) verifySealedCleanupContent(workspace WorkspaceIdentity, seal Att
 	if err != nil {
 		return err
 	}
-	if attempt.AttemptState != AttemptStateSuspendedForBlocker && attempt.AttemptState != AttemptStateAccepted {
+	if !sealedExecutionAttemptState(attempt.AttemptState) {
 		return fmt.Errorf("cleanup attempt is not suspended or accepted")
 	}
 	trees, err := CaptureExecutionTrees(root, seal.ExecutionBaseOID)
@@ -240,4 +240,13 @@ func verifyExecutionLaneAbsent(workspace WorkspaceIdentity) error {
 		}
 	}
 	return nil
+}
+
+func sealedExecutionAttemptState(value AttemptState) bool {
+	switch value {
+	case AttemptStateSuspendedForBlocker, AttemptStateSuspendedForAdvancement, AttemptStateAccepted:
+		return true
+	default:
+		return false
+	}
 }
