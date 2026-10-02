@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+type evidenceLifecycleFixture struct {
+	store            *Store
+	suspendedRef     EvidenceObjectRef
+	suspended        AttemptSeal
+	blocked          TaskIndexRevision
+	acceptedRef      EvidenceObjectRef
+	accepted         AttemptSeal
+	awaiting         TaskIndexRevision
+	terminal         TaskIndexRevision
+	closedEpisodeRef EvidenceObjectRef
+	closedEpisode    EpisodeIndexRevision
+}
+
 func TestAttemptSealCoverageStatesRemainEvidenceCoverage(t *testing.T) {
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	cases := []struct {
@@ -82,19 +95,6 @@ func TestClosedEpisodeAndLaterFactsDoNotRewriteSuspendedSeal(t *testing.T) {
 	if reloaded.AttemptSealID != fixture.suspended.AttemptSealID || reloaded.Disposition != "suspended-for-blocker" {
 		t.Fatal("later Task/Episode/finalization evidence rewrote the immutable suspended AttemptSeal")
 	}
-}
-
-type evidenceLifecycleFixture struct {
-	store            *Store
-	suspendedRef     EvidenceObjectRef
-	suspended        AttemptSeal
-	blocked          TaskIndexRevision
-	acceptedRef      EvidenceObjectRef
-	accepted         AttemptSeal
-	awaiting         TaskIndexRevision
-	terminal         TaskIndexRevision
-	closedEpisodeRef EvidenceObjectRef
-	closedEpisode    EpisodeIndexRevision
 }
 
 func newEvidenceLifecycleFixture(t *testing.T) evidenceLifecycleFixture {
