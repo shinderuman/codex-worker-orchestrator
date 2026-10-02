@@ -77,7 +77,7 @@ func (s *Store) planPublishedEpisode(op *ExecutionOperation, head RepositoryCont
 		return fmt.Errorf("publication result project authority is missing")
 	}
 	project := *op.Publication.Project
-	next, err := progressedEpisodeRevision(previous, head, project, EpisodeSatisfactionInput{SatisfiedTaskRef: c.TaskRef})
+	next, err := progressedEpisodeRevision(previous, head, project, EpisodeSatisfactionInput{})
 	if err != nil {
 		return err
 	}

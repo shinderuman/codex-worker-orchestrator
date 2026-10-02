@@ -71,7 +71,11 @@ func TestCandidateAcceptanceRejectsMissingOrStaleEvidenceBeforeLeaseRevocation(t
 
 func newPublicationTestFixture(t *testing.T) (findingAcceptanceFixture, PublicationPolicy) {
 	t.Helper()
-	fixture := newFindingAcceptanceFixture(t)
+	return configurePublicationTestFixture(t, newFindingAcceptanceFixture(t))
+}
+
+func configurePublicationTestFixture(t *testing.T, fixture findingAcceptanceFixture) (findingAcceptanceFixture, PublicationPolicy) {
+	t.Helper()
 	remote := filepath.Join(t.TempDir(), "remote.git")
 	runControllerGit(t, fixture.source.Workspace.Root, "init", "--bare", remote)
 	runControllerGit(t, fixture.source.Workspace.Root, "remote", "add", "origin", remote)

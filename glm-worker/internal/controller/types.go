@@ -33,6 +33,8 @@ type ProjectSnapshot struct {
 }
 
 type RepositoryControllerHead struct {
+	PendingTerminalTaskRef *SemanticTaskRef   `json:"pending_terminal_task_ref,omitempty"`
+	MetadataLineageRef     *EvidenceObjectRef `json:"metadata_lineage_ref,omitempty"`
 	SchemaVersion          int                `json:"schema_version"`
 	RepositoryIdentity     string             `json:"repository_identity"`
 	ControllerGeneration   uint64             `json:"controller_generation"`

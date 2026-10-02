@@ -51,7 +51,7 @@ func (s *Store) currentEpisodeSuspensions(head RepositoryControllerHead, episode
 		if err := readJSON(filepath.Join(s.dir, "suspensions", entry.Name()), &snapshot); err != nil {
 			return nil, err
 		}
-		if !neededEpisodeSuspension(snapshot, head, episode) {
+		if !s.neededEpisodeSuspension(snapshot, head, episode) {
 			continue
 		}
 		old := latest[snapshot.SemanticTaskRef.TaskPath]
@@ -188,12 +188,17 @@ func verifyCommittedBaseAdvancement(op ExecutionOperation, head RepositoryContro
 	return nil
 }
 
-func neededEpisodeSuspension(snapshot SuspensionSnapshot, head RepositoryControllerHead, episode BlockerEpisodeRevision) bool {
-	if head.RootTaskRef == nil || !snapshot.RootTaskRef.Equal(*head.RootTaskRef) {
+func (s *Store) neededEpisodeSuspension(snapshot SuspensionSnapshot, head RepositoryControllerHead, episode BlockerEpisodeRevision) bool {
+	if head.RootTaskRef == nil || !s.metadataTaskBindingProven(snapshot.RootTaskRef, *head.RootTaskRef) {
 		return false
 	}
-	if snapshot.SemanticTaskRef.Equal(*head.RootTaskRef) {
+	if s.metadataTaskBindingProven(snapshot.SemanticTaskRef, *head.RootTaskRef) {
 		return true
 	}
-	return taskRefIn(episode.AdmittedClosure, snapshot.SemanticTaskRef) && !taskPathSatisfied(episode.SatisfiedTaskRefs, snapshot.SemanticTaskRef.TaskPath)
+	for _, ref := range episode.AdmittedClosure {
+		if s.metadataTaskBindingProven(snapshot.SemanticTaskRef, ref) {
+			return !taskPathSatisfied(episode.SatisfiedTaskRefs, snapshot.SemanticTaskRef.TaskPath)
+		}
+	}
+	return false
 }

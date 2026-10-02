@@ -524,6 +524,13 @@ func dependsTransitively(revision BlockerEpisodeRevision, blocked, dependency Se
 }
 
 func (s *Store) ScheduleEpisode(episodeID string, revision uint64) (EpisodeScheduleResult, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return EpisodeScheduleResult{}, err
+	}
+	if err := s.ensureTerminalMetadataFinalized(head); err != nil {
+		return EpisodeScheduleResult{}, err
+	}
 	record, err := s.LoadEpisodeRevision(episodeID, revision)
 	if err != nil {
 		return EpisodeScheduleResult{}, err

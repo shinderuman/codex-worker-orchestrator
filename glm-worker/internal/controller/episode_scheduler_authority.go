@@ -9,6 +9,13 @@ type episodeScheduleAuthority struct {
 }
 
 func (s *Store) scheduleEpisodeAgainstProject(revision BlockerEpisodeRevision) (EpisodeScheduleResult, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return EpisodeScheduleResult{}, err
+	}
+	if err := s.ensureTerminalMetadataFinalized(head); err != nil {
+		return EpisodeScheduleResult{}, err
+	}
 	project, err := s.LoadProjectSnapshot(revision.ProjectSnapshotID)
 	if err != nil {
 		return EpisodeScheduleResult{}, err

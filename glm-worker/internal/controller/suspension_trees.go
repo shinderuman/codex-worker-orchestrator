@@ -153,7 +153,7 @@ func validateSuspensionPath(path string) error {
 }
 
 func parentManagedPath(path string) bool {
-	return path == "IMPLEMENTATION_RULES.md" || path == "IMPLEMENTATION_PLAN.local.md" || path == "IMPLEMENTATION_HISTORY.md" || path == "IMPLEMENTATION_TASKS" || strings.HasPrefix(path, "IMPLEMENTATION_TASKS/")
+	return path == "IMPLEMENTATION_RULES.md" || path == implementationPlanPath || path == "IMPLEMENTATION_HISTORY.md" || path == "IMPLEMENTATION_TASKS" || strings.HasPrefix(path, "IMPLEMENTATION_TASKS/")
 }
 
 func newSuspensionIndex(repo, tree string) (string, error) {
@@ -203,7 +203,7 @@ func normalizeParentPaths(repo, index, base string) (string, error) {
 	if _, err := suspensionGit(repo, index, remove.Bytes(), "update-index", "--force-remove", "-z", "--stdin"); err != nil {
 		return "", err
 	}
-	data, err := runGitBinary(repo, nil, "ls-tree", "-r", "-z", base, "--", "IMPLEMENTATION_RULES.md", "IMPLEMENTATION_PLAN.local.md", "IMPLEMENTATION_HISTORY.md", "IMPLEMENTATION_TASKS")
+	data, err := runGitBinary(repo, nil, "ls-tree", "-r", "-z", base, "--", "IMPLEMENTATION_RULES.md", implementationPlanPath, "IMPLEMENTATION_HISTORY.md", "IMPLEMENTATION_TASKS")
 	if err != nil {
 		return "", err
 	}

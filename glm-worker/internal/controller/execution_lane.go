@@ -75,7 +75,7 @@ func (s *Store) materializationAuthority(input MaterializeExecutionInput) (Repos
 	if err != nil {
 		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
 	}
-	if err := validateMaterializationHead(head, input); err != nil {
+	if err := s.validateMaterializationAuthorityHead(head, input); err != nil {
 		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
 	}
 	if input.EpisodeID == "" && head.ActiveEpisodeID == "" {
@@ -124,7 +124,7 @@ func (s *Store) materializationTrees(head RepositoryControllerHead, task Semanti
 	if err != nil {
 		return ReboundSuspension{}, nil, nil, err
 	}
-	if !snapshot.SemanticTaskRef.Equal(task) || !snapshot.RootTaskRef.Equal(*head.RootTaskRef) {
+	if !s.metadataTaskBindingProven(snapshot.SemanticTaskRef, task) || !s.metadataTaskBindingProven(snapshot.RootTaskRef, *head.RootTaskRef) {
 		return ReboundSuspension{}, nil, nil, fmt.Errorf("suspension does not belong to scheduled execution")
 	}
 	seal, err := s.suspensionSealRef(snapshot)
@@ -196,7 +196,7 @@ func laneMaterializationIdentity(workspace WorkspaceIdentity, rebound ReboundSus
 }
 
 func validateMaterializationHead(head RepositoryControllerHead, input MaterializeExecutionInput) error {
-	if head.Status != ControllerStatusActive || head.ControllerGeneration != input.ExpectedGeneration || head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.RootTaskRef == nil || head.IntegrationTip == "" {
+	if head.Status != ControllerStatusActive || head.ControllerGeneration != input.ExpectedGeneration || head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.PendingTerminalTaskRef != nil || head.RootTaskRef == nil || head.IntegrationTip == "" {
 		return fmt.Errorf("materialization requires exact quiescent controller authority")
 	}
 	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
@@ -206,4 +206,11 @@ func validateMaterializationHead(head RepositoryControllerHead, input Materializ
 		return fmt.Errorf("materialization episode is stale")
 	}
 	return nil
+}
+
+func (s *Store) validateMaterializationAuthorityHead(head RepositoryControllerHead, input MaterializeExecutionInput) error {
+	if err := s.ensureTerminalMetadataFinalized(head); err != nil {
+		return err
+	}
+	return validateMaterializationHead(head, input)
 }

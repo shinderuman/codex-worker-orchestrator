@@ -81,6 +81,12 @@ func (s *Store) commitPublicationOperation(op ExecutionOperation, c AcceptedCand
 	}
 	_, _, err = s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, evidence, func(next *RepositoryControllerHead) error {
 		next.AcceptedCandidateRef = op.Publication.After
+		if op.Transition.Kind == publicationPublish {
+			next.PendingTerminalTaskRef = &c.TaskRef
+		}
+		if op.Transition.Kind == publicationReenter {
+			next.PendingTerminalTaskRef = nil
+		}
 		next.PublicationPolicy = &op.Publication.Policy
 		next.LiveAttemptID = ""
 		next.LiveLeaseID = ""
