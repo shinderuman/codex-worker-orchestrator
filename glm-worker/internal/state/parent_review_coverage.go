@@ -95,59 +95,16 @@ func (s *StateStore) AccumulateParentReviewEvidenceCoverage(
 	if reviewID == "" || ownerCallID == "" || lease < 0 {
 		return false, fmt.Errorf("parent review evidence coverage identity is incomplete")
 	}
-	state, err := s.loadParentReviewState()
+	state, current, err := s.currentParentReviewCoverageState(reviewID, lease)
 	if err != nil {
 		return false, err
 	}
-	if state.Open == nil || state.Open.PacketStatus != string(packet.StatusNeedsSolReview) || state.Review == nil || state.Review.ID != reviewID {
-		return false, fmt.Errorf("parent review evidence coverage no longer matches the open review")
-	}
-	currentLease, err := s.ParentEvidenceLeaseEpoch()
-	if err != nil {
+	coverage := reusableParentReviewCoverage(state.Review.Coverage, reviewID, lease, current)
+	if err := mergeParentReviewCoverageClaims(state.Review.Targets, coverage, claims, ownerCallID); err != nil {
 		return false, err
 	}
-	if currentLease != lease {
-		return false, fmt.Errorf("parent review evidence lease changed; request fresh review evidence")
-	}
-	current, err := s.captureCurrentParentReviewSnapshot()
-	if err != nil {
-		return false, err
-	}
-	if !sameParentReviewSnapshot(current, state.Review.Snapshot) {
-		return false, fmt.Errorf("parent review evidence snapshot changed; request fresh review evidence")
-	}
-
-	coverage := state.Review.Coverage
-	if coverage == nil || coverage.ReviewID != reviewID || coverage.Lease != lease || !sameParentReviewSnapshot(coverage.Snapshot, current) {
-		coverage = &ParentReviewEvidenceCoverage{ReviewID: reviewID, Lease: lease, Snapshot: current}
-	}
-	byTarget := make(map[string]ParentReviewTargetCoverageClaim, len(coverage.Claims)+len(claims))
-	for _, covered := range coverage.Claims {
-		byTarget[covered.Target] = covered
-	}
-	allowed := parentReviewTargetSet(state.Review.Targets)
-	for _, claim := range claims {
-		if _, ok := allowed[claim.Target]; !ok || !validParentReviewEvidenceClaim(claim.Evidence) {
-			return false, fmt.Errorf("parent review evidence coverage claim is invalid for target %q", claim.Target)
-		}
-		claim.OwnerCallID = ownerCallID
-		byTarget[claim.Target] = claim
-	}
-	coverage.Claims = orderedCoverageClaims(state.Review.Targets, byTarget)
 	state.Review.Coverage = coverage
-
-	complete := parentReviewCoverageComplete(state.Review)
-	if complete {
-		proofClaims := make([]ParentReviewEvidenceClaim, 0, len(coverage.Claims))
-		for _, covered := range coverage.Claims {
-			proofClaims = append(proofClaims, covered.Evidence)
-		}
-		state.Review.Proof = &ParentReviewEvidenceProof{
-			ReviewID: reviewID, OwnerCallID: ownerCallID, Snapshot: current, Claims: proofClaims,
-		}
-	} else {
-		state.Review.Proof = nil
-	}
+	complete := materializeParentReviewCoverageProof(state.Review, reviewID, ownerCallID, current)
 	if len(coverage.Claims) == 0 {
 		state.Review.Coverage = nil
 	}
@@ -155,6 +112,86 @@ func (s *StateStore) AccumulateParentReviewEvidenceCoverage(
 		return false, err
 	}
 	return complete, nil
+}
+
+func (s *StateStore) currentParentReviewCoverageState(reviewID string, lease int64) (ParentReviewState, SnapshotDigest, error) {
+	state, err := s.loadParentReviewState()
+	if err != nil {
+		return ParentReviewState{}, SnapshotDigest{}, err
+	}
+	if state.Open == nil || state.Open.PacketStatus != string(packet.StatusNeedsSolReview) || state.Review == nil || state.Review.ID != reviewID {
+		return ParentReviewState{}, SnapshotDigest{}, fmt.Errorf("parent review evidence coverage no longer matches the open review")
+	}
+	currentLease, err := s.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return ParentReviewState{}, SnapshotDigest{}, err
+	}
+	if currentLease != lease {
+		return ParentReviewState{}, SnapshotDigest{}, fmt.Errorf("parent review evidence lease changed; request fresh review evidence")
+	}
+	current, err := s.captureCurrentParentReviewSnapshot()
+	if err != nil {
+		return ParentReviewState{}, SnapshotDigest{}, err
+	}
+	if !sameParentReviewSnapshot(current, state.Review.Snapshot) {
+		return ParentReviewState{}, SnapshotDigest{}, fmt.Errorf("parent review evidence snapshot changed; request fresh review evidence")
+	}
+	return state, current, nil
+}
+
+func reusableParentReviewCoverage(
+	coverage *ParentReviewEvidenceCoverage,
+	reviewID string,
+	lease int64,
+	current SnapshotDigest,
+) *ParentReviewEvidenceCoverage {
+	if coverage == nil || coverage.ReviewID != reviewID || coverage.Lease != lease || !sameParentReviewSnapshot(coverage.Snapshot, current) {
+		return &ParentReviewEvidenceCoverage{ReviewID: reviewID, Lease: lease, Snapshot: current}
+	}
+	return coverage
+}
+
+func mergeParentReviewCoverageClaims(
+	targets []string,
+	coverage *ParentReviewEvidenceCoverage,
+	claims []ParentReviewTargetCoverageClaim,
+	ownerCallID string,
+) error {
+	byTarget := make(map[string]ParentReviewTargetCoverageClaim, len(coverage.Claims)+len(claims))
+	for _, covered := range coverage.Claims {
+		byTarget[covered.Target] = covered
+	}
+	allowed := parentReviewTargetSet(targets)
+	for _, claim := range claims {
+		if _, ok := allowed[claim.Target]; !ok || !validParentReviewEvidenceClaim(claim.Evidence) {
+			return fmt.Errorf("parent review evidence coverage claim is invalid for target %q", claim.Target)
+		}
+		claim.OwnerCallID = ownerCallID
+		byTarget[claim.Target] = claim
+	}
+	coverage.Claims = orderedCoverageClaims(targets, byTarget)
+	return nil
+}
+
+func materializeParentReviewCoverageProof(
+	binding *ParentReviewBinding,
+	reviewID string,
+	ownerCallID string,
+	current SnapshotDigest,
+) bool {
+	complete := parentReviewCoverageComplete(binding)
+	if !complete {
+		binding.Proof = nil
+		return false
+	}
+	proofClaims := make([]ParentReviewEvidenceClaim, 0, len(binding.Coverage.Claims))
+	for _, covered := range binding.Coverage.Claims {
+		proofClaims = append(proofClaims, covered.Evidence)
+	}
+	binding.Proof = &ParentReviewEvidenceProof{
+		ReviewID: reviewID, OwnerCallID: ownerCallID, Snapshot: current, Claims: proofClaims,
+	}
+	return true
 }
 
 func (s *StateStore) parentReviewCoverageLeaseCurrent(binding *ParentReviewBinding) (bool, error) {
