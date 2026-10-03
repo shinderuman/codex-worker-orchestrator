@@ -23,14 +23,25 @@ type FixEvidence struct {
 	Output *FixInputSnapshot `json:"output,omitempty"`
 }
 
-type Report struct {
-	Status      string       `json:"status"`
-	Fixed       int          `json:"fixed"`
-	Violations  []Violation  `json:"violations"`
-	FixEvidence *FixEvidence `json:"fix_evidence,omitempty"`
+type DeterministicFixConvergence struct {
+	State           string `json:"state"`
+	Iterations      int    `json:"iterations"`
+	MaxIterations   int    `json:"max_iterations"`
+	ChangesProduced bool   `json:"changes_produced"`
 }
 
-const FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
+type Report struct {
+	Status                   string                       `json:"status"`
+	Fixed                    int                          `json:"fixed"`
+	Violations               []Violation                  `json:"violations"`
+	FixEvidence              *FixEvidence                 `json:"fix_evidence,omitempty"`
+	DeterministicConvergence *DeterministicFixConvergence `json:"deterministic_convergence,omitempty"`
+}
+
+const (
+	FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
+	reportStatusFail                 = "fail"
+)
 
 func makeReport(fixed int, violations []Violation) Report {
 	sort.Slice(violations, func(i, j int) bool {
@@ -47,11 +58,20 @@ func makeReport(fixed int, violations []Violation) Report {
 	})
 	status := "pass"
 	if len(violations) > 0 {
-		status = "fail"
+		status = reportStatusFail
 	}
 	return Report{Status: status, Fixed: fixed, Violations: violations}
 }
 
 func IsViolation(report Report) bool {
-	return report.Status == "fail" && len(report.Violations) > 0
+	return report.Status == reportStatusFail && len(report.Violations) > 0
+}
+
+func HasFixableViolation(report Report) bool {
+	for _, violation := range report.Violations {
+		if violation.Fixable {
+			return true
+		}
+	}
+	return false
 }

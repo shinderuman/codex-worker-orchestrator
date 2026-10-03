@@ -43,14 +43,37 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 	report, err := runModeReport(root, mode)
 	if err != nil {
+		if mode == modeDeterministicFix {
+			if failureReport, matched := harnesslint.DeterministicAutofixFailureReport(err); matched {
+				write(stdout, failureReport)
+				return deterministicAutofixFailureExit(failureReport)
+			}
+		}
 		write(stderr, errorEnvelope{Error: errorBody{Kind: "internal", Message: err.Error()}})
 		return 1
 	}
 	write(stdout, report)
 	if harnesslint.IsViolation(report) {
+		if mode == modeControlledCheck && harnesslint.HasFixableViolation(report) {
+			return 3
+		}
 		return 1
 	}
 	return 0
+}
+
+func deterministicAutofixFailureExit(report harnesslint.Report) int {
+	if report.DeterministicConvergence == nil {
+		return 1
+	}
+	switch report.DeterministicConvergence.State {
+	case harnesslint.DeterministicFixCycle:
+		return 3
+	case harnesslint.DeterministicFixBoundExhausted:
+		return 4
+	default:
+		return 1
+	}
 }
 
 func runModeReport(root string, mode runMode) (harnesslint.Report, error) {

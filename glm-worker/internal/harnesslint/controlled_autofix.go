@@ -2,6 +2,7 @@ package harnesslint
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -12,6 +13,41 @@ type controlledCommandRunner struct {
 	base        commandRunner
 	targetRoot  string
 	controlRoot string
+}
+
+type deterministicAutofixFailure struct {
+	evidence DeterministicFixConvergence
+}
+
+type deterministicAutofixState struct {
+	initial         map[string][32]byte
+	current         map[string][32]byte
+	seen            map[string]struct{}
+	changesProduced bool
+}
+
+const (
+	deterministicAutofixMaxIterations = 8
+	DeterministicFixConverged         = "converged"
+	DeterministicFixCycle             = "cycle"
+	DeterministicFixBoundExhausted    = "iteration-bound-exhausted"
+)
+
+func (failure *deterministicAutofixFailure) Error() string {
+	return fmt.Sprintf("deterministic autofix did not converge: state=%s iterations=%d max_iterations=%d",
+		failure.evidence.State, failure.evidence.Iterations, failure.evidence.MaxIterations)
+}
+
+func DeterministicAutofixFailureReport(err error) (Report, bool) {
+	var failure *deterministicAutofixFailure
+	if !errors.As(err, &failure) {
+		return Report{}, false
+	}
+	report := makeReport(0, nil)
+	report.Status = reportStatusFail
+	evidence := failure.evidence
+	report.DeterministicConvergence = &evidence
+	return report, true
 }
 
 func RunControlled(root, controlRoot string) (Report, error) {
@@ -40,29 +76,117 @@ func runDeterministicAutofix(root, controlRoot string, base commandRunner) (Repo
 	if err != nil {
 		return Report{}, err
 	}
-	before, err := snapshots(root, paths)
+	initial, err := snapshots(root, paths)
 	if err != nil {
 		return Report{}, err
 	}
-	if err := fixGoFormatting(root, paths); err != nil {
+	state, err := newDeterministicAutofixState(initial)
+	if err != nil {
 		return Report{}, err
 	}
 	runner := controlledCommandRunner{base: base, targetRoot: root, controlRoot: controlRoot}
+
+	for iteration := 1; iteration <= deterministicAutofixMaxIterations; iteration++ {
+		nextPaths, next, iterationErr := deterministicAutofixIteration(root, paths, runner)
+		if iterationErr != nil {
+			return Report{}, iterationErr
+		}
+		paths = nextPaths
+		if changedSnapshotCount(state.current, next) == 0 {
+			return state.convergedReport(next, iteration), nil
+		}
+		if err := state.recordChangedPostimage(next, iteration); err != nil {
+			return Report{}, err
+		}
+	}
+	return Report{}, newDeterministicAutofixFailure(
+		DeterministicFixBoundExhausted,
+		deterministicAutofixMaxIterations,
+		state.changesProduced,
+	)
+}
+
+func deterministicAutofixIteration(
+	root string,
+	paths []string,
+	runner commandRunner,
+) ([]string, map[string][32]byte, error) {
+	if err := runDeterministicAutofixPass(root, paths, runner); err != nil {
+		return nil, nil, err
+	}
+	nextPaths, err := repositoryPaths(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	next, err := snapshots(root, nextPaths)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nextPaths, next, nil
+}
+
+func newDeterministicAutofixState(initial map[string][32]byte) (*deterministicAutofixState, error) {
+	key, err := deterministicSnapshotKey(initial)
+	if err != nil {
+		return nil, err
+	}
+	return &deterministicAutofixState{
+		initial: initial,
+		current: initial,
+		seen:    map[string]struct{}{key: {}},
+	}, nil
+}
+
+func (state *deterministicAutofixState) recordChangedPostimage(next map[string][32]byte, iteration int) error {
+	state.changesProduced = true
+	key, err := deterministicSnapshotKey(next)
+	if err != nil {
+		return err
+	}
+	if _, repeated := state.seen[key]; repeated {
+		return newDeterministicAutofixFailure(DeterministicFixCycle, iteration, state.changesProduced)
+	}
+	state.seen[key] = struct{}{}
+	state.current = next
+	return nil
+}
+
+func (state *deterministicAutofixState) convergedReport(next map[string][32]byte, iteration int) Report {
+	report := makeReport(changedSnapshotCount(state.initial, next), nil)
+	report.DeterministicConvergence = &DeterministicFixConvergence{
+		State:           DeterministicFixConverged,
+		Iterations:      iteration,
+		MaxIterations:   deterministicAutofixMaxIterations,
+		ChangesProduced: state.changesProduced,
+	}
+	return report
+}
+
+func runDeterministicAutofixPass(root string, paths []string, runner commandRunner) error {
+	if err := fixGoFormatting(root, paths); err != nil {
+		return err
+	}
 	if _, err := runner.run(root, filepath.Join(root, "commentlint"), "--fix"); err != nil {
-		return Report{}, err
+		return err
 	}
-	if err := runDeterministicShellFixes(root, paths, runner); err != nil {
-		return Report{}, err
-	}
-	paths, err = repositoryPaths(root)
+	return runDeterministicShellFixes(root, paths, runner)
+}
+
+func deterministicSnapshotKey(snapshot map[string][32]byte) (string, error) {
+	data, err := json.Marshal(snapshot)
 	if err != nil {
-		return Report{}, err
+		return "", err
 	}
-	after, err := snapshots(root, paths)
-	if err != nil {
-		return Report{}, err
-	}
-	return makeReport(changedSnapshotCount(before, after), nil), nil
+	return string(data), nil
+}
+
+func newDeterministicAutofixFailure(state string, iterations int, changesProduced bool) error {
+	return &deterministicAutofixFailure{evidence: DeterministicFixConvergence{
+		State:           state,
+		Iterations:      iterations,
+		MaxIterations:   deterministicAutofixMaxIterations,
+		ChangesProduced: changesProduced,
+	}}
 }
 
 func runDeterministicShellFixes(root string, paths []string, runner commandRunner) error {

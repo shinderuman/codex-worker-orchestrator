@@ -19,11 +19,13 @@ resulting_head=''
 validation=not_run
 publication=not_started
 error_code=''
+deterministic_report=null
+controlled_report=null
 result_written=false
 
 write_result() {
-	printf '{"before_sha":"%s","changed":%s,"resulting_head":"%s","validation":"%s","publication":"%s","error":"%s"}\n' \
-		"$before_sha" "$changed" "$resulting_head" "$validation" "$publication" "$error_code" >"$result_path"
+	printf '{"before_sha":"%s","changed":%s,"resulting_head":"%s","validation":"%s","publication":"%s","error":"%s","deterministic_report":%s,"controlled_report":%s}\n' \
+		"$before_sha" "$changed" "$resulting_head" "$validation" "$publication" "$error_code" "$deterministic_report" "$controlled_report" >"$result_path"
 	result_written=true
 }
 
@@ -111,6 +113,15 @@ require_no_untracked() {
 	fi
 }
 
+json_output_or_null() {
+	output_path=$1
+	if [ -s "$output_path" ]; then
+		cat "$output_path"
+	else
+		printf '%s' null
+	fi
+}
+
 prepare_autofix() {
 	case "$control_root" in
 	/*) ;;
@@ -120,23 +131,48 @@ prepare_autofix() {
 		fail_closed invalid_control_root
 	fi
 	validate_target
+	fix_report_path=${result_path}.deterministic-report
+	fix_error_path=${result_path}.deterministic-error
 	set +e
-	run_controlled_harnesslint --deterministic-fix
+	run_controlled_harnesslint --deterministic-fix >"$fix_report_path" 2>"$fix_error_path"
 	fix_status=$?
 	set -e
-	if [ "$fix_status" -ne 0 ]; then
+	deterministic_report=$(json_output_or_null "$fix_report_path")
+	if [ "$fix_status" -ne 0 ] && [ -s "$fix_error_path" ]; then
+		cat "$fix_error_path" >&2
+	fi
+	rm -f "$fix_report_path" "$fix_error_path"
+	case "$fix_status" in
+	0) ;;
+	3)
+		validation=fail
+		fail_closed deterministic_fix_cycle not_published
+		;;
+	4)
+		validation=fail
+		fail_closed deterministic_fix_iteration_bound_exhausted not_published
+		;;
+	*)
 		validation=fail
 		fail_closed deterministic_fix_failed not_published
-	fi
+		;;
+	esac
 	require_no_untracked
 	capture_patch "$patch_path"
 	if [ -s "$patch_path" ]; then
 		changed=true
 	fi
+	check_report_path=${result_path}.controlled-report
+	check_error_path=${result_path}.controlled-error
 	set +e
-	run_controlled_harnesslint --controlled-check
+	run_controlled_harnesslint --controlled-check >"$check_report_path" 2>"$check_error_path"
 	check_status=$?
 	set -e
+	controlled_report=$(json_output_or_null "$check_report_path")
+	if [ "$check_status" -ne 0 ] && [ -s "$check_error_path" ]; then
+		cat "$check_error_path" >&2
+	fi
+	rm -f "$check_report_path" "$check_error_path"
 	require_no_untracked
 	validation_patch=${patch_path}.validation
 	capture_patch "$validation_patch"
@@ -146,10 +182,24 @@ prepare_autofix() {
 		fail_closed validation_mutated_target not_published
 	fi
 	rm -f "$validation_patch"
-	if [ "$check_status" -ne 0 ]; then
+	case "$check_status" in
+	0) ;;
+	3)
 		validation=fail
-		fail_closed lint_validation_failed not_published
-	fi
+		fail_closed residual_fixable_closure_failure not_published
+		;;
+	1)
+		validation=fail
+		if [ "$controlled_report" != null ]; then
+			fail_closed nonfixable_validation_failed not_published
+		fi
+		fail_closed controlled_check_failed not_published
+		;;
+	*)
+		validation=fail
+		fail_closed controlled_check_failed not_published
+		;;
+	esac
 	validation=pass
 	if [ "$changed" = false ]; then
 		publication=unchanged

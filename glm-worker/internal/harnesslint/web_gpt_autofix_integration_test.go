@@ -10,12 +10,14 @@ import (
 )
 
 type webGPTAutofixResult struct {
-	BeforeSHA     string `json:"before_sha"`
-	Changed       bool   `json:"changed"`
-	ResultingHead string `json:"resulting_head"`
-	Validation    string `json:"validation"`
-	Publication   string `json:"publication"`
-	Error         string `json:"error"`
+	BeforeSHA           string          `json:"before_sha"`
+	Changed             bool            `json:"changed"`
+	ResultingHead       string          `json:"resulting_head"`
+	Validation          string          `json:"validation"`
+	Publication         string          `json:"publication"`
+	Error               string          `json:"error"`
+	DeterministicReport json.RawMessage `json:"deterministic_report"`
+	ControlledReport    json.RawMessage `json:"controlled_report"`
 }
 
 type webGPTAutofixFixture struct {
@@ -33,15 +35,24 @@ set -eu
 [ -n "${HARNESSLINT_CONTROL_ROOT:-}" ]
 cd "$HARNESSLINT_REPO_ROOT"
 mode=${AUTOFIX_TEST_MODE:-clean}
+pass_report='{"status":"pass","fixed":0,"violations":[]}'
 case "${1:-}" in
 --deterministic-fix)
 	case "$mode" in
 	clean|nonfixable)
-		exit 0
+		printf '%s\n' '{"status":"pass","fixed":0,"violations":[],"deterministic_convergence":{"state":"converged","iterations":1,"max_iterations":8,"changes_produced":false}}'
 		;;
-	fixable|mutatingcheck)
+	fixable|mutatingcheck|residualfixable)
 		printf 'fixed\n' > fixture.txt
-		exit 0
+		printf '%s\n' '{"status":"pass","fixed":1,"violations":[],"deterministic_convergence":{"state":"converged","iterations":2,"max_iterations":8,"changes_produced":true}}'
+		;;
+	cycle)
+		printf '%s\n' '{"status":"fail","fixed":0,"violations":[],"deterministic_convergence":{"state":"cycle","iterations":2,"max_iterations":8,"changes_produced":true}}'
+		exit 3
+		;;
+	bound)
+		printf '%s\n' '{"status":"fail","fixed":0,"violations":[],"deterministic_convergence":{"state":"iteration-bound-exhausted","iterations":8,"max_iterations":8,"changes_produced":true}}'
+		exit 4
 		;;
 	*)
 		exit 2
@@ -50,18 +61,20 @@ case "${1:-}" in
 	;;
 --controlled-check)
 	case "$mode" in
-	clean)
-		exit 0
-		;;
-	fixable)
-		grep -Fxq fixed fixture.txt
+	clean|fixable)
+		printf '%s\n' "$pass_report"
 		;;
 	nonfixable)
+		printf '%s\n' '{"status":"fail","fixed":0,"violations":[{"rule":"semantic","path":"fixture.txt","line":1,"column":1,"message":"review required","fixable":false}]}'
 		exit 1
+		;;
+	residualfixable)
+		printf '%s\n' '{"status":"fail","fixed":0,"violations":[{"rule":"gofmt","path":"fixture.txt","line":1,"column":1,"message":"deterministic closure incomplete","fixable":true}]}'
+		exit 3
 		;;
 	mutatingcheck)
 		printf 'validation-mutated\n' > fixture.txt
-		exit 0
+		printf '%s\n' "$pass_report"
 		;;
 	*)
 		exit 2
@@ -88,6 +101,10 @@ func TestWebGPTAutofixCleanBranchCreatesNoCommit(t *testing.T) {
 	if result.Changed || result.ResultingHead != fixture.expected || result.Validation != "pass" || result.Publication != "unchanged" {
 		t.Fatalf("result = %#v", result)
 	}
+	convergence := readAutofixConvergence(t, result.DeterministicReport)
+	if convergence.State != DeterministicFixConverged || convergence.Iterations != 1 || convergence.ChangesProduced {
+		t.Fatalf("convergence = %#v", convergence)
+	}
 	if info, statErr := os.Stat(patch); statErr != nil || info.Size() != 0 {
 		t.Fatalf("clean patch = %v, %v", info, statErr)
 	}
@@ -103,6 +120,10 @@ func TestWebGPTAutofixFixableChangePublishesOneCommit(t *testing.T) {
 	}
 	if !prepared.Changed || prepared.Validation != "pass" || prepared.Publication != "prepared" {
 		t.Fatalf("prepared result = %#v", prepared)
+	}
+	convergence := readAutofixConvergence(t, prepared.DeterministicReport)
+	if convergence.State != DeterministicFixConverged || convergence.Iterations != 2 || !convergence.ChangesProduced {
+		t.Fatalf("convergence = %#v", convergence)
 	}
 	fixture.requireTargetCodeNotExecuted(t)
 	fixture.requireRemoteHead(t, fixture.expected)
@@ -143,8 +164,51 @@ func TestWebGPTAutofixRejectsInvalidAndStaleTargets(t *testing.T) {
 func TestWebGPTAutofixLeavesNonFixableViolationUnpublished(t *testing.T) {
 	fixture := newWebGPTAutofixFixture(t)
 	result, _, err := fixture.prepare(t, "nonfixable", fixture.branch, fixture.expected)
-	if err == nil || result.Validation != "fail" || result.Publication != "not_published" || result.Error != "lint_validation_failed" {
+	if err == nil || result.Validation != "fail" || result.Publication != "not_published" || result.Error != "nonfixable_validation_failed" {
 		t.Fatalf("result = %#v, err = %v", result, err)
+	}
+	if violation := readSingleAutofixViolation(t, result.ControlledReport); violation.Fixable {
+		t.Fatalf("non-fixable report = %#v", violation)
+	}
+	fixture.requireRemoteHead(t, fixture.expected)
+}
+
+func TestWebGPTAutofixRejectsResidualFixableViolationAfterConvergence(t *testing.T) {
+	fixture := newWebGPTAutofixFixture(t)
+	result, _, err := fixture.prepare(t, "residualfixable", fixture.branch, fixture.expected)
+	if err == nil || result.Validation != "fail" || result.Publication != "not_published" || result.Error != "residual_fixable_closure_failure" {
+		t.Fatalf("result = %#v, err = %v", result, err)
+	}
+	if violation := readSingleAutofixViolation(t, result.ControlledReport); !violation.Fixable {
+		t.Fatalf("fixable closure report = %#v", violation)
+	}
+	fixture.requireRemoteHead(t, fixture.expected)
+}
+
+func TestWebGPTAutofixRejectsDeterministicCycle(t *testing.T) {
+	requireAutofixDeterministicFailure(t, "cycle", "deterministic_fix_cycle", DeterministicFixCycle, 2)
+}
+
+func TestWebGPTAutofixRejectsDeterministicIterationBound(t *testing.T) {
+	requireAutofixDeterministicFailure(
+		t,
+		"bound",
+		"deterministic_fix_iteration_bound_exhausted",
+		DeterministicFixBoundExhausted,
+		8,
+	)
+}
+
+func requireAutofixDeterministicFailure(t *testing.T, mode, errorCode, state string, iterations int) {
+	t.Helper()
+	fixture := newWebGPTAutofixFixture(t)
+	result, _, err := fixture.prepare(t, mode, fixture.branch, fixture.expected)
+	if err == nil || result.Validation != "fail" || result.Publication != "not_published" || result.Error != errorCode {
+		t.Fatalf("result = %#v, err = %v", result, err)
+	}
+	convergence := readAutofixConvergence(t, result.DeterministicReport)
+	if convergence.State != state || convergence.Iterations != iterations || !convergence.ChangesProduced {
+		t.Fatalf("convergence = %#v", convergence)
 	}
 	fixture.requireRemoteHead(t, fixture.expected)
 }
@@ -172,6 +236,30 @@ func TestWebGPTAutofixPublicationRaceDoesNotOverwrite(t *testing.T) {
 		t.Fatalf("result = %#v, err = %v", result, err)
 	}
 	fixture.requireRemoteHead(t, competitor)
+}
+
+func readAutofixConvergence(t *testing.T, data json.RawMessage) DeterministicFixConvergence {
+	t.Helper()
+	var report Report
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("decode deterministic report: %v: %s", err, data)
+	}
+	if report.DeterministicConvergence == nil {
+		t.Fatalf("deterministic convergence missing: %s", data)
+	}
+	return *report.DeterministicConvergence
+}
+
+func readSingleAutofixViolation(t *testing.T, data json.RawMessage) Violation {
+	t.Helper()
+	var report Report
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("decode controlled report: %v: %s", err, data)
+	}
+	if len(report.Violations) != 1 {
+		t.Fatalf("controlled violations = %#v", report.Violations)
+	}
+	return report.Violations[0]
 }
 
 func newWebGPTAutofixFixture(t *testing.T) webGPTAutofixFixture {
