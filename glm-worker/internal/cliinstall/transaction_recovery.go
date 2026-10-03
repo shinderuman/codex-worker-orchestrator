@@ -19,17 +19,17 @@ type cliInstallTransactionJournal struct {
 }
 
 type cliInstallTransactionState struct {
-	Path string                          `json:"path"`
-	Temp string                          `json:"temp"`
+	Path string                         `json:"path"`
+	Temp string                         `json:"temp"`
 	Pre  cliInstallTransactionFileImage `json:"pre"`
 	Post cliInstallTransactionFileImage `json:"post"`
 }
 
 type cliInstallTransactionBinary struct {
-	Name        string                          `json:"name"`
-	Target      string                          `json:"target"`
-	Replacement string                          `json:"replacement"`
-	Backup      string                          `json:"backup,omitempty"`
+	Name        string                         `json:"name"`
+	Target      string                         `json:"target"`
+	Replacement string                         `json:"replacement"`
+	Backup      string                         `json:"backup,omitempty"`
 	Pre         cliInstallTransactionFileImage `json:"pre"`
 	Post        cliInstallTransactionFileImage `json:"post"`
 }
