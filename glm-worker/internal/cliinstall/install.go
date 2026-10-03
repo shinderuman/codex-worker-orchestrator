@@ -245,32 +245,7 @@ func planRetireBinary(binDir, name, digest string) (Result, string, bool, error)
 }
 
 func applyInstall(actions []action, statePath string, nextState installState) error {
-	changed := changedActions(actions)
-	stateDir := filepath.Dir(statePath)
-	if err := ensureStateDir(stateDir); err != nil {
-		return err
-	}
-	stateTemp, err := stageState(stateDir, nextState)
-	if err != nil {
-		return err
-	}
-	staged, err := stageActions(changed)
-	if err != nil {
-		return errors.Join(err, removeIfExists(stateTemp))
-	}
-	applied, err := commitActions(staged)
-	if err != nil {
-		return errors.Join(err, cleanupStaged(staged), removeIfExists(stateTemp))
-	}
-	if err := os.Rename(stateTemp, statePath); err != nil {
-		return errors.Join(
-			fmt.Errorf("commit binary ownership state: %w", err),
-			rollback(applied),
-			cleanupStaged(staged),
-			removeIfExists(stateTemp),
-		)
-	}
-	return cleanupStaged(staged)
+	return applyInstallWithStateWriter(actions, statePath, nextState, os.Rename)
 }
 
 func changedActions(actions []action) []action {
