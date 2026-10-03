@@ -26,7 +26,6 @@ func TestCaptureReturnsBaselineToCurrentDiffWithoutMutatingState(t *testing.T) {
 	runGit(t, repoRoot, "add", "tracked.txt", "blob.bin")
 	runGit(t, repoRoot, "commit", "-qm", "baseline")
 	writeFile(t, filepath.Join(repoRoot, "baseline-preexisting.txt"), "preexisting\n")
-	head := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
 
 	cfg := config.AppConfig{
 		RepoRoot:  repoRoot,
@@ -37,16 +36,9 @@ func TestCaptureReturnsBaselineToCurrentDiffWithoutMutatingState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write("baseline-head", head); err != nil {
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write("baseline-status", "?? baseline-preexisting.txt\n"); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"baseline-index.patch", "baseline-worktree.patch"} {
-		writeFile(t, st.Path(name), "")
-	}
-	writeFile(t, st.Path("baseline-untracked"), "baseline-preexisting.txt\x00")
 
 	writeFile(t, filepath.Join(repoRoot, "tracked.txt"), "after\n")
 	if err := os.Remove(filepath.Join(repoRoot, "blob.bin")); err != nil {
@@ -115,7 +107,6 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 	writeFile(t, filepath.Join(repoRoot, "seed.txt"), "seed\n")
 	runGit(t, repoRoot, "add", "seed.txt")
 	runGit(t, repoRoot, "commit", "-qm", "baseline")
-	head := strings.TrimSpace(runGit(t, repoRoot, "rev-parse", "HEAD"))
 
 	cfg := config.AppConfig{
 		RepoRoot:  repoRoot,
@@ -126,14 +117,8 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write("baseline-head", head); err != nil {
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
-	}
-	if err := st.Write("baseline-status", "clean"); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"baseline-index.patch", "baseline-worktree.patch", "baseline-untracked"} {
-		writeFile(t, st.Path(name), "")
 	}
 
 	writeFile(t, filepath.Join(repoRoot, "created-during-task.txt"), "created\n")

@@ -16,10 +16,13 @@ func writeCleanTaskBaselineState(t *testing.T, st *state.StateStore, baseline st
 	if err := st.Write("baseline-status", "clean"); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"baseline-index.patch", "baseline-worktree.patch", "baseline-untracked"} {
+	for _, name := range []string{"baseline-index.patch", "baseline-worktree.patch"} {
 		if err := os.WriteFile(st.Path(name), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := os.WriteFile(st.Path("baseline-untracked"), []byte("{\"version\":1,\"entries\":[]}\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
