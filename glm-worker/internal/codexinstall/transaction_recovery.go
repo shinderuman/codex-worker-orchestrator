@@ -157,13 +157,13 @@ func loadInstallTransactionJournal(codexDir string) (installTransactionJournal, 
 	decoder.DisallowUnknownFields()
 	var journal installTransactionJournal
 	if err := decoder.Decode(&journal); err != nil {
-		return installTransactionJournal{}, fmt.Errorf("decode codex install transaction journal: %w", err)
+		return installTransactionJournal{}, fmt.Errorf("failed to decode Codex install transaction journal: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		if err == nil {
 			err = fmt.Errorf("unexpected trailing JSON value")
 		}
-		return installTransactionJournal{}, fmt.Errorf("decode codex install transaction journal: %w", err)
+		return installTransactionJournal{}, fmt.Errorf("failed to decode Codex install transaction journal: %w", err)
 	}
 	if err := validateInstallTransactionJournal(codexDir, journal); err != nil {
 		return installTransactionJournal{}, err
