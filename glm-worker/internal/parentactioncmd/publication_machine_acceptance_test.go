@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathadvisory"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -38,9 +39,10 @@ func TestMachineAcceptanceBindsObservedEvidenceToCurrentTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeMachineAcceptanceRegistry(t, fixture, failurepathadvisory.Record{
-		TaskID:  "other-task",
-		Outcome: failurepathadvisory.OutcomeObserved,
-		CallID:  "other-call",
+		TaskID:       "other-task",
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		CallID:       "other-call",
 	})
 	if failure := verifyPromotedPublicationReadiness(fixture.cfg, fixture.st, candidate); failure == nil || !strings.Contains(failure.Detail, "unproven") {
 		t.Fatalf("other-task evidence admitted = %#v", failure)
@@ -51,12 +53,40 @@ func TestMachineAcceptanceBindsObservedEvidenceToCurrentTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeMachineAcceptanceRegistry(t, fixture, failurepathadvisory.Record{
-		TaskID:  taskID,
-		Outcome: failurepathadvisory.OutcomeObserved,
-		CallID:  "current-call",
+		TaskID:       taskID,
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		CallID:       "current-call",
 	})
 	if failure := verifyPromotedPublicationReadiness(fixture.cfg, fixture.st, candidate); failure != nil {
 		t.Fatalf("current observed evidence rejected = %#v", failure)
+	}
+}
+
+func TestMachineAcceptanceRejectsStaleSameTaskEvidence(t *testing.T) {
+	fixture := newMachineAcceptanceCompleteFixture(t, taskcontract.MachineFactFailurePathAdvisoryObserved)
+	candidate, err := fixture.st.LoadPublicationCandidate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := fixture.st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := candidate.Snapshot
+	stale.WorktreeDigest = strings.Repeat("0", 64)
+	if stale.WorktreeDigest == candidate.Snapshot.WorktreeDigest {
+		stale.WorktreeDigest = strings.Repeat("1", 64)
+	}
+	writeMachineAcceptanceEvidenceAtSnapshot(t, fixture, failurepathadvisory.Record{
+		TaskID:       taskID,
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		CallID:       "stale-call",
+	}, stale)
+	failure := verifyPromotedPublicationReadiness(fixture.cfg, fixture.st, candidate)
+	if failure == nil || !strings.Contains(failure.Detail, "unproven") {
+		t.Fatalf("stale same-task evidence admitted = %#v", failure)
 	}
 }
 
@@ -71,9 +101,10 @@ func TestMachineAcceptanceDistinguishesObservedFromSolVisibleAdvisory(t *testing
 		t.Fatal(err)
 	}
 	writeMachineAcceptanceRegistry(t, fixture, failurepathadvisory.Record{
-		TaskID:  taskID,
-		Outcome: failurepathadvisory.OutcomeObserved,
-		CallID:  "observed-only",
+		TaskID:       taskID,
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		CallID:       "observed-only",
 		Advisory: &failurepathadvisory.AdvisoryOutcome{
 			Status: failurepathadvisory.AdvisoryOmittedNoFind,
 		},
@@ -83,9 +114,10 @@ func TestMachineAcceptanceDistinguishesObservedFromSolVisibleAdvisory(t *testing
 	}
 
 	writeMachineAcceptanceRegistry(t, fixture, failurepathadvisory.Record{
-		TaskID:  taskID,
-		Outcome: failurepathadvisory.OutcomeObserved,
-		CallID:  "shown-call",
+		TaskID:       taskID,
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		CallID:       "shown-call",
 		Advisory: &failurepathadvisory.AdvisoryOutcome{
 			Status:        failurepathadvisory.AdvisoryShown,
 			FindingsShown: 1,
@@ -93,6 +125,31 @@ func TestMachineAcceptanceDistinguishesObservedFromSolVisibleAdvisory(t *testing
 	})
 	if failure := verifyPromotedPublicationReadiness(fixture.cfg, fixture.st, candidate); failure != nil {
 		t.Fatalf("Sol-visible advisory rejected = %#v", failure)
+	}
+}
+
+func TestMachineAcceptanceRejectsEmptyShownAdvisory(t *testing.T) {
+	fixture := newMachineAcceptanceCompleteFixture(t, taskcontract.MachineFactFailurePathAdvisoryShown)
+	candidate, err := fixture.st.LoadPublicationCandidate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := fixture.st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineAcceptanceRegistry(t, fixture, failurepathadvisory.Record{
+		TaskID:       taskID,
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		CallID:       "empty-shown",
+		Advisory: &failurepathadvisory.AdvisoryOutcome{
+			Status: failurepathadvisory.AdvisoryShown,
+		},
+	})
+	failure := verifyPromotedPublicationReadiness(fixture.cfg, fixture.st, candidate)
+	if failure == nil || !strings.Contains(failure.Detail, "unproven") {
+		t.Fatalf("empty shown advisory admitted = %#v", failure)
 	}
 }
 
@@ -118,9 +175,10 @@ func TestMachineAcceptanceAllowsCompletionAfterCurrentEvidenceExists(t *testing.
 		t.Fatal(err)
 	}
 	writeMachineAcceptanceRegistry(t, fixture, failurepathadvisory.Record{
-		TaskID:  taskID,
-		Outcome: failurepathadvisory.OutcomeObserved,
-		CallID:  "current-call",
+		TaskID:       taskID,
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		CallID:       "current-call",
 	})
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
 	output := runCompleteCommand(t, fixture)
@@ -170,8 +228,34 @@ func machineAcceptanceRequirementID(fact taskcontract.MachineAcceptanceFact) str
 
 func writeMachineAcceptanceRegistry(t *testing.T, fixture *completeFixture, record failurepathadvisory.Record) {
 	t.Helper()
+	candidate, err := fixture.st.LoadPublicationCandidate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineAcceptanceEvidenceAtSnapshot(t, fixture, record, candidate.Snapshot)
+}
+
+func writeMachineAcceptanceEvidenceAtSnapshot(
+	t *testing.T,
+	fixture *completeFixture,
+	record failurepathadvisory.Record,
+	snapshot state.SnapshotDigest,
+) {
+	t.Helper()
 	if err := failurepathadvisory.SaveRegistry(fixture.st.Path(failurepathadvisory.RegistryFile), failurepathadvisory.Registry{
 		Records: []failurepathadvisory.Record{record},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if record.ReviewNumber <= 0 {
+		return
+	}
+	if err := fixture.st.AppendRoundRecord(state.RoundRecord{
+		TaskID:       record.TaskID,
+		ReviewNumber: record.ReviewNumber,
+		WorkerPhase:  "worker-new",
+		CapturedAt:   time.Now().UTC(),
+		Snapshot:     snapshot,
 	}); err != nil {
 		t.Fatal(err)
 	}

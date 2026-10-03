@@ -81,12 +81,16 @@ func publicationMachineAcceptanceGate(repoRoot string, st *state.StateStore, can
 	if err != nil {
 		return machineAcceptanceGateFailure(gate, publicationGateFail, "machine acceptance evidence is unreadable: "+err.Error())
 	}
+	rounds, err := st.ReadRoundRecords(taskID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return machineAcceptanceGateFailure(gate, publicationGateFail, "machine acceptance round evidence is unreadable: "+err.Error())
+	}
 	for _, requirement := range contract.Requirements {
-		if machineAcceptanceRequirementSatisfied(registry, taskID, requirement) {
+		if machineAcceptanceRequirementSatisfied(registry, rounds, taskID, candidate.SnapshotID, requirement) {
 			continue
 		}
 		return machineAcceptanceGateFailure(gate, publicationGateMissing,
-			fmt.Sprintf("requirement %s (%s) is unproven for current task %s", requirement.ID, requirement.Fact, taskID))
+			fmt.Sprintf("requirement %s (%s) is unproven for current task %s at snapshot %s", requirement.ID, requirement.Fact, taskID, candidate.SnapshotID))
 	}
 	return gate
 }
@@ -161,11 +165,13 @@ func publicationTaskTrackedAt(repoRoot, head, taskPath string) (bool, error) {
 
 func machineAcceptanceRequirementSatisfied(
 	registry failurepathadvisory.Registry,
+	rounds []state.RoundRecord,
 	taskID string,
+	snapshotID string,
 	requirement taskcontract.MachineAcceptanceRequirement,
 ) bool {
 	for _, record := range registry.Records {
-		if record.TaskID != taskID || record.Outcome != failurepathadvisory.OutcomeObserved || strings.TrimSpace(record.CallID) == "" {
+		if !machineAcceptanceRecordMatchesSnapshot(record, rounds, taskID, snapshotID) {
 			continue
 		}
 		switch requirement.Fact {
@@ -175,6 +181,27 @@ func machineAcceptanceRequirementSatisfied(
 			if record.Advisory != nil && record.Advisory.Status == failurepathadvisory.AdvisoryShown && record.Advisory.FindingsShown > 0 {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func machineAcceptanceRecordMatchesSnapshot(
+	record failurepathadvisory.Record,
+	rounds []state.RoundRecord,
+	taskID string,
+	snapshotID string,
+) bool {
+	if record.TaskID != taskID || record.ReviewNumber <= 0 || record.Outcome != failurepathadvisory.OutcomeObserved || strings.TrimSpace(record.CallID) == "" {
+		return false
+	}
+	for _, round := range rounds {
+		if round.TaskID != taskID || round.ReviewNumber != record.ReviewNumber || round.CaptureError != "" {
+			continue
+		}
+		roundSnapshotID := state.ValidationSnapshotID(round.Snapshot.Head, round.Snapshot.IndexDigest, round.Snapshot.WorktreeDigest)
+		if roundSnapshotID != "" && roundSnapshotID == snapshotID {
+			return true
 		}
 	}
 	return false
