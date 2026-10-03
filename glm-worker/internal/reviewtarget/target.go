@@ -101,15 +101,19 @@ func parseGoSymbolLocator(locator string) (string, string, bool) {
 	parts := strings.Split(locator, ".")
 	switch len(parts) {
 	case 1:
-		if token.IsIdentifier(parts[0]) {
+		if validGoLocatorIdentifier(parts[0]) {
 			return "", parts[0], true
 		}
 	case 2:
-		if token.IsIdentifier(parts[0]) && token.IsIdentifier(parts[1]) {
+		if validGoLocatorIdentifier(parts[0]) && validGoLocatorIdentifier(parts[1]) {
 			return parts[0], parts[1], true
 		}
 	}
 	return "", "", false
+}
+
+func validGoLocatorIdentifier(value string) bool {
+	return value != "_" && token.IsIdentifier(value)
 }
 
 func parseError(code, raw string) error {
