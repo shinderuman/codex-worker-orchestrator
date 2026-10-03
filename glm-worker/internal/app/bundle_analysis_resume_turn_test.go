@@ -6,56 +6,6 @@ import (
 	"time"
 )
 
-func TestBundleAnalysisAutoResumeTurnIsTaskOwned(t *testing.T) {
-	task := newAnalysisTerminalTask(t)
-	resumeStart := task.completeAt.Add(-10 * time.Minute)
-	resumeComplete := task.completeAt.Add(2 * time.Minute)
-	laterStart := task.completeAt.Add(4 * time.Minute)
-	laterComplete := task.completeAt.Add(5 * time.Minute)
-
-	lines := []string{
-		analysisTokenCountLine(t, task.start.Add(-time.Minute), 1000, 500),
-		analysisTurnLine(t, task.start.Add(-30*time.Second), codexRolloutTaskStartedType, analysisOwningTurnID),
-		analysisTokenCountLine(t, task.start.Add(2*time.Minute), 1500, 700),
-		analysisTurnLine(t, task.start.Add(5*time.Minute), codexRolloutTaskCompleteType, analysisOwningTurnID),
-		analysisTurnLine(t, resumeStart, codexRolloutTaskStartedType, "turn-resume"),
-		analysisResumeStatusLine(t, resumeStart.Add(time.Minute), "turn-resume", task.taskID, true, true),
-		analysisCommandCompletedLine(t, resumeStart.Add(2*time.Minute), "turn-resume", analysisParentResumeCommand, 0, `{"resumed":true}`),
-		analysisTokenCountLine(t, task.completeAt.Add(-time.Second), 2200, 1100),
-		analysisTokenCountLine(t, task.completeAt.Add(30*time.Second), 2500, 1300),
-		analysisTurnLine(t, resumeComplete, codexRolloutTaskCompleteType, "turn-resume"),
-		analysisTurnLine(t, laterStart, codexRolloutTaskStartedType, analysisLaterTurnID),
-		analysisTokenCountLine(t, laterStart.Add(30*time.Second), 2900, 1500),
-		analysisTurnLine(t, laterComplete, codexRolloutTaskCompleteType, analysisLaterTurnID),
-	}
-	writeAnalysisRollout(t, task.codexHome, analysisRolloutRel(), codexTestParentThreadID,
-		task.start.Add(-3*time.Hour), lines)
-
-	index := runAnalysisBundle(t, task.cfg, "")
-	finalization := index.Intervals.ParentFinalization
-	if finalization.Status != analysisStatusAvailable || finalization.Start == nil || finalization.End == nil ||
-		*finalization.Start != task.completeAt.Format(time.RFC3339Nano) ||
-		*finalization.End != resumeComplete.Format(time.RFC3339Nano) {
-		t.Fatalf("auto-resume finalization interval = %#v", finalization)
-	}
-	if index.Finalization.Status != analysisStatusAvailable || index.Finalization.InputTokens != 300 ||
-		index.Finalization.CachedInputTokens != 200 {
-		t.Fatalf("auto-resume finalization token delta = %#v", index.Finalization)
-	}
-	if index.TokenDelta.Status != analysisStatusAvailable || index.TokenDelta.InputTokens != 1200 ||
-		index.TokenDelta.CachedInputTokens != 600 {
-		t.Fatalf("auto-resume execution token delta = %#v", index.TokenDelta)
-	}
-	subsequent := index.Intervals.SubsequentRequests
-	if subsequent.Status != analysisStatusAvailable || len(subsequent.Turns) != 1 ||
-		subsequent.Turns[0].TurnID != analysisLaterTurnID {
-		t.Fatalf("auto-resume subsequent requests = %#v", subsequent)
-	}
-	if subsequent.Turns[0].InputTokens != 400 || subsequent.Turns[0].CachedInputTokens != 200 {
-		t.Fatalf("later unrelated turn token delta = %#v", subsequent.Turns[0])
-	}
-}
-
 func TestResolveAnalysisOwningTurnRequiresExactResumeEvidence(t *testing.T) {
 	start := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
 	taskID := "task-exact"

@@ -32,7 +32,17 @@ func TestParentUsageRejectsEveryChainMemberWithoutUsableCounterAnchor(t *testing
 				}
 				writeChainRollout(t, task.codexHome, firstRel, codexTestParentThreadID, firstAt.Add(-time.Minute), "/repo", "Codex Desktop", lines(firstAt, position == "first"))
 				writeChainRollout(t, task.codexHome, lastRel, codexTestParentThreadID, lastAt.Add(-time.Minute), "/repo", "Codex Desktop", lines(lastAt, position == "last"))
-				report := runParentUsageReport(t, task.cfg)
+				stats, err := task.st.AllTaskStats()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var selected state.TaskStats
+				for _, record := range stats {
+					if record.TaskID == task.taskID {
+						selected = record
+					}
+				}
+				report := buildParentUsageReport(task.cfg, task.st, bundleTask{ID: task.taskID, Status: string(state.TaskStatusComplete), Stats: selected})
 				if report.ParentSession.Status != codexStatusAmbiguous || !strings.Contains(report.ParentSession.Detail, "no usable token counter anchor") {
 					t.Fatalf("parent session = %#v", report.ParentSession)
 				}
@@ -41,24 +51,6 @@ func TestParentUsageRejectsEveryChainMemberWithoutUsableCounterAnchor(t *testing
 				}
 			})
 		}
-	}
-}
-
-func TestAnalysisMissingCollectedChainMemberIsUnreadable(t *testing.T) {
-	start := time.Now().UTC()
-	association := codexAssociation{
-		ParentStatus: codexStatusIncluded, ParentThreadID: codexTestParentThreadID,
-		ParentChain: []codexRollout{{HomeRelative: "first.jsonl"}, {HomeRelative: "second.jsonl"}},
-	}
-	collector := newBundleCollector()
-	collector.entries[codexRolloutArchivePathAt(codexTestParentThreadID, 0)] = bundleEntry{}
-	scan, err := scanAnalysisRolloutWindow(collector, association, start, start.Add(time.Hour))
-	missingPath := codexRolloutArchivePathAt(codexTestParentThreadID, 1)
-	if err == nil || !strings.Contains(err.Error(), missingPath) {
-		t.Fatalf("missing collected entry error = %v, want %s", err, missingPath)
-	}
-	if window := analysisRolloutWindow(association, scan, err, start); window.Status != analysisStatusUnreadable {
-		t.Fatalf("missing evidence window = %#v", window)
 	}
 }
 

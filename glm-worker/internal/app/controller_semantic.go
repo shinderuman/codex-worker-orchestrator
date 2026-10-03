@@ -54,6 +54,11 @@ func runControllerSemantic(
 	if err != nil {
 		return true, err
 	}
+	lock, err := acquireWorkflowLock(cfg)
+	if err != nil {
+		return true, err
+	}
+	defer func() { _ = lock.Close() }()
 	store, err := openControllerSemanticStore(cfg)
 	if err != nil {
 		return true, err

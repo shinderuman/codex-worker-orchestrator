@@ -51,7 +51,7 @@ func (s *Store) ScheduleEpisodeWithProjectAuthority(
 	episodeID string,
 	revision uint64,
 ) (EpisodeScheduleResult, error) {
-	legacy, err := s.ScheduleEpisode(episodeID, revision)
+	legacy, err := s.scheduleEpisode(episodeID, revision)
 	if err != nil {
 		return EpisodeScheduleResult{}, err
 	}

@@ -20,13 +20,15 @@ type controllerExecutionCommand struct {
 	TransitionID       string                        `json:"transition_id,omitempty"`
 }
 
+const controllerExecutionSurface = "controller-execution"
+
 func runControllerOperations(args []string, loadConfig func() (config.AppConfig, error), stdin io.Reader, stdout io.Writer) (bool, error) {
 	if len(args) != 2 || args[0] != controllerAuthorityFlag {
 		return false, nil
 	}
 	var command any
 	switch args[1] {
-	case "controller-execution":
+	case controllerExecutionSurface:
 		command = &controllerExecutionCommand{}
 	case "controller-publication":
 		command = &controllerPublicationCommand{}
@@ -37,6 +39,11 @@ func runControllerOperations(args []string, loadConfig func() (config.AppConfig,
 	if err != nil {
 		return true, err
 	}
+	lock, err := acquireWorkflowLock(cfg)
+	if err != nil {
+		return true, err
+	}
+	defer func() { _ = lock.Close() }()
 	result, err := dispatchControllerOperation(cfg, store, command)
 	if err != nil {
 		return true, err

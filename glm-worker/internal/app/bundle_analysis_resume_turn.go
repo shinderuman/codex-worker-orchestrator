@@ -296,64 +296,9 @@ func analysisTaskFinalizationInterval(execution analysisExecutionBoundary, owner
 	return interval
 }
 
-func analysisTaskSubsequentRequests(association codexAssociation, scan bundleRolloutScan, scanErr error, ownership analysisTaskOwnership, collectionEnd time.Time) bundleAnalysisSubsequents {
-	if scanErr != nil {
-		return bundleAnalysisSubsequents{
-			Status:      analysisStatusUnreadable,
-			Attribution: analysisAttributionSubsequent,
-		}
-	}
-	if analysisSingleOwnedTurn(ownership) {
-		return analysisSubsequentRequests(association, scan, analysisOwningTurn{status: ownership.status, turn: ownership.initial}, collectionEnd)
-	}
-	subsequent := bundleAnalysisSubsequents{
-		Status:      analysisStatusUnknown,
-		Attribution: analysisAttributionSubsequent,
-	}
-	if association.ParentStatus != codexStatusIncluded || ownership.status != analysisStatusAvailable || ownership.initial == nil || ownership.final == nil {
-		return subsequent
-	}
-	if collectionEnd.IsZero() {
-		return subsequent
-	}
-	if !ownership.initial.HasComplete || !ownership.final.HasComplete {
-		subsequent.Status = analysisStatusOpen
-		return subsequent
-	}
-	subsequent.Status = analysisStatusAvailable
-	for i := range scan.turns {
-		turn := &scan.turns[i]
-		if analysisSubsequentCandidate(ownership, turn, collectionEnd) {
-			subsequent.Turns = append(subsequent.Turns, analysisSubsequentTurn(scan, turn, collectionEnd))
-		}
-	}
-	return subsequent
-}
-
-func analysisSubsequentCandidate(ownership analysisTaskOwnership, turn *analysisRolloutTurn, collectionEnd time.Time) bool {
-	if analysisTaskOwnsTurn(ownership, turn) {
-		return false
-	}
-	return turn.StartedAt.After(ownership.initial.CompletedAt) && !turn.StartedAt.After(collectionEnd)
-}
-
 func analysisTaskOwnsTurn(ownership analysisTaskOwnership, turn *analysisRolloutTurn) bool {
 	_, owned := ownership.owned[turn.TurnID]
 	return owned
-}
-
-func analysisTaskFinalizationTokenDelta(association codexAssociation, scan bundleRolloutScan, scanErr error, execution analysisExecutionBoundary, ownership analysisTaskOwnership, interval bundleAnalysisInterval) bundleAnalysisTokenDelta {
-	if scanErr != nil {
-		return bundleAnalysisTokenDelta{Status: analysisStatusUnreadable}
-	}
-	if analysisSingleOwnedTurn(ownership) {
-		return analysisFinalizationTokenDelta(association, scan, execution, analysisOwningTurn{status: ownership.status, turn: ownership.initial}, interval)
-	}
-	delta := bundleAnalysisTokenDelta{Status: interval.Status}
-	if association.ParentStatus != codexStatusIncluded || interval.Status != analysisStatusAvailable || ownership.final == nil {
-		return delta
-	}
-	return analysisAnchoredTokenDelta(scan, execution.end, ownership.final.CompletedAt)
 }
 
 func analysisSingleOwnedTurn(ownership analysisTaskOwnership) bool {

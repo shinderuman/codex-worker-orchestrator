@@ -2,7 +2,11 @@ package app
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
@@ -38,4 +42,15 @@ func parseLockPID(data []byte) string {
 		return taskview.StatusNone
 	}
 	return text
+}
+
+func acquireWorkflowLock(cfg config.AppConfig) (*RepoLock, error) {
+	path, err := controller.WorkflowLockPath(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	return AcquireRepoLock(path)
 }

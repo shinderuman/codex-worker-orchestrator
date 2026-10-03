@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -120,6 +121,9 @@ func runPublicationBindingSubcommand(repoRoot string, args []string, stdout io.W
 	if cfg.RepoRoot != repoRoot {
 		return fmt.Errorf("publication repository identity changed")
 	}
+	if err := rejectLegacyPublicationBinding(cfg, args[0]); err != nil {
+		return err
+	}
 	switch args[0] {
 	case publicationPrepareSubcommand:
 		return runPublicationPrepare(cfg, args, stdout)
@@ -145,6 +149,18 @@ func publicationBindingSubcommand(value string) bool {
 		value == publicationReadinessSubcommand || value == publicationPromoteSubcommand ||
 		value == publicationRefGuardSubcommand || value == publicationPushGuardSubcommand ||
 		value == publicationRecoverSubcommand
+}
+
+func rejectLegacyPublicationBinding(cfg config.AppConfig, subcommand string) error {
+	switch subcommand {
+	case publicationPrepareSubcommand, publicationInstallCandidateSubcommand, publicationPromoteSubcommand, publicationRecoverSubcommand:
+	default:
+		return nil
+	}
+	if _, err := controller.CanonicalAuthorityActive(cfg); err != nil {
+		return fmt.Errorf("inspect canonical controller authority before publication binding: %w", err)
+	}
+	return fmt.Errorf("legacy publication binding %s is unavailable after canonical controller cutover; use --authority controller-publication", subcommand)
 }
 
 func parsePushBindingOptions(args []string) (pushBindingOptions, error) {

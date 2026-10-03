@@ -8,10 +8,9 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/canonical-blocker-cutover.md`
+- `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 
 ## NEXT（優先順）
-- `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 - `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
 - `IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`

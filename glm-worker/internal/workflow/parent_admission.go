@@ -13,7 +13,7 @@ func (w *Workflow) admitParentAction(action state.ParentAction) error {
 		return &WorkerError{Message: err.Error()}
 	}
 	if plan.AdmitsCommand(action) {
-		return nil
+		return w.admitCanonicalMutation()
 	}
 	return w.parentActionDenied(action)
 }
@@ -29,13 +29,16 @@ func (w *Workflow) admitNewTask() error {
 		return &WorkerError{Message: err.Error()}
 	}
 	if resume {
-		return nil
+		return w.admitCanonicalMutation()
 	}
 	plan, admitted, err := w.state.AdmitNewTask()
 	if err != nil {
 		return &WorkerError{Message: err.Error()}
 	}
 	if admitted {
+		if err := w.admitCanonicalMutation(); err != nil {
+			return err
+		}
 		if claimID == "" {
 			if err := w.state.StagePendingSessionRotationRecommendationRetirement(threadID); err != nil {
 				return &WorkerError{Message: err.Error()}
@@ -70,7 +73,7 @@ func (w *Workflow) parentActionDenied(action state.ParentAction) error {
 func (w *Workflow) newTaskActionDenied(plan state.ParentActionPlan) error {
 	switch plan.RequiredAction {
 	case state.ParentActionDecision:
-		return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
+		return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision"}
 	case state.ParentActionReview, state.ParentActionAccept:
 		label := w.state.OpenParentReviewLabel()
 		if label == "none" {
@@ -80,20 +83,20 @@ func (w *Workflow) newTaskActionDenied(plan state.ParentActionPlan) error {
 	case state.ParentActionApproveSurface:
 		return &WorkerError{Message: "previous task is waiting for quality policy surface approval; resolve it with glm-parent-action approve-surface --accepted-scope current-diff (or --fix) before starting a new task"}
 	case state.ParentActionComplete:
-		return &WorkerError{Message: "previous task is awaiting parent completion; finish the parent push and run glm-parent-action complete before starting a new task"}
+		return &WorkerError{Message: "previous task is awaiting parent completion; finish canonical controller publication and retirement before starting a new task"}
 	case state.ParentActionResume:
 		switch plan.ResumeKind {
 		case "rate-limited":
-			return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
+			return &WorkerError{Message: "previous task is rate-limited; use --resume"}
 		case "provider-unavailable":
-			return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
+			return &WorkerError{Message: "previous task is provider-unavailable; use --resume"}
 		case "interrupted":
-			return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
+			return &WorkerError{Message: "previous task is interrupted; use --resume"}
 		}
 	case state.ParentActionRepairGuardThenResume:
-		return &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
+		return &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume"}
 	case state.ParentActionRepairQualityGateThenResume:
-		return &WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume or --reset"}
+		return &WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume"}
 	}
 	return &WorkerError{Message: fmt.Sprintf("previous task requires parent action %s before starting a new task", plan.RequiredAction)}
 }

@@ -15,11 +15,22 @@ func Activate(cfg config.AppConfig) (Admission, error) {
 	if err != nil {
 		return Admission{}, err
 	}
-	authority, err := ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	store, err := Open(cfg)
 	if err != nil {
 		return Admission{}, err
 	}
-	store, err := Open(cfg)
+	head, err := store.LoadHead()
+	if err != nil {
+		return Admission{}, err
+	}
+	if head.LiveLeaseID != "" {
+		authority, err := MutationAuthorityFromHead(head)
+		if err != nil {
+			return Admission{}, err
+		}
+		return store.AdmitMutationOrFailClosed(authority, workspace, snapshot)
+	}
+	authority, err := ResolveCommittedTaskAuthority(cfg.RepoRoot)
 	if err != nil {
 		return Admission{}, err
 	}

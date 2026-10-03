@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -51,7 +52,10 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
 		return Prepared{}, fmt.Errorf("unsupported parent payload action %q", action)
 	}
-	stageDir := filepath.Join(repoRoot, StageDirName)
+	stageDir, err := actionStageDir(repoRoot, action)
+	if err != nil {
+		return Prepared{}, err
+	}
 	if err := ensureStageDir(stageDir); err != nil {
 		return Prepared{}, err
 	}
@@ -91,7 +95,10 @@ func Peek(repoRoot, action, token string) ([]byte, error) {
 	if !validToken(token) {
 		return nil, fmt.Errorf("invalid parent action token")
 	}
-	stageDir := filepath.Join(repoRoot, StageDirName)
+	stageDir, err := actionStageDir(repoRoot, action)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateStageDir(stageDir); err != nil {
 		return nil, err
 	}
@@ -128,7 +135,11 @@ func consume(repoRoot, action, token string, expected []byte, requireExpected bo
 	if requireExpected && !bytes.Equal(payload, expected) {
 		return nil, fmt.Errorf("parent action staging payload changed after validation")
 	}
-	path := payloadPath(filepath.Join(repoRoot, StageDirName), action, token)
+	stageDir, err := actionStageDir(repoRoot, action)
+	if err != nil {
+		return nil, err
+	}
+	path := payloadPath(stageDir, action, token)
 	if err := os.Remove(path); err != nil {
 		return nil, fmt.Errorf("consume parent action staging file: %w", err)
 	}
@@ -242,7 +253,7 @@ func validPayloadAction(action string) bool {
 	if _, ok := LookupPayloadAction(action); ok {
 		return true
 	}
-	return Action(action) == ActionObservationExecute
+	return Action(action) == ActionObservationExecute || IsControllerAction(action)
 }
 
 func newToken() (string, error) {
@@ -259,4 +270,19 @@ func validToken(token string) bool {
 	}
 	decoded, err := hex.DecodeString(token)
 	return err == nil && len(decoded) == 16
+}
+
+func actionStageDir(repoRoot, action string) (string, error) {
+	if !IsControllerAction(action) {
+		return filepath.Join(repoRoot, StageDirName), nil
+	}
+	raw, err := exec.Command("git", "-C", repoRoot, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve controller action staging repository: %w", err)
+	}
+	common := strings.TrimSpace(string(raw))
+	if common == "" || !filepath.IsAbs(common) {
+		return "", fmt.Errorf("controller action staging requires an absolute git common directory")
+	}
+	return filepath.Join(common, StageDirName), nil
 }

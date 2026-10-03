@@ -24,14 +24,16 @@ func projectImprovementSignal(output *parentHandoffOutput) *parentHandoffImprove
 	if output == nil {
 		return nil
 	}
-	return improvementSignalAdvisory(improvementSignalFromMaterial(output.LastMaterial))
+	signal := improvementSignalAdvisory(improvementSignalFromMaterial(output.LastMaterial))
+	return canonicalImprovementSignal(output.Controller != nil, signal)
 }
 
 func projectRecoveryImprovementSignal(output *parentHandoffRecoveryOutput) *parentHandoffImprovementSignal {
 	if output == nil {
 		return nil
 	}
-	return improvementSignalAdvisory(improvementSignalFromRecoveryMaterial(output.LastMaterial))
+	signal := improvementSignalAdvisory(improvementSignalFromRecoveryMaterial(output.LastMaterial))
+	return canonicalImprovementSignal(output.Controller != nil, signal)
 }
 
 func improvementSignalAdvisory(signal *state.ImprovementSignal) *parentHandoffImprovementSignal {
@@ -90,4 +92,12 @@ func invalidPacketImprovementSignal(callID *string, rejectReason string) *state.
 		SourceCallID: *callID,
 		Reason:       reason,
 	}
+}
+
+func canonicalImprovementSignal(canonical bool, signal *parentHandoffImprovementSignal) *parentHandoffImprovementSignal {
+	if canonical && signal != nil {
+		spec, _ := parentActionSpec("controller-semantic", nil)
+		signal.ActionSpec = spec
+	}
+	return signal
 }

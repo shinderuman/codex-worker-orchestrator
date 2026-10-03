@@ -3,11 +3,9 @@ package app
 import (
 	"strings"
 	"testing"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestNewTaskAdmissionRejectsOwnerLostActiveTaskUntilExplicitReset(t *testing.T) {
+func TestNewTaskAdmissionPreservesOwnerLostActiveTask(t *testing.T) {
 	st := newParentAdmissionStore(t)
 	taskID, err := st.TaskID()
 	if err != nil {
@@ -18,7 +16,7 @@ func TestNewTaskAdmissionRejectsOwnerLostActiveTaskUntilExplicitReset(t *testing
 	}
 
 	err = admitParentCommand(Command{Mode: ModeNewTask}, st)
-	if err == nil || !strings.Contains(err.Error(), "reset") {
+	if err == nil || !strings.Contains(err.Error(), "controller-semantic") {
 		t.Fatalf("active new-task admission error = %v", err)
 	}
 	if got, err := st.TaskID(); err != nil || got != taskID {
@@ -28,13 +26,4 @@ func TestNewTaskAdmissionRejectsOwnerLostActiveTaskUntilExplicitReset(t *testing
 		t.Fatalf("active task state changed: last-request = %q", got)
 	}
 
-	if err := st.Reset(); err != nil {
-		t.Fatal(err)
-	}
-	if got := st.TaskStatus(); got != state.TaskStatusNone {
-		t.Fatalf("reset task status = %q", got)
-	}
-	if err := admitParentCommand(Command{Mode: ModeNewTask}, st); err != nil {
-		t.Fatalf("new task rejected after explicit reset: %v", err)
-	}
 }

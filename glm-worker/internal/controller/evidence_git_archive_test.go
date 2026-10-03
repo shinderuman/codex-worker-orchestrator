@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -9,6 +10,71 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestGitArchiveCacheBindsAllVerificationClaims(t *testing.T) {
+	source, _ := newControllerLinkedWorktree(t)
+	store := newEvidenceTestStore(t)
+	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
+	ref, _, err := store.CaptureGitObjectArchive(source, "cache:git", []string{commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := store.LoadEvidenceObject(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original gitObjectArchiveEnvelope
+	if err := json.Unmarshal(data, &original); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.VerifyGitObjectArchive(ref); err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range []string{"root", "type", "format"} {
+		t.Run(claim, func(t *testing.T) {
+			envelope := original
+			envelope.Roots = append([]GitObjectArchiveRoot(nil), original.Roots...)
+			switch claim {
+			case "root":
+				envelope.Roots[0].OID = strings.Repeat("0", 40)
+			case "type":
+				envelope.Roots[0].Type = "tree"
+			case "format":
+				envelope.ObjectFormat = "unsupported"
+			}
+			payload, err := json.Marshal(envelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			forged, err := store.PutEvidenceObject("git-object-archive", gitObjectArchiveMediaType, "cache:"+claim, true, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.VerifyGitObjectArchive(forged); err == nil {
+				t.Fatal("cached pack accepted invalid archive claims")
+			}
+		})
+	}
+}
+
+func TestGitArchiveVerificationFailureIsRetryable(t *testing.T) {
+	source, _ := newControllerLinkedWorktree(t)
+	store := newEvidenceTestStore(t)
+	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
+	ref, _, err := store.CaptureGitObjectArchive(source, "retry:git", []string{commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPath := os.Getenv("PATH")
+	t.Setenv("PATH", t.TempDir())
+	if _, err := store.VerifyGitObjectArchive(ref); err == nil {
+		t.Fatal("verification succeeded without Git")
+	}
+	t.Setenv("PATH", originalPath)
+	if _, err := store.VerifyGitObjectArchive(ref); err != nil {
+		t.Fatalf("transient failure poisoned the verification cache: %v", err)
+	}
+}
 
 func TestGitObjectArchiveSurvivesSourceDeletionAndPathReuse(t *testing.T) {
 	source, _ := newControllerLinkedWorktree(t)

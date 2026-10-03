@@ -523,7 +523,7 @@ func dependsTransitively(revision BlockerEpisodeRevision, blocked, dependency Se
 	return false
 }
 
-func (s *Store) ScheduleEpisode(episodeID string, revision uint64) (EpisodeScheduleResult, error) {
+func (s *Store) scheduleEpisode(episodeID string, revision uint64) (EpisodeScheduleResult, error) {
 	head, err := s.LoadHead()
 	if err != nil {
 		return EpisodeScheduleResult{}, err

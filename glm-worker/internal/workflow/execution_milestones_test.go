@@ -207,7 +207,7 @@ exercise milestones
 		t.Fatal(err)
 	}
 	runner := &scriptedRunner{steps: steps}
-	w := NewWorkflow(cfg, st, runner, io.Discard)
+	w := newUnitWorkflow(cfg, st, runner, io.Discard)
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) { return fixedSnapshot, nil }
 	w.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {
 		snapshot, err := w.captureSnapshot(repoRoot)

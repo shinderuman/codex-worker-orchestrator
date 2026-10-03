@@ -38,6 +38,11 @@ func runControllerActivation(
 	if !decision.Active {
 		return true, fmt.Errorf("repository controller activation requires active repository harness")
 	}
+	lock, err := acquireWorkflowLock(cfg)
+	if err != nil {
+		return true, err
+	}
+	defer func() { _ = lock.Close() }()
 	admission, err := controller.Activate(cfg)
 	if err != nil {
 		return true, err

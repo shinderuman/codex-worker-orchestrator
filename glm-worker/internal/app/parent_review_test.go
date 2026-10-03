@@ -101,7 +101,7 @@ func needsSolDecisionPacketApp() string {
 
 func newParentReviewOpportunity(t *testing.T) (config.AppConfig, *state.StateStore) {
 	t.Helper()
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	review := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: reviewFixPacketApp()},
@@ -119,18 +119,16 @@ func newParentReviewOpportunity(t *testing.T) (config.AppConfig, *state.StateSto
 	return cfg, st
 }
 
-func writeParentReviewTaskChange(t *testing.T, cfg config.AppConfig) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "parent-review-change.txt"), []byte("task change\n"), 0o644); err != nil {
-		t.Fatal(err)
+func parentReviewTaskMutation(cfg config.AppConfig) func() error {
+	return func() error {
+		return os.WriteFile(filepath.Join(cfg.RepoRoot, "parent-review-change.txt"), []byte("task change\n"), 0644)
 	}
 }
 
 func applyParentReviewFix(t *testing.T, cfg config.AppConfig) {
 	t.Helper()
-	writeParentReviewTaskChange(t, cfg)
 	fix := &fakeRunner{steps: []fakeStep{
-		{structured: implementedPacketApp("fixed")},
+		{structured: implementedPacketApp("fixed"), mutate: parentReviewTaskMutation(cfg)},
 		{structured: passPacketApp()},
 		{structured: passPacketApp()},
 	}}
@@ -249,7 +247,7 @@ func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
 		t.Fatalf("rejected accept changed status = %q", got)
 	}
 
-	cfg = newAppConfig(t)
+	cfg = newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -302,7 +300,7 @@ func TestExecuteParentReviewStatsExposeRework(t *testing.T) {
 }
 
 func TestExecuteAcceptWithoutOpenOpportunityIsNoOp(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	var out bytes.Buffer
 
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, &out, io.Discard); err != nil {
@@ -421,7 +419,7 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 	}
 }
 func TestExecuteAcceptRejectsPendingDecisionOpportunity(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	decision := &fakeRunner{steps: []fakeStep{
 		{structured: needsSolDecisionPacketApp()},
 	}}
@@ -448,7 +446,7 @@ func TestExecuteAcceptRejectsPendingDecisionOpportunity(t *testing.T) {
 }
 
 func TestExecuteDecisionRecordsParentOutcome(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	decisionWait := &fakeRunner{steps: []fakeStep{
 		{structured: needsSolDecisionPacketApp()},
 	}}
@@ -481,7 +479,7 @@ func TestExecuteDecisionRecordsParentOutcome(t *testing.T) {
 }
 
 func TestExecuteFixWithoutOriginRecordsUnknownOrigin(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	review := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: reviewFixPacketApp()},
@@ -490,9 +488,8 @@ func TestExecuteFixWithoutOriginRecordsUnknownOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	writeParentReviewTaskChange(t, cfg)
 	fix := &fakeRunner{steps: []fakeStep{
-		{structured: implementedPacketApp("fixed")},
+		{structured: implementedPacketApp("fixed"), mutate: parentReviewTaskMutation(cfg)},
 		{structured: passPacketApp()},
 		{structured: passPacketApp()},
 	}}
@@ -524,7 +521,7 @@ func TestExecuteFixOriginValuesRecorded(t *testing.T) {
 		state.ParentOriginExternalReview,
 		state.ParentOriginMetadataRepair,
 	} {
-		cfg := newAppConfig(t)
+		cfg := newCanonicalAppConfig(t)
 		review := &fakeRunner{steps: []fakeStep{
 			{structured: implementedPacketApp("done")},
 			{structured: reviewFixPacketApp()},
@@ -533,9 +530,8 @@ func TestExecuteFixOriginValuesRecorded(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		writeParentReviewTaskChange(t, cfg)
 		fix := &fakeRunner{steps: []fakeStep{
-			{structured: implementedPacketApp("fixed")},
+			{structured: implementedPacketApp("fixed"), mutate: parentReviewTaskMutation(cfg)},
 			{structured: passPacketApp()},
 			{structured: passPacketApp()},
 		}}

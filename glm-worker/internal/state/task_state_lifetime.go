@@ -20,6 +20,8 @@ const (
 )
 
 var taskBoundStatePolicies = []taskBoundStatePolicy{
+	{name: ControllerAttemptStateFile, lifetime: taskBoundStateFreshTaskClear},
+	{name: CanonicalExecutionTaskStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "task.status", lifetime: taskBoundStateFreshTaskClear},
 	{name: parentCodexIdentityFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "isolation.policy", lifetime: taskBoundStateFreshTaskClear},
@@ -49,7 +51,6 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: reportOnlyStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: poCStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: snapshotComparisonFile, lifetime: taskBoundStateFreshTaskClear},
-	{name: guardRepairStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: runtimeInstallEvidenceFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: finalizationEvidenceFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: publicationCandidateStateFile, lifetime: taskBoundStateFreshTaskClear},

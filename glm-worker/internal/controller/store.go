@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
 type Store struct {
-	dir      string
-	identity RepositoryIdentity
+	dir                 string
+	identity            RepositoryIdentity
+	archiveVerification sync.Mutex
+	archiveVerified     map[string]struct{}
 }
 
 const controllerSchemaVersion = 1

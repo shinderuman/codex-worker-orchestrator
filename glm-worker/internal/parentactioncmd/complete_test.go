@@ -241,7 +241,7 @@ func TestCompleteRejectsNonAwaitingStateAndArguments(t *testing.T) {
 	}
 
 	if err := execute(fixture.cfg, []string{"complete", "extra"}, &bytes.Buffer{}, nil); err == nil ||
-		!strings.Contains(err.Error(), "usage: glm-parent-action complete") {
+		!strings.Contains(err.Error(), "canonical controller cutover") {
 		t.Fatalf("extra-argument complete = %v", err)
 	}
 }

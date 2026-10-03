@@ -155,7 +155,10 @@ func TestWebGPTValidationFailsClosedOnPostExecutionMutation(t *testing.T) {
 
 func newWebGPTValidationFixture(t *testing.T) webGPTValidationFixture {
 	t.Helper()
-	base := t.TempDir()
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	target := filepath.Join(base, "target")
 	control := filepath.Join(base, "control")
 	remote := filepath.Join(base, "remote.git")

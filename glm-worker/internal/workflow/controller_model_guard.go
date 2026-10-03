@@ -15,6 +15,28 @@ type controllerModelCallGuard struct {
 	active    bool
 }
 
+func (w *Workflow) admitCanonicalWorkflowMutation() error {
+	if w.state.TaskStatus() != state.TaskStatusNone {
+		exists, err := controller.Exists(w.config)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("existing workflow requires canonical controller execution authority")
+		}
+	}
+
+	admission, err := controller.Activate(w.config)
+	if err != nil {
+		return err
+	}
+	if err := w.bindCanonicalWorkflowAttempt(admission); err != nil {
+		return err
+	}
+	w.canonicalAdmission = &admission
+	return nil
+}
+
 func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (controllerModelCallGuard, error) {
 	if checkpoint.ReadOnly {
 		return controllerModelCallGuard{}, nil
@@ -24,7 +46,7 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 		return controllerModelCallGuard{}, err
 	}
 	if !active {
-		return controllerModelCallGuard{}, nil
+		return controllerModelCallGuard{}, fmt.Errorf("mutating model call requires canonical controller execution authority")
 	}
 	workspace, err := controller.ResolveWorkspaceIdentity(w.config.RepoRoot, store.Identity())
 	if err != nil {

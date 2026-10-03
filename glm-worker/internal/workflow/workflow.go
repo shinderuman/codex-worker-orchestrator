@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
@@ -38,6 +39,9 @@ type Workflow struct {
 	qualityGate             func(root string) (harnesslint.Report, error)
 	captureQualitySurface   func(root string) (string, error)
 	repoSearch              repoSearchFunc
+	admitCanonicalMutation  func() error
+	admitModelMutation      func(state.ResumeCheckpoint) (controllerModelCallGuard, error)
+	canonicalAdmission      *controller.Admission
 
 	stop *runner.StopController
 
@@ -111,7 +115,7 @@ var transientBackoffSchedule = []time.Duration{
 }
 
 func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, output io.Writer) *Workflow {
-	return &Workflow{
+	w := &Workflow{
 		config:                  cfg,
 		state:                   st,
 		runner:                  r,
@@ -128,6 +132,9 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		qualityGate:           runRepositoryQualityGate,
 		captureQualitySurface: captureQualitySurfaceDigest,
 	}
+	w.admitCanonicalMutation = w.admitCanonicalWorkflowMutation
+	w.admitModelMutation = w.admitControllerModelCall
+	return w
 }
 
 func (w *Workflow) AttachStopController(stop *runner.StopController) {
@@ -213,6 +220,11 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 	threadID := os.Getenv(state.ParentActionCodexThreadIDEnv)
 	if err := w.initializeNewTaskState(threadID, claimID); err != nil {
 		return "", err
+	}
+	if w.canonicalAdmission != nil {
+		if err := w.state.Write(state.ControllerAttemptStateFile, w.canonicalAdmission.Attempt.AttemptID); err != nil {
+			return "", err
+		}
 	}
 	if err := w.persistParentActionCodexIdentity(); err != nil {
 		return "", err

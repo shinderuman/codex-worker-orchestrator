@@ -9,12 +9,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
@@ -23,6 +25,7 @@ import (
 )
 
 type fakeStep struct {
+	mutate     func() error
 	structured string
 	output     string
 	runErr     error
@@ -49,6 +52,11 @@ func (r *fakeRunner) Run(
 	r.models = append(r.models, model)
 	index := len(r.prompts) - 1
 	step := r.steps[index]
+	if step.mutate != nil {
+		if err := step.mutate(); err != nil {
+			return runner.RunResult{}, err
+		}
+	}
 	if step.output != "" {
 		if err := os.WriteFile(outputPath, []byte(step.output), 0o600); err != nil {
 			return runner.RunResult{}, err
@@ -112,10 +120,11 @@ func newAppConfig(t *testing.T) config.AppConfig {
 	t.Helper()
 	t.Setenv(state.ParentActionCodexThreadIDEnv, "")
 	t.Setenv(state.ParentActionCodexSessionIDEnv, "")
-	return config.AppConfig{
+	repo := initGitRepo(t)
+	cfg := config.AppConfig{
 		StateBase:             t.TempDir(),
 		RepoHash:              "apphash",
-		RepoRoot:              initGitRepo(t),
+		RepoRoot:              repo,
 		RepoShort:             "appshort1234",
 		RoutineEffort:         "high",
 		MaxAutoFixRounds:      2,
@@ -124,6 +133,29 @@ func newAppConfig(t *testing.T) config.AppConfig {
 		HighRiskReviewerModel: "sonnet",
 		CodexConfigDir:        t.TempDir(),
 	}
+	cfg, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+func newCanonicalAppConfig(t *testing.T) config.AppConfig {
+	t.Helper()
+	cfg := newAppConfig(t)
+	repo := cfg.RepoRoot
+	if err := os.MkdirAll(filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
+	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\napp workflow task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+	runCanonicalGuardGit(t, repo, "add", ".")
+	runCanonicalGuardGit(t, repo, "-c", "user.name=app test", "-c", "user.email=app-test@example.invalid", "commit", "-q", "-m", "canonical task")
+	cfg, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
 }
 
 func initGitRepo(t *testing.T) string {
@@ -144,7 +176,7 @@ func initGitRepo(t *testing.T) string {
 }
 
 func TestExecuteStatusReportsEmptyState(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	var out bytes.Buffer
 
 	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
@@ -160,7 +192,7 @@ func TestExecuteStatusReportsEmptyState(t *testing.T) {
 }
 
 func TestExecuteStatsReportsEmptyState(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	var out bytes.Buffer
 
 	if err := Execute(Command{Mode: ModeStats}, cfg, nil, &out, io.Discard); err != nil {
@@ -185,7 +217,7 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 }
 
 func TestPrintStatsAggregatesAndSortsModelAliases(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -243,41 +275,8 @@ func TestPrintStatsAggregatesAndSortsModelAliases(t *testing.T) {
 	}
 }
 
-func TestExecuteResetClearsTask(t *testing.T) {
-	cfg := newAppConfig(t)
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/999-stale.md"); err != nil {
-		t.Fatal(err)
-	}
-
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeReset, Payload: string(state.TaskDispositionAbandon)}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	var reset map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &reset); err != nil {
-		t.Fatalf("reset出力がmachine JSONではありません: %v: %q", err, out.String())
-	}
-	if reset["status"] != "reset" || reset["disposition"] != string(state.TaskDispositionAbandon) {
-		t.Fatalf("explicit abandon RESET出力がありません: %q", out.String())
-	}
-	if st.Exists("task.id") {
-		t.Fatal("reset後もtask.idが残っています")
-	}
-	if st.Exists("active-task") {
-		t.Fatal("reset後もactive-taskが残っています")
-	}
-}
-
 func TestExecuteResumeRejectsNonRateLimited(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{}
 
 	err := Execute(Command{Mode: ModeResume}, cfg, r.factory(), io.Discard, io.Discard)
@@ -287,13 +286,14 @@ func TestExecuteResumeRejectsNonRateLimited(t *testing.T) {
 }
 
 func TestExecuteNewTaskReachesPass(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: passPacketApp()},
 	}}
 
-	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, r.factory(), io.Discard, io.Discard); err != nil {
+	var out bytes.Buffer
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, r.factory(), &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 
@@ -302,12 +302,12 @@ func TestExecuteNewTaskReachesPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("status = %q", st.TaskStatus())
+		t.Fatalf("status = %q output=%s", st.TaskStatus(), out.String())
 	}
 }
 
 func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 
 	first := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
@@ -321,7 +321,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !st.Exists("lock") {
+	if _, err := os.Stat(st.LockPath()); err != nil {
 		t.Fatal("lockファイルが作成されていません")
 	}
 	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
@@ -347,7 +347,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 }
 
 func TestExecutePropagatesWorkerFailure(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{{runErr: errors.New("boom")}}}
 
 	err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, r.factory(), io.Discard, io.Discard)
@@ -361,7 +361,7 @@ func TestExecutePropagatesWorkerFailure(t *testing.T) {
 }
 
 func TestRunUsesInjectedDependencies(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: passPacketApp()},
@@ -404,7 +404,7 @@ func TestRunVerifyCodexWakePassesWithParentProcessIdentity(t *testing.T) {
 		t.Skip("sqlite3 not installed")
 	}
 
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	parentThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
 	wakeThread := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
 	wakeKey := autoresume.CodexWakeAutomationKey(wakeThread)
@@ -461,7 +461,7 @@ func TestRunVerifyCodexWakeFailsClosedOnIdentityMixups(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cfg := newAppConfig(t)
+			cfg := newCanonicalAppConfig(t)
 			writeWakeAutomationTOML(t, cfg, test.automationKey, test.entityTarget)
 			writeAutomationSchedulerRow(t, cfg, test.automationKey, nextRunAt)
 			t.Setenv(codexThreadIDEnv, parentThread)
@@ -528,7 +528,7 @@ func writeAutomationSchedulerRow(t *testing.T, cfg config.AppConfig, key string,
 }
 
 func TestInstructionMutationGuardRecoveryCLIAcceptance(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	seedGitCommit(t, cfg.RepoRoot)
 	decisionWait := &fakeRunner{steps: []fakeStep{
 		{structured: needsSolDecisionPacketApp()},
@@ -605,5 +605,19 @@ func assertGuardRecoveryCommandRejected(t *testing.T, cfg config.AppConfig, cmd 
 	}
 	if len(rejected.prompts) != 0 {
 		t.Fatalf("拒否されたcommandがmodel呼出を実行しました: %d", len(rejected.prompts))
+	}
+}
+
+func bindCanonicalAppTask(t *testing.T, cfg config.AppConfig, st *state.StateStore) {
+	t.Helper()
+	admission, err := controller.Activate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(state.ControllerAttemptStateFile, admission.Attempt.AttemptID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(state.CanonicalExecutionTaskStateFile, admission.Attempt.SemanticTaskRef.TaskPath); err != nil {
+		t.Fatal(err)
 	}
 }

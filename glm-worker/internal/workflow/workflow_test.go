@@ -290,6 +290,10 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 		TelemetryContent:      true,
 		RepoRoot:              repoRoot,
 	}, st, r, output)
+	w.admitCanonicalMutation = func() error { return nil }
+	w.admitModelMutation = func(state.ResumeCheckpoint) (controllerModelCallGuard, error) {
+		return controllerModelCallGuard{}, nil
+	}
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
 		return fixedSnapshot, nil
 	}
@@ -370,4 +374,11 @@ func workerPacketWithRisk(risk string) string {
 		Tests:               "pass",
 		Unverified:          "none",
 	})
+}
+
+func newUnitWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, out io.Writer) *Workflow {
+	w := NewWorkflow(cfg, st, r, out)
+	w.admitCanonicalMutation = func() error { return nil }
+	w.admitModelMutation = func(state.ResumeCheckpoint) (controllerModelCallGuard, error) { return controllerModelCallGuard{}, nil }
+	return w
 }

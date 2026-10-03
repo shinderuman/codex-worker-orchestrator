@@ -28,8 +28,8 @@ func TestPristineControllerStoreDoesNotMintWorkflowAuthority(t *testing.T) {
 
 	workflow := &Workflow{config: cfg}
 	guard, err := workflow.admitControllerModelCall(state.ResumeCheckpoint{})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("mutating model call accepted a pristine controller")
 	}
 	if guard.active {
 		t.Fatal("normal workflow activated a pristine controller store")

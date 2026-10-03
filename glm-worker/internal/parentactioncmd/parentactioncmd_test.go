@@ -110,7 +110,7 @@ func TestApproveSurfaceValidInvocationPassesUsageValidation(t *testing.T) {
 	if strings.Contains(stderr.String(), "usage:") {
 		t.Fatalf("正規のapprove-surface引数がusage error扱いされました: %q", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "glm-worker executable not found") {
+	if !strings.Contains(stderr.String(), "resolve git common dir") {
 		t.Fatalf("usage検証通過後のworker解決まで到達していません: %q", stderr.String())
 	}
 	if stdout.Len() != 0 {

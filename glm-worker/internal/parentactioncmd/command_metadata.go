@@ -21,6 +21,7 @@ type parentActionCommandDescriptor struct {
 
 const (
 	parentActionExecutionUnsupported parentActionExecutionKind = iota
+	parentActionExecutionController
 	parentActionExecutionPayload
 	parentActionExecutionSessionRotation
 	parentActionExecutionLifecycle
@@ -158,6 +159,9 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 }
 
 func lookupParentActionCommand(action string) (parentActionCommandDescriptor, bool) {
+	if parentaction.IsControllerAction(action) {
+		return parentActionCommandDescriptor{Action: action, Execute: parentActionExecutionController, TerminalExecute: parentActionExecutionController}, true
+	}
 	if payload, ok := parentaction.LookupPayloadAction(action); ok {
 		terminalExecute := parentActionExecutionPayload
 		if payload.Action == parentaction.ActionDecision {
@@ -192,6 +196,9 @@ func executeParentActionCommand(
 	execution := descriptor.Execute
 	if terminal {
 		execution = descriptor.TerminalExecute
+	}
+	if err := rejectLegacyParentActionInvocation(execution, descriptor.Action); err != nil {
+		return err
 	}
 	if err, handled := executeStandardParentAction(cfg, descriptor, execution, args, stdout, stderr); handled {
 		return err
@@ -243,6 +250,8 @@ func executeInterfaceParentAction(
 	stderr io.Writer,
 ) (error, bool) {
 	switch execution {
+	case parentActionExecutionController:
+		return executeControllerAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionPayload:
 		return executeStagedPayloadAction(cfg, descriptor.Payload, args, stdout, stderr), true
 	case parentActionExecutionWait:
@@ -283,6 +292,45 @@ func executeSpecialParentAction(
 	default:
 		return fmt.Errorf("%s", usage)
 	}
+}
+
+func rejectLegacyParentActionInvocation(execution parentActionExecutionKind, action string) error {
+	if !isLegacyParentActionInvocation(execution, action) {
+		return nil
+	}
+	return fmt.Errorf("legacy parent action is unavailable after canonical controller cutover; use %s", legacyParentActionReplacement(execution, action))
+}
+
+func isLegacyParentActionInvocation(execution parentActionExecutionKind, action string) bool {
+	switch execution {
+	case parentActionExecutionLifecycle,
+		parentActionExecutionComplete,
+		parentActionExecutionInstall,
+		parentActionExecutionReviewEvidence,
+		parentActionExecutionDefectRegistration,
+		parentActionExecutionImprovementDisposition:
+		return true
+	case parentActionExecutionDirectWorker:
+		return false
+	case parentActionExecutionReadOrPark:
+		return action == actionPark || action == actionUnpark
+	case parentActionExecutionContinuationOrApprove:
+		return false
+	case parentActionExecutionGitEvidence:
+		return action == "push-binding"
+	default:
+		return false
+	}
+}
+
+func legacyParentActionReplacement(execution parentActionExecutionKind, action string) string {
+	if execution == parentActionExecutionDefectRegistration || execution == parentActionExecutionImprovementDisposition || action == actionRecordPublicationFinding {
+		return "--authority controller-semantic"
+	}
+	if execution == parentActionExecutionReviewEvidence {
+		return "--authority controller-evidence"
+	}
+	return "--authority controller-execution"
 }
 
 func parentActionUsesInProcessHandoff(action string) bool {
