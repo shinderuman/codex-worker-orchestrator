@@ -246,6 +246,9 @@ func finishRecoveredCommittedCLIInstall(
 	observation cliInstallTransactionObservation,
 ) error {
 	if err := requireCLIInstallBinaryPostimages(journal, observation); err != nil {
+		if observation.statePre {
+			return rollbackRecoveredCLIInstall(journal, observation)
+		}
 		return err
 	}
 	return cleanupCLIInstallTransaction(journal)
