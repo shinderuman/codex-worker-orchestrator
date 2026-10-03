@@ -94,9 +94,8 @@ func TestUnknownOrRefinedBodyReferenceIsNotProof(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			claims, complete := ReviewClaims([]string{"other.go:1"}, []Part{tc.part})
-			if complete || len(claims) != 0 {
-				t.Fatalf("unresolved body reference became proof: complete=%v claims=%#v", complete, claims)
+			if _, ok := reviewClaimForTarget("other.go:1", []Part{tc.part}); ok {
+				t.Fatalf("unresolved body reference became proof: %#v", tc.part)
 			}
 		})
 	}
