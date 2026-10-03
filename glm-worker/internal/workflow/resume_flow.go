@@ -89,16 +89,8 @@ func (w *Workflow) prepareResumeCheckpoint(
 	if err := w.activateResume(checkpoint); err != nil {
 		return checkpoint, false, err
 	}
-	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
+	if stopped, err := w.gateActivatedResumeCheckpoint(checkpoint, pocResume); err != nil || stopped {
 		return checkpoint, stopped, err
-	}
-	if err := w.gateResumeProvider(checkpoint); err != nil {
-		return checkpoint, false, err
-	}
-	if checkpoint.Stage == state.ResumeStageReview {
-		if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil || stopped {
-			return checkpoint, stopped, err
-		}
 	}
 	if restoreQualitySurfaceApproval {
 		if err := w.restoreQualitySurfaceApprovalAfterResume(checkpoint); err != nil {
@@ -116,6 +108,22 @@ func (w *Workflow) prepareResumeCheckpoint(
 		checkpoint.ReadOnly = resumeWorkerReadOnly(checkpoint, decl)
 	}
 	return checkpoint, false, nil
+}
+
+func (w *Workflow) gateActivatedResumeCheckpoint(
+	checkpoint state.ResumeCheckpoint,
+	pocResume bool,
+) (bool, error) {
+	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
+		return stopped, err
+	}
+	if err := w.gateResumeProvider(checkpoint); err != nil {
+		return false, err
+	}
+	if checkpoint.Stage != state.ResumeStageReview {
+		return false, nil
+	}
+	return w.verifyReviewResumeSnapshot(checkpoint)
 }
 
 func (w *Workflow) prepareQualitySurfaceApprovalResume(checkpoint state.ResumeCheckpoint) (bool, error) {
