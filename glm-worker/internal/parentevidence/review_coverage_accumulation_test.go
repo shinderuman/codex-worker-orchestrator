@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -118,6 +119,37 @@ func TestReviewCoverageBudgetRefinementDoesNotCount(t *testing.T) {
 	if binding == nil || binding.Coverage != nil || binding.Proof != nil {
 		t.Fatalf("budget-refined source became coverage: %#v", binding)
 	}
+}
+
+func TestReviewCoverageCompletesAfterTotalBudgetForcesSplitDelivery(t *testing.T) {
+	repoRoot, st := newReviewCoverageStore(t)
+	large := strings.Repeat("x", 60*1024)
+	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte(large), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "other.go"), []byte(large), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	openLocatorIdentityReview(t, repoRoot, st, []string{"review.go:1", "other.go:1"})
+
+	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
+		Version: ManifestVersion,
+		Reason:  "combined output exceeds total budget",
+		Source: []SourceRequest{
+			{Question: "first large target", Path: "review.go", LineStart: 1, LineEnd: 1, BudgetBytes: MaxBudgetBytes},
+			{Question: "second large target", Path: "other.go", LineStart: 1, LineEnd: 1, BudgetBytes: MaxBudgetBytes},
+		},
+	})
+	binding, err := st.CurrentParentReviewBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding == nil || binding.Proof != nil || binding.Coverage == nil || len(binding.Coverage.Claims) != 1 {
+		t.Fatalf("combined over-budget projection did not preserve exactly one delivered target: %#v", binding)
+	}
+
+	projectReviewCoverageManifest(t, repoRoot, st, oneSourceManifest("second bounded delivery", "other.go", 1, MaxBudgetBytes))
+	assertDistinctSourceClaims(t, st, "review.go:1-1", "other.go:1-1")
 }
 
 func TestConcurrentReviewCoverageCallsUnionUnderLedgerLock(t *testing.T) {
