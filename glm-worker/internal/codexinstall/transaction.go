@@ -203,13 +203,6 @@ func (t *installMutationTracker) record(path string) error {
 	return nil
 }
 
-func (t *installMutationTracker) rollback(cause error) error {
-	if err := t.rollbackMutations(); err != nil {
-		return errors.Join(cause, err)
-	}
-	return cause
-}
-
 func (t *installMutationTracker) rollbackMutations() error {
 	var errs []error
 	for i := len(t.order) - 1; i >= 0; i-- {
