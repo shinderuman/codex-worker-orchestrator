@@ -198,27 +198,35 @@ func validateInstallTransactionJournal(codexDir string, journal installTransacti
 	seen := make(map[string]bool, len(journal.Surfaces))
 	stateCount := 0
 	for _, surface := range journal.Surfaces {
-		if !validInstallTransactionSurfacePath(surface.Path) || seen[surface.Path] {
-			return fmt.Errorf("invalid codex install transaction surface %q", surface.Path)
+		isState, err := validateInstallTransactionSurface(codexDir, surface, seen)
+		if err != nil {
+			return err
 		}
-		if err := validateManagedPathAncestors(codexDir, surface.Path); err != nil {
-			return fmt.Errorf("invalid codex install transaction surface %s: %w", surface.Path, err)
-		}
-		seen[surface.Path] = true
-		if surface.Path == stateRelativePath {
+		if isState {
 			stateCount++
-		}
-		if err := validateInstallTransactionImage(surface.Pre); err != nil {
-			return fmt.Errorf("invalid codex install transaction preimage for %s: %w", surface.Path, err)
-		}
-		if err := validateInstallTransactionImage(surface.Post); err != nil {
-			return fmt.Errorf("invalid codex install transaction postimage for %s: %w", surface.Path, err)
 		}
 	}
 	if stateCount != 1 {
 		return fmt.Errorf("codex install transaction journal must contain exactly one state surface")
 	}
 	return nil
+}
+
+func validateInstallTransactionSurface(codexDir string, surface installTransactionSurface, seen map[string]bool) (bool, error) {
+	if !validInstallTransactionSurfacePath(surface.Path) || seen[surface.Path] {
+		return false, fmt.Errorf("invalid codex install transaction surface %q", surface.Path)
+	}
+	if err := validateManagedPathAncestors(codexDir, surface.Path); err != nil {
+		return false, fmt.Errorf("invalid codex install transaction surface %s: %w", surface.Path, err)
+	}
+	if err := validateInstallTransactionImage(surface.Pre); err != nil {
+		return false, fmt.Errorf("invalid codex install transaction preimage for %s: %w", surface.Path, err)
+	}
+	if err := validateInstallTransactionImage(surface.Post); err != nil {
+		return false, fmt.Errorf("invalid codex install transaction postimage for %s: %w", surface.Path, err)
+	}
+	seen[surface.Path] = true
+	return surface.Path == stateRelativePath, nil
 }
 
 func validateInstallTransactionImage(image installTransactionImage) error {
