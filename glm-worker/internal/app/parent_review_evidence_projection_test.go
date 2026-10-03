@@ -44,7 +44,7 @@ func TestBuildParentReviewEvidenceManifestUsesSourceForSymbolTarget(t *testing.T
 	if len(manifest.Source) != 1 || len(manifest.Diff) != 0 {
 		t.Fatalf("manifest = %#v", manifest)
 	}
-	if manifest.Source[0].Path != "review.go" || manifest.Source[0].LineStart != 1 {
+	if manifest.Source[0].Path != "review.go" || manifest.Source[0].LineStart != 2 || manifest.Source[0].LineEnd != 2 {
 		t.Fatalf("source request = %#v", manifest.Source[0])
 	}
 }
