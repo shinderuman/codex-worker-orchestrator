@@ -126,7 +126,6 @@ func TestExecuteZaiSelfResumeLoopDoesNotStackTenSecondsAfterLongCLIBackoff(t *te
 		func() error {
 			resumes++
 			if resumes == 1 {
-				// Simulate Claude CLI spending longer than the outer 10s cadence in its own retry/backoff.
 				now = now.Add(15 * time.Second)
 				return limitErr
 			}
