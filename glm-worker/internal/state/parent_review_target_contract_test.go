@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 func TestParentReviewBindingRejectsTargetsWithoutCanonicalProofPath(t *testing.T) {
@@ -41,6 +42,22 @@ func TestParentReviewBindingRejectsTargetsWithoutCanonicalProofPath(t *testing.T
 		snapshot := currentReviewSnapshotForContract(t, repoRoot)
 		err := recordBoundReviewForContract(st, snapshot, "review.go:Local")
 		assertReviewTargetAdmissionRejected(t, st, err, "[symbol-not-declared]")
+	})
+
+	t.Run("oversized symbol declaration", func(t *testing.T) {
+		st, repoRoot, _ := newBoundParentReviewTestStore(t)
+		var source strings.Builder
+		source.WriteString("package review\nfunc Huge() {\n")
+		for range reviewtarget.MaxSourceProofLines {
+			source.WriteString("\t_ = 0\n")
+		}
+		source.WriteString("}\n")
+		if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte(source.String()), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		snapshot := currentReviewSnapshotForContract(t, repoRoot)
+		err := recordBoundReviewForContract(st, snapshot, "review.go:Huge")
+		assertReviewTargetAdmissionRejected(t, st, err, "[symbol-source-too-large]")
 	})
 }
 
