@@ -3,6 +3,8 @@ package harnesslintcmd
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -41,5 +43,28 @@ func TestControlledRootRequiresAbsolutePath(t *testing.T) {
 	}
 	if got != filepath.Clean(absolute) {
 		t.Fatalf("controlledRoot = %q", got)
+	}
+}
+
+func TestDeterministicAutofixFailureExit(t *testing.T) {
+	cases := []struct {
+		name  string
+		state string
+		want  int
+	}{
+		{name: "cycle", state: harnesslint.DeterministicFixCycle, want: 3},
+		{name: "bound", state: harnesslint.DeterministicFixBoundExhausted, want: 4},
+		{name: "unknown", state: "unknown", want: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			report := harnesslint.Report{DeterministicConvergence: &harnesslint.DeterministicFixConvergence{State: tc.state}}
+			if got := deterministicAutofixFailureExit(report); got != tc.want {
+				t.Fatalf("exit = %d want %d", got, tc.want)
+			}
+		})
+	}
+	if got := deterministicAutofixFailureExit(harnesslint.Report{}); got != 1 {
+		t.Fatalf("nil convergence exit = %d", got)
 	}
 }
