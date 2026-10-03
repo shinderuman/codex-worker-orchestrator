@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestExecuteZaiSelfResumeLoopDoesNotRetryUnrelatedFailure(t *testing.T) {
@@ -56,7 +57,7 @@ func TestExecuteZaiSelfResumeLoopHonorsStopDuringPostResetRetryWait(t *testing.T
 	if resumeCalls != 0 {
 		t.Fatalf("resume calls = %d want 0 after stop request", resumeCalls)
 	}
-	if got := st.TaskStatus(); got != "rate_limited" {
-		t.Fatalf("task status = %s want rate_limited", got)
+	if got := st.TaskStatus(); got != state.TaskStatusRateLimited {
+		t.Fatalf("task status = %s want %s", got, state.TaskStatusRateLimited)
 	}
 }
