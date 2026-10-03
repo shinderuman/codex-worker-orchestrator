@@ -39,6 +39,10 @@ func Capture(repoRoot string, st *state.StateStore) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	diff, err = appendPreexistingUntrackedDiff(repoRoot, st, diff)
+	if err != nil {
+		return nil, false, err
+	}
 	return diff, true, nil
 }
 
@@ -64,6 +68,15 @@ func ChangedPaths(repoRoot string, st *state.StateStore) ([]string, bool, error)
 	}
 	paths = appendUniquePaths(paths, tracked...)
 	paths = appendUniquePaths(paths, untracked...)
+	entries, _, err := loadPreexistingUntracked(st)
+	if err != nil {
+		return nil, false, err
+	}
+	preexisting, err := preexistingUntrackedChangedPaths(repoRoot, entries)
+	if err != nil {
+		return nil, false, err
+	}
+	paths = appendUniquePaths(paths, preexisting...)
 	return paths, true, nil
 }
 
@@ -81,8 +94,28 @@ func BaselineWorktreePathPatches(repoRoot string, st *state.StateStore, paths []
 	}
 	defer cleanup()
 
+	_, preexistingByPath, err := loadPreexistingUntracked(st)
+	if err != nil {
+		return nil, err
+	}
+	currentTracked, err := currentTrackedPathSet(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+
 	patches := make(map[string][]byte, len(paths))
 	for _, path := range paths {
+		if entry, ok := preexistingByPath[filepath.ToSlash(path)]; ok {
+			_, nowTracked := currentTracked[entry.Path]
+			patch, differs, err := preexistingUntrackedPathPatch(repoRoot, entry, nowTracked)
+			if err != nil {
+				return nil, err
+			}
+			if differs {
+				patches[entry.Path] = patch
+			}
+			continue
+		}
 		patch, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--no-renames", "--unified=0", "--no-ext-diff", "--no-color", "--", path)
 		if err != nil {
 			return nil, fmt.Errorf("capture task baseline diff %s: %w", path, err)
@@ -198,13 +231,11 @@ func appendTaskCreatedDiff(repoRoot, indexPath string, st *state.StateStore, dif
 }
 
 func taskCreatedPaths(repoRoot, indexPath string, st *state.StateStore) ([]string, []string, error) {
-	if !st.Exists("baseline-untracked") {
-		return nil, nil, nil
-	}
-	baselineUntracked, err := os.ReadFile(st.Path("baseline-untracked"))
+	entries, _, err := loadPreexistingUntracked(st)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read baseline untracked paths: %w", err)
+		return nil, nil, err
 	}
+	baselineUntracked := baselineUntrackedPathSet(entries)
 	tracked, err := taskCreatedTrackedPaths(repoRoot, indexPath, baselineUntracked)
 	if err != nil {
 		return nil, nil, err
@@ -216,7 +247,7 @@ func taskCreatedPaths(repoRoot, indexPath string, st *state.StateStore) ([]strin
 	return tracked, untracked, nil
 }
 
-func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineRaw []byte) ([]string, error) {
+func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineUntracked map[string]struct{}) ([]string, error) {
 	currentRaw, stderr, err := runGitCommand(repoRoot, nil, nil, "ls-files", "-z")
 	if err != nil {
 		return nil, fmt.Errorf("list current tracked files: %w: %s", err, strings.TrimSpace(string(stderr)))
@@ -226,7 +257,6 @@ func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineRaw []byte) ([]
 		return nil, err
 	}
 	baselineIndex := nulPathSet(baselineIndexRaw)
-	baselineUntracked := nulPathSet(baselineRaw)
 	var result []string
 	for _, filePath := range splitNul(currentRaw) {
 		if _, ok := baselineIndex[filePath]; ok {
@@ -243,15 +273,14 @@ func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineRaw []byte) ([]
 	return result, nil
 }
 
-func taskCreatedUntrackedPaths(repoRoot string, baselineRaw []byte) ([]string, error) {
+func taskCreatedUntrackedPaths(repoRoot string, baselineUntracked map[string]struct{}) ([]string, error) {
 	currentRaw, stderr, err := runGitCommand(repoRoot, nil, nil, "ls-files", "-z", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, fmt.Errorf("list current untracked files: %w: %s", err, strings.TrimSpace(string(stderr)))
 	}
-	existed := nulPathSet(baselineRaw)
 	var result []string
 	for _, filePath := range splitNul(currentRaw) {
-		if _, ok := existed[filePath]; ok {
+		if _, ok := baselineUntracked[filePath]; ok {
 			continue
 		}
 		result = append(result, filePath)
