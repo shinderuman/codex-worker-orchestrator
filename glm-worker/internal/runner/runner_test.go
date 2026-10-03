@@ -344,7 +344,7 @@ func TestZaiRateLimitErrorAutoResumeSchedule(t *testing.T) {
 	if !available {
 		t.Fatalf("reset時刻があるのにauto resume不可: %v", limit)
 	}
-	if at != "2026-08-09T22:37:58+08:00" {
+	if at != "2026-08-09T22:36:03+08:00" {
 		t.Fatalf("auto resume予定時刻がgrace反映後と違います: %s", at)
 	}
 

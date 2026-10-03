@@ -21,7 +21,7 @@ type ZaiRateLimitError struct {
 	ArtifactWarning string
 }
 
-const autoResumeGrace = 2 * time.Minute
+const autoResumeGrace = 5 * time.Second
 
 var (
 	zaiBracketedBusinessCodePattern = regexp.MustCompile(`\[([0-9]{4})\]`)

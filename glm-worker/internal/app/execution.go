@@ -21,6 +21,15 @@ type stdinReadyControlEvent struct {
 
 type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
+const (
+	zaiPostResetRetryInterval       = 10 * time.Second
+	zaiPostResetRetryWindow         = 2 * time.Minute
+	zaiSelfResumeModeInitialGrace   = "initial-grace"
+	zaiSelfResumeModePostResetRetry = "post-reset-retry"
+)
+
+var zaiSelfResumeNow = func() time.Time { return time.Now().UTC() }
+
 var waitForZaiSelfResume = func(target time.Time, controller *runner.StopController) bool {
 	if controller.StopRequested() {
 		return true
@@ -269,17 +278,77 @@ func executeZaiSelfResumeLoop(
 	initial func() error,
 	resume func() error,
 ) error {
+	lastAttemptStartedAt := zaiSelfResumeNow()
 	err := initial()
+	lastBoundary := ""
 	for {
 		var limitErr runner.ZaiRateLimitError
 		if !errors.As(err, &limitErr) {
 			return err
 		}
+		postReset, boundary, retryErr := classifyZaiSelfResumeRetry(lastBoundary, limitErr)
+		if retryErr != nil {
+			return retryErr
+		}
 		if waitErr := waitForZaiFiveHourSelfResume(st, controller, limitErr); waitErr != nil {
 			return waitErr
 		}
+		if waitErr := waitForZaiPostResetRetryIfNeeded(st, controller, limitErr, postReset, lastAttemptStartedAt); waitErr != nil {
+			return waitErr
+		}
+		lastBoundary = boundary
+		lastAttemptStartedAt = zaiSelfResumeNow()
 		err = resume()
 	}
+}
+
+func classifyZaiSelfResumeRetry(lastBoundary string, limitErr runner.ZaiRateLimitError) (bool, string, error) {
+	boundary := limitErr.Limit.ResetAtRFC3339
+	resumeAt, err := zaiSelfResumeAt(boundary)
+	if err != nil {
+		return false, boundary, errors.Join(limitErr, err)
+	}
+	now := zaiSelfResumeNow()
+	if resumeAt.After(now) {
+		return false, boundary, nil
+	}
+	if lastBoundary != "" && lastBoundary != boundary {
+		return true, boundary, errors.Join(limitErr, fmt.Errorf(
+			"five-hour self-resume received a different already-passed reset boundary: got %s want %s",
+			boundary,
+			lastBoundary,
+		))
+	}
+	if !now.Before(resumeAt.Add(zaiPostResetRetryWindow)) {
+		return true, boundary, errors.Join(limitErr, fmt.Errorf(
+			"five-hour self-resume post-reset retry window exhausted for reset boundary %s",
+			boundary,
+		))
+	}
+	return true, boundary, nil
+}
+
+func zaiSelfResumeAt(resetAtRFC3339 string) (time.Time, error) {
+	available, resumeAtRFC3339 := runner.AutoResumeAtFromReset(resetAtRFC3339)
+	if !available {
+		return time.Time{}, fmt.Errorf("five-hour self-resume reset boundary is unavailable")
+	}
+	resumeAt, err := time.Parse(time.RFC3339, resumeAtRFC3339)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("five-hour self-resume boundary is invalid: %w", err)
+	}
+	return resumeAt, nil
+}
+
+func zaiSelfResumeMode(resetAtRFC3339 string, now time.Time) string {
+	resumeAt, err := zaiSelfResumeAt(resetAtRFC3339)
+	if err != nil {
+		return ""
+	}
+	if resumeAt.After(now) {
+		return zaiSelfResumeModeInitialGrace
+	}
+	return zaiSelfResumeModePostResetRetry
 }
 
 func executeWorkflowCommand(cmd Command, wf *workflow.Workflow) error {
@@ -307,29 +376,58 @@ func waitForZaiFiveHourSelfResume(
 	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {
 		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume pre-wait validation failed: %w", err))
 	}
-	available, resumeAtRFC3339 := limitErr.AutoResumeSchedule()
-	if !available {
-		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume reset boundary is unavailable"))
-	}
-	resumeAt, err := time.Parse(time.RFC3339, resumeAtRFC3339)
+	resumeAt, err := zaiSelfResumeAt(limitErr.Limit.ResetAtRFC3339)
 	if err != nil {
-		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume boundary is invalid: %w", err))
+		return errors.Join(limitErr, err)
 	}
-	if !resumeAt.After(time.Now().UTC()) {
-		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume reset boundary is not in the future: %s", resumeAtRFC3339))
-	}
-	if waitForZaiSelfResume(resumeAt, controller) {
-		controller.NotifyInterrupted(limitErr.TaskID, "")
-		return &runner.InterruptedCallError{
-			Phase:    limitErr.Phase,
-			TaskID:   limitErr.TaskID,
-			RepoRoot: limitErr.RepoRoot,
-		}
+	if resumeAt.After(zaiSelfResumeNow()) && waitForZaiSelfResume(resumeAt, controller) {
+		return zaiSelfResumeInterrupted(controller, limitErr)
 	}
 	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {
 		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume wake validation failed: %w", err))
 	}
 	return nil
+}
+
+func waitForZaiPostResetRetryIfNeeded(
+	st *state.StateStore,
+	controller *runner.StopController,
+	limitErr runner.ZaiRateLimitError,
+	postReset bool,
+	lastAttemptStartedAt time.Time,
+) error {
+	if !postReset {
+		return nil
+	}
+	return waitForZaiPostResetRetrySpacing(st, controller, limitErr, lastAttemptStartedAt)
+}
+
+func waitForZaiPostResetRetrySpacing(
+	st *state.StateStore,
+	controller *runner.StopController,
+	limitErr runner.ZaiRateLimitError,
+	lastAttemptStartedAt time.Time,
+) error {
+	if lastAttemptStartedAt.IsZero() {
+		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume previous attempt start time is unavailable"))
+	}
+	nextAttemptAt := lastAttemptStartedAt.Add(zaiPostResetRetryInterval)
+	if nextAttemptAt.After(zaiSelfResumeNow()) && waitForZaiSelfResume(nextAttemptAt, controller) {
+		return zaiSelfResumeInterrupted(controller, limitErr)
+	}
+	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {
+		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume post-reset retry validation failed: %w", err))
+	}
+	return nil
+}
+
+func zaiSelfResumeInterrupted(controller *runner.StopController, limitErr runner.ZaiRateLimitError) error {
+	controller.NotifyInterrupted(limitErr.TaskID, "")
+	return &runner.InterruptedCallError{
+		Phase:    limitErr.Phase,
+		TaskID:   limitErr.TaskID,
+		RepoRoot: limitErr.RepoRoot,
+	}
 }
 
 func validateZaiFiveHourSelfResumeState(st *state.StateStore, limitErr runner.ZaiRateLimitError) error {
