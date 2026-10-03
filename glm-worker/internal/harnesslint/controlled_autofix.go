@@ -9,13 +9,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/commentlint"
 )
 
-const (
-	deterministicAutofixMaxIterations = 8
-	DeterministicFixConverged         = "converged"
-	DeterministicFixCycle             = "cycle"
-	DeterministicFixBoundExhausted    = "iteration-bound-exhausted"
-)
-
 type controlledCommandRunner struct {
 	base        commandRunner
 	targetRoot  string
@@ -25,6 +18,20 @@ type controlledCommandRunner struct {
 type deterministicAutofixFailure struct {
 	evidence DeterministicFixConvergence
 }
+
+type deterministicAutofixState struct {
+	initial         map[string][32]byte
+	current         map[string][32]byte
+	seen            map[string]struct{}
+	changesProduced bool
+}
+
+const (
+	deterministicAutofixMaxIterations = 8
+	DeterministicFixConverged         = "converged"
+	DeterministicFixCycle             = "cycle"
+	DeterministicFixBoundExhausted    = "iteration-bound-exhausted"
+)
 
 func (failure *deterministicAutofixFailure) Error() string {
 	return fmt.Sprintf("deterministic autofix did not converge: state=%s iterations=%d max_iterations=%d",
@@ -37,7 +44,7 @@ func DeterministicAutofixFailureReport(err error) (Report, bool) {
 		return Report{}, false
 	}
 	report := makeReport(0, nil)
-	report.Status = "fail"
+	report.Status = reportStatusFail
 	evidence := failure.evidence
 	report.DeterministicConvergence = &evidence
 	return report, true
@@ -73,47 +80,85 @@ func runDeterministicAutofix(root, controlRoot string, base commandRunner) (Repo
 	if err != nil {
 		return Report{}, err
 	}
-	key, err := deterministicSnapshotKey(initial)
+	state, err := newDeterministicAutofixState(initial)
 	if err != nil {
 		return Report{}, err
 	}
-	seen := map[string]struct{}{key: {}}
-	current := initial
-	changesProduced := false
 	runner := controlledCommandRunner{base: base, targetRoot: root, controlRoot: controlRoot}
 
 	for iteration := 1; iteration <= deterministicAutofixMaxIterations; iteration++ {
-		if err := runDeterministicAutofixPass(root, paths, runner); err != nil {
-			return Report{}, err
-		}
-		paths, err = repositoryPaths(root)
+		paths, next, err := deterministicAutofixIteration(root, paths, runner)
 		if err != nil {
 			return Report{}, err
 		}
-		next, err := snapshots(root, paths)
-		if err != nil {
+		if changedSnapshotCount(state.current, next) == 0 {
+			return state.convergedReport(next, iteration), nil
+		}
+		if err := state.recordChangedPostimage(next, iteration); err != nil {
 			return Report{}, err
 		}
-		if changedSnapshotCount(current, next) == 0 {
-			report := makeReport(changedSnapshotCount(initial, next), nil)
-			report.DeterministicConvergence = &DeterministicFixConvergence{
-				State: DeterministicFixConverged, Iterations: iteration,
-				MaxIterations: deterministicAutofixMaxIterations, ChangesProduced: changesProduced,
-			}
-			return report, nil
-		}
-		changesProduced = true
-		key, err = deterministicSnapshotKey(next)
-		if err != nil {
-			return Report{}, err
-		}
-		if _, repeated := seen[key]; repeated {
-			return Report{}, newDeterministicAutofixFailure(DeterministicFixCycle, iteration, changesProduced)
-		}
-		seen[key] = struct{}{}
-		current = next
 	}
-	return Report{}, newDeterministicAutofixFailure(DeterministicFixBoundExhausted, deterministicAutofixMaxIterations, changesProduced)
+	return Report{}, newDeterministicAutofixFailure(
+		DeterministicFixBoundExhausted,
+		deterministicAutofixMaxIterations,
+		state.changesProduced,
+	)
+}
+
+func deterministicAutofixIteration(
+	root string,
+	paths []string,
+	runner commandRunner,
+) ([]string, map[string][32]byte, error) {
+	if err := runDeterministicAutofixPass(root, paths, runner); err != nil {
+		return nil, nil, err
+	}
+	nextPaths, err := repositoryPaths(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	next, err := snapshots(root, nextPaths)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nextPaths, next, nil
+}
+
+func newDeterministicAutofixState(initial map[string][32]byte) (*deterministicAutofixState, error) {
+	key, err := deterministicSnapshotKey(initial)
+	if err != nil {
+		return nil, err
+	}
+	return &deterministicAutofixState{
+		initial: initial,
+		current: initial,
+		seen:    map[string]struct{}{key: {}},
+	}, nil
+}
+
+func (state *deterministicAutofixState) recordChangedPostimage(next map[string][32]byte, iteration int) error {
+	state.changesProduced = true
+	key, err := deterministicSnapshotKey(next)
+	if err != nil {
+		return err
+	}
+	if _, repeated := state.seen[key]; repeated {
+		return newDeterministicAutofixFailure(DeterministicFixCycle, iteration, state.changesProduced)
+	}
+	state.seen[key] = struct{}{}
+	state.current = next
+	return nil
+}
+
+func (state *deterministicAutofixState) convergedReport(next map[string][32]byte, iteration int) Report {
+	report := makeReport(changedSnapshotCount(state.initial, next), nil)
+	report.DeterministicConvergence = &DeterministicFixConvergence{
+		State:           DeterministicFixConverged,
+		Iterations:      iteration,
+		MaxIterations:   deterministicAutofixMaxIterations,
+		ChangesProduced: state.changesProduced,
+	}
+	return report
 }
 
 func runDeterministicAutofixPass(root string, paths []string, runner commandRunner) error {
@@ -136,7 +181,9 @@ func deterministicSnapshotKey(snapshot map[string][32]byte) (string, error) {
 
 func newDeterministicAutofixFailure(state string, iterations int, changesProduced bool) error {
 	return &deterministicAutofixFailure{evidence: DeterministicFixConvergence{
-		State: state, Iterations: iterations, MaxIterations: deterministicAutofixMaxIterations,
+		State:           state,
+		Iterations:      iterations,
+		MaxIterations:   deterministicAutofixMaxIterations,
 		ChangesProduced: changesProduced,
 	}}
 }
