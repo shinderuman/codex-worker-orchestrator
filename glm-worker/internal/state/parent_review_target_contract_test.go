@@ -59,6 +59,13 @@ func TestParentReviewBindingRejectsTargetsWithoutCanonicalProofPath(t *testing.T
 		err := recordBoundReviewForContract(st, snapshot, "review.go:Huge")
 		assertReviewTargetAdmissionRejected(t, st, err, "[symbol-source-too-large]")
 	})
+
+	t.Run("oversized numeric range", func(t *testing.T) {
+		st, _, snapshot := newBoundParentReviewTestStore(t)
+		target := "review.go:1-" + strconv.Itoa(reviewtarget.MaxSourceProofLines+1)
+		err := recordBoundReviewForContract(st, snapshot, target)
+		assertReviewTargetAdmissionRejected(t, st, err, "[line-range-too-large]")
+	})
 }
 
 func TestParentReviewBindingAdmitsCanonicalProofableTargets(t *testing.T) {
