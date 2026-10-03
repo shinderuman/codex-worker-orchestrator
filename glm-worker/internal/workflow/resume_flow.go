@@ -407,6 +407,7 @@ func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, r
 		if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil || stopped {
 			return err
 		}
+	}
 	if !checkpoint.ReportOnly {
 		var err error
 		result, err = w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
