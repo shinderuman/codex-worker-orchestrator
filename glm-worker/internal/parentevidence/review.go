@@ -47,21 +47,43 @@ func BuildReviewManifest(repoRoot string, st *state.StateStore) (Manifest, error
 		if err != nil {
 			return Manifest{}, err
 		}
-		switch target.Kind {
-		case reviewtarget.LocatorLineRange:
-			appendReviewSourceRequest(&manifest, seenSource, question, target.Path, target.LineStart, target.LineEnd)
-		case reviewtarget.LocatorGoSymbol:
-			request, err := reviewSymbolSourceRequest(repoRoot, question, target)
-			if err != nil {
-				return Manifest{}, err
-			}
-			appendReviewSourceRequest(&manifest, seenSource, request.Question, request.Path, request.LineStart, request.LineEnd)
-		case reviewtarget.LocatorWholeDiff:
-			diffPaths[target.Path] = struct{}{}
-		default:
-			return Manifest{}, fmt.Errorf("review evidence target has no proof strategy: %s", raw)
+		if err := appendReviewManifestTarget(repoRoot, &manifest, seenSource, diffPaths, question, target); err != nil {
+			return Manifest{}, err
 		}
 	}
+	appendReviewDiffRequests(&manifest, diffPaths, question)
+	if err := ValidateManifest(manifest); err != nil {
+		return Manifest{}, err
+	}
+	return manifest, nil
+}
+
+func appendReviewManifestTarget(
+	repoRoot string,
+	manifest *Manifest,
+	seenSource map[string]struct{},
+	diffPaths map[string]struct{},
+	question string,
+	target reviewtarget.Target,
+) error {
+	switch target.Kind {
+	case reviewtarget.LocatorLineRange:
+		appendReviewSourceRequest(manifest, seenSource, question, target.Path, target.LineStart, target.LineEnd)
+	case reviewtarget.LocatorGoSymbol:
+		request, err := reviewSymbolSourceRequest(repoRoot, question, target)
+		if err != nil {
+			return err
+		}
+		appendReviewSourceRequest(manifest, seenSource, request.Question, request.Path, request.LineStart, request.LineEnd)
+	case reviewtarget.LocatorWholeDiff:
+		diffPaths[target.Path] = struct{}{}
+	default:
+		return fmt.Errorf("review evidence target has no proof strategy: %s:%s", target.Path, target.Locator)
+	}
+	return nil
+}
+
+func appendReviewDiffRequests(manifest *Manifest, diffPaths map[string]struct{}, question string) {
 	paths := make([]string, 0, len(diffPaths))
 	for path := range diffPaths {
 		paths = append(paths, path)
@@ -70,10 +92,6 @@ func BuildReviewManifest(repoRoot string, st *state.StateStore) (Manifest, error
 	for _, path := range paths {
 		manifest.Diff = append(manifest.Diff, DiffRequest{Question: question, Paths: []string{path}, BudgetBytes: MaxBudgetBytes})
 	}
-	if err := ValidateManifest(manifest); err != nil {
-		return Manifest{}, err
-	}
-	return manifest, nil
 }
 
 func appendReviewSourceRequest(manifest *Manifest, seen map[string]struct{}, question, path string, start, end int) {
@@ -110,10 +128,6 @@ func reviewSymbolSourceRequest(repoRoot, question string, target reviewtarget.Ta
 	return SourceRequest{
 		Question: question, Path: target.Path, LineStart: start, LineEnd: declaration.LineEnd, BudgetBytes: MaxBudgetBytes,
 	}, nil
-}
-
-func ReviewTarget(target string) (string, string, error) {
-	return reviewtarget.Parse(target)
 }
 
 func (p *Projector) markReviewProof(parts []Part) error {
@@ -285,15 +299,6 @@ func reviewDiffHunkRange(line string, oldSide bool) (int, int, bool) {
 		count = parsed
 	}
 	return start, start + count - 1, true
-}
-
-func reviewTargetMatchesPath(target, path string) bool {
-	parsed, err := reviewtarget.ParseTarget(target)
-	return err == nil && parsed.Path == path
-}
-
-func NumericRange(locator string) (int, int, bool) {
-	return reviewtarget.ParseLineRange(locator)
 }
 
 func positiveLine(value string) (int, bool) {
