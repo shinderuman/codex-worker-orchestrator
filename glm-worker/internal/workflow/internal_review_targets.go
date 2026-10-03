@@ -51,13 +51,9 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 		if path == "" {
 			continue
 		}
-		target := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
-		parsed, err := reviewtarget.ParseTarget(target)
+		target, err := proofableReviewPathTarget(w.config.RepoRoot, path)
 		if err != nil {
-			return nil, fmt.Errorf("current task review targets: changed path %q cannot be represented as a review target: %w", path, err)
-		}
-		if err := reviewtarget.ValidateProofAddressable(w.config.RepoRoot, parsed); err != nil {
-			return nil, fmt.Errorf("current task review targets: changed path %q has no whole-diff proof: %w", path, err)
+			return nil, fmt.Errorf("current task review targets: %w", err)
 		}
 		if _, duplicate := seen[target]; duplicate {
 			continue
@@ -69,6 +65,23 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 		return nil, fmt.Errorf("current task review targets: current task has no changed paths")
 	}
 	return targets, nil
+}
+
+func proofableReviewPathTarget(repoRoot, path string) (string, error) {
+	var lastErr error
+	for _, locator := range []string{reviewtarget.WholeFileDiffLocator, "1"} {
+		raw := fmt.Sprintf("%s:%s", path, locator)
+		target, err := reviewtarget.ParseTarget(raw)
+		if err != nil {
+			return "", fmt.Errorf("changed path %q cannot be represented as a review target: %w", path, err)
+		}
+		if err := reviewtarget.ValidateProofAddressable(repoRoot, target); err == nil {
+			return raw, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return "", fmt.Errorf("changed path %q has no canonical review proof path: %w", path, lastErr)
 }
 
 func (w *Workflow) resultOrCurrentReviewTargets(result packet.Result) ([]string, error) {
