@@ -2,6 +2,9 @@ package state
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,27 +50,18 @@ func TestCaptureGitBaselineStoresPrivateUntrackedSnapshot(t *testing.T) {
 		t.Fatalf("symlink kind = %q", byPath["preexisting-link"].Kind)
 	}
 
-	root := st.Path(baselineUntrackedFile)
-	assertPrivateMode(t, root, 0o700)
-	assertPrivateMode(t, filepath.Join(root, untrackedBaselineBlobDir), 0o700)
-	assertPrivateMode(t, filepath.Join(root, untrackedBaselineManifestFile), 0o600)
-	blobEntries, err := os.ReadDir(filepath.Join(root, untrackedBaselineBlobDir))
+	path := st.Path(baselineUntrackedFile)
+	assertPrivateMode(t, path, 0o600)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(blobEntries) != 2 {
-		t.Fatalf("blob entries = %d, want 2", len(blobEntries))
+	if bytes.Contains(raw, []byte("private contents")) {
+		t.Fatalf("snapshot unexpectedly stores raw text inline: %s", raw)
 	}
-	for _, entry := range blobEntries {
-		assertPrivateMode(t, filepath.Join(root, untrackedBaselineBlobDir, entry.Name()), 0o600)
-	}
-
 	evidence := st.BaselineEvidence()
-	if evidence == nil || evidence.Untracked != root {
+	if evidence == nil || evidence.Untracked != path {
 		t.Fatalf("baseline evidence = %#v", evidence)
-	}
-	if strings.Contains(evidence.Untracked, untrackedBaselineBlobDir+string(filepath.Separator)) {
-		t.Fatalf("baseline evidence exposed blob path: %q", evidence.Untracked)
 	}
 }
 
@@ -89,35 +83,63 @@ func TestCaptureGitBaselineRejectsOversizedUntrackedPreimage(t *testing.T) {
 	}
 }
 
-func TestReadUntrackedBaselineRejectsMissingBlob(t *testing.T) {
-	repoRoot, cfg, st := newUntrackedBaselineStateFixture(t, "missing-blob")
+func TestReadUntrackedBaselineRejectsCorruptContentDigest(t *testing.T) {
+	repoRoot, cfg, st := newUntrackedBaselineStateFixture(t, "corrupt")
 	if err := os.WriteFile(filepath.Join(repoRoot, "preexisting.txt"), []byte("contents\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.RemoveAll(filepath.Join(st.Path(baselineUntrackedFile), untrackedBaselineBlobDir)); err != nil {
+	raw, err := os.ReadFile(st.Path(baselineUntrackedFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot untrackedBaselineSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Entries) != 1 {
+		t.Fatalf("entries = %#v", snapshot.Entries)
+	}
+	snapshot.Entries[0].Content[0] ^= 1
+	corrupt, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path(baselineUntrackedFile), append(corrupt, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := st.ReadUntrackedBaseline(); err == nil || !strings.Contains(err.Error(), "blob") {
-		t.Fatalf("missing blob was not rejected: %v", err)
+	if _, err := st.ReadUntrackedBaseline(); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("corrupt snapshot was not rejected: %v", err)
 	}
 }
 
-func TestReadUntrackedBaselineRejectsEscapingManifestPath(t *testing.T) {
+func TestReadUntrackedBaselineRejectsEscapingSnapshotPath(t *testing.T) {
 	_, cfg, st := newUntrackedBaselineStateFixture(t, "escaping-path")
 	if err := CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"version":1,"entries":[{"path":"../outside","kind":"file","mode":384,"size":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","blob":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}]}` + "\n"
-	if err := os.WriteFile(filepath.Join(st.Path(baselineUntrackedFile), untrackedBaselineManifestFile), []byte(manifest), 0o600); err != nil {
+	digest := sha256.Sum256(nil)
+	snapshot := untrackedBaselineSnapshot{Version: untrackedBaselineVersion, Entries: []untrackedBaselineSnapshotEntry{{
+		Path:    "../outside",
+		Kind:    UntrackedBaselineKindFile,
+		Mode:    0o600,
+		Size:    0,
+		SHA256:  hex.EncodeToString(digest[:]),
+		Content: nil,
+	}}}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path(baselineUntrackedFile), append(data, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	if _, err := st.ReadUntrackedBaseline(); err == nil || !strings.Contains(err.Error(), "invalid untracked baseline path") {
-		t.Fatalf("escaping manifest path was not rejected: %v", err)
+		t.Fatalf("escaping snapshot path was not rejected: %v", err)
 	}
 }
 
