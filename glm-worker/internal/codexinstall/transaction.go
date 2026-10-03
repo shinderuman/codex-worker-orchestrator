@@ -33,34 +33,62 @@ func applyInstallWithStateWriter(preparation installPreparation, stdout io.Write
 	if err != nil {
 		return err
 	}
+	next := plannedInstallState(preparation)
+	journal, err := newInstallTransactionJournal(preparation, backups, next)
+	if err != nil {
+		return err
+	}
+	if err := saveInstallTransactionJournal(installTransactionPath(preparation.codexDir), journal); err != nil {
+		return err
+	}
+
 	tracker := newInstallMutationTracker(backups)
+	rollback := func(cause error) error {
+		return rollbackInstallAttempt(preparation.codexDir, tracker, cause)
+	}
 	var pendingOutput bytes.Buffer
 	output := func(format string, args ...any) { _, _ = fmt.Fprintf(&pendingOutput, format, args...) }
 	files, err := applyFileInstallPlan(preparation.codexDir, preparation.filePlan, preparation.state, preparation.stateExists, tracker.record, output)
 	if err != nil {
-		return tracker.rollback(err)
+		return rollback(err)
 	}
 	if err := applyConfigInstallPlan(preparation.configPlan, tracker.record, output); err != nil {
-		return tracker.rollback(err)
+		return rollback(err)
 	}
 	if err := validateManagedFilesForStateCommit(preparation.codexDir, files); err != nil {
-		return tracker.rollback(err)
+		return rollback(err)
 	}
 	if err := validateConfigForStateCommit(preparation.configPlan); err != nil {
-		return tracker.rollback(err)
+		return rollback(err)
 	}
 	if err := requireInstallStateUnchanged(preparation); err != nil {
-		return tracker.rollback(err)
-	}
-	next := installState{Version: stateVersion, Files: files, Config: map[string]managedConfigRecord{}}
-	if preparation.configPlan.Record != nil {
-		next.Config[managedConfigKey] = *preparation.configPlan.Record
+		return rollback(err)
 	}
 	if err := writeStateFn(preparation.codexDir, next); err != nil {
-		return tracker.rollback(err)
+		return rollback(err)
+	}
+	if err := removeInstallTransactionJournal(preparation.codexDir, "finalize Codex install transaction"); err != nil {
+		return err
 	}
 	_, _ = io.Copy(stdout, &pendingOutput)
 	return nil
+}
+
+func rollbackInstallAttempt(codexDir string, tracker *installMutationTracker, cause error) error {
+	if rollbackErr := tracker.rollbackMutations(); rollbackErr != nil {
+		return errors.Join(cause, rollbackErr)
+	}
+	matches, err := installTransactionPreimagesMatch(codexDir)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	if !matches {
+		return errors.Join(cause, fmt.Errorf("install rollback incomplete; durable recovery required"))
+	}
+	if err := removeInstallTransactionJournal(codexDir, "remove Codex install transaction journal after rollback"); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
 }
 
 func requireInstallStateUnchanged(preparation installPreparation) error {
@@ -176,7 +204,14 @@ func (t *installMutationTracker) record(path string) error {
 }
 
 func (t *installMutationTracker) rollback(cause error) error {
-	errs := []error{cause}
+	if err := t.rollbackMutations(); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
+}
+
+func (t *installMutationTracker) rollbackMutations() error {
+	var errs []error
 	for i := len(t.order) - 1; i >= 0; i-- {
 		path := t.order[i]
 		written := t.written[path]
