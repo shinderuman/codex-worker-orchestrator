@@ -81,6 +81,9 @@ func verifyPromotedPublicationReadiness(cfg config.AppConfig, st *state.StateSto
 	if review := publicationReviewGate(st, candidate); review.Status != publicationGatePass {
 		return publicationReadinessFailure(publicationFailureRemoteNotReady, review.Reason)
 	}
+	if acceptance := publicationMachineAcceptanceGate(cfg.RepoRoot, st, candidate); acceptance.Required && acceptance.Status != publicationGatePass {
+		return publicationReadinessFailure(publicationFailureRemoteNotReady, acceptance.Gate+": "+acceptance.Reason)
+	}
 	if validation, required := publicationParentValidationGate(st, cfg.RepoRoot, candidate); required && validation.Status != publicationGatePass {
 		return publicationReadinessFailure(publicationFailureRemoteNotReady, validation.Gate+": "+validation.Reason)
 	}
