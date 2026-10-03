@@ -124,6 +124,67 @@ func TestRecoverInterruptedInstallRejectsWrongDestination(t *testing.T) {
 	}
 }
 
+func TestRecoverInterruptedInstallRejectsSymlinkedJournal(t *testing.T) {
+	fixture := newInstallRecoveryFixture(t)
+	journalPath := installTransactionPath(fixture.codexDir)
+	journalData := append([]byte(nil), readTestFile(t, journalPath)...)
+	outside := filepath.Join(t.TempDir(), "journal.json")
+	writeTestFile(t, outside, journalData)
+	if err := os.Remove(journalPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, journalPath); err != nil {
+		t.Fatal(err)
+	}
+
+	err := recoverInterruptedInstall(fixture.codexDir)
+	if err == nil || !strings.Contains(err.Error(), "journal is not a regular file") {
+		t.Fatalf("expected symlinked journal rejection, got %v", err)
+	}
+	assertFileBytes(t, outside, journalData)
+	if info, err := os.Lstat(journalPath); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("journal symlink was changed: info=%v err=%v", info, err)
+	}
+}
+
+func TestRecoverInterruptedInstallRejectsSymlinkedSurfaceAncestor(t *testing.T) {
+	fixture := newInstallRecoveryFixture(t)
+	outside := t.TempDir()
+	for _, surface := range fixture.journal.Surfaces {
+		if !strings.HasPrefix(surface.Path, "instructions/") || !surface.Post.Exists {
+			continue
+		}
+		relative := strings.TrimPrefix(surface.Path, "instructions/")
+		target := filepath.Join(outside, filepath.FromSlash(relative))
+		writeTestFile(t, target, surface.Post.Content)
+		if err := os.Chmod(target, surface.Post.Mode.Perm()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	instructions := filepath.Join(fixture.codexDir, "instructions")
+	if err := os.RemoveAll(instructions); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, instructions); err != nil {
+		t.Fatal(err)
+	}
+
+	err := recoverInterruptedInstall(fixture.codexDir)
+	if err == nil || !strings.Contains(err.Error(), "ancestor is not a real directory") {
+		t.Fatalf("expected symlinked ancestor rejection, got %v", err)
+	}
+	for _, surface := range fixture.journal.Surfaces {
+		if !strings.HasPrefix(surface.Path, "instructions/") || !surface.Post.Exists {
+			continue
+		}
+		relative := strings.TrimPrefix(surface.Path, "instructions/")
+		assertFileBytes(t, filepath.Join(outside, filepath.FromSlash(relative)), surface.Post.Content)
+	}
+	if _, err := os.Stat(installTransactionPath(fixture.codexDir)); err != nil {
+		t.Fatalf("journal was removed after unsafe recovery: %v", err)
+	}
+}
+
 func TestInstallRecoversAfterStateCommitBoundaryCrash(t *testing.T) {
 	if os.Getenv("CODEX_INSTALL_CRASH_HELPER") == "1" {
 		repo := os.Getenv("CODEX_INSTALL_CRASH_REPO")
