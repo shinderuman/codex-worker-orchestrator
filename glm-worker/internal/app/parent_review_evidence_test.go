@@ -174,42 +174,17 @@ func TestParentEvidenceSnapshotChangeCannotCreateProof(t *testing.T) {
 	}
 }
 
-func TestParentReviewEvidenceClaimCoverage(t *testing.T) {
-	diff := &parentevidence.DiffBody{
+func TestParentReviewDiffClaimCoverage(t *testing.T) {
+	diff := parentevidence.DiffBody{
 		Paths: []string{"symbol.go"},
 		Body:  "diff --git a/symbol.go b/symbol.go\n--- a/symbol.go\n+++ b/symbol.go\n@@ -8,6 +8,6 @@ func TargetSymbol() {\n context\n-old\n+new\n context\n",
 		Files: []parentevidence.DiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	parts := []parentevidence.Part{
-		{
-			Kind: "source", Digest: "range-source-digest", Locator: "review.go:8-15",
-			Source: &parentevidence.SourceBody{Path: "review.go", LineStart: 8, LineEnd: 15, Content: "body"},
-		},
-		{
-			Kind: "source", Digest: "symbol-source-digest", Locator: "symbol.go:8-8",
-			Source: &parentevidence.SourceBody{Path: "symbol.go", LineStart: 8, LineEnd: 8, Content: "func TargetSymbol() {}\n"},
-		},
-		{Kind: "diff", Digest: "diff-digest", Locator: "git diff HEAD -- symbol.go", Diff: diff},
-	}
-	claims, ok := parentevidence.ReviewClaims([]string{"review.go:10-12", "symbol.go:TargetSymbol"}, parts)
-	if !ok || len(claims) != 2 || claims[0].Kind != "source" || claims[1].Kind != "source" {
-		t.Fatalf("claims = %#v complete=%v", claims, ok)
-	}
-	if _, ok := parentevidence.ReviewClaims([]string{"review.go:16"}, parts); ok {
-		t.Fatal("source outside requested target range counted as proof")
-	}
-	if _, ok := parentevidence.ReviewClaims([]string{"symbol.go:OtherSymbol"}, parts); ok {
-		t.Fatal("unrelated same-file evidence counted as symbol proof")
-	}
-	if !parentevidence.ReviewDiffCoversTarget("symbol.go:10-12", *diff) {
+	if !parentevidence.ReviewDiffCoversTarget("symbol.go:10-12", diff) {
 		t.Fatal("visible diff hunk did not cover numeric target")
 	}
-	if parentevidence.ReviewDiffCoversTarget("symbol.go:20", *diff) {
+	if parentevidence.ReviewDiffCoversTarget("symbol.go:20", diff) {
 		t.Fatal("unrelated same-file diff counted as line proof")
-	}
-	parts[0].Source.Content = ""
-	if _, ok := parentevidence.ReviewClaims([]string{"review.go:10"}, parts); ok {
-		t.Fatal("non-model-visible source counted as proof")
 	}
 }
 

@@ -11,12 +11,13 @@ import (
 )
 
 type ParentReviewBinding struct {
-	ID           string                     `json:"id"`
-	PacketSHA256 string                     `json:"packet_sha256"`
-	Targets      []string                   `json:"targets"`
-	SolQuestion  string                     `json:"sol_question"`
-	Snapshot     SnapshotDigest             `json:"snapshot"`
-	Proof        *ParentReviewEvidenceProof `json:"proof,omitempty"`
+	ID           string                        `json:"id"`
+	PacketSHA256 string                        `json:"packet_sha256"`
+	Targets      []string                      `json:"targets"`
+	SolQuestion  string                        `json:"sol_question"`
+	Snapshot     SnapshotDigest                `json:"snapshot"`
+	Coverage     *ParentReviewEvidenceCoverage `json:"coverage,omitempty"`
+	Proof        *ParentReviewEvidenceProof    `json:"proof,omitempty"`
 }
 
 type ParentReviewEvidenceProof struct {
@@ -67,6 +68,9 @@ func validateParentReviewBindingState(state ParentReviewState) error {
 	if err := validateParentReviewBindingIdentity(state); err != nil {
 		return err
 	}
+	if err := validateParentReviewEvidenceCoverage(state.Review); err != nil {
+		return err
+	}
 	return validateParentReviewEvidenceProof(state.Review)
 }
 
@@ -96,7 +100,7 @@ func validateParentReviewEvidenceProof(binding *ParentReviewBinding) error {
 		return fmt.Errorf("parent review evidence proof schema is invalid")
 	}
 	for _, claim := range proof.Claims {
-		if (claim.Kind != "diff" && claim.Kind != "source") || claim.Digest == "" || claim.Locator == "" {
+		if !validParentReviewEvidenceClaim(claim) {
 			return fmt.Errorf("parent review evidence claim schema is invalid")
 		}
 	}
@@ -152,6 +156,11 @@ func (s *StateStore) CurrentParentReviewBinding() (*ParentReviewBinding, error) 
 	}
 	binding := *state.Review
 	binding.Targets = append([]string(nil), binding.Targets...)
+	if binding.Coverage != nil {
+		coverage := *binding.Coverage
+		coverage.Claims = append([]ParentReviewTargetCoverageClaim(nil), coverage.Claims...)
+		binding.Coverage = &coverage
+	}
 	if binding.Proof != nil {
 		proof := *binding.Proof
 		proof.Claims = append([]ParentReviewEvidenceClaim(nil), proof.Claims...)
@@ -201,6 +210,10 @@ func (s *StateStore) ParentReviewAcceptReady() (bool, error) {
 	}
 	if state.Review == nil || state.Review.Proof == nil || state.Review.Proof.ReviewID != state.Review.ID {
 		return false, nil
+	}
+	coverageCurrent, err := s.parentReviewCoverageLeaseCurrent(state.Review)
+	if err != nil || !coverageCurrent {
+		return false, err
 	}
 	current, err := s.captureCurrentParentReviewSnapshot()
 	if err != nil {
