@@ -1,6 +1,7 @@
 package parentactioncmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -28,6 +31,15 @@ type runtimeInstallAttempt struct {
 	output      installOutput
 }
 
+type installDiagnosticTail struct {
+	mu   sync.Mutex
+	data []byte
+}
+
+type installFailureEnvelope struct {
+	Failure *finalizationFailure `json:"failure"`
+}
+
 const (
 	installStatusInstalled          = "installed"
 	installStatusNotRequired        = "not_required"
@@ -36,6 +48,32 @@ const (
 	installStatusGuardRejected      = "install_guard_rejected"
 	installScriptName               = "install.sh"
 )
+
+func (w *installDiagnosticTail) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	n := len(p)
+	if n == 0 {
+		return 0, nil
+	}
+	if n >= finalizationDiagnosticLimit {
+		w.data = append(w.data[:0], p[n-finalizationDiagnosticLimit:]...)
+		return n, nil
+	}
+	if overflow := len(w.data) + n - finalizationDiagnosticLimit; overflow > 0 {
+		copy(w.data, w.data[overflow:])
+		w.data = w.data[:len(w.data)-overflow]
+	}
+	w.data = append(w.data, p...)
+	return n, nil
+}
+
+func (w *installDiagnosticTail) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return string(append([]byte(nil), w.data...))
+}
 
 func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	if len(args) != 1 {
@@ -180,8 +218,10 @@ func installScriptGuard(repoRoot string) (string, *finalizationFailure) {
 func runInstallScript(script, repoRoot string, stderr io.Writer) installOutput {
 	command := exec.Command(script)
 	command.Dir = repoRoot
-	command.Stdout = stderr
-	command.Stderr = stderr
+	diagnostic := &installDiagnosticTail{}
+	childOutput := io.MultiWriter(stderr, diagnostic)
+	command.Stdout = childOutput
+	command.Stderr = childOutput
 
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -199,12 +239,43 @@ func runInstallScript(script, repoRoot string, stderr io.Writer) installOutput {
 	if err == nil {
 		return installOutput{Status: installStatusInstalled}
 	}
-	failure := &finalizationFailure{Stage: "install", Reason: "install_script_failed"}
+
+	detail := compactFinalizationDiagnostic(diagnostic.String())
+	failure := &finalizationFailure{Stage: "install", Reason: "install_script_failed", Detail: detail}
+	if typed := installTypedChildFailure(diagnostic.String()); typed != nil {
+		failure.Stage = typed.Stage
+		failure.Reason = typed.Reason
+		if typed.Detail != "" {
+			failure.Detail = compactFinalizationDiagnostic(typed.Detail)
+		}
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		failure.ExitCode = childExitCode(exitErr)
-	} else {
+	}
+	if failure.Detail == "" {
 		failure.Detail = compactFinalizationDiagnostic(err.Error())
 	}
 	return installOutput{Status: installStatusFailed, Failure: failure}
+}
+
+func installTypedChildFailure(value string) *finalizationFailure {
+	lines := strings.Split(value, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || !json.Valid([]byte(line)) {
+			continue
+		}
+		var envelope installFailureEnvelope
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil || envelope.Failure == nil {
+			continue
+		}
+		if envelope.Failure.Stage == "" || envelope.Failure.Reason == "" {
+			continue
+		}
+		failure := *envelope.Failure
+		failure.Detail = compactFinalizationDiagnostic(failure.Detail)
+		return &failure
+	}
+	return nil
 }
