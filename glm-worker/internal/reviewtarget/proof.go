@@ -57,6 +57,9 @@ func validateGoSymbolProofAddressable(repoRoot string, target Target) error {
 }
 
 func validateLineRangeProofAddressable(repoRoot string, target Target) error {
+	if target.LineEnd-target.LineStart+1 > MaxSourceProofLines {
+		return proofError("line-range-too-large", target, "split the source proof into canonical ranges within the source proof bound")
+	}
 	content, err := readRepositoryFile(repoRoot, target.Path)
 	if err == nil {
 		if !textLineEvidence(content) {
