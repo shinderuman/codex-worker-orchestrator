@@ -118,15 +118,11 @@ func reviewSymbolSourceRequest(repoRoot, question string, target reviewtarget.Ta
 	if err != nil {
 		return SourceRequest{}, fmt.Errorf("resolve review symbol %s:%s: %w", target.Path, target.Locator, err)
 	}
-	start := declaration.LineStart
-	if declaration.Kind != "func" && declaration.Kind != "method" {
-		start = 1
-	}
-	if declaration.LineEnd-start+1 > MaxSourceLines {
-		return SourceRequest{}, fmt.Errorf("review symbol %s:%s needs %d source lines; correction=use an exact numeric line/range within the %d-line evidence bound", target.Path, target.Locator, declaration.LineEnd-start+1, MaxSourceLines)
+	if declaration.LineEnd-declaration.LineStart+1 > MaxSourceLines {
+		return SourceRequest{}, fmt.Errorf("review symbol %s:%s needs %d source lines; correction=use an exact numeric line/range within the %d-line evidence bound", target.Path, target.Locator, declaration.LineEnd-declaration.LineStart+1, MaxSourceLines)
 	}
 	return SourceRequest{
-		Question: question, Path: target.Path, LineStart: start, LineEnd: declaration.LineEnd, BudgetBytes: MaxBudgetBytes,
+		Question: question, Path: target.Path, LineStart: declaration.LineStart, LineEnd: declaration.LineEnd, BudgetBytes: MaxBudgetBytes,
 	}, nil
 }
 
@@ -199,7 +195,7 @@ func sourceCoversSymbol(target reviewtarget.Target, content string) bool {
 		return declaration.Locator == target.Locator
 	}
 	trimmed := strings.TrimSpace(content)
-	if !strings.HasPrefix(trimmed, "func ") {
+	if trimmed == "" {
 		return false
 	}
 	declaration, err = reviewtarget.FindGoDeclaration([]byte("package reviewevidence\n"+trimmed), target.Locator)
