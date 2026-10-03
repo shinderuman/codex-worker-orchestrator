@@ -19,7 +19,7 @@ type installTransactionJournal struct {
 }
 
 type installTransactionSurface struct {
-	Path string                  `json:"path"`
+	Path string                   `json:"path"`
 	Pre  installTransactionImage `json:"pre"`
 	Post installTransactionImage `json:"post"`
 }
@@ -148,7 +148,17 @@ func saveInstallTransactionJournal(path string, journal installTransactionJourna
 }
 
 func loadInstallTransactionJournal(codexDir string) (installTransactionJournal, error) {
+	if err := validateManagedPathAncestors(codexDir, installTransactionRelativePath); err != nil {
+		return installTransactionJournal{}, fmt.Errorf("validate codex install transaction journal path: %w", err)
+	}
 	path := installTransactionPath(codexDir)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return installTransactionJournal{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return installTransactionJournal{}, fmt.Errorf("codex install transaction journal is not a regular file")
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return installTransactionJournal{}, err
@@ -190,6 +200,9 @@ func validateInstallTransactionJournal(codexDir string, journal installTransacti
 	for _, surface := range journal.Surfaces {
 		if !validInstallTransactionSurfacePath(surface.Path) || seen[surface.Path] {
 			return fmt.Errorf("invalid codex install transaction surface %q", surface.Path)
+		}
+		if err := validateManagedPathAncestors(codexDir, surface.Path); err != nil {
+			return fmt.Errorf("invalid codex install transaction surface %s: %w", surface.Path, err)
 		}
 		seen[surface.Path] = true
 		if surface.Path == stateRelativePath {
