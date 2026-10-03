@@ -9,6 +9,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type sourceIdentityCase struct {
+	path     string
+	content  string
+	targets  []string
+	requests []SourceRequest
+	locators []string
+}
+
 func TestIdenticalSourceBodiesPreserveDistinctPathTargets(t *testing.T) {
 	proveDistinctSourceClaims(t, sourceIdentityCase{
 		path: "other.go", content: "package review\nvar other = 2\n",
@@ -99,14 +107,6 @@ func TestUnknownOrRefinedBodyReferenceIsNotProof(t *testing.T) {
 			}
 		})
 	}
-}
-
-type sourceIdentityCase struct {
-	path     string
-	content  string
-	targets  []string
-	requests []SourceRequest
-	locators []string
 }
 
 func proveDistinctSourceClaims(t *testing.T, fixture sourceIdentityCase) {
