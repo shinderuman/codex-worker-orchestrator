@@ -1,6 +1,7 @@
 package reviewtarget
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -40,25 +41,50 @@ func ValidateProofAddressable(repoRoot string, target Target) error {
 		}
 		return nil
 	case LocatorLineRange:
-		content, err := readRepositoryFile(repoRoot, target.Path)
-		if err == nil {
-			lines := strings.Split(string(content), "\n")
-			if target.LineEnd <= len(lines) {
-				return nil
-			}
-			return proofError("line-out-of-range", target, "use a line/range that exists in the current file")
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return proofError("line-source-unavailable", target, "use a readable repository file line/range")
-		}
-		body, diffErr := targetDiff(repoRoot, target.Path)
-		if diffErr == nil && len(body) != 0 && strings.Contains(body, "+++ /dev/null") {
-			return nil
-		}
-		return proofError("line-source-missing", target, "use @diff for a deleted changed file or a line/range in a current file")
+		return validateLineRangeProofAddressable(repoRoot, target)
 	default:
 		return proofError("locator-kind", target, canonicalCorrection)
 	}
+}
+
+func validateLineRangeProofAddressable(repoRoot string, target Target) error {
+	content, err := readRepositoryFile(repoRoot, target.Path)
+	if err == nil {
+		if lineRangeExists(content, target.LineEnd) {
+			return nil
+		}
+		return proofError("line-out-of-range", target, "use a line/range that exists in the current file")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return proofError("line-source-unavailable", target, "use a readable repository file line/range")
+	}
+	return validateDeletedLineRange(repoRoot, target)
+}
+
+func validateDeletedLineRange(repoRoot string, target Target) error {
+	body, err := targetDiff(repoRoot, target.Path)
+	if err != nil || len(body) == 0 || !bytes.Contains(body, []byte("+++ /dev/null")) {
+		return proofError("line-source-missing", target, "use @diff for a deleted changed file or a line/range in a current file")
+	}
+	content, err := headFile(repoRoot, target.Path)
+	if err != nil {
+		return proofError("deleted-line-head-unavailable", target, "use a deleted-file line/range only when that exact line exists in HEAD")
+	}
+	if !lineRangeExists(content, target.LineEnd) {
+		return proofError("deleted-line-out-of-range", target, "use a line/range that existed in the deleted HEAD file")
+	}
+	return nil
+}
+
+func lineRangeExists(content []byte, end int) bool {
+	if end <= 0 || len(content) == 0 {
+		return false
+	}
+	lines := bytes.Count(content, []byte{'\n'}) + 1
+	if content[len(content)-1] == '\n' {
+		lines--
+	}
+	return end <= lines
 }
 
 func readRepositoryFile(repoRoot, path string) ([]byte, error) {
@@ -89,6 +115,15 @@ func targetDiff(repoRoot, path string) ([]byte, error) {
 	output, err := command.Output()
 	if err != nil {
 		return nil, fmt.Errorf("capture review target diff %s: %w", path, err)
+	}
+	return output, nil
+}
+
+func headFile(repoRoot, path string) ([]byte, error) {
+	command := exec.Command("git", "-C", repoRoot, "show", "HEAD:"+path)
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("read HEAD review target %s: %w", path, err)
 	}
 	return output, nil
 }
