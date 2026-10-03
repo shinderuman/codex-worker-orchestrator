@@ -23,6 +23,9 @@ func Install(buildDir, binDir string) ([]Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if recoveryErr := recoverInterruptedCLIInstall(binDir); recoveryErr != nil {
+		return nil, joinCloseError(recoveryErr, lock.Close())
+	}
 	results, installErr := installUnlocked(buildDir, binDir)
 	return results, joinCloseError(installErr, lock.Close())
 }
@@ -34,6 +37,9 @@ func Retire(binDir string) ([]Result, error) {
 	lock, err := acquireInstallLock(binDir)
 	if err != nil {
 		return nil, err
+	}
+	if recoveryErr := recoverInterruptedCLIInstall(binDir); recoveryErr != nil {
+		return nil, joinCloseError(recoveryErr, lock.Close())
 	}
 	results, retireErr := retireUnlocked(binDir)
 	return results, joinCloseError(retireErr, lock.Close())
