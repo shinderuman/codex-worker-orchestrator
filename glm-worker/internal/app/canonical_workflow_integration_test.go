@@ -21,11 +21,12 @@ import (
 )
 
 type canonicalWorkflowRunner struct {
-	t       *testing.T
-	cfg     config.AppConfig
-	task    string
-	path    string
-	prompts []string
+	t          *testing.T
+	cfg        config.AppConfig
+	task       string
+	path       string
+	prompts    []string
+	transcript []byte
 }
 
 func (*canonicalWorkflowRunner) Probe(string) (runner.ProbeResult, error) {
@@ -44,7 +45,16 @@ func (r *canonicalWorkflowRunner) Run(role state.SessionRole, phase, _ string, r
 	if r.path != "" {
 		writeAppTestFile(r.t, r.cfg.RepoRoot, r.path, "preserved "+r.task+"\n")
 	}
-	return runner.RunResult{SessionID: "interrupted-test-session"}, &runner.InterruptedCallError{Phase: phase}
+	sessionID, err := state.NewUUID()
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	r.transcript, err = json.Marshal(map[string]string{"sessionId": sessionID, "task": r.task, "prompt": prompt})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	writeAppTestFile(r.t, r.cfg.ClaudeConfigDir, filepath.Join("projects", "canonical", sessionID+".jsonl"), string(r.transcript))
+	return runner.RunResult{SessionID: sessionID}, &runner.InterruptedCallError{Phase: phase}
 }
 
 func runCanonicalWorkflow(t *testing.T, cfg config.AppConfig, mode CommandMode, request, task, path string) *canonicalWorkflowRunner {
@@ -115,6 +125,8 @@ func newCanonicalWorkflowCorpus(t *testing.T) (config.AppConfig, string, string,
 	stateHome := t.TempDir()
 	cfg.StateBase = filepath.Join(stateHome, "sessions")
 	cfg.WorktreeBase = filepath.Join(stateHome, "worktrees")
+	cfg.ClaudeConfigDir = filepath.Join(stateHome, "claude")
+	cfg.CodexConfigDir = filepath.Join(stateHome, "codex")
 	cfg.EscalatedEffort = "high"
 	t.Setenv("GLM_WORKER_HOME", stateHome)
 	rootTask := "IMPLEMENTATION_TASKS/root.md"
@@ -203,6 +215,15 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	bundle, err := store.BuildAttemptEvidenceBundle(candidate.SealRef)
 	if err != nil || bundle.EvidenceGraphDigest == "" {
 		t.Fatalf("historical F11 Bundle unavailable: %v", err)
+	}
+	transcriptFound := false
+	for _, object := range bundle.Objects {
+		if object.Ref.Kind == "model-transcript" && bytes.Equal(object.Data, blockerRunner.transcript) {
+			transcriptFound = true
+		}
+	}
+	if !transcriptFound {
+		t.Fatal("normal workflow lost the blocker model transcript")
 	}
 	var out bytes.Buffer
 	lockPath, err := controller.WorkflowLockPath(rootCfg)

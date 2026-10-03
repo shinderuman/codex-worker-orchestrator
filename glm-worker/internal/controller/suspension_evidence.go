@@ -28,6 +28,12 @@ func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicat
 		seal.EpisodeID = op.Episode.EpisodeID
 		seal.EpisodeRevision = op.Episode.Revision
 	}
+	if err := s.captureAttemptSemanticEvidence(op, &seal); err != nil {
+		return EvidencePublicationInput{}, EvidenceObjectRef{}, err
+	}
+	if err := s.captureAttemptRuntimeEvidence(op.Source, &seal); err != nil {
+		return EvidencePublicationInput{}, EvidenceObjectRef{}, err
+	}
 	sealRef, _, err := s.StoreAttemptSeal(seal)
 	if err != nil {
 		return EvidencePublicationInput{}, EvidenceObjectRef{}, err

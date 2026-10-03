@@ -175,7 +175,7 @@ func newExecutionSwitchFixture(t *testing.T) executionSwitchFixture {
 		WorkspaceID:       workspace.ID,
 		WorkspaceSnapshot: snapshot,
 	}
-	record, err := store.BeginAuthorityTransition(TransitionIntent{
+	record, err := prepareTestAuthorityTransition(store, TransitionIntent{
 		Kind:               "execution-authority:blocker-execution",
 		ExpectedGeneration: source.Head.ControllerGeneration,
 		Source:             source,

@@ -15,7 +15,7 @@ func TestTransitionClassificationUsesExactOldAndNewState(t *testing.T) {
 	target := authorityFromAdmission(source, source.Snapshot)
 	target.LeaseID = targetLease.LeaseID
 	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/main", ExpectedOld: "old", ExpectedNew: "new"}
-	record, err := store.BeginAuthorityTransition(TransitionIntent{
+	record, err := prepareTestAuthorityTransition(store, TransitionIntent{
 		Kind:               "test-ref-cas",
 		ExpectedGeneration: source.Head.ControllerGeneration,
 		Source:             source,
@@ -78,7 +78,7 @@ func TestUnexpectedTransitionFailsClosedAndRevokesLease(t *testing.T) {
 	target := authorityFromAdmission(source, source.Snapshot)
 	target.LeaseID = targetLease.LeaseID
 	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/main", ExpectedOld: "old", ExpectedNew: "new"}
-	record, err := store.BeginAuthorityTransition(TransitionIntent{
+	record, err := prepareTestAuthorityTransition(store, TransitionIntent{
 		Kind:               "test-unexpected",
 		ExpectedGeneration: source.Head.ControllerGeneration,
 		Source:             source,
@@ -114,6 +114,29 @@ func TestUnexpectedTransitionFailsClosedAndRevokesLease(t *testing.T) {
 	}
 	if _, err := store.AdmitMutation(source.MutationAuthority(), source.Workspace, source.Snapshot); err == nil {
 		t.Fatal("fail-closed controller still admitted mutation")
+	}
+}
+
+func TestTransitionClassificationDistinguishesObservedTargetFromMissingEffect(t *testing.T) {
+	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/main", ExpectedOld: "same", ExpectedNew: "same"}
+	for _, test := range []struct {
+		name   string
+		effect EffectExpectation
+		actual map[string]string
+		want   EffectClassification
+	}{
+		{name: "already-at-target", effect: effect, actual: map[string]string{effect.Key(): "same"}, want: EffectExpectedNew},
+		{name: "missing-no-op", effect: effect, want: EffectUnexpected},
+		{name: "observed-deletion", effect: EffectExpectation{Surface: effect.Surface, Resource: effect.Resource, ExpectedOld: "old"}, actual: map[string]string{effect.Key(): ""}, want: EffectExpectedNew},
+		{name: "missing-deletion", effect: EffectExpectation{Surface: effect.Surface, Resource: effect.Resource, ExpectedOld: "old"}, want: EffectUnexpected},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &Store{}
+			got := store.ClassifyTransition(TransitionRecord{Effects: []EffectExpectation{test.effect}}, test.actual)
+			if got[effect.Key()] != test.want {
+				t.Fatalf("classification = %s want %s", got[effect.Key()], test.want)
+			}
+		})
 	}
 }
 

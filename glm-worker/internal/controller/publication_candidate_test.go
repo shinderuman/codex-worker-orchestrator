@@ -69,6 +69,38 @@ func TestCandidateAcceptanceRejectsMissingOrStaleEvidenceBeforeLeaseRevocation(t
 	}
 }
 
+func TestCandidatePromotionWhenLocalRefAlreadyMatchesTarget(t *testing.T) {
+	t.Parallel()
+	fixture, policy := newPublicationTestFixture(t)
+	source := publicationTestEdit(t, fixture, "accepted.txt", "accepted task result\n")
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+		Message: "accept root result\n", Policy: policy,
+		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := fixture.store.LoadAcceptedCandidate(*accepted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, fixture.source.Workspace.Root, "update-ref", policy.LocalRef, candidate.CommitOID, candidate.BaseOID)
+	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promoted.Head.PendingTransitionID != "" || promoted.Head.LiveLeaseID != "" {
+		t.Fatal("promotion retained pending or mutating authority")
+	}
+	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newPublicationTestFixture(t *testing.T) (findingAcceptanceFixture, PublicationPolicy) {
 	t.Helper()
 	return configurePublicationTestFixture(t, newFindingAcceptanceFixture(t))
