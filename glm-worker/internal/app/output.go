@@ -140,14 +140,7 @@ func msPtr(d time.Duration) *int64 {
 	return &ms
 }
 
-func printStatus(st *state.StateStore, stdout io.Writer) error {
-	taskID := st.ReadOr("task.id", "")
-	logs, logErr := taskview.ReadStatusTelemetry(st, taskID)
-	output := buildStatusOutput(st, taskID, logs, logErr)
-	return machinecli.WriteJSON(stdout, output)
-}
-
-func printStatusLeased(st *state.StateStore, stdout io.Writer) error {
+func printStatusLeased(st *state.StateStore, repoRoot string, stdout io.Writer) error {
 	scope, err := parentevidence.CaptureReadScope(st)
 	if err != nil {
 		return err
@@ -155,6 +148,8 @@ func printStatusLeased(st *state.StateStore, stdout io.Writer) error {
 	taskID := st.ReadOr("task.id", "")
 	logs, logErr := taskview.ReadStatusTelemetry(st, taskID)
 	output := buildStatusOutput(st, taskID, logs, logErr)
+	output.RepoRoot = machinecli.StringPtr(repoRoot)
+	output.RuntimeBuild = currentRuntimeBuild(repoRoot)
 	digest := parentStatusReadDigest(st)
 	return parentevidence.FinishReadInScope(st, scope, state.ParentEvidenceSurfaceStatus, digest, func() (int, error) {
 		return parentevidence.WriteMeasuredJSON(stdout, output)

@@ -1,0 +1,92 @@
+package controller
+
+import (
+	"fmt"
+	"time"
+)
+
+func buildTransitionRecord(intent TransitionIntent, transitionID string) TransitionRecord {
+	source := intent.Source
+	return TransitionRecord{
+		SchemaVersion:          controllerSchemaVersion,
+		TransitionID:           transitionID,
+		Kind:                   intent.Kind,
+		SourceGeneration:       source.Head.ControllerGeneration,
+		PreparedGeneration:     source.Head.ControllerGeneration + 1,
+		CommittedGeneration:    source.Head.ControllerGeneration + 2,
+		TargetGeneration:       source.Head.ControllerGeneration + 3,
+		SourceEpisodeID:        source.Head.ActiveEpisodeID,
+		SourceEpisodeRevision:  source.Head.ActiveEpisodeRevision,
+		TargetEpisodeID:        intent.Target.EpisodeID,
+		TargetEpisodeRevision:  intent.Target.EpisodeRevision,
+		SourceAttemptID:        source.Attempt.AttemptID,
+		TargetAttemptID:        intent.Target.AttemptID,
+		SourceLeaseID:          source.Lease.LeaseID,
+		TargetLeaseID:          intent.Target.LeaseID,
+		SourceWorkspaceID:      source.Workspace.ID,
+		TargetWorkspaceID:      intent.Target.WorkspaceID,
+		SourceRootTaskRef:      source.Attempt.RootTaskRef,
+		TargetRootTaskRef:      intent.Target.RootTaskRef,
+		SourceExecutionTaskRef: source.Attempt.SemanticTaskRef,
+		TargetExecutionTaskRef: intent.Target.ExecutionTaskRef,
+		WorkspaceSnapshotOld:   source.Snapshot,
+		WorkspaceSnapshotNew:   intent.Target.WorkspaceSnapshot,
+		ProjectSnapshotOld:     source.Head.ProjectSnapshotID,
+		ProjectSnapshotNew:     intent.Target.ProjectSnapshotID,
+		Effects:                append([]EffectExpectation(nil), intent.Effects...),
+		CreatedAt:              time.Now().UTC(),
+	}
+}
+
+func (s *Store) persistPreparedTransition(record TransitionRecord, sourceHead RepositoryControllerHead) error {
+	if err := writeJSONAtomic(s.transitionPath(record.TransitionID), record); err != nil {
+		return err
+	}
+	transitionState := TransitionState{
+		SchemaVersion: controllerSchemaVersion,
+		TransitionID:  record.TransitionID,
+		Phase:         TransitionPhasePrepared,
+		UpdatedAt:     time.Now().UTC(),
+	}
+	if err := s.writeTransitionState(transitionState); err != nil {
+		return err
+	}
+	next := sourceHead
+	next.ControllerGeneration = record.PreparedGeneration
+	next.PendingTransitionID = record.TransitionID
+	return s.writeHeadCAS(sourceHead.ControllerGeneration, next)
+}
+
+func (s *Store) validateTransitionSource(intent TransitionIntent) error {
+	source := intent.Source
+	if source.Head.ControllerGeneration != intent.ExpectedGeneration {
+		return fmt.Errorf("transition source generation does not match expected generation")
+	}
+	current, err := s.AdmitMutation(source.MutationAuthority(), source.Workspace, source.Snapshot)
+	if err != nil {
+		return err
+	}
+	if current.Head.ControllerGeneration != intent.ExpectedGeneration ||
+		current.Attempt.AttemptID != source.Attempt.AttemptID ||
+		current.Lease.LeaseID != source.Lease.LeaseID ||
+		current.Workspace.ID != source.Workspace.ID ||
+		current.Snapshot.ID != source.Snapshot.ID ||
+		current.Head.ProjectSnapshotID != source.Head.ProjectSnapshotID {
+		return fmt.Errorf("transition source authority is stale")
+	}
+	return nil
+}
+
+func authorityFromAdmission(admission Admission, snapshot WorkspaceSnapshot) TransitionAuthority {
+	return TransitionAuthority{
+		ProjectSnapshotID: admission.Head.ProjectSnapshotID,
+		RootTaskRef:       admission.Attempt.RootTaskRef,
+		ExecutionTaskRef:  admission.Attempt.SemanticTaskRef,
+		EpisodeID:         admission.Head.ActiveEpisodeID,
+		EpisodeRevision:   admission.Head.ActiveEpisodeRevision,
+		AttemptID:         admission.Attempt.AttemptID,
+		LeaseID:           admission.Lease.LeaseID,
+		WorkspaceID:       admission.Workspace.ID,
+		WorkspaceSnapshot: snapshot,
+	}
+}

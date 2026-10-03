@@ -11,6 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
@@ -194,6 +196,18 @@ func readSnapshot(root string) (snapshot, error) {
 	activePath, err := taskcontract.ParsePlanSchedule(string(plan)).ActiveTask()
 	if err != nil {
 		return snapshot{}, err
+	}
+	stateHome, err := config.StateHome()
+	if err != nil {
+		return snapshot{}, err
+	}
+	cfg := config.AppConfig{RepoRoot: root, StateBase: filepath.Join(stateHome, "sessions")}
+	executionTask, canonical, err := controller.WorkflowExecutionTask(cfg)
+	if err != nil {
+		return snapshot{}, err
+	}
+	if canonical {
+		activePath = executionTask.TaskPath
 	}
 	activeFile := filepath.Join(root, filepath.FromSlash(activePath))
 	info, err := os.Lstat(activeFile)

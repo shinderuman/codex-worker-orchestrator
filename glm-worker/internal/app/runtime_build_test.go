@@ -108,6 +108,19 @@ func TestBuildStatusOutputIncludesRuntimeBuild(t *testing.T) {
 	}
 }
 
+func TestExecuteStatusBeforeTaskUsesRepositoryWithoutCreatingState(t *testing.T) {
+	cfg := newAppConfig(t)
+	cfg.RepoRoot = newRuntimeBuildRepo(t)
+	st := state.AttachStateStore(cfg)
+	output := executeStatusOutput(t, cfg)
+	statusString(t, "repo_root", output.RepoRoot, cfg.RepoRoot)
+	statusString(t, "repository_head", output.RuntimeBuild.RepositoryHead, runtimeBuildGit(t, cfg.RepoRoot, "rev-parse", "HEAD"))
+	statusNullString(t, "task_id", output.TaskID)
+	if _, err := os.Stat(st.Path(".")); !os.IsNotExist(err) {
+		t.Fatalf("statusが未開始taskのstateを作成しました: %v", err)
+	}
+}
+
 func stateStoreForRuntimeBuildTest(cfg config.AppConfig) (*state.StateStore, error) {
 	return state.NewStateStore(cfg)
 }

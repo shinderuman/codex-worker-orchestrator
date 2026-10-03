@@ -38,7 +38,7 @@ func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
 		return nil
 	}
 	if st.TaskStatus() == state.TaskStatusActive {
-		return &workflow.WorkerError{Message: "previous task is still active; explicitly dispose it with glm-worker --reset --disposition cancel or --reset --disposition abandon before starting a new task"}
+		return &workflow.WorkerError{Message: "previous task is still active; resolve it through the canonical controller-semantic disposition before starting a new task"}
 	}
 	plan, admitted, err := st.AdmitNewTask()
 	if err != nil {
@@ -115,7 +115,7 @@ func parentAcceptDenied(plan state.ParentActionPlan, st *state.StateStore) error
 		return &workflow.WorkerError{Message: "task is waiting for quality policy surface approval; resolve it with --approve-surface current-diff (or --fix) before --accept"}
 	}
 	if plan.RequiredAction == state.ParentActionComplete {
-		return &workflow.WorkerError{Message: "task is awaiting parent completion; run the parent push and glm-parent-action complete before starting further actions"}
+		return &workflow.WorkerError{Message: "task is awaiting parent completion; finish canonical controller publication and retirement before starting further actions"}
 	}
 	if plan.RequiredAction == state.ParentActionReview {
 		if err := st.RequireParentReviewAcceptanceEvidence(); err != nil {
@@ -145,7 +145,7 @@ func resumeActionDenied(st *state.StateStore) error {
 func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) error {
 	switch plan.RequiredAction {
 	case state.ParentActionDecision:
-		return &workflow.WorkerError{Message: "previous task is waiting for Sol decision; use --decision, or explicitly dispose it with --reset --disposition cancel|abandon"}
+		return &workflow.WorkerError{Message: "previous task is waiting for Sol decision; use --decision or a canonical controller-semantic disposition"}
 	case state.ParentActionReview, state.ParentActionAccept:
 		label := st.OpenParentReviewLabel()
 		if label == "none" {
@@ -155,15 +155,15 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 	case state.ParentActionApproveSurface:
 		return &workflow.WorkerError{Message: "previous task is waiting for quality policy surface approval; resolve it with glm-parent-action approve-surface --accepted-scope current-diff (or --fix) before starting a new task"}
 	case state.ParentActionComplete:
-		return &workflow.WorkerError{Message: "previous task is awaiting parent completion; finish the parent push and run glm-parent-action complete before starting a new task"}
+		return &workflow.WorkerError{Message: "previous task is awaiting parent completion; finish canonical controller publication and retirement before starting a new task"}
 	case state.ParentActionResume:
 		if message, ok := resumeDeniedMessage(plan.ResumeKind); ok {
 			return &workflow.WorkerError{Message: message}
 		}
 	case state.ParentActionRepairGuardThenResume:
-		return &workflow.WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
+		return &workflow.WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume"}
 	case state.ParentActionRepairQualityGateThenResume:
-		return &workflow.WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume or --reset"}
+		return &workflow.WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume"}
 	case state.ParentActionUnpark:
 		return &workflow.WorkerError{Message: "previous task is parked for an interrupt task; unpark it (after integrating the interrupt work) or run the interrupt task inside the parked worktree"}
 	}
@@ -173,11 +173,11 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 func resumeDeniedMessage(resumeKind string) (string, bool) {
 	switch resumeKind {
 	case "rate-limited":
-		return "previous task is rate-limited; use --resume or --reset", true
+		return "previous task is rate-limited; use --resume", true
 	case "provider-unavailable":
-		return "previous task is provider-unavailable; use --resume or --reset", true
+		return "previous task is provider-unavailable; use --resume", true
 	case "interrupted":
-		return "previous task is interrupted; use --resume or --reset", true
+		return "previous task is interrupted; use --resume", true
 	}
 	return "", false
 }

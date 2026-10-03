@@ -1,9 +1,9 @@
 package parentactioncmd
 
 import (
-	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -62,45 +62,36 @@ func TestCompleteFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
 	}
 }
 
-func TestRepositoryAwareResumeKeepsMarkerlessForeignGuardRecoveryGeneric(t *testing.T) {
-	cfg, st, record := newGuardRepairLifecycleState(t)
-	persistReadyGuardRepair(t, cfg, st, &record)
-	marker := installFailingNormalWorker(t)
-
-	if err := executeRepositoryAwareResume(cfg, io.Discard, io.Discard, nil); err == nil {
-		t.Fatal("generic resume worker failureを期待")
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("markerless foreign resume did not execute the generic worker: %v", err)
-	}
-	got, err := st.LoadGuardRepairRecord()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != state.GuardRepairReady || got.OriginalResumeObserved {
-		t.Fatalf("foreign resume executed repository guard repair: %#v", got)
-	}
+func TestRepositoryAwareResumeDelegatesWithoutCanonicalActivation(t *testing.T) {
+	assertRepositoryAwareResumeCutover(t, false)
 }
 
-func TestRepositoryAwareResumeUsesBoundedRepairWhenActivated(t *testing.T) {
-	cfg, st, record := newGuardRepairLifecycleState(t)
-	pinCompleteRepositoryHarnessActive(t, st)
-	writeGuardRepairWorkerModule(t, cfg.RepoRoot, guardRepairLifecycleEvidenceWorkerSource(t, st, state.TaskStatusActive, false))
-	persistReadyGuardRepair(t, cfg, st, &record)
-	marker := installFailingNormalWorker(t)
+func TestRepositoryAwareResumeDelegatesWithCanonicalActivation(t *testing.T) {
+	assertRepositoryAwareResumeCutover(t, true)
+}
 
-	if err := executeRepositoryAwareResume(cfg, io.Discard, io.Discard, nil); err != nil {
+func assertRepositoryAwareResumeCutover(t *testing.T, activate bool) {
+	t.Helper()
+	cfg := newCanonicalCutoverConfig(t, activate)
+	binDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "canonical-resume-worker-args")
+	worker := filepath.Join(binDir, "glm-worker")
+	if err := os.WriteFile(worker, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$LEGACY_RESUME_MARKER\"\nexit 99\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("activated repository repair redispatched the broken generic worker")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("LEGACY_RESUME_MARKER", marker)
+
+	err := executeRepositoryAwareResume(cfg, io.Discard, io.Discard, nil)
+	if err == nil || !strings.Contains(err.Error(), "99") {
+		t.Fatalf("repository-aware resume error = %v", err)
 	}
-	got, err := st.LoadGuardRepairRecord()
-	if err != nil {
-		t.Fatal(err)
+	args, err := os.ReadFile(marker)
+	if err != nil || string(args) != "--resume\n" {
+		t.Fatalf("canonical resume args = %q: %v", args, err)
 	}
-	if got.Status != state.GuardRepairComplete || !got.OriginalResumeObserved {
-		t.Fatalf("activated repository repair did not resume the original task: %#v", got)
+	if worktrees := canonicalCutoverWorktrees(t, cfg.RepoRoot); len(worktrees) != 0 {
+		t.Fatalf("legacy resume minted repair worktree(s): %v", worktrees)
 	}
 }
 

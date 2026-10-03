@@ -188,7 +188,9 @@ func terminalPayloadRealWorkerTerminalResult(t *testing.T) {
 			"GIT_COMMITTER_NAME=glm-worker-test",
 			"GIT_COMMITTER_EMAIL=glm-worker-test@example.com",
 		)
-		seed := exec.Command("sh", "-c", `echo seed > tracked.txt && git add tracked.txt && git commit -qm seed`)
+		writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
+		writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\nterminal payload\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+		seed := exec.Command("sh", "-c", `echo seed > tracked.txt && git add . && git commit -qm seed`)
 		seed.Dir = repo
 		seed.Env = commitEnv
 		_ = seed.Run()

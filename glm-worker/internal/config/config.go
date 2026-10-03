@@ -15,10 +15,11 @@ import (
 )
 
 type AppConfig struct {
-	RepoRoot  string
-	RepoHash  string
-	RepoShort string
-	StateBase string
+	RepoRoot           string
+	RepoHash           string
+	RepoShort          string
+	StateBase          string
+	RepositoryLockPath string
 
 	WorktreeBase        string
 	RepoSearchCacheRoot string
@@ -78,7 +79,10 @@ func Load() (AppConfig, error) {
 	}
 	repoHashString := RepoHashFor(repoRoot)
 
-	stateHome := envOrDefault("GLM_WORKER_HOME", filepath.Join(home, ".glm-worker"))
+	stateHome, err := StateHome()
+	if err != nil {
+		return AppConfig{}, err
+	}
 	codexConfigDir := envOrDefault("CODEX_CONFIG_DIR", envOrDefault("CODEX_HOME", filepath.Join(home, ".codex")))
 	promptDir := envOrDefault("GLM_WORKER_PROMPT_DIR", filepath.Join(codexConfigDir, "glm-worker", "prompts"))
 	claudeSettingsOverride := claudeoverride.ResolvePath(home)
@@ -210,4 +214,15 @@ func boolEnv(name string, defaultValue bool) (bool, error) {
 		return false, fmt.Errorf("%sは真偽値で指定してください", name)
 	}
 	return value, nil
+}
+
+func StateHome() (string, error) {
+	if value := os.Getenv("GLM_WORKER_HOME"); value != "" {
+		return value, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".glm-worker"), nil
 }

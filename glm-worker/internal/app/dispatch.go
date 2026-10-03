@@ -99,7 +99,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	st := state.AttachStateStore(cfg)
 	switch cmd.Mode {
 	case ModeStatus:
-		return printStatusLeased(st, stdout)
+		return printStatusLeased(st, cfg.RepoRoot, stdout)
 	case ModeHandoff:
 		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:
@@ -158,7 +158,7 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 	case ModeRepoSearchEval:
 		return report.PrintRepoSearchEval(st, stdout)
 	case ModeBundle:
-		return printBundle(cfg, st, cmd.Payload, stdout)
+		return executeBundleProjection(cfg, st, cmd.Payload, stdout)
 	case ModeReviewGap:
 		return printReviewGap(cfg, st, cmd.Payload, stdout)
 	case ModeShadowEval, ModeFailurePathAdvisory:
@@ -166,6 +166,10 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 	default:
 		return fmt.Errorf("command mode %d is not read-only analysis", cmd.Mode)
 	}
+}
+
+func executeBundleProjection(cfg config.AppConfig, _ *state.StateStore, _ string, _ io.Writer) error {
+	return rejectLegacyBundleProjection(cfg)
 }
 
 func executeShadowObservation(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {

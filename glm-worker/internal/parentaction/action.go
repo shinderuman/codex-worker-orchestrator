@@ -38,3 +38,12 @@ func LookupPayloadAction(action string) (PayloadAction, bool) {
 	descriptor, ok := payloadActions[Action(action)]
 	return descriptor, ok
 }
+
+func IsControllerAction(action string) bool {
+	switch action {
+	case "controller-semantic", "controller-execution", "controller-publication", "controller-evidence":
+		return true
+	default:
+		return false
+	}
+}

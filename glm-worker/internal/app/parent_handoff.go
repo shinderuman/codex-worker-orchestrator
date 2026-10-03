@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
@@ -14,6 +15,7 @@ import (
 )
 
 type parentHandoffOutput struct {
+	Controller               *controller.ControllerStatusReport       `json:"controller,omitempty"`
 	Version                  int                                      `json:"version"`
 	Consistent               bool                                     `json:"consistent"`
 	Inconsistency            *string                                  `json:"inconsistency"`
@@ -37,6 +39,7 @@ type parentHandoffOutput struct {
 }
 
 type parentHandoffRecoveryOutput struct {
+	Controller               *controller.ControllerStatusReport `json:"controller,omitempty"`
 	Version                  int                                `json:"version"`
 	Projection               string                             `json:"projection"`
 	Consistent               bool                               `json:"consistent"`
@@ -105,6 +108,7 @@ const (
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
 	recovery := parentHandoffRecoveryOutput{
+		Controller:               output.Controller,
 		Version:                  output.Version,
 		Projection:               "recovery",
 		Consistent:               output.Consistent,

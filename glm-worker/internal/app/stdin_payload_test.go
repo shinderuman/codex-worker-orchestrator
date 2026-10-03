@@ -93,6 +93,7 @@ func prepareWaitingDecisionState(t *testing.T, cfg config.AppConfig) *state.Stat
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	bindCanonicalAppTask(t, cfg, st)
 	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +121,7 @@ func prepareWaitingSolReviewState(t *testing.T, cfg config.AppConfig) *state.Sta
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	bindCanonicalAppTask(t, cfg, st)
 	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +173,7 @@ func assertFailClosedStateUnchanged(t *testing.T, cfg config.AppConfig, before m
 }
 
 func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{
@@ -192,7 +194,7 @@ func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
 	if string(persisted) != payload+"\n" {
 		t.Fatalf("last-decisionが全byte保存されていません: %q", persisted)
 	}
-	decision := promptSection(t, r.prompts[0], "\nSOL_DECISION:\n", "\n\n直前の同一タスクの調査文脈を利用し")
+	decision := promptSection(t, r.prompts[0], "\nSOL_DECISION:\n", "\n\nACTIVE_TASK_FILE:")
 	if decision != payload {
 		t.Fatalf("worker promptのdecision部分が全byte保存されていません: %q", decision)
 	}
@@ -202,7 +204,7 @@ func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
 }
 
 func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
@@ -222,7 +224,7 @@ func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
 }
 
 func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
@@ -238,7 +240,7 @@ func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
 }
 
 func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	prepareWaitingSolReviewState(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{
@@ -251,7 +253,7 @@ func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	feedback := promptSection(t, r.prompts[0], "\nREVIEW_FEEDBACK:\n", "\n\n同一タスクの既存文脈を利用し")
+	feedback := promptSection(t, r.prompts[0], "\nREVIEW_FEEDBACK:\n", "\n\nACTIVE_TASK_FILE:")
 	if feedback != payload {
 		t.Fatalf("worker promptのfix指示部分が全byte保存されていません: %q", feedback)
 	}
@@ -262,7 +264,7 @@ func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
 }
 
 func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	prepareWaitingSolReviewState(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
@@ -284,7 +286,7 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 	payload := stdinTestPayload()
 	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
 
-	pipeCfg := newAppConfig(t)
+	pipeCfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, pipeCfg)
 	pipeRunner := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("decision applied")},
@@ -307,7 +309,7 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 		t.Fatalf("pipe stdinでREADY markerが出力されています: %q", pipeStderr.String())
 	}
 
-	readerCfg := newAppConfig(t)
+	readerCfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, readerCfg)
 	readerRunner := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("decision applied")},
@@ -323,7 +325,7 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 }
 
 func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := "NUL先頭\x00中間\x00末尾\n2行目 `backtick` $HOME \"double\" 'single' 日本語\x00"
 	r := &fakeRunner{steps: []fakeStep{
@@ -346,7 +348,7 @@ func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	decision := promptSection(t, r.prompts[0], "\nSOL_DECISION:\n", "\n\n直前の同一タスクの調査文脈を利用し")
+	decision := promptSection(t, r.prompts[0], "\nSOL_DECISION:\n", "\n\nACTIVE_TASK_FILE:")
 	if decision != payload {
 		t.Fatalf("NUL混在payloadが全byte保存されていません: %q", decision)
 	}

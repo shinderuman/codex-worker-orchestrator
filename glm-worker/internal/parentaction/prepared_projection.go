@@ -25,6 +25,9 @@ func (prepared Prepared) MarshalJSON() ([]byte, error) {
 }
 
 func preparedSlots(action string) []PreparedSlot {
+	if IsControllerAction(action) {
+		return []PreparedSlot{{Name: "controller_command_json", Placeholder: "__GLM_PARENT_ACTION_PAYLOAD__"}}
+	}
 	switch Action(action) {
 	case ActionDecision:
 		return []PreparedSlot{

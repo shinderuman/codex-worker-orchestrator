@@ -35,11 +35,11 @@ func TestParentEvidenceLedgerLockSerializesConcurrentReads(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
 	writer := &blockingParentEvidenceWriter{started: make(chan struct{}), release: make(chan struct{})}
 	firstErr := make(chan error, 1)
-	go func() { firstErr <- printStatusLeased(fixture.st, writer) }()
+	go func() { firstErr <- printStatusLeased(fixture.st, fixture.cfg.RepoRoot, writer) }()
 	<-writer.started
 
 	secondErr := make(chan error, 1)
-	go func() { secondErr <- printStatusLeased(fixture.st, io.Discard) }()
+	go func() { secondErr <- printStatusLeased(fixture.st, fixture.cfg.RepoRoot, io.Discard) }()
 	select {
 	case err := <-secondErr:
 		t.Fatalf("second read finished while the first read still held the ledger lock: %v", err)
@@ -59,21 +59,21 @@ func TestParentEvidenceLedgerLockSerializesConcurrentReads(t *testing.T) {
 
 func TestParentEvidenceRenderFailureLeavesNoLedgerClaim(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
-	if err := printStatusLeased(fixture.st, failingParentEvidenceWriter{}); err == nil {
+	if err := printStatusLeased(fixture.st, fixture.cfg.RepoRoot, failingParentEvidenceWriter{}); err == nil {
 		t.Fatal("render failure must surface")
 	}
 	digest := parentStatusReadDigest(fixture.st)
 	if _, delivered, err := fixture.st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceStatus, digest); err != nil || delivered {
 		t.Fatalf("failed render left a ledger claim: delivered=%v err=%v", delivered, err)
 	}
-	if err := printStatusLeased(fixture.st, io.Discard); err != nil {
+	if err := printStatusLeased(fixture.st, fixture.cfg.RepoRoot, io.Discard); err != nil {
 		t.Fatalf("retry after render failure: %v", err)
 	}
 }
 
 func TestEvidenceBatchDegradesPartsAlreadyDeliveredByStandaloneRead(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
-	if err := printStatusLeased(fixture.st, io.Discard); err != nil {
+	if err := printStatusLeased(fixture.st, fixture.cfg.RepoRoot, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 

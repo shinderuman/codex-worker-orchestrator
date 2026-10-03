@@ -69,7 +69,7 @@ func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *te
 		{structured: passPacket()},
 	}}
 	var output bytes.Buffer
-	w := NewWorkflow(cfg, st, runner, &output)
+	w := newUnitWorkflow(cfg, st, runner, &output)
 	w.captureQualitySurface = func(string) (string, error) { return "changed", nil }
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass"}, nil
@@ -188,7 +188,7 @@ func TestQualitySurfaceApprovalStopsAgainAfterLaterOutOfScopeMutation(t *testing
 		},
 	}
 	var output bytes.Buffer
-	w := NewWorkflow(cfg, st, runner, &output)
+	w := newUnitWorkflow(cfg, st, runner, &output)
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass"}, nil
 	}
@@ -291,7 +291,7 @@ func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *te
 		{structured: passPacket()},
 	}}
 	var output bytes.Buffer
-	w := NewWorkflow(cfg, st, runner, &output)
+	w := newUnitWorkflow(cfg, st, runner, &output)
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass"}, nil
 	}
@@ -408,7 +408,7 @@ func TestQualitySurfaceApprovalScopesPostBaselinePreexistingEdits(t *testing.T) 
 		{structured: passPacket()},
 	}}
 	var output bytes.Buffer
-	w := NewWorkflow(cfg, st, runner, &output)
+	w := newUnitWorkflow(cfg, st, runner, &output)
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass"}, nil
 	}

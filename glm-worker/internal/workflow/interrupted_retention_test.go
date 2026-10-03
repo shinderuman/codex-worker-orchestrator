@@ -95,6 +95,8 @@ func newGitWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner, repo
 		TelemetryContent:      true,
 		RepoRoot:              repo,
 	}, st, r, io.Discard)
+	w.admitCanonicalMutation = func() error { return nil }
+	w.admitModelMutation = func(state.ResumeCheckpoint) (controllerModelCallGuard, error) { return controllerModelCallGuard{}, nil }
 	w.temp = t.TempDir()
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil

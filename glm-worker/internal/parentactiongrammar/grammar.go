@@ -40,6 +40,9 @@ const (
 )
 
 func Project(action string, requiredParameters map[string]string) (Spec, bool) {
+	if parentaction.IsControllerAction(action) {
+		return staged(action), true
+	}
 	if spec, handled := projectExecutionUnitAction(action); handled {
 		return spec, true
 	}

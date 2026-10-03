@@ -73,7 +73,7 @@ func newQualitySurfaceDecisionWorkflow(t *testing.T, steps []runnerStep) (string
 	writeScopeFile(t, repo, "worker_change.go", "package sample\n")
 
 	scripted := &scriptedRunner{steps: steps}
-	w := NewWorkflow(cfg, st, scripted, &bytes.Buffer{})
+	w := newUnitWorkflow(cfg, st, scripted, &bytes.Buffer{})
 	w.captureQualitySurface = func(string) (string, error) { return "changed", nil }
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass"}, nil

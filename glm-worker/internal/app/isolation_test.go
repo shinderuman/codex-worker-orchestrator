@@ -400,7 +400,7 @@ func TestStatusExposesIsolationRecords(t *testing.T) {
 	}
 
 	var plain strings.Builder
-	if err := printStatus(st, &plain); err != nil {
+	if err := printStatusLeased(st, cfg.RepoRoot, &plain); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(plain.String(), "isolation") {
@@ -418,7 +418,7 @@ func TestStatusExposesIsolationRecords(t *testing.T) {
 	}
 
 	var originStatus strings.Builder
-	if err := printStatus(st, &originStatus); err != nil {
+	if err := printStatusLeased(st, cfg.RepoRoot, &originStatus); err != nil {
 		t.Fatal(err)
 	}
 	var originBody struct {
@@ -437,7 +437,7 @@ func TestStatusExposesIsolationRecords(t *testing.T) {
 		RepoHash:  config.RepoHashFor(result.Worktree),
 	})
 	var worktreeStatus strings.Builder
-	if err := printStatus(worktreeStore, &worktreeStatus); err != nil {
+	if err := printStatusLeased(worktreeStore, result.Worktree, &worktreeStatus); err != nil {
 		t.Fatal(err)
 	}
 	var worktreeBody struct {

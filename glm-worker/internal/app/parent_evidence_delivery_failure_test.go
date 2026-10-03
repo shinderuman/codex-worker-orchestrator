@@ -22,7 +22,7 @@ func TestParentStatusLedgerSaveFailureFailsClosed(t *testing.T) {
 	restore := blockParentEvidenceLedgerSave(t, fixture.st)
 
 	var failedOutput bytes.Buffer
-	err := printStatusLeased(fixture.st, &failedOutput)
+	err := printStatusLeased(fixture.st, fixture.cfg.RepoRoot, &failedOutput)
 	if err == nil || !strings.Contains(err.Error(), "delivery claim") {
 		t.Fatalf("ledger save failure err=%v output=%s", err, failedOutput.String())
 	}
@@ -32,7 +32,7 @@ func TestParentStatusLedgerSaveFailureFailsClosed(t *testing.T) {
 	restore()
 
 	var retryOutput bytes.Buffer
-	if err := printStatusLeased(fixture.st, &retryOutput); err != nil {
+	if err := printStatusLeased(fixture.st, fixture.cfg.RepoRoot, &retryOutput); err != nil {
 		t.Fatalf("retry after failed claim save: %v", err)
 	}
 	if retryOutput.Len() == 0 {
@@ -40,14 +40,14 @@ func TestParentStatusLedgerSaveFailureFailsClosed(t *testing.T) {
 	}
 
 	var duplicate *parentevidence.DuplicateProjectionError
-	if err := printStatusLeased(fixture.st, &bytes.Buffer{}); err == nil || !errors.As(err, &duplicate) {
+	if err := printStatusLeased(fixture.st, fixture.cfg.RepoRoot, &bytes.Buffer{}); err == nil || !errors.As(err, &duplicate) {
 		t.Fatalf("same-lease duplicate err=%v", err)
 	}
 
 	if err := fixture.st.AdvanceParentEvidenceLease(); err != nil {
 		t.Fatal(err)
 	}
-	if err := printStatusLeased(fixture.st, &bytes.Buffer{}); err != nil {
+	if err := printStatusLeased(fixture.st, fixture.cfg.RepoRoot, &bytes.Buffer{}); err != nil {
 		t.Fatalf("fresh lease status projection: %v", err)
 	}
 }

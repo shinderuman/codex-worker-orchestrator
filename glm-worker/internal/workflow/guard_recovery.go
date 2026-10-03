@@ -21,7 +21,7 @@ type GuardRecoverableError struct {
 var captureCurrentGuardRecoveryRefDigest = runner.CaptureGitAuthorityRefDigest
 
 func (e *GuardRecoverableError) Error() string {
-	return fmt.Sprintf("guard failure stopped task at %s; parent repair is required before --resume: %s", e.Phase, e.Failure)
+	return fmt.Sprintf("guard failure stopped task at %s; canonical controller recovery is required before resume: %s", e.Phase, e.Failure)
 }
 
 func (w *Workflow) saveGuardRecoverableState(
@@ -181,11 +181,7 @@ func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) er
 	}
 	current, err := captureCurrentGuardRecoveryRefDigest(w.config.RepoRoot)
 	if err != nil {
-		failure := &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
-		if repairErr := w.requestGuardRepair(checkpoint, failure); repairErr != nil {
-			return errors.Join(failure, fmt.Errorf("persist guard repair request: %w", repairErr))
-		}
-		return failure
+		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
 	}
 	if current == checkpoint.GuardRefBeforeDigest {
 		return nil

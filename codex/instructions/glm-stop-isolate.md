@@ -1,29 +1,28 @@
-# GLM workerの安全停止・隔離・park
+# GLM workerの安全停止とblocker切替
 
-user interruption時のstop/resume、保持taskからのisolate、親判断待ちtaskのpark/unparkにだけ適用する。rate limit / provider recoveryはauto-resume契約を使う。
+user interruption時のstop/resumeと、canonical controllerによるblocker切替に適用する。rate limit / provider recoveryはauto-resume契約を使う。
 
 ## semantic choice
 
-親が判断するのは操作の意味だけである。
+親は停止理由、findingの採否、blocking boundary、再開するTaskを判断する。
 
-- 実行中taskをuser interruptionで止める: `stop`
-- 同じ停止taskを続ける: `resume`
-- 停止taskを保持して別taskを走らせる: `isolate`
-- 親判断待ちtaskを保持して優先taskへ切り替える: `park` / `unpark`
+- 実行中のmodel callをuser interruptionで止める: `stop`
+- 保持した同じTaskを続ける: `resume`
+- blockerを先に処理する: controllerのfinding dispositionとepisode scheduleを確定し、typed suspend/materializeを使う。
 
-これらを相互のfallbackとして使わない。どのtaskを止める・隔離する・parkするか、成果をどう統合しconflictを解決するかは親のsemantic責任である。
+旧`isolate`・`park`・`unpark`は退役済みである。手動のPlan ACTIVE書換え、stash/reset、新たな復旧Taskやworktreeを代替経路にしない。
 
 ## machine-owned lifecycle
 
-status admission、process cleanup、snapshot/dirty/ref検証、checkpoint/session保持、isolation/park provenance、idempotency、stale state、restore ordering、resume/unpark admissionは`control:stop-isolate-park-lifecycle`とcurrent production state machineを唯一のprocedure authorityとする。
+checkpoint/session保持、ExecutionLease admission、suspension、one-lane materialize、publication、cleanup、stale authority拒否は`control:stop-isolate-park-lifecycle`とcurrent production controllerをprocedure authorityとする。
 
-親Codexはsignal順、PID、state field、retry matrix、branch/worktree照合条件をMarkdownから再構成しない。machineが拒否・stale・cleanup pending・provenance mismatchを返した場合はstateを保持し、返されたbounded evidenceに対応するsemantic/外部問題だけを直してcanonical actionへ戻る。
+親Codexはsignal順、PID、state field、retry matrix、branch/worktree照合条件をMarkdownから再構成しない。machineが拒否・stale・cleanup pending・provenance mismatchを返した場合は保持されたstateとbounded evidenceから問題を判断し、同じtyped operationへ戻る。
 
 手動`kill`/`pkill`、checkpoint/stateの削除、branch/worktree recordの書換えでmachine admissionを迂回しない。
 
 ## residual external responsibility
 
-- user interruptionで保持されたtaskは新規taskとして作り直さず、machine-owned retentionから再開する。
-- untracked fileはmachineがidentity/hashを検証できても本文原本の復元元ではない。停止時内容そのものを外部に保持・復元する必要がある場合は親が所有する。
-- isolate/parkした成果の統合、conflict解決、外部branch/worktree resourceの最終削除時機は親が判断する。特に隔離branchと隔離worktreeは、元taskのresume保持照合が完了し元taskが完了するまで削除しない。
+- 停止Taskを新規Taskとして作り直さず、保存された要求とcanonical attempt lineageから再開する。
+- controllerのRoot/Focus TaskとExecution Taskを区別する。Plan ACTIVEはfocusを保持し、worker/reviewerはcontrollerが束縛したExecution Taskを読む。
+- restore conflictの解決内容とpublication evidenceの採否は親のsemantic責任とする。lane削除や再利用の時機と証拠保存はtyped cleanupのpostconditionで確認する。
 - Plan/task authority、parent metadata、risk判断はrepository固有authorityを正とし、generic lifecycle stateから意味を推測しない。

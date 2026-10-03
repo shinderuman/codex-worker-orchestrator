@@ -1,74 +1,5 @@
 package app
 
-import "time"
-
-func analysisExecutionTokenDelta(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisTokenDelta {
-	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable}
-	if association.ParentStatus != codexStatusIncluded {
-		delta.Status = association.ParentStatus
-		return delta
-	}
-	if scanErr != nil {
-		delta.Status = analysisStatusUnreadable
-		return delta
-	}
-	if execution.status == analysisStatusUnknown {
-		delta.Status = analysisStatusUnknown
-		return delta
-	}
-	endBound := collectionEnd
-	if execution.status == analysisStatusAvailable {
-		endBound = execution.end
-	}
-	delta = analysisAnchoredTokenDelta(scan, start, endBound)
-	if execution.status == analysisStatusOpen && delta.Status == analysisStatusAvailable {
-		delta.Status = analysisStatusOpen
-	}
-	return delta
-}
-
-func analysisFinalizationTokenDelta(association codexAssociation, scan bundleRolloutScan, execution analysisExecutionBoundary, owning analysisOwningTurn, interval bundleAnalysisInterval) bundleAnalysisTokenDelta {
-	delta := bundleAnalysisTokenDelta{Status: interval.Status}
-	if association.ParentStatus != codexStatusIncluded || interval.Status != analysisStatusAvailable {
-		return delta
-	}
-	return analysisAnchoredTokenDelta(scan, execution.end, owning.turn.CompletedAt)
-}
-
-func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound time.Time) bundleAnalysisTokenDelta {
-	baseline, hasBaseline := lastTokenAnchorAtOrBefore(scan, baselineBound)
-	end, hasEnd := lastTokenAnchorAtOrBefore(scan, endBound)
-	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable}
-	switch {
-	case !hasBaseline || !hasEnd:
-		delta.Status = analysisStatusMissing
-	case end.Offset <= baseline.Offset:
-		delta.Status = analysisStatusNoObservation
-		delta.BaselineAt = baseline.RawAt
-	}
-	if delta.Status != analysisStatusAvailable {
-		return delta
-	}
-	segments := analysisTokenSegments(scan, baseline, end)
-	if analysisSegmentsCounterReset(scan, segments) {
-		delta.Status = analysisStatusCounterReset
-		delta.BaselineAt = baseline.RawAt
-		delta.EndAt = end.RawAt
-		return delta
-	}
-	inputTokens, inputKnown := analysisSegmentFieldSum(segments, analysisAnchorInput)
-	cachedInputTokens, cachedInputKnown := analysisSegmentFieldSum(segments, analysisAnchorCached)
-	delta.BaselineAt = baseline.RawAt
-	delta.EndAt = end.RawAt
-	if !inputKnown || !cachedInputKnown {
-		delta.Status = analysisStatusUnknown
-		return delta
-	}
-	delta.InputTokens = inputTokens
-	delta.CachedInputTokens = cachedInputTokens
-	return delta
-}
-
 func analysisTokenSegments(scan bundleRolloutScan, baseline, end analysisRolloutTokenAnchor) []analysisTokenSegment {
 	if baseline.File == end.File {
 		return []analysisTokenSegment{{file: baseline.File, baseline: &baseline, end: &end}}
@@ -150,26 +81,6 @@ func analysisAnchorReasoning(anchor *analysisRolloutTokenAnchor) *int64 {
 
 func analysisAnchorTotal(anchor *analysisRolloutTokenAnchor) *int64 {
 	return anchor.Total
-}
-
-func analysisSegmentFieldSum(segments []analysisTokenSegment, field func(*analysisRolloutTokenAnchor) *int64) (int64, bool) {
-	var total int64
-	for _, segment := range segments {
-		if segment.baseline != nil {
-			delta := analysisCounterDeltaState(field(segment.baseline), field(segment.end))
-			if !delta.Known {
-				return 0, false
-			}
-			total += delta.Value
-			continue
-		}
-		value := field(segment.end)
-		if value == nil {
-			return 0, false
-		}
-		total += *value
-	}
-	return total, true
 }
 
 func analysisCounterDeltaState(baseline, end *int64) analysisCounterDelta {
