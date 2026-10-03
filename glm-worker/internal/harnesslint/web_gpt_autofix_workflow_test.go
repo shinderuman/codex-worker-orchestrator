@@ -81,7 +81,7 @@ func TestControlledAutofixUsesControlPolicyOnly(t *testing.T) {
 		"controlled[index+1] = filepath.Join(controlRoot, \".golangci.yml\")",
 		"deterministicAutofixMaxIterations = 8",
 		"DeterministicFixCycle",
-		"changedSnapshotCount(current, next) == 0",
+		"changedSnapshotCount(state.current, next) == 0",
 		"seen[key]",
 		"fixGoFormatting(root, paths)",
 		"runDeterministicShellFixes(root, paths, runner)",
