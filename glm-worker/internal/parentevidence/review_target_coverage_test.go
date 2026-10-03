@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -67,34 +68,21 @@ func TestDeletedNumericTargetProvenByDeletionDiff(t *testing.T) {
 	}
 }
 
-func TestDeletedNumericTargetOutsideDeletionRangeStaysUnproven(t *testing.T) {
+func TestDeletedNumericTargetOutsideDeletionRangeRejectedBeforeBinding(t *testing.T) {
 	repoRoot, st := newReviewCoverageStore(t)
 	if err := os.Remove(filepath.Join(repoRoot, "review.go")); err != nil {
 		t.Fatal(err)
 	}
-	openReviewCoverageBinding(t, repoRoot, st, "review.go:5")
-
-	if err := PrintReviewEvidence(repoRoot, st, &bytes.Buffer{}); err == nil {
-		t.Fatal("deleted numeric target outside source range unexpectedly auto-projected")
+	err := recordReviewCoverageBinding(repoRoot, st, "review.go:5")
+	if err == nil || !strings.Contains(err.Error(), "[deleted-line-out-of-range]") {
+		t.Fatalf("out-of-range deleted target error = %v", err)
 	}
-	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
-		Version: ManifestVersion,
-		Reason:  "inspect deleted line outside range",
-		Diff: []DiffRequest{{
-			Question: "review deletion", Paths: []string{"review.go"}, BudgetBytes: 4096,
-		}},
-	})
-
-	binding, err := st.CurrentParentReviewBinding()
-	if err != nil || binding == nil {
-		t.Fatalf("binding = %#v err=%v", binding, err)
+	binding, bindingErr := st.CurrentParentReviewBinding()
+	if bindingErr != nil {
+		t.Fatal(bindingErr)
 	}
-	if binding.Proof != nil {
-		t.Fatalf("line outside the old-side deletion range created proof: %#v", binding.Proof)
-	}
-	ready, err := st.ParentReviewAcceptReady()
-	if err != nil || ready {
-		t.Fatalf("out-of-range deleted target accept readiness = %v err=%v", ready, err)
+	if binding != nil {
+		t.Fatalf("out-of-range deleted target persisted binding: %#v", binding)
 	}
 }
 
@@ -180,9 +168,15 @@ func newReviewCoverageStore(t *testing.T) (string, *state.StateStore) {
 
 func openReviewCoverageBinding(t *testing.T, repoRoot string, st *state.StateStore, target string) {
 	t.Helper()
+	if err := recordReviewCoverageBinding(repoRoot, st, target); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func recordReviewCoverageBinding(repoRoot string, st *state.StateStore, target string) error {
 	snapshot, err := state.CaptureGitSnapshot(repoRoot)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	result := packet.Result{
 		Status:      packet.StatusNeedsSolReview,
@@ -191,9 +185,7 @@ func openReviewCoverageBinding(t *testing.T, repoRoot string, st *state.StateSto
 		Targets:     []string{target},
 	}
 	digest := state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
-	if err := st.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, digest); err != nil {
-		t.Fatal(err)
-	}
+	return st.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, digest)
 }
 
 func projectReviewCoverageManifest(t *testing.T, repoRoot string, st *state.StateStore, manifest Manifest) {
