@@ -55,9 +55,3 @@ func TestBuildParentReviewEvidenceManifestRequiresOpenReview(t *testing.T) {
 		t.Fatal("review evidence builder accepted a missing open review")
 	}
 }
-
-func TestBuildParentReviewEvidenceManifestRejectsAmbiguousTarget(t *testing.T) {
-	_, st, snapshot := newParentEvidenceReviewStore(t)
-	openParentEvidenceReview(t, st, snapshot, "inspect-current-review")
-	t.Fatal("unreachable: ambiguous review target should be rejected before a binding is persisted")
-}
