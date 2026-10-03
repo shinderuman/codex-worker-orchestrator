@@ -26,10 +26,10 @@ func FindGoDeclaration(content []byte, locator string) (GoDeclaration, error) {
 	}
 	matches := findGoDeclarations(fileset, file, owner, symbol)
 	if len(matches) == 0 {
-		return GoDeclaration{}, fmt.Errorf("Go declaration %q is not present", locator)
+		return GoDeclaration{}, fmt.Errorf("go declaration %q is not present", locator)
 	}
 	if len(matches) != 1 {
-		return GoDeclaration{}, fmt.Errorf("Go declaration %q is ambiguous", locator)
+		return GoDeclaration{}, fmt.Errorf("go declaration %q is ambiguous", locator)
 	}
 	return matches[0], nil
 }
@@ -47,30 +47,42 @@ func findGoDeclarations(fileset *token.FileSet, file *ast.File, owner, symbol st
 }
 
 func topLevelGoDeclaration(fileset *token.FileSet, declaration ast.Decl, symbol string) []GoDeclaration {
-	switch current := declaration.(type) {
-	case *ast.FuncDecl:
-		if current.Recv == nil && current.Name.Name == symbol {
-			return []GoDeclaration{goDeclaration(fileset, symbol, "func", current.Pos(), current.End())}
+	if function, ok := declaration.(*ast.FuncDecl); ok {
+		if function.Recv == nil && function.Name.Name == symbol {
+			return []GoDeclaration{goDeclaration(fileset, symbol, "func", function.Pos(), function.End())}
 		}
-	case *ast.GenDecl:
-		var matches []GoDeclaration
-		for _, spec := range current.Specs {
-			switch typed := spec.(type) {
-			case *ast.TypeSpec:
-				if typed.Name.Name == symbol {
-					matches = append(matches, goDeclaration(fileset, symbol, "type", typed.Pos(), typed.End()))
-				}
-			case *ast.ValueSpec:
-				for _, name := range typed.Names {
-					if name.Name == symbol {
-						matches = append(matches, goDeclaration(fileset, symbol, current.Tok.String(), typed.Pos(), typed.End()))
-					}
-				}
-			}
-		}
-		return matches
+		return nil
 	}
-	return nil
+	generated, ok := declaration.(*ast.GenDecl)
+	if !ok {
+		return nil
+	}
+	return topLevelGeneratedDeclarations(fileset, generated, symbol)
+}
+
+func topLevelGeneratedDeclarations(fileset *token.FileSet, declaration *ast.GenDecl, symbol string) []GoDeclaration {
+	var matches []GoDeclaration
+	for _, spec := range declaration.Specs {
+		switch typed := spec.(type) {
+		case *ast.TypeSpec:
+			if typed.Name.Name == symbol {
+				matches = append(matches, goDeclaration(fileset, symbol, "type", typed.Pos(), typed.End()))
+			}
+		case *ast.ValueSpec:
+			matches = append(matches, topLevelValueDeclarations(fileset, declaration, typed, symbol)...)
+		}
+	}
+	return matches
+}
+
+func topLevelValueDeclarations(fileset *token.FileSet, declaration *ast.GenDecl, spec *ast.ValueSpec, symbol string) []GoDeclaration {
+	var matches []GoDeclaration
+	for _, name := range spec.Names {
+		if name.Name == symbol {
+			matches = append(matches, goDeclaration(fileset, symbol, declaration.Tok.String(), spec.Pos(), spec.End()))
+		}
+	}
+	return matches
 }
 
 func goMemberDeclarations(fileset *token.FileSet, declaration ast.Decl, owner, symbol string) []GoDeclaration {
@@ -95,7 +107,7 @@ func goMemberDeclarations(fileset *token.FileSet, declaration ast.Decl, owner, s
 
 func goTypeMemberDeclarations(fileset *token.FileSet, typ ast.Expr, owner, symbol string) []GoDeclaration {
 	var fields *ast.FieldList
-	kind := "member"
+	var kind string
 	switch current := typ.(type) {
 	case *ast.StructType:
 		fields = current.Fields
