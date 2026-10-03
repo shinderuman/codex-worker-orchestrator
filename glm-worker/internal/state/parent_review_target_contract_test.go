@@ -97,15 +97,6 @@ func recordBoundReviewForContract(st *StateStore, snapshot SnapshotDigest, targe
 	}, ParentReviewProducer{Role: string(ReviewerRole), Model: "reviewer"}, snapshot)
 }
 
-func currentReviewSnapshotForContract(t *testing.T, repoRoot string) SnapshotDigest {
-	t.Helper()
-	snapshot, err := CaptureGitSnapshot(repoRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
-}
-
 func assertReviewTargetAdmissionRejected(t *testing.T, st *StateStore, err error, want string) {
 	t.Helper()
 	if err == nil || !strings.Contains(err.Error(), want) {
