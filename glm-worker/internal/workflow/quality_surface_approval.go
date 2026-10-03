@@ -76,6 +76,9 @@ func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {
 	if err := w.activateApprovedQualitySurface(); err != nil {
 		return true, err
 	}
+	if err := checkpoint.MarkQualitySurfaceApprovalActivated(); err != nil {
+		return true, err
+	}
 	result, err = w.convergeWorkerRuleActivation(checkpoint, result, checkpointActivatedRules(checkpoint))
 	if err != nil {
 		return true, err
@@ -147,7 +150,6 @@ func (w *Workflow) activateApprovedQualitySurface() error {
 			if rollbackErr := w.state.Write(qualitySurfaceBaselineStateKey, previousBaseline); rollbackErr != nil {
 				err = fmt.Errorf("quality-surface approval activation failed and baseline rollback failed: activation=%w rollback=%w", err, rollbackErr)
 			}
-		}
 		return w.discardAcceptedFixScopeAfterFailure(err)
 	}
 	return nil
