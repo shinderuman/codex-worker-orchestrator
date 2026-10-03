@@ -49,14 +49,16 @@ func Parse(raw string) (string, string, error) {
 }
 
 func ParseTarget(raw string) (Target, error) {
-	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.TrimSpace(raw) != raw {
+		return Target{}, parseError("shape", raw)
+	}
 	separator := strings.Index(raw, ":")
 	if separator <= 0 || separator == len(raw)-1 {
 		return Target{}, parseError("shape", raw)
 	}
-	path := strings.TrimSpace(raw[:separator])
-	locator := strings.TrimSpace(raw[separator+1:])
-	if path == "" || locator == "" || !relativePath(path) || strings.ContainsAny(path, " ,()") {
+	path := raw[:separator]
+	locator := raw[separator+1:]
+	if path == "" || locator == "" || strings.TrimSpace(path) != path || strings.TrimSpace(locator) != locator || !relativePath(path) || strings.ContainsAny(path, " ,()") {
 		return Target{}, parseError("path", raw)
 	}
 	if start, end, ok := ParseLineRange(locator); ok {
@@ -121,6 +123,9 @@ func parseError(code, raw string) error {
 }
 
 func relativePath(path string) bool {
-	clean := filepath.ToSlash(filepath.Clean(path))
-	return clean != "" && clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && !strings.HasPrefix(clean, "/")
+	if strings.Contains(path, "\\") {
+		return false
+	}
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	return clean == path && clean != "" && clean != "." && clean != ".." && !strings.HasPrefix(clean, "../") && !strings.HasPrefix(clean, "/")
 }
