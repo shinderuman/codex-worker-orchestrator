@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -22,18 +23,18 @@ type UntrackedBaselineEntry struct {
 	Content []byte
 }
 
-type untrackedBaselineManifest struct {
+type untrackedBaselineSnapshot struct {
 	Version int                              `json:"version"`
-	Entries []untrackedBaselineManifestEntry `json:"entries"`
+	Entries []untrackedBaselineSnapshotEntry `json:"entries"`
 }
 
-type untrackedBaselineManifestEntry struct {
-	Path   string `json:"path"`
-	Kind   string `json:"kind"`
-	Mode   uint32 `json:"mode"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
-	Blob   string `json:"blob"`
+type untrackedBaselineSnapshotEntry struct {
+	Path    string `json:"path"`
+	Kind    string `json:"kind"`
+	Mode    uint32 `json:"mode"`
+	Size    int64  `json:"size"`
+	SHA256  string `json:"sha256"`
+	Content []byte `json:"content"`
 }
 
 const (
@@ -41,12 +42,10 @@ const (
 	UntrackedBaselineKindSymlink = "symlink"
 
 	untrackedBaselineVersion          = 1
-	untrackedBaselineManifestFile     = "manifest.json"
-	untrackedBaselineBlobDir          = "blobs"
 	untrackedBaselineMaxEntryBytes    = 512 * 1024
 	untrackedBaselineMaxTotalBytes    = 4 * 1024 * 1024
 	untrackedBaselineMaxEntries       = 4096
-	untrackedBaselineMaxManifestBytes = 4 * 1024 * 1024
+	untrackedBaselineMaxSnapshotBytes = 8 * 1024 * 1024
 )
 
 func captureUntrackedBaselineSnapshot(repoRoot string, state *StateStore, rawPaths []byte) error {
@@ -54,20 +53,22 @@ func captureUntrackedBaselineSnapshot(repoRoot string, state *StateStore, rawPat
 	if err != nil {
 		return err
 	}
-	tempDir, blobDir, err := createUntrackedBaselineStaging(state)
+	snapshot, err := captureUntrackedBaselineEntries(repoRoot, paths)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	manifest, err := captureUntrackedBaselineEntries(repoRoot, blobDir, paths)
+	data, err := json.Marshal(snapshot)
 	if err != nil {
-		return err
+		return fmt.Errorf("encode untracked baseline snapshot: %w", err)
 	}
-	if err := writeUntrackedBaselineManifest(tempDir, manifest); err != nil {
-		return err
+	data = append(data, '\n')
+	if len(data) > untrackedBaselineMaxSnapshotBytes {
+		return fmt.Errorf("untracked baseline snapshot exceeds encoded limit of %d bytes", untrackedBaselineMaxSnapshotBytes)
 	}
-	return publishUntrackedBaselineSnapshot(state, tempDir)
+	if err := writeFileAtomic(state.Path(baselineUntrackedFile), data, 0o600); err != nil {
+		return fmt.Errorf("write untracked baseline snapshot: %w", err)
+	}
+	return nil
 }
 
 func prepareUntrackedBaselinePaths(raw []byte) ([]string, error) {
@@ -79,88 +80,32 @@ func prepareUntrackedBaselinePaths(raw []byte) ([]string, error) {
 	return paths, nil
 }
 
-func createUntrackedBaselineStaging(state *StateStore) (string, string, error) {
-	parent := filepath.Dir(state.Path(baselineUntrackedFile))
-	tempDir, err := os.MkdirTemp(parent, ".baseline-untracked-")
-	if err != nil {
-		return "", "", fmt.Errorf("create untracked baseline staging directory: %w", err)
-	}
-	cleanup := func(cause error) (string, string, error) {
-		_ = os.RemoveAll(tempDir)
-		return "", "", cause
-	}
-	if err := os.Chmod(tempDir, 0o700); err != nil {
-		return cleanup(fmt.Errorf("protect untracked baseline staging directory: %w", err))
-	}
-	blobDir := filepath.Join(tempDir, untrackedBaselineBlobDir)
-	if err := os.Mkdir(blobDir, 0o700); err != nil {
-		return cleanup(fmt.Errorf("create untracked baseline blob directory: %w", err))
-	}
-	return tempDir, blobDir, nil
-}
-
-func captureUntrackedBaselineEntries(repoRoot, blobDir string, paths []string) (untrackedBaselineManifest, error) {
-	manifest := untrackedBaselineManifest{Version: untrackedBaselineVersion}
+func captureUntrackedBaselineEntries(repoRoot string, paths []string) (untrackedBaselineSnapshot, error) {
+	snapshot := untrackedBaselineSnapshot{Version: untrackedBaselineVersion}
 	totalBytes := int64(0)
 	seen := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
 		if _, exists := seen[path]; exists {
-			return untrackedBaselineManifest{}, fmt.Errorf("duplicate untracked baseline path %q", path)
+			return untrackedBaselineSnapshot{}, fmt.Errorf("duplicate untracked baseline path %q", path)
 		}
 		seen[path] = struct{}{}
-		entry, content, err := captureUntrackedBaselineEntry(repoRoot, path)
+		entry, err := captureUntrackedBaselineEntry(repoRoot, path)
 		if err != nil {
-			return untrackedBaselineManifest{}, err
+			return untrackedBaselineSnapshot{}, err
 		}
-		totalBytes += int64(len(content))
+		totalBytes += entry.Size
 		if totalBytes > untrackedBaselineMaxTotalBytes {
-			return untrackedBaselineManifest{}, fmt.Errorf("untracked baseline content exceeds total limit of %d bytes", untrackedBaselineMaxTotalBytes)
+			return untrackedBaselineSnapshot{}, fmt.Errorf("untracked baseline content exceeds total limit of %d bytes", untrackedBaselineMaxTotalBytes)
 		}
-		if err := writeUntrackedBaselineBlob(blobDir, entry.Blob, content); err != nil {
-			return untrackedBaselineManifest{}, err
-		}
-		manifest.Entries = append(manifest.Entries, entry)
+		snapshot.Entries = append(snapshot.Entries, entry)
 	}
-	return manifest, nil
+	return snapshot, nil
 }
 
-func writeUntrackedBaselineManifest(tempDir string, manifest untrackedBaselineManifest) error {
-	data, err := json.MarshalIndent(manifest, "", "  ")
+func captureUntrackedBaselineEntry(repoRoot, path string) (untrackedBaselineSnapshotEntry, error) {
+	fullPath, info, err := safeUntrackedBaselinePath(repoRoot, path)
 	if err != nil {
-		return fmt.Errorf("encode untracked baseline manifest: %w", err)
-	}
-	data = append(data, '\n')
-	if len(data) > untrackedBaselineMaxManifestBytes {
-		return fmt.Errorf("untracked baseline manifest exceeds limit of %d bytes", untrackedBaselineMaxManifestBytes)
-	}
-	if err := os.WriteFile(filepath.Join(tempDir, untrackedBaselineManifestFile), data, 0o600); err != nil {
-		return fmt.Errorf("write untracked baseline manifest: %w", err)
-	}
-	return nil
-}
-
-func publishUntrackedBaselineSnapshot(state *StateStore, tempDir string) error {
-	finalDir := state.Path(baselineUntrackedFile)
-	if err := os.RemoveAll(finalDir); err != nil {
-		return fmt.Errorf("remove previous untracked baseline: %w", err)
-	}
-	if err := os.Rename(tempDir, finalDir); err != nil {
-		return fmt.Errorf("publish untracked baseline snapshot: %w", err)
-	}
-	return nil
-}
-
-func captureUntrackedBaselineEntry(
-	repoRoot string,
-	path string,
-) (untrackedBaselineManifestEntry, []byte, error) {
-	fullPath, err := safeUntrackedBaselinePath(repoRoot, path)
-	if err != nil {
-		return untrackedBaselineManifestEntry{}, nil, err
-	}
-	info, err := os.Lstat(fullPath)
-	if err != nil {
-		return untrackedBaselineManifestEntry{}, nil, fmt.Errorf("stat untracked baseline path %q: %w", path, err)
+		return untrackedBaselineSnapshotEntry{}, err
 	}
 
 	kind := ""
@@ -171,7 +116,7 @@ func captureUntrackedBaselineEntry(
 		kind = UntrackedBaselineKindSymlink
 		target, readErr := os.Readlink(fullPath)
 		if readErr != nil {
-			return untrackedBaselineManifestEntry{}, nil, fmt.Errorf("read untracked baseline symlink %q: %w", path, readErr)
+			return untrackedBaselineSnapshotEntry{}, fmt.Errorf("read untracked baseline symlink %q: %w", path, readErr)
 		}
 		content = []byte(target)
 	case info.Mode().IsRegular():
@@ -179,30 +124,29 @@ func captureUntrackedBaselineEntry(
 		mode = uint32(info.Mode().Perm())
 		content, err = readStableUntrackedBaselineFile(fullPath, info)
 		if err != nil {
-			return untrackedBaselineManifestEntry{}, nil, fmt.Errorf("read untracked baseline file %q: %w", path, err)
+			return untrackedBaselineSnapshotEntry{}, fmt.Errorf("read untracked baseline file %q: %w", path, err)
 		}
 	default:
-		return untrackedBaselineManifestEntry{}, nil, fmt.Errorf("unsupported untracked baseline file type for %q", path)
+		return untrackedBaselineSnapshotEntry{}, fmt.Errorf("unsupported untracked baseline file type for %q", path)
 	}
 	if len(content) > untrackedBaselineMaxEntryBytes {
-		return untrackedBaselineManifestEntry{}, nil, fmt.Errorf("untracked baseline path %q exceeds per-entry limit of %d bytes", path, untrackedBaselineMaxEntryBytes)
+		return untrackedBaselineSnapshotEntry{}, fmt.Errorf("untracked baseline path %q exceeds per-entry limit of %d bytes", path, untrackedBaselineMaxEntryBytes)
 	}
 
 	digest := sha256.Sum256(content)
-	hexDigest := hex.EncodeToString(digest[:])
-	return untrackedBaselineManifestEntry{
-		Path:   path,
-		Kind:   kind,
-		Mode:   mode,
-		Size:   int64(len(content)),
-		SHA256: hexDigest,
-		Blob:   hexDigest,
-	}, content, nil
+	return untrackedBaselineSnapshotEntry{
+		Path:    path,
+		Kind:    kind,
+		Mode:    mode,
+		Size:    int64(len(content)),
+		SHA256:  hex.EncodeToString(digest[:]),
+		Content: content,
+	}, nil
 }
 
 func readStableUntrackedBaselineFile(path string, initial os.FileInfo) ([]byte, error) {
-	if err := validateUntrackedBaselineInitialFile(initial); err != nil {
-		return nil, err
+	if initial.Size() > untrackedBaselineMaxEntryBytes {
+		return nil, fmt.Errorf("file exceeds per-entry limit of %d bytes", untrackedBaselineMaxEntryBytes)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -213,8 +157,8 @@ func readStableUntrackedBaselineFile(path string, initial os.FileInfo) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	if err := validateUntrackedBaselineOpenedFile(initial, opened); err != nil {
-		return nil, err
+	if !opened.Mode().IsRegular() || !os.SameFile(initial, opened) {
+		return nil, fmt.Errorf("file changed type or identity while opening")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, int64(untrackedBaselineMaxEntryBytes)+1))
 	if err != nil {
@@ -227,73 +171,81 @@ func readStableUntrackedBaselineFile(path string, initial os.FileInfo) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	if err := validateUntrackedBaselineStableRead(opened, after, int64(len(data))); err != nil {
-		return nil, err
+	if !os.SameFile(opened, after) || opened.Size() != after.Size() || opened.Mode() != after.Mode() || int64(len(data)) != after.Size() {
+		return nil, fmt.Errorf("file changed while capturing baseline")
 	}
 	return data, nil
 }
 
-func validateUntrackedBaselineInitialFile(info os.FileInfo) error {
-	if info.Size() > untrackedBaselineMaxEntryBytes {
-		return fmt.Errorf("file exceeds per-entry limit of %d bytes", untrackedBaselineMaxEntryBytes)
-	}
-	return nil
-}
-
-func validateUntrackedBaselineOpenedFile(initial, opened os.FileInfo) error {
-	if !opened.Mode().IsRegular() || !os.SameFile(initial, opened) {
-		return fmt.Errorf("file changed type or identity while opening")
-	}
-	return nil
-}
-
-func validateUntrackedBaselineStableRead(opened, after os.FileInfo, readSize int64) error {
-	if !os.SameFile(opened, after) || opened.Size() != after.Size() || opened.Mode() != after.Mode() || readSize != after.Size() {
-		return fmt.Errorf("file changed while capturing baseline")
-	}
-	return nil
-}
-
-func writeUntrackedBaselineBlob(blobDir, name string, content []byte) error {
-	path := filepath.Join(blobDir, name)
-	if _, err := os.Lstat(path); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect untracked baseline blob: %w", err)
-	}
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		return fmt.Errorf("write untracked baseline blob: %w", err)
-	}
-	return nil
-}
-
 func (s *StateStore) ReadUntrackedBaseline() ([]UntrackedBaselineEntry, error) {
-	root := s.Path(baselineUntrackedFile)
-	info, err := os.Lstat(root)
+	path := s.Path(baselineUntrackedFile)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("read untracked baseline snapshot: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return nil, fmt.Errorf("untracked baseline snapshot is not a directory")
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("untracked baseline snapshot is not a regular file")
 	}
-
-	manifest, err := readUntrackedBaselineManifest(root)
+	if info.Size() > untrackedBaselineMaxSnapshotBytes {
+		return nil, fmt.Errorf("untracked baseline snapshot exceeds encoded limit of %d bytes", untrackedBaselineMaxSnapshotBytes)
+	}
+	data, err := readBoundedUntrackedBaselineSnapshot(path)
 	if err != nil {
 		return nil, err
 	}
-	entries := make([]UntrackedBaselineEntry, 0, len(manifest.Entries))
+	snapshot, err := decodeUntrackedBaselineSnapshot(data)
+	if err != nil {
+		return nil, err
+	}
+	return validateUntrackedBaselineSnapshot(snapshot)
+}
+
+func readBoundedUntrackedBaselineSnapshot(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open untracked baseline snapshot: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, int64(untrackedBaselineMaxSnapshotBytes)+1))
+	if err != nil {
+		return nil, fmt.Errorf("read untracked baseline snapshot: %w", err)
+	}
+	if len(data) > untrackedBaselineMaxSnapshotBytes {
+		return nil, fmt.Errorf("untracked baseline snapshot exceeds encoded limit of %d bytes", untrackedBaselineMaxSnapshotBytes)
+	}
+	return data, nil
+}
+
+func decodeUntrackedBaselineSnapshot(data []byte) (untrackedBaselineSnapshot, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var snapshot untrackedBaselineSnapshot
+	if err := decoder.Decode(&snapshot); err != nil {
+		return untrackedBaselineSnapshot{}, fmt.Errorf("decode untracked baseline snapshot: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return untrackedBaselineSnapshot{}, fmt.Errorf("untracked baseline snapshot has trailing data")
+	}
+	if snapshot.Version != untrackedBaselineVersion {
+		return untrackedBaselineSnapshot{}, fmt.Errorf("unsupported untracked baseline version %d", snapshot.Version)
+	}
+	if len(snapshot.Entries) > untrackedBaselineMaxEntries {
+		return untrackedBaselineSnapshot{}, fmt.Errorf("untracked baseline has %d paths; limit is %d", len(snapshot.Entries), untrackedBaselineMaxEntries)
+	}
+	return snapshot, nil
+}
+
+func validateUntrackedBaselineSnapshot(snapshot untrackedBaselineSnapshot) ([]UntrackedBaselineEntry, error) {
+	entries := make([]UntrackedBaselineEntry, 0, len(snapshot.Entries))
+	seen := make(map[string]struct{}, len(snapshot.Entries))
 	totalBytes := int64(0)
-	seen := make(map[string]struct{}, len(manifest.Entries))
-	for _, item := range manifest.Entries {
-		if err := validateUntrackedBaselineManifestEntry(item, seen); err != nil {
+	for _, item := range snapshot.Entries {
+		if err := validateUntrackedBaselineSnapshotEntry(item, seen); err != nil {
 			return nil, err
 		}
 		seen[item.Path] = struct{}{}
-		content, err := readUntrackedBaselineBlob(root, item)
-		if err != nil {
-			return nil, err
-		}
-		totalBytes += int64(len(content))
+		totalBytes += item.Size
 		if totalBytes > untrackedBaselineMaxTotalBytes {
 			return nil, fmt.Errorf("untracked baseline content exceeds total limit of %d bytes", untrackedBaselineMaxTotalBytes)
 		}
@@ -303,52 +255,13 @@ func (s *StateStore) ReadUntrackedBaseline() ([]UntrackedBaselineEntry, error) {
 			Mode:    item.Mode,
 			Size:    item.Size,
 			SHA256:  item.SHA256,
-			Content: content,
+			Content: append([]byte(nil), item.Content...),
 		})
 	}
 	return entries, nil
 }
 
-func readUntrackedBaselineManifest(root string) (untrackedBaselineManifest, error) {
-	path := filepath.Join(root, untrackedBaselineManifestFile)
-	info, err := os.Lstat(path)
-	if err != nil {
-		return untrackedBaselineManifest{}, fmt.Errorf("read untracked baseline manifest: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return untrackedBaselineManifest{}, fmt.Errorf("untracked baseline manifest is not a regular file")
-	}
-	if info.Size() > untrackedBaselineMaxManifestBytes {
-		return untrackedBaselineManifest{}, fmt.Errorf("untracked baseline manifest exceeds limit of %d bytes", untrackedBaselineMaxManifestBytes)
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return untrackedBaselineManifest{}, err
-	}
-	defer func() { _ = file.Close() }()
-	decoder := json.NewDecoder(io.LimitReader(file, int64(untrackedBaselineMaxManifestBytes)+1))
-	decoder.DisallowUnknownFields()
-	var manifest untrackedBaselineManifest
-	if err := decoder.Decode(&manifest); err != nil {
-		return untrackedBaselineManifest{}, fmt.Errorf("decode untracked baseline manifest: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return untrackedBaselineManifest{}, fmt.Errorf("untracked baseline manifest has trailing data")
-	}
-	if manifest.Version != untrackedBaselineVersion {
-		return untrackedBaselineManifest{}, fmt.Errorf("unsupported untracked baseline version %d", manifest.Version)
-	}
-	if len(manifest.Entries) > untrackedBaselineMaxEntries {
-		return untrackedBaselineManifest{}, fmt.Errorf("untracked baseline has %d paths; limit is %d", len(manifest.Entries), untrackedBaselineMaxEntries)
-	}
-	return manifest, nil
-}
-
-func validateUntrackedBaselineManifestEntry(
-	entry untrackedBaselineManifestEntry,
-	seen map[string]struct{},
-) error {
+func validateUntrackedBaselineSnapshotEntry(entry untrackedBaselineSnapshotEntry, seen map[string]struct{}) error {
 	if !validUntrackedBaselineRelativePath(entry.Path) {
 		return fmt.Errorf("invalid untracked baseline path %q", entry.Path)
 	}
@@ -361,48 +274,45 @@ func validateUntrackedBaselineManifestEntry(
 	if entry.Kind == UntrackedBaselineKindSymlink && entry.Mode != 0 {
 		return fmt.Errorf("symlink untracked baseline has unexpected mode for %q", entry.Path)
 	}
-	if entry.Size < 0 || entry.Size > untrackedBaselineMaxEntryBytes {
+	if entry.Kind == UntrackedBaselineKindFile && entry.Mode&^uint32(0o777) != 0 {
+		return fmt.Errorf("regular untracked baseline has invalid mode for %q", entry.Path)
+	}
+	if entry.Size < 0 || entry.Size > untrackedBaselineMaxEntryBytes || entry.Size != int64(len(entry.Content)) {
 		return fmt.Errorf("invalid untracked baseline size for %q", entry.Path)
 	}
-	if !validUntrackedBaselineDigest(entry.SHA256) || entry.Blob != entry.SHA256 {
+	if !validUntrackedBaselineDigest(entry.SHA256) {
 		return fmt.Errorf("invalid untracked baseline digest for %q", entry.Path)
+	}
+	digest := sha256.Sum256(entry.Content)
+	if hex.EncodeToString(digest[:]) != entry.SHA256 {
+		return fmt.Errorf("untracked baseline content digest mismatch for %q", entry.Path)
 	}
 	return nil
 }
 
-func readUntrackedBaselineBlob(root string, entry untrackedBaselineManifestEntry) ([]byte, error) {
-	path := filepath.Join(root, untrackedBaselineBlobDir, entry.Blob)
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, fmt.Errorf("read untracked baseline blob for %q: %w", entry.Path, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("untracked baseline blob is not a regular file for %q", entry.Path)
-	}
-	if info.Size() != entry.Size {
-		return nil, fmt.Errorf("untracked baseline blob size mismatch for %q", entry.Path)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read untracked baseline blob for %q: %w", entry.Path, err)
-	}
-	digest := sha256.Sum256(data)
-	if hex.EncodeToString(digest[:]) != entry.SHA256 {
-		return nil, fmt.Errorf("untracked baseline blob digest mismatch for %q", entry.Path)
-	}
-	return data, nil
-}
-
-func safeUntrackedBaselinePath(repoRoot, path string) (string, error) {
+func safeUntrackedBaselinePath(repoRoot, path string) (string, os.FileInfo, error) {
 	if !validUntrackedBaselineRelativePath(path) {
-		return "", fmt.Errorf("invalid untracked baseline path %q", path)
+		return "", nil, fmt.Errorf("invalid untracked baseline path %q", path)
 	}
-	fullPath := filepath.Join(repoRoot, filepath.FromSlash(path))
-	relative, err := filepath.Rel(repoRoot, fullPath)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("untracked baseline path escapes repository: %q", path)
+	parts := strings.Split(filepath.FromSlash(path), string(filepath.Separator))
+	current := repoRoot
+	for index, part := range parts {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return "", nil, fmt.Errorf("stat untracked baseline path %q: %w", path, err)
+		}
+		if index == len(parts)-1 {
+			return current, info, nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", nil, fmt.Errorf("untracked baseline path %q traverses symlink parent", path)
+		}
+		if !info.IsDir() {
+			return "", nil, fmt.Errorf("untracked baseline path %q traverses non-directory parent", path)
+		}
 	}
-	return fullPath, nil
+	return "", nil, fmt.Errorf("invalid untracked baseline path %q", path)
 }
 
 func validUntrackedBaselineRelativePath(path string) bool {
@@ -437,7 +347,8 @@ func splitUntrackedBaselinePaths(raw []byte) []string {
 }
 
 func removeUntrackedBaselineSnapshot(state *StateStore) error {
-	if err := os.RemoveAll(state.Path(baselineUntrackedFile)); err != nil {
+	err := removeStatePath(state.Path(baselineUntrackedFile))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove untracked baseline snapshot: %w", err)
 	}
 	return nil
