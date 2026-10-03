@@ -28,7 +28,7 @@ func (s *Store) publicationEvidence(op ExecutionOperation, c AcceptedCandidate, 
 	task.ControllerGeneration = op.Transition.CommittedGeneration
 	task.TransitionID = op.Transition.TransitionID
 	task.CreatedAt = op.Transition.CreatedAt
-	final, _, err := s.StoreAttemptFinalization(AttemptFinalizationRecord{SchemaVersion: evidenceSchemaVersion, AttemptSealRef: c.SealRef, ControllerGeneration: op.Transition.CommittedGeneration, TransitionID: op.Transition.TransitionID, ProjectSnapshotID: op.Transition.ProjectSnapshotNew, Kind: op.Transition.Kind, EvidenceRefs: refs, CreatedAt: op.Transition.CreatedAt})
+	final, err := s.storeOperationFinalization(op, c.SealRef, refs)
 	if err != nil {
 		return EvidencePublicationInput{}, err
 	}

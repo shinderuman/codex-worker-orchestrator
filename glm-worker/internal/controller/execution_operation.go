@@ -198,6 +198,8 @@ func (s *Store) finalizeCommittedExecution(op ExecutionOperation, head Repositor
 func (s *Store) applyExecutionOperation(op ExecutionOperation) error {
 	var err error
 	switch op.Transition.Kind {
+	case executionModelCall:
+		err = s.applyModelCallAdmission(op)
 	case terminalRetire:
 		err = s.applyTerminalMetadata(op)
 	case executionSuspend:
@@ -237,7 +239,7 @@ func (s *Store) executionOperationResult(op ExecutionOperation, head RepositoryC
 	if op.Publication != nil {
 		result.CandidateRef = op.Publication.After
 	}
-	if op.Transition.Kind != executionMaterialize {
+	if op.Transition.Kind != executionMaterialize && op.Transition.Kind != executionModelCall {
 		return result, nil
 	}
 	workspace, err := ResolveWorkspaceIdentity(op.Workspace.Root, s.identity)

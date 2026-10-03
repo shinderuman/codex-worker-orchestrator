@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -120,6 +121,12 @@ esac
 echo "stub claude unknown mode: $mode" >&2
 exit 1
 `
+
+var multiRepoWorkerBuild struct {
+	once sync.Once
+	data []byte
+	err  error
+}
 
 func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	env := newMultiRepoEnv(t)
@@ -329,20 +336,34 @@ func canonicalRepoPath(t *testing.T, repo string) string {
 
 func buildMultiRepoWorkerBinary(t *testing.T) (string, error) {
 	t.Helper()
-	moduleRoot, err := filepath.Abs("../..")
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(filepath.Join(moduleRoot, "go.mod")); err != nil {
-		return "", fmt.Errorf("module root解決失敗: %w", err)
+	multiRepoWorkerBuild.once.Do(func() {
+		multiRepoWorkerBuild.data, multiRepoWorkerBuild.err = buildMultiRepoWorkerBytes(t.TempDir())
+	})
+	if multiRepoWorkerBuild.err != nil {
+		return "", multiRepoWorkerBuild.err
 	}
 	binary := filepath.Join(t.TempDir(), "glm-worker")
+	if err := os.WriteFile(binary, multiRepoWorkerBuild.data, 0o700); err != nil {
+		return "", err
+	}
+	return binary, nil
+}
+
+func buildMultiRepoWorkerBytes(dir string) ([]byte, error) {
+	moduleRoot, err := filepath.Abs("../..")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(filepath.Join(moduleRoot, "go.mod")); err != nil {
+		return nil, fmt.Errorf("module root解決失敗: %w", err)
+	}
+	binary := filepath.Join(dir, "glm-worker")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/glm-worker")
 	build.Dir = moduleRoot
 	if output, err := build.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("go build失敗: %w: %s", err, output)
+		return nil, fmt.Errorf("go build失敗: %w: %s", err, output)
 	}
-	return binary, nil
+	return os.ReadFile(binary)
 }
 
 func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {

@@ -12,6 +12,7 @@ import (
 )
 
 type Store struct {
+	config              config.AppConfig
 	dir                 string
 	identity            RepositoryIdentity
 	archiveVerification sync.Mutex
@@ -59,7 +60,7 @@ func Open(cfg config.AppConfig) (*Store, error) {
 		return nil, err
 	}
 	base := controllerStoreDir(cfg, identity)
-	store := &Store{dir: base, identity: identity}
+	store := &Store{dir: base, identity: identity, config: cfg}
 	info, err := os.Stat(base)
 	switch {
 	case errors.Is(err, os.ErrNotExist):

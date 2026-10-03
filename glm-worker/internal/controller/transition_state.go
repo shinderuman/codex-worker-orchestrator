@@ -10,12 +10,16 @@ import (
 func (*Store) ClassifyTransition(record TransitionRecord, actual map[string]string) map[string]EffectClassification {
 	result := make(map[string]EffectClassification, len(record.Effects))
 	for _, effect := range record.Effects {
-		observed := actual[effect.Key()]
+		observed, present := actual[effect.Key()]
+		if !present {
+			result[effect.Key()] = EffectUnexpected
+			continue
+		}
 		switch observed {
-		case effect.ExpectedOld:
-			result[effect.Key()] = EffectExpectedOld
 		case effect.ExpectedNew:
 			result[effect.Key()] = EffectExpectedNew
+		case effect.ExpectedOld:
+			result[effect.Key()] = EffectExpectedOld
 		default:
 			result[effect.Key()] = EffectUnexpected
 		}

@@ -57,6 +57,32 @@ func TestGitArchiveCacheBindsAllVerificationClaims(t *testing.T) {
 	}
 }
 
+func TestGitObjectArchiveRejectsIncompleteObjectClosure(t *testing.T) {
+	source, _ := newControllerLinkedWorktree(t)
+	store := newEvidenceTestStore(t)
+	for _, objectType := range []string{"commit", "tree"} {
+		t.Run(objectType, func(t *testing.T) {
+			oid := controllerGitOutput(t, source, "rev-parse", "HEAD^{"+objectType+"}")
+			pack, err := runGitBinary(source, []byte(oid+"\n"), "pack-objects", "--stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			envelope := gitObjectArchiveEnvelope{SchemaVersion: evidenceSchemaVersion, ObjectFormat: "sha1", Roots: []GitObjectArchiveRoot{{OID: oid, Type: objectType}}, PackDigest: digestBytes(pack), Pack: pack}
+			data, err := json.Marshal(envelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref, err := store.PutEvidenceObject("git-object-archive", gitObjectArchiveMediaType, "incomplete:"+objectType, true, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.VerifyGitObjectArchive(ref); err == nil {
+				t.Fatal("archive missing reachable objects was accepted")
+			}
+		})
+	}
+}
+
 func TestGitArchiveVerificationFailureIsRetryable(t *testing.T) {
 	source, _ := newControllerLinkedWorktree(t)
 	store := newEvidenceTestStore(t)

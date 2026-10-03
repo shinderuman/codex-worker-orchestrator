@@ -285,6 +285,13 @@ func verifyGitObjectPack(envelope gitObjectArchiveEnvelope) error {
 			return fmt.Errorf("git object archive root %s has wrong object type", root.OID)
 		}
 	}
+	args := []string{"fsck", "--connectivity-only", "--no-reflogs", "--no-dangling"}
+	for _, root := range envelope.Roots {
+		args = append(args, root.OID)
+	}
+	if _, err := runGitBinaryWithGitDir(repo, nil, args...); err != nil {
+		return fmt.Errorf("git object archive closure is incomplete: %w", err)
+	}
 	return nil
 }
 

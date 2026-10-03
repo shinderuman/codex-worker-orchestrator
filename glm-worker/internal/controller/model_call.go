@@ -6,24 +6,49 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const executionModelCall = "model-call-admission"
+
 func (s *Store) BindModelCall(admission Admission) (Admission, error) {
-	targetLease, target, err := s.prepareModelCallTarget(admission)
+	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return Admission{}, err
 	}
-	record, err := s.BeginAuthorityTransition(TransitionIntent{
-		Kind:               "model-call-admission",
-		ExpectedGeneration: admission.Head.ControllerGeneration,
-		Source:             admission,
-		Target:             target,
-	})
+	defer func() { _ = lock.Close() }()
+	op, err := s.planModelCallAdmission(admission)
 	if err != nil {
 		return Admission{}, err
 	}
-	if err := s.verifyPreparedModelCallTransition(record); err != nil {
+	if err := s.prepareExecutionOperation(&op, admission.Head); err != nil {
 		return Admission{}, err
 	}
-	return s.finalizeModelCallTransition(admission, record, targetLease)
+	result, err := s.recoverExecutionOperationLocked(op)
+	if err != nil {
+		return Admission{}, err
+	}
+	if result.Admission == nil {
+		return Admission{}, fmt.Errorf("model-call admission has no live authority")
+	}
+	return *result.Admission, nil
+}
+
+func (s *Store) planModelCallAdmission(admission Admission) (ExecutionOperation, error) {
+	if admission.Lease.InFlightCallID != "" {
+		return ExecutionOperation{}, fmt.Errorf("model-call admission requires a quiescent lease")
+	}
+	if err := s.validateTransitionSource(TransitionIntent{ExpectedGeneration: admission.Head.ControllerGeneration, Source: admission}); err != nil {
+		return ExecutionOperation{}, err
+	}
+	lease, target, err := s.prepareModelCallTarget(admission)
+	if err != nil {
+		return ExecutionOperation{}, err
+	}
+	id, err := state.NewUUID()
+	if err != nil {
+		return ExecutionOperation{}, err
+	}
+	record := buildTransitionRecord(TransitionIntent{Kind: executionModelCall, Source: admission, Target: target}, id)
+	workspace := admission.Workspace
+	return ExecutionOperation{Transition: record, Source: admission, Lease: &lease, Workspace: &workspace}, nil
 }
 
 func (s *Store) prepareModelCallTarget(admission Admission) (ExecutionLease, TransitionAuthority, error) {
@@ -46,50 +71,4 @@ func (s *Store) prepareModelCallTarget(admission Admission) (ExecutionLease, Tra
 	target := authorityFromAdmission(admission, admission.Snapshot)
 	target.LeaseID = targetLease.LeaseID
 	return targetLease, target, nil
-}
-
-func (s *Store) verifyPreparedModelCallTransition(record TransitionRecord) error {
-	persisted, transitionState, err := s.LoadTransition(record.TransitionID)
-	if err != nil {
-		return err
-	}
-	if persisted.TransitionID != record.TransitionID || transitionState.Phase != TransitionPhasePrepared {
-		return fmt.Errorf("model-call admission transition is not durably prepared")
-	}
-	return nil
-}
-
-func (s *Store) finalizeModelCallTransition(
-	admission Admission,
-	record TransitionRecord,
-	targetLease ExecutionLease,
-) (Admission, error) {
-	lock, err := s.acquireMutationLock()
-	if err != nil {
-		return Admission{}, err
-	}
-	defer func() { _ = lock.Close() }()
-	if err := s.markTransitionApplied(record, nil); err != nil {
-		return Admission{}, err
-	}
-	if _, err := s.commitAuthorityTransitionLocked(record, nil, false, func(next *RepositoryControllerHead) error {
-		next.LiveLeaseID = targetLease.LeaseID
-		return nil
-	}); err != nil {
-		return Admission{}, err
-	}
-	head, err := s.finalizeAuthorityTransitionLocked(record)
-	if err != nil {
-		return Admission{}, err
-	}
-	if head.LiveLeaseID != targetLease.LeaseID || head.ControllerGeneration != targetLease.ControllerGeneration {
-		return Admission{}, fmt.Errorf("model-call admission finalized with inconsistent lease authority")
-	}
-	return Admission{
-		Head:      head,
-		Attempt:   admission.Attempt,
-		Lease:     targetLease,
-		Workspace: admission.Workspace,
-		Snapshot:  admission.Snapshot,
-	}, nil
 }

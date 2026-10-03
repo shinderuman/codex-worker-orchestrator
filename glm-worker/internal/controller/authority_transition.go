@@ -3,35 +3,7 @@ package controller
 import (
 	"fmt"
 	"time"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-func (s *Store) BeginAuthorityTransition(intent TransitionIntent) (TransitionRecord, error) {
-	if intent.Kind == "" {
-		return TransitionRecord{}, fmt.Errorf("transition kind is required")
-	}
-	lock, err := s.acquireMutationLock()
-	if err != nil {
-		return TransitionRecord{}, err
-	}
-	defer func() { _ = lock.Close() }()
-	if err := s.validateTransitionSource(intent); err != nil {
-		return TransitionRecord{}, err
-	}
-	if err := validateTransitionTarget(intent.Target); err != nil {
-		return TransitionRecord{}, err
-	}
-	transitionID, err := state.NewUUID()
-	if err != nil {
-		return TransitionRecord{}, err
-	}
-	record := buildTransitionRecord(intent, transitionID)
-	if err := s.persistPreparedTransition(record, intent.Source.Head); err != nil {
-		return TransitionRecord{}, err
-	}
-	return record, nil
-}
 
 func buildTransitionRecord(intent TransitionIntent, transitionID string) TransitionRecord {
 	source := intent.Source
@@ -101,22 +73,6 @@ func (s *Store) validateTransitionSource(intent TransitionIntent) error {
 		current.Snapshot.ID != source.Snapshot.ID ||
 		current.Head.ProjectSnapshotID != source.Head.ProjectSnapshotID {
 		return fmt.Errorf("transition source authority is stale")
-	}
-	return nil
-}
-
-func validateTransitionTarget(target TransitionAuthority) error {
-	if target.ProjectSnapshotID == "" {
-		return fmt.Errorf("transition target project snapshot is required")
-	}
-	if target.RootTaskRef.Empty() || target.ExecutionTaskRef.Empty() {
-		return fmt.Errorf("transition target root and execution task authority are required")
-	}
-	if target.AttemptID == "" || target.LeaseID == "" || target.WorkspaceID == "" {
-		return fmt.Errorf("transition target attempt, lease, and workspace authority are required")
-	}
-	if target.WorkspaceSnapshot.ID == "" {
-		return fmt.Errorf("transition target workspace snapshot is required")
 	}
 	return nil
 }

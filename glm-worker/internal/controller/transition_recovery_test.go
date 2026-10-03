@@ -8,7 +8,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
-func TestConcurrentTransitionPrepareAllowsOnlyOnePendingAuthority(t *testing.T) {
+func TestConcurrentModelCallAdmissionAllowsOnlyOneLiveCall(t *testing.T) {
 	repo, _ := newControllerLinkedWorktree(t)
 	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
 	if err != nil {
@@ -28,38 +28,21 @@ func TestConcurrentTransitionPrepareAllowsOnlyOnePendingAuthority(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	makeIntent := func() TransitionIntent {
-		lease, leaseErr := store.prepareContinuationLease(source.Lease, source.Snapshot, source.Head.ControllerGeneration+3)
-		if leaseErr != nil {
-			t.Fatal(leaseErr)
-		}
-		target := authorityFromAdmission(source, source.Snapshot)
-		target.LeaseID = lease.LeaseID
-		return TransitionIntent{
-			Kind:               "concurrent-prepare",
-			ExpectedGeneration: source.Head.ControllerGeneration,
-			Source:             source,
-			Target:             target,
-		}
-	}
-	intents := []TransitionIntent{makeIntent(), makeIntent()}
 	start := make(chan struct{})
-	results := make(chan error, len(intents))
+	results := make(chan error, 2)
 	var wait sync.WaitGroup
-	for _, intent := range intents {
-		intent := intent
+	for i := 0; i < 2; i++ {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
 			<-start
-			_, beginErr := store.BeginAuthorityTransition(intent)
-			results <- beginErr
+			_, bindErr := store.BindModelCall(source)
+			results <- bindErr
 		}()
 	}
 	close(start)
 	wait.Wait()
 	close(results)
-
 	successes := 0
 	failures := 0
 	for result := range results {
@@ -76,8 +59,12 @@ func TestConcurrentTransitionPrepareAllowsOnlyOnePendingAuthority(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head.PendingTransitionID == "" || head.ControllerGeneration != source.Head.ControllerGeneration+1 {
-		t.Fatalf("controller does not expose exactly one prepared transition: %#v", head)
+	if head.PendingTransitionID != "" || head.ControllerGeneration != source.Head.ControllerGeneration+3 || head.LiveLeaseID == source.Lease.LeaseID {
+		t.Fatalf("concurrent admission lost live authority: %#v", head)
+	}
+	lease, err := store.loadLease(head.LiveLeaseID)
+	if err != nil || lease.InFlightCallID == "" {
+		t.Fatal("concurrent admission has no in-flight call identity")
 	}
 }
 
@@ -169,7 +156,7 @@ func prepareFinalizingRecoveryFixture(t *testing.T) (cfg config.AppConfig, store
 	target := authorityFromAdmission(source, source.Snapshot)
 	target.LeaseID = targetLease.LeaseID
 	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/example", ExpectedOld: "old", ExpectedNew: "new"}
-	record, err = store.BeginAuthorityTransition(TransitionIntent{
+	record, err = prepareTestAuthorityTransition(store, TransitionIntent{
 		Kind:               "crash-recovery",
 		ExpectedGeneration: source.Head.ControllerGeneration,
 		Source:             source,
