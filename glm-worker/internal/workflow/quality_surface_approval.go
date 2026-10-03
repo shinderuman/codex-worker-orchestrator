@@ -75,6 +75,9 @@ func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {
 	if err := w.activateApprovedQualitySurface(); err != nil {
 		return true, err
 	}
+	if err := checkpoint.MarkQualitySurfaceApprovalActivated(); err != nil {
+		return true, err
+	}
 	result, err = w.convergeWorkerRuleActivation(checkpoint, result, checkpointActivatedRules(checkpoint))
 	if err != nil {
 		return true, err
