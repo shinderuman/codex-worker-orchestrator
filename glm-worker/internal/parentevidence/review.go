@@ -188,14 +188,38 @@ func reviewClaimForTarget(target string, parts []Part) (state.ParentReviewEviden
 		if part.Digest == "" {
 			continue
 		}
-		if part.Source != nil && part.Source.Content != "" && reviewSourceCoversTarget(target, *part.Source) {
-			return state.ParentReviewEvidenceClaim{Kind: "source", Digest: part.Digest, Locator: part.Locator}, true
+		if part.Source != nil {
+			source, ok := sourceForReviewClaim(part, parts)
+			if ok && reviewSourceCoversTarget(target, source) {
+				return state.ParentReviewEvidenceClaim{Kind: "source", Digest: part.Digest, Locator: part.Locator}, true
+			}
 		}
 		if part.Diff != nil && part.Diff.Body != "" && ReviewDiffCoversTarget(target, *part.Diff) {
 			return state.ParentReviewEvidenceClaim{Kind: "diff", Digest: part.Digest, Locator: part.Locator}, true
 		}
 	}
 	return state.ParentReviewEvidenceClaim{}, false
+}
+
+func sourceForReviewClaim(part Part, parts []Part) (SourceBody, bool) {
+	if part.Source == nil {
+		return SourceBody{}, false
+	}
+	source := *part.Source
+	if source.Content != "" {
+		return source, true
+	}
+	if part.Status != PartProjected || part.Reason != UnchangedReason {
+		return SourceBody{}, false
+	}
+	for _, candidate := range parts {
+		if candidate.Source == nil || candidate.Digest != part.Digest || candidate.Source.Content == "" || candidate.Status != PartProjected {
+			continue
+		}
+		source.Content = candidate.Source.Content
+		return source, true
+	}
+	return SourceBody{}, false
 }
 
 func reviewSourceCoversTarget(raw string, source SourceBody) bool {
