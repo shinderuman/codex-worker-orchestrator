@@ -84,6 +84,32 @@ func TestCLIInstallRecoversPartialBinaryPrefixBeforeRetry(t *testing.T) {
 	}
 }
 
+func TestCLIInstallRecoveryRollsBackPartialRestoreWhenStateImageUnchanged(t *testing.T) {
+	buildDir, binDir := prepareOwnedCLIInstall(t)
+	for _, name := range managedNames[:2] {
+		if err := os.Remove(filepath.Join(binDir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	journal, staged := stageCLIInstallTransactionForTest(t, buildDir, binDir)
+	if !sameCLIInstallTransactionImage(journal.State.Pre, journal.State.Post) {
+		t.Fatal("restore fixture must keep the ownership state image unchanged")
+	}
+	if len(staged) != 2 {
+		t.Fatalf("staged actions = %d, want 2", len(staged))
+	}
+	first := staged[0]
+	if err := os.Rename(first.replacement, first.action.target); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Install(buildDir, binDir); err != nil {
+		t.Fatalf("Install() after interrupted restore: %v", err)
+	}
+	assertCLIInstallVersion(t, binDir, "v1")
+	assertCLIInstallTransactionAbsent(t, binDir)
+}
+
 func TestCLIInstallRecoveryPreservesExternalEditAfterInterruption(t *testing.T) {
 	buildDir, binDir := prepareOwnedCLIInstall(t)
 	writeBuildSet(t, buildDir, "v2")
