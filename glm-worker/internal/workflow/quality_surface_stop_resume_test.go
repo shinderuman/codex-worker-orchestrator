@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -35,6 +37,9 @@ func TestTransientStopResumeRestoresQualitySurfaceApprovalBoundary(t *testing.T)
 	if saved.StopKind != state.ResumeStopNone || !saved.QualitySurfaceApprovalPending || saved.CompletedResult == nil {
 		t.Fatalf("restored checkpoint = %#v", saved)
 	}
+	if saved.QualitySurfaceApprovalActivated {
+		t.Fatalf("pre-activation stop restored as activated: %#v", saved)
+	}
 	if saved.StopGitSnapshot == nil || saved.StopGitSnapshot.Head == "" || saved.StopDirtyFiles == nil {
 		t.Fatalf("restored approval retention = %#v", saved)
 	}
@@ -44,6 +49,61 @@ func TestTransientStopResumeRestoresQualitySurfaceApprovalBoundary(t *testing.T)
 	}
 	if plan.RequiredAction != state.ParentActionApproveSurface || !plan.Allows(state.ParentActionApproveSurface) {
 		t.Fatalf("parent action = %#v", plan)
+	}
+}
+
+func TestActivatedQualitySurfaceRateLimitResumesContinuationWithoutReapproval(t *testing.T) {
+	_, st, scripted, w := newQualitySurfaceDecisionWorkflow(t, []runnerStep{{
+		runErr: errors.New("exit status 1"),
+		result: runner.RunResult{PlainFailure: runner.ProviderFailureClass{
+			Kind: runner.ProviderFailureZaiFiveHour,
+			FiveHourLimit: runner.ZaiFiveHourLimit{
+				ResetAtRFC3339: "2026-09-09T14:06:34+08:00",
+			},
+		}},
+	}})
+	stopDecisionContinuationForQualitySurface(t, st, w)
+
+	err := w.ExecuteQualitySurfaceApproval(acceptedFixScopeCurrentDiff)
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
+		t.Fatalf("rate limit errorを期待: %v", err)
+	}
+	if len(scripted.phases) != 1 || scripted.phases[0] != "worker-decision-rule-activation-1" {
+		t.Fatalf("phases = %v", scripted.phases)
+	}
+	if st.TaskStatus() != state.TaskStatusRateLimited {
+		t.Fatalf("status = %s want rate-limited", st.TaskStatus())
+	}
+
+	saved, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.StopKind != state.ResumeStopRateLimited || !saved.QualitySurfaceApprovalPending ||
+		!saved.QualitySurfaceApprovalActivated || saved.CompletedResult == nil {
+		t.Fatalf("activated stop checkpoint = %#v", saved)
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != state.ParentActionResume || !plan.Allows(state.ParentActionResume) {
+		t.Fatalf("stopped parent action = %#v", plan)
+	}
+
+	prepared, restored, err := w.prepareResumeCheckpoint(saved, externalFeasibility{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored {
+		t.Fatal("activated continuation incorrectly restored approve-surface")
+	}
+	if prepared.QualitySurfaceApprovalPending || prepared.QualitySurfaceApprovalActivated {
+		t.Fatalf("activated continuation retained approval obligation after resume admission: %#v", prepared)
+	}
+	if st.TaskStatus() != state.TaskStatusActive {
+		t.Fatalf("resume status = %s want active", st.TaskStatus())
 	}
 }
 
