@@ -10,41 +10,27 @@ import (
 )
 
 func TestIdenticalSourceBodiesPreserveDistinctPathTargets(t *testing.T) {
-	repoRoot, st := newReviewCoverageStore(t)
-	if err := os.WriteFile(filepath.Join(repoRoot, "other.go"), []byte("package review\nvar other = 2\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	openLocatorIdentityReview(t, repoRoot, st, []string{"review.go:1", "other.go:1"})
-
-	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
-		Version: ManifestVersion,
-		Reason:  "same body at distinct paths",
-		Source: []SourceRequest{
+	proveDistinctSourceClaims(t, sourceIdentityCase{
+		path: "other.go", content: "package review\nvar other = 2\n",
+		targets: []string{"review.go:1", "other.go:1"},
+		requests: []SourceRequest{
 			{Question: "first path", Path: "review.go", LineStart: 1, LineEnd: 1, BudgetBytes: 4096},
 			{Question: "second path", Path: "other.go", LineStart: 1, LineEnd: 1, BudgetBytes: 4096},
 		},
+		locators: []string{"review.go:1-1", "other.go:1-1"},
 	})
-
-	assertDistinctSourceClaims(t, st, "review.go:1-1", "other.go:1-1")
 }
 
 func TestIdenticalSourceBodiesPreserveDistinctRanges(t *testing.T) {
-	repoRoot, st := newReviewCoverageStore(t)
-	if err := os.WriteFile(filepath.Join(repoRoot, "repeat.txt"), []byte("same\nsame\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	openLocatorIdentityReview(t, repoRoot, st, []string{"repeat.txt:1", "repeat.txt:2"})
-
-	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
-		Version: ManifestVersion,
-		Reason:  "same body at distinct ranges",
-		Source: []SourceRequest{
+	proveDistinctSourceClaims(t, sourceIdentityCase{
+		path: "repeat.txt", content: "same\nsame\n",
+		targets: []string{"repeat.txt:1", "repeat.txt:2"},
+		requests: []SourceRequest{
 			{Question: "first range", Path: "repeat.txt", LineStart: 1, LineEnd: 1, BudgetBytes: 4096},
 			{Question: "second range", Path: "repeat.txt", LineStart: 2, LineEnd: 2, BudgetBytes: 4096},
 		},
+		locators: []string{"repeat.txt:1-1", "repeat.txt:2-2"},
 	})
-
-	assertDistinctSourceClaims(t, st, "repeat.txt:1-1", "repeat.txt:2-2")
 }
 
 func TestPriorLedgerBodyDoesNotBecomeCurrentLocatorProof(t *testing.T) {
@@ -113,6 +99,29 @@ func TestUnknownOrRefinedBodyReferenceIsNotProof(t *testing.T) {
 			}
 		})
 	}
+}
+
+type sourceIdentityCase struct {
+	path     string
+	content  string
+	targets  []string
+	requests []SourceRequest
+	locators []string
+}
+
+func proveDistinctSourceClaims(t *testing.T, fixture sourceIdentityCase) {
+	t.Helper()
+	repoRoot, st := newReviewCoverageStore(t)
+	if err := os.WriteFile(filepath.Join(repoRoot, fixture.path), []byte(fixture.content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	openLocatorIdentityReview(t, repoRoot, st, fixture.targets)
+	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
+		Version: ManifestVersion,
+		Reason:  "same body at distinct locator identities",
+		Source:  fixture.requests,
+	})
+	assertDistinctSourceClaims(t, st, fixture.locators...)
 }
 
 func openLocatorIdentityReview(t *testing.T, repoRoot string, st *state.StateStore, targets []string) {
