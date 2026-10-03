@@ -46,6 +46,34 @@ func TestStoppedQualitySurfaceApprovalRequiresCompletedResult(t *testing.T) {
 	}
 }
 
+func TestActivatedQualitySurfaceApprovalIsDurableOnlyAsTransientStop(t *testing.T) {
+	checkpoint := qualitySurfaceStopCheckpoint()
+	if err := checkpoint.MarkQualitySurfaceApprovalActivated(); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkpoint.validateStopState(); err == nil {
+		t.Fatal("activated approval checkpoint unexpectedly persisted without a transient stop")
+	}
+
+	checkpoint.SetStopKind(ResumeStopRateLimited)
+	if err := checkpoint.validateStopState(); err != nil {
+		t.Fatalf("activated transient approval stop rejected: %v", err)
+	}
+	if err := checkpoint.ContinueActivatedQualitySurfaceApproval(); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.QualitySurfaceApprovalPending || checkpoint.QualitySurfaceApprovalActivated {
+		t.Fatalf("activated continuation did not release approval facts: %#v", checkpoint)
+	}
+}
+
+func TestQualitySurfaceApprovalActivationRequiresPendingCheckpoint(t *testing.T) {
+	checkpoint := ResumeCheckpoint{Model: "worker"}
+	if err := checkpoint.MarkQualitySurfaceApprovalActivated(); err == nil {
+		t.Fatal("activation marker accepted a checkpoint without pending approval")
+	}
+}
+
 func qualitySurfaceStopCheckpoint() ResumeCheckpoint {
 	result := packet.Result{Status: packet.StatusImplemented}
 	return ResumeCheckpoint{
