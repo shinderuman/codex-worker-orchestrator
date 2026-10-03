@@ -118,7 +118,11 @@ func (w *Workflow) prepareResumeContinuation(
 	decl externalFeasibility,
 	approvalResumeMode qualitySurfaceApprovalResumeMode,
 ) (state.ResumeCheckpoint, error) {
-	checkpoint.Prompt = resumePrompt(checkpoint)
+	prompt := resumePrompt(checkpoint)
+	if prompt == "" {
+		return checkpoint, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unsupported resume stop kind: %q", checkpoint.StopKind)}
+	}
+	checkpoint.Prompt = prompt
 	activatedCheckpoint, err := w.activateResumeRuleContext(checkpoint)
 	if err != nil {
 		return checkpoint, err
