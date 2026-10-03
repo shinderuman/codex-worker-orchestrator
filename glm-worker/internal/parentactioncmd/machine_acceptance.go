@@ -20,63 +20,113 @@ func publicationMachineAcceptanceGate(repoRoot string, st *state.StateStore, can
 		Status:     publicationGatePass,
 		SnapshotID: candidate.SnapshotID,
 	}
-	taskID, err := st.TaskID()
-	if err != nil {
-		return gate
-	}
-
-	taskPath, canonicalPathErr := st.CurrentTaskAuthorityPath()
-	if canonicalPathErr != nil {
-		taskPath = st.ReadOr("active-task", "")
-	}
-	if taskPath == "" {
-		declared, probeErr := savedTaskDeclaresMachineAcceptance(st, taskID)
-		if probeErr != nil {
-			return machineAcceptanceGateFailure(gate, publicationGateFail, probeErr.Error())
-		}
-		if !declared {
-			return gate
-		}
-		return machineAcceptanceGateFailure(gate, publicationGateFail, canonicalPathErr.Error())
-	}
-
-	content, tracked, err := publicationTaskAuthorityAt(repoRoot, candidate.BaseHead, taskPath)
-	if err != nil {
-		return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
-	}
-	if !tracked {
-		declared, probeErr := savedTaskDeclaresMachineAcceptance(st, taskID)
-		if probeErr != nil {
-			return machineAcceptanceGateFailure(gate, publicationGateFail, probeErr.Error())
-		}
-		if !declared {
-			return gate
-		}
-		if canonicalPathErr != nil {
-			return machineAcceptanceGateFailure(gate, publicationGateFail, canonicalPathErr.Error())
-		}
-		content, err = publicationTaskAuthorityContent(repoRoot, st, candidate, taskID, taskPath)
-		if err != nil {
-			return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
-		}
-	}
-
-	contract, err := taskcontract.ParseMachineAcceptance(content)
-	if err != nil {
-		return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
+	taskID, contract, failureReason := publicationMachineAcceptanceContract(repoRoot, st, candidate)
+	if failureReason != "" {
+		return machineAcceptanceGateFailure(gate, publicationGateFail, failureReason)
 	}
 	if !contract.Present {
 		return gate
-	}
-	if canonicalPathErr != nil {
-		return machineAcceptanceGateFailure(gate, publicationGateFail, canonicalPathErr.Error())
 	}
 	if candidate.TaskID != taskID {
 		return machineAcceptanceGateFailure(gate, publicationGateFail,
 			fmt.Sprintf("publication candidate task %s does not match current task %s", candidate.TaskID, taskID))
 	}
-
 	gate.Required = true
+	return evaluateMachineAcceptanceEvidence(gate, st, candidate, taskID, contract)
+}
+
+func publicationMachineAcceptanceContract(
+	repoRoot string,
+	st *state.StateStore,
+	candidate state.PublicationCandidate,
+) (string, taskcontract.MachineAcceptance, string) {
+	taskID, err := st.TaskID()
+	if err != nil {
+		return "", taskcontract.MachineAcceptance{}, ""
+	}
+	taskPath, canonicalPathErr := currentMachineAcceptanceTaskPath(st)
+	if taskPath == "" {
+		return missingMachineAcceptanceTaskPath(st, taskID, canonicalPathErr)
+	}
+	content, tracked, err := publicationTaskAuthorityAt(repoRoot, candidate.BaseHead, taskPath)
+	if err != nil {
+		return taskID, taskcontract.MachineAcceptance{}, err.Error()
+	}
+	if !tracked {
+		return publicationReopenMachineAcceptanceContract(repoRoot, st, candidate, taskID, taskPath, canonicalPathErr)
+	}
+	contract, err := taskcontract.ParseMachineAcceptance(content)
+	if err != nil {
+		return taskID, taskcontract.MachineAcceptance{}, err.Error()
+	}
+	if contract.Present && canonicalPathErr != nil {
+		return taskID, taskcontract.MachineAcceptance{}, canonicalPathErr.Error()
+	}
+	return taskID, contract, ""
+}
+
+func currentMachineAcceptanceTaskPath(st *state.StateStore) (string, error) {
+	taskPath, err := st.CurrentTaskAuthorityPath()
+	if err == nil {
+		return taskPath, nil
+	}
+	return st.ReadOr("active-task", ""), err
+}
+
+func missingMachineAcceptanceTaskPath(
+	st *state.StateStore,
+	taskID string,
+	canonicalPathErr error,
+) (string, taskcontract.MachineAcceptance, string) {
+	declared, err := savedTaskDeclaresMachineAcceptance(st, taskID)
+	if err != nil {
+		return taskID, taskcontract.MachineAcceptance{}, err.Error()
+	}
+	if !declared {
+		return taskID, taskcontract.MachineAcceptance{}, ""
+	}
+	if canonicalPathErr != nil {
+		return taskID, taskcontract.MachineAcceptance{}, canonicalPathErr.Error()
+	}
+	return taskID, taskcontract.MachineAcceptance{}, "machine acceptance task authority path is unavailable"
+}
+
+func publicationReopenMachineAcceptanceContract(
+	repoRoot string,
+	st *state.StateStore,
+	candidate state.PublicationCandidate,
+	taskID string,
+	taskPath string,
+	canonicalPathErr error,
+) (string, taskcontract.MachineAcceptance, string) {
+	declared, err := savedTaskDeclaresMachineAcceptance(st, taskID)
+	if err != nil {
+		return taskID, taskcontract.MachineAcceptance{}, err.Error()
+	}
+	if !declared {
+		return taskID, taskcontract.MachineAcceptance{}, ""
+	}
+	if canonicalPathErr != nil {
+		return taskID, taskcontract.MachineAcceptance{}, canonicalPathErr.Error()
+	}
+	content, err := publicationTaskAuthorityContent(repoRoot, st, candidate, taskID, taskPath)
+	if err != nil {
+		return taskID, taskcontract.MachineAcceptance{}, err.Error()
+	}
+	contract, err := taskcontract.ParseMachineAcceptance(content)
+	if err != nil {
+		return taskID, taskcontract.MachineAcceptance{}, err.Error()
+	}
+	return taskID, contract, ""
+}
+
+func evaluateMachineAcceptanceEvidence(
+	gate publicationGateProjection,
+	st *state.StateStore,
+	candidate state.PublicationCandidate,
+	taskID string,
+	contract taskcontract.MachineAcceptance,
+) publicationGateProjection {
 	registry, err := failurepathadvisory.LoadRegistry(st.Path(failurepathadvisory.RegistryFile))
 	if err != nil {
 		return machineAcceptanceGateFailure(gate, publicationGateFail, "machine acceptance evidence is unreadable: "+err.Error())
