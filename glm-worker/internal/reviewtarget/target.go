@@ -28,6 +28,7 @@ type ParseError struct {
 
 const (
 	WholeFileDiffLocator = "@diff"
+	MaxSourceProofLines  = 2000
 	canonicalCorrection  = "use repository-relative path:N, path:N-M, path:@diff, or for Go source path:TopLevel / path:Type.Member"
 
 	LocatorLineRange LocatorKind = "line_range"
