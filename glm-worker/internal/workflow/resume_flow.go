@@ -77,6 +77,10 @@ func (w *Workflow) prepareResumeCheckpoint(
 	decl externalFeasibility,
 	pocResume bool,
 ) (state.ResumeCheckpoint, bool, error) {
+	restoreQualitySurfaceApproval, err := w.prepareQualitySurfaceApprovalResume(checkpoint)
+	if err != nil {
+		return checkpoint, false, err
+	}
 	if checkpoint.StopKind == state.ResumeStopInterrupted {
 		if err := w.verifyInterruptedRetention(checkpoint); err != nil {
 			return checkpoint, false, err
@@ -96,6 +100,12 @@ func (w *Workflow) prepareResumeCheckpoint(
 			return checkpoint, stopped, err
 		}
 	}
+	if restoreQualitySurfaceApproval {
+		if err := w.restoreQualitySurfaceApprovalAfterResume(checkpoint); err != nil {
+			return checkpoint, false, err
+		}
+		return checkpoint, true, nil
+	}
 	checkpoint.Prompt = resumePrompt(checkpoint)
 	activatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
 	if activationErr != nil {
@@ -106,6 +116,34 @@ func (w *Workflow) prepareResumeCheckpoint(
 		checkpoint.ReadOnly = resumeWorkerReadOnly(checkpoint, decl)
 	}
 	return checkpoint, false, nil
+}
+
+func (w *Workflow) prepareQualitySurfaceApprovalResume(checkpoint state.ResumeCheckpoint) (bool, error) {
+	if !checkpoint.QualitySurfaceApprovalPending || !checkpoint.IsStopped() {
+		return false, nil
+	}
+	if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
+		return false, fmt.Errorf("quality-surface approval cannot resume from stop kind %q", checkpoint.StopKind)
+	}
+	if checkpoint.CompletedResult == nil {
+		return false, &WorkerError{Phase: checkpoint.Phase, Message: "stopped quality-surface approval checkpoint has no completed worker result"}
+	}
+	if err := w.validateApprovedQualitySurfaceRetention(checkpoint); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (w *Workflow) restoreQualitySurfaceApprovalAfterResume(checkpoint state.ResumeCheckpoint) error {
+	restored := checkpoint
+	restored.ClearStop()
+	if err := w.captureStopRetention(&restored); err != nil {
+		return w.restoreResumeStop(checkpoint, fmt.Errorf("refresh quality-surface approval retention: %w", err))
+	}
+	if err := w.state.EnterQualitySurfaceApprovalWait(restored); err != nil {
+		return w.restoreResumeStop(checkpoint, fmt.Errorf("restore quality-surface approval wait: %w", err))
+	}
+	return nil
 }
 
 func resumeWorkerReadOnly(checkpoint state.ResumeCheckpoint, decl externalFeasibility) bool {
