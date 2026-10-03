@@ -22,7 +22,7 @@ func TestContinuationStopBlockReason(t *testing.T) {
 		{name: "explicit user stop", handoff: continuationGateHandoff{Consistent: true, ParentRequest: projection(repositoryproject.ContinuationExplicitStop, repositoryproject.ReasonUserInterruption, false, true)}},
 		{name: "verified automation deferral", handoff: continuationGateHandoff{Consistent: true, ParentRequest: projection(repositoryproject.ContinuationDeferredByVerifiedAutomation, parentcontinuation.ReasonVerifiedAutomation, false, true)}},
 		{name: "blocked boundary", handoff: continuationGateHandoff{Consistent: true, ParentRequest: projection(repositoryproject.ContinuationBlocked, "user-decision", false, true)}},
-		{name: "non-goal post-completion stop admitted", handoff: continuationGateHandoff{Consistent: true, ParentRequest: projection(repositoryproject.ContinuationContinueNow, repositoryproject.ReasonPostCompletionActive, true, true)}},
+		{name: "non-goal post-completion continuation", handoff: continuationGateHandoff{Consistent: true, ParentRequest: projection(repositoryproject.ContinuationContinueNow, repositoryproject.ReasonPostCompletionActive, false, false)}, wantBlock: true, wantText: "post-local-completion-active"},
 		{
 			name: "active task mismatch",
 			handoff: continuationGateHandoff{Consistent: true, ParentRequest: projectionWithContinuation(repositoryproject.Continuation{

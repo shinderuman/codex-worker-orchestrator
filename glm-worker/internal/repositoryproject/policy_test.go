@@ -76,7 +76,7 @@ func TestPostCompletionProjectionAdmitsNonGoalShapes(t *testing.T) {
 	continueProjection := PostCompletionProjection(PostCompletionPlan{
 		Kind: PostCompletionContinue, Active: []string{promoted},
 	}, nil)
-	if !continueProjection.CompletionAdmitted || !continueProjection.StopAdmitted ||
+	if continueProjection.CompletionAdmitted || continueProjection.StopAdmitted ||
 		continueProjection.Continuation.State != ContinuationContinueNow ||
 		continueProjection.Continuation.Task != promoted ||
 		continueProjection.Continuation.RequiredAction != ActionStart ||

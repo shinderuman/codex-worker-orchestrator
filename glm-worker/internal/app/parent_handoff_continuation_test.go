@@ -74,7 +74,7 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 	}
 }
 
-func TestParentHandoffAdmitsNonGoalPostCompletionStopWithoutStart(t *testing.T) {
+func TestParentHandoffRejectsNonGoalPostCompletionStopWithoutStart(t *testing.T) {
 	cfg := newAppConfig(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
@@ -92,7 +92,7 @@ func TestParentHandoffAdmitsNonGoalPostCompletionStopWithoutStart(t *testing.T) 
 	if !output.Consistent || output.ParentRequest == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
-	if !output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted ||
+	if output.ParentRequest.CompletionAdmitted || output.ParentRequest.StopAdmitted ||
 		output.ParentRequest.Continuation.State != repositoryproject.ContinuationContinueNow ||
 		output.ParentRequest.Continuation.Task != promoted ||
 		output.ParentRequest.Continuation.RequiredAction != repositoryproject.ActionStart ||

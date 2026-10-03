@@ -62,7 +62,7 @@ func TestParentRequestCompletionProjectionAdmitsCompletedGoalOnly(t *testing.T) 
 	}
 }
 
-func TestParentRequestCompletionProjectionAdmitsNonGoalPromotedActiveWithoutStart(t *testing.T) {
+func TestParentRequestCompletionProjectionRejectsNonGoalPromotedActiveStop(t *testing.T) {
 	cfg := newAppConfig(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
@@ -72,7 +72,7 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalPromotedActiveWithoutStar
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !projection.CompletionAdmitted || !projection.StopAdmitted ||
+	if projection.CompletionAdmitted || projection.StopAdmitted ||
 		projection.Continuation.State != repositoryproject.ContinuationContinueNow ||
 		projection.Continuation.Task != promoted ||
 		projection.Continuation.RequiredAction != repositoryproject.ActionStart ||
