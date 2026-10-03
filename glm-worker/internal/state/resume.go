@@ -234,13 +234,8 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 	if !checkpoint.StopKind.Valid() {
 		return fmt.Errorf("unknown resume stop kind: %q", checkpoint.StopKind)
 	}
-	if checkpoint.QualitySurfaceApprovalActivated {
-		if !checkpoint.QualitySurfaceApprovalPending {
-			return fmt.Errorf("activated quality-surface approval checkpoint must retain the pending approval fact")
-		}
-		if !checkpoint.IsStopped() {
-			return fmt.Errorf("activated quality-surface approval checkpoint is only durable while transiently stopped")
-		}
+	if checkpoint.QualitySurfaceApprovalActivated && !checkpoint.QualitySurfaceApprovalPending {
+		return fmt.Errorf("activated quality-surface approval checkpoint must retain the pending approval fact")
 	}
 	if checkpoint.QualitySurfaceApprovalPending && checkpoint.IsStopped() {
 		if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
