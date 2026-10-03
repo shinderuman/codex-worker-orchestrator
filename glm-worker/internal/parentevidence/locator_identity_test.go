@@ -41,7 +41,7 @@ func TestIdenticalSourceBodiesPreserveDistinctRanges(t *testing.T) {
 	})
 }
 
-func TestPriorLedgerBodyDoesNotBecomeCurrentLocatorProof(t *testing.T) {
+func TestDeliveredBodyReferenceCompletesDistinctLocatorCoverageAcrossCalls(t *testing.T) {
 	repoRoot, st := newReviewCoverageStore(t)
 	if err := os.WriteFile(filepath.Join(repoRoot, "other.go"), []byte("package review\nvar other = 2\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestPriorLedgerBodyDoesNotBecomeCurrentLocatorProof(t *testing.T) {
 
 	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
 		Version: ManifestVersion,
-		Reason:  "deliver one body",
+		Reason:  "deliver first locator",
 		Source: []SourceRequest{{
 			Question: "first path", Path: "review.go", LineStart: 1, LineEnd: 1, BudgetBytes: 4096,
 		}},
@@ -59,25 +59,18 @@ func TestPriorLedgerBodyDoesNotBecomeCurrentLocatorProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binding == nil || binding.Proof != nil {
-		t.Fatalf("partial delivery unexpectedly created proof: %#v", binding)
+	if binding == nil || binding.Proof != nil || binding.Coverage == nil || len(binding.Coverage.Claims) != 1 {
+		t.Fatalf("first partial coverage = %#v", binding)
 	}
 
 	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
 		Version: ManifestVersion,
-		Reason:  "retry both paths",
-		Source: []SourceRequest{
-			{Question: "first path", Path: "review.go", LineStart: 1, LineEnd: 1, BudgetBytes: 4096},
-			{Question: "second path", Path: "other.go", LineStart: 1, LineEnd: 1, BudgetBytes: 4096},
-		},
+		Reason:  "deliver second locator",
+		Source: []SourceRequest{{
+			Question: "second path", Path: "other.go", LineStart: 1, LineEnd: 1, BudgetBytes: 4096,
+		}},
 	})
-	binding, err = st.CurrentParentReviewBinding()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if binding == nil || binding.Proof != nil {
-		t.Fatalf("persistent body-dedup ledger was incorrectly treated as cross-call target coverage: %#v", binding)
-	}
+	assertDistinctSourceClaims(t, st, "review.go:1-1", "other.go:1-1")
 }
 
 func TestUnknownOrRefinedBodyReferenceIsNotProof(t *testing.T) {
