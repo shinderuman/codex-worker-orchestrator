@@ -118,6 +118,9 @@ func (w *Workflow) prepareResumeContinuation(
 	decl externalFeasibility,
 	approvalResumeMode qualitySurfaceApprovalResumeMode,
 ) (state.ResumeCheckpoint, error) {
+	if !checkpoint.StopKind.IsStopped() {
+		return checkpoint, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unsupported resume stop kind: %q", checkpoint.StopKind)}
+	}
 	prompt := resumePrompt(checkpoint)
 	if prompt == "" {
 		return checkpoint, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unsupported resume stop kind: %q", checkpoint.StopKind)}
@@ -404,7 +407,6 @@ func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, r
 		if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil || stopped {
 			return err
 		}
-	}
 	if !checkpoint.ReportOnly {
 		var err error
 		result, err = w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
