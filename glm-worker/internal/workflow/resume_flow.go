@@ -117,10 +117,15 @@ func (w *Workflow) prepareResumeCheckpoint(
 		return checkpoint, false, activationErr
 	}
 	checkpoint = activatedCheckpoint
-	if checkpoint.Stage == state.ResumeStageWorker {
-		checkpoint.ReadOnly = resumeWorkerReadOnly(checkpoint, decl)
-	}
+	checkpoint.ReadOnly = resumeCheckpointReadOnly(checkpoint, decl)
 	return checkpoint, false, nil
+}
+
+func resumeCheckpointReadOnly(checkpoint state.ResumeCheckpoint, decl externalFeasibility) bool {
+	if checkpoint.Stage != state.ResumeStageWorker {
+		return checkpoint.ReadOnly
+	}
+	return resumeWorkerReadOnly(checkpoint, decl)
 }
 
 func (w *Workflow) gateActivatedResumeCheckpoint(
