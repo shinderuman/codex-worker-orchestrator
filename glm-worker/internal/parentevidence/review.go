@@ -1,9 +1,11 @@
 package parentevidence
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,7 +70,7 @@ func appendReviewManifestTarget(
 ) error {
 	switch target.Kind {
 	case reviewtarget.LocatorLineRange:
-		appendReviewSourceRequest(manifest, seenSource, question, target.Path, target.LineStart, target.LineEnd)
+		return appendReviewLineTarget(repoRoot, manifest, seenSource, diffPaths, question, target)
 	case reviewtarget.LocatorGoSymbol:
 		request, err := reviewSymbolSourceRequest(repoRoot, question, target)
 		if err != nil {
@@ -81,6 +83,28 @@ func appendReviewManifestTarget(
 		return fmt.Errorf("review evidence target has no proof strategy: %s:%s", target.Path, target.Locator)
 	}
 	return nil
+}
+
+func appendReviewLineTarget(
+	repoRoot string,
+	manifest *Manifest,
+	seenSource map[string]struct{},
+	diffPaths map[string]struct{},
+	question string,
+	target reviewtarget.Target,
+) error {
+	current := filepath.Join(repoRoot, filepath.FromSlash(target.Path))
+	_, err := os.Stat(current)
+	switch {
+	case err == nil:
+		appendReviewSourceRequest(manifest, seenSource, question, target.Path, target.LineStart, target.LineEnd)
+		return nil
+	case errors.Is(err, os.ErrNotExist):
+		diffPaths[target.Path] = struct{}{}
+		return nil
+	default:
+		return fmt.Errorf("inspect review line target %s: %w", target.Path, err)
+	}
 }
 
 func appendReviewDiffRequests(manifest *Manifest, diffPaths map[string]struct{}, question string) {
