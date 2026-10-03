@@ -72,7 +72,8 @@ type ResumeCheckpoint struct {
 
 	QualityGateFailure string `json:"quality_gate_failure,omitempty"`
 
-	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
+	QualitySurfaceApprovalPending   bool `json:"quality_surface_approval_pending,omitempty"`
+	QualitySurfaceApprovalActivated bool `json:"quality_surface_approval_activated,omitempty"`
 
 	StopGitSnapshot *GitSnapshot `json:"stop_git_snapshot,omitempty"`
 
@@ -166,6 +167,26 @@ func (checkpoint ResumeCheckpoint) IsStopped() bool {
 	return checkpoint.StopKind.IsStopped()
 }
 
+func (checkpoint *ResumeCheckpoint) MarkQualitySurfaceApprovalActivated() error {
+	if !checkpoint.QualitySurfaceApprovalPending {
+		return fmt.Errorf("quality-surface approval activation requires a pending approval checkpoint")
+	}
+	if checkpoint.IsStopped() {
+		return fmt.Errorf("quality-surface approval activation cannot mark a stopped checkpoint")
+	}
+	checkpoint.QualitySurfaceApprovalActivated = true
+	return nil
+}
+
+func (checkpoint *ResumeCheckpoint) ContinueActivatedQualitySurfaceApproval() error {
+	if !checkpoint.QualitySurfaceApprovalPending || !checkpoint.QualitySurfaceApprovalActivated || !checkpoint.IsStopped() {
+		return fmt.Errorf("activated quality-surface approval continuation requires a stopped activated approval checkpoint")
+	}
+	checkpoint.QualitySurfaceApprovalPending = false
+	checkpoint.QualitySurfaceApprovalActivated = false
+	return nil
+}
+
 func (checkpoint *ResumeCheckpoint) SetStopKind(kind ResumeStopKind) {
 	retainedSnapshot := checkpoint.StopGitSnapshot
 	retainedDirtyFiles := append([]StopDirtyFile(nil), checkpoint.StopDirtyFiles...)
@@ -212,6 +233,14 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 func (checkpoint ResumeCheckpoint) validateStopState() error {
 	if !checkpoint.StopKind.Valid() {
 		return fmt.Errorf("unknown resume stop kind: %q", checkpoint.StopKind)
+	}
+	if checkpoint.QualitySurfaceApprovalActivated {
+		if !checkpoint.QualitySurfaceApprovalPending {
+			return fmt.Errorf("activated quality-surface approval checkpoint must retain the pending approval fact")
+		}
+		if !checkpoint.IsStopped() {
+			return fmt.Errorf("activated quality-surface approval checkpoint is only durable while transiently stopped")
+		}
 	}
 	if checkpoint.QualitySurfaceApprovalPending && checkpoint.IsStopped() {
 		if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
