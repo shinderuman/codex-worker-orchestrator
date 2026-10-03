@@ -1,7 +1,10 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -14,7 +17,7 @@ const (
 	internalReviewPacketTarget = "PACKET"
 )
 
-func canonicalReviewTargets(values []string) ([]string, error) {
+func canonicalReviewTargets(values []string) []string {
 	targets := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, raw := range values {
@@ -23,7 +26,7 @@ func canonicalReviewTargets(values []string) ([]string, error) {
 			continue
 		}
 		if _, err := reviewtarget.ParseTarget(value); err != nil {
-			return nil, fmt.Errorf("review target %q is not canonical: %w", value, err)
+			continue
 		}
 		if _, duplicate := seen[value]; duplicate {
 			continue
@@ -31,7 +34,7 @@ func canonicalReviewTargets(values []string) ([]string, error) {
 		seen[value] = struct{}{}
 		targets = append(targets, value)
 	}
-	return targets, nil
+	return targets
 }
 
 func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
@@ -68,38 +71,39 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 }
 
 func proofableReviewPathTarget(repoRoot, path string) (string, error) {
-	var lastErr error
-	for _, locator := range []string{reviewtarget.WholeFileDiffLocator, "1"} {
-		raw := fmt.Sprintf("%s:%s", path, locator)
-		target, err := reviewtarget.ParseTarget(raw)
-		if err != nil {
-			return "", fmt.Errorf("changed path %q cannot be represented as a review target: %w", path, err)
-		}
-		if err := reviewtarget.ValidateProofAddressable(repoRoot, target); err == nil {
-			return raw, nil
-		} else {
-			lastErr = err
-		}
+	diffRaw := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
+	diffTarget, err := reviewtarget.ParseTarget(diffRaw)
+	if err != nil {
+		return "", fmt.Errorf("changed path %q cannot be represented as a review target: %w", path, err)
 	}
-	return "", fmt.Errorf("changed path %q has no canonical review proof path: %w", path, lastErr)
+	if err := reviewtarget.ValidateProofAddressable(repoRoot, diffTarget); err == nil {
+		return diffRaw, nil
+	}
+
+	_, statErr := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(path)))
+	if errors.Is(statErr, os.ErrNotExist) {
+		// A canonical changed-path collector may report a deleted path. Deleted paths
+		// are proved by their HEAD-to-current diff even though the worktree file is absent.
+		return diffRaw, nil
+	}
+	if statErr != nil {
+		return "", fmt.Errorf("inspect changed path %q: %w", path, statErr)
+	}
+
+	lineRaw := fmt.Sprintf("%s:1", path)
+	lineTarget, err := reviewtarget.ParseTarget(lineRaw)
+	if err != nil {
+		return "", fmt.Errorf("changed path %q cannot be represented as source evidence: %w", path, err)
+	}
+	if err := reviewtarget.ValidateProofAddressable(repoRoot, lineTarget); err != nil {
+		return "", fmt.Errorf("changed path %q has no canonical review proof path: %w", path, err)
+	}
+	return lineRaw, nil
 }
 
 func (w *Workflow) resultOrCurrentReviewTargets(result packet.Result) ([]string, error) {
-	targets, err := canonicalReviewTargets(result.Targets)
-	if err != nil {
-		return nil, err
+	if targets := canonicalReviewTargets(result.Targets); len(targets) > 0 {
+		return targets, nil
 	}
-	if len(targets) == 0 {
-		return w.currentReviewDiffTargets()
-	}
-	for _, raw := range targets {
-		target, err := reviewtarget.ParseTarget(raw)
-		if err != nil {
-			return nil, err
-		}
-		if err := reviewtarget.ValidateProofAddressable(w.config.RepoRoot, target); err != nil {
-			return nil, fmt.Errorf("review target %q has no proof path: %w", raw, err)
-		}
-	}
-	return targets, nil
+	return w.currentReviewDiffTargets()
 }
