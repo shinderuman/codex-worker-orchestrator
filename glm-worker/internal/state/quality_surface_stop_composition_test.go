@@ -46,13 +46,13 @@ func TestStoppedQualitySurfaceApprovalRequiresCompletedResult(t *testing.T) {
 	}
 }
 
-func TestActivatedQualitySurfaceApprovalIsDurableOnlyAsTransientStop(t *testing.T) {
+func TestActivatedQualitySurfaceApprovalCanTransitionIntoTransientStop(t *testing.T) {
 	checkpoint := qualitySurfaceStopCheckpoint()
 	if err := checkpoint.MarkQualitySurfaceApprovalActivated(); err != nil {
 		t.Fatal(err)
 	}
-	if err := checkpoint.validateStopState(); err == nil {
-		t.Fatal("activated approval checkpoint unexpectedly persisted without a transient stop")
+	if err := checkpoint.validateStopState(); err != nil {
+		t.Fatalf("in-flight activated approval checkpoint rejected: %v", err)
 	}
 
 	checkpoint.SetStopKind(ResumeStopRateLimited)
