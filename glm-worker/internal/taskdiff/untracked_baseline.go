@@ -55,6 +55,9 @@ func preexistingUntrackedChangedPaths(
 	var changed []string
 	for _, entry := range entries {
 		if _, nowTracked := tracked[entry.Path]; nowTracked {
+			if _, _, err := safeCurrentUntrackedPath(repoRoot, entry.Path); err != nil {
+				return nil, err
+			}
 			changed = append(changed, entry.Path)
 			continue
 		}
@@ -121,7 +124,11 @@ func preexistingUntrackedPathPatch(
 }
 
 func trackedPreexistingUntrackedPatch(repoRoot, path string) ([]byte, error) {
-	if worktreePathPresent(repoRoot, path) {
+	_, info, err := safeCurrentUntrackedPath(repoRoot, path)
+	if err != nil {
+		return nil, err
+	}
+	if info != nil && !info.IsDir() {
 		return newFilePatch(repoRoot, path)
 	}
 	args := []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-renames", "--", path}
@@ -136,13 +143,12 @@ func trackedPreexistingUntrackedPatch(repoRoot, path string) ([]byte, error) {
 }
 
 func preexistingUntrackedMatchesCurrent(repoRoot string, entry state.UntrackedBaselineEntry) (bool, error) {
-	path := filepath.Join(repoRoot, filepath.FromSlash(entry.Path))
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
+	path, info, err := safeCurrentUntrackedPath(repoRoot, entry.Path)
 	if err != nil {
-		return false, fmt.Errorf("stat current pre-existing untracked path %s: %w", entry.Path, err)
+		return false, err
+	}
+	if info == nil {
+		return false, nil
 	}
 
 	switch {
@@ -188,12 +194,13 @@ func diffPreexistingUntrackedPath(repoRoot string, entry state.UntrackedBaseline
 	if err := os.Symlink(repoRoot, newRoot); err != nil {
 		return nil, fmt.Errorf("link current worktree for pre-existing untracked diff: %w", err)
 	}
-	currentPath := filepath.Join(repoRoot, filepath.FromSlash(entry.Path))
+	_, info, err := safeCurrentUntrackedPath(repoRoot, entry.Path)
+	if err != nil {
+		return nil, err
+	}
 	newArg := filepath.ToSlash(filepath.Join("b", filepath.FromSlash(entry.Path)))
-	if info, err := os.Lstat(currentPath); errors.Is(err, os.ErrNotExist) {
+	if info == nil {
 		newArg = "/dev/null"
-	} else if err != nil {
-		return nil, fmt.Errorf("stat current pre-existing untracked path %s: %w", entry.Path, err)
 	} else if info.IsDir() || (!info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0) {
 		return nil, fmt.Errorf("current pre-existing untracked path %s has unsupported file type", entry.Path)
 	}
@@ -209,6 +216,37 @@ func diffPreexistingUntrackedPath(repoRoot string, entry state.UntrackedBaseline
 		return stdout, nil
 	}
 	return nil, fmt.Errorf("capture pre-existing untracked diff for %s: %w: %s", entry.Path, err, strings.TrimSpace(string(stderr)))
+}
+
+func safeCurrentUntrackedPath(repoRoot, path string) (string, os.FileInfo, error) {
+	local := filepath.FromSlash(path)
+	clean := filepath.Clean(local)
+	if path == "" || filepath.IsAbs(local) || filepath.ToSlash(clean) != path || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", nil, fmt.Errorf("invalid current pre-existing untracked path %q", path)
+	}
+
+	parts := strings.Split(clean, string(filepath.Separator))
+	current := repoRoot
+	for i, part := range parts {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			return filepath.Join(repoRoot, clean), nil, nil
+		}
+		if err != nil {
+			return "", nil, fmt.Errorf("stat current pre-existing untracked path %s: %w", path, err)
+		}
+		if i == len(parts)-1 {
+			return current, info, nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", nil, fmt.Errorf("current pre-existing untracked path %s traverses symlink parent %s", path, filepath.ToSlash(strings.Join(parts[:i+1], string(filepath.Separator))))
+		}
+		if !info.IsDir() {
+			return "", nil, fmt.Errorf("current pre-existing untracked path %s traverses non-directory parent %s", path, filepath.ToSlash(strings.Join(parts[:i+1], string(filepath.Separator))))
+		}
+	}
+	return filepath.Join(repoRoot, clean), nil, nil
 }
 
 func materializeUntrackedBaselineEntry(path string, entry state.UntrackedBaselineEntry) error {
