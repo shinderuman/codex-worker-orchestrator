@@ -121,11 +121,7 @@ func (w *Workflow) prepareResumeContinuation(
 	if !checkpoint.StopKind.IsStopped() {
 		return checkpoint, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unsupported resume stop kind: %q", checkpoint.StopKind)}
 	}
-	prompt := resumePrompt(checkpoint)
-	if prompt == "" {
-		return checkpoint, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unsupported resume stop kind: %q", checkpoint.StopKind)}
-	}
-	checkpoint.Prompt = prompt
+	checkpoint.Prompt = resumePrompt(checkpoint)
 	activatedCheckpoint, err := w.activateResumeRuleContext(checkpoint)
 	if err != nil {
 		return checkpoint, err
