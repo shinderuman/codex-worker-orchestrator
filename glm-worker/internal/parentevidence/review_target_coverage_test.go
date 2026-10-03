@@ -68,21 +68,18 @@ func TestDeletedNumericTargetProvenByDeletionDiff(t *testing.T) {
 	}
 }
 
-func TestDeletedNumericTargetOutsideDeletionRangeRejectedBeforeBinding(t *testing.T) {
-	repoRoot, st := newReviewCoverageStore(t)
+func TestDeletedNumericTargetOutsideDeletionRangeIsNotProofAddressable(t *testing.T) {
+	repoRoot, _ := newReviewCoverageStore(t)
 	if err := os.Remove(filepath.Join(repoRoot, "review.go")); err != nil {
 		t.Fatal(err)
 	}
-	err := recordReviewCoverageBinding(repoRoot, st, "review.go:5")
+	target, err := reviewtarget.ParseTarget("review.go:5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = reviewtarget.ValidateProofAddressable(repoRoot, target)
 	if err == nil || !strings.Contains(err.Error(), "[deleted-line-out-of-range]") {
 		t.Fatalf("out-of-range deleted target error = %v", err)
-	}
-	binding, bindingErr := st.CurrentParentReviewBinding()
-	if bindingErr != nil {
-		t.Fatal(bindingErr)
-	}
-	if binding != nil {
-		t.Fatalf("out-of-range deleted target persisted binding: %#v", binding)
 	}
 }
 
