@@ -82,8 +82,6 @@ func proofableReviewPathTarget(repoRoot, path string) (string, error) {
 
 	_, statErr := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(path)))
 	if errors.Is(statErr, os.ErrNotExist) {
-		// A canonical changed-path collector may report a deleted path. Deleted paths
-		// are proved by their HEAD-to-current diff even though the worktree file is absent.
 		return diffRaw, nil
 	}
 	if statErr != nil {
