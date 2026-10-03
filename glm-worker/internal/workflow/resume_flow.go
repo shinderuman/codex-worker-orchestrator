@@ -9,6 +9,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type qualitySurfaceApprovalResumeMode uint8
+
+const (
+	qualitySurfaceApprovalResumeNone qualitySurfaceApprovalResumeMode = iota
+	qualitySurfaceApprovalResumePending
+	qualitySurfaceApprovalResumeActivated
+)
+
 func (w *Workflow) ExecuteResume() error {
 	return quietWhenTerminalResultEmitted(w.withTemp(w.executeResume))
 }
@@ -77,6 +85,10 @@ func (w *Workflow) prepareResumeCheckpoint(
 	decl externalFeasibility,
 	pocResume bool,
 ) (state.ResumeCheckpoint, bool, error) {
+	approvalResumeMode, err := w.prepareQualitySurfaceApprovalResume(checkpoint)
+	if err != nil {
+		return checkpoint, false, err
+	}
 	if checkpoint.StopKind == state.ResumeStopInterrupted {
 		if err := w.verifyInterruptedRetention(checkpoint); err != nil {
 			return checkpoint, false, err
@@ -85,27 +97,99 @@ func (w *Workflow) prepareResumeCheckpoint(
 	if err := w.activateResume(checkpoint); err != nil {
 		return checkpoint, false, err
 	}
-	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
+	if stopped, err := w.gateActivatedResumeCheckpoint(checkpoint, pocResume); err != nil || stopped {
 		return checkpoint, stopped, err
 	}
-	if err := w.gateResumeProvider(checkpoint); err != nil {
+	if approvalResumeMode == qualitySurfaceApprovalResumePending {
+		if err := w.restoreQualitySurfaceApprovalAfterResume(checkpoint); err != nil {
+			return checkpoint, false, err
+		}
+		return checkpoint, true, nil
+	}
+	checkpoint, err = w.prepareResumeContinuation(checkpoint, decl, approvalResumeMode)
+	if err != nil {
 		return checkpoint, false, err
 	}
-	if checkpoint.Stage == state.ResumeStageReview {
-		if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil || stopped {
-			return checkpoint, stopped, err
-		}
-	}
+	return checkpoint, false, nil
+}
+
+func (w *Workflow) prepareResumeContinuation(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	approvalResumeMode qualitySurfaceApprovalResumeMode,
+) (state.ResumeCheckpoint, error) {
 	checkpoint.Prompt = resumePrompt(checkpoint)
-	activatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
-	if activationErr != nil {
-		return checkpoint, false, activationErr
+	activatedCheckpoint, err := w.activateResumeRuleContext(checkpoint)
+	if err != nil {
+		return checkpoint, err
 	}
 	checkpoint = activatedCheckpoint
-	if checkpoint.Stage == state.ResumeStageWorker {
-		checkpoint.ReadOnly = resumeWorkerReadOnly(checkpoint, decl)
+	checkpoint.ReadOnly = resumeCheckpointReadOnly(checkpoint, decl)
+	if approvalResumeMode == qualitySurfaceApprovalResumeActivated {
+		if err := checkpoint.ContinueActivatedQualitySurfaceApproval(); err != nil {
+			return checkpoint, err
+		}
 	}
-	return checkpoint, false, nil
+	return checkpoint, nil
+}
+
+func resumeCheckpointReadOnly(checkpoint state.ResumeCheckpoint, decl externalFeasibility) bool {
+	if checkpoint.Stage != state.ResumeStageWorker {
+		return checkpoint.ReadOnly
+	}
+	return resumeWorkerReadOnly(checkpoint, decl)
+}
+
+func (w *Workflow) gateActivatedResumeCheckpoint(
+	checkpoint state.ResumeCheckpoint,
+	pocResume bool,
+) (bool, error) {
+	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
+		return stopped, err
+	}
+	if err := w.gateResumeProvider(checkpoint); err != nil {
+		return false, err
+	}
+	if checkpoint.Stage != state.ResumeStageReview {
+		return false, nil
+	}
+	return w.verifyReviewResumeSnapshot(checkpoint)
+}
+
+func (w *Workflow) prepareQualitySurfaceApprovalResume(
+	checkpoint state.ResumeCheckpoint,
+) (qualitySurfaceApprovalResumeMode, error) {
+	if !checkpoint.QualitySurfaceApprovalPending || !checkpoint.IsStopped() {
+		return qualitySurfaceApprovalResumeNone, nil
+	}
+	if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
+		return qualitySurfaceApprovalResumeNone, fmt.Errorf("quality-surface approval cannot resume from stop kind %q", checkpoint.StopKind)
+	}
+	if checkpoint.CompletedResult == nil {
+		return qualitySurfaceApprovalResumeNone, &WorkerError{Phase: checkpoint.Phase, Message: "stopped quality-surface approval checkpoint has no completed worker result"}
+	}
+	if err := w.validateApprovedQualitySurfaceRetention(checkpoint); err != nil {
+		return qualitySurfaceApprovalResumeNone, err
+	}
+	if checkpoint.QualitySurfaceApprovalActivated {
+		return qualitySurfaceApprovalResumeActivated, nil
+	}
+	return qualitySurfaceApprovalResumePending, nil
+}
+
+func (w *Workflow) restoreQualitySurfaceApprovalAfterResume(checkpoint state.ResumeCheckpoint) error {
+	if checkpoint.QualitySurfaceApprovalActivated {
+		return fmt.Errorf("activated quality-surface approval continuation cannot restore the pending approval wait")
+	}
+	restored := checkpoint
+	restored.ClearStop()
+	if err := w.captureStopRetention(&restored); err != nil {
+		return w.restoreResumeStop(checkpoint, fmt.Errorf("refresh quality-surface approval retention: %w", err))
+	}
+	if err := w.state.EnterQualitySurfaceApprovalWait(restored); err != nil {
+		return w.restoreResumeStop(checkpoint, fmt.Errorf("restore quality-surface approval wait: %w", err))
+	}
+	return nil
 }
 
 func resumeWorkerReadOnly(checkpoint state.ResumeCheckpoint, decl externalFeasibility) bool {

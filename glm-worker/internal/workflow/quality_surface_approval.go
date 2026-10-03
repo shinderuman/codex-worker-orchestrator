@@ -31,6 +31,7 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	}
 
 	checkpoint.QualitySurfaceApprovalPending = true
+	checkpoint.QualitySurfaceApprovalActivated = false
 	checkpoint.CompletedResult = &result
 	if err := w.captureStopRetention(&checkpoint); err != nil {
 		return true, err
@@ -73,6 +74,9 @@ func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {
 	}
 	result := *checkpoint.CompletedResult
 	if err := w.activateApprovedQualitySurface(); err != nil {
+		return true, err
+	}
+	if err := checkpoint.MarkQualitySurfaceApprovalActivated(); err != nil {
 		return true, err
 	}
 	result, err = w.convergeWorkerRuleActivation(checkpoint, result, checkpointActivatedRules(checkpoint))

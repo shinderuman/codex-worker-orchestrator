@@ -72,7 +72,8 @@ type ResumeCheckpoint struct {
 
 	QualityGateFailure string `json:"quality_gate_failure,omitempty"`
 
-	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
+	QualitySurfaceApprovalPending   bool `json:"quality_surface_approval_pending,omitempty"`
+	QualitySurfaceApprovalActivated bool `json:"quality_surface_approval_activated,omitempty"`
 
 	StopGitSnapshot *GitSnapshot `json:"stop_git_snapshot,omitempty"`
 
@@ -119,6 +120,15 @@ func (kind ResumeStopKind) IsStopped() bool {
 	return kind != ResumeStopNone && kind.Valid()
 }
 
+func (kind ResumeStopKind) CanInterruptQualitySurfaceApproval() bool {
+	switch kind {
+	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:
+		return true
+	default:
+		return false
+	}
+}
+
 func (kind ResumeStopKind) TaskStatus() TaskStatus {
 	switch kind {
 	case ResumeStopRateLimited:
@@ -157,8 +167,35 @@ func (checkpoint ResumeCheckpoint) IsStopped() bool {
 	return checkpoint.StopKind.IsStopped()
 }
 
+func (checkpoint *ResumeCheckpoint) MarkQualitySurfaceApprovalActivated() error {
+	if !checkpoint.QualitySurfaceApprovalPending {
+		return fmt.Errorf("quality-surface approval activation requires a pending approval checkpoint")
+	}
+	if checkpoint.IsStopped() {
+		return fmt.Errorf("quality-surface approval activation cannot mark a stopped checkpoint")
+	}
+	checkpoint.QualitySurfaceApprovalActivated = true
+	return nil
+}
+
+func (checkpoint *ResumeCheckpoint) ContinueActivatedQualitySurfaceApproval() error {
+	if !checkpoint.QualitySurfaceApprovalPending || !checkpoint.QualitySurfaceApprovalActivated || !checkpoint.IsStopped() {
+		return fmt.Errorf("activated quality-surface approval continuation requires a stopped activated approval checkpoint")
+	}
+	checkpoint.QualitySurfaceApprovalPending = false
+	checkpoint.QualitySurfaceApprovalActivated = false
+	return nil
+}
+
 func (checkpoint *ResumeCheckpoint) SetStopKind(kind ResumeStopKind) {
+	retainedSnapshot := checkpoint.StopGitSnapshot
+	retainedDirtyFiles := append([]StopDirtyFile(nil), checkpoint.StopDirtyFiles...)
+	retainApprovalEvidence := checkpoint.QualitySurfaceApprovalPending
 	checkpoint.clearStopPayload()
+	if retainApprovalEvidence {
+		checkpoint.StopGitSnapshot = retainedSnapshot
+		checkpoint.StopDirtyFiles = retainedDirtyFiles
+	}
 	checkpoint.StopKind = kind
 }
 
@@ -197,8 +234,16 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 	if !checkpoint.StopKind.Valid() {
 		return fmt.Errorf("unknown resume stop kind: %q", checkpoint.StopKind)
 	}
-	if checkpoint.QualitySurfaceApprovalPending && checkpoint.StopKind != ResumeStopNone {
-		return fmt.Errorf("quality-surface approval checkpoint cannot also carry resume stop kind %q", checkpoint.StopKind)
+	if checkpoint.QualitySurfaceApprovalActivated && !checkpoint.QualitySurfaceApprovalPending {
+		return fmt.Errorf("activated quality-surface approval checkpoint must retain the pending approval fact")
+	}
+	if checkpoint.QualitySurfaceApprovalPending && checkpoint.IsStopped() {
+		if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
+			return fmt.Errorf("quality-surface approval checkpoint cannot carry non-transient resume stop kind %q", checkpoint.StopKind)
+		}
+		if checkpoint.CompletedResult == nil {
+			return fmt.Errorf("stopped quality-surface approval checkpoint requires the completed worker result")
+		}
 	}
 	if err := checkpoint.validateRateLimitStopPayload(); err != nil {
 		return err
