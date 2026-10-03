@@ -11,11 +11,6 @@ import (
 	"strings"
 )
 
-const (
-	cliInstallTransactionVersion  = 1
-	cliInstallTransactionFileName = "cli-install-transaction.json"
-)
-
 type cliInstallTransactionJournal struct {
 	Version     int                           `json:"version"`
 	Destination string                        `json:"destination"`
@@ -24,17 +19,17 @@ type cliInstallTransactionJournal struct {
 }
 
 type cliInstallTransactionState struct {
-	Path string                         `json:"path"`
-	Temp string                         `json:"temp"`
+	Path string                          `json:"path"`
+	Temp string                          `json:"temp"`
 	Pre  cliInstallTransactionFileImage `json:"pre"`
 	Post cliInstallTransactionFileImage `json:"post"`
 }
 
 type cliInstallTransactionBinary struct {
-	Name        string                         `json:"name"`
-	Target      string                         `json:"target"`
-	Replacement string                         `json:"replacement"`
-	Backup      string                         `json:"backup,omitempty"`
+	Name        string                          `json:"name"`
+	Target      string                          `json:"target"`
+	Replacement string                          `json:"replacement"`
+	Backup      string                          `json:"backup,omitempty"`
 	Pre         cliInstallTransactionFileImage `json:"pre"`
 	Post        cliInstallTransactionFileImage `json:"post"`
 }
@@ -48,13 +43,18 @@ type cliInstallTransactionFileImage struct {
 type cliInstallTransactionObservation struct {
 	statePre  bool
 	statePost bool
-	binaries []cliInstallBinaryObservation
+	binaries  []cliInstallBinaryObservation
 }
 
 type cliInstallBinaryObservation struct {
 	pre  bool
 	post bool
 }
+
+const (
+	cliInstallTransactionVersion  = 1
+	cliInstallTransactionFileName = "cli-install-transaction.json"
+)
 
 func applyInstallWithStateWriter(
 	actions []action,
@@ -111,62 +111,95 @@ func newCLIInstallTransactionJournal(
 	if err != nil {
 		return cliInstallTransactionJournal{}, fmt.Errorf("resolve CLI install destination: %w", err)
 	}
-	preState, err := snapshotCLIInstallTransactionFile(statePath)
+	state, err := newCLIInstallTransactionState(statePath, stateTemp)
 	if err != nil {
 		return cliInstallTransactionJournal{}, err
 	}
-	postState, err := snapshotCLIInstallTransactionFile(stateTemp)
+	binaries, err := newCLIInstallTransactionBinaries(staged)
 	if err != nil {
 		return cliInstallTransactionJournal{}, err
 	}
 	journal := cliInstallTransactionJournal{
 		Version:     cliInstallTransactionVersion,
 		Destination: filepath.Clean(destination),
-		State: cliInstallTransactionState{
-			Path: filepath.Clean(statePath),
-			Temp: filepath.Clean(stateTemp),
-			Pre:  preState,
-			Post: postState,
-		},
-		Binaries: make([]cliInstallTransactionBinary, 0, len(staged)),
-	}
-	for _, item := range staged {
-		pre, err := snapshotCLIInstallTransactionFile(item.action.target)
-		if err != nil {
-			return cliInstallTransactionJournal{}, err
-		}
-		post, err := snapshotCLIInstallTransactionFile(item.replacement)
-		if err != nil {
-			return cliInstallTransactionJournal{}, err
-		}
-		if !post.Exists || post.SHA256 != item.action.sourceHash || post.Mode != 0o755 {
-			return cliInstallTransactionJournal{}, fmt.Errorf("staged CLI replacement does not match planned source: %s", item.action.name)
-		}
-		if item.action.hadTarget != pre.Exists {
-			return cliInstallTransactionJournal{}, fmt.Errorf("CLI install preimage changed while staging: %s", item.action.name)
-		}
-		if pre.Exists {
-			backup, err := snapshotCLIInstallTransactionFile(item.backup)
-			if err != nil {
-				return cliInstallTransactionJournal{}, err
-			}
-			if !sameCLIInstallTransactionImage(pre, backup) {
-				return cliInstallTransactionJournal{}, fmt.Errorf("CLI install backup does not match preimage: %s", item.action.name)
-			}
-		}
-		journal.Binaries = append(journal.Binaries, cliInstallTransactionBinary{
-			Name:        item.action.name,
-			Target:      filepath.Clean(item.action.target),
-			Replacement: filepath.Clean(item.replacement),
-			Backup:      cleanOptionalCLIInstallPath(item.backup),
-			Pre:         pre,
-			Post:        post,
-		})
+		State:       state,
+		Binaries:    binaries,
 	}
 	if err := validateCLIInstallTransactionJournal(journal, binDir); err != nil {
 		return cliInstallTransactionJournal{}, err
 	}
 	return journal, nil
+}
+
+func newCLIInstallTransactionState(statePath, stateTemp string) (cliInstallTransactionState, error) {
+	pre, err := snapshotCLIInstallTransactionFile(statePath)
+	if err != nil {
+		return cliInstallTransactionState{}, err
+	}
+	post, err := snapshotCLIInstallTransactionFile(stateTemp)
+	if err != nil {
+		return cliInstallTransactionState{}, err
+	}
+	return cliInstallTransactionState{
+		Path: filepath.Clean(statePath),
+		Temp: filepath.Clean(stateTemp),
+		Pre:  pre,
+		Post: post,
+	}, nil
+}
+
+func newCLIInstallTransactionBinaries(staged []stagedAction) ([]cliInstallTransactionBinary, error) {
+	binaries := make([]cliInstallTransactionBinary, 0, len(staged))
+	for _, item := range staged {
+		binary, err := newCLIInstallTransactionBinary(item)
+		if err != nil {
+			return nil, err
+		}
+		binaries = append(binaries, binary)
+	}
+	return binaries, nil
+}
+
+func newCLIInstallTransactionBinary(item stagedAction) (cliInstallTransactionBinary, error) {
+	pre, err := snapshotCLIInstallTransactionFile(item.action.target)
+	if err != nil {
+		return cliInstallTransactionBinary{}, err
+	}
+	post, err := snapshotCLIInstallTransactionFile(item.replacement)
+	if err != nil {
+		return cliInstallTransactionBinary{}, err
+	}
+	if !post.Exists || post.SHA256 != item.action.sourceHash || post.Mode != 0o755 {
+		return cliInstallTransactionBinary{}, fmt.Errorf("staged CLI replacement does not match planned source: %s", item.action.name)
+	}
+	if item.action.hadTarget != pre.Exists {
+		return cliInstallTransactionBinary{}, fmt.Errorf("CLI install preimage changed while staging: %s", item.action.name)
+	}
+	if err := validateCLIInstallTransactionBackup(item, pre); err != nil {
+		return cliInstallTransactionBinary{}, err
+	}
+	return cliInstallTransactionBinary{
+		Name:        item.action.name,
+		Target:      filepath.Clean(item.action.target),
+		Replacement: filepath.Clean(item.replacement),
+		Backup:      cleanOptionalCLIInstallPath(item.backup),
+		Pre:         pre,
+		Post:        post,
+	}, nil
+}
+
+func validateCLIInstallTransactionBackup(item stagedAction, pre cliInstallTransactionFileImage) error {
+	if !pre.Exists {
+		return nil
+	}
+	backup, err := snapshotCLIInstallTransactionFile(item.backup)
+	if err != nil {
+		return err
+	}
+	if !sameCLIInstallTransactionImage(pre, backup) {
+		return fmt.Errorf("CLI install backup does not match preimage: %s", item.action.name)
+	}
+	return nil
 }
 
 func saveCLIInstallTransactionJournal(journal cliInstallTransactionJournal) error {
@@ -199,34 +232,67 @@ func recoverInterruptedCLIInstall(binDir string) error {
 	if err := validateCLIInstallRecoveryEvidence(journal, observation); err != nil {
 		return err
 	}
-	switch {
-	case observation.statePost:
-		for index, binary := range observation.binaries {
-			if !binary.post {
-				return fmt.Errorf("CLI install transaction state is committed but binary %s is not the postimage", journal.Binaries[index].Name)
-			}
-		}
-		return cleanupCLIInstallTransaction(journal)
-	case observation.statePre:
-		if err := restoreCLIInstallTransactionPreimages(journal, observation); err != nil {
-			return err
-		}
-		verified, err := observeCLIInstallTransaction(journal)
-		if err != nil {
-			return err
-		}
-		if !verified.statePre {
-			return fmt.Errorf("CLI install transaction recovery did not restore ownership state preimage")
-		}
-		for index, binary := range verified.binaries {
-			if !binary.pre {
-				return fmt.Errorf("CLI install transaction recovery did not restore binary %s preimage", journal.Binaries[index].Name)
-			}
-		}
-		return cleanupCLIInstallTransaction(journal)
-	default:
+	if observation.statePost {
+		return finishRecoveredCommittedCLIInstall(journal, observation)
+	}
+	if !observation.statePre {
 		return fmt.Errorf("CLI install transaction ownership state matches neither preimage nor postimage")
 	}
+	return rollbackRecoveredCLIInstall(journal, observation)
+}
+
+func finishRecoveredCommittedCLIInstall(
+	journal cliInstallTransactionJournal,
+	observation cliInstallTransactionObservation,
+) error {
+	if err := requireCLIInstallBinaryPostimages(journal, observation); err != nil {
+		return err
+	}
+	return cleanupCLIInstallTransaction(journal)
+}
+
+func rollbackRecoveredCLIInstall(
+	journal cliInstallTransactionJournal,
+	observation cliInstallTransactionObservation,
+) error {
+	if err := restoreCLIInstallTransactionPreimages(journal, observation); err != nil {
+		return err
+	}
+	verified, err := observeCLIInstallTransaction(journal)
+	if err != nil {
+		return err
+	}
+	if !verified.statePre {
+		return fmt.Errorf("CLI install transaction recovery did not restore ownership state preimage")
+	}
+	if err := requireCLIInstallBinaryPreimages(journal, verified); err != nil {
+		return err
+	}
+	return cleanupCLIInstallTransaction(journal)
+}
+
+func requireCLIInstallBinaryPostimages(
+	journal cliInstallTransactionJournal,
+	observation cliInstallTransactionObservation,
+) error {
+	for index, binary := range observation.binaries {
+		if !binary.post {
+			return fmt.Errorf("CLI install transaction state is committed but binary %s is not the postimage", journal.Binaries[index].Name)
+		}
+	}
+	return nil
+}
+
+func requireCLIInstallBinaryPreimages(
+	journal cliInstallTransactionJournal,
+	observation cliInstallTransactionObservation,
+) error {
+	for index, binary := range observation.binaries {
+		if !binary.pre {
+			return fmt.Errorf("CLI install transaction recovery did not restore binary %s preimage", journal.Binaries[index].Name)
+		}
+	}
+	return nil
 }
 
 func finishFailedCLIInstallTransaction(journal cliInstallTransactionJournal, cause error) error {
@@ -234,13 +300,8 @@ func finishFailedCLIInstallTransaction(journal cliInstallTransactionJournal, cau
 	if err != nil {
 		return errors.Join(cause, err)
 	}
-	if !observation.statePre {
+	if !observation.statePre || !allCLIInstallBinariesPre(observation) {
 		return errors.Join(cause, fmt.Errorf("CLI install rollback incomplete; durable recovery required"))
-	}
-	for _, binary := range observation.binaries {
-		if !binary.pre {
-			return errors.Join(cause, fmt.Errorf("CLI install rollback incomplete; durable recovery required"))
-		}
 	}
 	if err := validateCLIInstallRecoveryEvidence(journal, observation); err != nil {
 		return errors.Join(cause, err)
@@ -259,10 +320,8 @@ func finishCommittedCLIInstallTransaction(journal cliInstallTransactionJournal) 
 	if !observation.statePost {
 		return fmt.Errorf("CLI install transaction commit did not produce ownership state postimage")
 	}
-	for index, binary := range observation.binaries {
-		if !binary.post {
-			return fmt.Errorf("CLI install transaction commit did not produce binary %s postimage", journal.Binaries[index].Name)
-		}
+	if err := requireCLIInstallBinaryPostimages(journal, observation); err != nil {
+		return fmt.Errorf("CLI install transaction commit validation: %w", err)
 	}
 	if err := validateCLIInstallRecoveryEvidence(journal, observation); err != nil {
 		return err
@@ -270,8 +329,20 @@ func finishCommittedCLIInstallTransaction(journal cliInstallTransactionJournal) 
 	return cleanupCLIInstallTransaction(journal)
 }
 
+func allCLIInstallBinariesPre(observation cliInstallTransactionObservation) bool {
+	for _, binary := range observation.binaries {
+		if !binary.pre {
+			return false
+		}
+	}
+	return true
+}
+
 func loadCLIInstallTransactionJournal(binDir string) (cliInstallTransactionJournal, bool, error) {
 	path := cliInstallTransactionPath(binDir)
+	if err := validateStateDirectory(filepath.Dir(path)); err != nil {
+		return cliInstallTransactionJournal{}, false, err
+	}
 	info, exists, err := lstat(path)
 	if err != nil || !exists {
 		return cliInstallTransactionJournal{}, exists, err
@@ -283,19 +354,10 @@ func loadCLIInstallTransactionJournal(binDir string) (cliInstallTransactionJourn
 	if err != nil {
 		return cliInstallTransactionJournal{}, true, fmt.Errorf("open CLI install transaction journal: %w", err)
 	}
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
-	var journal cliInstallTransactionJournal
-	decodeErr := decoder.Decode(&journal)
-	if decodeErr == nil {
-		var extra any
-		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-			decodeErr = fmt.Errorf("trailing data")
-		}
-	}
+	journal, decodeErr := decodeCLIInstallTransactionJournal(file)
 	closeErr := file.Close()
 	if decodeErr != nil {
-		return cliInstallTransactionJournal{}, true, errors.Join(fmt.Errorf("decode CLI install transaction journal: %w", decodeErr), closeErr)
+		return cliInstallTransactionJournal{}, true, errors.Join(decodeErr, closeErr)
 	}
 	if closeErr != nil {
 		return cliInstallTransactionJournal{}, true, fmt.Errorf("close CLI install transaction journal: %w", closeErr)
@@ -306,56 +368,111 @@ func loadCLIInstallTransactionJournal(binDir string) (cliInstallTransactionJourn
 	return journal, true, nil
 }
 
+func decodeCLIInstallTransactionJournal(file *os.File) (cliInstallTransactionJournal, error) {
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	var journal cliInstallTransactionJournal
+	if err := decoder.Decode(&journal); err != nil {
+		return cliInstallTransactionJournal{}, fmt.Errorf("decode CLI install transaction journal: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = fmt.Errorf("trailing data")
+		}
+		return cliInstallTransactionJournal{}, fmt.Errorf("decode CLI install transaction journal: %w", err)
+	}
+	return journal, nil
+}
+
 func validateCLIInstallTransactionJournal(journal cliInstallTransactionJournal, binDir string) error {
-	if journal.Version != cliInstallTransactionVersion {
-		return fmt.Errorf("invalid CLI install transaction journal version")
-	}
-	destination, err := filepath.Abs(binDir)
+	destination, err := validateCLIInstallTransactionHeader(journal, binDir)
 	if err != nil {
-		return fmt.Errorf("resolve CLI install transaction destination: %w", err)
+		return err
 	}
-	destination = filepath.Clean(destination)
-	if journal.Destination != destination {
-		return fmt.Errorf("CLI install transaction destination mismatch")
-	}
-	stateDir := filepath.Join(destination, stateDirName)
-	if journal.State.Path != filepath.Join(stateDir, stateFileName) {
-		return fmt.Errorf("invalid CLI install transaction state path")
-	}
-	if !validCLIInstallTempPath(journal.State.Temp, stateDir, ".cli-install-state-") {
-		return fmt.Errorf("invalid CLI install transaction state temp path")
-	}
-	if err := validateCLIInstallTransactionImage(journal.State.Pre); err != nil {
-		return fmt.Errorf("invalid CLI install transaction state preimage: %w", err)
-	}
-	if err := validateCLIInstallTransactionImage(journal.State.Post); err != nil || !journal.State.Post.Exists {
-		return fmt.Errorf("invalid CLI install transaction state postimage")
+	if err := validateCLIInstallTransactionState(journal.State, destination); err != nil {
+		return err
 	}
 	seen := make(map[string]bool, len(journal.Binaries))
 	for _, binary := range journal.Binaries {
-		if _, ok := managedNameSet[binary.Name]; !ok || seen[binary.Name] {
-			return fmt.Errorf("invalid CLI install transaction binary name: %s", binary.Name)
+		if err := validateCLIInstallTransactionBinary(binary, destination, seen); err != nil {
+			return err
 		}
 		seen[binary.Name] = true
-		if binary.Target != filepath.Join(destination, binary.Name) {
-			return fmt.Errorf("invalid CLI install transaction binary target: %s", binary.Name)
+	}
+	return nil
+}
+
+func validateCLIInstallTransactionHeader(
+	journal cliInstallTransactionJournal,
+	binDir string,
+) (string, error) {
+	if journal.Version != cliInstallTransactionVersion {
+		return "", fmt.Errorf("invalid CLI install transaction journal version")
+	}
+	destination, err := filepath.Abs(binDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve CLI install transaction destination: %w", err)
+	}
+	destination = filepath.Clean(destination)
+	if journal.Destination != destination {
+		return "", fmt.Errorf("CLI install transaction destination mismatch")
+	}
+	return destination, nil
+}
+
+func validateCLIInstallTransactionState(state cliInstallTransactionState, destination string) error {
+	stateDir := filepath.Join(destination, stateDirName)
+	if state.Path != filepath.Join(stateDir, stateFileName) {
+		return fmt.Errorf("invalid CLI install transaction state path")
+	}
+	if !validCLIInstallTempPath(state.Temp, stateDir, ".cli-install-state-") {
+		return fmt.Errorf("invalid CLI install transaction state temp path")
+	}
+	if err := validateCLIInstallTransactionImage(state.Pre); err != nil {
+		return fmt.Errorf("invalid CLI install transaction state preimage: %w", err)
+	}
+	if err := validateCLIInstallTransactionImage(state.Post); err != nil || !state.Post.Exists {
+		return fmt.Errorf("invalid CLI install transaction state postimage")
+	}
+	return nil
+}
+
+func validateCLIInstallTransactionBinary(
+	binary cliInstallTransactionBinary,
+	destination string,
+	seen map[string]bool,
+) error {
+	if _, ok := managedNameSet[binary.Name]; !ok || seen[binary.Name] {
+		return fmt.Errorf("invalid CLI install transaction binary name: %s", binary.Name)
+	}
+	if binary.Target != filepath.Join(destination, binary.Name) {
+		return fmt.Errorf("invalid CLI install transaction binary target: %s", binary.Name)
+	}
+	if !validCLIInstallTempPath(binary.Replacement, destination, "."+binary.Name+"-") {
+		return fmt.Errorf("invalid CLI install transaction replacement path: %s", binary.Name)
+	}
+	if err := validateCLIInstallTransactionBackupPath(binary, destination); err != nil {
+		return err
+	}
+	if err := validateCLIInstallTransactionImage(binary.Pre); err != nil {
+		return fmt.Errorf("invalid CLI install transaction binary preimage %s: %w", binary.Name, err)
+	}
+	if err := validateCLIInstallTransactionImage(binary.Post); err != nil || !binary.Post.Exists || binary.Post.Mode != 0o755 {
+		return fmt.Errorf("invalid CLI install transaction binary postimage: %s", binary.Name)
+	}
+	return nil
+}
+
+func validateCLIInstallTransactionBackupPath(binary cliInstallTransactionBinary, destination string) error {
+	if binary.Pre.Exists {
+		if !validCLIInstallTempPath(binary.Backup, destination, "."+binary.Name+"-backup-") {
+			return fmt.Errorf("invalid CLI install transaction backup path: %s", binary.Name)
 		}
-		if !validCLIInstallTempPath(binary.Replacement, destination, "."+binary.Name+"-") {
-			return fmt.Errorf("invalid CLI install transaction replacement path: %s", binary.Name)
-		}
-		if binary.Pre.Exists {
-			if !validCLIInstallTempPath(binary.Backup, destination, "."+binary.Name+"-backup-") {
-				return fmt.Errorf("invalid CLI install transaction backup path: %s", binary.Name)
-			}
-		} else if binary.Backup != "" {
-			return fmt.Errorf("unexpected CLI install transaction backup path: %s", binary.Name)
-		}
-		if err := validateCLIInstallTransactionImage(binary.Pre); err != nil {
-			return fmt.Errorf("invalid CLI install transaction binary preimage %s: %w", binary.Name, err)
-		}
-		if err := validateCLIInstallTransactionImage(binary.Post); err != nil || !binary.Post.Exists || binary.Post.Mode != 0o755 {
-			return fmt.Errorf("invalid CLI install transaction binary postimage: %s", binary.Name)
-		}
+		return nil
+	}
+	if binary.Backup != "" {
+		return fmt.Errorf("unexpected CLI install transaction backup path: %s", binary.Name)
 	}
 	return nil
 }
@@ -400,26 +517,40 @@ func observeCLIInstallTransaction(journal cliInstallTransactionJournal) (cliInst
 	if err != nil {
 		return cliInstallTransactionObservation{}, err
 	}
-	observation := cliInstallTransactionObservation{
-		statePre:  statePre,
-		statePost: statePost,
-		binaries: make([]cliInstallBinaryObservation, len(journal.Binaries)),
+	binaries, err := observeCLIInstallTransactionBinaries(journal.Binaries)
+	if err != nil {
+		return cliInstallTransactionObservation{}, err
 	}
-	for index, binary := range journal.Binaries {
-		pre, err := cliInstallTransactionFileMatches(binary.Target, binary.Pre)
+	return cliInstallTransactionObservation{statePre: statePre, statePost: statePost, binaries: binaries}, nil
+}
+
+func observeCLIInstallTransactionBinaries(
+	binaries []cliInstallTransactionBinary,
+) ([]cliInstallBinaryObservation, error) {
+	observations := make([]cliInstallBinaryObservation, len(binaries))
+	for index, binary := range binaries {
+		observation, err := observeCLIInstallTransactionBinary(binary)
 		if err != nil {
-			return cliInstallTransactionObservation{}, err
+			return nil, err
 		}
-		post, err := cliInstallTransactionFileMatches(binary.Target, binary.Post)
-		if err != nil {
-			return cliInstallTransactionObservation{}, err
-		}
-		if !pre && !post {
-			return cliInstallTransactionObservation{}, fmt.Errorf("CLI install transaction binary %s matches neither preimage nor postimage", binary.Name)
-		}
-		observation.binaries[index] = cliInstallBinaryObservation{pre: pre, post: post}
+		observations[index] = observation
 	}
-	return observation, nil
+	return observations, nil
+}
+
+func observeCLIInstallTransactionBinary(binary cliInstallTransactionBinary) (cliInstallBinaryObservation, error) {
+	pre, err := cliInstallTransactionFileMatches(binary.Target, binary.Pre)
+	if err != nil {
+		return cliInstallBinaryObservation{}, err
+	}
+	post, err := cliInstallTransactionFileMatches(binary.Target, binary.Post)
+	if err != nil {
+		return cliInstallBinaryObservation{}, err
+	}
+	if !pre && !post {
+		return cliInstallBinaryObservation{}, fmt.Errorf("CLI install transaction binary %s matches neither preimage nor postimage", binary.Name)
+	}
+	return cliInstallBinaryObservation{pre: pre, post: post}, nil
 }
 
 func validateCLIInstallRecoveryEvidence(
@@ -430,19 +561,30 @@ func validateCLIInstallRecoveryEvidence(
 		return fmt.Errorf("invalid CLI install state temp evidence: %w", err)
 	}
 	for index, binary := range journal.Binaries {
-		observed := observation.binaries[index]
-		if err := validateOptionalCLIInstallEvidence(binary.Replacement, binary.Post); err != nil {
-			return fmt.Errorf("invalid CLI replacement evidence %s: %w", binary.Name, err)
+		if err := validateCLIInstallBinaryRecoveryEvidence(binary, observation.binaries[index], observation.statePre); err != nil {
+			return err
 		}
-		if binary.Pre.Exists {
-			backupExists, err := validateOptionalCLIInstallEvidenceExists(binary.Backup, binary.Pre)
-			if err != nil {
-				return fmt.Errorf("invalid CLI backup evidence %s: %w", binary.Name, err)
-			}
-			if observed.post && observation.statePre && !backupExists {
-				return fmt.Errorf("missing CLI backup required to restore %s", binary.Name)
-			}
-		}
+	}
+	return nil
+}
+
+func validateCLIInstallBinaryRecoveryEvidence(
+	binary cliInstallTransactionBinary,
+	observed cliInstallBinaryObservation,
+	statePre bool,
+) error {
+	if err := validateOptionalCLIInstallEvidence(binary.Replacement, binary.Post); err != nil {
+		return fmt.Errorf("invalid CLI replacement evidence %s: %w", binary.Name, err)
+	}
+	if !binary.Pre.Exists {
+		return nil
+	}
+	backupExists, err := validateOptionalCLIInstallEvidenceExists(binary.Backup, binary.Pre)
+	if err != nil {
+		return fmt.Errorf("invalid CLI backup evidence %s: %w", binary.Name, err)
+	}
+	if observed.post && statePre && !backupExists {
+		return fmt.Errorf("missing CLI backup required to restore %s", binary.Name)
 	}
 	return nil
 }
@@ -479,26 +621,30 @@ func restoreCLIInstallTransactionPreimages(
 		if !observation.binaries[index].post {
 			continue
 		}
-		if !binary.Pre.Exists {
-			if err := os.Remove(binary.Target); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("remove interrupted CLI install target %s: %w", binary.Target, err)
-			}
-			continue
+		if err := restoreCLIInstallTransactionPreimage(binary); err != nil {
+			return err
 		}
-		if err := os.Rename(binary.Backup, binary.Target); err != nil {
-			return fmt.Errorf("restore interrupted CLI install target %s: %w", binary.Target, err)
+	}
+	return nil
+}
+
+func restoreCLIInstallTransactionPreimage(binary cliInstallTransactionBinary) error {
+	if !binary.Pre.Exists {
+		if err := os.Remove(binary.Target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove interrupted CLI install target %s: %w", binary.Target, err)
 		}
+		return nil
+	}
+	if err := os.Rename(binary.Backup, binary.Target); err != nil {
+		return fmt.Errorf("restore interrupted CLI install target %s: %w", binary.Target, err)
 	}
 	return nil
 }
 
 func cleanupCLIInstallTransaction(journal cliInstallTransactionJournal) error {
 	for _, binary := range journal.Binaries {
-		if err := removeIfExists(binary.Replacement); err != nil {
-			return fmt.Errorf("remove CLI replacement evidence: %w", err)
-		}
-		if err := removeIfExists(binary.Backup); err != nil {
-			return fmt.Errorf("remove CLI backup evidence: %w", err)
+		if err := cleanupCLIInstallBinaryEvidence(binary); err != nil {
+			return err
 		}
 	}
 	if err := removeIfExists(journal.State.Temp); err != nil {
@@ -506,6 +652,16 @@ func cleanupCLIInstallTransaction(journal cliInstallTransactionJournal) error {
 	}
 	if err := removeIfExists(cliInstallTransactionPath(journal.Destination)); err != nil {
 		return fmt.Errorf("remove CLI install transaction journal: %w", err)
+	}
+	return nil
+}
+
+func cleanupCLIInstallBinaryEvidence(binary cliInstallTransactionBinary) error {
+	if err := removeIfExists(binary.Replacement); err != nil {
+		return fmt.Errorf("remove CLI replacement evidence: %w", err)
+	}
+	if err := removeIfExists(binary.Backup); err != nil {
+		return fmt.Errorf("remove CLI backup evidence: %w", err)
 	}
 	return nil
 }
