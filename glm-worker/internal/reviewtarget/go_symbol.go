@@ -66,7 +66,7 @@ func topLevelGeneratedDeclarations(fileset *token.FileSet, declaration *ast.GenD
 		switch typed := spec.(type) {
 		case *ast.TypeSpec:
 			if typed.Name.Name == symbol {
-				matches = append(matches, goDeclaration(fileset, symbol, "type", typed.Pos(), typed.End()))
+				matches = append(matches, goDeclaration(fileset, symbol, "type", declaration.Pos(), declaration.End()))
 			}
 		case *ast.ValueSpec:
 			matches = append(matches, topLevelValueDeclarations(fileset, declaration, typed, symbol)...)
@@ -79,7 +79,7 @@ func topLevelValueDeclarations(fileset *token.FileSet, declaration *ast.GenDecl,
 	var matches []GoDeclaration
 	for _, name := range spec.Names {
 		if name.Name == symbol {
-			matches = append(matches, goDeclaration(fileset, symbol, declaration.Tok.String(), spec.Pos(), spec.End()))
+			matches = append(matches, goDeclaration(fileset, symbol, declaration.Tok.String(), declaration.Pos(), declaration.End()))
 		}
 	}
 	return matches
@@ -92,20 +92,26 @@ func goMemberDeclarations(fileset *token.FileSet, declaration ast.Decl, owner, s
 			return []GoDeclaration{goDeclaration(fileset, owner+"."+symbol, "method", current.Pos(), current.End())}
 		}
 	case *ast.GenDecl:
-		var matches []GoDeclaration
-		for _, spec := range current.Specs {
-			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok || typeSpec.Name.Name != owner {
-				continue
-			}
-			matches = append(matches, goTypeMemberDeclarations(fileset, typeSpec.Type, owner, symbol)...)
-		}
-		return matches
+		return generatedMemberDeclarations(fileset, current, owner, symbol)
 	}
 	return nil
 }
 
-func goTypeMemberDeclarations(fileset *token.FileSet, typ ast.Expr, owner, symbol string) []GoDeclaration {
+func generatedMemberDeclarations(fileset *token.FileSet, declaration *ast.GenDecl, owner, symbol string) []GoDeclaration {
+	var matches []GoDeclaration
+	for _, spec := range declaration.Specs {
+		typeSpec, ok := spec.(*ast.TypeSpec)
+		if !ok || typeSpec.Name.Name != owner {
+			continue
+		}
+		for _, kind := range goTypeMemberKinds(typeSpec.Type, symbol) {
+			matches = append(matches, goDeclaration(fileset, owner+"."+symbol, kind, declaration.Pos(), declaration.End()))
+		}
+	}
+	return matches
+}
+
+func goTypeMemberKinds(typ ast.Expr, symbol string) []string {
 	var fields *ast.FieldList
 	var kind string
 	switch current := typ.(type) {
@@ -118,15 +124,15 @@ func goTypeMemberDeclarations(fileset *token.FileSet, typ ast.Expr, owner, symbo
 	default:
 		return nil
 	}
-	var matches []GoDeclaration
+	var kinds []string
 	for _, field := range fields.List {
 		for _, name := range field.Names {
 			if name.Name == symbol {
-				matches = append(matches, goDeclaration(fileset, owner+"."+symbol, kind, field.Pos(), field.End()))
+				kinds = append(kinds, kind)
 			}
 		}
 	}
-	return matches
+	return kinds
 }
 
 func receiverTypeName(fields *ast.FieldList) string {
