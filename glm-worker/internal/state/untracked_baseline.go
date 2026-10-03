@@ -145,8 +145,8 @@ func captureUntrackedBaselineEntry(repoRoot, path string) (untrackedBaselineSnap
 }
 
 func readStableUntrackedBaselineFile(path string, initial os.FileInfo) ([]byte, error) {
-	if initial.Size() > untrackedBaselineMaxEntryBytes {
-		return nil, fmt.Errorf("file exceeds per-entry limit of %d bytes", untrackedBaselineMaxEntryBytes)
+	if err := validateUntrackedBaselineInitialFile(initial); err != nil {
+		return nil, err
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -157,8 +157,8 @@ func readStableUntrackedBaselineFile(path string, initial os.FileInfo) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	if !opened.Mode().IsRegular() || !os.SameFile(initial, opened) {
-		return nil, fmt.Errorf("file changed type or identity while opening")
+	if err := validateUntrackedBaselineOpenedFile(initial, opened); err != nil {
+		return nil, err
 	}
 	data, err := io.ReadAll(io.LimitReader(file, int64(untrackedBaselineMaxEntryBytes)+1))
 	if err != nil {
@@ -171,10 +171,31 @@ func readStableUntrackedBaselineFile(path string, initial os.FileInfo) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	if !os.SameFile(opened, after) || opened.Size() != after.Size() || opened.Mode() != after.Mode() || int64(len(data)) != after.Size() {
-		return nil, fmt.Errorf("file changed while capturing baseline")
+	if err := validateUntrackedBaselineStableRead(opened, after, int64(len(data))); err != nil {
+		return nil, err
 	}
 	return data, nil
+}
+
+func validateUntrackedBaselineInitialFile(info os.FileInfo) error {
+	if info.Size() > untrackedBaselineMaxEntryBytes {
+		return fmt.Errorf("file exceeds per-entry limit of %d bytes", untrackedBaselineMaxEntryBytes)
+	}
+	return nil
+}
+
+func validateUntrackedBaselineOpenedFile(initial, opened os.FileInfo) error {
+	if !opened.Mode().IsRegular() || !os.SameFile(initial, opened) {
+		return fmt.Errorf("file changed type or identity while opening")
+	}
+	return nil
+}
+
+func validateUntrackedBaselineStableRead(opened, after os.FileInfo, readSize int64) error {
+	if !os.SameFile(opened, after) || opened.Size() != after.Size() || opened.Mode() != after.Mode() || readSize != after.Size() {
+		return fmt.Errorf("file changed while capturing baseline")
+	}
+	return nil
 }
 
 func (s *StateStore) ReadUntrackedBaseline() ([]UntrackedBaselineEntry, error) {
