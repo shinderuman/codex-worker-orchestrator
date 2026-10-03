@@ -23,11 +23,19 @@ type FixEvidence struct {
 	Output *FixInputSnapshot `json:"output,omitempty"`
 }
 
+type DeterministicFixConvergence struct {
+	State           string `json:"state"`
+	Iterations      int    `json:"iterations"`
+	MaxIterations   int    `json:"max_iterations"`
+	ChangesProduced bool   `json:"changes_produced"`
+}
+
 type Report struct {
-	Status      string       `json:"status"`
-	Fixed       int          `json:"fixed"`
-	Violations  []Violation  `json:"violations"`
-	FixEvidence *FixEvidence `json:"fix_evidence,omitempty"`
+	Status                   string                       `json:"status"`
+	Fixed                    int                          `json:"fixed"`
+	Violations               []Violation                  `json:"violations"`
+	FixEvidence              *FixEvidence                  `json:"fix_evidence,omitempty"`
+	DeterministicConvergence *DeterministicFixConvergence `json:"deterministic_convergence,omitempty"`
 }
 
 const FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
@@ -54,4 +62,13 @@ func makeReport(fixed int, violations []Violation) Report {
 
 func IsViolation(report Report) bool {
 	return report.Status == "fail" && len(report.Violations) > 0
+}
+
+func HasFixableViolation(report Report) bool {
+	for _, violation := range report.Violations {
+		if violation.Fixable {
+			return true
+		}
+	}
+	return false
 }
