@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 type ParentReviewBinding struct {
@@ -103,6 +104,9 @@ func validateParentReviewEvidenceProof(binding *ParentReviewBinding) error {
 }
 
 func (s *StateStore) openBoundParentReviewState(value packet.Result, producer ParentReviewProducer, snapshot SnapshotDigest) error {
+	if err := s.validateReviewTargetProofAddressability(value.Targets); err != nil {
+		return err
+	}
 	binding, err := newParentReviewBinding(value, snapshot)
 	if err != nil {
 		return err
@@ -120,6 +124,23 @@ func (s *StateStore) openBoundParentReviewState(value packet.Result, producer Pa
 	state.Review = binding
 	state.Completion = nil
 	return s.writeParentReviewState(state)
+}
+
+func (s *StateStore) validateReviewTargetProofAddressability(targets []string) error {
+	repoRoot := s.ReadOr("repo-root", "")
+	if repoRoot == "" {
+		return fmt.Errorf("review target proof admission requires repository root")
+	}
+	for _, raw := range targets {
+		target, err := reviewtarget.ParseTarget(raw)
+		if err != nil {
+			return fmt.Errorf("review target admission rejected before binding: %w", err)
+		}
+		if err := reviewtarget.ValidateProofAddressable(repoRoot, target); err != nil {
+			return fmt.Errorf("review target admission rejected before binding: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *StateStore) CurrentParentReviewBinding() (*ParentReviewBinding, error) {
