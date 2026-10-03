@@ -34,7 +34,7 @@ type Report struct {
 	Status                   string                       `json:"status"`
 	Fixed                    int                          `json:"fixed"`
 	Violations               []Violation                  `json:"violations"`
-	FixEvidence              *FixEvidence                  `json:"fix_evidence,omitempty"`
+	FixEvidence              *FixEvidence                 `json:"fix_evidence,omitempty"`
 	DeterministicConvergence *DeterministicFixConvergence `json:"deterministic_convergence,omitempty"`
 }
 
