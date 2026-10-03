@@ -95,6 +95,14 @@ func TestSourceSymbolCoverageRequiresCanonicalDeclarationSite(t *testing.T) {
 	if !reviewSourceCoversTarget("new.go:NewAPI", partialFunction) {
 		t.Fatal("canonical function fragment without package clause was not proven")
 	}
+	partialVarGroup := SourceBody{Path: "new.go", LineStart: 8, LineEnd: 10, Content: "var (\n\tNewAPI = 1\n)\n"}
+	if !reviewSourceCoversTarget("new.go:NewAPI", partialVarGroup) {
+		t.Fatal("canonical var-group fragment without package clause was not proven")
+	}
+	partialMember := SourceBody{Path: "new.go", LineStart: 12, LineEnd: 12, Content: "type Holder struct{ NewAPI int }\n"}
+	if !reviewSourceCoversTarget("new.go:Holder.NewAPI", partialMember) {
+		t.Fatal("canonical member fragment without package clause was not proven")
+	}
 	unproven := []struct {
 		name   string
 		source SourceBody
