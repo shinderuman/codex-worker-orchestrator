@@ -100,25 +100,37 @@ func (w *Workflow) prepareResumeCheckpoint(
 	if stopped, err := w.gateActivatedResumeCheckpoint(checkpoint, pocResume); err != nil || stopped {
 		return checkpoint, stopped, err
 	}
-	switch approvalResumeMode {
-	case qualitySurfaceApprovalResumePending:
+	if approvalResumeMode == qualitySurfaceApprovalResumePending {
 		if err := w.restoreQualitySurfaceApprovalAfterResume(checkpoint); err != nil {
 			return checkpoint, false, err
 		}
 		return checkpoint, true, nil
-	case qualitySurfaceApprovalResumeActivated:
-		if err := checkpoint.ContinueActivatedQualitySurfaceApproval(); err != nil {
-			return checkpoint, false, err
-		}
 	}
+	checkpoint, err = w.prepareResumeContinuation(checkpoint, decl, approvalResumeMode)
+	if err != nil {
+		return checkpoint, false, err
+	}
+	return checkpoint, false, nil
+}
+
+func (w *Workflow) prepareResumeContinuation(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	approvalResumeMode qualitySurfaceApprovalResumeMode,
+) (state.ResumeCheckpoint, error) {
 	checkpoint.Prompt = resumePrompt(checkpoint)
-	activatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
-	if activationErr != nil {
-		return checkpoint, false, activationErr
+	activatedCheckpoint, err := w.activateResumeRuleContext(checkpoint)
+	if err != nil {
+		return checkpoint, err
 	}
 	checkpoint = activatedCheckpoint
 	checkpoint.ReadOnly = resumeCheckpointReadOnly(checkpoint, decl)
-	return checkpoint, false, nil
+	if approvalResumeMode == qualitySurfaceApprovalResumeActivated {
+		if err := checkpoint.ContinueActivatedQualitySurfaceApproval(); err != nil {
+			return checkpoint, err
+		}
+	}
+	return checkpoint, nil
 }
 
 func resumeCheckpointReadOnly(checkpoint state.ResumeCheckpoint, decl externalFeasibility) bool {
