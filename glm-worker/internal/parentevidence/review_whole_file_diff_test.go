@@ -20,16 +20,16 @@ func TestWholeFileDiffLocatorProducesDiffClaim(t *testing.T) {
 	}
 }
 
-func TestDiffRemainsOrdinarySymbolLocator(t *testing.T) {
-	path, locator, err := ReviewTarget("foo.go:diff")
+func TestDiffRemainsGoSymbolWithoutDiffSubstringProof(t *testing.T) {
+	target, err := reviewtarget.ParseTarget("foo.go:diff")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if path != "foo.go" || locator != "diff" {
-		t.Fatalf("symbol target parsed as path=%q locator=%q", path, locator)
+	if target.Path != "foo.go" || target.Locator != "diff" || target.Kind != reviewtarget.LocatorGoSymbol {
+		t.Fatalf("symbol target parsed as %#v", target)
 	}
-	if locator == reviewtarget.WholeFileDiffLocator {
-		t.Fatalf("ordinary symbol locator %q collided with reserved whole-file locator", locator)
+	if target.Locator == reviewtarget.WholeFileDiffLocator {
+		t.Fatalf("ordinary symbol locator %q collided with reserved whole-file locator", target.Locator)
 	}
 
 	diff := DiffBody{
@@ -37,7 +37,7 @@ func TestDiffRemainsOrdinarySymbolLocator(t *testing.T) {
 		Body:  "diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -1 +1 @@\n-old\n+func diff() {}\n",
 		Files: []DiffFile{{Path: "foo.go", Status: "M", HeadBlob: "head", WorktreeSHA: "worktree"}},
 	}
-	if !ReviewDiffCoversTarget("foo.go:diff", diff) {
-		t.Fatal("ordinary diff symbol locator no longer follows symbol evidence semantics")
+	if ReviewDiffCoversTarget("foo.go:diff", diff) {
+		t.Fatal("Go symbol target was incorrectly proven by diff substring evidence")
 	}
 }
