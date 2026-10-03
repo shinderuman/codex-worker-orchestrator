@@ -158,6 +158,34 @@ func TestPreexistingUntrackedLegacyPathListIsRejected(t *testing.T) {
 	}
 }
 
+func TestPreexistingUntrackedRejectsSymlinkParentEscape(t *testing.T) {
+	repoRoot, cfg, st := newPreexistingUntrackedFixture(t, "symlink-parent")
+	inside := filepath.Join(repoRoot, "nested")
+	if err := os.MkdirAll(inside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(inside, "preexisting.txt"), "inside\n")
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.RemoveAll(inside); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "preexisting.txt"), "outside secret\n")
+	if err := os.Symlink(outside, inside); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, available, err := ChangedPaths(repoRoot, st); err == nil || available || !strings.Contains(err.Error(), "symlink parent") {
+		t.Fatalf("ChangedPaths followed symlink parent: available=%v err=%v", available, err)
+	}
+	if _, available, err := Capture(repoRoot, st); err == nil || available || !strings.Contains(err.Error(), "symlink parent") {
+		t.Fatalf("Capture followed symlink parent: available=%v err=%v", available, err)
+	}
+}
+
 func newPreexistingUntrackedFixture(t *testing.T, suffix string) (string, config.AppConfig, *state.StateStore) {
 	t.Helper()
 	root := t.TempDir()
