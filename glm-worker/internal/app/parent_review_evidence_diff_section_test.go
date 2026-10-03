@@ -26,24 +26,28 @@ func TestParentReviewDiffCoversGitOctalQuotedPath(t *testing.T) {
 	}
 }
 
-func TestParentReviewDiffCoversUnquotedPathWithSpaces(t *testing.T) {
+func TestParentReviewDiffSectionHandlesUnquotedPathWithSpacesWithoutAdmittingTarget(t *testing.T) {
+	body := "diff --git a/hello world.go b/hello world.go\n--- a/hello world.go\n+++ b/hello world.go\n@@ -1 +1 @@\n-old\n+new\n"
 	diff := parentevidence.DiffBody{
-		Body:  "diff --git a/hello world.go b/hello world.go\n--- a/hello world.go\n+++ b/hello world.go\n@@ -1 +1 @@\n-old\n+new\n",
+		Body:  body,
 		Files: []parentevidence.DiffFile{{Path: "hello world.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	if !parentevidence.ReviewDiffCoversTarget("hello world.go:1", diff) {
-		t.Fatal("unquoted diff path with spaces did not cover matching line target")
+	if parentevidence.ReviewDiffCoversTarget("hello world.go:1", diff) {
+		t.Fatal("non-canonical spaced path counted as review proof")
+	}
+	if section := parentevidence.ReviewDiffFileSection(body, "hello world.go"); section == "" {
+		t.Fatal("diff section parser lost support for unquoted paths with spaces")
 	}
 }
 
-func TestParentReviewDiffCoversUnquotedRenameWithSpaces(t *testing.T) {
+func TestParentReviewDiffSectionHandlesUnquotedRenameWithSpacesWithoutAdmittingTarget(t *testing.T) {
 	body := "diff --git a/old name.go b/new name.go\nsimilarity index 80%\n--- a/old name.go\n+++ b/new name.go\n@@ -1 +1 @@\n-old\n+new\n"
 	diff := parentevidence.DiffBody{
 		Body:  body,
 		Files: []parentevidence.DiffFile{{Path: "new name.go", Status: "R", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	if !parentevidence.ReviewDiffCoversTarget("new name.go:1", diff) {
-		t.Fatal("unquoted renamed path with spaces did not cover matching line target")
+	if parentevidence.ReviewDiffCoversTarget("new name.go:1", diff) {
+		t.Fatal("non-canonical renamed spaced path counted as review proof")
 	}
 	if section := parentevidence.ReviewDiffFileSection(body, "old name.go"); section == "" {
 		t.Fatal("unquoted rename old path with spaces did not resolve its diff section")
