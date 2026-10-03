@@ -94,8 +94,8 @@ func TestAutoResumeScheduleSecondPrecision(t *testing.T) {
 		resetAt     string
 		wantResumed string
 	}{
-		{"second precision reset", "2026-07-22T14:06:34+08:00", "2026-07-22T14:08:34+08:00"},
-		{"sub-second reset", "2026-07-22T14:06:34.325+08:00", "2026-07-22T14:08:34+08:00"},
+		{"second precision reset", "2026-07-22T14:06:34+08:00", "2026-07-22T14:06:39+08:00"},
+		{"sub-second reset", "2026-07-22T14:06:34.325+08:00", "2026-07-22T14:06:39+08:00"},
 	}
 
 	for _, c := range cases {
