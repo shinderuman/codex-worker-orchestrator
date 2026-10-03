@@ -14,7 +14,7 @@ const (
 	internalReviewPacketTarget = "PACKET"
 )
 
-func canonicalReviewTargets(values []string) []string {
+func canonicalReviewTargets(values []string) ([]string, error) {
 	targets := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, raw := range values {
@@ -22,8 +22,8 @@ func canonicalReviewTargets(values []string) []string {
 		if value == "" || value == internalReviewNoTarget || value == internalReviewPacketTarget {
 			continue
 		}
-		if _, _, err := reviewtarget.Parse(value); err != nil {
-			continue
+		if _, err := reviewtarget.ParseTarget(value); err != nil {
+			return nil, fmt.Errorf("review target %q is not canonical: %w", value, err)
 		}
 		if _, duplicate := seen[value]; duplicate {
 			continue
@@ -31,7 +31,7 @@ func canonicalReviewTargets(values []string) []string {
 		seen[value] = struct{}{}
 		targets = append(targets, value)
 	}
-	return targets
+	return targets, nil
 }
 
 func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
@@ -52,8 +52,12 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 			continue
 		}
 		target := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
-		if _, _, err := reviewtarget.Parse(target); err != nil {
+		parsed, err := reviewtarget.ParseTarget(target)
+		if err != nil {
 			return nil, fmt.Errorf("current task review targets: changed path %q cannot be represented as a review target: %w", path, err)
+		}
+		if err := reviewtarget.ValidateProofAddressable(w.config.RepoRoot, parsed); err != nil {
+			return nil, fmt.Errorf("current task review targets: changed path %q has no whole-diff proof: %w", path, err)
 		}
 		if _, duplicate := seen[target]; duplicate {
 			continue
@@ -68,8 +72,21 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 }
 
 func (w *Workflow) resultOrCurrentReviewTargets(result packet.Result) ([]string, error) {
-	if targets := canonicalReviewTargets(result.Targets); len(targets) > 0 {
-		return targets, nil
+	targets, err := canonicalReviewTargets(result.Targets)
+	if err != nil {
+		return nil, err
 	}
-	return w.currentReviewDiffTargets()
+	if len(targets) == 0 {
+		return w.currentReviewDiffTargets()
+	}
+	for _, raw := range targets {
+		target, err := reviewtarget.ParseTarget(raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := reviewtarget.ValidateProofAddressable(w.config.RepoRoot, target); err != nil {
+			return nil, fmt.Errorf("review target %q has no proof path: %w", raw, err)
+		}
+	}
+	return targets, nil
 }
