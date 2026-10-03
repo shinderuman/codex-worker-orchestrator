@@ -186,27 +186,29 @@ func TestWebGPTAutofixRejectsResidualFixableViolationAfterConvergence(t *testing
 }
 
 func TestWebGPTAutofixRejectsDeterministicCycle(t *testing.T) {
-	fixture := newWebGPTAutofixFixture(t)
-	result, _, err := fixture.prepare(t, "cycle", fixture.branch, fixture.expected)
-	if err == nil || result.Validation != "fail" || result.Publication != "not_published" || result.Error != "deterministic_fix_cycle" {
-		t.Fatalf("result = %#v, err = %v", result, err)
-	}
-	convergence := readAutofixConvergence(t, result.DeterministicReport)
-	if convergence.State != DeterministicFixCycle || convergence.Iterations != 2 || !convergence.ChangesProduced {
-		t.Fatalf("cycle = %#v", convergence)
-	}
-	fixture.requireRemoteHead(t, fixture.expected)
+	requireAutofixDeterministicFailure(t, "cycle", "deterministic_fix_cycle", DeterministicFixCycle, 2)
 }
 
 func TestWebGPTAutofixRejectsDeterministicIterationBound(t *testing.T) {
+	requireAutofixDeterministicFailure(
+		t,
+		"bound",
+		"deterministic_fix_iteration_bound_exhausted",
+		DeterministicFixBoundExhausted,
+		8,
+	)
+}
+
+func requireAutofixDeterministicFailure(t *testing.T, mode, errorCode, state string, iterations int) {
+	t.Helper()
 	fixture := newWebGPTAutofixFixture(t)
-	result, _, err := fixture.prepare(t, "bound", fixture.branch, fixture.expected)
-	if err == nil || result.Validation != "fail" || result.Publication != "not_published" || result.Error != "deterministic_fix_iteration_bound_exhausted" {
+	result, _, err := fixture.prepare(t, mode, fixture.branch, fixture.expected)
+	if err == nil || result.Validation != "fail" || result.Publication != "not_published" || result.Error != errorCode {
 		t.Fatalf("result = %#v, err = %v", result, err)
 	}
 	convergence := readAutofixConvergence(t, result.DeterministicReport)
-	if convergence.State != DeterministicFixBoundExhausted || convergence.Iterations != 8 || !convergence.ChangesProduced {
-		t.Fatalf("bound = %#v", convergence)
+	if convergence.State != state || convergence.Iterations != iterations || !convergence.ChangesProduced {
+		t.Fatalf("convergence = %#v", convergence)
 	}
 	fixture.requireRemoteHead(t, fixture.expected)
 }
