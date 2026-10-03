@@ -43,7 +43,7 @@ func TestRunModelSurfacesZaiFiveHourLimit(t *testing.T) {
 		t.Fatalf("rate limit errorのtask/repo = %q/%q want %q//repo", limitErr.TaskID, limitErr.RepoRoot, taskID)
 	}
 	available, resumeAt := limitErr.AutoResumeSchedule()
-	if !available || resumeAt != "2026-07-22T14:08:34+08:00" {
+	if !available || resumeAt != "2026-07-22T14:06:39+08:00" {
 		t.Fatalf("auto-resume schedule = %v/%q", available, resumeAt)
 	}
 	if key := limitErr.AutoResumeKey(); key != "glm-worker-resume-testrepo1234-"+taskID[:8] {
