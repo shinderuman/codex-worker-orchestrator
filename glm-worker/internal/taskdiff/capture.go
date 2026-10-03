@@ -105,34 +105,41 @@ func BaselineWorktreePathPatches(repoRoot string, st *state.StateStore, paths []
 
 	patches := make(map[string][]byte, len(paths))
 	for _, path := range paths {
-		if entry, ok := preexistingByPath[filepath.ToSlash(path)]; ok {
-			_, nowTracked := currentTracked[entry.Path]
-			patch, differs, err := preexistingUntrackedPathPatch(repoRoot, entry, nowTracked)
-			if err != nil {
-				return nil, err
-			}
-			if differs {
-				patches[entry.Path] = patch
-			}
-			continue
-		}
-		patch, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--no-renames", "--unified=0", "--no-ext-diff", "--no-color", "--", path)
-		if err != nil {
-			return nil, fmt.Errorf("capture task baseline diff %s: %w", path, err)
-		}
-		if len(patch) != 0 {
-			patches[path] = patch
-			continue
-		}
-		tracked, err := baselineIndexHasPath(repoRoot, indexPath, path)
+		key, patch, differs, err := baselineWorktreePathPatch(repoRoot, indexPath, path, preexistingByPath, currentTracked)
 		if err != nil {
 			return nil, err
 		}
-		if !tracked {
-			patches[path] = nil
+		if differs {
+			patches[key] = patch
 		}
 	}
 	return patches, nil
+}
+
+func baselineWorktreePathPatch(
+	repoRoot string,
+	indexPath string,
+	path string,
+	preexistingByPath map[string]state.UntrackedBaselineEntry,
+	currentTracked map[string]struct{},
+) (string, []byte, bool, error) {
+	if entry, ok := preexistingByPath[filepath.ToSlash(path)]; ok {
+		_, nowTracked := currentTracked[entry.Path]
+		patch, differs, err := preexistingUntrackedPathPatch(repoRoot, entry, nowTracked)
+		return entry.Path, patch, differs, err
+	}
+	patch, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--no-renames", "--unified=0", "--no-ext-diff", "--no-color", "--", path)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("capture task baseline diff %s: %w", path, err)
+	}
+	if len(patch) != 0 {
+		return path, patch, true, nil
+	}
+	tracked, err := baselineIndexHasPath(repoRoot, indexPath, path)
+	if err != nil {
+		return "", nil, false, err
+	}
+	return path, nil, !tracked, nil
 }
 
 func baselineIndexHasPath(repoRoot, indexPath, path string) (bool, error) {
