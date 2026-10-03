@@ -19,7 +19,7 @@ type installTransactionJournal struct {
 }
 
 type installTransactionSurface struct {
-	Path string                   `json:"path"`
+	Path string                  `json:"path"`
 	Pre  installTransactionImage `json:"pre"`
 	Post installTransactionImage `json:"post"`
 }
