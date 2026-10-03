@@ -1,7 +1,6 @@
 package reviewtarget
 
 import (
-	"errors"
 	"fmt"
 	"go/token"
 	"path/filepath"
@@ -10,14 +9,6 @@ import (
 )
 
 type LocatorKind string
-
-const (
-	WholeFileDiffLocator = "@diff"
-
-	LocatorLineRange LocatorKind = "line_range"
-	LocatorWholeDiff LocatorKind = "whole_diff"
-	LocatorGoSymbol  LocatorKind = "go_symbol"
-)
 
 type Target struct {
 	Path      string
@@ -35,27 +26,18 @@ type ParseError struct {
 	Correction string
 }
 
+const (
+	WholeFileDiffLocator = "@diff"
+	canonicalCorrection  = "use repository-relative path:N, path:N-M, path:@diff, or for Go source path:TopLevel / path:Type.Member"
+
+	LocatorLineRange LocatorKind = "line_range"
+	LocatorWholeDiff LocatorKind = "whole_diff"
+	LocatorGoSymbol  LocatorKind = "go_symbol"
+)
+
 func (e *ParseError) Error() string {
 	return fmt.Sprintf("review target [%s] %q is not canonical; correction=%s", e.Code, e.Target, e.Correction)
 }
-
-func ParseErrorCode(err error) string {
-	var target *ParseError
-	if errors.As(err, &target) {
-		return target.Code
-	}
-	return "invalid"
-}
-
-func ParseCorrection(err error) string {
-	var target *ParseError
-	if errors.As(err, &target) {
-		return target.Correction
-	}
-	return canonicalCorrection
-}
-
-const canonicalCorrection = "use repository-relative path:N, path:N-M, path:@diff, or for Go source path:TopLevel / path:Type.Member"
 
 func Parse(raw string) (string, string, error) {
 	target, err := ParseTarget(raw)
