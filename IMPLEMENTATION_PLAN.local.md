@@ -17,7 +17,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-locator-identity.md`
 - `IMPLEMENTATION_TASKS/parent-review-evidence-coverage-accumulation.md`
-- `IMPLEMENTATION_TASKS/codex-install-interruption-recovery.md`
 - `IMPLEMENTATION_TASKS/cli-install-interruption-recovery.md`
 - `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
 - `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`

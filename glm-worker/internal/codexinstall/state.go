@@ -116,17 +116,25 @@ func validateInstallStateConfig(records map[string]managedConfigRecord) error {
 	return nil
 }
 
-func writeState(codexDir string, state installState) error {
+func encodeInstallState(state installState) ([]byte, error) {
 	state.Version = stateVersion
+	state.Files = append([]managedFileRecord(nil), state.Files...)
 	sort.Slice(state.Files, func(i, j int) bool { return state.Files[i].Path < state.Files[j].Path })
 	if len(state.Config) == 0 {
 		state.Config = nil
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode Codex install state: %w", err)
+		return nil, fmt.Errorf("encode Codex install state: %w", err)
 	}
-	data = append(data, '\n')
+	return append(data, '\n'), nil
+}
+
+func writeState(codexDir string, state installState) error {
+	data, err := encodeInstallState(state)
+	if err != nil {
+		return err
+	}
 	path := statePath(codexDir)
 	if err := writeAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("write Codex install state: %w", err)

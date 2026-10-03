@@ -26,6 +26,9 @@ func Install(repoRoot, codexDir string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if recoveryErr := recoverInterruptedInstall(codexDir); recoveryErr != nil {
+		return joinInstallLockError(recoveryErr, lock.Close())
+	}
 	preparation, prepareErr := prepareInstall(repoRoot, codexDir)
 	if prepareErr != nil {
 		return joinInstallLockError(prepareErr, lock.Close())
