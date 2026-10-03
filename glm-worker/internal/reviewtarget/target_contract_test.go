@@ -36,6 +36,9 @@ func TestParseTargetRejectsUnprovableLocatorShapes(t *testing.T) {
 		"a.go:10-20(notes)",
 		"a.go:First,Second",
 		"a.go:Runner.Run.More",
+		"a.go:_",
+		"a.go:Runner._",
+		"a.go:_.Run",
 		"a.md:Heading",
 	} {
 		_, err := ParseTarget(target)
