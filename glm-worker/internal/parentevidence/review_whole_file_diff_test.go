@@ -12,11 +12,11 @@ func TestWholeFileDiffLocatorProducesDiffClaim(t *testing.T) {
 		Body:  "diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []DiffFile{{Path: "foo.go", Status: "M", HeadBlob: "head", WorktreeSHA: "worktree"}},
 	}
-	claims, ok := ReviewClaims([]string{"foo.go:" + reviewtarget.WholeFileDiffLocator}, []Part{{
-		Kind: "diff", Digest: "digest", Locator: "git diff HEAD -- foo.go", Diff: &diff,
+	claim, ok := reviewClaimForTarget("foo.go:"+reviewtarget.WholeFileDiffLocator, []Part{{
+		Kind: "diff", Status: PartProjected, Digest: "digest", Locator: "git diff HEAD -- foo.go", Diff: &diff,
 	}})
-	if !ok || len(claims) != 1 || claims[0].Kind != "diff" {
-		t.Fatalf("whole-file diff claims = %#v complete=%v", claims, ok)
+	if !ok || claim.Kind != "diff" {
+		t.Fatalf("whole-file diff claim = %#v complete=%v", claim, ok)
 	}
 }
 
