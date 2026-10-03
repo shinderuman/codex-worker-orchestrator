@@ -94,7 +94,7 @@ func TestNewTaskObservationalStatsFailureDoesNotUndoCanonicalCommit(t *testing.T
 	if newLease != oldLease+1 {
 		t.Fatalf("parent evidence lease = %d, want %d", newLease, oldLease+1)
 	}
-	for _, name := range []string{"worker.id", "worker.ready", "reviewer.id", "reviewer.ready", "pending-decision"} {
+	for _, name := range []string{"worker.id", "worker.ready", "reviewer.id", "reviewer.ready", "pending-decision", baselineUntrackedFile} {
 		if st.Exists(name) {
 			t.Fatalf("old task state survived committed transition: %s", name)
 		}
@@ -108,12 +108,13 @@ func newAtomicTransitionFixture(t *testing.T) *StateStore {
 		t.Fatal(err)
 	}
 	for name, value := range map[string]string{
-		"worker.id":        "old-worker",
-		"worker.ready":     "1",
-		"reviewer.id":      "old-reviewer",
-		"reviewer.ready":   "1",
-		"pending-decision": "old-decision",
-		"baseline-head":    "old-head",
+		"worker.id":            "old-worker",
+		"worker.ready":         "1",
+		"reviewer.id":          "old-reviewer",
+		"reviewer.ready":       "1",
+		"pending-decision":     "old-decision",
+		"baseline-head":        "old-head",
+		baselineUntrackedFile: `{"version":1,"entries":[]}`,
 	} {
 		if err := st.Write(name, value); err != nil {
 			t.Fatal(err)
