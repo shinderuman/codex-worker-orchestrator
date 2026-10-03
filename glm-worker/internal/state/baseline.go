@@ -36,7 +36,21 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 	if !repository {
 		return removeGitBaseline(state)
 	}
+	captured, err := captureGitBaselinePatches(cfg.RepoRoot, state)
+	if err != nil || !captured {
+		return err
+	}
+	captured, err = captureGitBaselineUntracked(cfg.RepoRoot, state)
+	if err != nil || !captured {
+		return err
+	}
+	if unborn {
+		return state.Remove("baseline-head")
+	}
+	return state.Write("baseline-head", head)
+}
 
+func captureGitBaselinePatches(repoRoot string, state *StateStore) (bool, error) {
 	commands := []struct {
 		name string
 		args []string
@@ -45,41 +59,41 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		{name: "baseline-worktree.patch", args: []string{"diff", "--binary", "--no-ext-diff"}},
 		{name: "baseline-index.patch", args: []string{"diff", "--cached", "--binary", "--no-ext-diff"}},
 	}
-
 	for _, item := range commands {
 		command := exec.Command("git", item.args...)
-		command.Dir = cfg.RepoRoot
+		command.Dir = repoRoot
 		output, err := command.Output()
 		if err != nil {
-			if err := removeGitBaseline(state); err != nil {
-				return err
-			}
-			return nil
+			return false, clearUnavailableGitBaseline(state)
 		}
 		if err := state.Write(item.name, string(output)); err != nil {
-			return err
+			return false, err
 		}
 	}
-	untracked := exec.Command("git", "ls-files", "-z", "--others", "--exclude-standard")
-	untracked.Dir = cfg.RepoRoot
-	untrackedOutput, err := untracked.Output()
-	if err != nil {
-		if err := removeGitBaseline(state); err != nil {
-			return err
-		}
-		return nil
-	}
-	if err := captureUntrackedBaselineSnapshot(cfg.RepoRoot, state, untrackedOutput); err != nil {
-		if cleanupErr := removeGitBaseline(state); cleanupErr != nil {
-			return fmt.Errorf("capture untracked baseline: %w; cleanup failed: %w", err, cleanupErr)
-		}
-		return fmt.Errorf("capture untracked baseline: %w", err)
-	}
+	return true, nil
+}
 
-	if unborn {
-		return state.Remove("baseline-head")
+func captureGitBaselineUntracked(repoRoot string, state *StateStore) (bool, error) {
+	command := exec.Command("git", "ls-files", "-z", "--others", "--exclude-standard")
+	command.Dir = repoRoot
+	output, err := command.Output()
+	if err != nil {
+		return false, clearUnavailableGitBaseline(state)
 	}
-	return state.Write("baseline-head", head)
+	if err := captureUntrackedBaselineSnapshot(repoRoot, state, output); err != nil {
+		if cleanupErr := removeGitBaseline(state); cleanupErr != nil {
+			return false, fmt.Errorf("capture untracked baseline: %w; cleanup failed: %w", err, cleanupErr)
+		}
+		return false, fmt.Errorf("capture untracked baseline: %w", err)
+	}
+	return true, nil
+}
+
+func clearUnavailableGitBaseline(state *StateStore) error {
+	if err := removeGitBaseline(state); err != nil {
+		return err
+	}
+	return nil
 }
 
 func captureGitBaselineHead(repoRoot string) (head string, unborn bool, repository bool, err error) {
