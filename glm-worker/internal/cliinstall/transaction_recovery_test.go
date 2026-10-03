@@ -44,8 +44,8 @@ func TestCLIInstallRecoversInterruptedUpgrade(t *testing.T) {
 		"CLI_INSTALL_RECOVERY_BIN="+binDir,
 	)
 	output, err := cmd.CombinedOutput()
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok || exitErr.ExitCode() != 77 {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 77 {
 		t.Fatalf("child exit = %v, output = %s", err, output)
 	}
 
