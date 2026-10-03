@@ -38,7 +38,10 @@ type Report struct {
 	DeterministicConvergence *DeterministicFixConvergence `json:"deterministic_convergence,omitempty"`
 }
 
-const FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
+const (
+	FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
+	reportStatusFail                 = "fail"
+)
 
 func makeReport(fixed int, violations []Violation) Report {
 	sort.Slice(violations, func(i, j int) bool {
@@ -55,13 +58,13 @@ func makeReport(fixed int, violations []Violation) Report {
 	})
 	status := "pass"
 	if len(violations) > 0 {
-		status = "fail"
+		status = reportStatusFail
 	}
 	return Report{Status: status, Fixed: fixed, Violations: violations}
 }
 
 func IsViolation(report Report) bool {
-	return report.Status == "fail" && len(report.Violations) > 0
+	return report.Status == reportStatusFail && len(report.Violations) > 0
 }
 
 func HasFixableViolation(report Report) bool {
