@@ -87,10 +87,11 @@ func runDeterministicAutofix(root, controlRoot string, base commandRunner) (Repo
 	runner := controlledCommandRunner{base: base, targetRoot: root, controlRoot: controlRoot}
 
 	for iteration := 1; iteration <= deterministicAutofixMaxIterations; iteration++ {
-		paths, next, err := deterministicAutofixIteration(root, paths, runner)
-		if err != nil {
-			return Report{}, err
+		nextPaths, next, iterationErr := deterministicAutofixIteration(root, paths, runner)
+		if iterationErr != nil {
+			return Report{}, iterationErr
 		}
+		paths = nextPaths
 		if changedSnapshotCount(state.current, next) == 0 {
 			return state.convergedReport(next, iteration), nil
 		}
