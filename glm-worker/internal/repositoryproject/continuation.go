@@ -202,12 +202,12 @@ func PostCompletionProjection(prepared PostCompletionPlan, graph *TaskGraph) Par
 		if len(prepared.Active) != 1 {
 			return ParentRequestProjection(UnknownContinuation(ReasonActiveTaskUnresolved), true)
 		}
-		return admittedCompletionProjection(Continuation{
+		return ParentRequestProjection(Continuation{
 			State:          ContinuationContinueNow,
 			Task:           prepared.Active[0],
 			RequiredAction: ActionStart,
 			Reason:         ReasonPostCompletionActive,
-		})
+		}, false)
 	case PostCompletionBlocked:
 		return nonGoalBlockedProjection(prepared, graph)
 	case PostCompletionExhausted:
