@@ -158,7 +158,7 @@ func newCLIInstallTransactionJournal(
 			Name:        item.action.name,
 			Target:      filepath.Clean(item.action.target),
 			Replacement: filepath.Clean(item.replacement),
-			Backup:      filepath.Clean(item.backup),
+			Backup:      cleanOptionalCLIInstallPath(item.backup),
 			Pre:         pre,
 			Post:        post,
 		})
@@ -347,7 +347,7 @@ func validateCLIInstallTransactionJournal(journal cliInstallTransactionJournal, 
 			if !validCLIInstallTempPath(binary.Backup, destination, "."+binary.Name+"-backup-") {
 				return fmt.Errorf("invalid CLI install transaction backup path: %s", binary.Name)
 			}
-		} else if binary.Backup != "." && binary.Backup != "" {
+		} else if binary.Backup != "" {
 			return fmt.Errorf("unexpected CLI install transaction backup path: %s", binary.Name)
 		}
 		if err := validateCLIInstallTransactionImage(binary.Pre); err != nil {
@@ -361,11 +361,18 @@ func validateCLIInstallTransactionJournal(journal cliInstallTransactionJournal, 
 }
 
 func validCLIInstallTempPath(path, parent, prefix string) bool {
-	if path == "" || path == "." || filepath.Dir(path) != filepath.Clean(parent) {
+	if path == "" || filepath.Dir(path) != filepath.Clean(parent) {
 		return false
 	}
 	base := filepath.Base(path)
 	return strings.HasPrefix(base, prefix) && strings.HasSuffix(base, ".tmp")
+}
+
+func cleanOptionalCLIInstallPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	return filepath.Clean(path)
 }
 
 func validateCLIInstallTransactionImage(image cliInstallTransactionFileImage) error {
