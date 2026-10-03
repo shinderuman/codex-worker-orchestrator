@@ -7,13 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
-	"path/filepath"
+
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -318,13 +316,6 @@ type codexRolloutToolPayload struct {
 	Output json.RawMessage `json:"output"`
 }
 
-type analysisValidationEvent struct {
-	RunID  string
-	Form   string
-	Result string
-	At     time.Time
-}
-
 type analysisExecutionBoundary struct {
 	status   string
 	end      time.Time
@@ -351,10 +342,6 @@ type analysisTokenSegment struct {
 
 const bundleAnalysisIndexVersion = 5
 
-const bundleAnalysisEntryPath = "analysis-index.json"
-
-const bundleAnalysisRunsArchivePrefix = "current-state/diagnostics/quality-gate-runs/"
-
 const (
 	analysisStatusAvailable     = "available"
 	analysisStatusCounted       = "counted"
@@ -375,19 +362,6 @@ const (
 	analysisAttributionSubsequent      = "unattributed-subsequent-request"
 )
 
-const (
-	analysisBasisTaskEventValidation   = "task-event-validation"
-	analysisBasisRoundSnapshotDigest   = "round-snapshot-digest"
-	analysisBasisWindowOverlap         = "window-overlap"
-	analysisBasisOutsideWindow         = "outside-window"
-	analysisBasisTaskScopedState       = "task-scoped-state-store"
-	analysisBasisModelCallSession      = "model-call-log-session"
-	analysisBasisCurrentState          = "bundle-time-current-state"
-	analysisBasisParentRolloutWindow   = "parent-rollout-window"
-	analysisBasisGuardianWindowOverlap = "guardian-window-overlap"
-	analysisBasisParentLogWindow       = "parent-log-window"
-)
-
 const analysisReasonRolloutScanFailed = "rollout-scan-failed"
 
 const analysisWindowEndBasisArchivedAt = "archived-at"
@@ -398,19 +372,11 @@ const analysisExecutionEndBasisLifecycleComplete = "lifecycle-complete"
 
 const analysisExecutionEndBasisLifecycleInterrupted = "lifecycle-interrupted"
 
-const analysisRetryAfterFail = "previous-task-validation-fail"
-
-const analysisRetryUnknown = "unknown"
-
 const analysisAmbiguityTargetConflicted = "target_call_id_conflicted"
 
 const analysisAmbiguitySourceConflicted = "source_call_id_conflicted"
 
 const analysisWaitYieldClassShort = "short"
-
-const analysisWaitYieldClassBounded = "bounded"
-
-const analysisWaitYieldClassLong = "long"
 
 const codexRolloutTaskStartedType = "task_started"
 
@@ -425,10 +391,6 @@ const codexRolloutCustomToolCallType = "custom_tool_call"
 const codexRolloutCustomToolCallOutputType = "custom_tool_call_output"
 
 const codexRolloutCompactedType = "compacted"
-
-const analysisWaitShortBoundMS = 60000
-
-const analysisWaitLongBoundMS = 21600000
 
 const codexRolloutTokenCountType = "token_count"
 
@@ -446,86 +408,6 @@ func analysisCollectionWindow(task bundleTask) (time.Time, time.Time, string) {
 func analysisTimestamp(value time.Time) *string {
 	encoded := value.UTC().Format(time.RFC3339Nano)
 	return &encoded
-}
-
-func (c *bundleCollector) addBundleAnalysisIndex(st *state.StateStore, task bundleTask, association codexAssociation) {
-	encoded, err := json.MarshalIndent(buildBundleAnalysisIndex(st, task, c, association), "", "  ")
-	if err != nil {
-		return
-	}
-	c.addData(bundleAnalysisEntryPath, append(encoded, '\n'))
-}
-
-func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *bundleCollector, association codexAssociation) bundleAnalysisIndex {
-	start, collectionEnd, collectionEndBasis := analysisCollectionWindow(task)
-	execution := resolveAnalysisExecutionBoundary(st, task.ID)
-	rolloutScan, rolloutScanErr := scanAnalysisRolloutWindow(collector, association, start, collectionEnd)
-	ownership := resolveAnalysisTaskOwnership(rolloutScan, start, collectionEnd, task.ID)
-	finalizationInterval := analysisTaskFinalizationInterval(execution, ownership)
-	eventRuns := analysisTaskEventValidationRuns(st, task.ID)
-	roundSeqByDigest := analysisRoundDigestSeqs(st, task.ID)
-	telemetry := scanAnalysisTelemetryCalls(st, task.ID)
-	validations, attributedRuns := collectAnalysisValidationRuns(collector, eventRuns, roundSeqByDigest, start, collectionEnd)
-	return bundleAnalysisIndex{
-		Version:     bundleAnalysisIndexVersion,
-		TaskID:      task.ID,
-		TaskStatus:  task.Status,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		Intervals: bundleAnalysisIntervals{
-			TaskExecution:      analysisExecutionInterval(start, execution),
-			ParentFinalization: finalizationInterval,
-			SubsequentRequests: analysisTaskSubsequentRequests(association, rolloutScan, rolloutScanErr, ownership, collectionEnd),
-			Collection: bundleAnalysisInterval{
-				Status:   analysisStatusAvailable,
-				Start:    analysisTimestamp(start),
-				End:      analysisTimestamp(collectionEnd),
-				EndBasis: collectionEndBasis,
-			},
-		},
-		ParentSession:  analysisParentSession(association),
-		RolloutWindow:  analysisRolloutWindow(association, rolloutScan, rolloutScanErr, start),
-		WaitCalls:      analysisWaitCalls(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd),
-		TokenDelta:     analysisExecutionTokenDeltaForOwnership(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd, ownership),
-		Finalization:   analysisTaskFinalizationTokenDelta(association, rolloutScan, rolloutScanErr, execution, ownership, finalizationInterval),
-		ValidationRuns: validations,
-		Retries:        analysisRetries(task, eventRuns, validations.Runs, telemetry),
-		Evidence:       analysisEvidence(collector, association, attributedRuns, validations.Runs),
-	}
-}
-
-func analysisParentSession(association codexAssociation) bundleAnalysisParent {
-	parent := bundleAnalysisParent{
-		Status: association.ParentStatus,
-		Detail: association.Detail,
-	}
-	if association.ParentStatus != codexStatusIncluded {
-		return parent
-	}
-	parent.ThreadID = association.ParentThreadID
-	parent.AssociationBasis = association.Basis
-	parent.RolloutArchivePath = codexRolloutArchivePath(association.ParentThreadID)
-	if len(association.rolloutChain()) > 1 {
-		parent.RolloutArchivePaths = association.rolloutArchivePaths()
-		parent.RolloutSources = association.parentSources()
-	}
-	return parent
-}
-
-func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAssociation, start, end time.Time) (bundleRolloutScan, error) {
-	if association.ParentStatus != codexStatusIncluded {
-		return bundleRolloutScan{}, nil
-	}
-	chain := association.rolloutChain()
-	for index := range chain {
-		if _, collected := collector.entries[codexRolloutArchivePathAt(association.ParentThreadID, index)]; !collected {
-			return bundleRolloutScan{}, fmt.Errorf("collected parent rollout evidence is missing: %s", codexRolloutArchivePathAt(association.ParentThreadID, index))
-		}
-	}
-	scan, err := scanCodexRolloutChainWindow(chain, start, end)
-	if err != nil {
-		return bundleRolloutScan{}, err
-	}
-	return scan, nil
 }
 
 func scanCodexRolloutChainWindow(chain []codexRollout, start, end time.Time) (bundleRolloutScan, error) {
@@ -757,30 +639,6 @@ func observeAnalysisRolloutTurnBoundary(scan *bundleRolloutScan, payload codexRo
 	}
 }
 
-func analysisRolloutWindow(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time) bundleAnalysisRollout {
-	rollout := bundleAnalysisRollout{Status: association.ParentStatus}
-	if association.ParentStatus != codexStatusIncluded {
-		return rollout
-	}
-	if scanErr != nil {
-		rollout.Status = analysisStatusUnreadable
-		rollout.Reason = analysisReasonRolloutScanFailed
-		rollout.Source = strings.Join(association.parentSources(), ";")
-		return rollout
-	}
-	if !scan.hasWindow {
-		return rollout
-	}
-	rollout.TotalBytes = scan.totalBytes
-	rollout.WindowStartOffset = scan.windowStart
-	rollout.WindowEndOffset = scan.windowEnd
-	rollout.WindowBytes = scan.windowEnd - scan.windowStart
-	if baseline, found := lastTokenAnchorAtOrBefore(scan, start); found {
-		rollout.BaselineOffset = baseline.Offset
-	}
-	return rollout
-}
-
 func lastTokenAnchorAtOrBefore(scan bundleRolloutScan, bound time.Time) (analysisRolloutTokenAnchor, bool) {
 	var found analysisRolloutTokenAnchor
 	observed := false
@@ -828,18 +686,6 @@ func resolveAnalysisOwningTurn(turns []analysisRolloutTurn, taskStart time.Time)
 	return analysisOwningTurn{status: analysisStatusAvailable, turn: containing[0]}
 }
 
-func analysisExecutionInterval(start time.Time, execution analysisExecutionBoundary) bundleAnalysisInterval {
-	interval := bundleAnalysisInterval{
-		Status: execution.status,
-		Start:  analysisTimestamp(start),
-	}
-	if execution.status == analysisStatusAvailable {
-		interval.End = analysisTimestamp(execution.end)
-		interval.EndBasis = execution.endBasis
-	}
-	return interval
-}
-
 func analysisFinalizationInterval(execution analysisExecutionBoundary, owning analysisOwningTurn) bundleAnalysisInterval {
 	interval := bundleAnalysisInterval{Status: analysisStatusUnknown}
 	if owning.status != analysisStatusAvailable {
@@ -863,449 +709,4 @@ func analysisFinalizationInterval(execution analysisExecutionBoundary, owning an
 	interval.Start = analysisTimestamp(execution.end)
 	interval.End = analysisTimestamp(owning.turn.CompletedAt)
 	return interval
-}
-
-func analysisSubsequentRequests(association codexAssociation, scan bundleRolloutScan, owning analysisOwningTurn, collectionEnd time.Time) bundleAnalysisSubsequents {
-	subsequent := bundleAnalysisSubsequents{
-		Status:      analysisStatusUnknown,
-		Attribution: analysisAttributionSubsequent,
-	}
-	if association.ParentStatus != codexStatusIncluded || owning.status != analysisStatusAvailable {
-		return subsequent
-	}
-	if collectionEnd.IsZero() {
-		return subsequent
-	}
-	if !owning.turn.HasComplete {
-		subsequent.Status = analysisStatusOpen
-		return subsequent
-	}
-	subsequent.Status = analysisStatusAvailable
-	for i := range scan.turns {
-		turn := &scan.turns[i]
-		if !turn.StartedAt.After(owning.turn.CompletedAt) {
-			continue
-		}
-		if turn.StartedAt.After(collectionEnd) {
-			continue
-		}
-		subsequent.Turns = append(subsequent.Turns, analysisSubsequentTurn(scan, turn, collectionEnd))
-	}
-	return subsequent
-}
-
-func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, collectionEnd time.Time) bundleAnalysisSubsequentTurn {
-	entry := bundleAnalysisSubsequentTurn{
-		TurnID:    turn.TurnID,
-		Status:    analysisStatusOpen,
-		StartedAt: turn.StartedAt.UTC().Format(time.RFC3339Nano),
-	}
-	if !turn.HasComplete || turn.CompletedAt.After(collectionEnd) {
-		return entry
-	}
-	completed := turn.CompletedAt.UTC().Format(time.RFC3339Nano)
-	entry.CompletedAt = &completed
-	delta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt)
-	entry.Status = delta.Status
-	entry.BaselineAt = delta.BaselineAt
-	entry.EndAt = delta.EndAt
-	if delta.Status != analysisStatusAvailable {
-		return entry
-	}
-	entry.InputTokens = delta.InputTokens
-	entry.CachedInputTokens = delta.CachedInputTokens
-	return entry
-}
-
-func collectAnalysisValidationRuns(collector *bundleCollector, eventRuns map[string]analysisValidationEvent, roundSeqByDigest map[string]int, start, end time.Time) (bundleAnalysisValidations, map[string]struct{}) {
-	validations := bundleAnalysisValidations{Status: analysisStatusNotCollected}
-	attributed := map[string]struct{}{}
-	runEntries := analysisRunArchiveEntries(collector)
-	if len(runEntries) == 0 {
-		return validations, attributed
-	}
-
-	validations.Status = analysisStatusAvailable
-	runs := make([]bundleAnalysisRun, 0, len(runEntries))
-	for runID, entry := range runEntries {
-		run := analysisRunRecord(runID, entry, eventRuns, roundSeqByDigest, start, end)
-		if run.Attribution == analysisAttributionTask {
-			attributed[runID] = struct{}{}
-		}
-		runs = append(runs, run)
-	}
-	sort.Slice(runs, func(i, j int) bool {
-		if runs[i].StartedAt == runs[j].StartedAt {
-			return runs[i].RunID < runs[j].RunID
-		}
-		return runs[i].StartedAt < runs[j].StartedAt
-	})
-	validations.Runs = runs
-	return validations, attributed
-}
-
-func analysisRunArchiveEntries(collector *bundleCollector) map[string]bundleEntry {
-	runEntries := map[string]bundleEntry{}
-	for archivePath, entry := range collector.entries {
-		if !strings.HasPrefix(archivePath, bundleAnalysisRunsArchivePrefix) {
-			continue
-		}
-		if !strings.HasSuffix(archivePath, "/"+qualitygate.RunFile) {
-			continue
-		}
-		relative := strings.TrimSuffix(strings.TrimPrefix(archivePath, bundleAnalysisRunsArchivePrefix), "/"+qualitygate.RunFile)
-		if qualitygate.ValidRunID(relative) {
-			runEntries[relative] = entry
-		}
-	}
-	return runEntries
-}
-
-func analysisTaskEventValidationRuns(st *state.StateStore, taskID string) map[string]analysisValidationEvent {
-	events := map[string]analysisValidationEvent{}
-	recordTaskEventValidationRuns(st.TaskEventLogPath(taskID), events)
-	return events
-}
-
-func recordTaskEventValidationRuns(eventPath string, events map[string]analysisValidationEvent) {
-	file, err := os.Open(eventPath)
-	if err != nil {
-		return
-	}
-	defer func() { _ = file.Close() }()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		record, err := state.ParseTaskEventLine(scanner.Bytes())
-		if err != nil || record.Kind != "validation" || record.Validation == nil {
-			continue
-		}
-		runID := validationEventRunID(record.Validation.Evidence)
-		if runID == "" {
-			continue
-		}
-		event := analysisValidationEvent{
-			RunID:  runID,
-			Form:   record.Validation.Form,
-			Result: record.Validation.Result,
-			At:     record.Timestamp,
-		}
-		if existing, duplicated := events[runID]; !duplicated || event.At.Before(existing.At) {
-			events[runID] = event
-		}
-	}
-}
-
-func validationEventRunID(evidence string) string {
-	if evidence == "" {
-		return ""
-	}
-	relative := strings.TrimPrefix(filepath.ToSlash(evidence), qualitygate.RunDirectory+"/")
-	runID, _, found := strings.Cut(relative, "/")
-	if !found || !qualitygate.ValidRunID(runID) {
-		return ""
-	}
-	return runID
-}
-
-func analysisRoundDigestSeqs(st *state.StateStore, taskID string) map[string]int {
-	records, err := st.ReadRoundRecords(taskID)
-	if err != nil {
-		return nil
-	}
-	digests := map[string]int{}
-	for _, record := range records {
-		key := roundSnapshotDigestKey(record.Snapshot.Head, record.Snapshot.IndexDigest, record.Snapshot.WorktreeDigest)
-		digests[key] = record.Seq
-	}
-	return digests
-}
-
-func roundSnapshotDigestKey(head, indexDigest, worktreeDigest string) string {
-	return strings.Join([]string{head, indexDigest, worktreeDigest}, "\x00")
-}
-
-func analysisRunRecord(runID string, entry bundleEntry, eventRuns map[string]analysisValidationEvent, roundSeqByDigest map[string]int, start, end time.Time) bundleAnalysisRun {
-	run := bundleAnalysisRun{
-		RunID:       runID,
-		ArchivePath: entry.ArchivePath,
-		Attribution: analysisAttributionUnknown,
-		Bases:       []string{},
-	}
-	record, err := readAnalysisRunRecord(entry.SourcePath)
-	if err != nil {
-		run.Bases = append(run.Bases, analysisStatusUnreadable)
-		return run
-	}
-	run.Form = record.Form
-	run.Result = record.Status
-	run.WorkingDir = record.WorkingDir
-	run.StartedAt = record.StartedAt.UTC().Format(time.RFC3339Nano)
-	if record.CompletedAt != nil {
-		run.CompletedAt = record.CompletedAt.UTC().Format(time.RFC3339Nano)
-	}
-	if _, linked := eventRuns[runID]; linked {
-		run.Attribution = analysisAttributionTask
-		run.Bases = append(run.Bases, analysisBasisTaskEventValidation)
-		return run
-	}
-	roundSeq, digestMatched := roundSeqByDigest[roundSnapshotDigestKey(record.Head, record.IndexDigest, record.WorktreeDigest)]
-	if digestMatched {
-		run.RoundSeq = roundSeq
-	}
-	overlaps := analysisRunOverlapsWindow(record, start, end)
-	switch {
-	case digestMatched && overlaps:
-		run.Attribution = analysisAttributionTask
-		run.Bases = append(run.Bases, analysisBasisRoundSnapshotDigest, analysisBasisWindowOverlap)
-	case overlaps:
-		run.Attribution = analysisAttributionWindowUnmatched
-		run.Bases = append(run.Bases, analysisBasisWindowOverlap)
-	case digestMatched:
-		run.Attribution = analysisAttributionExternal
-		run.Bases = append(run.Bases, analysisBasisRoundSnapshotDigest, analysisBasisOutsideWindow)
-	default:
-		run.Attribution = analysisAttributionExternal
-		run.Bases = append(run.Bases, analysisBasisOutsideWindow)
-	}
-	return run
-}
-
-func analysisRunOverlapsWindow(record qualitygate.RunRecord, start, end time.Time) bool {
-	if record.StartedAt.IsZero() || record.StartedAt.After(end) {
-		return false
-	}
-	if record.CompletedAt == nil {
-		return !record.StartedAt.Before(start)
-	}
-	return !record.CompletedAt.Before(start)
-}
-
-func readAnalysisRunRecord(sourcePath string) (qualitygate.RunRecord, error) {
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return qualitygate.RunRecord{}, err
-	}
-	var record qualitygate.RunRecord
-	if err := json.Unmarshal(data, &record); err != nil {
-		return qualitygate.RunRecord{}, err
-	}
-	return record, nil
-}
-
-func analysisRetries(task bundleTask, eventRuns map[string]analysisValidationEvent, runs []bundleAnalysisRun, telemetry analysisTelemetryScan) bundleAnalysisRetries {
-	retries := bundleAnalysisRetries{
-		WorkerCounters:     analysisWorkerRetryCounters(task.Stats),
-		ResumedModelCalls:  analysisResumedModelCalls(telemetry),
-		ModelCallRelations: analysisModelCallRelations(telemetry, task.ID),
-	}
-	byRunID := make(map[string]bundleAnalysisRun, len(runs))
-	for _, run := range runs {
-		byRunID[run.RunID] = run
-	}
-	retries.ValidationReruns = analysisValidationReruns(eventRuns, byRunID)
-	return retries
-}
-
-func analysisWorkerRetryCounters(stats state.TaskStats) map[string]int {
-	counters := map[string]int{}
-	for name, value := range map[string]int{
-		"rate_limits":          stats.RateLimits,
-		"provider_unavailable": stats.ProviderUnavailable,
-		"packet_compactions":   stats.PacketCompactions,
-		"resume_commands":      stats.ResumeCommands,
-		"auto_fix_rounds":      stats.AutoFixRounds,
-		"transient_retries":    stats.TransientRetries,
-	} {
-		if value > 0 {
-			counters[name] = value
-		}
-	}
-	if len(counters) == 0 {
-		return nil
-	}
-	return counters
-}
-
-func analysisResumedModelCalls(telemetry analysisTelemetryScan) bundleAnalysisCount {
-	count := bundleAnalysisCount{Status: telemetry.status}
-	if telemetry.status != analysisStatusAvailable {
-		return count
-	}
-	for _, call := range telemetry.calls {
-		if !call.conflicted() {
-			if call.Variants[0].Resumed {
-				count.Count++
-			}
-			continue
-		}
-		resumed, consistent := analysisConflictedCallResumed(call)
-		if !consistent {
-			count.Status = analysisStatusUnknown
-			count.Count = 0
-			return count
-		}
-		if resumed {
-			count.Count++
-		}
-	}
-	return count
-}
-
-func analysisConflictedCallResumed(call analysisTelemetryCall) (bool, bool) {
-	resumed := call.Variants[0].Resumed
-	for _, variant := range call.Variants[1:] {
-		if variant.Resumed != resumed {
-			return false, false
-		}
-	}
-	return resumed, true
-}
-
-func analysisValidationReruns(eventRuns map[string]analysisValidationEvent, runs map[string]bundleAnalysisRun) []bundleAnalysisRerun {
-	ordered := make([]analysisValidationEvent, 0, len(eventRuns))
-	for _, event := range eventRuns {
-		ordered = append(ordered, event)
-	}
-	sort.Slice(ordered, func(i, j int) bool {
-		if ordered[i].At.Equal(ordered[j].At) {
-			return ordered[i].RunID < ordered[j].RunID
-		}
-		return ordered[i].At.Before(ordered[j].At)
-	})
-
-	reruns := make([]bundleAnalysisRerun, 0)
-	previousByForm := map[string]analysisValidationEvent{}
-	for _, event := range ordered {
-		previous, existed := previousByForm[event.Form]
-		previousByForm[event.Form] = event
-		if !existed {
-			continue
-		}
-		rerun := bundleAnalysisRerun{
-			RunID:         event.RunID,
-			Form:          event.Form,
-			Reason:        analysisRetryUnknown,
-			PreviousRunID: previous.RunID,
-		}
-		if previous.Result == state.ValidationResultFail {
-			if _, collected := runs[event.RunID]; collected {
-				rerun.Reason = analysisRetryAfterFail
-			}
-		}
-		reruns = append(reruns, rerun)
-	}
-	if len(reruns) == 0 {
-		return nil
-	}
-	return reruns
-}
-
-func analysisEvidence(collector *bundleCollector, association codexAssociation, attributedRuns map[string]struct{}, runs []bundleAnalysisRun) bundleAnalysisEvidence {
-	external := map[string]struct{}{}
-	explained := make(map[string]struct{}, len(attributedRuns)+len(runs))
-	for runID := range attributedRuns {
-		explained[runID] = struct{}{}
-	}
-	for _, run := range runs {
-		if run.Attribution != analysisAttributionExternal {
-			continue
-		}
-		external[run.RunID] = struct{}{}
-		explained[run.RunID] = struct{}{}
-	}
-	return bundleAnalysisEvidence{
-		Task:          analysisTaskEvidence(collector),
-		ParentSession: analysisParentEvidence(collector, association),
-		Unattributed:  analysisUnattributedEvidence(collector, explained),
-		TaskExternal:  analysisExternalRunEvidence(external),
-	}
-}
-
-func analysisTaskEvidence(collector *bundleCollector) []bundleAnalysisEvidenceRef {
-	refs := []bundleAnalysisEvidenceRef{{ArchivePath: "task/", Basis: analysisBasisTaskScopedState}}
-	transcripts := make([]string, 0)
-	for archivePath := range collector.entries {
-		if strings.HasPrefix(archivePath, "claude-transcripts/") {
-			transcripts = append(transcripts, archivePath)
-		}
-	}
-	sort.Strings(transcripts)
-	for _, transcript := range transcripts {
-		refs = append(refs, bundleAnalysisEvidenceRef{ArchivePath: transcript, Basis: analysisBasisModelCallSession})
-	}
-	return refs
-}
-
-func analysisParentEvidence(collector *bundleCollector, association codexAssociation) []bundleAnalysisEvidenceRef {
-	if association.ParentStatus != codexStatusIncluded {
-		return nil
-	}
-	refs := []bundleAnalysisEvidenceRef{{
-		ArchivePath: codexRolloutArchivePath(association.ParentThreadID),
-		Basis:       association.Basis + ";" + analysisBasisParentRolloutWindow,
-	}}
-	for _, guardian := range association.Guardians {
-		refs = append(refs, bundleAnalysisEvidenceRef{
-			ArchivePath: codexGuardianArchivePath(guardian.ID),
-			Basis:       association.Basis + ";" + analysisBasisGuardianWindowOverlap,
-		})
-	}
-	logPaths := make([]string, 0)
-	for archivePath := range collector.entries {
-		if strings.HasPrefix(archivePath, "codex-parent/logs/") {
-			logPaths = append(logPaths, archivePath)
-		}
-	}
-	sort.Strings(logPaths)
-	for _, logPath := range logPaths {
-		refs = append(refs, bundleAnalysisEvidenceRef{
-			ArchivePath: logPath,
-			Basis:       association.Basis + ";" + analysisBasisParentLogWindow,
-		})
-	}
-	return refs
-}
-
-func analysisUnattributedEvidence(collector *bundleCollector, attributedRuns map[string]struct{}) []bundleAnalysisEvidenceRef {
-	refs := make([]bundleAnalysisEvidenceRef, 0)
-	for _, archivePath := range collector.unattributedList() {
-		if analysisRunAttributed(archivePath, attributedRuns) {
-			continue
-		}
-		refs = append(refs, bundleAnalysisEvidenceRef{ArchivePath: archivePath, Basis: analysisBasisCurrentState})
-	}
-	if len(refs) == 0 {
-		return nil
-	}
-	return refs
-}
-
-func analysisRunAttributed(archivePath string, attributedRuns map[string]struct{}) bool {
-	if !strings.HasPrefix(archivePath, bundleAnalysisRunsArchivePrefix) {
-		return false
-	}
-	remaining := strings.TrimPrefix(archivePath, bundleAnalysisRunsArchivePrefix)
-	for runID := range attributedRuns {
-		if strings.HasPrefix(remaining, runID+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-func analysisExternalRunEvidence(externalRuns map[string]struct{}) []bundleAnalysisEvidenceRef {
-	refs := make([]bundleAnalysisEvidenceRef, 0, len(externalRuns))
-	for runID := range externalRuns {
-		refs = append(refs, bundleAnalysisEvidenceRef{
-			ArchivePath: path.Join(bundleAnalysisRunsArchivePrefix, runID, qualitygate.RunFile),
-			Basis:       analysisBasisOutsideWindow,
-		})
-	}
-	sort.Slice(refs, func(i, j int) bool { return refs[i].ArchivePath < refs[j].ArchivePath })
-	if len(refs) == 0 {
-		return nil
-	}
-	return refs
 }

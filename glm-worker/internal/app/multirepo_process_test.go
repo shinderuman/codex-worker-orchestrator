@@ -1,5 +1,3 @@
-//go:build unix
-
 package app
 
 import (
@@ -10,12 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"time"
 )
 
 type multiRepoEnv struct {
@@ -63,7 +62,7 @@ hold)
 	exit 1
 	;;
 ratelimit)
-	echo "API Error: Request rejected (429) [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-08-23 12:00:00]" >&2
+	echo "API Error: Request rejected (429) [1308][Usage limit reached for month.]" >&2
 	exit 1
 	;;
 hold-with-tool)
@@ -145,65 +144,49 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	)
 	snapshotB := snapshotStateDir(t, stateB)
 
-	env.releaseHold(t)
+	stopped := env.run(t, env.repoA, "--stop")
+	if stopped.code != 0 || !strings.Contains(stopped.stdout, `"result":"interrupted"`) {
+		t.Fatalf("repo A停止が失敗しました: %+v", stopped)
+	}
 	holder.waitFailure(t)
-	if probe := ProbeRepoLock(filepath.Join(stateA, "lock")); probe.State != LockFree {
+	if probe := ProbeRepoLock(env.workflowLockPath(t, env.repoA)); probe.State != LockFree {
 		t.Fatalf("repo A process終了後にlockが解放されていません: %s", probe.State)
 	}
 	resetLost := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
-	if resetLost.code != 0 || !strings.Contains(resetLost.stdout, `"status":"reset"`) || !strings.Contains(resetLost.stdout, `"disposition":"abandon"`) {
-		t.Fatalf("repo A owner-lost taskの明示abandon resetが失敗しました: code=%d stdout=%s stderr=%s", resetLost.code, resetLost.stdout, resetLost.stderr)
-	}
-	assertStateDirUnchanged(t, stateB, snapshotB)
-
-	env.setStubMode(t, env.stubA, "ratelimit")
-	rateLimited := env.run(t, env.repoA, "repo A second task after recovery marker MRISOA2")
-	if rateLimited.code != 1 || !strings.Contains(rateLimited.stderr, `"kind":"rate_limited"`) {
-		t.Fatalf("rate-limit停止になりません: code=%d stderr=%s", rateLimited.code, rateLimited.stderr)
-	}
-	statusA := env.status(t, env.repoA)
-	rateLimitedStatus, ok := statusJSONField(t, statusA, "rate_limited").(map[string]any)
-	if !ok || rateLimitedStatus["limited"] != true {
-		t.Fatalf("repo Aがrate-limited stateになっていません: %s", statusA)
-	}
-	checkpointA := parseStateJSON(t, stateA, "resume-state.json")
-	if checkpointA["stop_kind"] != "rate-limited" || !strings.Contains(fmt.Sprint(checkpointA["request"]), "MRISOA2") {
-		t.Fatalf("repo Aのrate-limit checkpointが当該taskの停止状態を保持していません: %v", checkpointA["request"])
-	}
-	if _, err := os.Stat(filepath.Join(stateB, "resume-state.json")); !os.IsNotExist(err) {
-		t.Fatalf("完結済みrepo Bへcheckpointが残っています: %v", err)
+	if resetLost.code == 0 || !strings.Contains(resetLost.stderr, "legacy reset lifecycle is unavailable") {
+		t.Fatalf("repo A 廃止済みresetが拒否されません: code=%d stdout=%s stderr=%s", resetLost.code, resetLost.stdout, resetLost.stderr)
 	}
 	assertStateDirUnchanged(t, stateB, snapshotB)
 
 	env.setStubMode(t, env.stubA, "success")
 	resumed := env.run(t, env.repoA, "--resume")
 	if resumed.code != 0 || !strings.Contains(resumed.stdout, `"status":"PASS"`) {
-		t.Fatalf("rate-limit resumeが完結しません: code=%d stdout=%s stderr=%s", resumed.code, resumed.stdout, resumed.stderr)
+		t.Fatalf("停止後のresumeが完結しません: code=%d stdout=%s stderr=%s", resumed.code, resumed.stdout, resumed.stderr)
 	}
 	taskA2 := readStateFile(t, stateA, "task.id")
 	assertStateDirUnchanged(t, stateB, snapshotB)
-	assertRepoLocalObservability(t, stateA, taskA2, "MRISOA2")
+	assertRepoLocalObservability(t, stateA, taskA2, "MRISOA1")
 	assertRepoLocalObservability(t, stateB, taskB, "MRISOB")
 
 	reset := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
-	if reset.code != 0 || !strings.Contains(reset.stdout, `"status":"reset"`) || !strings.Contains(reset.stdout, `"disposition":"abandon"`) {
-		t.Fatalf("repo Aの明示abandon resetが失敗しました: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
+	if reset.code == 0 || !strings.Contains(reset.stderr, "legacy reset lifecycle is unavailable") {
+		t.Fatalf("repo Aの廃止済みresetが拒否されません: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
 	}
 	assertStateDirUnchanged(t, stateB, snapshotB)
-	if _, err := os.Stat(filepath.Join(stateA, "task.id")); !os.IsNotExist(err) {
-		t.Fatalf("repo A reset後もtask.idが残っています: %v", err)
+	if got := readStateFile(t, stateA, "task.id"); got != taskA1 || taskA2 != taskA1 {
+		t.Fatalf("停止・再開・reset拒否でtask identityが変化しました: %s / %s / %s", taskA1, taskA2, got)
 	}
 }
 
 func assertRepoLockSemantics(t *testing.T, env *multiRepoEnv, stateA string, stateB string, taskA1 string, taskB string) {
 	t.Helper()
-	if stateA == stateB || filepath.Join(stateA, "lock") == filepath.Join(stateB, "lock") {
+	if stateA == stateB || env.workflowLockPath(t, env.repoA) == env.workflowLockPath(t, env.repoB) {
 		t.Fatalf("state dir・lock pathが分離されていません: %s vs %s", stateA, stateB)
 	}
-	if probe := ProbeRepoLock(filepath.Join(stateA, "lock")); probe.State != LockHeld {
+	if probe := ProbeRepoLock(env.workflowLockPath(t, env.repoA)); probe.State != LockHeld {
 		t.Fatalf("repo Aのlockが保持されていません: %s pid=%s", probe.State, probe.PID)
 	}
-	if probe := ProbeRepoLock(filepath.Join(stateB, "lock")); probe.State != LockFree {
+	if probe := ProbeRepoLock(env.workflowLockPath(t, env.repoB)); probe.State != LockFree {
 		t.Fatalf("repo B完了後のlockが解放されていません: %s pid=%s", probe.State, probe.PID)
 	}
 
@@ -238,7 +221,7 @@ func assertRepoLockSemantics(t *testing.T, env *multiRepoEnv, stateA string, sta
 
 func assertSameRepoSecondProcessDenied(t *testing.T, env *multiRepoEnv, repo string) {
 	t.Helper()
-	denied := env.run(t, repo, "--reset")
+	denied := env.run(t, repo, "second task while owner is active")
 	if denied.code == 0 || !strings.Contains(denied.stderr, "another glm-worker is already running for this repository") {
 		t.Fatalf("同一repo 2本目のlock拒否が成立していません: code=%d stderr=%s", denied.code, denied.stderr)
 	}
@@ -266,7 +249,7 @@ func assertStateDirExcludes(t *testing.T, stateDir string, secret string, other 
 func assertRepoLocalObservability(t *testing.T, stateDir string, taskID string, marker string) {
 	t.Helper()
 	telemetry := readStateFile(t, stateDir, filepath.Join("telemetry", taskID+".jsonl"))
-	if !strings.Contains(telemetry, taskID) || !strings.Contains(telemetry, marker) {
+	if !strings.Contains(telemetry, taskID) || !strings.Contains(readStateFile(t, stateDir, "last-request"), marker) {
 		t.Fatalf("telemetryが当該taskの記録を含みません: task=%s marker=%s", taskID, marker)
 	}
 	events := readStateFile(t, stateDir, filepath.Join("events", taskID+".jsonl"))
@@ -382,80 +365,11 @@ func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {
 	if err := os.WriteFile(filepath.Join(dir, "corpus.md"), []byte(document), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run("add", "corpus.md")
+	writeAppTestFile(t, dir, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
+	writeAppTestFile(t, dir, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\nprocess task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+	run("add", ".")
 	run("commit", "-q", "-m", "initial")
 	return dir
-}
-
-func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin string) {
-	t.Helper()
-	sourceRoot := multiRepoSourceRepositoryRoot(t)
-	for _, path := range []string{
-		".golangci.yml",
-		".github/workflows/ci.yml",
-		".github/workflows/install-smoke.yml",
-		".githooks/post-merge",
-		"harnesslint",
-		"install.sh",
-		"install-quality-tools.sh",
-		"tests/install_quality_tools_smoke.sh",
-		"glm-worker/go.mod",
-		"glm-worker/internal/workflow/workflow.go",
-		"glm-worker/internal/workflow/review_flow.go",
-		"glm-worker/internal/workflow/quality_gate.go",
-	} {
-		copyMultiRepoFixtureFile(t, sourceRoot, repoRoot, path)
-	}
-	goVersion := strings.TrimPrefix(runtime.Version(), "go")
-	qualityTools := fmt.Sprintf("namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: %s\nlint-go: %s\ngolangci-lint: 2.7.0\ndeadcode: 0.50.0\nshellcheck: 0.11.0\nshfmt: 3.13.0\n", goVersion, goVersion)
-	if err := os.WriteFile(filepath.Join(repoRoot, "quality-tools.yml"), []byte(qualityTools), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	commentlint := "#!/bin/sh\nprintf '%s\\n' '{\"status\":\"pass\",\"fixed\":0,\"violations\":[]}'\n"
-	if err := os.WriteFile(filepath.Join(repoRoot, "commentlint"), []byte(commentlint), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repoRoot, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("git", "-C", repoRoot, "add", ".")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git add active harness fixture: %v: %s", err, output)
-	}
-	command = exec.Command("git", "-C", repoRoot, "commit", "-q", "-m", "activate repository harness")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git commit active harness fixture: %v: %s", err, output)
-	}
-	_ = qualityBin
-}
-
-func multiRepoSourceRepositoryRoot(t *testing.T) string {
-	t.Helper()
-	moduleRoot, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return filepath.Dir(moduleRoot)
-}
-
-func copyMultiRepoFixtureFile(t *testing.T, sourceRoot, targetRoot, path string) {
-	t.Helper()
-	source := filepath.Join(sourceRoot, filepath.FromSlash(path))
-	target := filepath.Join(targetRoot, filepath.FromSlash(path))
-	data, err := os.ReadFile(source)
-	if err != nil {
-		t.Fatalf("read fixture %s: %v", path, err)
-	}
-	info, err := os.Stat(source)
-	if err != nil {
-		t.Fatalf("stat fixture %s: %v", path, err)
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(target, data, info.Mode().Perm()); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func writeMultiRepoQualityToolStubs(t *testing.T, dir string) {
@@ -626,11 +540,11 @@ func findStateDirForRepo(sessions string, canonicalRepo string) string {
 	return ""
 }
 
-func (*multiRepoEnv) waitHeldWithWorkerSession(t *testing.T, stateDir string) {
+func (e *multiRepoEnv) waitHeldWithWorkerSession(t *testing.T, stateDir string) {
 	t.Helper()
 	deadline := time.Now().Add(multiRepoWaitTimeout)
 	for time.Now().Before(deadline) {
-		if ProbeRepoLock(filepath.Join(stateDir, "lock")).State == LockHeld &&
+		if ProbeRepoLock(e.workflowLockPath(t, readStateFile(t, stateDir, "repo-root"))).State == LockHeld &&
 			fileExists(filepath.Join(stateDir, "task.id")) &&
 			fileExists(filepath.Join(stateDir, "worker.id")) {
 			return
@@ -721,4 +635,13 @@ func statusJSONField(t *testing.T, output string, key string) any {
 		t.Fatalf("status出力に%qがありません: %q", key, output)
 	}
 	return value
+}
+
+func (e *multiRepoEnv) workflowLockPath(t *testing.T, repo string) string {
+	t.Helper()
+	path, err := controller.WorkflowLockPath(config.AppConfig{RepoRoot: repo, StateBase: filepath.Join(e.home, "sessions")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
 type pushBindingFixture struct {
@@ -249,19 +247,6 @@ func TestPushBindingRejectsInvalidArguments(t *testing.T) {
 			!strings.Contains(err.Error(), "usage: glm-parent-action push-binding") || output.Len() != 0 {
 			t.Fatalf("args = %v: err = %v output = %q", args, err, output.String())
 		}
-	}
-}
-
-func TestExecuteRoutesPushBindingAction(t *testing.T) {
-	fixture := newPushBindingFixture(t)
-	cfg := config.AppConfig{RepoRoot: fixture.repo}
-	var output bytes.Buffer
-	if err := execute(cfg, []string{"push-binding"}, &output, &output); err != nil {
-		t.Fatalf("execute: %v: %s", err, output.String())
-	}
-	result := decodePushBindingOutput(t, output)
-	if result.Status != "classified" || result.Classification != pushBindingClassificationSynced {
-		t.Fatalf("result = %#v", result)
 	}
 }
 

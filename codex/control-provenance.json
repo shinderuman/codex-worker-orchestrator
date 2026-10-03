@@ -907,19 +907,19 @@
     {
       "id": "stop-isolate-park-lifecycle",
       "classification": "machine-enforced",
-      "purpose": "Keep stop, interrupted isolation, and parent-wait park/unpark transitions within their distinct machine lifecycle states.",
+      "purpose": "Preserve interrupted calls through stop/resume, reject retired isolation/park authority, and serialize blocker transitions through the repository controller.",
       "machine_owners": [
         {
           "path": "glm-worker/internal/app/stop_endpoint.go",
           "symbol": "stopEndpointServer.handleConn"
         },
         {
-          "path": "glm-worker/internal/app/isolation.go",
-          "symbol": "isolateInterruptedTask"
+          "path": "glm-worker/internal/app/canonical_lifecycle_guard.go",
+          "symbol": "rejectLegacyStateLifecycle"
         },
         {
-          "path": "glm-worker/internal/state/park.go",
-          "symbol": "StateStore.EnterParked"
+          "path": "glm-worker/internal/controller/execution_operation.go",
+          "symbol": "Store.SuspendExecution"
         }
       ],
       "tests": [
@@ -928,12 +928,12 @@
           "symbol": "TestStopDuringRunningCallSavesInterruptedState"
         },
         {
-          "path": "glm-worker/internal/app/isolation_test.go",
-          "symbol": "TestIsolateRejectsNonUserInterruptedState"
+          "path": "glm-worker/internal/app/canonical_lifecycle_guard_test.go",
+          "symbol": "TestLegacyStateLifecycleIsRejectedAfterCanonicalCutover"
         },
         {
-          "path": "glm-worker/internal/workflow/park_test.go",
-          "symbol": "TestParkPreservesTaskStateAndCreatesInterruptWorktree"
+          "path": "glm-worker/internal/app/canonical_workflow_integration_test.go",
+          "symbol": "TestCanonicalWorkflow606F11DispatchAndRootResume"
         }
       ],
       "postconditions": [
@@ -942,12 +942,12 @@
           "symbol": "stopEndpointServer.buildResponse"
         },
         {
-          "path": "glm-worker/internal/app/isolation.go",
-          "symbol": "persistIsolationRecords"
+          "path": "glm-worker/internal/controller/execution_lane.go",
+          "symbol": "Store.MaterializeExecution"
         },
         {
-          "path": "glm-worker/internal/state/park.go",
-          "symbol": "StateStore.CommitUnpark"
+          "path": "glm-worker/internal/controller/execution_cleanup.go",
+          "symbol": "Store.CleanupExecution"
         }
       ],
       "projection_guards": [

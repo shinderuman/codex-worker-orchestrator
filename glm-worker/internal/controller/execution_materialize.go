@@ -12,8 +12,8 @@ import (
 const executionWorkspaceIdentityFile = "controller-workspace.json"
 
 func (s *Store) applyExecutionMaterialization(op ExecutionOperation) error {
-	if op.Workspace == nil || op.Rebound == nil || op.Attempt == nil || op.Lease == nil {
-		return fmt.Errorf("materialization payload is incomplete")
+	if err := validateMaterializationPayload(op); err != nil {
+		return err
 	}
 	if err := s.ensureExecutionLaneRegistration(*op.Workspace, op.Rebound.BaseOID); err != nil {
 		return err
@@ -25,19 +25,46 @@ func (s *Store) applyExecutionMaterialization(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
+	attempt, lease := materializedExecutionRecords(op, snapshot)
+	if err := s.writeMaterializedExecutionRecords(attempt, lease); err != nil {
+		return err
+	}
+	return s.commitMaterializedExecution(op, workspace, attempt, lease)
+}
+
+func validateMaterializationPayload(op ExecutionOperation) error {
+	if op.Workspace == nil || op.Rebound == nil || op.Attempt == nil || op.Lease == nil {
+		return fmt.Errorf("materialization payload is incomplete")
+	}
+	return nil
+}
+
+func materializedExecutionRecords(op ExecutionOperation, snapshot WorkspaceSnapshot) (AttemptRecord, ExecutionLease) {
 	attempt := *op.Attempt
 	attempt.BaselineSnapshotID = digestStrings(op.Rebound.BaseOID, op.Rebound.Baseline.IndexTree, op.Rebound.Baseline.WorktreeTree)
 	attempt.WorkspaceSnapshotID = snapshot.ID
 	lease := *op.Lease
 	lease.ExpectedWorkspaceSnapshotID = snapshot.ID
+	return attempt, lease
+}
+
+func (s *Store) writeMaterializedExecutionRecords(attempt AttemptRecord, lease ExecutionLease) error {
 	if err := s.writeAttempt(attempt); err != nil {
 		return err
 	}
-	if err := s.writeLease(lease); err != nil {
-		return err
-	}
+	return s.writeLease(lease)
+}
+
+func (s *Store) commitMaterializedExecution(op ExecutionOperation, workspace WorkspaceIdentity, attempt AttemptRecord, lease ExecutionLease) error {
 	actual := map[string]string{op.Transition.Effects[0].Key(): laneMaterializationIdentity(workspace, *op.Rebound)}
-	_, err = s.commitAuthorityTransitionLocked(op.Transition, actual, false, func(next *RepositoryControllerHead) error {
+	_, _, err := s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, op.Evidence, func(next *RepositoryControllerHead) error {
+		if op.Episode != nil && op.Episode.State == EpisodeStateClosed {
+			if err := s.writeEpisodeRevision(*op.Episode); err != nil {
+				return err
+			}
+			next.ActiveEpisodeID = ""
+			next.ActiveEpisodeRevision = 0
+		}
 		next.AcceptedCandidateRef = nil
 		next.LiveAttemptID = attempt.AttemptID
 		next.LiveLeaseID = lease.LeaseID

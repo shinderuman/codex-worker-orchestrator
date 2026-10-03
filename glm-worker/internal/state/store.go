@@ -16,6 +16,7 @@ type SessionRole string
 type TaskStatus string
 
 type StateStore struct {
+	lockPath                 string
 	dir                      string
 	repoSearchReadProjection bool
 }
@@ -41,8 +42,10 @@ const (
 
 	TaskStatusNone TaskStatus = "none"
 
-	ExecutionMilestonesStateFile = "execution-milestones.json"
-	ResultCorrectionStateFile    = "result-correction.json"
+	ExecutionMilestonesStateFile    = "execution-milestones.json"
+	ResultCorrectionStateFile       = "result-correction.json"
+	ControllerAttemptStateFile      = "controller-attempt"
+	CanonicalExecutionTaskStateFile = "execution-task"
 )
 
 var removeStatePath = os.Remove
@@ -73,7 +76,12 @@ func NewStateStore(config config.AppConfig) (*StateStore, error) {
 		return nil, fmt.Errorf("GLM stateディレクトリを作成できません: %w", err)
 	}
 
-	state := &StateStore{dir: dir}
+	if config.RepositoryLockPath != "" {
+		if err := os.MkdirAll(filepath.Dir(config.RepositoryLockPath), 0o700); err != nil {
+			return nil, fmt.Errorf("create repository workflow lock directory: %w", err)
+		}
+	}
+	state := AttachStateStore(config)
 	if err := state.Write("repo-root", config.RepoRoot); err != nil {
 		return nil, err
 	}
@@ -81,7 +89,7 @@ func NewStateStore(config config.AppConfig) (*StateStore, error) {
 }
 
 func AttachStateStore(config config.AppConfig) *StateStore {
-	return &StateStore{dir: filepath.Join(config.StateBase, config.RepoHash)}
+	return &StateStore{dir: filepath.Join(config.StateBase, config.RepoHash), lockPath: config.RepositoryLockPath}
 }
 
 func (s *StateStore) AttachSiblingStore(repoHash string) *StateStore {
@@ -93,6 +101,9 @@ func (s *StateStore) Path(name string) string {
 }
 
 func (s *StateStore) LockPath() string {
+	if s.lockPath != "" {
+		return s.lockPath
+	}
 	return s.Path("lock")
 }
 

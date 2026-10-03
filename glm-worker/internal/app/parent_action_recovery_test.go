@@ -10,7 +10,7 @@ import (
 )
 
 func TestRecoverParentActionCommandRestoresDecisionFromCanonicalState(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestRecoverParentActionCommandRestoresDecisionFromCanonicalState(t *testing
 }
 
 func TestRecoverParentActionCommandRestoresFixFromCanonicalState(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestRecoverParentActionCommandRejectsForeignConditions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cfg := newAppConfig(t)
+			cfg := newCanonicalAppConfig(t)
 			st, err := state.NewStateStore(cfg)
 			if err != nil {
 				t.Fatal(err)

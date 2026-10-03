@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -22,12 +23,19 @@ const reopenUsage = "usage: glm-parent-action reopen"
 func executeParentLifecycleAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	switch args[0] {
 	case actionRecordPublicationFinding:
-		return executeRecordPublicationFinding(cfg, args, stdout)
+		return rejectLegacyPublicationFindingRegistration(cfg)
 	case actionReopen:
 		return executeReopen(cfg, args, stdout)
 	default:
 		return executeNoGo(cfg, args, stdout)
 	}
+}
+
+func rejectLegacyPublicationFindingRegistration(cfg config.AppConfig) error {
+	if _, err := controller.CanonicalAuthorityActive(cfg); err != nil {
+		return fmt.Errorf("inspect canonical controller authority before publication finding: %w", err)
+	}
+	return fmt.Errorf("legacy publication finding registration is unavailable after canonical controller cutover; use --authority controller-semantic")
 }
 
 func executeReopen(cfg config.AppConfig, args []string, stdout io.Writer) error {

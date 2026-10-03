@@ -622,7 +622,11 @@ func startParentHandoffTask(t *testing.T, cfg config.AppConfig) *state.StateStor
 
 func seedSessionRotationAccept(t *testing.T) (config.AppConfig, *state.StateStore, string) {
 	t.Helper()
-	cfg := newAppConfig(t)
+	return seedSessionRotationAcceptConfig(t, newAppConfig(t))
+}
+
+func seedSessionRotationAcceptConfig(t *testing.T, cfg config.AppConfig) (config.AppConfig, *state.StateStore, string) {
+	t.Helper()
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -640,7 +644,13 @@ func seedSessionRotationAccept(t *testing.T) (config.AppConfig, *state.StateStor
 		t.Fatal(err)
 	}
 	var accept acceptOutput
-	executeCommandOutput(t, cfg, ModeAccept, &accept, "accept")
+	var output bytes.Buffer
+	if err := parentAccept(st, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(output.Bytes(), &accept); err != nil {
+		t.Fatal(err)
+	}
 	if !accept.Accepted {
 		t.Fatal("open reviewをacceptできませんでした")
 	}
@@ -766,7 +776,7 @@ func TestSessionRotationCompletionFailsClosedWithoutParentIdentity(t *testing.T)
 }
 
 func TestSessionRotationNewThreadBindRetiresOldDirective(t *testing.T) {
-	cfg, st, oldThread := seedSessionRotationAccept(t)
+	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
 
 	newThread := prepareNextRotatedTask(t, st)
 	next := &fakeRunner{steps: []fakeStep{
@@ -819,7 +829,7 @@ func prepareNextRotatedTask(t *testing.T, st *state.StateStore) string {
 }
 
 func TestSessionRotationPendingAllowsOrdinaryNewTaskAndRetiresRecommendation(t *testing.T) {
-	cfg, st, threadID := seedSessionRotationAccept(t)
+	cfg, st, threadID := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
 	beforeTaskID := st.ReadOr("task.id", "")
 	t.Setenv(state.ParentActionCodexThreadIDEnv, threadID)
 	t.Setenv(state.ParentActionCodexSessionIDEnv, threadID)
@@ -846,7 +856,7 @@ func TestSessionRotationPendingAllowsOrdinaryNewTaskAndRetiresRecommendation(t *
 }
 
 func TestSessionRotationPendingOnOtherThreadAllowsOrdinaryStartAndRetiresRecommendation(t *testing.T) {
-	cfg, st, oldThread := seedSessionRotationAccept(t)
+	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
 	marker, err := st.LoadSessionRotationMarker(oldThread)
 	if err != nil || marker == nil || marker.Directive == nil {
 		t.Fatalf("pending marker = %#v err=%v", marker, err)
@@ -909,7 +919,7 @@ func TestSessionRotationHandoffSurvivesUnreadableStatsMirror(t *testing.T) {
 }
 
 func TestSessionRotationStartResumesAfterTaskSwitch(t *testing.T) {
-	cfg, st, oldThread := seedSessionRotationAccept(t)
+	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
 	marker, err := st.LoadSessionRotationMarker(oldThread)
 	if err != nil {
 		t.Fatal(err)

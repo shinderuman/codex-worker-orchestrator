@@ -27,6 +27,13 @@ func (s *Store) bootstrapExecution(task SemanticTaskRef, workspace WorkspaceIden
 		}
 		return s.AdmitMutation(authority, workspace, snapshot)
 	}
+	return s.bootstrapWithoutLiveLease(task, workspace, snapshot, head)
+}
+
+func (s *Store) bootstrapWithoutLiveLease(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, head RepositoryControllerHead) (Admission, error) {
+	if !IsPristine(head) {
+		return Admission{}, fmt.Errorf("execution bootstrap is restricted to a pristine controller; existing execution requires its typed transition")
+	}
 	if err := s.validateBootstrapWorkspace(workspace); err != nil {
 		return Admission{}, err
 	}

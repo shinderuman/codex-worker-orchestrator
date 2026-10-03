@@ -25,7 +25,7 @@ func stubQualityPreflight(t *testing.T, fn qualityPreflightFunc) {
 
 func newQualityContractConfig(t *testing.T) config.AppConfig {
 	t.Helper()
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	marker := filepath.Join(cfg.RepoRoot, "glm-worker", "go.mod")
 	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestPreflightQualityToolchainRecordsFailureOnFreshStore(t *testing.T) {
 }
 
 func TestPreflightQualityToolchainSkipsRepoWithoutQualitySurface(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ func TestStatsOutputIncludesPreflightAggregate(t *testing.T) {
 }
 
 func TestStatsOutputPreflightStatusUnknownOnMalformedAggregate(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -297,7 +297,7 @@ func TestStatsOutputPreflightStatusUnknownOnMalformedAggregate(t *testing.T) {
 }
 
 func TestStatsOutputPreflightStatusNoneWithoutAttempts(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)

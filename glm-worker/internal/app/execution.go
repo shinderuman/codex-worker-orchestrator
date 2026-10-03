@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
@@ -88,6 +89,11 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.W
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
 	}
+	var err error
+	cfg, err = controller.WorkflowConfig(cfg)
+	if err != nil {
+		return err
+	}
 
 	owner, err := commandDispatchOwnerFor(cmd.Mode)
 	if err != nil {
@@ -110,6 +116,12 @@ func executeStateBacked(
 	rf RunnerFactory,
 	stdout io.Writer,
 ) error {
+	if err := rejectLegacyStateLifecycle(cfg, cmd.Mode); err != nil {
+		return err
+	}
+	if retainedCanonicalWorkflowMode(cmd.Mode) {
+		return executeRetainedCanonicalWorkflow(cmd, cfg, rf, stdout)
+	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		return err
@@ -118,12 +130,15 @@ func executeStateBacked(
 		return executeStateCommand(cmd, cfg, st, stdout)
 	}
 
-	lock, err := AcquireRepoLock(st.LockPath())
+	lock, err := acquireWorkflowLock(cfg)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
 	if err := admitParentCommand(cmd, st); err != nil {
+		return err
+	}
+	if _, err := controller.Activate(cfg); err != nil {
 		return err
 	}
 
@@ -135,6 +150,85 @@ func executeStateBacked(
 	default:
 		return fmt.Errorf("unsupported state-backed dispatch owner: %d", owner)
 	}
+}
+
+func retainedCanonicalWorkflowMode(mode CommandMode) bool {
+	return mode == ModeNewTask || mode == ModeResume || mode == ModeDecision || mode == ModeFix || mode == ModeApproveSurface || mode == ModeAccept
+}
+
+func executeRetainedCanonicalWorkflow(
+	cmd Command,
+	cfg config.AppConfig,
+	rf RunnerFactory,
+	stdout io.Writer,
+) error {
+	attached := state.AttachStateStore(cfg)
+	lock, err := acquireWorkflowLock(cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+
+	if err := admitParentCommand(cmd, attached); err != nil {
+		return err
+	}
+	if cmd.Mode == ModeAccept && attached.TaskStatus() == state.TaskStatusNone {
+		return parentAccept(attached, stdout)
+	}
+	cfg, err = activateWorkflowConfig(cmd, cfg)
+	if err != nil {
+		return err
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		return err
+	}
+	if cmd.Mode == ModeAccept {
+		store, err := controller.Open(cfg)
+		if err != nil {
+			return err
+		}
+		head, err := store.LoadHead()
+		if err != nil {
+			return err
+		}
+		boundAttempt := st.ReadOr(state.ControllerAttemptStateFile, "")
+		if boundAttempt == "" || boundAttempt != head.LiveAttemptID {
+			return fmt.Errorf("parent acceptance requires review reentry for the current controller attempt")
+		}
+		return parentAccept(st, stdout)
+	}
+	return executeWorkflow(cmd, cfg, st, rf, stdout)
+}
+
+func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
+	if cmd.Mode != ModeNewTask {
+		exists, err := controller.Exists(cfg)
+		if err != nil {
+			return cfg, err
+		}
+		if !exists {
+			return cfg, fmt.Errorf("existing workflow requires canonical controller execution authority")
+		}
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return cfg, err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return cfg, err
+	}
+	if cmd.Mode == ModeNewTask && !controller.IsPristine(head) && head.LiveLeaseID == "" && head.ExecutionTaskRef == nil {
+		materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: head.ControllerGeneration})
+		if err != nil {
+			return cfg, err
+		}
+		cfg.RepoRoot = materialized.Admission.Workspace.Root
+		return controller.WorkflowConfig(cfg)
+	}
+	_, err = controller.Activate(cfg)
+	return cfg, err
 }
 
 func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer) error {

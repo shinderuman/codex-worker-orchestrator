@@ -2,7 +2,7 @@ package parentactioncmd
 
 import (
 	"bytes"
-	"encoding/json"
+
 	"errors"
 	"testing"
 
@@ -10,52 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-func TestRunNoGoAwaitsObservationCompletionWithoutWorker(t *testing.T) {
-	cfg, st := newParentActionIdentityTestState(t)
-	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
-	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
-	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/observation.md", []byte("# observation\n\n## External feasibility\n\nstatus: observation\nassumption: representative producer behavior\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Touch("pending-decision"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"}); err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout bytes.Buffer
-	if err := execute(cfg, []string{"no-go"}, &stdout, nil); err != nil {
-		t.Fatal(err)
-	}
-	var output noGoOutput
-	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
-		t.Fatal(err)
-	}
-	if output.Status != "no-go" || output.Completed || output.TaskStatus != string(state.TaskStatusAwaitingParentCompletion) {
-		t.Fatalf("output = %#v", output)
-	}
-	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion || st.Exists("pending-decision") {
-		t.Fatalf("awaiting state = status:%s pending:%v", st.TaskStatus(), st.Exists("pending-decision"))
-	}
-	plan, err := st.ParentActionPlan()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.RequiredAction != state.ParentActionComplete {
-		t.Fatalf("awaiting plan = %#v", plan)
-	}
-	if _, err := st.CompleteParentAwaiting(nil); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("completion status = %s", st.TaskStatus())
-	}
-}
 
 func TestRunNoGoRejectsHeldRepositoryLock(t *testing.T) {
 	cfg, st := newParentActionIdentityTestState(t)

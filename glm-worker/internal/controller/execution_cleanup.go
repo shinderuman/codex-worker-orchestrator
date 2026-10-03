@@ -176,6 +176,17 @@ func (s *Store) GarbageCollectSuspension(expectedGeneration uint64, id string) (
 }
 
 func (s *Store) proveSuspensionSuccessor(snapshot SuspensionSnapshot, seal EvidenceObjectRef, head RepositoryControllerHead) error {
+	source, err := s.loadAttempt(snapshot.AttemptID)
+	if err != nil {
+		return err
+	}
+	terminal, err := s.terminalAttemptProven(source)
+	if err != nil {
+		return err
+	}
+	if terminal {
+		return nil
+	}
 	entries, err := os.ReadDir(filepath.Join(s.dir, "attempts"))
 	if err != nil {
 		return err

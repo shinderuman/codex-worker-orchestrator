@@ -1,46 +1,17 @@
 package app
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"path"
-	"path/filepath"
+
 	"sort"
-	"strconv"
+
 	"strings"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexrollout"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type bundleCodexSource struct {
-	Class            string   `json:"class"`
-	Status           string   `json:"status"`
-	Sources          []string `json:"sources,omitempty"`
-	ArchivePaths     []string `json:"archive_paths,omitempty"`
-	ThreadIDs        []string `json:"thread_ids,omitempty"`
-	SpansTasks       bool     `json:"spans_tasks,omitempty"`
-	AssociationBasis string   `json:"association_basis,omitempty"`
-	Detail           string   `json:"detail,omitempty"`
-}
-
 type codexRollout = codexrollout.Rollout
-
-type codexLogRow struct {
-	TS              int64   `json:"ts"`
-	TSNanos         int64   `json:"ts_nanos"`
-	Level           string  `json:"level"`
-	Target          string  `json:"target"`
-	ThreadID        string  `json:"thread_id"`
-	ProcessUUID     *string `json:"process_uuid"`
-	EstimatedBytes  int64   `json:"estimated_bytes"`
-	FeedbackLogBody *string `json:"feedback_log_body"`
-}
 
 type codexAssociation struct {
 	ParentStatus   string
@@ -55,27 +26,13 @@ type codexAssociation struct {
 	Detail         string
 }
 
-type codexLogExtraction struct {
-	ThreadID string
-	Rows     []codexLogRow
-}
-
 const (
 	codexStatusIncluded    = "included"
 	codexStatusMissing     = "missing"
 	codexStatusUnavailable = "unavailable"
 	codexStatusAmbiguous   = "ambiguous"
 
-	codexClassParentSession     = "parent-session"
-	codexClassGuardianChild     = "guardian-child"
-	codexClassAppServerLogs     = "app-server-logs"
-	codexClassProcessProjection = "process-projection"
-	codexClassRuntimeSettings   = "runtime-settings"
-	codexClassAttachments       = "attachments"
-
 	codexAssociationBasis = "stored-parent-identity"
-
-	codexBackgroundTerminalMaxTimeoutKey = "background_terminal_max_timeout"
 )
 
 func (association codexAssociation) rolloutChain() []codexRollout {
@@ -99,21 +56,6 @@ func (association codexAssociation) parentSources() []string {
 
 func (association codexAssociation) parentSourceLabel() string {
 	return strings.Join(association.parentSources(), ";")
-}
-
-func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundleTask) (codexAssociation, []bundleCodexSource) {
-	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
-	threads := c.addCodexRolloutEvidence(association)
-	logs := c.addCodexLogEvidence(cfg.CodexConfigDir, task, threads, association.ParentStatus, association.Basis)
-	process := c.addCodexProcessEvidence(cfg.CodexConfigDir, task, threads, association.ParentStatus, association.Basis)
-	runtime := c.addCodexRuntimeSettingsEvidence(cfg.CodexConfigDir)
-	attachments := bundleCodexSource{
-		Class:   codexClassAttachments,
-		Status:  codexStatusUnavailable,
-		Sources: []string{"attachments"},
-		Detail:  "schema-different: no deterministic structured association from rollouts to attachment storage",
-	}
-	return association, []bundleCodexSource{codexParentSource(association), codexGuardianSource(association), logs, process, runtime, attachments}
 }
 
 func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation {
@@ -219,287 +161,4 @@ func selectCodexGuardianChildren(rollouts []codexRollout, parent codexRollout, s
 	}
 	sort.Slice(children, func(i, j int) bool { return children[i].ID < children[j].ID })
 	return children, qualifying
-}
-
-func (c *bundleCollector) addCodexRolloutEvidence(association codexAssociation) []string {
-	threads := make([]string, 0, 1+len(association.Guardians))
-	if association.ParentStatus != codexStatusIncluded {
-		return threads
-	}
-	chain := association.rolloutChain()
-	for index, member := range chain {
-		c.addFile(member.AbsolutePath, codexRolloutArchivePathAt(association.ParentThreadID, index))
-	}
-	threads = append(threads, association.ParentThreadID)
-	for _, guardian := range association.Guardians {
-		c.addFile(guardian.AbsolutePath, codexGuardianArchivePath(guardian.ID))
-		threads = append(threads, guardian.ID)
-	}
-	return threads
-}
-
-func codexRolloutArchivePath(threadID string) string {
-	return path.Join("codex-parent", "rollouts", safeArchiveComponent(threadID)+".jsonl")
-}
-
-func codexRolloutArchivePathAt(threadID string, index int) string {
-	if index == 0 {
-		return codexRolloutArchivePath(threadID)
-	}
-	return path.Join("codex-parent", "rollouts", fmt.Sprintf("%s-%d.jsonl", safeArchiveComponent(threadID), index+1))
-}
-
-func (association codexAssociation) rolloutArchivePaths() []string {
-	chain := association.rolloutChain()
-	paths := make([]string, 0, len(chain))
-	for index := range chain {
-		paths = append(paths, codexRolloutArchivePathAt(association.ParentThreadID, index))
-	}
-	return paths
-}
-
-func codexGuardianArchivePath(threadID string) string {
-	return path.Join("codex-parent", "guardians", safeArchiveComponent(threadID)+".jsonl")
-}
-
-func codexParentSource(association codexAssociation) bundleCodexSource {
-	source := bundleCodexSource{
-		Class:  codexClassParentSession,
-		Status: association.ParentStatus,
-		Detail: association.Detail,
-	}
-	if association.ParentStatus != codexStatusIncluded {
-		return source
-	}
-	source.Sources = association.parentSources()
-	source.ArchivePaths = association.rolloutArchivePaths()
-	source.ThreadIDs = []string{association.ParentThreadID}
-	source.SpansTasks = true
-	source.AssociationBasis = association.Basis
-	return source
-}
-
-func codexGuardianSource(association codexAssociation) bundleCodexSource {
-	source := bundleCodexSource{Class: codexClassGuardianChild, Status: association.ParentStatus}
-	if association.ParentStatus != codexStatusIncluded {
-		source.Detail = "parent session is not associated: " + association.Detail
-		return source
-	}
-	source.Status = association.GuardianStatus
-	source.Detail = association.GuardianDetail
-	if association.GuardianStatus == codexStatusAmbiguous {
-		return source
-	}
-	source.AssociationBasis = association.Basis
-	source.Detail = fmt.Sprintf("%d direct guardian children overlap the task window", len(association.Guardians))
-	for _, guardian := range association.Guardians {
-		source.Sources = append(source.Sources, guardian.HomeRelative)
-		source.ArchivePaths = append(source.ArchivePaths, codexGuardianArchivePath(guardian.ID))
-		source.ThreadIDs = append(source.ThreadIDs, guardian.ID)
-	}
-	return source
-}
-
-func (c *bundleCollector) addCodexLogEvidence(codexHome string, task bundleTask, threads []string, parentStatus, associationBasis string) bundleCodexSource {
-	source := bundleCodexSource{Class: codexClassAppServerLogs, Sources: []string{"logs_2.sqlite"}}
-	if parentStatus != codexStatusIncluded {
-		source.Status = parentStatus
-		source.Detail = "parent session is not associated: no associated Codex thread for bounded extraction"
-		return source
-	}
-	if len(threads) == 0 {
-		source.Status = codexStatusMissing
-		source.Detail = "no associated Codex thread for bounded extraction"
-		return source
-	}
-	source.Status = codexStatusIncluded
-	source.AssociationBasis = associationBasis
-	dbPath := filepath.Join(codexHome, "logs_2.sqlite")
-	start, end := taskWindow(task)
-	extractions := make([]codexLogExtraction, 0, len(threads))
-	totalRows := 0
-	for _, threadID := range threads {
-		rows, err := extractCodexLogRows(dbPath, threadID, start, end)
-		if err != nil {
-			return bundleCodexSource{
-				Class:            codexClassAppServerLogs,
-				Status:           codexStatusUnavailable,
-				Sources:          []string{"logs_2.sqlite"},
-				AssociationBasis: associationBasis,
-				Detail:           "bounded log extraction failed: " + err.Error(),
-			}
-		}
-		extractions = append(extractions, codexLogExtraction{ThreadID: threadID, Rows: rows})
-		totalRows += len(rows)
-	}
-	for _, extraction := range extractions {
-		source.ArchivePaths = append(source.ArchivePaths, path.Join("codex-parent", "logs", safeArchiveComponent(extraction.ThreadID)+".jsonl"))
-		source.ThreadIDs = append(source.ThreadIDs, extraction.ThreadID)
-		c.addCodexLogEntry(extraction.ThreadID, extraction.Rows)
-	}
-	source.Detail = fmt.Sprintf("extracted %d rows bounded by the associated threads and the task time range", totalRows)
-	return source
-}
-
-func (c *bundleCollector) addCodexLogEntry(threadID string, rows []codexLogRow) {
-	var buffer bytes.Buffer
-	for _, row := range rows {
-		encoded, err := json.Marshal(row)
-		if err != nil {
-			return
-		}
-		buffer.Write(encoded)
-		buffer.WriteByte('\n')
-	}
-	c.addData(path.Join("codex-parent", "logs", safeArchiveComponent(threadID)+".jsonl"), buffer.Bytes())
-}
-
-func extractCodexLogRows(dbPath, threadID string, start, end time.Time) ([]codexLogRow, error) {
-	if !state.ValidUUIDFormat(threadID) {
-		return nil, fmt.Errorf("thread ID is not a canonical UUID: %q", threadID)
-	}
-	info, err := os.Stat(dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("logs_2.sqlite is not present")
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("logs_2.sqlite is not a regular file")
-	}
-	if _, err := exec.LookPath("sqlite3"); err != nil {
-		return nil, fmt.Errorf("sqlite3 binary not found")
-	}
-	query := fmt.Sprintf(
-		"SELECT ts, ts_nanos, level, target, thread_id, process_uuid, estimated_bytes, feedback_log_body FROM logs WHERE thread_id = '%s' AND ts >= %d AND ts <= %d ORDER BY ts, ts_nanos, id;",
-		threadID, start.Unix(), end.Unix(),
-	)
-	var stderr bytes.Buffer
-	cmd := exec.Command("sqlite3", "-readonly", "-json", dbPath, query)
-	cmd.Stderr = &stderr
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("sqlite3 query failed: %s", strings.TrimSpace(stderr.String()))
-	}
-	if len(bytes.TrimSpace(output)) == 0 {
-		return nil, nil
-	}
-	var rows []codexLogRow
-	if err := json.Unmarshal(output, &rows); err != nil {
-		return nil, fmt.Errorf("sqlite3 -json decode failed: %w", err)
-	}
-	return rows, nil
-}
-
-func (c *bundleCollector) addCodexProcessEvidence(codexHome string, task bundleTask, threads []string, parentStatus, associationBasis string) bundleCodexSource {
-	source := bundleCodexSource{Class: codexClassProcessProjection, Sources: []string{"process_manager/chat_processes.json"}}
-	if !task.Current {
-		source.Status = codexStatusUnavailable
-		source.Detail = "process projection is volatile bundle-time evidence for the current task only"
-		return source
-	}
-	if parentStatus != codexStatusIncluded {
-		source.Status = parentStatus
-		source.Detail = "parent session is not associated: matching process rows cannot be selected"
-		return source
-	}
-	source.AssociationBasis = associationBasis
-	matched, threadIDs, err := readCodexChatProcesses(filepath.Join(codexHome, "process_manager", "chat_processes.json"), threads)
-	if err != nil {
-		source.Status = codexStatusUnavailable
-		source.Detail = "process projection unavailable: " + err.Error()
-		return source
-	}
-	if len(matched) == 0 {
-		source.Status = codexStatusMissing
-		source.Detail = "no chat process rows match the associated threads at bundle time"
-		return source
-	}
-	source.Status = codexStatusIncluded
-	source.ThreadIDs = threadIDs
-	source.ArchivePaths = []string{path.Join("codex-parent", "process-manager", "chat_processes.json")}
-	encoded, err := json.MarshalIndent(matched, "", "  ")
-	if err != nil {
-		source.Status = codexStatusUnavailable
-		source.Detail = "process projection encode failed: " + err.Error()
-		source.ArchivePaths = nil
-		return source
-	}
-	c.addData(source.ArchivePaths[0], append(encoded, '\n'))
-	return source
-}
-
-func readCodexChatProcesses(filePath string, threads []string) ([]map[string]any, []string, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("chat_processes.json is not readable")
-	}
-	var rows []map[string]any
-	if err := json.Unmarshal(data, &rows); err != nil {
-		return nil, nil, fmt.Errorf("chat_processes.json is not a JSON array")
-	}
-	targets := make(map[string]struct{}, len(threads))
-	for _, threadID := range threads {
-		targets[threadID] = struct{}{}
-	}
-	matched := make([]map[string]any, 0)
-	seen := make(map[string]struct{})
-	for _, row := range rows {
-		conversationID, _ := row["conversationId"].(string)
-		if _, ok := targets[conversationID]; !ok {
-			continue
-		}
-		matched = append(matched, row)
-		seen[conversationID] = struct{}{}
-	}
-	return matched, sortedSet(seen), nil
-}
-
-func (c *bundleCollector) addCodexRuntimeSettingsEvidence(codexHome string) bundleCodexSource {
-	source := bundleCodexSource{Class: codexClassRuntimeSettings, Sources: []string{"config.toml"}}
-	value, err := readCodexBackgroundTerminalMaxTimeout(filepath.Join(codexHome, "config.toml"))
-	switch {
-	case err != nil:
-		source.Status = codexStatusUnavailable
-		source.Detail = "runtime settings unavailable: " + err.Error()
-	case value == nil:
-		source.Status = codexStatusMissing
-		source.Detail = codexBackgroundTerminalMaxTimeoutKey + " is not present in config.toml"
-	default:
-		source.Status = codexStatusIncluded
-		source.ArchivePaths = []string{path.Join("codex-parent", "runtime-settings.json")}
-		encoded, encodeErr := json.MarshalIndent(map[string]int64{codexBackgroundTerminalMaxTimeoutKey: *value}, "", "  ")
-		if encodeErr != nil {
-			source.Status = codexStatusUnavailable
-			source.Detail = "runtime settings encode failed: " + encodeErr.Error()
-			source.ArchivePaths = nil
-			return source
-		}
-		c.addData(source.ArchivePaths[0], append(encoded, '\n'))
-	}
-	return source
-}
-
-func readCodexBackgroundTerminalMaxTimeout(configPath string) (*int64, error) {
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("config.toml is not readable")
-	}
-	for _, rawLine := range strings.Split(string(data), "\n") {
-		line := strings.TrimSpace(rawLine)
-		if strings.HasPrefix(line, "[") {
-			return nil, nil
-		}
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found || strings.TrimSpace(key) != codexBackgroundTerminalMaxTimeoutKey {
-			continue
-		}
-		parsed, parseErr := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(value), "_", ""), 10, 64)
-		if parseErr != nil {
-			continue
-		}
-		return &parsed, nil
-	}
-	return nil, nil
 }

@@ -68,7 +68,7 @@ func stopWorkerCallWithToolChild(t *testing.T, env *multiRepoEnv) {
 	if checkpoint["stop_kind"] != "interrupted" {
 		t.Fatalf("停止checkpoint = %#v", checkpoint)
 	}
-	if got, ok := checkpoint["prompt"].(string); !ok || !strings.Contains(got, "STOPW1") {
+	if got, ok := checkpoint["request"].(string); !ok || !strings.Contains(got, "STOPW1") {
 		t.Fatalf("停止checkpointが要求正本を保持していません: %#v", checkpoint["prompt"])
 	}
 }

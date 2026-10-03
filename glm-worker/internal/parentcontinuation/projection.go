@@ -7,6 +7,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
@@ -59,7 +60,7 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	}
 
 	repoRoot := st.ReadOr("repo-root", "")
-	applyRequest(repoRoot, st, plan, &projection)
+	applyRequest(cfg, repoRoot, st, plan, &projection)
 	applySnapshot(repoRoot, &projection)
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
@@ -91,7 +92,7 @@ func BuildProjectContinuation(repoRoot string, st *state.StateStore, loaded repo
 	return repositoryproject.DeriveContinuation(project, continuationLifecycle(st)), evidence, nil
 }
 
-func applyRequest(repoRoot string, st *state.StateStore, plan state.ParentActionPlan, projection *Projection) {
+func applyRequest(cfg config.AppConfig, repoRoot string, st *state.StateStore, plan state.ParentActionPlan, projection *Projection) {
 	if repoRoot == "" {
 		return
 	}
@@ -103,7 +104,10 @@ func applyRequest(repoRoot string, st *state.StateStore, plan state.ParentAction
 	if !active {
 		return
 	}
-	request, err := buildCurrentRequest(repoRoot, st)
+	request, canonical, err := canonicalExecutionRequest(cfg, st, plan)
+	if err == nil && !canonical {
+		request, err = buildCurrentRequest(repoRoot, st)
+	}
 	if err != nil {
 		markInconsistent(projection, "project continuation projection is unavailable: "+err.Error())
 		return
@@ -335,4 +339,52 @@ func markInconsistent(projection *Projection, detail string) {
 	if projection.Inconsistency == nil {
 		projection.Inconsistency = &detail
 	}
+}
+
+func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan state.ParentActionPlan) (Request, bool, error) {
+	task, canonical, err := controller.WorkflowExecutionTask(cfg)
+	if canonical && err != nil {
+		task, err = quiescentControllerTask(cfg, err)
+	}
+	if err != nil || !canonical {
+		return Request{}, canonical, err
+	}
+	continuation := repositoryproject.Continuation{State: repositoryproject.ContinuationContinueNow, Task: task.TaskPath, RequiredAction: string(plan.RequiredAction), Reason: repositoryproject.ReasonCurrentTask}
+	if st.TaskStatus() == state.TaskStatusNone {
+		continuation.RequiredAction = repositoryproject.ActionStart
+	}
+	if reason := temporaryBlockReason(st.TaskStatus()); reason != "" {
+		continuation.State = repositoryproject.ContinuationBlocked
+		continuation.Reason = reason
+	}
+	if st.TaskStatus() == state.TaskStatusInterrupted {
+		continuation.State = repositoryproject.ContinuationExplicitStop
+		continuation.Reason = repositoryproject.ReasonUserInterruption
+	}
+	attribution := repositoryproject.DeriveTaskAttribution(st.ReadOr(state.CanonicalExecutionTaskStateFile, ""), task.TaskPath, continuation)
+	if authorityTask, err := st.CurrentTaskAuthorityPath(); err == nil {
+		attribution = repositoryproject.BindTaskAuthority(attribution, authorityTask)
+	}
+	return Request{Continuation: continuation, TaskAttribution: attribution}, true, nil
+}
+
+func quiescentControllerTask(cfg config.AppConfig, admissionError error) (controller.SemanticTaskRef, error) {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return controller.SemanticTaskRef{}, err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return controller.SemanticTaskRef{}, err
+	}
+	if head.Status != controller.ControllerStatusActive || head.LiveLeaseID != "" {
+		return controller.SemanticTaskRef{}, admissionError
+	}
+	if head.ExecutionTaskRef != nil {
+		return *head.ExecutionTaskRef, nil
+	}
+	if head.RootTaskRef != nil {
+		return *head.RootTaskRef, nil
+	}
+	return controller.SemanticTaskRef{}, admissionError
 }

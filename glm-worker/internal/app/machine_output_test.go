@@ -250,7 +250,7 @@ func TestStructuredLinesOutputRejectsSubprocessStderrOnFailureExit(t *testing.T)
 }
 
 func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -258,6 +258,7 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	bindCanonicalAppTask(t, cfg, st)
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +388,7 @@ func TestStdinReadyControlEventStaysTypedJSONLine(t *testing.T) {
 }
 
 func TestDispatchWithholdsTypedWarningWhenExecuteFailsAfterWarning(t *testing.T) {
-	cfg := newAppConfig(t)
+	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)

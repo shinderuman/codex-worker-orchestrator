@@ -73,10 +73,35 @@ func (s *Store) VerifyGitObjectArchive(ref EvidenceObjectRef) ([]GitObjectArchiv
 	if err := validateGitObjectArchiveEnvelope(ref, envelope); err != nil {
 		return nil, err
 	}
-	if err := verifyGitObjectPack(envelope); err != nil {
+	if err := s.verifyGitObjectPackCached(envelope); err != nil {
 		return nil, gitArchiveIntegrityError(ref, err.Error())
 	}
 	return append([]GitObjectArchiveRoot(nil), envelope.Roots...), nil
+}
+
+func (s *Store) verifyGitObjectPackCached(envelope gitObjectArchiveEnvelope) error {
+	s.archiveVerification.Lock()
+	defer s.archiveVerification.Unlock()
+	if s.archiveVerified == nil {
+		s.archiveVerified = make(map[string]struct{})
+	}
+	identity, err := json.Marshal(struct {
+		ObjectFormat string                 `json:"object_format"`
+		PackDigest   string                 `json:"pack_digest"`
+		Roots        []GitObjectArchiveRoot `json:"roots"`
+	}{envelope.ObjectFormat, envelope.PackDigest, envelope.Roots})
+	if err != nil {
+		return err
+	}
+	key := string(identity)
+	if _, cached := s.archiveVerified[key]; cached {
+		return nil
+	}
+	if err := verifyGitObjectPack(envelope); err != nil {
+		return err
+	}
+	s.archiveVerified[key] = struct{}{}
+	return nil
 }
 
 func collectGitObjectClosure(repoPath string, rootOIDs []string) ([]GitObjectArchiveRoot, []string, string, error) {

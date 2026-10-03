@@ -17,15 +17,3 @@ func TestParentMaintenanceDirectEditAuthorityIsScoped(t *testing.T) {
 		}
 	}
 }
-
-func TestIsolationInstructionRetainsBranchUntilOriginalTaskCompletes(t *testing.T) {
-	contract := readExecutionPermissionFile(t, "codex", "instructions", "glm-stop-isolate.md")
-	for _, token := range []string{
-		"隔離branch",
-		"元taskのresume保持照合が完了し元taskが完了するまで削除しない",
-	} {
-		if !strings.Contains(contract, token) {
-			t.Fatalf("glm-stop-isolate.md missing branch lifetime token %q", token)
-		}
-	}
-}

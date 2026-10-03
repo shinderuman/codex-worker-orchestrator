@@ -35,7 +35,7 @@ func (c *queueCapturer) capture(string) (state.GitSnapshot, error) {
 }
 
 func newSnapshotWorkflow(st *state.StateStore, r *scriptedRunner, out io.Writer) *Workflow {
-	w := NewWorkflow(config.AppConfig{
+	w := newUnitWorkflow(config.AppConfig{
 		WorkerModel:           "opus",
 		ReviewerModel:         "haiku",
 		HighRiskReviewerModel: "sonnet",

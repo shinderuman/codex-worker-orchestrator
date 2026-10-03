@@ -67,6 +67,9 @@ func (s *Store) planExecutionMaterialization(input MaterializeExecutionInput) (E
 	record.TargetRootTaskRef = *head.RootTaskRef
 	record.Effects = []EffectExpectation{{Surface: MutationSurfaceSource, Resource: workspace.Root, ExpectedNew: laneMaterializationIdentity(workspace, rebound)}}
 	op := ExecutionOperation{Transition: record, Suspension: suspended, SealRef: seal, Episode: &episode, Rebound: &rebound, Workspace: &workspace, Attempt: &attempt, Lease: &lease}
+	if err := planRootResumeClosure(&op, head, task); err != nil {
+		return ExecutionOperation{}, head, err
+	}
 	return op, head, nil
 }
 
@@ -79,11 +82,22 @@ func (s *Store) materializationAuthority(input MaterializeExecutionInput) (Repos
 		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
 	}
 	if input.EpisodeID == "" && head.ActiveEpisodeID == "" {
-		if head.ExecutionTaskRef == nil || input.SuspensionID == "" {
-			return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, fmt.Errorf("ordinary resume requires exact suspended execution")
-		}
-		return head, BlockerEpisodeRevision{}, *head.ExecutionTaskRef, nil
+		return s.materializationWithoutEpisode(head, input)
 	}
+	return s.materializationWithEpisode(head, input)
+}
+
+func (s *Store) materializationWithoutEpisode(head RepositoryControllerHead, input MaterializeExecutionInput) (RepositoryControllerHead, BlockerEpisodeRevision, SemanticTaskRef, error) {
+	if head.ExecutionTaskRef == nil && input.SuspensionID == "" {
+		return s.nextRootMaterializationAuthority(head)
+	}
+	if head.ExecutionTaskRef == nil || input.SuspensionID == "" {
+		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, fmt.Errorf("ordinary resume requires exact suspended execution")
+	}
+	return head, BlockerEpisodeRevision{}, *head.ExecutionTaskRef, nil
+}
+
+func (s *Store) materializationWithEpisode(head RepositoryControllerHead, input MaterializeExecutionInput) (RepositoryControllerHead, BlockerEpisodeRevision, SemanticTaskRef, error) {
 	episode, err := s.LoadEpisodeRevision(input.EpisodeID, input.EpisodeRevision)
 	if err != nil {
 		return head, episode, SemanticTaskRef{}, err
@@ -187,7 +201,11 @@ func plannedLaneExecution(head RepositoryControllerHead, task SemanticTaskRef, w
 	generation := head.ControllerGeneration + 3
 	now := time.Now().UTC()
 	attempt := AttemptRecord{SchemaVersion: controllerSchemaVersion, AttemptID: attemptID, SemanticTaskRef: task, RootTaskRef: *head.RootTaskRef, EpisodeID: head.ActiveEpisodeID, EpisodeRevision: head.ActiveEpisodeRevision, ExecutionBaseOID: rebound.BaseOID, BaselineTrees: rebound.Baseline, StartControllerGeneration: generation, AttemptState: AttemptStateLive, CreatedAt: now}
-	lease := ExecutionLease{SchemaVersion: controllerSchemaVersion, LeaseID: leaseID, AttemptID: attemptID, SemanticTaskRef: task, Purpose: "episode-execution", ControllerGeneration: generation, EpisodeID: head.ActiveEpisodeID, EpisodeRevision: head.ActiveEpisodeRevision, WorkspaceID: workspace.ID, ExpectedBaseOID: rebound.BaseOID, CreatedAt: now}
+	purpose := "root-execution"
+	if head.ActiveEpisodeID != "" {
+		purpose = "episode-execution"
+	}
+	lease := ExecutionLease{SchemaVersion: controllerSchemaVersion, LeaseID: leaseID, AttemptID: attemptID, SemanticTaskRef: task, Purpose: purpose, ControllerGeneration: generation, EpisodeID: head.ActiveEpisodeID, EpisodeRevision: head.ActiveEpisodeRevision, WorkspaceID: workspace.ID, ExpectedBaseOID: rebound.BaseOID, CreatedAt: now}
 	return attempt, lease, nil
 }
 

@@ -11,13 +11,14 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestExecuteAcceptRequiresProjectedReviewEvidence(t *testing.T) {
-	cfg, st, snapshot := newParentEvidenceReviewStore(t)
+	cfg, st, snapshot := newParentEvidenceReviewStore(t, true)
 	openParentEvidenceReview(t, st, snapshot, "review.go:2")
 
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "requires matching current target evidence") {
@@ -210,7 +211,7 @@ func TestParentReviewEvidenceClaimCoverage(t *testing.T) {
 	}
 }
 
-func newParentEvidenceReviewStore(t *testing.T) (config.AppConfig, *state.StateStore, state.SnapshotDigest) {
+func newParentEvidenceReviewStore(t *testing.T, canonical ...bool) (config.AppConfig, *state.StateStore, state.SnapshotDigest) {
 	t.Helper()
 	repoRoot := t.TempDir()
 	gitParentReviewEvidenceCommand(t, repoRoot, "init", "-q")
@@ -224,12 +225,26 @@ func newParentEvidenceReviewStore(t *testing.T) (config.AppConfig, *state.StateS
 	gitParentReviewEvidenceCommand(t, repoRoot, "-c", "user.name=review evidence test", "-c", "user.email=review-evidence@example.invalid", "commit", "-q", "-m", "seed")
 
 	cfg := config.AppConfig{StateBase: t.TempDir(), RepoHash: "review-evidence", RepoRoot: repoRoot}
+	if len(canonical) != 0 && canonical[0] {
+		writeAppTestFile(t, repoRoot, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
+		writeAppTestFile(t, repoRoot, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\nreview\n\n## Dependencies\n\nnone\n")
+		gitParentReviewEvidenceCommand(t, repoRoot, "add", ".")
+		gitParentReviewEvidenceCommand(t, repoRoot, "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "task authority")
+		var err error
+		cfg, err = controller.WorkflowConfig(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
+	}
+	if len(canonical) != 0 && canonical[0] {
+		bindCanonicalAppTask(t, cfg, st)
 	}
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)

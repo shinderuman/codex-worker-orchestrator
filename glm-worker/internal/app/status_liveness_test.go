@@ -1,10 +1,6 @@
 package app
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
-	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -55,41 +51,6 @@ func TestExecuteStatusActiveWithLockHeldIsRunning(t *testing.T) {
 	output := executeStatusOutput(t, cfg)
 	statusString(t, "repository_lock", output.RepositoryLock, "held")
 	statusString(t, "task_liveness", output.TaskLiveness, "running")
-}
-
-func TestExecuteStatusRaceConvergesOnNextCommandLock(t *testing.T) {
-	cfg := newAppConfig(t)
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = executeStatusOutput(t, cfg)
-
-	otherCfg := cfg
-	otherCfg.RepoHash = cfg.RepoHash + "-other"
-	otherCfg.RepoShort = cfg.RepoShort + "-oth"
-	otherSt, err := state.NewStateStore(otherCfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherLock, err := AcquireRepoLock(otherSt.LockPath())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = otherLock.Close() }()
-
-	var resetOut bytes.Buffer
-	if err := Execute(Command{Mode: ModeReset}, cfg, nil, &resetOut, io.Discard); err != nil {
-		t.Fatalf("別repo lock保持中に対象repoの次commandが失敗しました: %v", err)
-	}
-	var reset map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(resetOut.String())), &reset); err != nil {
-		t.Fatalf("reset出力がmachine JSONではありません: %v: %q", err, resetOut.String())
-	}
-	if reset["status"] != "reset" {
-		t.Fatalf("reset出力 = %v", reset)
-	}
-	_ = st
 }
 
 func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {

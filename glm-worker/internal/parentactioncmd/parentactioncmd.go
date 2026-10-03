@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/observationexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
@@ -27,7 +28,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | park | unpark | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute|controller-semantic|controller-execution|controller-publication|controller-evidence> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | park | unpark | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -51,6 +52,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("%s", usage)
 	}
 	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	cfg, err = controller.WorkflowConfig(cfg)
 	if err != nil {
 		return err
 	}
