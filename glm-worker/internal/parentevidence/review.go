@@ -190,24 +190,6 @@ func (p *Projector) reviewCoverageClaims(targets []string, parts []Part) ([]stat
 	return claims, nil
 }
 
-func ReviewClaims(targets []string, parts []Part) ([]state.ParentReviewEvidenceClaim, bool) {
-	claims := make([]state.ParentReviewEvidenceClaim, 0, len(targets))
-	seen := make(map[string]struct{})
-	for _, target := range targets {
-		claim, ok := reviewClaimForTarget(target, parts)
-		if !ok {
-			return nil, false
-		}
-		key := claim.Kind + "\x00" + claim.Digest + "\x00" + claim.Locator
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		claims = append(claims, claim)
-	}
-	return claims, len(claims) > 0
-}
-
 func reviewClaimForTarget(target string, parts []Part) (state.ParentReviewEvidenceClaim, bool) {
 	for _, part := range parts {
 		if part.Status != PartProjected || part.Digest == "" {
