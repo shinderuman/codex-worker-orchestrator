@@ -167,7 +167,14 @@ func (checkpoint ResumeCheckpoint) IsStopped() bool {
 }
 
 func (checkpoint *ResumeCheckpoint) SetStopKind(kind ResumeStopKind) {
+	retainedSnapshot := checkpoint.StopGitSnapshot
+	retainedDirtyFiles := append([]StopDirtyFile(nil), checkpoint.StopDirtyFiles...)
+	retainApprovalEvidence := checkpoint.QualitySurfaceApprovalPending
 	checkpoint.clearStopPayload()
+	if retainApprovalEvidence {
+		checkpoint.StopGitSnapshot = retainedSnapshot
+		checkpoint.StopDirtyFiles = retainedDirtyFiles
+	}
 	checkpoint.StopKind = kind
 }
 
