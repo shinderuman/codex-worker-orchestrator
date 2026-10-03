@@ -11,42 +11,37 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
-func TestParentReviewBindingRejectsTargetsWithoutCanonicalProofPath(t *testing.T) {
-	t.Run("free-form relation", func(t *testing.T) {
-		st, _, snapshot := newBoundParentReviewTestStore(t)
-		err := recordBoundReviewForContract(st, snapshot, "review.go:AppendRecord-acquireRegistryLock")
-		assertReviewTargetAdmissionRejected(t, st, err, "correction=")
-	})
+func TestParentReviewBindingRejectsNonCanonicalTargetBeforePersistence(t *testing.T) {
+	st, _, snapshot := newBoundParentReviewTestStore(t)
+	err := recordBoundReviewForContract(st, snapshot, "review.go:AppendRecord-acquireRegistryLock")
+	assertReviewTargetAdmissionRejected(t, st, err, "correction=")
+}
 
+func TestReviewTargetProofAddressabilityRejectsUnavailableInstances(t *testing.T) {
 	t.Run("unchanged diff", func(t *testing.T) {
-		st, _, snapshot := newBoundParentReviewTestStore(t)
-		err := recordBoundReviewForContract(st, snapshot, "review.go:@diff")
-		assertReviewTargetAdmissionRejected(t, st, err, "[diff-absent]")
+		_, repoRoot, _ := newBoundParentReviewTestStore(t)
+		assertProofAddressabilityRejected(t, repoRoot, "review.go:@diff", "[diff-absent]")
 	})
 
 	t.Run("untracked diff", func(t *testing.T) {
-		st, repoRoot, _ := newBoundParentReviewTestStore(t)
+		_, repoRoot, _ := newBoundParentReviewTestStore(t)
 		if err := os.WriteFile(filepath.Join(repoRoot, "new.go"), []byte("package review\nfunc NewAPI() {}\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		snapshot := currentReviewSnapshotForContract(t, repoRoot)
-		err := recordBoundReviewForContract(st, snapshot, "new.go:@diff")
-		assertReviewTargetAdmissionRejected(t, st, err, "[diff-absent]")
+		assertProofAddressabilityRejected(t, repoRoot, "new.go:@diff", "[diff-absent]")
 	})
 
 	t.Run("local variable is not top-level symbol", func(t *testing.T) {
-		st, repoRoot, _ := newBoundParentReviewTestStore(t)
+		_, repoRoot, _ := newBoundParentReviewTestStore(t)
 		content := "package review\nfunc Caller() {\n\tLocal := 1\n\t_ = Local\n}\n"
 		if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		snapshot := currentReviewSnapshotForContract(t, repoRoot)
-		err := recordBoundReviewForContract(st, snapshot, "review.go:Local")
-		assertReviewTargetAdmissionRejected(t, st, err, "[symbol-not-declared]")
+		assertProofAddressabilityRejected(t, repoRoot, "review.go:Local", "[symbol-not-declared]")
 	})
 
 	t.Run("oversized symbol declaration", func(t *testing.T) {
-		st, repoRoot, _ := newBoundParentReviewTestStore(t)
+		_, repoRoot, _ := newBoundParentReviewTestStore(t)
 		var source strings.Builder
 		source.WriteString("package review\nfunc Huge() {\n")
 		for range reviewtarget.MaxSourceProofLines {
@@ -56,57 +51,41 @@ func TestParentReviewBindingRejectsTargetsWithoutCanonicalProofPath(t *testing.T
 		if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte(source.String()), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		snapshot := currentReviewSnapshotForContract(t, repoRoot)
-		err := recordBoundReviewForContract(st, snapshot, "review.go:Huge")
-		assertReviewTargetAdmissionRejected(t, st, err, "[symbol-source-too-large]")
+		assertProofAddressabilityRejected(t, repoRoot, "review.go:Huge", "[symbol-source-too-large]")
 	})
 
 	t.Run("oversized numeric range", func(t *testing.T) {
-		st, _, snapshot := newBoundParentReviewTestStore(t)
+		_, repoRoot, _ := newBoundParentReviewTestStore(t)
 		target := "review.go:1-" + strconv.Itoa(reviewtarget.MaxSourceProofLines+1)
-		err := recordBoundReviewForContract(st, snapshot, target)
-		assertReviewTargetAdmissionRejected(t, st, err, "[line-range-too-large]")
+		assertProofAddressabilityRejected(t, repoRoot, target, "[line-range-too-large]")
 	})
 }
 
-func TestParentReviewBindingAdmitsCanonicalProofableTargets(t *testing.T) {
-	t.Run("untracked Go symbol", func(t *testing.T) {
-		st, repoRoot, _ := newBoundParentReviewTestStore(t)
-		if err := os.WriteFile(filepath.Join(repoRoot, "new.go"), []byte("package review\nfunc NewAPI() {}\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		snapshot := currentReviewSnapshotForContract(t, repoRoot)
-		if err := recordBoundReviewForContract(st, snapshot, "new.go:NewAPI"); err != nil {
-			t.Fatal(err)
-		}
-		binding, err := st.CurrentParentReviewBinding()
-		if err != nil || binding == nil || len(binding.Targets) != 1 || binding.Targets[0] != "new.go:NewAPI" {
-			t.Fatalf("binding = %#v err=%v", binding, err)
-		}
-	})
+func TestParentReviewBindingAdmitsCanonicalTargets(t *testing.T) {
+	for _, target := range []string{"review.go:target", "review.go:1", "review.go:1-2"} {
+		t.Run(target, func(t *testing.T) {
+			st, _, snapshot := newBoundParentReviewTestStore(t)
+			if err := recordBoundReviewForContract(st, snapshot, target); err != nil {
+				t.Fatal(err)
+			}
+			binding, err := st.CurrentParentReviewBinding()
+			if err != nil || binding == nil || len(binding.Targets) != 1 || binding.Targets[0] != target {
+				t.Fatalf("binding = %#v err=%v", binding, err)
+			}
+		})
+	}
+}
 
-	t.Run("qualified member", func(t *testing.T) {
-		st, repoRoot, _ := newBoundParentReviewTestStore(t)
-		content := "package review\ntype First struct { Shared int }\ntype Second struct { Shared int }\n"
-		if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		snapshot := currentReviewSnapshotForContract(t, repoRoot)
-		if err := recordBoundReviewForContract(st, snapshot, "review.go:First.Shared"); err != nil {
-			t.Fatal(err)
-		}
-	})
-
-	t.Run("changed whole diff", func(t *testing.T) {
-		st, repoRoot, _ := newBoundParentReviewTestStore(t)
-		if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte("package review\nvar changed = true\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		snapshot := currentReviewSnapshotForContract(t, repoRoot)
-		if err := recordBoundReviewForContract(st, snapshot, "review.go:@diff"); err != nil {
-			t.Fatal(err)
-		}
-	})
+func assertProofAddressabilityRejected(t *testing.T, repoRoot, raw, want string) {
+	t.Helper()
+	target, err := reviewtarget.ParseTarget(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = reviewtarget.ValidateProofAddressable(repoRoot, target)
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("proof addressability error = %v, want %q", err, want)
+	}
 }
 
 func recordBoundReviewForContract(st *StateStore, snapshot SnapshotDigest, target string) error {
