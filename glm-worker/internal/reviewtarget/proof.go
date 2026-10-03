@@ -33,19 +33,27 @@ func ValidateProofAddressable(repoRoot string, target Target) error {
 		}
 		return nil
 	case LocatorGoSymbol:
-		content, err := readRepositoryFile(repoRoot, target.Path)
-		if err != nil {
-			return proofError("symbol-source-unavailable", target, "use a declaration locator only for a current readable Go source declaration")
-		}
-		if _, err := FindGoDeclaration(content, target.Locator); err != nil {
-			return proofError("symbol-not-declared", target, "use the exact top-level Go declaration name or Type.Member identity that exists in the current source")
-		}
-		return nil
+		return validateGoSymbolProofAddressable(repoRoot, target)
 	case LocatorLineRange:
 		return validateLineRangeProofAddressable(repoRoot, target)
 	default:
 		return proofError("locator-kind", target, canonicalCorrection)
 	}
+}
+
+func validateGoSymbolProofAddressable(repoRoot string, target Target) error {
+	content, err := readRepositoryFile(repoRoot, target.Path)
+	if err != nil {
+		return proofError("symbol-source-unavailable", target, "use a declaration locator only for a current readable Go source declaration")
+	}
+	declaration, err := FindGoDeclaration(content, target.Locator)
+	if err != nil {
+		return proofError("symbol-not-declared", target, "use the exact top-level Go declaration name or Type.Member identity that exists in the current source")
+	}
+	if declaration.LineEnd-declaration.LineStart+1 > MaxSourceProofLines {
+		return proofError("symbol-source-too-large", target, "use an exact numeric line/range within the canonical source proof bound")
+	}
+	return nil
 }
 
 func validateLineRangeProofAddressable(repoRoot string, target Target) error {
