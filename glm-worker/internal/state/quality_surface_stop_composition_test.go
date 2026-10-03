@@ -53,7 +53,7 @@ func qualitySurfaceStopCheckpoint() ResumeCheckpoint {
 		CompletedResult:               &result,
 		QualitySurfaceApprovalPending: true,
 		StopGitSnapshot:               &GitSnapshot{Head: "0123456789abcdef0123456789abcdef01234567"},
-		StopDirtyFiles: []StopDirtyFile{{Path: "worker.go"}},
+		StopDirtyFiles:                []StopDirtyFile{{Path: "worker.go"}},
 	}
 }
 
