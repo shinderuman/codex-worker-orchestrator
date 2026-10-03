@@ -68,6 +68,7 @@ func topLevelGoDeclaration(fileset *token.FileSet, declaration ast.Decl, symbol 
 				}
 			}
 		}
+		return matches
 	}
 	return nil
 }
