@@ -118,7 +118,7 @@ func TestWriteProcessErrorKindContract(t *testing.T) {
 					"task_id": "task-rate-1", "repo_root": "/repo/root",
 					"reset_at_cst": "2026-08-24 07:06:34", "reset_at_rfc3339": "2026-08-24T07:06:34+08:00",
 					"resume_available": true, "auto_resume_available": true,
-					"auto_resume_at_rfc3339": "2026-08-24T07:08:34+08:00",
+					"auto_resume_at_rfc3339": "2026-08-24T07:06:39+08:00",
 					"auto_resume_key":        rateLimit.AutoResumeKey(),
 				} {
 					if detail[key] != want {
