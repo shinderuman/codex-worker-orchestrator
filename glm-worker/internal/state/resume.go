@@ -119,6 +119,15 @@ func (kind ResumeStopKind) IsStopped() bool {
 	return kind != ResumeStopNone && kind.Valid()
 }
 
+func (kind ResumeStopKind) CanInterruptQualitySurfaceApproval() bool {
+	switch kind {
+	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:
+		return true
+	default:
+		return false
+	}
+}
+
 func (kind ResumeStopKind) TaskStatus() TaskStatus {
 	switch kind {
 	case ResumeStopRateLimited:
@@ -197,8 +206,13 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 	if !checkpoint.StopKind.Valid() {
 		return fmt.Errorf("unknown resume stop kind: %q", checkpoint.StopKind)
 	}
-	if checkpoint.QualitySurfaceApprovalPending && checkpoint.StopKind != ResumeStopNone {
-		return fmt.Errorf("quality-surface approval checkpoint cannot also carry resume stop kind %q", checkpoint.StopKind)
+	if checkpoint.QualitySurfaceApprovalPending && checkpoint.IsStopped() {
+		if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
+			return fmt.Errorf("quality-surface approval checkpoint cannot carry non-transient resume stop kind %q", checkpoint.StopKind)
+		}
+		if checkpoint.CompletedResult == nil {
+			return fmt.Errorf("stopped quality-surface approval checkpoint requires the completed worker result")
+		}
 	}
 	if err := checkpoint.validateRateLimitStopPayload(); err != nil {
 		return err
