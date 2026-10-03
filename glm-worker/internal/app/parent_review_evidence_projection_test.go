@@ -10,7 +10,7 @@ import (
 
 func TestPrintParentReviewEvidenceBuildsFromOpenBinding(t *testing.T) {
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
-	openParentEvidenceReview(t, st, snapshot, "review.go:2-3(exact target)")
+	openParentEvidenceReview(t, st, snapshot, "review.go:2-3")
 
 	var stdout bytes.Buffer
 	if err := parentevidence.PrintReviewEvidence(cfg.RepoRoot, st, &stdout); err != nil {
@@ -33,33 +33,25 @@ func TestPrintParentReviewEvidenceBuildsFromOpenBinding(t *testing.T) {
 	}
 }
 
-func TestBuildParentReviewEvidenceManifestUsesDiffForSymbolTarget(t *testing.T) {
-	_, st, snapshot := newParentEvidenceReviewStore(t)
+func TestBuildParentReviewEvidenceManifestUsesSourceForSymbolTarget(t *testing.T) {
+	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:target")
 
-	manifest, err := parentevidence.BuildReviewManifest(st)
+	manifest, err := parentevidence.BuildReviewManifest(cfg.RepoRoot, st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(manifest.Source) != 0 || len(manifest.Diff) != 1 {
+	if len(manifest.Source) != 1 || len(manifest.Diff) != 0 {
 		t.Fatalf("manifest = %#v", manifest)
 	}
-	if len(manifest.Diff[0].Paths) != 1 || manifest.Diff[0].Paths[0] != "review.go" {
-		t.Fatalf("diff request = %#v", manifest.Diff[0])
+	if manifest.Source[0].Path != "review.go" || manifest.Source[0].LineStart != 2 || manifest.Source[0].LineEnd != 2 {
+		t.Fatalf("source request = %#v", manifest.Source[0])
 	}
 }
 
 func TestBuildParentReviewEvidenceManifestRequiresOpenReview(t *testing.T) {
-	_, st, _ := newParentEvidenceReviewStore(t)
-	if _, err := parentevidence.BuildReviewManifest(st); err == nil {
+	cfg, st, _ := newParentEvidenceReviewStore(t)
+	if _, err := parentevidence.BuildReviewManifest(cfg.RepoRoot, st); err == nil {
 		t.Fatal("review evidence builder accepted a missing open review")
-	}
-}
-
-func TestBuildParentReviewEvidenceManifestRejectsAmbiguousTarget(t *testing.T) {
-	_, st, snapshot := newParentEvidenceReviewStore(t)
-	openParentEvidenceReview(t, st, snapshot, "inspect-current-review")
-	if _, err := parentevidence.BuildReviewManifest(st); err == nil {
-		t.Fatal("review evidence builder accepted a target without path:locator")
 	}
 }

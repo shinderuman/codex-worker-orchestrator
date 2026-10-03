@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
@@ -190,9 +189,9 @@ func (w *Workflow) currentQualitySurfaceReviewTargets() ([]string, error) {
 		if path == "" || !IsQualitySurface(path) {
 			continue
 		}
-		target := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
-		if _, _, err := reviewtarget.Parse(target); err != nil {
-			return nil, fmt.Errorf("quality surface changed path %q cannot be represented as a review target: %w", path, err)
+		target, err := proofableReviewPathTarget(w.config.RepoRoot, path)
+		if err != nil {
+			return nil, fmt.Errorf("quality surface path %q has no canonical review proof path: %w", path, err)
 		}
 		if _, duplicate := seen[target]; duplicate {
 			continue
@@ -228,7 +227,11 @@ func qualityGateFixResult(report harnesslint.Report) packet.Result {
 		issues = append(issues, fmt.Sprintf("%s %s:%d:%d %s", violation.Rule, violation.Path, violation.Line, violation.Column, violation.Message))
 		path := strings.TrimSpace(violation.Path)
 		if path != "" {
-			targetSet[fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)] = struct{}{}
+			line := violation.Line
+			if line < 1 {
+				line = 1
+			}
+			targetSet[fmt.Sprintf("%s:%d", path, line)] = struct{}{}
 		}
 	}
 	targets := make([]string, 0, len(targetSet))

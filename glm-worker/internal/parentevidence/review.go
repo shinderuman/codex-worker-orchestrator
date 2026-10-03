@@ -1,11 +1,11 @@
 package parentevidence
 
 import (
+	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +15,7 @@ import (
 )
 
 func PrintReviewEvidence(repoRoot string, st *state.StateStore, stdout io.Writer) error {
-	manifest, err := BuildReviewManifest(st)
+	manifest, err := BuildReviewManifest(repoRoot, st)
 	if err != nil {
 		return err
 	}
@@ -28,7 +28,7 @@ func PrintReviewEvidence(repoRoot string, st *state.StateStore, stdout io.Writer
 	return projector.Commit(stdout, manifest.Reason)
 }
 
-func BuildReviewManifest(st *state.StateStore) (Manifest, error) {
+func BuildReviewManifest(repoRoot string, st *state.StateStore) (Manifest, error) {
 	binding, err := st.CurrentParentReviewBinding()
 	if err != nil {
 		return Manifest{}, err
@@ -41,54 +41,113 @@ func BuildReviewManifest(st *state.StateStore) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("review evidence binding has no semantic question or targets")
 	}
 
-	manifest := Manifest{
-		Version: ManifestVersion,
-		Reason:  "parent-review-targets:" + binding.ID,
-	}
+	manifest := Manifest{Version: ManifestVersion, Reason: "parent-review-targets:" + binding.ID}
 	seenSource := map[string]struct{}{}
 	diffPaths := map[string]struct{}{}
-	for _, target := range binding.Targets {
-		path, locator, err := ReviewTarget(target)
+	for _, raw := range binding.Targets {
+		target, err := reviewtarget.ParseTarget(raw)
 		if err != nil {
 			return Manifest{}, err
 		}
-		if start, end, ok := NumericRange(locator); ok {
-			key := fmt.Sprintf("%s:%d-%d", path, start, end)
-			if _, exists := seenSource[key]; exists {
-				continue
-			}
-			seenSource[key] = struct{}{}
-			manifest.Source = append(manifest.Source, SourceRequest{
-				Question:    question,
-				Path:        path,
-				LineStart:   start,
-				LineEnd:     end,
-				BudgetBytes: MaxBudgetBytes,
-			})
-			continue
+		if err := appendReviewManifestTarget(repoRoot, &manifest, seenSource, diffPaths, question, target); err != nil {
+			return Manifest{}, err
 		}
-		diffPaths[path] = struct{}{}
 	}
-	paths := make([]string, 0, len(diffPaths))
-	for path := range diffPaths {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		manifest.Diff = append(manifest.Diff, DiffRequest{
-			Question:    question,
-			Paths:       []string{path},
-			BudgetBytes: MaxBudgetBytes,
-		})
-	}
+	appendReviewDiffRequests(&manifest, diffPaths, question)
 	if err := ValidateManifest(manifest); err != nil {
 		return Manifest{}, err
 	}
 	return manifest, nil
 }
 
-func ReviewTarget(target string) (string, string, error) {
-	return reviewtarget.Parse(target)
+func appendReviewManifestTarget(
+	repoRoot string,
+	manifest *Manifest,
+	seenSource map[string]struct{},
+	diffPaths map[string]struct{},
+	question string,
+	target reviewtarget.Target,
+) error {
+	switch target.Kind {
+	case reviewtarget.LocatorLineRange:
+		return appendReviewLineTarget(repoRoot, manifest, seenSource, diffPaths, question, target)
+	case reviewtarget.LocatorGoSymbol:
+		request, err := reviewSymbolSourceRequest(repoRoot, question, target)
+		if err != nil {
+			return err
+		}
+		appendReviewSourceRequest(manifest, seenSource, request.Question, request.Path, request.LineStart, request.LineEnd)
+	case reviewtarget.LocatorWholeDiff:
+		diffPaths[target.Path] = struct{}{}
+	default:
+		return fmt.Errorf("review evidence target has no proof strategy: %s:%s", target.Path, target.Locator)
+	}
+	return nil
+}
+
+func appendReviewLineTarget(
+	repoRoot string,
+	manifest *Manifest,
+	seenSource map[string]struct{},
+	diffPaths map[string]struct{},
+	question string,
+	target reviewtarget.Target,
+) error {
+	current := filepath.Join(repoRoot, filepath.FromSlash(target.Path))
+	_, err := os.Stat(current)
+	switch {
+	case err == nil:
+		appendReviewSourceRequest(manifest, seenSource, question, target.Path, target.LineStart, target.LineEnd)
+		return nil
+	case errors.Is(err, os.ErrNotExist):
+		diffPaths[target.Path] = struct{}{}
+		return nil
+	default:
+		return fmt.Errorf("inspect review line target %s: %w", target.Path, err)
+	}
+}
+
+func appendReviewDiffRequests(manifest *Manifest, diffPaths map[string]struct{}, question string) {
+	paths := make([]string, 0, len(diffPaths))
+	for path := range diffPaths {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		manifest.Diff = append(manifest.Diff, DiffRequest{Question: question, Paths: []string{path}, BudgetBytes: MaxBudgetBytes})
+	}
+}
+
+func appendReviewSourceRequest(manifest *Manifest, seen map[string]struct{}, question, path string, start, end int) {
+	key := fmt.Sprintf("%s:%d-%d", path, start, end)
+	if _, exists := seen[key]; exists {
+		return
+	}
+	seen[key] = struct{}{}
+	manifest.Source = append(manifest.Source, SourceRequest{
+		Question: question, Path: path, LineStart: start, LineEnd: end, BudgetBytes: MaxBudgetBytes,
+	})
+}
+
+func reviewSymbolSourceRequest(repoRoot, question string, target reviewtarget.Target) (SourceRequest, error) {
+	absolute, err := joinRoot(repoRoot, target.Path)
+	if err != nil {
+		return SourceRequest{}, err
+	}
+	content, err := os.ReadFile(absolute)
+	if err != nil {
+		return SourceRequest{}, fmt.Errorf("read review symbol source %s: %w", target.Path, err)
+	}
+	declaration, err := reviewtarget.FindGoDeclaration(content, target.Locator)
+	if err != nil {
+		return SourceRequest{}, fmt.Errorf("resolve review symbol %s:%s: %w", target.Path, target.Locator, err)
+	}
+	if declaration.LineEnd-declaration.LineStart+1 > MaxSourceLines {
+		return SourceRequest{}, fmt.Errorf("review symbol %s:%s needs %d source lines; correction=use an exact numeric line/range within the %d-line evidence bound", target.Path, target.Locator, declaration.LineEnd-declaration.LineStart+1, MaxSourceLines)
+	}
+	return SourceRequest{
+		Question: question, Path: target.Path, LineStart: declaration.LineStart, LineEnd: declaration.LineEnd, BudgetBytes: MaxBudgetBytes,
+	}, nil
 }
 
 func (p *Projector) markReviewProof(parts []Part) error {
@@ -139,79 +198,39 @@ func reviewClaimForTarget(target string, parts []Part) (state.ParentReviewEviden
 	return state.ParentReviewEvidenceClaim{}, false
 }
 
-func reviewSourceCoversTarget(target string, source SourceBody) bool {
-	if !reviewTargetMatchesPath(target, source.Path) {
+func reviewSourceCoversTarget(raw string, source SourceBody) bool {
+	target, err := reviewtarget.ParseTarget(raw)
+	if err != nil || target.Path != source.Path {
 		return false
 	}
-	suffix := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(target), source.Path))
-	if !strings.HasPrefix(suffix, ":") {
+	switch target.Kind {
+	case reviewtarget.LocatorLineRange:
+		return source.LineStart <= target.LineStart && source.LineEnd >= target.LineEnd
+	case reviewtarget.LocatorGoSymbol:
+		return sourceCoversSymbol(target, source.Content)
+	default:
 		return false
 	}
-	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
-	if start, end, ok := NumericRange(locator); ok {
-		return source.LineStart <= start && source.LineEnd >= end
-	}
-	return sourceCoversSymbol(locator, source.Path, source.Content)
 }
 
-func sourceCoversSymbol(locator, path, content string) bool {
-	if locator == "" || locator == reviewtarget.WholeFileDiffLocator || !strings.HasSuffix(path, ".go") {
+func sourceCoversSymbol(target reviewtarget.Target, content string) bool {
+	declaration, err := reviewtarget.FindGoDeclaration([]byte(content), target.Locator)
+	if err == nil {
+		return declaration.Locator == target.Locator
+	}
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
 		return false
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), path, content, parser.SkipObjectResolution)
+	declaration, err = reviewtarget.FindGoDeclaration([]byte("package reviewevidence\n"+trimmed), target.Locator)
+	return err == nil && declaration.Locator == target.Locator
+}
+
+func ReviewDiffCoversTarget(raw string, diff DiffBody) bool {
+	target, err := reviewtarget.ParseTarget(raw)
 	if err != nil {
 		return false
 	}
-	declared := declaredSymbolNames(file)
-	for _, symbol := range strings.Split(locator, ",") {
-		if symbol == "" {
-			return false
-		}
-		if _, ok := declared[symbol]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-func declaredSymbolNames(file *ast.File) map[string]struct{} {
-	names := map[string]struct{}{}
-	ast.Inspect(file, func(node ast.Node) bool {
-		switch declaration := node.(type) {
-		case *ast.FuncDecl:
-			names[declaration.Name.Name] = struct{}{}
-		case *ast.TypeSpec:
-			names[declaration.Name.Name] = struct{}{}
-			collectTypeMemberNames(declaration.Type, names)
-		case *ast.ValueSpec:
-			for _, name := range declaration.Names {
-				names[name.Name] = struct{}{}
-			}
-		}
-		return true
-	})
-	return names
-}
-
-func collectTypeMemberNames(typ ast.Expr, names map[string]struct{}) {
-	switch t := typ.(type) {
-	case *ast.StructType:
-		for _, field := range t.Fields.List {
-			for _, name := range field.Names {
-				names[name.Name] = struct{}{}
-			}
-		}
-	case *ast.InterfaceType:
-		for _, method := range t.Methods.List {
-			for _, name := range method.Names {
-				names[name.Name] = struct{}{}
-			}
-		}
-	}
-}
-
-func ReviewDiffCoversTarget(target string, diff DiffBody) bool {
-	target = strings.TrimSpace(target)
 	for _, file := range diff.Files {
 		if reviewDiffFileCoversTarget(target, file, diff.Body) {
 			return true
@@ -220,8 +239,8 @@ func ReviewDiffCoversTarget(target string, diff DiffBody) bool {
 	return false
 }
 
-func reviewDiffFileCoversTarget(target string, file DiffFile, body string) bool {
-	if !reviewTargetMatchesPath(target, file.Path) || file.Status == "unknown" {
+func reviewDiffFileCoversTarget(target reviewtarget.Target, file DiffFile, body string) bool {
+	if target.Path != file.Path || file.Status == "unknown" {
 		return false
 	}
 	if file.HeadBlob == "" && file.IndexBlob == "" && file.WorktreeSHA == "" {
@@ -231,21 +250,14 @@ func reviewDiffFileCoversTarget(target string, file DiffFile, body string) bool 
 	if section == "" {
 		return false
 	}
-	suffix := strings.TrimSpace(strings.TrimPrefix(target, file.Path))
-	if suffix == "" {
+	switch target.Kind {
+	case reviewtarget.LocatorLineRange:
+		return reviewDiffSectionCoversLines(section, target.LineStart, target.LineEnd)
+	case reviewtarget.LocatorWholeDiff:
 		return true
-	}
-	if !strings.HasPrefix(suffix, ":") {
+	default:
 		return false
 	}
-	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
-	if start, end, ok := NumericRange(locator); ok {
-		return reviewDiffSectionCoversLines(section, start, end)
-	}
-	if locator == reviewtarget.WholeFileDiffLocator {
-		return true
-	}
-	return locator != "" && strings.Contains(section, locator)
 }
 
 func ReviewDiffFileSection(body, path string) string {
@@ -307,54 +319,6 @@ func reviewDiffHunkRange(line string, oldSide bool) (int, int, bool) {
 		count = parsed
 	}
 	return start, start + count - 1, true
-}
-
-func reviewTargetMatchesPath(target, path string) bool {
-	target = strings.TrimSpace(target)
-	if target == path {
-		return true
-	}
-	for _, separator := range []string{":", " ", ","} {
-		if strings.HasPrefix(target, path+separator) {
-			return true
-		}
-	}
-	return false
-}
-
-func NumericRange(locator string) (int, int, bool) {
-	token := numericRangeToken(locator)
-	if token == "" {
-		return 0, 0, false
-	}
-	values := strings.Split(token, "-")
-	if len(values) > 2 || values[0] == "" {
-		return 0, 0, false
-	}
-	start, ok := positiveLine(values[0])
-	if !ok {
-		return 0, 0, false
-	}
-	if len(values) == 1 {
-		return start, start, true
-	}
-	end, ok := positiveLine(values[1])
-	if !ok || end < start {
-		return 0, 0, false
-	}
-	return start, end, true
-}
-
-func numericRangeToken(locator string) string {
-	end := 0
-	for end < len(locator) {
-		c := locator[end]
-		if (c < '0' || c > '9') && c != '-' {
-			break
-		}
-		end++
-	}
-	return locator[:end]
 }
 
 func positiveLine(value string) (int, bool) {

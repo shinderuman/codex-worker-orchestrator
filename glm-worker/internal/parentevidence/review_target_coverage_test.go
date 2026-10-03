@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -23,20 +24,12 @@ func TestUntrackedSymbolTargetProvenByDeliveredSource(t *testing.T) {
 	if err := PrintReviewEvidence(repoRoot, st, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
-		Version: ManifestVersion,
-		Reason:  "inspect new API source",
-		Source: []SourceRequest{{
-			Question: "review new API", Path: "new.go", LineStart: 1, LineEnd: 2, BudgetBytes: 4096,
-		}},
-	})
-
 	binding, err := st.CurrentParentReviewBinding()
 	if err != nil || binding == nil {
 		t.Fatalf("binding = %#v err=%v", binding, err)
 	}
 	if binding.Proof == nil || len(binding.Proof.Claims) != 1 || binding.Proof.Claims[0].Kind != "source" {
-		t.Fatalf("untracked symbol target remains unproven after delivered source: %#v", binding.Proof)
+		t.Fatalf("untracked symbol target remains unproven after canonical source projection: %#v", binding.Proof)
 	}
 	ready, err := st.ParentReviewAcceptReady()
 	if err != nil || !ready {
@@ -75,41 +68,37 @@ func TestDeletedNumericTargetProvenByDeletionDiff(t *testing.T) {
 	}
 }
 
-func TestDeletedNumericTargetOutsideDeletionRangeStaysUnproven(t *testing.T) {
-	repoRoot, st := newReviewCoverageStore(t)
+func TestDeletedNumericTargetOutsideDeletionRangeIsNotProofAddressable(t *testing.T) {
+	repoRoot, _ := newReviewCoverageStore(t)
 	if err := os.Remove(filepath.Join(repoRoot, "review.go")); err != nil {
 		t.Fatal(err)
 	}
-	openReviewCoverageBinding(t, repoRoot, st, "review.go:5")
-
-	if err := PrintReviewEvidence(repoRoot, st, &bytes.Buffer{}); err != nil {
+	target, err := reviewtarget.ParseTarget("review.go:5")
+	if err != nil {
 		t.Fatal(err)
 	}
-	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
-		Version: ManifestVersion,
-		Reason:  "inspect deleted line outside range",
-		Diff: []DiffRequest{{
-			Question: "review deletion", Paths: []string{"review.go"}, BudgetBytes: 4096,
-		}},
-	})
-
-	binding, err := st.CurrentParentReviewBinding()
-	if err != nil || binding == nil {
-		t.Fatalf("binding = %#v err=%v", binding, err)
-	}
-	if binding.Proof != nil {
-		t.Fatalf("line outside the old-side deletion range created proof: %#v", binding.Proof)
-	}
-	ready, err := st.ParentReviewAcceptReady()
-	if err != nil || ready {
-		t.Fatalf("out-of-range deleted target accept readiness = %v err=%v", ready, err)
+	err = reviewtarget.ValidateProofAddressable(repoRoot, target)
+	if err == nil || !strings.Contains(err.Error(), "[deleted-line-out-of-range]") {
+		t.Fatalf("out-of-range deleted target error = %v", err)
 	}
 }
 
-func TestSourceSymbolCoverageRequiresDeclarationSite(t *testing.T) {
+func TestSourceSymbolCoverageRequiresCanonicalDeclarationSite(t *testing.T) {
 	declared := SourceBody{Path: "new.go", LineStart: 1, LineEnd: 2, Content: "package review\nfunc NewAPI() {}\n"}
 	if !reviewSourceCoversTarget("new.go:NewAPI", declared) {
 		t.Fatal("declared symbol in delivered source was not proven")
+	}
+	partialFunction := SourceBody{Path: "new.go", LineStart: 3, LineEnd: 3, Content: "func NewAPI() {}\n"}
+	if !reviewSourceCoversTarget("new.go:NewAPI", partialFunction) {
+		t.Fatal("canonical function fragment without package clause was not proven")
+	}
+	partialVarGroup := SourceBody{Path: "new.go", LineStart: 8, LineEnd: 10, Content: "var (\n\tNewAPI = 1\n)\n"}
+	if !reviewSourceCoversTarget("new.go:NewAPI", partialVarGroup) {
+		t.Fatal("canonical var-group fragment without package clause was not proven")
+	}
+	partialMember := SourceBody{Path: "new.go", LineStart: 12, LineEnd: 12, Content: "type Holder struct{ NewAPI int }\n"}
+	if !reviewSourceCoversTarget("new.go:Holder.NewAPI", partialMember) {
+		t.Fatal("canonical member fragment without package clause was not proven")
 	}
 	unproven := []struct {
 		name   string
@@ -119,12 +108,13 @@ func TestSourceSymbolCoverageRequiresDeclarationSite(t *testing.T) {
 		{name: "comment only", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 3, Content: "package review\n// NewAPI placeholder\nvar Other = 1\n"}, target: "new.go:NewAPI"},
 		{name: "string literal only", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 2, Content: "package review\nvar Doc = \"NewAPI\"\n"}, target: "new.go:NewAPI"},
 		{name: "reference only in another body", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 2, Content: "package review\nfunc Caller() { NewAPI() }\n"}, target: "new.go:NewAPI"},
+		{name: "same-named local", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 5, Content: "package review\nfunc Caller() {\n\tNewAPI := 1\n\t_ = NewAPI\n}\n"}, target: "new.go:NewAPI"},
+		{name: "same-named unrelated field", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 2, Content: "package review\ntype Holder struct{ NewAPI int }\n"}, target: "new.go:NewAPI"},
+		{name: "same-named unrelated method", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 3, Content: "package review\ntype Holder struct{}\nfunc (Holder) NewAPI() {}\n"}, target: "new.go:NewAPI"},
 		{name: "identifier superstring", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 2, Content: "package review\nfunc NewAPIOnly() {}\n"}, target: "new.go:NewAPI"},
 		{name: "identifier substring", source: declared, target: "new.go:New"},
 		{name: "missing symbol", source: declared, target: "new.go:MissingAPI"},
-		{name: "empty locator", source: declared, target: "new.go:"},
-		{name: "whitespace locator", source: declared, target: "new.go:   "},
-		{name: "partial source without package clause", source: SourceBody{Path: "new.go", LineStart: 3, LineEnd: 3, Content: "func NewAPI() {}\n"}, target: "new.go:NewAPI"},
+		{name: "compound locator", source: declared, target: "new.go:NewAPI,Other"},
 		{name: "non-go file", source: SourceBody{Path: "notes.md", LineStart: 1, LineEnd: 2, Content: "package review\nfunc NewAPI() {}\n"}, target: "notes.md:NewAPI"},
 		{name: "whole-file diff locator", source: SourceBody{Path: "new.go", LineStart: 1, LineEnd: 2, Content: "package review\nvar Doc = \"@diff\"\n"}, target: "new.go:" + reviewtarget.WholeFileDiffLocator},
 	}
@@ -135,81 +125,25 @@ func TestSourceSymbolCoverageRequiresDeclarationSite(t *testing.T) {
 	}
 }
 
-func TestSourceSymbolCoverageAcceptsGoDeclarationKinds(t *testing.T) {
+func TestSourceSymbolCoverageAcceptsCanonicalGoDeclarationKinds(t *testing.T) {
 	cases := []struct {
 		kind    string
+		target  string
 		content string
 	}{
-		{kind: "function", content: "package review\nfunc NewAPI() {}\n"},
-		{kind: "method", content: "package review\nfunc (p *Projector) NewAPI() {}\n"},
-		{kind: "type", content: "package review\ntype NewAPI struct{}\n"},
-		{kind: "var", content: "package review\nvar NewAPI = 1\n"},
-		{kind: "const", content: "package review\nconst NewAPI = 1\n"},
-		{kind: "struct field", content: "package review\ntype Holder struct{ NewAPI int }\n"},
-		{kind: "interface method", content: "package review\ntype Runner interface{ NewAPI() }\n"},
+		{kind: "function", target: "new.go:NewAPI", content: "package review\nfunc NewAPI() {}\n"},
+		{kind: "method", target: "new.go:Projector.NewAPI", content: "package review\ntype Projector struct{}\nfunc (p *Projector) NewAPI() {}\n"},
+		{kind: "type", target: "new.go:NewAPI", content: "package review\ntype NewAPI struct{}\n"},
+		{kind: "var", target: "new.go:NewAPI", content: "package review\nvar NewAPI = 1\n"},
+		{kind: "const", target: "new.go:NewAPI", content: "package review\nconst NewAPI = 1\n"},
+		{kind: "struct field", target: "new.go:Holder.NewAPI", content: "package review\ntype Holder struct{ NewAPI int }\n"},
+		{kind: "interface method", target: "new.go:Runner.NewAPI", content: "package review\ntype Runner interface{ NewAPI() }\n"},
 	}
 	for _, tc := range cases {
-		source := SourceBody{Path: "new.go", LineStart: 1, LineEnd: 2, Content: tc.content}
-		if !reviewSourceCoversTarget("new.go:NewAPI", source) {
-			t.Fatalf("%s declaration did not prove the symbol target", tc.kind)
+		source := SourceBody{Path: "new.go", LineStart: 1, LineEnd: 3, Content: tc.content}
+		if !reviewSourceCoversTarget(tc.target, source) {
+			t.Fatalf("%s declaration did not prove %s", tc.kind, tc.target)
 		}
-	}
-}
-
-func TestSourceSymbolCoverageCommaSeparatedSymbols(t *testing.T) {
-	declared := SourceBody{Path: "probe_test.go", LineStart: 1, LineEnd: 3, Content: "package review\nfunc FirstProbe() {}\nfunc SecondProbe() {}\n"}
-	if !reviewSourceCoversTarget("probe_test.go:FirstProbe,SecondProbe", declared) {
-		t.Fatal("comma-separated symbols all declared in the projected source were not proven")
-	}
-	unproven := []struct {
-		name   string
-		source SourceBody
-		target string
-	}{
-		{name: "one symbol missing", source: declared, target: "probe_test.go:FirstProbe,MissingProbe"},
-		{name: "all symbols missing", source: declared, target: "probe_test.go:MissingProbe,OtherMissingProbe"},
-		{name: "trailing empty element", source: declared, target: "probe_test.go:FirstProbe,"},
-		{name: "leading empty element", source: declared, target: "probe_test.go:,FirstProbe"},
-		{name: "inner empty element", source: declared, target: "probe_test.go:FirstProbe,,SecondProbe"},
-		{name: "symbols declared in another file", source: SourceBody{Path: "other.go", LineStart: 1, LineEnd: 3, Content: "package review\nfunc FirstProbe() {}\nfunc SecondProbe() {}\n"}, target: "probe_test.go:FirstProbe,SecondProbe"},
-		{name: "partial source without one declaration", source: SourceBody{Path: "probe_test.go", LineStart: 1, LineEnd: 2, Content: "package review\nfunc FirstProbe() {}\n"}, target: "probe_test.go:FirstProbe,SecondProbe"},
-		{name: "single missing symbol still unproven", source: declared, target: "probe_test.go:MissingProbe"},
-	}
-	for _, tc := range unproven {
-		if reviewSourceCoversTarget(tc.target, tc.source) {
-			t.Fatalf("%s counted as source proof: %q", tc.name, tc.target)
-		}
-	}
-}
-
-func TestUntrackedSymbolWithoutDeclarationStaysUnproven(t *testing.T) {
-	repoRoot, st := newReviewCoverageStore(t)
-	if err := os.WriteFile(filepath.Join(repoRoot, "new.go"), []byte("package review\nvar caller = NewAPI()\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	openReviewCoverageBinding(t, repoRoot, st, "new.go:NewAPI")
-
-	if err := PrintReviewEvidence(repoRoot, st, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
-		Version: ManifestVersion,
-		Reason:  "inspect undeclared symbol",
-		Source: []SourceRequest{{
-			Question: "review undeclared symbol", Path: "new.go", LineStart: 1, LineEnd: 2, BudgetBytes: 4096,
-		}},
-	})
-
-	binding, err := st.CurrentParentReviewBinding()
-	if err != nil || binding == nil {
-		t.Fatalf("binding = %#v err=%v", binding, err)
-	}
-	if binding.Proof != nil {
-		t.Fatalf("reference-only symbol in an untracked file created proof: %#v", binding.Proof)
-	}
-	ready, err := st.ParentReviewAcceptReady()
-	if err != nil || ready {
-		t.Fatalf("undeclared symbol accept readiness = %v err=%v", ready, err)
 	}
 }
 
@@ -239,9 +173,15 @@ func newReviewCoverageStore(t *testing.T) (string, *state.StateStore) {
 
 func openReviewCoverageBinding(t *testing.T, repoRoot string, st *state.StateStore, target string) {
 	t.Helper()
+	if err := recordReviewCoverageBinding(repoRoot, st, target); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func recordReviewCoverageBinding(repoRoot string, st *state.StateStore, target string) error {
 	snapshot, err := state.CaptureGitSnapshot(repoRoot)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	result := packet.Result{
 		Status:      packet.StatusNeedsSolReview,
@@ -250,9 +190,7 @@ func openReviewCoverageBinding(t *testing.T, repoRoot string, st *state.StateSto
 		Targets:     []string{target},
 	}
 	digest := state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
-	if err := st.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, digest); err != nil {
-		t.Fatal(err)
-	}
+	return st.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, digest)
 }
 
 func projectReviewCoverageManifest(t *testing.T, repoRoot string, st *state.StateStore, manifest Manifest) {

@@ -1,7 +1,10 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -22,7 +25,7 @@ func canonicalReviewTargets(values []string) []string {
 		if value == "" || value == internalReviewNoTarget || value == internalReviewPacketTarget {
 			continue
 		}
-		if _, _, err := reviewtarget.Parse(value); err != nil {
+		if _, err := reviewtarget.ParseTarget(value); err != nil {
 			continue
 		}
 		if _, duplicate := seen[value]; duplicate {
@@ -51,9 +54,9 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 		if path == "" {
 			continue
 		}
-		target := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
-		if _, _, err := reviewtarget.Parse(target); err != nil {
-			return nil, fmt.Errorf("current task review targets: changed path %q cannot be represented as a review target: %w", path, err)
+		target, err := proofableReviewPathTarget(w.config.RepoRoot, path)
+		if err != nil {
+			return nil, fmt.Errorf("current task review targets: %w", err)
 		}
 		if _, duplicate := seen[target]; duplicate {
 			continue
@@ -65,6 +68,35 @@ func (w *Workflow) currentReviewDiffTargets() ([]string, error) {
 		return nil, fmt.Errorf("current task review targets: current task has no changed paths")
 	}
 	return targets, nil
+}
+
+func proofableReviewPathTarget(repoRoot, path string) (string, error) {
+	diffRaw := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
+	diffTarget, err := reviewtarget.ParseTarget(diffRaw)
+	if err != nil {
+		return "", fmt.Errorf("changed path %q cannot be represented as a review target: %w", path, err)
+	}
+	if err := reviewtarget.ValidateProofAddressable(repoRoot, diffTarget); err == nil {
+		return diffRaw, nil
+	}
+
+	_, statErr := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(path)))
+	if errors.Is(statErr, os.ErrNotExist) {
+		return diffRaw, nil
+	}
+	if statErr != nil {
+		return "", fmt.Errorf("inspect changed path %q: %w", path, statErr)
+	}
+
+	lineRaw := fmt.Sprintf("%s:1", path)
+	lineTarget, err := reviewtarget.ParseTarget(lineRaw)
+	if err != nil {
+		return "", fmt.Errorf("changed path %q cannot be represented as source evidence: %w", path, err)
+	}
+	if err := reviewtarget.ValidateProofAddressable(repoRoot, lineTarget); err != nil {
+		return "", fmt.Errorf("changed path %q has no canonical review proof path: %w", path, err)
+	}
+	return lineRaw, nil
 }
 
 func (w *Workflow) resultOrCurrentReviewTargets(result packet.Result) ([]string, error) {
