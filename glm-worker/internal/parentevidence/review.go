@@ -158,11 +158,36 @@ func (p *Projector) markReviewProof(parts []Part) error {
 	if binding == nil {
 		return nil
 	}
-	claims, complete := ReviewClaims(binding.Targets, parts)
-	if !complete {
-		return nil
+	claims, err := p.reviewCoverageClaims(binding.Targets, parts)
+	if err != nil {
+		return err
 	}
-	return p.st.MarkParentReviewEvidence(binding.ID, p.ownerCallID, claims)
+	_, err = p.st.AccumulateParentReviewEvidenceCoverage(binding.ID, p.ownerCallID, p.leaseEpoch, claims)
+	return err
+}
+
+func (p *Projector) reviewCoverageClaims(targets []string, parts []Part) ([]state.ParentReviewTargetCoverageClaim, error) {
+	claims := make([]state.ParentReviewTargetCoverageClaim, 0, len(targets))
+	seen := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		if _, duplicate := seen[target]; duplicate {
+			continue
+		}
+		claim, ok := reviewClaimForTarget(target, parts)
+		if !ok {
+			var err error
+			claim, ok, err = p.deliveredSourceClaimForTarget(target, parts)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !ok {
+			continue
+		}
+		seen[target] = struct{}{}
+		claims = append(claims, state.ParentReviewTargetCoverageClaim{Target: target, Evidence: claim})
+	}
+	return claims, nil
 }
 
 func ReviewClaims(targets []string, parts []Part) ([]state.ParentReviewEvidenceClaim, bool) {
@@ -185,7 +210,7 @@ func ReviewClaims(targets []string, parts []Part) ([]state.ParentReviewEvidenceC
 
 func reviewClaimForTarget(target string, parts []Part) (state.ParentReviewEvidenceClaim, bool) {
 	for _, part := range parts {
-		if part.Digest == "" {
+		if part.Status != PartProjected || part.Digest == "" {
 			continue
 		}
 		if part.Source != nil {
@@ -199,6 +224,56 @@ func reviewClaimForTarget(target string, parts []Part) (state.ParentReviewEviden
 		}
 	}
 	return state.ParentReviewEvidenceClaim{}, false
+}
+
+func (p *Projector) deliveredSourceClaimForTarget(target string, parts []Part) (state.ParentReviewEvidenceClaim, bool, error) {
+	for _, part := range parts {
+		if part.Status != PartProjected || part.Reason != UnchangedReason || part.Digest == "" || part.Source == nil || part.Source.Content != "" {
+			continue
+		}
+		covered, err := sourceMetadataCoversTarget(p.repoRoot, target, *part.Source)
+		if err != nil {
+			return state.ParentReviewEvidenceClaim{}, false, err
+		}
+		if !covered {
+			continue
+		}
+		_, delivered, err := p.st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceSource, part.Digest)
+		if err != nil {
+			return state.ParentReviewEvidenceClaim{}, false, err
+		}
+		if delivered {
+			return state.ParentReviewEvidenceClaim{Kind: "source", Digest: part.Digest, Locator: part.Locator}, true, nil
+		}
+	}
+	return state.ParentReviewEvidenceClaim{}, false, nil
+}
+
+func sourceMetadataCoversTarget(repoRoot, raw string, source SourceBody) (bool, error) {
+	target, err := reviewtarget.ParseTarget(raw)
+	if err != nil || target.Path != source.Path {
+		return false, nil
+	}
+	switch target.Kind {
+	case reviewtarget.LocatorLineRange:
+		return source.LineStart <= target.LineStart && source.LineEnd >= target.LineEnd, nil
+	case reviewtarget.LocatorGoSymbol:
+		absolute, err := joinRoot(repoRoot, target.Path)
+		if err != nil {
+			return false, err
+		}
+		content, err := os.ReadFile(absolute)
+		if err != nil {
+			return false, fmt.Errorf("read delivered review symbol source %s: %w", target.Path, err)
+		}
+		declaration, err := reviewtarget.FindGoDeclaration(content, target.Locator)
+		if err != nil {
+			return false, nil
+		}
+		return source.LineStart <= declaration.LineStart && source.LineEnd >= declaration.LineEnd, nil
+	default:
+		return false, nil
+	}
 }
 
 func sourceForReviewClaim(part Part, parts []Part) (SourceBody, bool) {
