@@ -94,6 +94,7 @@ type statusRateLimit struct {
 	Phase          string  `json:"phase,omitempty"`
 	ResetAtCST     string  `json:"reset_at_cst,omitempty"`
 	ResetAtRFC3339 *string `json:"reset_at_rfc3339,omitempty"`
+	ResumeMode     string  `json:"resume_mode,omitempty"`
 }
 
 type statusProviderUnavailable struct {
@@ -309,6 +310,7 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 			Phase:          checkpoint.Phase,
 			ResetAtCST:     checkpoint.ResetAtCST,
 			ResetAtRFC3339: machinecli.StringPtr(checkpoint.ResetAtRFC3339),
+			ResumeMode:     zaiSelfResumeMode(checkpoint.ResetAtRFC3339, zaiSelfResumeNow()),
 		}
 	}
 	if checkpoint.StopKind == state.ResumeStopProviderUnavailable {
