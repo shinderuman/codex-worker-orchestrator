@@ -20,7 +20,7 @@ func TestQualityGateFixResultUsesCanonicalViolationTargets(t *testing.T) {
 		{Rule: "revive", Path: "a.go", Line: 3, Column: 2, Message: "bad name"},
 		{Rule: "other", Path: "b.go", Line: 10, Column: 1, Message: "duplicate path"},
 	}})
-	want := []string{"a.go:@diff", "b.go:@diff"}
+	want := []string{"a.go:3", "b.go:10", "b.go:9"}
 	if !reflect.DeepEqual(result.Targets, want) {
 		t.Fatalf("quality gate targets = %#v want %#v", result.Targets, want)
 	}
@@ -32,6 +32,7 @@ func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &out)
 	runQualityGateGit(t, w.config.RepoRoot, "init")
+	writeQualityGateFile(t, w.config.RepoRoot, ".golangci.yml", "version: current\n")
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{".golangci.yml"}, nil
 	}
@@ -65,6 +66,7 @@ func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testin
 	}
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, &scriptedRunner{}, &out)
+	writeQualityGateFile(t, w.config.RepoRoot, ".golangci.yml", "version: current\n")
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{".golangci.yml"}, nil
 	}
