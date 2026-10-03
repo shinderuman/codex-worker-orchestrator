@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -16,10 +17,17 @@ func writeCleanTaskBaselineState(t *testing.T, st *state.StateStore, baseline st
 	if err := st.Write("baseline-status", "clean"); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"baseline-index.patch", "baseline-worktree.patch", "baseline-untracked"} {
+	for _, name := range []string{"baseline-index.patch", "baseline-worktree.patch"} {
 		if err := os.WriteFile(st.Path(name), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	root := st.Path("baseline-untracked")
+	if err := os.MkdirAll(filepath.Join(root, "blobs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), []byte("{\"version\":1,\"entries\":[]}\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
