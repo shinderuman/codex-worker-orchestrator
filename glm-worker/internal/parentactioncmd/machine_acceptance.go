@@ -1,7 +1,10 @@
 package parentactioncmd
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathadvisory"
@@ -19,20 +22,45 @@ func publicationMachineAcceptanceGate(repoRoot string, st *state.StateStore, can
 	}
 	taskID, err := st.TaskID()
 	if err != nil {
-		return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
+		return gate
 	}
-	if candidate.TaskID != taskID {
-		return machineAcceptanceGateFailure(gate, publicationGateFail,
-			fmt.Sprintf("publication candidate task %s does not match current task %s", candidate.TaskID, taskID))
+
+	taskPath, canonicalPathErr := st.CurrentTaskAuthorityPath()
+	if canonicalPathErr != nil {
+		taskPath = st.ReadOr("active-task", "")
 	}
-	taskPath, err := st.CurrentTaskAuthorityPath()
+	if taskPath == "" {
+		declared, probeErr := savedTaskDeclaresMachineAcceptance(st, taskID)
+		if probeErr != nil {
+			return machineAcceptanceGateFailure(gate, publicationGateFail, probeErr.Error())
+		}
+		if !declared {
+			return gate
+		}
+		return machineAcceptanceGateFailure(gate, publicationGateFail, canonicalPathErr.Error())
+	}
+
+	content, tracked, err := publicationTaskAuthorityAt(repoRoot, candidate.BaseHead, taskPath)
 	if err != nil {
 		return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
 	}
-	content, err := publicationTaskAuthorityContent(repoRoot, st, candidate, taskID, taskPath)
-	if err != nil {
-		return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
+	if !tracked {
+		declared, probeErr := savedTaskDeclaresMachineAcceptance(st, taskID)
+		if probeErr != nil {
+			return machineAcceptanceGateFailure(gate, publicationGateFail, probeErr.Error())
+		}
+		if !declared {
+			return gate
+		}
+		if canonicalPathErr != nil {
+			return machineAcceptanceGateFailure(gate, publicationGateFail, canonicalPathErr.Error())
+		}
+		content, err = publicationTaskAuthorityContent(repoRoot, st, candidate, taskID, taskPath)
+		if err != nil {
+			return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
+		}
 	}
+
 	contract, err := taskcontract.ParseMachineAcceptance(content)
 	if err != nil {
 		return machineAcceptanceGateFailure(gate, publicationGateFail, err.Error())
@@ -40,6 +68,14 @@ func publicationMachineAcceptanceGate(repoRoot string, st *state.StateStore, can
 	if !contract.Present {
 		return gate
 	}
+	if canonicalPathErr != nil {
+		return machineAcceptanceGateFailure(gate, publicationGateFail, canonicalPathErr.Error())
+	}
+	if candidate.TaskID != taskID {
+		return machineAcceptanceGateFailure(gate, publicationGateFail,
+			fmt.Sprintf("publication candidate task %s does not match current task %s", candidate.TaskID, taskID))
+	}
+
 	gate.Required = true
 	registry, err := failurepathadvisory.LoadRegistry(st.Path(failurepathadvisory.RegistryFile))
 	if err != nil {
@@ -62,6 +98,29 @@ func machineAcceptanceGateFailure(gate publicationGateProjection, status, reason
 	return gate
 }
 
+func savedTaskDeclaresMachineAcceptance(st *state.StateStore, taskID string) (bool, error) {
+	content, err := os.ReadFile(st.TaskAuthorityContentPath(taskID))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read saved task authority: %w", err)
+	}
+	return bytes.Contains(content, []byte(taskcontract.MachineAcceptanceHeading)), nil
+}
+
+func publicationTaskAuthorityAt(repoRoot, head, taskPath string) ([]byte, bool, error) {
+	tracked, err := publicationTaskTrackedAt(repoRoot, head, taskPath)
+	if err != nil || !tracked {
+		return nil, tracked, err
+	}
+	content, err := gitFinalizationOutput(repoRoot, "show", head+":"+taskPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("read task authority %s at %s: %w", taskPath, head, err)
+	}
+	return []byte(content), true, nil
+}
+
 func publicationTaskAuthorityContent(
 	repoRoot string,
 	st *state.StateStore,
@@ -69,32 +128,27 @@ func publicationTaskAuthorityContent(
 	taskID string,
 	taskPath string,
 ) ([]byte, error) {
-	authorityHead := candidate.BaseHead
-	tracked, err := publicationTaskTrackedAt(repoRoot, authorityHead, taskPath)
+	lineage, err := st.LoadPublicationReopenLineage()
+	if err != nil {
+		return nil, fmt.Errorf("task %s is absent from candidate base and reopen lineage is unavailable: %w", taskPath, err)
+	}
+	if err := verifyCompletionReopenLineageIdentity(lineage, taskPath, taskID); err != nil {
+		return nil, err
+	}
+	if err := verifyCompletionReopenLineageTransition(repoRoot, lineage, taskPath); err != nil {
+		return nil, err
+	}
+	if _, err := gitFinalizationOutput(repoRoot, "merge-base", "--is-ancestor", lineage.CommitOID, candidate.BaseHead); err != nil {
+		return nil, fmt.Errorf("candidate base %s does not descend from reopen lineage %s", candidate.BaseHead, lineage.CommitOID)
+	}
+	content, tracked, err := publicationTaskAuthorityAt(repoRoot, lineage.BaseHead, taskPath)
 	if err != nil {
 		return nil, err
 	}
 	if !tracked {
-		lineage, err := st.LoadPublicationReopenLineage()
-		if err != nil {
-			return nil, fmt.Errorf("task %s is absent from candidate base and reopen lineage is unavailable: %w", taskPath, err)
-		}
-		if err := verifyCompletionReopenLineageIdentity(lineage, taskPath, taskID); err != nil {
-			return nil, err
-		}
-		if err := verifyCompletionReopenLineageTransition(repoRoot, lineage, taskPath); err != nil {
-			return nil, err
-		}
-		if _, err := gitFinalizationOutput(repoRoot, "merge-base", "--is-ancestor", lineage.CommitOID, candidate.BaseHead); err != nil {
-			return nil, fmt.Errorf("candidate base %s does not descend from reopen lineage %s", candidate.BaseHead, lineage.CommitOID)
-		}
-		authorityHead = lineage.BaseHead
+		return nil, fmt.Errorf("reopen lineage base %s does not contain task authority %s", lineage.BaseHead, taskPath)
 	}
-	content, err := gitFinalizationOutput(repoRoot, "show", authorityHead+":"+taskPath)
-	if err != nil {
-		return nil, fmt.Errorf("read task authority %s at %s: %w", taskPath, authorityHead, err)
-	}
-	return []byte(content), nil
+	return content, nil
 }
 
 func publicationTaskTrackedAt(repoRoot, head, taskPath string) (bool, error) {
@@ -118,7 +172,7 @@ func machineAcceptanceRequirementSatisfied(
 		case taskcontract.MachineFactFailurePathAdvisoryObserved:
 			return true
 		case taskcontract.MachineFactFailurePathAdvisoryShown:
-			if record.Advisory != nil && record.Advisory.Status == failurepathadvisory.AdvisoryShown {
+			if record.Advisory != nil && record.Advisory.Status == failurepathadvisory.AdvisoryShown && record.Advisory.FindingsShown > 0 {
 				return true
 			}
 		}
