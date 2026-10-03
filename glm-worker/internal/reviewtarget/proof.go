@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 type ProofError struct {
@@ -50,6 +51,9 @@ func ValidateProofAddressable(repoRoot string, target Target) error {
 func validateLineRangeProofAddressable(repoRoot string, target Target) error {
 	content, err := readRepositoryFile(repoRoot, target.Path)
 	if err == nil {
+		if !textLineEvidence(content) {
+			return proofError("line-source-nontext", target, "use a line/range only for UTF-8 text source; use @diff when binary diff evidence exists")
+		}
 		if lineRangeExists(content, target.LineEnd) {
 			return nil
 		}
@@ -70,10 +74,17 @@ func validateDeletedLineRange(repoRoot string, target Target) error {
 	if err != nil {
 		return proofError("deleted-line-head-unavailable", target, "use a deleted-file line/range only when that exact line exists in HEAD")
 	}
+	if !textLineEvidence(content) {
+		return proofError("deleted-line-nontext", target, "use a deleted-file line/range only for UTF-8 text source")
+	}
 	if !lineRangeExists(content, target.LineEnd) {
 		return proofError("deleted-line-out-of-range", target, "use a line/range that existed in the deleted HEAD file")
 	}
 	return nil
+}
+
+func textLineEvidence(content []byte) bool {
+	return utf8.Valid(content) && !bytes.ContainsRune(content, '\x00')
 }
 
 func lineRangeExists(content []byte, end int) bool {
