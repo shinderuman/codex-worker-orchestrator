@@ -153,7 +153,7 @@ func TestPreexistingUntrackedLegacyPathListIsRejected(t *testing.T) {
 	}
 
 	_, _, err := ChangedPaths(repoRoot, st)
-	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+	if err == nil || !strings.Contains(err.Error(), "decode untracked baseline snapshot") {
 		t.Fatalf("legacy path-only baseline was not rejected: %v", err)
 	}
 }
