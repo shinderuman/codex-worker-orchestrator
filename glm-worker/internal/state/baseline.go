@@ -69,8 +69,11 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		}
 		return nil
 	}
-	if err := writeFileAtomic(state.Path(baselineUntrackedFile), untrackedOutput, 0o600); err != nil {
-		return err
+	if err := captureUntrackedBaselineSnapshot(cfg.RepoRoot, state, untrackedOutput); err != nil {
+		if cleanupErr := removeGitBaseline(state); cleanupErr != nil {
+			return fmt.Errorf("capture untracked baseline: %w; cleanup failed: %w", err, cleanupErr)
+		}
+		return fmt.Errorf("capture untracked baseline: %w", err)
 	}
 
 	if unborn {
@@ -104,7 +107,10 @@ func failGitBaselineHeadResolution(state *StateStore, cause error) error {
 }
 
 func removeGitBaseline(state *StateStore) error {
-	return state.Remove("baseline-head", "baseline-status", "baseline-worktree.patch", "baseline-index.patch", baselineUntrackedFile)
+	if err := state.Remove("baseline-head", "baseline-status", "baseline-worktree.patch", "baseline-index.patch"); err != nil {
+		return err
+	}
+	return removeUntrackedBaselineSnapshot(state)
 }
 
 func ResolveGitHeadAuthority(gitPath, repoRoot string) (GitHeadAuthority, error) {
