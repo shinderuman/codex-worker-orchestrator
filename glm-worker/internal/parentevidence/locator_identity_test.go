@@ -1,7 +1,6 @@
 package parentevidence
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -159,5 +158,3 @@ func assertDistinctSourceClaims(t *testing.T, st *state.StateStore, locators ...
 		}
 	}
 }
-
-var _ = bytes.Buffer{}
