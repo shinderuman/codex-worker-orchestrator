@@ -49,17 +49,9 @@ func Parse(raw string) (string, string, error) {
 }
 
 func ParseTarget(raw string) (Target, error) {
-	if raw == "" || strings.TrimSpace(raw) != raw {
-		return Target{}, parseError("shape", raw)
-	}
-	separator := strings.Index(raw, ":")
-	if separator <= 0 || separator == len(raw)-1 {
-		return Target{}, parseError("shape", raw)
-	}
-	path := raw[:separator]
-	locator := raw[separator+1:]
-	if path == "" || locator == "" || strings.TrimSpace(path) != path || strings.TrimSpace(locator) != locator || !relativePath(path) || strings.ContainsAny(path, " ,()") {
-		return Target{}, parseError("path", raw)
+	path, locator, err := splitCanonicalTarget(raw)
+	if err != nil {
+		return Target{}, err
 	}
 	if start, end, ok := ParseLineRange(locator); ok {
 		return Target{Path: path, Locator: locator, Kind: LocatorLineRange, LineStart: start, LineEnd: end}, nil
@@ -67,6 +59,26 @@ func ParseTarget(raw string) (Target, error) {
 	if locator == WholeFileDiffLocator {
 		return Target{Path: path, Locator: locator, Kind: LocatorWholeDiff}, nil
 	}
+	return parseGoTarget(raw, path, locator)
+}
+
+func splitCanonicalTarget(raw string) (string, string, error) {
+	if raw == "" || strings.TrimSpace(raw) != raw {
+		return "", "", parseError("shape", raw)
+	}
+	separator := strings.Index(raw, ":")
+	if separator <= 0 || separator == len(raw)-1 {
+		return "", "", parseError("shape", raw)
+	}
+	path := raw[:separator]
+	locator := raw[separator+1:]
+	if strings.TrimSpace(path) != path || strings.TrimSpace(locator) != locator || !relativePath(path) || strings.ContainsAny(path, " ,()") {
+		return "", "", parseError("path", raw)
+	}
+	return path, locator, nil
+}
+
+func parseGoTarget(raw, path, locator string) (Target, error) {
 	if !strings.HasSuffix(path, ".go") {
 		return Target{}, parseError("locator-language", raw)
 	}
