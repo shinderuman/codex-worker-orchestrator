@@ -68,10 +68,12 @@ func markdownTaskDerivedStateViolations(path string, data []byte, headings map[s
 	if err != nil {
 		line := headings["Review findings"]
 		violations = append(violations, markdownDerivedViolation(path, line, "Review findings must have one live, unambiguous section: "+err.Error()))
-		return violations
-	}
-	if findings.Present && findings.None {
+	} else if findings.Present && findings.None {
 		violations = append(violations, markdownDerivedViolation(path, headings["Review findings"], "omit Review findings when there are no unresolved findings"))
+	}
+	if _, err := taskcontract.ParseMachineAcceptance(data); err != nil {
+		line := headings[strings.TrimPrefix(taskcontract.MachineAcceptanceHeading, "## ")]
+		violations = append(violations, markdownDerivedViolation(path, line, "Machine-verifiable acceptance must use the canonical typed contract: "+err.Error()))
 	}
 	return violations
 }
