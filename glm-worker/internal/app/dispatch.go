@@ -99,7 +99,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	st := state.AttachStateStore(cfg)
 	switch cmd.Mode {
 	case ModeStatus:
-		return printStatusLeased(st, stdout)
+		return printStatusLeased(st, cfg.RepoRoot, stdout)
 	case ModeHandoff:
 		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:

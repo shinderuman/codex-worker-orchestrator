@@ -214,13 +214,13 @@ if (
 	cd "$repo"
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" install
 ) >"$tmp/parent-action-install.stdout" 2>"$tmp/parent-action-install.stderr"; then
-	printf '%s\n' 'glm-parent-action install admitted without an awaiting task' >&2
+	printf '%s\n' 'glm-parent-action accepted retired install lifecycle' >&2
 	exit 1
 fi
-grep -q 'install is not admitted' "$tmp/parent-action-install.stderr"
+test ! -s "$tmp/parent-action-install.stdout"
+grep -Fq -- '--authority controller-execution' "$tmp/parent-action-install.stderr"
 (
 	cd "$repo"
-	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --reset >/dev/null
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --status
 ) >"$tmp/runtime-status.json"
 grep -Fq "\"vcs_revision\":\"$repo_revision\"" "$tmp/runtime-status.json"
