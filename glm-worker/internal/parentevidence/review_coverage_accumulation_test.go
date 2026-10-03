@@ -123,11 +123,10 @@ func TestReviewCoverageBudgetRefinementDoesNotCount(t *testing.T) {
 
 func TestReviewCoverageCompletesAfterTotalBudgetForcesSplitDelivery(t *testing.T) {
 	repoRoot, st := newReviewCoverageStore(t)
-	large := strings.Repeat("x", 60*1024)
-	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte(large), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte(strings.Repeat("a", 60*1024)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repoRoot, "other.go"), []byte(large), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repoRoot, "other.go"), []byte(strings.Repeat("b", 60*1024)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	openLocatorIdentityReview(t, repoRoot, st, []string{"review.go:1", "other.go:1"})
