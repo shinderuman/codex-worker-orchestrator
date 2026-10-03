@@ -283,6 +283,16 @@ func validateUntrackedBaselineSnapshot(snapshot untrackedBaselineSnapshot) ([]Un
 }
 
 func validateUntrackedBaselineSnapshotEntry(entry untrackedBaselineSnapshotEntry, seen map[string]struct{}) error {
+	if err := validateUntrackedBaselineEntryIdentity(entry, seen); err != nil {
+		return err
+	}
+	if err := validateUntrackedBaselineEntryMetadata(entry); err != nil {
+		return err
+	}
+	return validateUntrackedBaselineEntryContent(entry)
+}
+
+func validateUntrackedBaselineEntryIdentity(entry untrackedBaselineSnapshotEntry, seen map[string]struct{}) error {
 	if !validUntrackedBaselineRelativePath(entry.Path) {
 		return fmt.Errorf("invalid untracked baseline path %q", entry.Path)
 	}
@@ -292,6 +302,10 @@ func validateUntrackedBaselineSnapshotEntry(entry untrackedBaselineSnapshotEntry
 	if entry.Kind != UntrackedBaselineKindFile && entry.Kind != UntrackedBaselineKindSymlink {
 		return fmt.Errorf("invalid untracked baseline kind for %q", entry.Path)
 	}
+	return nil
+}
+
+func validateUntrackedBaselineEntryMetadata(entry untrackedBaselineSnapshotEntry) error {
 	if entry.Kind == UntrackedBaselineKindSymlink && entry.Mode != 0 {
 		return fmt.Errorf("symlink untracked baseline has unexpected mode for %q", entry.Path)
 	}
@@ -301,6 +315,10 @@ func validateUntrackedBaselineSnapshotEntry(entry untrackedBaselineSnapshotEntry
 	if entry.Size < 0 || entry.Size > untrackedBaselineMaxEntryBytes || entry.Size != int64(len(entry.Content)) {
 		return fmt.Errorf("invalid untracked baseline size for %q", entry.Path)
 	}
+	return nil
+}
+
+func validateUntrackedBaselineEntryContent(entry untrackedBaselineSnapshotEntry) error {
 	if !validUntrackedBaselineDigest(entry.SHA256) {
 		return fmt.Errorf("invalid untracked baseline digest for %q", entry.Path)
 	}
