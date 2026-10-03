@@ -1,6 +1,10 @@
 package state
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+)
 
 type ParentReviewEvidenceCoverage struct {
 	ReviewID string                            `json:"review_id"`
@@ -95,7 +99,7 @@ func (s *StateStore) AccumulateParentReviewEvidenceCoverage(
 	if err != nil {
 		return false, err
 	}
-	if state.Open == nil || state.Open.PacketStatus != "NEEDS_SOL_REVIEW" || state.Review == nil || state.Review.ID != reviewID {
+	if state.Open == nil || state.Open.PacketStatus != string(packet.StatusNeedsSolReview) || state.Review == nil || state.Review.ID != reviewID {
 		return false, fmt.Errorf("parent review evidence coverage no longer matches the open review")
 	}
 	currentLease, err := s.ParentEvidenceLeaseEpoch()
