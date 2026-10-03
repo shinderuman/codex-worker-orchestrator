@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
@@ -190,9 +189,9 @@ func (w *Workflow) currentQualitySurfaceReviewTargets() ([]string, error) {
 		if path == "" || !IsQualitySurface(path) {
 			continue
 		}
-		target, err := proofableQualitySurfaceTarget(w.config.RepoRoot, path)
+		target, err := proofableReviewPathTarget(w.config.RepoRoot, path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("quality surface path %q has no canonical review proof path: %w", path, err)
 		}
 		if _, duplicate := seen[target]; duplicate {
 			continue
@@ -204,20 +203,6 @@ func (w *Workflow) currentQualitySurfaceReviewTargets() ([]string, error) {
 		return nil, fmt.Errorf("quality surface has no changed paths")
 	}
 	return targets, nil
-}
-
-func proofableQualitySurfaceTarget(repoRoot, path string) (string, error) {
-	for _, locator := range []string{reviewtarget.WholeFileDiffLocator, "1"} {
-		raw := fmt.Sprintf("%s:%s", path, locator)
-		target, err := reviewtarget.ParseTarget(raw)
-		if err != nil {
-			return "", fmt.Errorf("quality surface path %q cannot be represented as a review target: %w", path, err)
-		}
-		if err := reviewtarget.ValidateProofAddressable(repoRoot, target); err == nil {
-			return raw, nil
-		}
-	}
-	return "", fmt.Errorf("quality surface path %q has no canonical review proof path", path)
 }
 
 func qualitySurfaceFailClosedResult(phase, reason string, targets []string) packet.Result {
