@@ -31,6 +31,7 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	}
 
 	checkpoint.QualitySurfaceApprovalPending = true
+	checkpoint.QualitySurfaceApprovalActivated = false
 	checkpoint.CompletedResult = &result
 	if err := w.captureStopRetention(&checkpoint); err != nil {
 		return true, err
@@ -107,9 +108,6 @@ func (w *Workflow) loadApprovedQualitySurfaceCheckpoint() (state.ResumeCheckpoin
 	}
 	if !w.acceptedFixScopeContainsCurrent() {
 		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(&WorkerError{Phase: checkpoint.Phase, Message: "current diff is not covered by the parent-approved quality-surface scope"})
-	}
-	if err := checkpoint.MarkQualitySurfaceApprovalActivated(); err != nil {
-		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(err)
 	}
 	return checkpoint, true, nil
 }
