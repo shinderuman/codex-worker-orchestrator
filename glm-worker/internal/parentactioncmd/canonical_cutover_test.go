@@ -36,6 +36,7 @@ func TestPublicationReadOnlyBindingsRemainAvailableAfterCutover(t *testing.T) {
 			if err := rejectLegacyPublicationBinding(cfg, subcommand); err != nil {
 				t.Fatalf("activate=%v read-only publication binding %s was rejected: %v", activate, subcommand, err)
 			}
+		}
 	}
 }
 
