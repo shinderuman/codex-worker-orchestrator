@@ -24,12 +24,16 @@ func TestEvidenceGraphMemoizesValidatedRevisionChains(t *testing.T) {
 	}
 
 	firstEpisode := EpisodeIndexRevision{
-		SchemaVersion:        evidenceSchemaVersion,
-		EpisodeID:            "episode-memoized",
-		EpisodeRevision:      1,
-		ControllerGeneration: 1,
-		TransitionID:         "transition-1",
-		CreatedAt:            time.Unix(9002, 0).UTC(),
+		SchemaVersion:             evidenceSchemaVersion,
+		EpisodeID:                 "episode-memoized",
+		RootTaskRef:               task,
+		EpisodeRevision:           1,
+		DependencyGraphSnapshotID: "dependency-episode-memoized",
+		AdmittedClosureTaskRefs:   []SemanticTaskRef{task},
+		State:                     "open",
+		ControllerGeneration:      1,
+		TransitionID:              "transition-1",
+		CreatedAt:                 time.Unix(9002, 0).UTC(),
 	}
 	firstEpisodeRef, _, err := store.StoreEpisodeIndexRevision(firstEpisode)
 	if err != nil {
