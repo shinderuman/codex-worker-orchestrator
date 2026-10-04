@@ -51,7 +51,7 @@ func RunBoundedCommand(ctx context.Context, workingDir, name string, args []stri
 		return boundedCommandResult(stdout, stderr, commandExitCode(err), BoundedCommandExitTarget, err)
 	case <-timer.C:
 		terminateObservationProcessGroup(command.Process.Pid)
-		err := boundedCommandWait(waitDone)
+		err := boundedCommandDeadlineError(boundedCommandWait(waitDone))
 		return boundedCommandResult(stdout, stderr, commandExitCode(err), BoundedCommandExitDeadline, err)
 	case <-ctx.Done():
 		terminateObservationProcessGroup(command.Process.Pid)
@@ -61,6 +61,13 @@ func RunBoundedCommand(ctx context.Context, workingDir, name string, args []stri
 		}
 		return boundedCommandResult(stdout, stderr, commandExitCode(err), BoundedCommandExitCancelled, err)
 	}
+}
+
+func boundedCommandDeadlineError(waitErr error) error {
+	if waitErr != nil {
+		return waitErr
+	}
+	return context.DeadlineExceeded
 }
 
 func boundedCommandWait(waitDone <-chan error) error {
