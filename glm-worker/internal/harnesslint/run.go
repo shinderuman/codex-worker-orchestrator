@@ -35,6 +35,9 @@ func run(root string, fix bool, runner commandRunner) (Report, error) {
 		if err != nil {
 			return Report{}, err
 		}
+		if err := fixCleanCutover(root, paths); err != nil {
+			return Report{}, err
+		}
 		if err := fixGoFormatting(root, paths); err != nil {
 			return Report{}, err
 		}
