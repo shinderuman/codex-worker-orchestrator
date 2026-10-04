@@ -67,6 +67,10 @@ func (p propertySchema) MarshalJSON() ([]byte, error) {
 	}
 }
 
+func plainStringProperty() *propertySchema {
+	return &propertySchema{scalar: &scalarSchema{Type: schemaTypeString}}
+}
+
 func stringProperty(values ...string) *propertySchema {
 	if len(values) == 0 {
 		return &propertySchema{scalar: &scalarSchema{Type: schemaTypeString, Pattern: singleLineNonBlankPattern}}
@@ -85,8 +89,8 @@ func stringsProperty() *propertySchema {
 
 func stringsPropertyMinItems(minItems int) *propertySchema {
 	return &propertySchema{array: &arraySchema{
-		Type: schemaTypeArray,
-		Items: scalarSchema{Type: schemaTypeString, Pattern: singleLineNonBlankPattern},
+		Type:     schemaTypeArray,
+		Items:    scalarSchema{Type: schemaTypeString, Pattern: singleLineNonBlankPattern},
 		MinItems: minItems,
 	}}
 }
@@ -95,6 +99,9 @@ func schemaPropertyForField(field machineField, contract machineContract) *prope
 	spec := machineFieldSpec(field)
 	switch spec.kind {
 	case machineFieldString:
+		if field == fieldParentValidationWorkingDir {
+			return plainStringProperty()
+		}
 		return stringProperty()
 	case machineFieldStrings:
 		return stringsProperty()
