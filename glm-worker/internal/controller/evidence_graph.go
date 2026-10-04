@@ -216,7 +216,7 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 	current := ref
 	upper := maxGeneration + 1
 	for {
-		key := revisionChainCacheKey(subject, current)
+		key := episodeRevisionChainCacheKey(subject, current, w.publishedTaskHeads)
 		if done, err := reuseValidatedRevisionChain(w.validatedEpisodeChains, key, current, upper, validated, "episode index revision chain authority is inconsistent"); done {
 			return err
 		}
@@ -245,6 +245,23 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 
 func revisionChainCacheKey(subject string, ref EvidenceObjectRef) string {
 	return subject + "\x00" + evidenceRefKey(ref)
+}
+
+func episodeRevisionChainCacheKey(subject string, ref EvidenceObjectRef, published map[string]EvidenceObjectRef) string {
+	heads := make([]EvidenceSubjectHead, 0, len(published))
+	for publishedSubject, publishedRef := range published {
+		heads = append(heads, EvidenceSubjectHead{SubjectID: publishedSubject, RevisionRef: publishedRef})
+	}
+	heads = canonicalEvidenceHeads(heads)
+	var key strings.Builder
+	key.WriteString(revisionChainCacheKey(subject, ref))
+	for _, head := range heads {
+		key.WriteByte('\x00')
+		key.WriteString(head.SubjectID)
+		key.WriteByte('\x00')
+		key.WriteString(evidenceRefKey(head.RevisionRef))
+	}
+	return key.String()
 }
 
 func reuseValidatedRevisionChain(
