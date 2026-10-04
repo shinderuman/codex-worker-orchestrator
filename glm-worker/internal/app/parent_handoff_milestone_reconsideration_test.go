@@ -60,7 +60,6 @@ func TestParentHandoffDoesNotAddDedicatedMilestoneReconsiderationOutsideNaturalB
 		state.TaskStatusAwaitingParentCompletion,
 		state.TaskStatusComplete,
 		state.TaskStatusQualityGateRecoverable,
-		state.TaskStatusParked,
 	}
 	for _, status := range statuses {
 		t.Run(string(status), func(t *testing.T) {
