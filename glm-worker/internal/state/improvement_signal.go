@@ -49,16 +49,6 @@ const (
 	improvementSignalDispositionVersion   = 1
 )
 
-func ImprovementSignalDispositionChoices() []string {
-	return []string{
-		string(ImprovementSignalDispositionAdopt),
-		string(ImprovementSignalDispositionExistingOwner),
-		string(ImprovementSignalDispositionDuplicate),
-		string(ImprovementSignalDispositionReject),
-		string(ImprovementSignalDispositionAwaitingEvidence),
-	}
-}
-
 func (d ImprovementSignalDisposition) Valid() bool {
 	switch d {
 	case ImprovementSignalDispositionAdopt,
