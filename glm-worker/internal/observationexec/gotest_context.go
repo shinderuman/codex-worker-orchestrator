@@ -13,7 +13,7 @@ import (
 
 const exitSourceCancelled = "cancelled"
 
-func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutcome {
+func RunIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -53,6 +53,10 @@ func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutc
 	run := runIsolatedGoTestProcessContext(executionCtx, input, tempRoot, deadline)
 	run.outcome.DurationMS = time.Since(started).Milliseconds()
 	return finalizeIsolatedGoTestOutcome(input, run)
+}
+
+func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutcome {
+	return RunIsolatedGoTest(ctx, input)
 }
 
 func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tempRoot string, deadline time.Duration) isolatedGoTestRun {
