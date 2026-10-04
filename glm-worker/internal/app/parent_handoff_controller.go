@@ -38,7 +38,7 @@ func canonicalParentAction(action string) string {
 	switch state.ParentAction(action) {
 	case state.ParentActionComplete, state.ParentActionInstall, state.ParentActionReopen:
 		return "controller-publication"
-	case state.ParentActionPark, state.ParentActionUnpark:
+	case state.ParentActionPark:
 		return controllerExecutionSurface
 	case state.ParentActionNoGo, state.ParentActionBindDefectTask, state.ParentActionImprovementDisposition:
 		return "controller-semantic"
