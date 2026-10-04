@@ -12,9 +12,7 @@ import (
 )
 
 func labeledSeedRegistry() Registry {
-	return Registry{}.WithRecord(observedRecord("task-a",
-		Finding{Target: "a:1", Class: ClassExternalModelInvocation, Issue: "i"},
-	))
+	return Registry{}.WithRecord(observedRecord("task-a", verifiedFinding("a:1")))
 }
 
 func labelsForTaskA() RegistryUpdate {
