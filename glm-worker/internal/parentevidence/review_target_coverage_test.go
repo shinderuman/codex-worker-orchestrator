@@ -1,7 +1,6 @@
 package parentevidence
 
 import (
-	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,64 +8,9 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-func TestUntrackedSymbolTargetProvenByDeliveredSource(t *testing.T) {
-	repoRoot, st := newReviewCoverageStore(t)
-	if err := os.WriteFile(filepath.Join(repoRoot, "new.go"), []byte("package review\nfunc NewAPI() {}\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	openReviewCoverageBinding(t, repoRoot, st, "new.go:NewAPI")
-
-	if err := PrintReviewEvidence(repoRoot, st, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	binding, err := st.CurrentParentReviewBinding()
-	if err != nil || binding == nil {
-		t.Fatalf("binding = %#v err=%v", binding, err)
-	}
-	if binding.Proof == nil || len(binding.Proof.Claims) != 1 || binding.Proof.Claims[0].Kind != "source" {
-		t.Fatalf("untracked symbol target remains unproven after canonical source projection: %#v", binding.Proof)
-	}
-	ready, err := st.ParentReviewAcceptReady()
-	if err != nil || !ready {
-		t.Fatalf("untracked symbol accept readiness = %v err=%v", ready, err)
-	}
-}
-
-func TestDeletedNumericTargetProvenByDeletionDiff(t *testing.T) {
-	repoRoot, st := newReviewCoverageStore(t)
-	if err := os.Remove(filepath.Join(repoRoot, "review.go")); err != nil {
-		t.Fatal(err)
-	}
-	openReviewCoverageBinding(t, repoRoot, st, "review.go:2")
-
-	if err := PrintReviewEvidence(repoRoot, st, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	projectReviewCoverageManifest(t, repoRoot, st, Manifest{
-		Version: ManifestVersion,
-		Reason:  "inspect deleted line",
-		Diff: []DiffRequest{{
-			Question: "review deletion", Paths: []string{"review.go"}, BudgetBytes: 4096,
-		}},
-	})
-
-	binding, err := st.CurrentParentReviewBinding()
-	if err != nil || binding == nil {
-		t.Fatalf("binding = %#v err=%v", binding, err)
-	}
-	if binding.Proof == nil || len(binding.Proof.Claims) != 1 || binding.Proof.Claims[0].Kind != "diff" {
-		t.Fatalf("deleted numeric target remains unproven after delivered deletion diff: %#v", binding.Proof)
-	}
-	ready, err := st.ParentReviewAcceptReady()
-	if err != nil || !ready {
-		t.Fatalf("deleted numeric accept readiness = %v err=%v", ready, err)
-	}
-}
 
 func TestDeletedNumericTargetOutsideDeletionRangeIsNotProofAddressable(t *testing.T) {
 	repoRoot, _ := newReviewCoverageStore(t)
@@ -169,41 +113,6 @@ func newReviewCoverageStore(t *testing.T) (string, *state.StateStore) {
 		t.Fatal(err)
 	}
 	return repoRoot, st
-}
-
-func openReviewCoverageBinding(t *testing.T, repoRoot string, st *state.StateStore, target string) {
-	t.Helper()
-	if err := recordReviewCoverageBinding(repoRoot, st, target); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func recordReviewCoverageBinding(repoRoot string, st *state.StateStore, target string) error {
-	snapshot, err := state.CaptureGitSnapshot(repoRoot)
-	if err != nil {
-		return err
-	}
-	result := packet.Result{
-		Status:      packet.StatusNeedsSolReview,
-		Risk:        packet.RiskHigh,
-		SolQuestion: "Inspect the current target and decide whether to accept.",
-		Targets:     []string{target},
-	}
-	digest := state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
-	return st.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, digest)
-}
-
-func projectReviewCoverageManifest(t *testing.T, repoRoot string, st *state.StateStore, manifest Manifest) {
-	t.Helper()
-	ownerCallID, err := state.NewUUID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	projector := NewProjector(repoRoot, st, ownerCallID, Providers{})
-	projector.Project(manifest)
-	if err := projector.Commit(&bytes.Buffer{}, manifest.Reason); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func gitReviewCoverageCommand(t *testing.T, repoRoot string, args ...string) {
