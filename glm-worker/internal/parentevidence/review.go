@@ -72,11 +72,7 @@ func appendReviewManifestTarget(
 	case reviewtarget.LocatorLineRange:
 		return appendReviewLineTarget(repoRoot, manifest, seenSource, diffPaths, question, target)
 	case reviewtarget.LocatorGoSymbol:
-		request, err := reviewSymbolSourceRequest(repoRoot, question, target)
-		if err != nil {
-			return err
-		}
-		appendReviewSourceRequest(manifest, seenSource, request.Question, request.Path, request.LineStart, request.LineEnd)
+		return appendReviewSymbolTarget(repoRoot, manifest, seenSource, diffPaths, question, target)
 	case reviewtarget.LocatorWholeDiff:
 		diffPaths[target.Path] = struct{}{}
 	default:
@@ -105,6 +101,34 @@ func appendReviewLineTarget(
 	default:
 		return fmt.Errorf("inspect review line target %s: %w", target.Path, err)
 	}
+}
+
+func appendReviewSymbolTarget(
+	repoRoot string,
+	manifest *Manifest,
+	seenSource map[string]struct{},
+	diffPaths map[string]struct{},
+	question string,
+	target reviewtarget.Target,
+) error {
+	current := filepath.Join(repoRoot, filepath.FromSlash(target.Path))
+	_, err := os.Stat(current)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := reviewtarget.ValidateProofAddressable(repoRoot, target); err != nil {
+			return err
+		}
+		diffPaths[target.Path] = struct{}{}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect review symbol target %s: %w", target.Path, err)
+	}
+	request, err := reviewSymbolSourceRequest(repoRoot, question, target)
+	if err != nil {
+		return err
+	}
+	appendReviewSourceRequest(manifest, seenSource, request.Question, request.Path, request.LineStart, request.LineEnd)
+	return nil
 }
 
 func appendReviewDiffRequests(manifest *Manifest, diffPaths map[string]struct{}, question string) {
@@ -334,6 +358,8 @@ func reviewDiffFileCoversTarget(target reviewtarget.Target, file DiffFile, body 
 	switch target.Kind {
 	case reviewtarget.LocatorLineRange:
 		return reviewDiffSectionCoversLines(section, target.LineStart, target.LineEnd)
+	case reviewtarget.LocatorGoSymbol:
+		return reviewDiffSectionDeletesFile(section) && sourceCoversSymbol(target, deletedReviewDiffSource(section))
 	case reviewtarget.LocatorWholeDiff:
 		return true
 	default:
@@ -366,6 +392,29 @@ func reviewDiffSectionDeletesFile(section string) bool {
 		}
 	}
 	return false
+}
+
+func deletedReviewDiffSource(section string) string {
+	var source strings.Builder
+	inHunk := false
+	for _, line := range strings.Split(section, "\n") {
+		if strings.HasPrefix(line, "@@ ") {
+			inHunk = true
+			continue
+		}
+		if !inHunk || strings.HasPrefix(line, `\ No newline at end of file`) {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "-"):
+			source.WriteString(strings.TrimPrefix(line, "-"))
+			source.WriteByte('\n')
+		case strings.HasPrefix(line, " "):
+			source.WriteString(strings.TrimPrefix(line, " "))
+			source.WriteByte('\n')
+		}
+	}
+	return source.String()
 }
 
 func reviewDiffHunkRange(line string, oldSide bool) (int, int, bool) {
