@@ -10,8 +10,6 @@ import (
 
 func admitParentCommand(cmd Command, st *state.StateStore) error {
 	switch cmd.Mode {
-	case ModeReset:
-		return admitResetCommand(cmd, st)
 	case ModeNewTask:
 		return admitNewTaskCommand(cmd, st)
 	default:
@@ -19,17 +17,7 @@ func admitParentCommand(cmd Command, st *state.StateStore) error {
 	}
 }
 
-func admitResetCommand(cmd Command, st *state.StateStore) error {
-	if err := st.ValidateResetRequest(cmd.Payload); err != nil {
-		return &workflow.WorkerError{Message: err.Error()}
-	}
-	return nil
-}
-
 func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
-	if err := st.ValidateResetDispositionForNewTask(); err != nil {
-		return &workflow.WorkerError{Message: err.Error()}
-	}
 	resume, err := st.AdmitNewTaskRotationBoundary(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
 	if err != nil {
 		return &workflow.WorkerError{Message: err.Error()}
