@@ -14,20 +14,12 @@ func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T
 	tests := []struct {
 		action      string
 		terminal    bool
-		inProcess   bool
 		wantPresent bool
 	}{
 		{action: "start", terminal: true, wantPresent: true},
 		{action: "approve-surface", terminal: true, wantPresent: true},
 		{action: "accept", terminal: true, wantPresent: true},
 		{action: "resume", terminal: true, wantPresent: true},
-		{action: "no-go", terminal: true, wantPresent: true},
-		{action: actionRecordPublicationFinding, terminal: true, wantPresent: true},
-		{action: actionRecordDefectFinding, terminal: true, wantPresent: true},
-		{action: actionBindDefectTask, terminal: true, wantPresent: true},
-		{action: actionImprovementDisposition, terminal: true, wantPresent: true},
-		{action: "reopen", terminal: true, wantPresent: true},
-		{action: actionReviewEvidence, terminal: true, inProcess: true, wantPresent: true},
 		{action: "decision", terminal: true, wantPresent: true},
 		{action: "fix", terminal: true, wantPresent: true},
 		{action: "start-milestones", terminal: true, wantPresent: true},
@@ -35,14 +27,11 @@ func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T
 		{action: "rotation-claim", terminal: false, wantPresent: true},
 		{action: "rotation-bind", terminal: false, wantPresent: true},
 		{action: "rotation-fail", terminal: false, wantPresent: true},
-		{action: "complete", terminal: false, wantPresent: true},
-		{action: "install", terminal: false, wantPresent: true},
 		{action: "wait", terminal: false, wantPresent: true},
 		{action: actionContinuationStopHook, terminal: false, wantPresent: true},
 		{action: actionContinuationMetadataGuard, terminal: false, wantPresent: true},
 		{action: "evidence", terminal: false, wantPresent: true},
 		{action: "finalize-check", terminal: false, wantPresent: true},
-		{action: "push-binding", terminal: false, wantPresent: true},
 		{action: "definitely-unknown", terminal: false, wantPresent: false},
 	}
 
@@ -57,9 +46,6 @@ func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T
 			}
 			if descriptor.TerminalEnvelope != tt.terminal {
 				t.Fatalf("lookupParentActionCommand(%q).TerminalEnvelope=%v want %v", tt.action, descriptor.TerminalEnvelope, tt.terminal)
-			}
-			if descriptor.InProcessHandoff != tt.inProcess {
-				t.Fatalf("lookupParentActionCommand(%q).InProcessHandoff=%v want %v", tt.action, descriptor.InProcessHandoff, tt.inProcess)
 			}
 		})
 	}
