@@ -37,7 +37,6 @@ const (
 	ParentActionFix                         ParentAction = "fix"
 	ParentActionResume                      ParentAction = "resume"
 	ParentActionPark                        ParentAction = "park"
-	ParentActionUnpark                      ParentAction = "unpark"
 	ParentActionObservationExecute          ParentAction = "observation-execute"
 	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
@@ -71,7 +70,7 @@ func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 		return false
 	}
 	switch p.RequiredAction {
-	case ParentActionDecision, ParentActionBindDefectTask, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete, ParentActionUnpark:
+	case ParentActionDecision, ParentActionBindDefectTask, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete:
 		return false
 	default:
 		return true
@@ -171,27 +170,13 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	if err != nil {
 		return ParentActionPlan{}, err
 	}
-	if status == TaskStatusWaitingDecision && plan.RequiredAction != ParentActionUnpark && s.ObservationNoGoEligible() {
+	if status == TaskStatusWaitingDecision && s.ObservationNoGoEligible() {
 		plan.AllowedActions = append(plan.AllowedActions, ParentActionObservationExecute, ParentActionNoGo)
 	}
 	return plan, nil
 }
 
 func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
-	record, cleanupPending, cleanupErr := s.PendingUnparkCleanup()
-	if cleanupErr != nil {
-		return ParentActionPlan{}, lifecycleInconsistency(status, "unpark cleanup state is unreadable: "+cleanupErr.Error())
-	}
-	if cleanupPending {
-		if stopKind != ResumeStopNone {
-			return ParentActionPlan{}, lifecycleInconsistency(status, "unpark cleanup pending task must not carry a resumable stop checkpoint")
-		}
-		if err := validateParkedOriginState(status, record.FromStatus, pending, openReview); err != nil {
-			return ParentActionPlan{}, err
-		}
-		return actionPlan(ParentActionUnpark, "", ParentActionUnpark), nil
-	}
-
 	switch status {
 	case TaskStatusWaitingDecision:
 		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
@@ -199,8 +184,6 @@ func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, 
 		return s.waitingReviewActionPlanWithEvidenceReadiness(status, pending, openReview, stopKind, qualitySurfaceApproval)
 	case TaskStatusAwaitingParentCompletion:
 		return s.awaitingParentCompletionActionPlan(status, pending, openReview, stopKind)
-	case TaskStatusParked:
-		return s.parkedActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusComplete:
 		return completeActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusActive, TaskStatusNone:
@@ -273,45 +256,6 @@ func (s *StateStore) awaitingParentCompletionActionPlan(status TaskStatus, pendi
 		return actionPlan(ParentActionReopen, "", ParentActionReopen), nil
 	}
 	return actionPlan(ParentActionComplete, "", ParentActionComplete, ParentActionInstall), nil
-}
-
-func (s *StateStore) parkedActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
-	if stopKind != ResumeStopNone {
-		return ParentActionPlan{}, lifecycleInconsistency(status, "parked task must not carry a resumable stop checkpoint")
-	}
-	if openReview != roundCommentNone && openReview != string(packet.StatusNeedsSolReview) && openReview != string(packet.StatusNeedsSolDecision) {
-		return ParentActionPlan{}, lifecycleInconsistency(status, "parked task has an unexpected parent review label")
-	}
-	record, err := s.LoadParkRecord()
-	if err != nil {
-		return ParentActionPlan{}, lifecycleInconsistency(status, "parked task has no readable park record")
-	}
-	if err := validateParkedOriginState(status, record.FromStatus, pending, openReview); err != nil {
-		return ParentActionPlan{}, err
-	}
-	return actionPlan(ParentActionUnpark, "", ParentActionUnpark), nil
-}
-
-func validateParkedOriginState(status TaskStatus, from TaskStatus, pending bool, openReview string) error {
-	switch from {
-	case TaskStatusWaitingDecision:
-		if !pending {
-			return lifecycleInconsistency(status, "parked decision-origin task lost its pending decision")
-		}
-		if unexpectedOpenReview(openReview, packet.StatusNeedsSolDecision) {
-			return lifecycleInconsistency(status, "parked decision-origin task has a review label outside the pending decision lease")
-		}
-	case TaskStatusWaitingSolReview:
-		if pending {
-			return lifecycleInconsistency(status, "parked review-origin task carries a pending decision")
-		}
-		if unexpectedOpenReview(openReview, packet.StatusNeedsSolReview) {
-			return lifecycleInconsistency(status, "parked review-origin task has a review label outside the review lease")
-		}
-	default:
-		return lifecycleInconsistency(status, fmt.Sprintf("park record from-status %s is not unparkable", from))
-	}
-	return nil
 }
 
 func unexpectedOpenReview(openReview string, expected packet.Status) bool {
