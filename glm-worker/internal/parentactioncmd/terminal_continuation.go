@@ -49,8 +49,8 @@ func writeProjectedTerminalEnvelopeWithContinuation(cfg config.AppConfig, stdout
 		Continuation:                       continuation,
 	}
 	if stats := wrapped.Projection; stats != nil {
-		if err := finalizeTerminalContinuationStats(&wrapped, stats); err != nil {
-			return errors.Join(err, err)
+		if statsErr := finalizeTerminalContinuationStats(&wrapped, stats); statsErr != nil {
+			return errors.Join(err, statsErr)
 		}
 		if stats.ProjectedBytes > stats.BudgetBytes {
 			return fmt.Errorf("%w; terminal continuation envelope exceeds budget: projected=%d budget=%d", err, stats.ProjectedBytes, stats.BudgetBytes)
