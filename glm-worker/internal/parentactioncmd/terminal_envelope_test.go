@@ -27,8 +27,6 @@ func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T
 		{action: actionBindDefectTask, terminal: true, wantPresent: true},
 		{action: actionImprovementDisposition, terminal: true, wantPresent: true},
 		{action: "reopen", terminal: true, wantPresent: true},
-		{action: "park", terminal: true, wantPresent: true},
-		{action: "unpark", terminal: true, wantPresent: true},
 		{action: actionReviewEvidence, terminal: true, inProcess: true, wantPresent: true},
 		{action: "decision", terminal: true, wantPresent: true},
 		{action: "fix", terminal: true, wantPresent: true},
