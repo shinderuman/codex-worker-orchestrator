@@ -127,6 +127,7 @@ func (s *Store) operationProjectSnapshot(op ExecutionOperation, id string) (Proj
 				return project, nil
 			}
 		}
+	}
 	if op.Publication != nil && op.Publication.Project != nil && op.Publication.Project.SnapshotID == id {
 		return *op.Publication.Project, nil
 	}
