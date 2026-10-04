@@ -4,7 +4,7 @@ import "testing"
 
 func TestParseStructuredOutputRejectsTrailingJSONValue(t *testing.T) {
 	for name, raw := range map[string]string{
-		"second-object": `{"findings":[],"summary":"s"}{"findings":[],"summary":"t"}`,
+		"second-object":  `{"findings":[],"summary":"s"}{"findings":[],"summary":"t"}`,
 		"trailing-token": `{"findings":[],"summary":"s"} true`,
 	} {
 		t.Run(name, func(t *testing.T) {
