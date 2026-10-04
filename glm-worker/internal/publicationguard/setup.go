@@ -115,21 +115,6 @@ func publicationGuardPrimaryDefects(defects []PublicationGuardHookDefect) []Publ
 	return primary
 }
 
-func VerifyPublicationGuardSetup(repoRoot string) error {
-	report, err := InspectPublicationGuardSetup(repoRoot)
-	if err != nil {
-		return err
-	}
-	if len(report.Defects) == 0 {
-		return nil
-	}
-	defects := make([]string, 0, len(report.Defects))
-	for _, defect := range report.Defects {
-		defects = append(defects, defect.Hook+" "+defect.Defect+" at "+defect.Path)
-	}
-	return fmt.Errorf("publication guard setup is not effective at %s: %s", report.HooksDir, strings.Join(defects, "; "))
-}
-
 func publicationGuardHookDefect(hooksDir, name string) *PublicationGuardHookDefect {
 	path := filepath.Join(hooksDir, name)
 	resolved, err := filepath.EvalSymlinks(path)
