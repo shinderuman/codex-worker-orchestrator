@@ -111,13 +111,16 @@ func (s *Store) applyTerminalMetadataFile(file TerminalMetadataFile, effects []E
 	if err != nil {
 		return err
 	}
-
 	if err := s.applyTerminalMetadataIndex(file, effects[0], actual); err != nil {
 		return err
 	}
 	if actual[effects[1].Key()] == effects[1].ExpectedNew {
 		return nil
 	}
+	return s.applyTerminalMetadataWorktreeFile(file)
+}
+
+func (s *Store) applyTerminalMetadataWorktreeFile(file TerminalMetadataFile) error {
 	path, err := suspensionWorktreePath(s.identity.PrimaryRoot, file.Path)
 	if err != nil {
 		return err
@@ -133,6 +136,10 @@ func (s *Store) applyTerminalMetadataFile(file TerminalMetadataFile, effects []E
 	if file.Mode == "100755" {
 		mode = 0o755
 	}
+	return writeTerminalMetadataWorktreeFile(path, parent, mode, file.NewBytes)
+}
+
+func writeTerminalMetadataWorktreeFile(path, parent string, mode os.FileMode, data []byte) error {
 	tmp, err := os.CreateTemp(parent, ".terminal-metadata-")
 	if err != nil {
 		return err
@@ -142,7 +149,7 @@ func (s *Store) applyTerminalMetadataFile(file TerminalMetadataFile, effects []E
 		_ = tmp.Close()
 		return err
 	}
-	if _, err := tmp.Write(file.NewBytes); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return err
 	}
