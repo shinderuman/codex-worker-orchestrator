@@ -67,7 +67,6 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 		state.ParentActionInstall,
 		state.ParentActionResume,
 		state.ParentActionPark,
-		state.ParentActionUnpark,
 		state.ParentActionNoGo:
 		return direct(action), true
 	default:
