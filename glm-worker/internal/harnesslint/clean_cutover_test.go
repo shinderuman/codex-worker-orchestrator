@@ -11,6 +11,7 @@ func TestCleanCutoverRejectsRegisteredParentActionRejectionRoots(t *testing.T) {
 
 type parentActionExecutionKind uint8
 type parentActionCommandDescriptor struct {
+	Action string
 	Execute parentActionExecutionKind
 	TerminalExecute parentActionExecutionKind
 }
@@ -21,16 +22,29 @@ const (
 	parentActionExecutionGitEvidence
 )
 var parentActionCommands = map[string]parentActionCommandDescriptor{
-	"current": {Execute: parentActionExecutionCurrent},
-	"legacy-kind": {Execute: parentActionExecutionLegacy},
-	"legacy-action": {Execute: parentActionExecutionGitEvidence},
+	"current": {Action: "current", Execute: parentActionExecutionCurrent},
+	"legacy-kind": {Action: "legacy-kind", Execute: parentActionExecutionLegacy},
+	"legacy-action": {Action: "legacy-action", Execute: parentActionExecutionGitEvidence},
 }
-func isLegacyParentActionInvocation(execution parentActionExecutionKind, action string) bool {
-	switch execution {
+func executeParentActionCommand(descriptor parentActionCommandDescriptor) error {
+	execution := descriptor.Execute
+	if err := denyRetiredSurface(execution, descriptor.Action); err != nil {
+		return err
+	}
+	return nil
+}
+func denyRetiredSurface(kind parentActionExecutionKind, surface string) error {
+	if !matchesRetiredSurface(kind, surface) {
+		return nil
+	}
+	return retiredSurfaceError()
+}
+func matchesRetiredSurface(kind parentActionExecutionKind, surface string) bool {
+	switch kind {
 	case parentActionExecutionLegacy:
 		return true
 	case parentActionExecutionGitEvidence:
-		return action == "legacy-action"
+		return surface == "legacy-action"
 	default:
 		return false
 	}
@@ -58,13 +72,19 @@ func TestCleanCutoverAllowsCurrentParentActionRegistry(t *testing.T) {
 	writeFixture(t, root, parentActionMetadataPath, `package parentactioncmd
 
 type parentActionExecutionKind uint8
-type parentActionCommandDescriptor struct { Execute parentActionExecutionKind }
+type parentActionCommandDescriptor struct {
+	Action string
+	Execute parentActionExecutionKind
+}
 const parentActionExecutionCurrent parentActionExecutionKind = 1
 var parentActionCommands = map[string]parentActionCommandDescriptor{
-	"current": {Execute: parentActionExecutionCurrent},
+	"current": {Action: "current", Execute: parentActionExecutionCurrent},
 }
-func isLegacyParentActionInvocation(execution parentActionExecutionKind, action string) bool {
-	return false
+func executeParentActionCommand(descriptor parentActionCommandDescriptor) error {
+	if err := validateCurrentInput(); err != nil {
+		return err
+	}
+	return nil
 }
 `)
 	violations, err := scanCleanCutover(root, []string{parentActionMetadataPath})
@@ -81,17 +101,33 @@ func TestCleanCutoverFixRemovesOnlyRejectedRegistryRootsAndConverges(t *testing.
 	writeFixture(t, root, parentActionMetadataPath, `package parentactioncmd
 
 type parentActionExecutionKind uint8
-type parentActionCommandDescriptor struct { Execute parentActionExecutionKind }
+type parentActionCommandDescriptor struct {
+	Action string
+	Execute parentActionExecutionKind
+}
 const (
 	parentActionExecutionCurrent parentActionExecutionKind = iota
 	parentActionExecutionLegacy
 )
 var parentActionCommands = map[string]parentActionCommandDescriptor{
-	"current": {Execute: parentActionExecutionCurrent},
-	"legacy": {Execute: parentActionExecutionLegacy},
+	"current": {Action: "current", Execute: parentActionExecutionCurrent},
+	"legacy": {Action: "legacy", Execute: parentActionExecutionLegacy},
 }
-func isLegacyParentActionInvocation(execution parentActionExecutionKind, action string) bool {
-	switch execution {
+func executeParentActionCommand(descriptor parentActionCommandDescriptor) error {
+	execution := descriptor.Execute
+	if err := cutoverGuard(execution, descriptor.Action); err != nil {
+		return err
+	}
+	return nil
+}
+func cutoverGuard(kind parentActionExecutionKind, surface string) error {
+	if !retiredKind(kind, surface) {
+		return nil
+	}
+	return retiredSurfaceError()
+}
+func retiredKind(kind parentActionExecutionKind, surface string) bool {
+	switch kind {
 	case parentActionExecutionLegacy:
 		return true
 	default:
