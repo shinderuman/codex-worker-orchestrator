@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
@@ -43,14 +42,14 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	terminalErr := executeParentActionCommand(cfg, descriptor, args, &terminal, stderr, true)
 	if terminalErr != nil {
 		return writeFailedTerminalAction(stdout, terminal.Bytes(), terminalErr, func() (json.RawMessage, error) {
-			return readTerminalHandoff(cfg, args[0], stderr, true)
+			return readTerminalHandoff(cfg, stderr, true)
 		})
 	}
 	terminalJSON, err := decodeSingleMachineJSON(terminal.Bytes(), "parent action terminal")
 	if err != nil {
 		return err
 	}
-	handoffJSON, err := readTerminalHandoff(cfg, args[0], stderr, false)
+	handoffJSON, err := readTerminalHandoff(cfg, stderr, false)
 	if err != nil {
 		return writeTerminalHandoffFailure(stdout, terminalJSON, fmt.Errorf("canonical handoff failed after parent action: %w", err))
 	}
@@ -88,18 +87,13 @@ func malformedFailedTerminal(raw []byte, decodeErr error) (json.RawMessage, erro
 	})
 }
 
-func readTerminalHandoff(cfg config.AppConfig, action string, stderr io.Writer, recovery bool) (json.RawMessage, error) {
+func readTerminalHandoff(cfg config.AppConfig, stderr io.Writer, recovery bool) (json.RawMessage, error) {
 	var handoff bytes.Buffer
-	var err error
-	switch {
-	case recovery:
-		err = runWorker(cfg.RepoRoot, []string{"--handoff", "recovery"}, nil, &handoff, stderr, nil)
-	case parentActionUsesInProcessHandoff(action):
-		err = app.Execute(app.Command{Mode: app.ModeHandoff}, cfg, nil, &handoff, stderr)
-	default:
-		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
+	args := []string{"--handoff"}
+	if recovery {
+		args = append(args, "recovery")
 	}
-	if err != nil {
+	if err := runWorker(cfg.RepoRoot, args, nil, &handoff, stderr, nil); err != nil {
 		return nil, err
 	}
 	return decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
