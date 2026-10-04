@@ -7,9 +7,6 @@ import (
 	"strings"
 )
 
-// finalizationStatusBlocked historically shared the publication prepare status.
-// Keep the value local to the live finalize-check surface after the retired
-// publication command graph is removed.
 const publicationPrepareStatusBlocked = "blocked"
 
 type gitUpstream struct {
