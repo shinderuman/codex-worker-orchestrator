@@ -19,7 +19,7 @@
 - unsupported old stateをcurrent stateへ変換・昇格・推定せず、current contractだけを正規入力として扱うか。
 
 ## 永続識別子の変更
-current contractで必要な識別子だけを維持する。旧識別子のalias・dual read/write・自動変換を追加せず、unsupported stateは用途に応じてreject / skip / reset / rebuild / delete / non-resumableとする。既存ユーザー所有データの破壊防止はcompatibilityとは分離して検証する。
+current contractで必要な識別子だけを維持する。旧識別子のalias・dual read/write・自動変換を追加せず、unsupported stateは用途に応じてreject / skip / reset / rebuild / delete / non-resumableとする。旧識別子・旧schemaを専用rejectするためだけのreader / discriminator / registered stateを残さない。current contractが旧representationの明示認識を要求しない限り旧representation自体をproduction graphから除去し、generic unknown / unsupported処理へ落とす。既存ユーザー所有データの破壊防止はcompatibilityとは分離して検証する。
 
 ## recovery手順
 README・error文のrecovery手順は概念上またはtestで検証する。未検証のものを安全と表現しない。

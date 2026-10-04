@@ -13,6 +13,6 @@
 - エラーを握り潰さず原因調査に必要な情報を保持する。診断情報は内部state・artifact等の既存診断sinkへ記録し、外部machine stdout/stderrへ人間向けtextを追加しない。
 - 原因不明の不具合では推測修正より先に実値・例外・ログを確認する。
 - 一時コード、デバッグコード、プレースホルダを残さない。
-- 後方互換性を持たせない。
+- 後方互換性を持たせない。retired parser / command / state / schema / actionを専用のlegacy / retired / unsupported errorへ送るためだけに現行production graphへ残すことも禁止する。具体的なcurrent contractが明示的認識を要求しない限り旧surface自体を削除し、unknown inputはcurrent generic fail-closed経路へ落とす。旧surfaceがruntimeで旧handlerへ到達不能なだけではclean cutoverとみなさない。
 - 不必要な抽象化、interface、wrapper、layerを追加しない。
 - 既存の責務分割・依存方向を不用意に崩さない。
