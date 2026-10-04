@@ -1,15 +1,15 @@
 package parentactioncmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"os/exec"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -66,11 +66,17 @@ type observationExecutionPlan struct {
 	moduleDir    string
 }
 
-const observationExecuteUsage = "usage: glm-parent-action observation-execute <token>"
+const (
+	observationExecuteUsage       = "usage: glm-parent-action observation-execute <token>"
+	observationExecuteDetailLimit = 2048
+	observationShadowOutputLimit  = 1 << 20
+	observationStatePollInterval  = 200 * time.Millisecond
+)
 
-const observationExecuteDetailLimit = 2048
-
-var resolveObservationShadowEvalWorker = resolveGLMWorker
+var (
+	resolveObservationShadowEvalWorker = resolveGLMWorker
+	dispatchObservationExecutionForAction = dispatchObservationExecution
+)
 
 func prepareObservationExecuteAdmission(cfg config.AppConfig) error {
 	st, err := state.NewStateStore(cfg)
@@ -101,26 +107,56 @@ func executeObservationExecuteAction(cfg config.AppConfig, args []string, stdout
 	if err != nil {
 		return err
 	}
-	defer func() { _ = lock.Close() }()
-	plan, err := prepareObservationExecutionPlan(cfg, st, args[1])
+	plan, snapshot, executionID, startedAt, err := beginObservationExecution(cfg, st, args[1])
+	if closeErr := lock.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
 	if err != nil {
 		return err
 	}
-	snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
-	if err != nil {
-		return fmt.Errorf("observation実行前のrepository snapshotを取得できません: %w", err)
-	}
-	executionID, err := state.NewUUID()
-	if err != nil {
-		return err
-	}
+
+	ctx, stop := observationExecutionContext(st, plan.admission)
 	started := time.Now()
-	outcome := dispatchObservationExecution(cfg, st, plan, executionID)
-	record := newObservationExecutionRecord(plan, outcome, executionID, snapshot, time.Since(started).Milliseconds())
-	if err := st.AppendObservationExecution(record); err != nil {
+	outcome := dispatchObservationExecutionForAction(ctx, cfg, st, plan, executionID)
+	stop()
+
+	lock, err = repolock.Acquire(st.LockPath())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := verifyObservationExecutionBoundary(st, plan.admission); err != nil {
+		return err
+	}
+	record := newObservationExecutionRecord(plan, outcome, executionID, snapshot, startedAt, time.Since(started).Milliseconds())
+	if err := st.CompleteObservationExecution(record); err != nil {
 		return err
 	}
 	return encodeObservationExecuteOutput(stdout, record)
+}
+
+func beginObservationExecution(
+	cfg config.AppConfig,
+	st *state.StateStore,
+	token string,
+) (observationExecutionPlan, state.GitSnapshot, string, time.Time, error) {
+	plan, err := prepareObservationExecutionPlan(cfg, st, token)
+	if err != nil {
+		return observationExecutionPlan{}, state.GitSnapshot{}, "", time.Time{}, err
+	}
+	snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
+	if err != nil {
+		return observationExecutionPlan{}, state.GitSnapshot{}, "", time.Time{}, fmt.Errorf("observation実行前のrepository snapshotを取得できません: %w", err)
+	}
+	executionID, err := state.NewUUID()
+	if err != nil {
+		return observationExecutionPlan{}, state.GitSnapshot{}, "", time.Time{}, err
+	}
+	startedAt := time.Now().UTC()
+	if err := st.BeginObservationExecution(newObservationExecutionInFlightRecord(plan, executionID, snapshot, startedAt)); err != nil {
+		return observationExecutionPlan{}, state.GitSnapshot{}, "", time.Time{}, err
+	}
+	return plan, snapshot, executionID, startedAt, nil
 }
 
 func prepareObservationExecutionPlan(cfg config.AppConfig, st *state.StateStore, token string) (observationExecutionPlan, error) {
@@ -164,15 +200,37 @@ func rejectDuplicateObservationExecution(st *state.StateStore, request observati
 	return nil
 }
 
+func newObservationExecutionInFlightRecord(
+	plan observationExecutionPlan,
+	executionID string,
+	snapshot state.GitSnapshot,
+	startedAt time.Time,
+) state.ObservationExecutionRecord {
+	return state.ObservationExecutionRecord{
+		ExecutionID:      executionID,
+		TaskID:           plan.admission.TaskID,
+		Operation:        string(plan.request.Operation),
+		ParamsDigest:     plan.request.Digest(),
+		Status:           state.ObservationExecutionStatusInFlight,
+		Head:             snapshot.Head,
+		IndexDigest:      snapshot.IndexDigest,
+		WorktreeDigest:   snapshot.WorktreeDigest,
+		DecisionRound:    plan.admission.Round,
+		StartedAtRFC3339: startedAt.Format(time.RFC3339Nano),
+	}
+}
+
 func newObservationExecutionRecord(
 	plan observationExecutionPlan,
 	outcome observationExecutionOutcome,
 	executionID string,
 	snapshot state.GitSnapshot,
+	startedAt time.Time,
 	durationMS int64,
 ) state.ObservationExecutionRecord {
 	return state.ObservationExecutionRecord{
 		ExecutionID:        executionID,
+		TaskID:             plan.admission.TaskID,
 		Operation:          string(plan.request.Operation),
 		ParamsDigest:       plan.request.Digest(),
 		Status:             outcome.Status,
@@ -185,7 +243,8 @@ func newObservationExecutionRecord(
 		IndexDigest:        snapshot.IndexDigest,
 		WorktreeDigest:     snapshot.WorktreeDigest,
 		DecisionRound:      plan.admission.Round,
-		CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
+		StartedAtRFC3339:   startedAt.Format(time.RFC3339Nano),
+		CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -205,16 +264,59 @@ func encodeObservationExecuteOutput(stdout io.Writer, record state.ObservationEx
 	})
 }
 
+func observationExecutionContext(st *state.StateStore, admission state.ObservationExecutionAdmission) (context.Context, context.CancelFunc) {
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, cancel := context.WithCancel(signalCtx)
+	go watchObservationExecutionBoundary(ctx, cancel, st, admission)
+	return ctx, func() {
+		cancel()
+		stopSignals()
+	}
+}
+
+func watchObservationExecutionBoundary(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	st *state.StateStore,
+	admission state.ObservationExecutionAdmission,
+) {
+	ticker := time.NewTicker(observationStatePollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if verifyObservationExecutionBoundary(st, admission) != nil {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+func verifyObservationExecutionBoundary(st *state.StateStore, expected state.ObservationExecutionAdmission) error {
+	current, err := st.ObservationExecuteAdmission()
+	if err != nil {
+		return fmt.Errorf("observation execution boundary changed: %w", err)
+	}
+	if current.TaskID != expected.TaskID || current.Round != expected.Round {
+		return fmt.Errorf("observation execution boundary changed: task=%s round=%d", current.TaskID, current.Round)
+	}
+	return nil
+}
+
 func dispatchObservationExecution(
+	ctx context.Context,
 	cfg config.AppConfig,
 	st *state.StateStore,
 	plan observationExecutionPlan,
 	executionID string,
 ) observationExecutionOutcome {
 	if plan.request.Operation == observationexec.OperationShadowEval {
-		return runObservationShadowEval(cfg, plan.admission.TaskID, plan.referenceAbs, plan.request)
+		return runObservationShadowEval(ctx, cfg, plan.admission.TaskID, plan.referenceAbs, plan.request)
 	}
-	outcome := observationexec.RunIsolatedGoTest(observationexec.GoTestInput{
+	outcome := observationexec.RunIsolatedGoTestContext(ctx, observationexec.GoTestInput{
 		ModuleDir:   plan.moduleDir,
 		ArtifactDir: st.ArtifactDir(plan.admission.TaskID),
 		ExecutionID: executionID,
@@ -238,6 +340,7 @@ func observationGoTestArtifacts(logPath string) []string {
 }
 
 func runObservationShadowEval(
+	ctx context.Context,
 	cfg config.AppConfig,
 	taskID string,
 	referenceAbs string,
@@ -247,57 +350,73 @@ func runObservationShadowEval(
 	if err != nil {
 		return observationShadowEvalWrapperFailure(err.Error())
 	}
-	decoded, failureDetail, runErr := runShadowEvalWorkerChild(cfg, worker, taskID, referenceAbs, request)
-	if runErr != nil {
-		return observationShadowEvalWrapperFailureWithCode(failureDetail, shadowEvalExitCode(runErr))
+	decoded, failureDetail, result := runShadowEvalWorkerChild(ctx, cfg, worker, taskID, referenceAbs, request)
+	if result.Err != nil {
+		source := "wrapper"
+		if result.ExitSource == observationexec.BoundedCommandExitCancelled || result.ExitSource == observationexec.BoundedCommandExitDeadline {
+			source = result.ExitSource
+		}
+		return observationShadowEvalFailureWithSource(failureDetail, result.ExitCode, source)
 	}
 	return shadowEvalOutcomeFromOutput(decoded)
 }
 
 func runShadowEvalWorkerChild(
+	ctx context.Context,
 	cfg config.AppConfig,
 	worker string,
 	taskID string,
 	referenceAbs string,
 	request observationexec.Request,
-) (observationShadowEvalOutput, string, error) {
+) (observationShadowEvalOutput, string, observationexec.BoundedCommandResult) {
 	args := []string{"--shadow-eval", taskID}
 	if referenceAbs != "" {
 		args = append(args, "--reference", referenceAbs)
 	}
-	var commandOut bytes.Buffer
-	var commandErr bytes.Buffer
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(request.ResolvedDeadlineMS())*time.Millisecond)
-	defer cancel()
-	runErr := runResolvedWorkerWithContext(ctx, worker, cfg.RepoRoot, args, nil, &commandOut, &commandErr)
-	if runErr != nil {
-		return observationShadowEvalOutput{}, "shadow-eval machine実行が失敗しました: " + strings.TrimSpace(commandErr.String()), runErr
+	result := observationexec.RunBoundedCommand(
+		ctx,
+		cfg.RepoRoot,
+		worker,
+		args,
+		time.Duration(request.ResolvedDeadlineMS())*time.Millisecond,
+		observationShadowOutputLimit,
+	)
+	if result.Err != nil {
+		detail := "shadow-eval machine実行が失敗しました"
+		if stderr := strings.TrimSpace(string(result.Stderr)); stderr != "" {
+			detail += ": " + stderr
+		}
+		if result.StderrTruncated {
+			detail += fmt.Sprintf("; stderr truncated(total=%d)", result.StderrTotal)
+		}
+		return observationShadowEvalOutput{}, detail, result
+	}
+	if result.StdoutTruncated {
+		result.Err = fmt.Errorf("shadow-eval machine output exceeded bounded capture(total=%d)", result.StdoutTotal)
+		result.ExitCode = 1
+		result.ExitSource = observationexec.BoundedCommandExitWrapper
+		return observationShadowEvalOutput{}, result.Err.Error(), result
 	}
 	var decoded observationShadowEvalOutput
-	if err := json.Unmarshal(bytes.TrimSpace(commandOut.Bytes()), &decoded); err != nil {
-		return observationShadowEvalOutput{}, "shadow-eval machine出力をdecodeできません", err
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(result.Stdout))), &decoded); err != nil {
+		result.Err = err
+		result.ExitCode = 1
+		result.ExitSource = observationexec.BoundedCommandExitWrapper
+		return observationShadowEvalOutput{}, "shadow-eval machine出力をdecodeできません", result
 	}
-	return decoded, "", nil
-}
-
-func shadowEvalExitCode(runErr error) int {
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
-		return childExitCode(exitErr)
-	}
-	return 1
+	return decoded, "", result
 }
 
 func observationShadowEvalWrapperFailure(detail string) observationExecutionOutcome {
-	return observationShadowEvalWrapperFailureWithCode(detail, 1)
+	return observationShadowEvalFailureWithSource(detail, 1, "wrapper")
 }
 
-func observationShadowEvalWrapperFailureWithCode(detail string, exitCode int) observationExecutionOutcome {
+func observationShadowEvalFailureWithSource(detail string, exitCode int, source string) observationExecutionOutcome {
 	return observationExecutionOutcome{
 		Status:     observationexec.StatusFail,
 		Detail:     boundedObservationDetail(detail),
 		ExitCode:   exitCode,
-		ExitSource: "wrapper",
+		ExitSource: source,
 	}
 }
 
@@ -345,19 +464,4 @@ func boundedObservationDetail(detail string) string {
 		return detail[:observationExecuteDetailLimit]
 	}
 	return detail
-}
-
-func runResolvedWorkerWithContext(
-	ctx context.Context,
-	worker, workingDir string,
-	args []string,
-	stdin io.Reader,
-	stdout, stderr io.Writer,
-) error {
-	command := exec.CommandContext(ctx, worker, args...)
-	command.Dir = workingDir
-	command.Stdin = stdin
-	command.Stdout = stdout
-	command.Stderr = stderr
-	return command.Run()
 }
