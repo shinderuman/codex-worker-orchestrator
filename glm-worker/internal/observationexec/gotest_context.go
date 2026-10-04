@@ -12,7 +12,7 @@ const exitSourceCancelled = "cancelled"
 
 func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutcome {
 	if ctx == nil {
-		ctx = context.Background()
+		return RunIsolatedGoTest(input)
 	}
 	if err := ValidateExecutionID(input.ExecutionID); err != nil {
 		return goTestInputFailure(err)
