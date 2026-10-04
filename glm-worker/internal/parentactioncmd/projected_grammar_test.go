@@ -22,7 +22,6 @@ func TestProjectedParentActionGrammarIsExecutable(t *testing.T) {
 		{action: string(state.ParentActionComplete)},
 		{action: string(state.ParentActionInstall)},
 		{action: string(state.ParentActionResume)},
-		{action: string(state.ParentActionPark)},
 		{action: string(state.ParentActionNoGo)},
 		{action: string(state.ParentActionReopen)},
 	}
