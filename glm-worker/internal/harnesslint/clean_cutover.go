@@ -30,19 +30,31 @@ func fixCleanCutover(root string, paths []string) error {
 	if !cleanCutoverContainsPath(paths, parentActionMetadataPath) {
 		return nil
 	}
-	data, err := readRegularFile(root, parentActionMetadataPath)
+	set, file, err := parseParentActionMetadata(root, parser.ParseComments)
 	if err != nil {
 		return err
 	}
-	set := token.NewFileSet()
-	file, err := parser.ParseFile(set, parentActionMetadataPath, data, parser.ParseComments)
-	if err != nil {
-		return fmt.Errorf("parse %s: %w", parentActionMetadataPath, err)
-	}
 	rejectedKinds, rejectedActions := parentActionRejectedRoots(file)
-	if len(rejectedKinds) == 0 && len(rejectedActions) == 0 {
+	if !removeRejectedParentActionRegistryEntries(file, rejectedKinds, rejectedActions) {
 		return nil
 	}
+	return writeFormattedParentActionMetadata(root, set, file)
+}
+
+func parseParentActionMetadata(root string, mode parser.Mode) (*token.FileSet, *ast.File, error) {
+	data, err := readRegularFile(root, parentActionMetadataPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, parentActionMetadataPath, data, mode)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse %s: %w", parentActionMetadataPath, err)
+	}
+	return set, file, nil
+}
+
+func removeRejectedParentActionRegistryEntries(file *ast.File, rejectedKinds, rejectedActions map[string]bool) bool {
 	changed := false
 	for _, registry := range parentActionRegistries(file) {
 		kept := registry.Elts[:0]
@@ -56,9 +68,10 @@ func fixCleanCutover(root string, paths []string) error {
 		}
 		registry.Elts = kept
 	}
-	if !changed {
-		return nil
-	}
+	return changed
+}
+
+func writeFormattedParentActionMetadata(root string, set *token.FileSet, file *ast.File) error {
 	var output bytes.Buffer
 	if err := format.Node(&output, set, file); err != nil {
 		return fmt.Errorf("format %s: %w", parentActionMetadataPath, err)
@@ -80,14 +93,9 @@ func cleanCutoverContainsPath(paths []string, wanted string) bool {
 }
 
 func cleanCutoverParentActionViolations(root string) ([]Violation, error) {
-	data, err := readRegularFile(root, parentActionMetadataPath)
+	set, file, err := parseParentActionMetadata(root, 0)
 	if err != nil {
 		return nil, err
-	}
-	set := token.NewFileSet()
-	file, err := parser.ParseFile(set, parentActionMetadataPath, data, 0)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", parentActionMetadataPath, err)
 	}
 	rejectedKinds, rejectedActions := parentActionRejectedRoots(file)
 	if len(rejectedKinds) == 0 && len(rejectedActions) == 0 {
@@ -99,40 +107,69 @@ func cleanCutoverParentActionViolations(root string) ([]Violation, error) {
 func parentActionRejectedRoots(file *ast.File) (map[string]bool, map[string]bool) {
 	kinds := make(map[string]bool)
 	actions := make(map[string]bool)
+	predicate := findParentActionLegacyPredicate(file)
+	if predicate == nil {
+		return kinds, actions
+	}
+	collectRejectedParentActionKinds(predicate.Body, kinds)
+	collectRejectedParentActionNames(predicate.Body, actions)
+	return kinds, actions
+}
+
+func findParentActionLegacyPredicate(file *ast.File) *ast.FuncDecl {
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != parentActionLegacyPredicate || function.Body == nil {
+		if ok && function.Name.Name == parentActionLegacyPredicate && function.Body != nil {
+			return function
+		}
+	}
+	return nil
+}
+
+func collectRejectedParentActionKinds(body *ast.BlockStmt, kinds map[string]bool) {
+	ast.Inspect(body, func(node ast.Node) bool {
+		switchStatement, ok := node.(*ast.SwitchStmt)
+		if !ok || !switchesOnIdentifier(switchStatement, parentActionExecutionParam) {
+			return true
+		}
+		collectRejectedSwitchKinds(switchStatement, kinds)
+		return true
+	})
+}
+
+func switchesOnIdentifier(statement *ast.SwitchStmt, name string) bool {
+	identifier, ok := statement.Tag.(*ast.Ident)
+	return ok && identifier.Name == name
+}
+
+func collectRejectedSwitchKinds(statement *ast.SwitchStmt, kinds map[string]bool) {
+	for _, item := range statement.Body.List {
+		clause, ok := item.(*ast.CaseClause)
+		if !ok || !returnsBoolean(clause.Body, true) {
 			continue
 		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			switch typed := node.(type) {
-			case *ast.SwitchStmt:
-				identifier, ok := typed.Tag.(*ast.Ident)
-				if !ok || identifier.Name != parentActionExecutionParam {
-					return true
-				}
-				for _, statement := range typed.Body.List {
-					clause, ok := statement.(*ast.CaseClause)
-					if !ok || !returnsBoolean(clause.Body, true) {
-						continue
-					}
-					for _, expression := range clause.List {
-						if identifier, ok := expression.(*ast.Ident); ok {
-							kinds[identifier.Name] = true
-						}
-					}
-				}
-			case *ast.ReturnStmt:
-				for _, result := range typed.Results {
-					if action, ok := parentActionRejectedAction(result); ok {
-						actions[action] = true
-					}
-				}
+		for _, expression := range clause.List {
+			identifier, ok := expression.(*ast.Ident)
+			if ok {
+				kinds[identifier.Name] = true
 			}
-			return true
-		})
+		}
 	}
-	return kinds, actions
+}
+
+func collectRejectedParentActionNames(body *ast.BlockStmt, actions map[string]bool) {
+	ast.Inspect(body, func(node ast.Node) bool {
+		result, ok := node.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+		for _, expression := range result.Results {
+			if action, ok := parentActionRejectedAction(expression); ok {
+				actions[action] = true
+			}
+		}
+		return true
+	})
 }
 
 func returnsBoolean(statements []ast.Stmt, wanted bool) bool {
