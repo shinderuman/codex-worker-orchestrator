@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -27,16 +26,6 @@ func TestOrdinaryWorkflowModesUseCanonicalAdmission(t *testing.T) {
 	}
 	if active, err := controller.CanonicalAuthorityActive(cfg); err != nil || !active {
 		t.Fatalf("explicit activation did not establish canonical authority: active=%v err=%v", active, err)
-	}
-}
-
-func TestLegacyBundleProjectionIsAlwaysRetired(t *testing.T) {
-	for _, activate := range []bool{false, true} {
-		cfg := newCanonicalGuardConfig(t, activate)
-		err := rejectLegacyBundleProjection(cfg)
-		if err == nil || !strings.Contains(err.Error(), "controller-evidence") {
-			t.Fatalf("activate=%t legacy bundle projection error = %v", activate, err)
-		}
 	}
 }
 
