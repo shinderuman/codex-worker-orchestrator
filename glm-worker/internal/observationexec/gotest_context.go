@@ -1,11 +1,11 @@
 package observationexec
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -120,13 +120,26 @@ func isolatedGoTestEnvContext(ctx context.Context, tempRoot string) ([]string, e
 }
 
 func isolatedGoModuleCacheContext(ctx context.Context) (string, error) {
-	command := exec.CommandContext(ctx, "go", "env", "GOMODCACHE")
+	command := newObservationProcessGroupCmd("go", "env", "GOMODCACHE")
 	command.Env = append(os.Environ(), "GOENV=off")
-	output, err := command.Output()
-	if err != nil {
+	var output bytes.Buffer
+	command.Stdout = &output
+	if err := command.Start(); err != nil {
 		return "", fmt.Errorf("隔離go testのmodule cacheを解決できません: %w", err)
 	}
-	path := strings.TrimSpace(string(output))
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- command.Wait() }()
+	select {
+	case err := <-waitDone:
+		if err != nil {
+			return "", fmt.Errorf("隔離go testのmodule cacheを解決できません: %w", err)
+		}
+	case <-ctx.Done():
+		terminateObservationProcessGroup(command.Process.Pid)
+		_ = boundedGoTestWait(waitDone)
+		return "", fmt.Errorf("隔離go testのmodule cacheを解決できません: %w", ctx.Err())
+	}
+	path := strings.TrimSpace(output.String())
 	if path == "" || !filepath.IsAbs(path) {
 		return "", fmt.Errorf("隔離go testのmodule cacheがabsolute pathではありません: %q", path)
 	}
