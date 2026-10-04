@@ -20,14 +20,14 @@ const (
 )
 
 func scanCleanCutover(root string, paths []string) ([]Violation, error) {
-	if !containsPath(paths, parentActionMetadataPath) {
+	if !cleanCutoverContainsPath(paths, parentActionMetadataPath) {
 		return nil, nil
 	}
 	return cleanCutoverParentActionViolations(root)
 }
 
 func fixCleanCutover(root string, paths []string) error {
-	if !containsPath(paths, parentActionMetadataPath) {
+	if !cleanCutoverContainsPath(paths, parentActionMetadataPath) {
 		return nil
 	}
 	data, err := readRegularFile(root, parentActionMetadataPath)
@@ -70,7 +70,7 @@ func fixCleanCutover(root string, paths []string) error {
 	return writeRegularFile(root, parentActionMetadataPath, formatted)
 }
 
-func containsPath(paths []string, wanted string) bool {
+func cleanCutoverContainsPath(paths []string, wanted string) bool {
 	for _, path := range paths {
 		if path == wanted {
 			return true
@@ -155,15 +155,15 @@ func parentActionRejectedAction(expression ast.Expr) (string, bool) {
 		return "", false
 	}
 	if identifier, ok := comparison.X.(*ast.Ident); ok && identifier.Name == parentActionActionParam {
-		return stringLiteral(comparison.Y)
+		return cleanCutoverStringLiteral(comparison.Y)
 	}
 	if identifier, ok := comparison.Y.(*ast.Ident); ok && identifier.Name == parentActionActionParam {
-		return stringLiteral(comparison.X)
+		return cleanCutoverStringLiteral(comparison.X)
 	}
 	return "", false
 }
 
-func stringLiteral(expression ast.Expr) (string, bool) {
+func cleanCutoverStringLiteral(expression ast.Expr) (string, bool) {
 	literal, ok := expression.(*ast.BasicLit)
 	if !ok || literal.Kind != token.STRING {
 		return "", false
@@ -215,7 +215,7 @@ func parentActionRegistries(file *ast.File) []*ast.CompositeLit {
 }
 
 func parentActionRegistryEntryRejected(entry *ast.KeyValueExpr, rejectedKinds, rejectedActions map[string]bool) bool {
-	if action, ok := stringLiteral(entry.Key); ok && rejectedActions[action] {
+	if action, ok := cleanCutoverStringLiteral(entry.Key); ok && rejectedActions[action] {
 		return true
 	}
 	descriptor, ok := entry.Value.(*ast.CompositeLit)
