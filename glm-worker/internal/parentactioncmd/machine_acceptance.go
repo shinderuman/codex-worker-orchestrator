@@ -40,9 +40,15 @@ func publicationMachineAcceptanceContract(
 	st *state.StateStore,
 	candidate state.PublicationCandidate,
 ) (string, taskcontract.MachineAcceptance, string) {
-	taskID, err := st.TaskID()
-	if err != nil {
+	taskID, err := st.Read("task.id")
+	if errors.Is(err, os.ErrNotExist) {
 		return "", taskcontract.MachineAcceptance{}, ""
+	}
+	if err != nil {
+		return "", taskcontract.MachineAcceptance{}, "machine acceptance task identity is unreadable: " + err.Error()
+	}
+	if strings.TrimSpace(taskID) == "" {
+		return "", taskcontract.MachineAcceptance{}, "machine acceptance task identity is empty"
 	}
 	taskPath, canonicalPathErr := currentMachineAcceptanceTaskPath(st)
 	if taskPath == "" {
