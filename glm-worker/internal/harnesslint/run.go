@@ -29,30 +29,9 @@ func run(root string, fix bool, runner commandRunner) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	fixed := 0
-	if fix {
-		before, err := snapshots(root, paths)
-		if err != nil {
-			return Report{}, err
-		}
-		if err := fixCleanCutover(root, paths); err != nil {
-			return Report{}, err
-		}
-		if err := fixGoFormatting(root, paths); err != nil {
-			return Report{}, err
-		}
-		if err := runExternalFixers(root, paths, runner); err != nil {
-			return Report{}, err
-		}
-		paths, err = repositoryPaths(root)
-		if err != nil {
-			return Report{}, err
-		}
-		after, err := snapshots(root, paths)
-		if err != nil {
-			return Report{}, err
-		}
-		fixed = changedSnapshotCount(before, after)
+	fixed, paths, err := applyRequestedFixes(root, paths, runner, fix)
+	if err != nil {
+		return Report{}, err
 	}
 	violations, err := checkRules(root, paths)
 	if err != nil {
@@ -66,7 +45,67 @@ func run(root string, fix bool, runner commandRunner) (Report, error) {
 	return makeReport(fixed, violations), nil
 }
 
+func applyRequestedFixes(root string, paths []string, runner commandRunner, fix bool) (int, []string, error) {
+	if !fix {
+		return 0, paths, nil
+	}
+	before, err := snapshots(root, paths)
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := fixCleanCutover(root, paths); err != nil {
+		return 0, nil, err
+	}
+	if err := fixGoFormatting(root, paths); err != nil {
+		return 0, nil, err
+	}
+	if err := runExternalFixers(root, paths, runner); err != nil {
+		return 0, nil, err
+	}
+	paths, err = repositoryPaths(root)
+	if err != nil {
+		return 0, nil, err
+	}
+	after, err := snapshots(root, paths)
+	if err != nil {
+		return 0, nil, err
+	}
+	return changedSnapshotCount(before, after), paths, nil
+}
+
 func checkRules(root string, paths []string) ([]Violation, error) {
+	violations, err := scanCoreRules(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	qualityViolations, err := scanQualitySurface(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	taskViolations, err := taskCorpusViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	activeTaskViolations, err := activeTaskContractViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	closureViolations, err := taskScheduleClosureViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	provenanceViolations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, qualityViolations...)
+	violations = append(violations, taskViolations...)
+	violations = append(violations, activeTaskViolations...)
+	violations = append(violations, closureViolations...)
+	return append(violations, provenanceViolations...), nil
+}
+
+func scanCoreRules(root string, paths []string) ([]Violation, error) {
 	goViolations, err := scanGoAndDuplicateTestRules(root, paths)
 	if err != nil {
 		return nil, err
@@ -91,37 +130,12 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	qualityViolations, err := scanQualitySurface(root, paths)
-	if err != nil {
-		return nil, err
-	}
-	taskViolations, err := taskCorpusViolations(root, paths)
-	if err != nil {
-		return nil, err
-	}
-	activeTaskViolations, err := activeTaskContractViolations(root, paths)
-	if err != nil {
-		return nil, err
-	}
-	closureViolations, err := taskScheduleClosureViolations(root, paths)
-	if err != nil {
-		return nil, err
-	}
-	provenanceViolations, err := scopedControlProvenanceViolations(root)
-	if err != nil {
-		return nil, err
-	}
 	violations := append([]Violation{}, goViolations...)
 	violations = append(violations, forwardOnlyViolations...)
 	violations = append(violations, cleanCutoverViolations...)
 	violations = append(violations, proseDataViolations...)
 	violations = append(violations, textViolations...)
-	violations = append(violations, markdownAuthorityViolations...)
-	violations = append(violations, qualityViolations...)
-	violations = append(violations, taskViolations...)
-	violations = append(violations, activeTaskViolations...)
-	violations = append(violations, closureViolations...)
-	return append(violations, provenanceViolations...), nil
+	return append(violations, markdownAuthorityViolations...), nil
 }
 
 func scanGoAndDuplicateTestRules(root string, paths []string) ([]Violation, error) {
