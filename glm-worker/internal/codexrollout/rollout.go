@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -139,14 +138,6 @@ func Matching(rollouts []Rollout, threadID string) []Rollout {
 func DirExists(dir string) bool {
 	info, err := os.Stat(dir)
 	return err == nil && info.IsDir()
-}
-
-func SourceLabel(chain []Rollout) string {
-	sources := make([]string, 0, len(chain))
-	for _, member := range chain {
-		sources = append(sources, member.HomeRelative)
-	}
-	return strings.Join(sources, ";")
 }
 
 func LastTimestamp(filePath string) (time.Time, bool) {
