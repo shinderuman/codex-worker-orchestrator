@@ -6,6 +6,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func (w *Workflow) reusableParentValidationPass(request packet.ParentValidationRequest, workingDir string) (parentValidationGateRecord, bool) {
@@ -21,11 +22,18 @@ func (w *Workflow) reusableParentValidationPass(request packet.ParentValidationR
 	if taskID == "" {
 		return parentValidationGateRecord{}, false
 	}
-	entries, err := os.ReadDir(w.state.Path(qualitygate.RunDirectory))
-	if err != nil {
+	latest, found := w.latestParentValidationRun(request.Form, repository, workingDir, taskID, snapshot)
+	if !found || qualitygate.VerifyTerminalPass(latest) != nil {
 		return parentValidationGateRecord{}, false
 	}
+	return parentValidationGateRecordFromQualityGate(latest), true
+}
 
+func (w *Workflow) latestParentValidationRun(form, repository, workingDir, taskID string, snapshot state.GitSnapshot) (qualitygate.RunRecord, bool) {
+	entries, err := os.ReadDir(w.state.Path(qualitygate.RunDirectory))
+	if err != nil {
+		return qualitygate.RunRecord{}, false
+	}
 	var latest qualitygate.RunRecord
 	found := false
 	for _, entry := range entries {
@@ -33,7 +41,7 @@ func (w *Workflow) reusableParentValidationPass(request packet.ParentValidationR
 			continue
 		}
 		record, err := qualitygate.Read(w.state, entry.Name())
-		if err != nil || !sameParentValidationRunIdentity(record, request.Form, repository, workingDir, taskID, snapshot.Head, snapshot.IndexDigest, snapshot.WorktreeDigest) {
+		if err != nil || !sameParentValidationRunIdentity(record, form, repository, workingDir, taskID, snapshot.Head, snapshot.IndexDigest, snapshot.WorktreeDigest) {
 			continue
 		}
 		if !found || latest.StartedAt.Before(record.StartedAt) {
@@ -41,10 +49,7 @@ func (w *Workflow) reusableParentValidationPass(request packet.ParentValidationR
 			found = true
 		}
 	}
-	if !found || qualitygate.VerifyTerminalPass(latest) != nil {
-		return parentValidationGateRecord{}, false
-	}
-	return parentValidationGateRecordFromQualityGate(latest), true
+	return latest, found
 }
 
 func sameParentValidationRunIdentity(record qualitygate.RunRecord, form, repository, workingDir, taskID, head, indexDigest, worktreeDigest string) bool {
