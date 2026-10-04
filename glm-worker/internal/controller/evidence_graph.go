@@ -8,10 +8,12 @@ import (
 )
 
 type evidenceGraphWalker struct {
-	store              *Store
-	refs               map[string]EvidenceObjectRef
-	expanded           map[string]bool
-	publishedTaskHeads map[string]EvidenceObjectRef
+	store                  *Store
+	refs                   map[string]EvidenceObjectRef
+	expanded               map[string]bool
+	publishedTaskHeads     map[string]EvidenceObjectRef
+	validatedTaskChains    map[string]uint64
+	validatedEpisodeChains map[string]uint64
 }
 
 func (s *Store) validateEvidenceGraphRoots(
@@ -20,9 +22,11 @@ func (s *Store) validateEvidenceGraphRoots(
 	sequence uint64,
 ) (string, error) {
 	walker := evidenceGraphWalker{
-		store:    s,
-		refs:     map[string]EvidenceObjectRef{},
-		expanded: map[string]bool{},
+		store:                  s,
+		refs:                   map[string]EvidenceObjectRef{},
+		expanded:               map[string]bool{},
+		validatedTaskChains:    map[string]uint64{},
+		validatedEpisodeChains: map[string]uint64{},
 	}
 	if err := walker.walkLedgerChain(ledgerRef, headRef, sequence); err != nil {
 		return "", err
@@ -166,9 +170,21 @@ func (w *evidenceGraphWalker) walkTaskRevisionChain(
 	ref EvidenceObjectRef,
 	maxGeneration uint64,
 ) error {
+	if w.validatedTaskChains == nil {
+		w.validatedTaskChains = map[string]uint64{}
+	}
+	validated := map[string]uint64{}
 	current := ref
 	upper := maxGeneration + 1
 	for {
+		key := revisionChainCacheKey(subject, current)
+		if generation, ok := w.validatedTaskChains[key]; ok {
+			if generation >= upper {
+				return evidenceGraphError(current, "task index revision chain authority is inconsistent")
+			}
+			rememberValidatedRevisionChain(w.validatedTaskChains, validated)
+			return nil
+		}
 		if err := w.addRef(current); err != nil {
 			return err
 		}
@@ -182,7 +198,9 @@ func (w *evidenceGraphWalker) walkTaskRevisionChain(
 		if err := w.walkTaskRevisionEvidence(subject, revision); err != nil {
 			return err
 		}
+		validated[key] = revision.ControllerGeneration
 		if revision.PreviousRevision == nil {
+			rememberValidatedRevisionChain(w.validatedTaskChains, validated)
 			return nil
 		}
 		upper = revision.ControllerGeneration
@@ -195,9 +213,21 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 	ref EvidenceObjectRef,
 	maxGeneration uint64,
 ) error {
+	if w.validatedEpisodeChains == nil {
+		w.validatedEpisodeChains = map[string]uint64{}
+	}
+	validated := map[string]uint64{}
 	current := ref
 	upper := maxGeneration + 1
 	for {
+		key := revisionChainCacheKey(subject, current)
+		if generation, ok := w.validatedEpisodeChains[key]; ok {
+			if generation >= upper {
+				return evidenceGraphError(current, "episode index revision chain authority is inconsistent")
+			}
+			rememberValidatedRevisionChain(w.validatedEpisodeChains, validated)
+			return nil
+		}
 		if err := w.addRef(current); err != nil {
 			return err
 		}
@@ -211,11 +241,23 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 		if err := w.walkEpisodeRevisionEvidence(subject, revision); err != nil {
 			return err
 		}
+		validated[key] = revision.ControllerGeneration
 		if revision.PreviousRevision == nil {
+			rememberValidatedRevisionChain(w.validatedEpisodeChains, validated)
 			return nil
 		}
 		upper = revision.ControllerGeneration
 		current = *revision.PreviousRevision
+	}
+}
+
+func revisionChainCacheKey(subject string, ref EvidenceObjectRef) string {
+	return subject + "\x00" + evidenceRefKey(ref)
+}
+
+func rememberValidatedRevisionChain(cache map[string]uint64, validated map[string]uint64) {
+	for key, generation := range validated {
+		cache[key] = generation
 	}
 }
 
