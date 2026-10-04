@@ -122,14 +122,18 @@ func (s *Store) applyTerminalMetadataFile(file TerminalMetadataFile, effects []E
 	if err != nil {
 		return err
 	}
+	parent := filepath.Dir(path)
 	if file.NewOID == "" {
-		return os.Remove(path)
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+		return syncDirectoryPath(parent)
 	}
 	mode := os.FileMode(0o644)
 	if file.Mode == "100755" {
 		mode = 0o755
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".terminal-metadata-")
+	tmp, err := os.CreateTemp(parent, ".terminal-metadata-")
 	if err != nil {
 		return err
 	}
@@ -149,7 +153,10 @@ func (s *Store) applyTerminalMetadataFile(file TerminalMetadataFile, effects []E
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	return syncDirectoryPath(parent)
 }
 
 func (s *Store) verifyCommittedTerminalMetadata(op ExecutionOperation, head RepositoryControllerHead) error {
