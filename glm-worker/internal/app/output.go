@@ -75,11 +75,6 @@ type currentCallView struct {
 	model string
 }
 
-type resetOutput struct {
-	Status   string  `json:"status"`
-	RepoRoot *string `json:"repo_root"`
-}
-
 type acceptOutput struct {
 	Accepted bool `json:"accepted"`
 }
@@ -294,16 +289,6 @@ func taskLiveness(probe LockProbe) *string {
 	default:
 		return nil
 	}
-}
-
-func resetState(st *state.StateStore, stdout io.Writer) error {
-	if err := st.Reset(); err != nil {
-		return err
-	}
-	return machinecli.WriteJSON(stdout, resetOutput{
-		Status:   "reset",
-		RepoRoot: machinecli.StringPtr(st.ReadOr("repo-root", "")),
-	})
 }
 
 func parentAccept(st *state.StateStore, stdout io.Writer) error {
