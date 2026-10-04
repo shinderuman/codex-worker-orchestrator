@@ -54,10 +54,9 @@ jobs:
           if text.count(session_import) != 1:
               raise SystemExit('parent_handoff_test.go: unexpected sessionrotation import count')
           text = text.replace(session_import, '', 1)
-          old_handoff_completion = old_completion
-          if text.count(old_handoff_completion) != 2:
-              raise SystemExit(f'parent_handoff_test.go: expected 2 evaluator calls, found {text.count(old_handoff_completion)}')
-          text = text.replace(old_handoff_completion, '''\tif _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {\n''', 1)
+          if text.count(old_completion) != 1:
+              raise SystemExit(f'parent_handoff_test.go: expected 1 direct evaluator call, found {text.count(old_completion)}')
+          text = text.replace(old_completion, '''\tif _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {\n''', 1)
           start = text.find('func TestSessionRotationCompletionFailsClosedWithoutParentIdentity')
           end = text.find('func TestSessionRotationNewThreadBindRetiresOldDirective', start)
           if start < 0 or end < 0:
@@ -100,7 +99,6 @@ jobs:
           (cd glm-worker && go test ./internal/app)
 
           python3 <<'PY'
-          import base64
           import json
           import os
           import pathlib
