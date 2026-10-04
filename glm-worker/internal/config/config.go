@@ -52,10 +52,7 @@ type boolFlags struct {
 	failurePathAdvisory bool
 }
 
-const (
-	failurePathAdvisoryEnv = "GLM_WORKER_FAILURE_PATH_ADVISORY"
-	failurePathTrialEnv    = "GLM_WORKER_FAILURE_PATH_TRIAL"
-)
+const failurePathAdvisoryEnv = "GLM_WORKER_FAILURE_PATH_ADVISORY"
 
 func RepoHashFor(root string) string {
 	sum := sha256.Sum256([]byte(root))
@@ -140,13 +137,7 @@ func loadBoolFlags() (boolFlags, error) {
 }
 
 func failurePathAdvisoryFlag() (bool, error) {
-	if os.Getenv(failurePathAdvisoryEnv) != "" {
-		return boolEnv(failurePathAdvisoryEnv, true)
-	}
-	if os.Getenv(failurePathTrialEnv) != "" {
-		return boolEnv(failurePathTrialEnv, true)
-	}
-	return true, nil
+	return boolEnv(failurePathAdvisoryEnv, true)
 }
 
 func resolveRepoRoot() (string, error) {
