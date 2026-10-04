@@ -7,19 +7,29 @@ import (
 )
 
 type scalarSchema struct {
-	Type string   `json:"type"`
-	Enum []string `json:"enum,omitempty"`
+	Type    string   `json:"type"`
+	Enum    []string `json:"enum,omitempty"`
+	Const   *string  `json:"const,omitempty"`
+	Pattern string   `json:"pattern,omitempty"`
 }
 
 type objectSchema struct {
-	Type       string                     `json:"type"`
-	Properties map[string]*propertySchema `json:"properties"`
-	Required   []string                   `json:"required"`
+	Type                 string                     `json:"type"`
+	Properties           map[string]*propertySchema `json:"properties"`
+	Required             []string                   `json:"required"`
+	AdditionalProperties bool                       `json:"additionalProperties"`
+	AnyOf                []objectCondition          `json:"anyOf,omitempty"`
+}
+
+type objectCondition struct {
+	Properties map[string]*propertySchema `json:"properties,omitempty"`
+	Required   []string                   `json:"required,omitempty"`
 }
 
 type arraySchema struct {
-	Type  string       `json:"type"`
-	Items scalarSchema `json:"items"`
+	Type     string       `json:"type"`
+	Items    scalarSchema `json:"items"`
+	MinItems int          `json:"minItems,omitempty"`
 }
 
 type propertySchema struct {
@@ -35,6 +45,8 @@ const (
 	schemaTypeNumber  = "number"
 	schemaTypeBoolean = "boolean"
 )
+
+const singleLineNonBlankPattern = `^[^\r\n]*[^ \t\r\n][^\r\n]*$`
 
 var scalarTypes = map[string]struct{}{
 	schemaTypeString:  {},
@@ -57,13 +69,26 @@ func (p propertySchema) MarshalJSON() ([]byte, error) {
 
 func stringProperty(values ...string) *propertySchema {
 	if len(values) == 0 {
-		return &propertySchema{scalar: &scalarSchema{Type: schemaTypeString}}
+		return &propertySchema{scalar: &scalarSchema{Type: schemaTypeString, Pattern: singleLineNonBlankPattern}}
 	}
 	return &propertySchema{scalar: &scalarSchema{Type: schemaTypeString, Enum: values}}
 }
 
+func forbiddenStringProperty() *propertySchema {
+	empty := ""
+	return &propertySchema{scalar: &scalarSchema{Type: schemaTypeString, Const: &empty}}
+}
+
 func stringsProperty() *propertySchema {
-	return &propertySchema{array: &arraySchema{Type: schemaTypeArray, Items: scalarSchema{Type: schemaTypeString}}}
+	return stringsPropertyMinItems(0)
+}
+
+func stringsPropertyMinItems(minItems int) *propertySchema {
+	return &propertySchema{array: &arraySchema{
+		Type: schemaTypeArray,
+		Items: scalarSchema{Type: schemaTypeString, Pattern: singleLineNonBlankPattern},
+		MinItems: minItems,
+	}}
 }
 
 func schemaPropertyForField(field machineField, contract machineContract) *propertySchema {
@@ -108,10 +133,44 @@ func schemaForMachineContract(contract machineContract) *objectSchema {
 		required = append(required, string(field))
 	}
 	return &objectSchema{
-		Type:       schemaTypeObject,
-		Properties: properties,
-		Required:   required,
+		Type:                 schemaTypeObject,
+		Properties:           properties,
+		Required:             required,
+		AdditionalProperties: false,
+		AnyOf:                schemaStatusConditions(contract),
 	}
+}
+
+func schemaStatusConditions(contract machineContract) []objectCondition {
+	conditions := make([]objectCondition, 0, len(contract.statuses))
+	for _, status := range contract.statuses {
+		statusContract, ok := packetStatusContracts[status]
+		if !ok {
+			panic(fmt.Sprintf("status %qにmachine contractがありません", status))
+		}
+		properties := map[string]*propertySchema{
+			string(fieldStatus): stringProperty(string(status)),
+		}
+		risks := make([]string, 0, len(statusContract.risks))
+		for _, risk := range statusContract.risks {
+			risks = append(risks, string(risk))
+		}
+		properties[string(fieldRisk)] = stringProperty(risks...)
+		if status != StatusImplemented {
+			properties[string(fieldTargets)] = stringsPropertyMinItems(1)
+		}
+		if contract.name == workerMachineContract.name && status != StatusImplemented {
+			properties[string(fieldParentValidation)] = forbiddenStringProperty()
+			properties[string(fieldParentValidationWorkingDir)] = forbiddenStringProperty()
+		}
+		required := []string{string(fieldStatus), string(fieldRisk)}
+		for _, field := range statusContract.resultFields {
+			required = append(required, string(field))
+		}
+		required = append(required, string(fieldTargets), string(fieldArtifacts))
+		conditions = append(conditions, objectCondition{Properties: properties, Required: required})
+	}
+	return conditions
 }
 
 func workerSchema() *objectSchema {
@@ -170,9 +229,29 @@ func validateObjectSchema(schema *objectSchema, path string) {
 	for _, name := range names {
 		validatePropertySchema(schema.Properties[name], path+"."+name)
 	}
-	for _, required := range schema.Required {
-		if _, ok := schema.Properties[required]; !ok {
-			panic(fmt.Sprintf("%s: requiredの%sがpropertiesにありません", path, required))
+	validateRequiredNames(schema.Required, schema.Properties, path)
+	for index, condition := range schema.AnyOf {
+		validateObjectCondition(condition, schema.Properties, fmt.Sprintf("%s.anyOf[%d]", path, index))
+	}
+}
+
+func validateObjectCondition(condition objectCondition, rootProperties map[string]*propertySchema, path string) {
+	if len(condition.Properties) == 0 || len(condition.Required) == 0 {
+		panic(fmt.Sprintf("%s: status conditionにproperties/requiredがありません", path))
+	}
+	for name, property := range condition.Properties {
+		if _, ok := rootProperties[name]; !ok {
+			panic(fmt.Sprintf("%s: condition property %sがroot propertiesにありません", path, name))
+		}
+		validatePropertySchema(property, path+"."+name)
+	}
+	validateRequiredNames(condition.Required, rootProperties, path)
+}
+
+func validateRequiredNames(required []string, properties map[string]*propertySchema, path string) {
+	for _, name := range required {
+		if _, ok := properties[name]; !ok {
+			panic(fmt.Sprintf("%s: requiredの%sがpropertiesにありません", path, name))
 		}
 	}
 }
@@ -185,8 +264,11 @@ func validatePropertySchema(property *propertySchema, path string) {
 		if property.array.Type != schemaTypeArray {
 			panic(fmt.Sprintf("%s: array schemaのtypeがarrayではありません", path))
 		}
-		if len(property.array.Items.Enum) != 0 {
-			panic(fmt.Sprintf("%s: array itemsへenumを指定できません", path))
+		if property.array.MinItems < 0 || property.array.MinItems > 1 {
+			panic(fmt.Sprintf("%s: minItemsは0または1だけを指定できます", path))
+		}
+		if len(property.array.Items.Enum) != 0 || property.array.Items.Const != nil {
+			panic(fmt.Sprintf("%s: array itemsへenum/constを指定できません", path))
 		}
 		validateScalarSchema(&property.array.Items, path+".items")
 	case property.object != nil:
@@ -199,6 +281,12 @@ func validatePropertySchema(property *propertySchema, path string) {
 func validateScalarSchema(schema *scalarSchema, path string) {
 	if _, ok := scalarTypes[schema.Type]; !ok {
 		panic(fmt.Sprintf("%s: scalar type %qは許可list外です", path, schema.Type))
+	}
+	if schema.Pattern != "" && schema.Type != schemaTypeString {
+		panic(fmt.Sprintf("%s: patternはstring以外へ指定できません", path))
+	}
+	if schema.Const != nil && schema.Type != schemaTypeString {
+		panic(fmt.Sprintf("%s: constはstring以外へ指定できません", path))
 	}
 	if len(schema.Enum) == 0 {
 		return
