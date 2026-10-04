@@ -60,7 +60,6 @@ const (
 	ModeTimeline
 	ModeConvergence
 	ModeStats
-	ModeReset
 	ModeVerifyCodexWake
 	ModeEvalAB
 	ModeCallOutliers
@@ -144,9 +143,6 @@ var commandParsers = map[string]commandParser{
 	},
 	"--stats": func(args []string) (Command, error) {
 		return telemetryQueryCommand(args, ModeStats, "--stats")
-	},
-	"--reset": func(args []string) (Command, error) {
-		return singleArgCommand(args, ModeReset, "usage: glm-worker --reset")
 	},
 	"--rotate-instruction-baseline": func(args []string) (Command, error) {
 		return singleArgCommand(args, modeRotateInstructionBaseline, "usage: glm-worker --rotate-instruction-baseline")

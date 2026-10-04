@@ -18,7 +18,6 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "stop", args: []string{"--stop"}, mode: ModeStop},
 		{name: "status", args: []string{"--status"}, mode: ModeStatus},
 		{name: "stats", args: []string{"--stats"}, mode: ModeStats},
-		{name: "reset", args: []string{"--reset"}, mode: ModeReset},
 		{name: "eval-ab", args: []string{"--eval-ab", "/tmp/ab-run"}, mode: ModeEvalAB, payload: "/tmp/ab-run"},
 		{name: "call-outliers", args: []string{"--call-outliers"}, mode: ModeCallOutliers},
 		{name: "model-routing", args: []string{"--model-routing"}, mode: ModeModelRouting},
@@ -65,6 +64,17 @@ func TestParkCommandsAreRetired(t *testing.T) {
 		}
 		if _, err := ParseCommand([]string{name}); err == nil || !strings.Contains(err.Error(), "unknown command") {
 			t.Fatalf("retired %s command is not rejected as unknown: %v", name, err)
+		}
+	}
+}
+
+func TestResetCommandIsRetired(t *testing.T) {
+	if _, ok := commandParsers["--reset"]; ok {
+		t.Fatal("retired --reset command remains registered")
+	}
+	for _, args := range [][]string{{"--reset"}, {"--reset", "--disposition", "abandon"}} {
+		if _, err := ParseCommand(args); err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("retired --reset command is not rejected as unknown: %v", err)
 		}
 	}
 }
@@ -178,7 +188,6 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--stop", "extra"},
 		{"--status", "extra"},
 		{"--stats", "extra"},
-		{"--reset", "extra"},
 		{"--verify-codex-wake"},
 		{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490"},
 		{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490", "2026-08-26T15:17:55Z", "extra"},

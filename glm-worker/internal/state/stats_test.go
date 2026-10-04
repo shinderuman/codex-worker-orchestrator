@@ -109,25 +109,6 @@ func TestSetTaskStatusContinuesWithCorruptedStats(t *testing.T) {
 	requireStatsWarning(t, warn, "task_stats")
 }
 
-func TestResetContinuesWithCorruptedStats(t *testing.T) {
-	st := &StateStore{dir: t.TempDir()}
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
-	writeCorruptedTaskStats(t, st)
-
-	warn, restore := captureStatsWarnings(t)
-	defer restore()
-
-	if err := st.Reset(); err != nil {
-		t.Fatalf("Resetが破損mirrorで停止しました: %v", err)
-	}
-	requireStatsWarning(t, warn, "task_stats")
-	if st.TaskStatus() != TaskStatus("none") {
-		t.Fatalf("reset後の task.status = %q", st.TaskStatus())
-	}
-}
-
 func TestRecordModelCallContinuesWithCorruptedStats(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {

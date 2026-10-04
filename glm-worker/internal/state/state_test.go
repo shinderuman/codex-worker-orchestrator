@@ -608,17 +608,3 @@ func TestStartNewTaskClearsBaselineHead(t *testing.T) {
 		t.Fatalf("前taskのbaseline-headが残留しています: %q", head)
 	}
 }
-
-func TestResetClearsBaselineHead(t *testing.T) {
-	st := &StateStore{dir: t.TempDir()}
-	if err := st.Write("baseline-head", "leftover-head"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Reset(); err != nil {
-		t.Fatal(err)
-	}
-	if st.Exists("baseline-head") {
-		head, _ := st.Read("baseline-head")
-		t.Fatalf("Reset後もbaseline-headが残留しています: %q", head)
-	}
-}

@@ -594,8 +594,3 @@ func (s *StateStore) recordSolOutcomeStats(value packet.Result, producer ParentR
 		stats.openParentReview(string(value.Status), string(value.Risk), producer)
 	})
 }
-
-func (s *StateStore) Reset() error {
-	s.ArchiveCurrentStats()
-	return s.Remove(taskStateFileNames()...)
-}
