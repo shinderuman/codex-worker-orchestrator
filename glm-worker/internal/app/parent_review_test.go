@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -382,9 +381,7 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 		t.Fatalf("awaiting中の新task開始がfail closedしませんでした: %v prompts=%d", err, len(awaiting.prompts))
 	}
 
-	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
-	}); err != nil {
+	if _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {
 		t.Fatal(err)
 	}
 	if got := st.TaskStatus(); got != state.TaskStatusComplete {

@@ -218,7 +218,7 @@ if (
 	exit 1
 fi
 test ! -s "$tmp/parent-action-install.stdout"
-grep -Fq -- '--authority controller-execution' "$tmp/parent-action-install.stderr"
+cmp "$tmp/parent-action-unknown.stderr" "$tmp/parent-action-install.stderr"
 (
 	cd "$repo"
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --status

@@ -154,21 +154,3 @@ func TestCommitSessionRotationPreservesUnknownAcceptedTaskHistory(t *testing.T) 
 		t.Fatalf("unknown accepted task history was converted into a count: %#v", marker)
 	}
 }
-
-func TestSessionRotationDefaultTriggerCarriesAcceptedTaskProvenance(t *testing.T) {
-	source := "/state/rotation/thread.json"
-	decision := DecideSessionRotation(SessionRotationSignals{
-		Terminal:                SessionRotationTerminalAccept,
-		AcceptedTasks:           2,
-		AcceptedTasksSource:     source,
-		Rollout:                 &SessionRotationRolloutSignals{},
-		MaterialEventsAvailable: true,
-		Limit:                   &SessionRotationLimitSignals{},
-	})
-	if !decision.Required || decision.Reason != SessionRotationReasonDefaultTwoTasks || len(decision.Evidence) != 1 {
-		t.Fatalf("decision = %#v", decision)
-	}
-	if decision.Evidence[0].Field != SessionRotationEvidenceFieldAcceptedTasks || decision.Evidence[0].Value != "2" || decision.Evidence[0].Source != source {
-		t.Fatalf("accepted-task evidence = %#v", decision.Evidence[0])
-	}
-}

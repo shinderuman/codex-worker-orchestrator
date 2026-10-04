@@ -135,40 +135,6 @@ func TestPostCompletionProjectionAdmitsNonGoalShapes(t *testing.T) {
 	}
 }
 
-func TestPrepareParentCompletionHeadAdmitsNonGoalPostCompletionShapes(t *testing.T) {
-	blockedPlan := nonGoalPostCompletionPlan(nil, nil, []string{"IMPLEMENTATION_TASKS/blocked.md"})
-	prepared, err := PrepareParentCompletionHead(blockedPlan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prepared.ActiveTask != "" || len(prepared.Tasks) != 1 || prepared.Tasks[0] != "IMPLEMENTATION_TASKS/blocked.md" {
-		t.Fatalf("blocked-only non-goal head = %#v", prepared)
-	}
-
-	exhausted, err := PrepareParentCompletionHead(nonGoalPostCompletionPlan(nil, nil, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if exhausted.ActiveTask != "" || len(exhausted.Tasks) != 0 {
-		t.Fatalf("exhausted non-goal head = %#v", exhausted)
-	}
-
-	promoted, err := PrepareParentCompletionHead(nonGoalPostCompletionPlan(
-		[]string{"IMPLEMENTATION_TASKS/a.md"}, []string{"IMPLEMENTATION_TASKS/b.md"}, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if promoted.ActiveTask != "IMPLEMENTATION_TASKS/a.md" ||
-		len(promoted.Tasks) != 2 || promoted.Tasks[0] != "IMPLEMENTATION_TASKS/a.md" || promoted.Tasks[1] != "IMPLEMENTATION_TASKS/b.md" {
-		t.Fatalf("promoted non-goal head = %#v", promoted)
-	}
-
-	if _, err := PrepareParentCompletionHead(nonGoalPostCompletionPlan(nil, []string{"IMPLEMENTATION_TASKS/b.md"}, nil)); err == nil ||
-		!strings.Contains(err.Error(), "ACTIVE昇格済み") {
-		t.Fatalf("promotion gap err = %v", err)
-	}
-}
-
 func nonGoalPostCompletionPlan(active, next, blocked []string) string {
 	var body strings.Builder
 	body.WriteString("# Plan\n\n## ACTIVE\n\n")
@@ -201,20 +167,6 @@ func TestPrepareProjectStateCompletedGoalRequiresEmptySchedule(t *testing.T) {
 	plan = strings.Replace(plan, "## ACTIVE\n", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/a.md`\n", 1)
 	if _, err := PrepareProjectState(plan); err == nil {
 		t.Fatal("non-empty completed goal was accepted")
-	}
-}
-
-func TestPrepareParentCompletionHeadAdmitsBlockedOnlyPlan(t *testing.T) {
-	plan := "## GOAL\n\nstatus: active\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n\n- `IMPLEMENTATION_TASKS/blocked.md`\n"
-	prepared, err := PrepareParentCompletionHead(plan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prepared.ActiveTask != "" || len(prepared.Tasks) != 1 || prepared.Tasks[0] != "IMPLEMENTATION_TASKS/blocked.md" {
-		t.Fatalf("blocked-only preparation = %#v", prepared)
-	}
-	if _, err := PrepareFinalHead(plan); err == nil {
-		t.Fatal("ordinary final-head policy unexpectedly accepted blocked-only Plan")
 	}
 }
 

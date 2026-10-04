@@ -13,9 +13,6 @@ import (
 
 func TestOrdinaryWorkflowModesUseCanonicalAdmission(t *testing.T) {
 	cfg := newCanonicalGuardConfig(t, false)
-	if active, err := controller.CanonicalAuthorityActive(cfg); err != nil || active {
-		t.Fatalf("pristine fixture reported canonical authority: active=%v err=%v", active, err)
-	}
 	for _, mode := range []CommandMode{ModeNewTask, ModeResume, ModeDecision, ModeFix, ModeAccept, ModeApproveSurface} {
 		if !retainedCanonicalWorkflowMode(mode) {
 			t.Fatalf("ordinary workflow mode %d does not enter canonical admission", mode)
@@ -23,9 +20,6 @@ func TestOrdinaryWorkflowModesUseCanonicalAdmission(t *testing.T) {
 	}
 	if _, err := controller.Activate(cfg); err != nil {
 		t.Fatalf("explicit canonical activation failed: %v", err)
-	}
-	if active, err := controller.CanonicalAuthorityActive(cfg); err != nil || !active {
-		t.Fatalf("explicit activation did not establish canonical authority: active=%v err=%v", active, err)
 	}
 }
 

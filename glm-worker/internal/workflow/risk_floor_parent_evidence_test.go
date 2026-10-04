@@ -41,8 +41,20 @@ func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
 	if err := st.RecordSolResultWithReviewSnapshot(enforced, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, digest); err != nil {
 		t.Fatal(err)
 	}
+	ownerCallID, err := state.NewUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := parentevidence.NewProjector(repo, st, ownerCallID, parentevidence.Providers{})
+	projector.Project(parentevidence.Manifest{
+		Version: parentevidence.ManifestVersion,
+		Reason:  "risk floor review target",
+		Diff: []parentevidence.DiffRequest{{
+			Question: "inspect risk floor task diff", Paths: []string{"tracked.md"}, BudgetBytes: 4096,
+		}},
+	})
 	var stdout bytes.Buffer
-	if err := parentevidence.PrintReviewEvidence(repo, st, &stdout); err != nil {
+	if err := projector.Commit(&stdout, "risk floor review target"); err != nil {
 		t.Fatal(err)
 	}
 	binding, err := st.CurrentParentReviewBinding()

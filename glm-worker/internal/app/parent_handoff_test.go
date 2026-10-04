@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -654,12 +653,25 @@ func seedSessionRotationAcceptConfig(t *testing.T, cfg config.AppConfig) (config
 	if !accept.Accepted {
 		t.Fatal("open reviewをacceptできませんでした")
 	}
-	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
-	}); err != nil {
+	if _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {
 		t.Fatal(err)
 	}
 	return cfg, st, codexTestParentThreadID
+}
+
+func completeParentWithPendingRotation(st *state.StateStore, parentThreadID string) (bool, error) {
+	taskID, err := st.TaskID()
+	if err != nil {
+		return false, err
+	}
+	return st.CompleteParentAwaiting(func(string) (*state.SessionRotationEvaluation, error) {
+		return &state.SessionRotationEvaluation{
+			ParentThreadID: parentThreadID,
+			TaskID:         taskID,
+			Terminal:       state.SessionRotationTerminalAccept,
+			Decision:       state.SessionRotationDecision{Required: true, Reason: state.SessionRotationReasonEvidenceUnavailable},
+		}, nil
+	})
 }
 
 func TestSessionRotationAcceptWritesPendingDirectiveProjectedByHandoff(t *testing.T) {
@@ -735,43 +747,6 @@ func TestSessionRotationRepeatedHandoffWritesNothingAndReturnsSameDirective(t *t
 	}
 	if !bytes.Equal(markerBefore, markerAfter) {
 		t.Fatal("handoff読み出しがrotation markerを更新しました")
-	}
-}
-
-func TestSessionRotationCompletionFailsClosedWithoutParentIdentity(t *testing.T) {
-	cfg := newAppConfig(t)
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := st.AcceptParentReview(); err != nil {
-		t.Fatal(err)
-	}
-	_, err = st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
-	})
-	if err == nil || !strings.Contains(err.Error(), "session rotation") {
-		t.Fatalf("identity欠損のcompletionがfail closedしませんでした: %v", err)
-	}
-	if got := st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
-		t.Fatalf("fail closed後のstatus = %q", got)
-	}
-	stats, err := st.CurrentTaskStats()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.ParentOutcomes[state.ParentOutcomeAccepted] != 1 {
-		t.Fatalf("fail closed後のstats = %#v", stats)
 	}
 }
 

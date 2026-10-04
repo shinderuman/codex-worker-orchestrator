@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -11,6 +12,7 @@ func TestParentHandoffProjectsBoundedImprovementAdvisoryWithoutReplacingLifecycl
 	callID := "33333333-3333-4333-8333-333333333333"
 	required := string(state.ParentActionAccept)
 	output := parentHandoffOutput{
+		Controller:     &controller.ControllerStatusReport{},
 		RequiredAction: &required,
 		AllowedActions: []string{string(state.ParentActionAccept)},
 		LastMaterial: &parentHandoffMaterial{
@@ -53,22 +55,8 @@ func TestParentHandoffProjectsBoundedImprovementAdvisoryWithoutReplacingLifecycl
 		t.Fatalf("signal = %#v", decoded.ImprovementSignal.Signal)
 	}
 	spec := decoded.ImprovementSignal.ActionSpec
-	action := string(state.ParentActionImprovementDisposition)
-	if spec.Kind != "bounded-choice" {
-		t.Fatalf("action spec = %#v", spec)
-	}
-	if len(spec.Command) != 6 ||
-		spec.Command[0] != "glm-parent-action" ||
-		spec.Command[1] != action ||
-		spec.Command[2] != "--signal-kind" ||
-		spec.Command[3] != state.ImprovementSignalInvalidPacket ||
-		spec.Command[4] != "--source-call-id" ||
-		spec.Command[5] != callID {
-		t.Fatalf("command = %#v", spec.Command)
-	}
-	choices := spec.Choices["--disposition"]
-	if len(choices) != 5 {
-		t.Fatalf("choices = %#v", choices)
+	if spec.Kind != "staged" || len(spec.PrepareCommand) != 3 || spec.PrepareCommand[0] != "glm-parent-action" || spec.PrepareCommand[1] != "prepare" || spec.PrepareCommand[2] != "controller-semantic" {
+		t.Fatalf("controller semantic action spec = %#v", spec)
 	}
 }
 

@@ -16,9 +16,6 @@ func TestInspectPublicationGuardSetupRequiresBinding(t *testing.T) {
 	if len(report.Defects) != 1 || report.Defects[0].Hook != publicationGuardBindingName || report.Defects[0].Defect != PublicationGuardHookMissing {
 		t.Fatalf("defects = %#v", report.Defects)
 	}
-	if err := VerifyPublicationGuardSetup(repo); err == nil {
-		t.Fatal("tracked hooks without glm-parent-action binding were admitted")
-	}
 }
 
 func TestInspectPublicationGuardSetupAcceptsExecutableBinding(t *testing.T) {

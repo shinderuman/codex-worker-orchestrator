@@ -2,15 +2,10 @@ package settingsmerge
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 )
 
 type managedState struct {
@@ -41,41 +36,6 @@ const managedStateSuffix = ".managed-settings-state.json"
 
 func ManagedStatePath(targetPath string) string {
 	return filepath.Join(filepath.Dir(targetPath), managedStateDir, filepath.Base(targetPath)+managedStateSuffix)
-}
-
-func loadManagedState(path string) (managedState, error) {
-	empty := managedState{Version: managedStateVersion, Values: []managedValueState{}}
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return empty, nil
-	}
-	if err != nil {
-		return managedState{}, err
-	}
-	defer func() { _ = file.Close() }()
-	decoder := json.NewDecoder(file)
-	decoder.UseNumber()
-	var state managedState
-	if err := decoder.Decode(&state); err != nil {
-		return managedState{}, fmt.Errorf("state JSON: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return managedState{}, fmt.Errorf("state: multiple JSON values")
-		}
-		return managedState{}, fmt.Errorf("state JSON: %w", err)
-	}
-	if state.Version != managedStateVersion {
-		return managedState{}, fmt.Errorf("managed state version %d is unsupported (expected %d)", state.Version, managedStateVersion)
-	}
-	if state.Values == nil {
-		state.Values = []managedValueState{}
-	}
-	if err := validateManagedState(state); err != nil {
-		return managedState{}, err
-	}
-	return state, nil
 }
 
 func validateManagedState(state managedState) error {
@@ -348,80 +308,4 @@ func cloneJSONValue(value any) any {
 	default:
 		return typed
 	}
-}
-
-func VerifyManagedInstallation(targetPath, fragmentPath, overridePath string) error {
-	target, _, err := readObject(targetPath)
-	if err != nil {
-		return fmt.Errorf("target JSON: %w", err)
-	}
-	fragment, _, err := readObject(fragmentPath)
-	if err != nil {
-		return fmt.Errorf("fragment JSON: %w", err)
-	}
-	state, err := loadManagedState(ManagedStatePath(targetPath))
-	if err != nil {
-		return fmt.Errorf("managed state: %w", err)
-	}
-	override, err := claudeoverride.Load(overridePath)
-	if err != nil {
-		return fmt.Errorf("env override: %w", err)
-	}
-	return verifyManagedInstallation(target, fragment, state, override)
-}
-
-func verifyManagedInstallation(target, fragment map[string]any, state managedState, override claudeoverride.EnvOverride) error {
-	desired := flattenManagedObject(fragment)
-	if len(state.Values) != len(desired) {
-		return fmt.Errorf("managed state path count=%d, expected=%d", len(state.Values), len(desired))
-	}
-	stateByPath := indexManagedValues(state.Values)
-	deleted := deletedOverrideKeys(override.Deletes)
-	for _, leaf := range desired {
-		if err := verifyManagedLeaf(target, leaf, stateByPath, override.Sets, deleted); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func deletedOverrideKeys(keys []string) map[string]bool {
-	deleted := make(map[string]bool, len(keys))
-	for _, key := range keys {
-		deleted[key] = true
-	}
-	return deleted
-}
-
-func verifyManagedLeaf(target map[string]any, leaf managedLeaf, state map[string]managedValueState, sets map[string]string, deleted map[string]bool) error {
-	record, ok := state[managedPathKey(leaf.Path)]
-	if !ok {
-		return fmt.Errorf("managed state is missing path %s", managedPathDisplay(leaf.Path))
-	}
-	if !reflect.DeepEqual(record.Applied, leaf.Value) {
-		return fmt.Errorf("managed state applied value mismatch at %s", managedPathDisplay(leaf.Path))
-	}
-	expected, expectedExists := effectiveManagedValue(leaf, sets, deleted)
-	actual, exists, err := managedValueAt(target, leaf.Path)
-	if err != nil {
-		return err
-	}
-	if exists != expectedExists || exists && !reflect.DeepEqual(actual, expected) {
-		return fmt.Errorf("installed managed Claude setting mismatch at %s", managedPathDisplay(leaf.Path))
-	}
-	return nil
-}
-
-func effectiveManagedValue(leaf managedLeaf, sets map[string]string, deleted map[string]bool) (any, bool) {
-	if len(leaf.Path) != 2 || leaf.Path[0] != "env" {
-		return leaf.Value, true
-	}
-	key := leaf.Path[1]
-	if deleted[key] {
-		return nil, false
-	}
-	if value, overridden := sets[key]; overridden {
-		return value, true
-	}
-	return leaf.Value, true
 }

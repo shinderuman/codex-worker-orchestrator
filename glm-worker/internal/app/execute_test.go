@@ -19,7 +19,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
@@ -330,9 +329,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	if accept := executeAccept(t, cfg); !accept.Accepted {
 		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
 	}
-	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
-	}); err != nil {
+	if _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {
 		t.Fatal(err)
 	}
 	prepareNextRotatedTask(t, st)
