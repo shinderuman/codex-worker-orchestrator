@@ -7,14 +7,14 @@ import (
 	"strings"
 )
 
-const publicationPrepareStatusBlocked = "blocked"
-
 type gitUpstream struct {
 	RemoteName  string
 	RemoteRef   string
 	TrackingRef string
 	TrackingOID string
 }
+
+const publicationPrepareStatusBlocked = "blocked"
 
 var (
 	errGitUpstreamMissing  = errors.New("branch upstream missing")
