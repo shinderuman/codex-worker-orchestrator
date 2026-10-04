@@ -1,0 +1,68 @@
+name: Temporary install smoke contract repair
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-1311-from-1310
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'Arm install smoke contract repair'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: glm-worker/go.mod
+          cache: false
+      - name: Update retired action smoke and validate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('tests/install_smoke.sh')
+          text = path.read_text()
+          old = "grep -Fq -- '--authority controller-execution' \"$tmp/parent-action-install.stderr\""
+          new = "cmp \"$tmp/parent-action-unknown.stderr\" \"$tmp/parent-action-install.stderr\""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one retired install error assertion, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          sh -n tests/install_smoke.sh
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./tests/install_smoke.sh
+          git diff --check
+          python3 <<'PY'
+          import json, os, pathlib, urllib.request
+          repo = os.environ['REPO']
+          branch = os.environ['BRANCH']
+          expected = os.environ['EXPECTED_HEAD']
+          token = os.environ['GH_TOKEN']
+          api = f'https://api.github.com/repos/{repo}'
+          headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          def request(method, url, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(req) as response:
+                  return json.load(response)
+          ref = request('GET', f'{api}/git/ref/heads/{branch}')
+          if ref['object']['sha'] != expected:
+              raise SystemExit(f'branch moved: expected {expected}, got {ref["object"]["sha"]}')
+          commit = request('GET', f'{api}/git/commits/{expected}')
+          content = pathlib.Path('tests/install_smoke.sh').read_text()
+          blob = request('POST', f'{api}/git/blobs', {'content': content, 'encoding': 'utf-8'})
+          tree = request('POST', f'{api}/git/trees', {'base_tree': commit['tree']['sha'], 'tree': [{'path': 'tests/install_smoke.sh', 'mode': '100755', 'type': 'blob', 'sha': blob['sha']}]})
+          new_commit = request('POST', f'{api}/git/commits', {'message': 'Align install smoke with generic retired-action rejection', 'tree': tree['sha'], 'parents': [expected]})
+          request('PATCH', f'{api}/git/refs/heads/{branch}', {'sha': new_commit['sha'], 'force': False})
+          print(new_commit['sha'])
+          PY
