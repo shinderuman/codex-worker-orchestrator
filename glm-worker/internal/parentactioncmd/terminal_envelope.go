@@ -55,7 +55,7 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	if err != nil {
 		return writeTerminalHandoffFailure(stdout, terminalJSON, fmt.Errorf("canonical handoff failed after parent action: %w", err))
 	}
-	return writeProjectedTerminalEnvelope(stdout, terminalJSON, handoffJSON)
+	return writeProjectedTerminalEnvelopeWithContinuation(cfg, stdout, terminalJSON, handoffJSON)
 }
 
 func writeFailedTerminalAction(stdout io.Writer, terminalBytes []byte, terminalErr error, loadRecoveryHandoff terminalHandoffLoader) error {
