@@ -21,8 +21,6 @@ func TestLegacyStateLifecycleIsRejectedAfterCanonicalCutover(t *testing.T) {
 			command string
 		}{
 			{mode: ModeReset, command: "reset"},
-			{mode: ModePark, command: "park"},
-			{mode: ModeUnpark, command: "unpark"},
 		}
 		for _, tc := range modes {
 			err := Execute(Command{Mode: tc.mode, Payload: "request"}, cfg, nil, io.Discard, io.Discard)

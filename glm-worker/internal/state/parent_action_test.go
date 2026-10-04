@@ -102,23 +102,6 @@ func TestParentValidationNonConvergenceStripsAcceptUntilNextReview(t *testing.T)
 		t.Fatalf("fix admission = %v err=%v", admitted, err)
 	}
 
-	if err := st.EnterParked(ParkRecord{Cleanup: &ParkCleanup{}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CommitUnpark(); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.CompleteUnpark(); err != nil {
-		t.Fatal(err)
-	}
-	afterPark, err := st.ParentActionPlan()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if afterPark.RequiredAction != ParentActionReview || afterPark.Allows(ParentActionAccept) || !afterPark.Allows(ParentActionFix) {
-		t.Fatalf("park roundtrip must preserve the non-convergence admission = %#v", afterPark)
-	}
-
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(ReviewerRole)}); err != nil {
 		t.Fatal(err)
 	}

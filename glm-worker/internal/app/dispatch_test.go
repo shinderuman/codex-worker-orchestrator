@@ -49,7 +49,6 @@ func TestCommandDispatchOwnersSeparateStateLockedAndWorkflow(t *testing.T) {
 		ModeInstallSmoke:    dispatchStateCommand,
 		ModeReset:           dispatchLockedMutation,
 		ModeAccept:          dispatchLockedMutation,
-		ModePark:            dispatchLockedMutation,
 		ModeNewTask:         dispatchWorkflow,
 		ModeDecision:        dispatchWorkflow,
 		ModeResume:          dispatchWorkflow,

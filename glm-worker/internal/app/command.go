@@ -55,8 +55,6 @@ const (
 	ModeAccept
 	ModeResume
 	ModeStop
-	ModePark
-	ModeUnpark
 	ModeStatus
 	ModeHandoff
 	ModeTimeline
@@ -133,12 +131,6 @@ var commandParsers = map[string]commandParser{
 	},
 	"--stop": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeStop, "usage: glm-worker --stop")
-	},
-	"--park": func(args []string) (Command, error) {
-		return singleArgCommand(args, ModePark, "usage: glm-worker --park")
-	},
-	"--unpark": func(args []string) (Command, error) {
-		return singleArgCommand(args, ModeUnpark, "usage: glm-worker --unpark")
 	},
 	"--status": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeStatus, "usage: glm-worker --status")

@@ -55,7 +55,7 @@ func LeaseActive(st *state.StateStore) bool {
 
 func StatusHasLease(status state.TaskStatus) bool {
 	switch status {
-	case state.TaskStatusWaitingDecision, state.TaskStatusWaitingSolReview, state.TaskStatusParked:
+	case state.TaskStatusWaitingDecision, state.TaskStatusWaitingSolReview:
 		return true
 	default:
 		return false

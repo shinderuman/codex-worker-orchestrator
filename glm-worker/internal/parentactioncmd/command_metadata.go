@@ -31,7 +31,7 @@ const (
 	parentActionExecutionContinuationOrApprove
 	parentActionExecutionDirectWorker
 	parentActionExecutionStartSingle
-	parentActionExecutionReadOrPark
+	parentActionExecutionRead
 	parentActionExecutionGitEvidence
 	parentActionExecutionReviewEvidence
 	parentActionExecutionPreflightDecision
@@ -109,19 +109,9 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		Execute:          parentActionExecutionDirectWorker,
 		TerminalEnvelope: true,
 	},
-	actionPark: {
-		Action:           actionPark,
-		Execute:          parentActionExecutionReadOrPark,
-		TerminalEnvelope: true,
-	},
-	actionUnpark: {
-		Action:           actionUnpark,
-		Execute:          parentActionExecutionReadOrPark,
-		TerminalEnvelope: true,
-	},
 	"evidence": {
 		Action:  "evidence",
-		Execute: parentActionExecutionReadOrPark,
+		Execute: parentActionExecutionRead,
 	},
 	"finalize-check": {
 		Action:  "finalize-check",
@@ -262,8 +252,8 @@ func executeInterfaceParentAction(
 		return executeDirectWorkerAction(cfg, descriptor.Action, args, stdout, stderr), true
 	case parentActionExecutionStartSingle:
 		return executeStartSingleAction(cfg, args, stdout, stderr), true
-	case parentActionExecutionReadOrPark:
-		return executeParentReadOrParkAction(cfg, args, stdout, stderr), true
+	case parentActionExecutionRead:
+		return executeParentReadAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionGitEvidence:
 		return executeGitEvidenceAction(cfg, args, stdout), true
 	case parentActionExecutionObservationExecute:
@@ -312,8 +302,6 @@ func isLegacyParentActionInvocation(execution parentActionExecutionKind, action 
 		return true
 	case parentActionExecutionDirectWorker:
 		return false
-	case parentActionExecutionReadOrPark:
-		return action == actionPark || action == actionUnpark
 	case parentActionExecutionContinuationOrApprove:
 		return false
 	case parentActionExecutionGitEvidence:

@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -61,14 +60,6 @@ func TestWorkflowEntriesRejectForeignWorkspaceBeforeStateMutation(t *testing.T) 
 				t.Fatalf("foreign workspace minted another attempt or lease: %#v %v", head, err)
 			}
 		})
-	}
-}
-
-func TestWorkflowParkRemainsRetired(t *testing.T) {
-	cfg, st := newWorkflowGuardFixture(t, t.TempDir())
-	w := NewWorkflow(cfg, st, nil, io.Discard)
-	if err := w.ExecutePark(io.Discard); err == nil || !strings.Contains(err.Error(), "canonical controller cutover") {
-		t.Fatalf("park error = %v", err)
 	}
 }
 
