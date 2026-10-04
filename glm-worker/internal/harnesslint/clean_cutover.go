@@ -1,20 +1,22 @@
 package harnesslint
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"strconv"
 )
 
 const (
-	cleanCutoverRule             = "clean-cutover-rejection-only-surface"
-	parentActionMetadataPath     = "glm-worker/internal/parentactioncmd/command_metadata.go"
-	parentActionRegistryName     = "parentActionCommands"
-	parentActionLegacyPredicate  = "isLegacyParentActionInvocation"
-	parentActionExecutionParam   = "execution"
-	parentActionActionParam      = "action"
+	cleanCutoverRule            = "clean-cutover-rejection-only-surface"
+	parentActionMetadataPath    = "glm-worker/internal/parentactioncmd/command_metadata.go"
+	parentActionRegistryName    = "parentActionCommands"
+	parentActionLegacyPredicate = "isLegacyParentActionInvocation"
+	parentActionExecutionParam  = "execution"
+	parentActionActionParam     = "action"
 )
 
 func scanCleanCutover(root string, paths []string) ([]Violation, error) {
@@ -22,6 +24,50 @@ func scanCleanCutover(root string, paths []string) ([]Violation, error) {
 		return nil, nil
 	}
 	return cleanCutoverParentActionViolations(root)
+}
+
+func fixCleanCutover(root string, paths []string) error {
+	if !containsPath(paths, parentActionMetadataPath) {
+		return nil
+	}
+	data, err := readRegularFile(root, parentActionMetadataPath)
+	if err != nil {
+		return err
+	}
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, parentActionMetadataPath, data, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", parentActionMetadataPath, err)
+	}
+	rejectedKinds, rejectedActions := parentActionRejectedRoots(file)
+	if len(rejectedKinds) == 0 && len(rejectedActions) == 0 {
+		return nil
+	}
+	changed := false
+	for _, registry := range parentActionRegistries(file) {
+		kept := registry.Elts[:0]
+		for _, element := range registry.Elts {
+			entry, ok := element.(*ast.KeyValueExpr)
+			if ok && parentActionRegistryEntryRejected(entry, rejectedKinds, rejectedActions) {
+				changed = true
+				continue
+			}
+			kept = append(kept, element)
+		}
+		registry.Elts = kept
+	}
+	if !changed {
+		return nil
+	}
+	var output bytes.Buffer
+	if err := format.Node(&output, set, file); err != nil {
+		return fmt.Errorf("format %s: %w", parentActionMetadataPath, err)
+	}
+	formatted := output.Bytes()
+	if len(formatted) == 0 || formatted[len(formatted)-1] != '\n' {
+		formatted = append(formatted, '\n')
+	}
+	return writeRegularFile(root, parentActionMetadataPath, formatted)
 }
 
 func containsPath(paths []string, wanted string) bool {
@@ -131,6 +177,24 @@ func stringLiteral(expression ast.Expr) (string, bool) {
 
 func parentActionRegistryViolations(set *token.FileSet, file *ast.File, rejectedKinds, rejectedActions map[string]bool) []Violation {
 	var violations []Violation
+	for _, registry := range parentActionRegistries(file) {
+		for _, element := range registry.Elts {
+			entry, ok := element.(*ast.KeyValueExpr)
+			if !ok || !parentActionRegistryEntryRejected(entry, rejectedKinds, rejectedActions) {
+				continue
+			}
+			position := set.Position(entry.Key.Pos())
+			violations = append(violations, Violation{
+				Rule: cleanCutoverRule, Path: parentActionMetadataPath, Line: position.Line, Column: position.Column,
+				Message: "registered parent action is retained solely behind an unconditional cutover rejection; remove the registry root",
+			})
+		}
+	}
+	return violations
+}
+
+func parentActionRegistries(file *ast.File) []*ast.CompositeLit {
+	var registries []*ast.CompositeLit
 	for _, declaration := range file.Decls {
 		general, ok := declaration.(*ast.GenDecl)
 		if !ok || general.Tok != token.VAR {
@@ -142,25 +206,12 @@ func parentActionRegistryViolations(set *token.FileSet, file *ast.File, rejected
 				continue
 			}
 			registry, ok := value.Values[0].(*ast.CompositeLit)
-			if !ok {
-				continue
-			}
-			for _, element := range registry.Elts {
-				entry, ok := element.(*ast.KeyValueExpr)
-				if !ok {
-					continue
-				}
-				if parentActionRegistryEntryRejected(entry, rejectedKinds, rejectedActions) {
-					position := set.Position(entry.Key.Pos())
-					violations = append(violations, Violation{
-						Rule: cleanCutoverRule, Path: parentActionMetadataPath, Line: position.Line, Column: position.Column,
-						Message: "registered parent action is retained solely behind an unconditional cutover rejection; remove the registry root",
-					})
-				}
+			if ok {
+				registries = append(registries, registry)
 			}
 		}
 	}
-	return violations
+	return registries
 }
 
 func parentActionRegistryEntryRejected(entry *ast.KeyValueExpr, rejectedKinds, rejectedActions map[string]bool) bool {
