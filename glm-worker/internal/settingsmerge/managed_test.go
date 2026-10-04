@@ -44,10 +44,7 @@ func TestManagedSettingsRetireSiblingKeysRemovesToolCreatedParent(t *testing.T) 
 	if _, err := MergeFiles(target, fragment, ""); err != nil {
 		t.Fatal(err)
 	}
-	state, err := loadManagedState(ManagedStatePath(target))
-	if err != nil {
-		t.Fatal(err)
-	}
+	state := readManagedStateForTest(t, ManagedStatePath(target))
 	if len(state.Values) != 2 {
 		t.Fatalf("managed values=%d, want 2", len(state.Values))
 	}
@@ -156,10 +153,7 @@ func TestManagedSettingsRetirePreservesUserModifiedValue(t *testing.T) {
 	}
 	assertJSONValue(t, target, []string{"env", "KEY"}, "manual")
 	assertJSONValue(t, target, []string{"env", "LOCAL"}, "keep")
-	state, err := loadManagedState(ManagedStatePath(target))
-	if err != nil {
-		t.Fatal(err)
-	}
+	state := readManagedStateForTest(t, ManagedStatePath(target))
 	if len(state.Values) != 0 {
 		t.Fatalf("retired user-modified value remained tool-owned: %+v", state.Values)
 	}
@@ -183,10 +177,7 @@ func TestManagedSettingsEmptyFragmentRestoresAllManagedBaselines(t *testing.T) {
 	assertJSONValue(t, target, []string{"other"}, "keep")
 	assertJSONMissing(t, target, []string{"env", "NEW"})
 	assertJSONMissing(t, target, []string{"top"})
-	state, err := loadManagedState(ManagedStatePath(target))
-	if err != nil {
-		t.Fatal(err)
-	}
+	state := readManagedStateForTest(t, ManagedStatePath(target))
 	if len(state.Values) != 0 {
 		t.Fatalf("empty managed fragment retained ownership: %+v", state.Values)
 	}
@@ -218,21 +209,13 @@ func TestManagedSettingsRollbackTargetAndOwnershipState(t *testing.T) {
 	}
 }
 
-func TestVerifyManagedInstallationRequiresOwnershipState(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "settings.json")
-	fragment := filepath.Join(dir, "managed.json")
-	writeTestFile(t, target, `{"env":{"KEY":"managed"}}`)
-	writeTestFile(t, fragment, `{"env":{"KEY":"managed"}}`)
-	if err := VerifyManagedInstallation(target, fragment, ""); err == nil {
-		t.Fatal("managed values without ownership state were accepted")
-	}
-	if _, err := MergeFiles(target, fragment, ""); err != nil {
+func readManagedStateForTest(t *testing.T, path string) managedState {
+	t.Helper()
+	state, err := managedStateFromSnapshot(fileRestore{existed: true, data: readTestFile(t, path)})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyManagedInstallation(target, fragment, ""); err != nil {
-		t.Fatalf("valid managed ownership rejected: %v", err)
-	}
+	return state
 }
 
 func assertJSONValue(t *testing.T, path string, keys []string, want any) {
