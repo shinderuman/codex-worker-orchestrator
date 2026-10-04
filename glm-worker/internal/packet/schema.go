@@ -14,11 +14,10 @@ type scalarSchema struct {
 }
 
 type objectSchema struct {
-	Type                 string                     `json:"type"`
-	Properties           map[string]*propertySchema `json:"properties"`
-	Required             []string                   `json:"required"`
-	AdditionalProperties bool                       `json:"additionalProperties"`
-	AnyOf                []objectCondition          `json:"anyOf,omitempty"`
+	Type       string                     `json:"type"`
+	Properties map[string]*propertySchema `json:"properties"`
+	Required   []string                   `json:"required"`
+	AnyOf      []objectCondition          `json:"anyOf,omitempty"`
 }
 
 type objectCondition struct {
@@ -140,11 +139,10 @@ func schemaForMachineContract(contract machineContract) *objectSchema {
 		required = append(required, string(field))
 	}
 	return &objectSchema{
-		Type:                 schemaTypeObject,
-		Properties:           properties,
-		Required:             required,
-		AdditionalProperties: false,
-		AnyOf:                schemaStatusConditions(contract),
+		Type:       schemaTypeObject,
+		Properties: properties,
+		Required:   required,
+		AnyOf:      schemaStatusConditions(contract),
 	}
 }
 
