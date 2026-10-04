@@ -82,10 +82,7 @@ func finalizeTerminalContinuationStats(envelope *parentActionTerminalContinuatio
 }
 
 func persistParentActionTerminalContinuation(cfg config.AppConfig, terminalJSON json.RawMessage) (parentActionTerminalContinuation, error) {
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		return parentActionTerminalContinuation{}, err
-	}
+	st := state.AttachStateStore(cfg)
 	dir, err := st.PrepareArtifactDir()
 	if err != nil {
 		return parentActionTerminalContinuation{}, err
