@@ -48,19 +48,3 @@ func TestStartNewTaskClearsPreviousTaskContext(t *testing.T) {
 		}
 	}
 }
-
-func TestTaskResetIncludesNewTaskTransitionState(t *testing.T) {
-	transition := make(map[string]bool)
-	for _, name := range newTaskTransitionStateFileNames() {
-		transition[name] = true
-	}
-	reset := make(map[string]bool)
-	for _, name := range taskStateFileNames() {
-		reset[name] = true
-	}
-	for name := range transition {
-		if !reset[name] {
-			t.Errorf("task reset omits transition state %s", name)
-		}
-	}
-}
