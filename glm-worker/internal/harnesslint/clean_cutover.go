@@ -399,6 +399,7 @@ func collectRejectedParentActionNames(body *ast.BlockStmt, actions map[string]bo
 			if action, ok := parentActionRejectedAction(expression, actionParam); ok {
 				actions[action] = true
 			}
+		}
 		return true
 	})
 }
