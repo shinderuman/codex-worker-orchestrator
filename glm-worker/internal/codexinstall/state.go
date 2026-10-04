@@ -35,43 +35,6 @@ func statePath(codexDir string) string {
 	return filepath.Join(codexDir, filepath.FromSlash(stateRelativePath))
 }
 
-func loadState(codexDir string) (installState, bool, error) {
-	if err := validateManagedPathAncestors(codexDir, stateRelativePath); err != nil {
-		return installState{}, false, err
-	}
-	path := statePath(codexDir)
-	data, exists, err := readOptionalRegularStateFile(path)
-	if err != nil {
-		return installState{}, false, err
-	}
-	if !exists {
-		return installState{Version: stateVersion, Config: map[string]managedConfigRecord{}}, false, nil
-	}
-	state, err := decodeInstallState(data)
-	if err != nil {
-		return installState{}, false, err
-	}
-	return state, true, nil
-}
-
-func readOptionalRegularStateFile(path string) ([]byte, bool, error) {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("stat Codex install state: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, false, fmt.Errorf("codex install state is not a regular file")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false, fmt.Errorf("read Codex install state: %w", err)
-	}
-	return data, true, nil
-}
-
 func decodeInstallState(data []byte) (installState, error) {
 	var state installState
 	if err := json.Unmarshal(data, &state); err != nil {
