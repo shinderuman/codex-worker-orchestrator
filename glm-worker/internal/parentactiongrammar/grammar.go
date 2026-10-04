@@ -23,6 +23,8 @@ const (
 	StartAction = "start"
 
 	AcceptedScopeParameter = state.ParentActionAcceptedScopeParameter
+	SignalKindParameter    = "signal-kind"
+	SourceCallIDParameter  = "source-call-id"
 
 	AcceptedScopeOption = "--accepted-scope"
 	ExecutionUnitOption = "--execution-unit"
