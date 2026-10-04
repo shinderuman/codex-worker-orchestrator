@@ -17,5 +17,5 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          patterns='CanonicalAuthorityActive|internal/sessionrotation|sessionrotation\.|PrintReviewEvidence|BuildReviewManifest'
+          patterns='CanonicalAuthorityActive|internal/sessionrotation|sessionrotation\.|PrintReviewEvidence|BuildReviewManifest|SessionRotationEvaluation|CompleteParentAwaiting'
           git grep -n -E "$patterns" -- ':!*.md' ':!*.json' ':!.github/workflows/tmp-current-closure-scan.yml' || true
