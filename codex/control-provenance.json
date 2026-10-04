@@ -914,10 +914,6 @@
           "symbol": "stopEndpointServer.handleConn"
         },
         {
-          "path": "glm-worker/internal/app/canonical_lifecycle_guard.go",
-          "symbol": "rejectLegacyStateLifecycle"
-        },
-        {
           "path": "glm-worker/internal/controller/execution_operation.go",
           "symbol": "Store.SuspendExecution"
         }
@@ -926,10 +922,6 @@
         {
           "path": "glm-worker/internal/workflow/stop_interruption_test.go",
           "symbol": "TestStopDuringRunningCallSavesInterruptedState"
-        },
-        {
-          "path": "glm-worker/internal/app/canonical_lifecycle_guard_test.go",
-          "symbol": "TestLegacyStateLifecycleIsRejectedAfterCanonicalCutover"
         },
         {
           "path": "glm-worker/internal/app/canonical_workflow_integration_test.go",
