@@ -1,0 +1,248 @@
+name: Temporary clean cutover lint refactor
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-1311-from-1310
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.event.head_commit.message == 'Arm clean-cutover lint refactor'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: glm-worker/go.mod
+          cache: false
+      - name: Split structural lint helpers and validate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/harnesslint/clean_cutover.go')
+          text = path.read_text()
+
+          def replace_between(start_marker, end_marker, replacement):
+              global text
+              start = text.find(start_marker)
+              if start < 0:
+                  raise SystemExit(f'missing start marker: {start_marker}')
+              end = text.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit(f'missing end marker after {start_marker}: {end_marker}')
+              text = text[:start] + replacement + text[end:]
+
+          replace_between(
+              'func findParentActionRejectionPredicate(',
+              '\nfunc parentActionRejectionGuardCall(',
+              '''func findParentActionRejectionPredicate(file *ast.File) (*ast.FuncDecl, string, string) {
+\tdispatch := findCleanCutoverFunction(file, parentActionDispatchName)
+\tif dispatch == nil || dispatch.Body == nil {
+\t\treturn nil, "", ""
+\t}
+\tfor _, statement := range dispatch.Body.List {
+\t\tpredicate, executionParam, actionParam, ok := parentActionRejectionPredicateFromStatement(file, statement)
+\t\tif ok {
+\t\t\treturn predicate, executionParam, actionParam
+\t\t}
+\t}
+\treturn nil, "", ""
+}
+
+func parentActionRejectionPredicateFromStatement(file *ast.File, statement ast.Stmt) (*ast.FuncDecl, string, string, bool) {
+\tconditional, ok := statement.(*ast.IfStmt)
+\tif !ok {
+\t\treturn nil, "", "", false
+\t}
+\tguardCall, executionIndex, actionIndex, ok := parentActionRejectionGuardCall(conditional)
+\tif !ok {
+\t\treturn nil, "", "", false
+\t}
+\tguardName, ok := cleanCutoverCalledFunctionName(guardCall)
+\tif !ok {
+\t\treturn nil, "", "", false
+\t}
+\tguard := findCleanCutoverFunction(file, guardName)
+\tguardParams := cleanCutoverParameterNames(guard)
+\tif !cleanCutoverParameterIndexesValid(guard, guardParams, executionIndex, actionIndex) {
+\t\treturn nil, "", "", false
+\t}
+\tpredicateCall, predicateExecutionIndex, predicateActionIndex, ok := cleanCutoverRejectionPredicateCall(
+\t\tguard,
+\t\tguardParams[executionIndex],
+\t\tguardParams[actionIndex],
+\t)
+\tif !ok {
+\t\treturn nil, "", "", false
+\t}
+\tpredicateName, ok := cleanCutoverCalledFunctionName(predicateCall)
+\tif !ok {
+\t\treturn nil, "", "", false
+\t}
+\tpredicate := findCleanCutoverFunction(file, predicateName)
+\tpredicateParams := cleanCutoverParameterNames(predicate)
+\tif !cleanCutoverParameterIndexesValid(predicate, predicateParams, predicateExecutionIndex, predicateActionIndex) {
+\t\treturn nil, "", "", false
+\t}
+\treturn predicate, predicateParams[predicateExecutionIndex], predicateParams[predicateActionIndex], true
+}
+
+func cleanCutoverParameterIndexesValid(function *ast.FuncDecl, parameters []string, executionIndex, actionIndex int) bool {
+\treturn function != nil && executionIndex >= 0 && actionIndex >= 0 && executionIndex < len(parameters) && actionIndex < len(parameters)
+}
+''',
+          )
+
+          replace_between(
+              'func parentActionRejectionGuardCall(',
+              '\nfunc cleanCutoverConditionIsNonNil(',
+              '''func parentActionRejectionGuardCall(statement *ast.IfStmt) (*ast.CallExpr, int, int, bool) {
+\tassignment, ok := cleanCutoverGuardAssignment(statement)
+\tif !ok {
+\t\treturn nil, 0, 0, false
+\t}
+\tcall, ok := assignment.Rhs[0].(*ast.CallExpr)
+\tif !ok || len(call.Args) != 2 {
+\t\treturn nil, 0, 0, false
+\t}
+\texecutionIndex, actionIndex := cleanCutoverGuardArgumentIndexes(call)
+\tif executionIndex < 0 || actionIndex < 0 || executionIndex == actionIndex {
+\t\treturn nil, 0, 0, false
+\t}
+\treturn call, executionIndex, actionIndex, true
+}
+
+func cleanCutoverGuardAssignment(statement *ast.IfStmt) (*ast.AssignStmt, bool) {
+\tif statement == nil {
+\t\treturn nil, false
+\t}
+\tassignment, ok := statement.Init.(*ast.AssignStmt)
+\tif !ok || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+\t\treturn nil, false
+\t}
+\terrName, ok := assignment.Lhs[0].(*ast.Ident)
+\tif !ok {
+\t\treturn nil, false
+\t}
+\tif !cleanCutoverConditionIsNonNil(statement.Cond, errName.Name) || !cleanCutoverBlockReturnsIdentifier(statement.Body, errName.Name) {
+\t\treturn nil, false
+\t}
+\treturn assignment, true
+}
+
+func cleanCutoverGuardArgumentIndexes(call *ast.CallExpr) (int, int) {
+\texecutionIndex := -1
+\tactionIndex := -1
+\tfor index, argument := range call.Args {
+\t\tif _, ok := argument.(*ast.Ident); ok {
+\t\t\texecutionIndex = index
+\t\t\tcontinue
+\t\t}
+\t\tselector, ok := argument.(*ast.SelectorExpr)
+\t\tif ok && selector.Sel.Name == "Action" {
+\t\t\tactionIndex = index
+\t\t}
+\t}
+\treturn executionIndex, actionIndex
+}
+''',
+          )
+
+          replace_between(
+              'func cleanCutoverRejectionPredicateCall(',
+              '\nfunc cleanCutoverBooleanCall(',
+              '''func cleanCutoverRejectionPredicateCall(guard *ast.FuncDecl, executionParam, actionParam string) (*ast.CallExpr, int, int, bool) {
+\tif guard == nil || guard.Body == nil {
+\t\treturn nil, 0, 0, false
+\t}
+\tfor index, statement := range guard.Body.List {
+\t\tconditional, call, negated, executionIndex, actionIndex, ok := cleanCutoverPredicateCandidate(statement, executionParam, actionParam)
+\t\tif !ok {
+\t\t\tcontinue
+\t\t}
+\t\tif cleanCutoverPredicateRejects(conditional, negated, guard.Body.List[index+1:]) {
+\t\t\treturn call, executionIndex, actionIndex, true
+\t\t}
+\t}
+\treturn nil, 0, 0, false
+}
+
+func cleanCutoverPredicateCandidate(statement ast.Stmt, executionParam, actionParam string) (*ast.IfStmt, *ast.CallExpr, bool, int, int, bool) {
+\tconditional, ok := statement.(*ast.IfStmt)
+\tif !ok {
+\t\treturn nil, nil, false, 0, 0, false
+\t}
+\tcall, negated := cleanCutoverBooleanCall(conditional.Cond)
+\tif call == nil {
+\t\treturn nil, nil, false, 0, 0, false
+\t}
+\texecutionIndex, actionIndex, ok := cleanCutoverCallParameterIndexes(call, executionParam, actionParam)
+\treturn conditional, call, negated, executionIndex, actionIndex, ok
+}
+
+func cleanCutoverPredicateRejects(conditional *ast.IfStmt, negated bool, remaining []ast.Stmt) bool {
+\tif negated {
+\t\treturn cleanCutoverBlockReturnsNil(conditional.Body) && cleanCutoverStatementsReturnNonNil(remaining)
+\t}
+\treturn cleanCutoverBlockReturnsNonNil(conditional.Body) && cleanCutoverStatementsReturnNil(remaining)
+}
+''',
+          )
+
+          nil_literals = text.count('"nil"')
+          if nil_literals != 3:
+              raise SystemExit(f'expected 3 nil identifier literals, found {nil_literals}')
+          text = text.replace('"nil"', 'forwardOnlyNilIdentifier')
+          path.write_text(text)
+          PY
+
+          gofmt -w glm-worker/internal/harnesslint/clean_cutover.go
+          git diff --check
+          (cd glm-worker && go test ./internal/harnesslint)
+
+          python3 <<'PY'
+          import json, os, pathlib, urllib.request
+          repo = os.environ['REPO']
+          branch = os.environ['BRANCH']
+          expected = os.environ['EXPECTED_HEAD']
+          token = os.environ['GH_TOKEN']
+          api = f'https://api.github.com/repos/{repo}'
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          def request(method, url, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(req) as response:
+                  return json.load(response)
+          ref = request('GET', f'{api}/git/ref/heads/{branch}')
+          if ref['object']['sha'] != expected:
+              raise SystemExit(f'branch moved: expected {expected}, got {ref["object"]["sha"]}')
+          commit = request('GET', f'{api}/git/commits/{expected}')
+          content = pathlib.Path('glm-worker/internal/harnesslint/clean_cutover.go').read_text()
+          blob = request('POST', f'{api}/git/blobs', {'content': content, 'encoding': 'utf-8'})
+          tree = request('POST', f'{api}/git/trees', {
+              'base_tree': commit['tree']['sha'],
+              'tree': [{'path': 'glm-worker/internal/harnesslint/clean_cutover.go', 'mode': '100644', 'type': 'blob', 'sha': blob['sha']}],
+          })
+          new_commit = request('POST', f'{api}/git/commits', {
+              'message': 'Simplify clean-cutover structural lint',
+              'tree': tree['sha'],
+              'parents': [expected],
+          })
+          request('PATCH', f'{api}/git/refs/heads/{branch}', {'sha': new_commit['sha'], 'force': False})
+          print(new_commit['sha'])
+          PY
