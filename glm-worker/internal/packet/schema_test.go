@@ -20,7 +20,7 @@ func decodeSchema(t *testing.T, encoded string) map[string]any {
 func TestSchemaJSONRestrictedVocabulary(t *testing.T) {
 	allowedNodeKeys := map[string]bool{
 		"type": true, "properties": true, "required": true, "enum": true, "const": true,
-		"pattern": true, "items": true, "minItems": true, "additionalProperties": true, "anyOf": true,
+		"pattern": true, "items": true, "minItems": true, "anyOf": true,
 	}
 	allowedTypes := map[string]bool{"object": true, "array": true, "string": true, "number": true, "boolean": true}
 
@@ -54,9 +54,6 @@ func TestSchemaJSONRestrictedVocabulary(t *testing.T) {
 						properties, _ := node["properties"].(map[string]any)
 						if len(properties) == 0 {
 							t.Fatalf("%s: objectにpropertiesがありません", path)
-						}
-						if additional, ok := node["additionalProperties"].(bool); !ok || additional {
-							t.Fatalf("%s: object additionalProperties = %v, want false", path, node["additionalProperties"])
 						}
 						for name, raw := range properties {
 							child, _ := raw.(map[string]any)
@@ -151,9 +148,6 @@ func TestReviewerSchemaContents(t *testing.T) {
 		if _, ok := properties[want]; !ok {
 			t.Fatalf("reviewer schemaに%sがありません", want)
 		}
-	}
-	if decoded["additionalProperties"] != false {
-		t.Fatalf("reviewer additionalProperties = %v, want false", decoded["additionalProperties"])
 	}
 }
 
