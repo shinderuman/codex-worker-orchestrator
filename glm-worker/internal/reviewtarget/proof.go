@@ -15,10 +15,19 @@ type ProofError struct {
 	Code       string
 	Target     string
 	Correction string
+	Cause      error
 }
 
 func (e *ProofError) Error() string {
-	return fmt.Sprintf("review target proof [%s] %q is unavailable; correction=%s", e.Code, e.Target, e.Correction)
+	message := fmt.Sprintf("review target proof [%s] %q is unavailable; correction=%s", e.Code, e.Target, e.Correction)
+	if e.Cause != nil {
+		message += fmt.Sprintf("; cause=%v", e.Cause)
+	}
+	return message
+}
+
+func (e *ProofError) Unwrap() error {
+	return e.Cause
 }
 
 func ValidateProofAddressable(repoRoot string, target Target) error {
@@ -78,7 +87,10 @@ func validateLineRangeProofAddressable(repoRoot string, target Target) error {
 
 func validateDeletedLineRange(repoRoot string, target Target) error {
 	body, err := targetDiff(repoRoot, target.Path)
-	if err != nil || len(body) == 0 || !bytes.Contains(body, []byte("+++ /dev/null")) {
+	if err != nil {
+		return err
+	}
+	if len(body) == 0 || !bytes.Contains(body, []byte("+++ /dev/null")) {
 		return proofError("line-source-missing", target, "use @diff for a deleted changed file or a line/range in a current file")
 	}
 	content, err := headFile(repoRoot, target.Path)
@@ -136,7 +148,12 @@ func targetDiff(repoRoot, path string) ([]byte, error) {
 	command := exec.Command("git", "-C", repoRoot, "diff", "HEAD", "--no-ext-diff", "--no-renames", "--", path)
 	output, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("capture review target diff %s: %w", path, err)
+		return nil, &ProofError{
+			Code:       "diff-unavailable",
+			Target:     path + ":@diff",
+			Correction: "retry after canonical Git diff evidence is available; do not substitute an unproved target",
+			Cause:      err,
+		}
 	}
 	return output, nil
 }
