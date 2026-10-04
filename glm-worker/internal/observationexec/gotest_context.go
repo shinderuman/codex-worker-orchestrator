@@ -2,6 +2,7 @@ package observationexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -142,7 +143,7 @@ func goTestContextStopOutcome(err error, deadline time.Duration) GoTestOutcome {
 }
 
 func goTestContextStopOutcomeWithRunErr(runErr, stopErr error, deadline time.Duration) GoTestOutcome {
-	if stopErr == context.DeadlineExceeded {
+	if errors.Is(stopErr, context.DeadlineExceeded) {
 		return goTestDeadlineOutcome(runErr, deadline)
 	}
 	return goTestCancelledOutcome(runErr, stopErr)
