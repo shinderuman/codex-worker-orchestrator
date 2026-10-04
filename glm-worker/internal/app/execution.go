@@ -125,9 +125,6 @@ func executeStateBacked(
 	rf RunnerFactory,
 	stdout io.Writer,
 ) error {
-	if err := rejectLegacyStateLifecycle(cfg, cmd.Mode); err != nil {
-		return err
-	}
 	if retainedCanonicalWorkflowMode(cmd.Mode) {
 		return executeRetainedCanonicalWorkflow(cmd, cfg, rf, stdout)
 	}
