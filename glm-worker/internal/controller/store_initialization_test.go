@@ -32,3 +32,28 @@ func TestInitializeControllerStoreDoesNotReplaceAmbiguousExistingTarget(t *testi
 		t.Fatalf("ambiguous target gained controller authority: %v", statErr)
 	}
 }
+
+func TestInitializeControllerStoreAdoptsCompleteWinner(t *testing.T) {
+	parent := t.TempDir()
+	store := &Store{
+		dir:      filepath.Join(parent, "controller"),
+		identity: RepositoryIdentity{LineageID: "lineage-test"},
+	}
+	if err := initializeControllerStore(store); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := initializeControllerStore(store); err != nil {
+		t.Fatalf("complete initialization winner was not adopted: %v", err)
+	}
+	after, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatalf("adopting initialization winner changed controller head: before=%+v after=%+v", before, after)
+	}
+}
