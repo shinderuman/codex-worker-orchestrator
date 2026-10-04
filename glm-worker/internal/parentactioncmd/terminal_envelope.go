@@ -11,13 +11,13 @@ import (
 )
 
 type parentActionTerminalEnvelopePayload struct {
-	Status          string                                `json:"status"`
-	Terminal        json.RawMessage                       `json:"terminal"`
-	Handoff         json.RawMessage                       `json:"handoff,omitempty"`
-	HandoffError    string                                `json:"handoff_error,omitempty"`
-	ProjectionError string                                `json:"projection_error,omitempty"`
+	Status          string                               `json:"status"`
+	Terminal        json.RawMessage                      `json:"terminal"`
+	Handoff         json.RawMessage                      `json:"handoff,omitempty"`
+	HandoffError    string                               `json:"handoff_error,omitempty"`
+	ProjectionError string                               `json:"projection_error,omitempty"`
 	Projection      *parentActionTerminalProjectionStats `json:"projection,omitempty"`
-	Continuation    *parentActionTerminalContinuation     `json:"continuation,omitempty"`
+	Continuation    *parentActionTerminalContinuation    `json:"continuation,omitempty"`
 }
 
 type terminalHandoffLoader func() (json.RawMessage, error)
