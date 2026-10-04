@@ -107,10 +107,6 @@ func readTerminalHandoff(cfg config.AppConfig, action string, stderr io.Writer, 
 	return decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
 }
 
-func writeProjectedTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
-	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, false)
-}
-
 func writeProjectedRecoveryTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
 	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, true)
 }
