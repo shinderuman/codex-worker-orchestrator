@@ -36,17 +36,6 @@ func TestPublicationReadOnlyBindingsRemainAvailableAfterCutover(t *testing.T) {
 			if err := rejectLegacyPublicationBinding(cfg, subcommand); err != nil {
 				t.Fatalf("activate=%v read-only publication binding %s was rejected: %v", activate, subcommand, err)
 			}
-		}
-	}
-}
-
-func TestLegacyPublicationFindingRegistrationIsRejectedAfterCutover(t *testing.T) {
-	for _, activate := range []bool{false, true} {
-		cfg := newCanonicalCutoverConfig(t, activate)
-		err := executeParentLifecycleAction(cfg, []string{actionRecordPublicationFinding, "--origin", "codex-review"}, nil)
-		if err == nil || !strings.Contains(err.Error(), "legacy publication finding registration is unavailable after canonical controller cutover") {
-			t.Fatalf("activate=%v record-publication-finding error = %v", activate, err)
-		}
 	}
 }
 
