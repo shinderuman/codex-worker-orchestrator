@@ -53,7 +53,10 @@ func ValidateProofAddressable(repoRoot string, target Target) error {
 func validateGoSymbolProofAddressable(repoRoot string, target Target) error {
 	content, err := readRepositoryFile(repoRoot, target.Path)
 	if err != nil {
-		return proofError("symbol-source-unavailable", target, "use a declaration locator only for a current readable Go source declaration")
+		if errors.Is(err, os.ErrNotExist) {
+			return validateDeletedGoSymbolProofAddressable(repoRoot, target)
+		}
+		return proofError("symbol-source-unavailable", target, "use a declaration locator only for a readable current source or a deleted Go source with canonical diff evidence")
 	}
 	declaration, err := FindGoDeclaration(content, target.Locator)
 	if err != nil {
@@ -61,6 +64,28 @@ func validateGoSymbolProofAddressable(repoRoot string, target Target) error {
 	}
 	if declaration.LineEnd-declaration.LineStart+1 > MaxSourceProofLines {
 		return proofError("symbol-source-too-large", target, "use an exact numeric line/range within the canonical source proof bound")
+	}
+	return nil
+}
+
+func validateDeletedGoSymbolProofAddressable(repoRoot string, target Target) error {
+	body, err := targetDiff(repoRoot, target.Path)
+	if err != nil {
+		return err
+	}
+	if len(body) == 0 || !bytes.Contains(body, []byte("+++ /dev/null")) {
+		return proofError("symbol-source-missing", target, "use a declaration locator only for a current declaration or a declaration in a deleted changed Go file")
+	}
+	content, err := headFile(repoRoot, target.Path)
+	if err != nil {
+		return proofError("deleted-symbol-head-unavailable", target, "use a deleted-file declaration only when the exact source exists in HEAD")
+	}
+	declaration, err := FindGoDeclaration(content, target.Locator)
+	if err != nil {
+		return proofError("deleted-symbol-not-declared", target, "use the exact top-level Go declaration name or Type.Member identity that existed in the deleted HEAD source")
+	}
+	if declaration.LineEnd-declaration.LineStart+1 > MaxSourceProofLines {
+		return proofError("deleted-symbol-source-too-large", target, "use an exact numeric line/range within the canonical source proof bound")
 	}
 	return nil
 }
