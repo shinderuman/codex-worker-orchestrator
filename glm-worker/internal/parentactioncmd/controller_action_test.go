@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
@@ -14,7 +15,7 @@ import (
 func TestControllerParentTransportPreservesPayloadAndRejectsReplay(t *testing.T) {
 	for _, action := range []string{"controller-semantic", "controller-execution", "controller-publication", "controller-evidence"} {
 		t.Run(action, func(t *testing.T) {
-			cfg := newCanonicalCutoverConfig(t, true)
+			cfg := newControllerActionTestConfig(t, true)
 			bin := t.TempDir()
 			stub := "#!/bin/sh\n[ \"$1\" = --authority ] || exit 2\n[ \"$2\" = " + action + " ] || exit 3\ncat\n"
 			if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
@@ -60,7 +61,7 @@ func TestControllerParentTransportPreservesPayloadAndRejectsReplay(t *testing.T)
 }
 
 func TestControllerParentTransportKeepsStageAfterRejectedCommand(t *testing.T) {
-	cfg := newCanonicalCutoverConfig(t, false)
+	cfg := newControllerActionTestConfig(t, false)
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte("#!/bin/sh\nexit 7\n"), 0700); err != nil {
 		t.Fatal(err)
@@ -84,4 +85,37 @@ func TestControllerParentTransportKeepsStageAfterRejectedCommand(t *testing.T) {
 	if _, err := parentaction.Peek(cfg.RepoRoot, prepared.Action, prepared.Token); err != nil {
 		t.Fatalf("rejected command consumed stage: %v", err)
 	}
+}
+
+func newControllerActionTestConfig(t *testing.T, activate bool) config.AppConfig {
+	t.Helper()
+	repo := t.TempDir()
+	runFinalizationGit(t, repo, "init", "-q")
+	runFinalizationGit(t, repo, "config", "user.email", "controller-action@example.invalid")
+	runFinalizationGit(t, repo, "config", "user.name", "Controller Action Test")
+	if err := os.MkdirAll(filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_TASKS", "root.md"), []byte("# root\n\n## Contract\n\nroot\n\n## Dependencies\n\nnone\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runFinalizationGit(t, repo, "add", ".")
+	runFinalizationGit(t, repo, "commit", "-q", "-m", "base")
+	hash := config.RepoHashFor(repo)
+	cfg := config.AppConfig{
+		RepoRoot:     repo,
+		RepoHash:     hash,
+		RepoShort:    hash[:12],
+		StateBase:    filepath.Join(t.TempDir(), "sessions"),
+		WorktreeBase: filepath.Join(t.TempDir(), "worktrees"),
+	}
+	if activate {
+		if _, err := controller.Activate(cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return cfg
 }
