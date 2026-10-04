@@ -14,8 +14,6 @@ func rejectLegacyStateLifecycle(_ config.AppConfig, mode CommandMode) error {
 		operation, replacement = "reset", "--authority controller-semantic"
 	case ModePark:
 		operation, replacement = "park", "--authority controller-execution (suspend)"
-	case ModeIsolate:
-		operation, replacement = "isolate", "--authority controller-execution (suspend)"
 	case ModeUnpark:
 		operation, replacement = "unpark", "--authority controller-execution (materialize/cleanup)"
 	default:
