@@ -53,29 +53,6 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		Action:  "rotation-fail",
 		Execute: parentActionExecutionSessionRotation,
 	},
-	"no-go": {
-		Action:           "no-go",
-		Execute:          parentActionExecutionLifecycle,
-		TerminalEnvelope: true,
-	},
-	actionRecordPublicationFinding: {
-		Action:           actionRecordPublicationFinding,
-		Execute:          parentActionExecutionLifecycle,
-		TerminalEnvelope: true,
-	},
-	actionReopen: {
-		Action:           actionReopen,
-		Execute:          parentActionExecutionLifecycle,
-		TerminalEnvelope: true,
-	},
-	"complete": {
-		Action:  "complete",
-		Execute: parentActionExecutionComplete,
-	},
-	"install": {
-		Action:  "install",
-		Execute: parentActionExecutionInstall,
-	},
 	"wait": {
 		Action:  "wait",
 		Execute: parentActionExecutionWait,
@@ -120,31 +97,6 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 	actionObservationExecute: {
 		Action:  actionObservationExecute,
 		Execute: parentActionExecutionObservationExecute,
-	},
-	"push-binding": {
-		Action:  "push-binding",
-		Execute: parentActionExecutionGitEvidence,
-	},
-	actionReviewEvidence: {
-		Action:           actionReviewEvidence,
-		TerminalExecute:  parentActionExecutionReviewEvidence,
-		TerminalEnvelope: true,
-		InProcessHandoff: true,
-	},
-	actionRecordDefectFinding: {
-		Action:           actionRecordDefectFinding,
-		TerminalExecute:  parentActionExecutionDefectRegistration,
-		TerminalEnvelope: true,
-	},
-	actionBindDefectTask: {
-		Action:           actionBindDefectTask,
-		TerminalExecute:  parentActionExecutionDefectRegistration,
-		TerminalEnvelope: true,
-	},
-	actionImprovementDisposition: {
-		Action:           actionImprovementDisposition,
-		TerminalExecute:  parentActionExecutionImprovementDisposition,
-		TerminalEnvelope: true,
 	},
 }
 
