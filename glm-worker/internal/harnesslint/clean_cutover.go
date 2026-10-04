@@ -120,58 +120,91 @@ func findParentActionRejectionPredicate(file *ast.File) (*ast.FuncDecl, string, 
 		return nil, "", ""
 	}
 	for _, statement := range dispatch.Body.List {
-		conditional, ok := statement.(*ast.IfStmt)
-		if !ok {
-			continue
+		predicate, executionParam, actionParam, ok := parentActionRejectionPredicateFromStatement(file, statement)
+		if ok {
+			return predicate, executionParam, actionParam
 		}
-		guardCall, executionIndex, actionIndex, ok := parentActionRejectionGuardCall(conditional)
-		if !ok {
-			continue
-		}
-		guardName, ok := cleanCutoverCalledFunctionName(guardCall)
-		if !ok {
-			continue
-		}
-		guard := findCleanCutoverFunction(file, guardName)
-		guardParams := cleanCutoverParameterNames(guard)
-		if guard == nil || executionIndex >= len(guardParams) || actionIndex >= len(guardParams) {
-			continue
-		}
-		predicateCall, predicateExecutionIndex, predicateActionIndex, ok := cleanCutoverRejectionPredicateCall(
-			guard,
-			guardParams[executionIndex],
-			guardParams[actionIndex],
-		)
-		if !ok {
-			continue
-		}
-		predicateName, ok := cleanCutoverCalledFunctionName(predicateCall)
-		if !ok {
-			continue
-		}
-		predicate := findCleanCutoverFunction(file, predicateName)
-		predicateParams := cleanCutoverParameterNames(predicate)
-		if predicate == nil || predicateExecutionIndex >= len(predicateParams) || predicateActionIndex >= len(predicateParams) {
-			continue
-		}
-		return predicate, predicateParams[predicateExecutionIndex], predicateParams[predicateActionIndex]
 	}
 	return nil, "", ""
 }
 
-func parentActionRejectionGuardCall(statement *ast.IfStmt) (*ast.CallExpr, int, int, bool) {
-	assignment, ok := statement.Init.(*ast.AssignStmt)
-	if !ok || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
-		return nil, 0, 0, false
+func parentActionRejectionPredicateFromStatement(file *ast.File, statement ast.Stmt) (*ast.FuncDecl, string, string, bool) {
+	conditional, ok := statement.(*ast.IfStmt)
+	if !ok {
+		return nil, "", "", false
 	}
-	errName, ok := assignment.Lhs[0].(*ast.Ident)
-	if !ok || !cleanCutoverConditionIsNonNil(statement.Cond, errName.Name) || !cleanCutoverBlockReturnsIdentifier(statement.Body, errName.Name) {
+	guardCall, executionIndex, actionIndex, ok := parentActionRejectionGuardCall(conditional)
+	if !ok {
+		return nil, "", "", false
+	}
+	guardName, ok := cleanCutoverCalledFunctionName(guardCall)
+	if !ok {
+		return nil, "", "", false
+	}
+	guard := findCleanCutoverFunction(file, guardName)
+	guardParams := cleanCutoverParameterNames(guard)
+	if !cleanCutoverParameterIndexesValid(guard, guardParams, executionIndex, actionIndex) {
+		return nil, "", "", false
+	}
+	predicateCall, predicateExecutionIndex, predicateActionIndex, ok := cleanCutoverRejectionPredicateCall(
+		guard,
+		guardParams[executionIndex],
+		guardParams[actionIndex],
+	)
+	if !ok {
+		return nil, "", "", false
+	}
+	predicateName, ok := cleanCutoverCalledFunctionName(predicateCall)
+	if !ok {
+		return nil, "", "", false
+	}
+	predicate := findCleanCutoverFunction(file, predicateName)
+	predicateParams := cleanCutoverParameterNames(predicate)
+	if !cleanCutoverParameterIndexesValid(predicate, predicateParams, predicateExecutionIndex, predicateActionIndex) {
+		return nil, "", "", false
+	}
+	return predicate, predicateParams[predicateExecutionIndex], predicateParams[predicateActionIndex], true
+}
+
+func cleanCutoverParameterIndexesValid(function *ast.FuncDecl, parameters []string, executionIndex, actionIndex int) bool {
+	return function != nil && executionIndex >= 0 && actionIndex >= 0 && executionIndex < len(parameters) && actionIndex < len(parameters)
+}
+
+func parentActionRejectionGuardCall(statement *ast.IfStmt) (*ast.CallExpr, int, int, bool) {
+	assignment, ok := cleanCutoverGuardAssignment(statement)
+	if !ok {
 		return nil, 0, 0, false
 	}
 	call, ok := assignment.Rhs[0].(*ast.CallExpr)
 	if !ok || len(call.Args) != 2 {
 		return nil, 0, 0, false
 	}
+	executionIndex, actionIndex := cleanCutoverGuardArgumentIndexes(call)
+	if executionIndex < 0 || actionIndex < 0 || executionIndex == actionIndex {
+		return nil, 0, 0, false
+	}
+	return call, executionIndex, actionIndex, true
+}
+
+func cleanCutoverGuardAssignment(statement *ast.IfStmt) (*ast.AssignStmt, bool) {
+	if statement == nil {
+		return nil, false
+	}
+	assignment, ok := statement.Init.(*ast.AssignStmt)
+	if !ok || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		return nil, false
+	}
+	errName, ok := assignment.Lhs[0].(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	if !cleanCutoverConditionIsNonNil(statement.Cond, errName.Name) || !cleanCutoverBlockReturnsIdentifier(statement.Body, errName.Name) {
+		return nil, false
+	}
+	return assignment, true
+}
+
+func cleanCutoverGuardArgumentIndexes(call *ast.CallExpr) (int, int) {
 	executionIndex := -1
 	actionIndex := -1
 	for index, argument := range call.Args {
@@ -184,10 +217,7 @@ func parentActionRejectionGuardCall(statement *ast.IfStmt) (*ast.CallExpr, int, 
 			actionIndex = index
 		}
 	}
-	if executionIndex < 0 || actionIndex < 0 || executionIndex == actionIndex {
-		return nil, 0, 0, false
-	}
-	return call, executionIndex, actionIndex, true
+	return executionIndex, actionIndex
 }
 
 func cleanCutoverConditionIsNonNil(expression ast.Expr, name string) bool {
@@ -204,7 +234,7 @@ func cleanCutoverIdentAndNil(identifierExpr, nilExpr ast.Expr, name string) bool
 		return false
 	}
 	nilIdentifier, ok := nilExpr.(*ast.Ident)
-	return ok && nilIdentifier.Name == "nil"
+	return ok && nilIdentifier.Name == forwardOnlyNilIdentifier
 }
 
 func cleanCutoverBlockReturnsIdentifier(block *ast.BlockStmt, name string) bool {
@@ -229,27 +259,35 @@ func cleanCutoverRejectionPredicateCall(guard *ast.FuncDecl, executionParam, act
 		return nil, 0, 0, false
 	}
 	for index, statement := range guard.Body.List {
-		conditional, ok := statement.(*ast.IfStmt)
+		conditional, call, negated, executionIndex, actionIndex, ok := cleanCutoverPredicateCandidate(statement, executionParam, actionParam)
 		if !ok {
 			continue
 		}
-		call, negated := cleanCutoverBooleanCall(conditional.Cond)
-		if call == nil {
-			continue
-		}
-		executionIndex, actionIndex, ok := cleanCutoverCallParameterIndexes(call, executionParam, actionParam)
-		if !ok {
-			continue
-		}
-		remaining := guard.Body.List[index+1:]
-		if negated && cleanCutoverBlockReturnsNil(conditional.Body) && cleanCutoverStatementsReturnNonNil(remaining) {
-			return call, executionIndex, actionIndex, true
-		}
-		if !negated && cleanCutoverBlockReturnsNonNil(conditional.Body) && cleanCutoverStatementsReturnNil(remaining) {
+		if cleanCutoverPredicateRejects(conditional, negated, guard.Body.List[index+1:]) {
 			return call, executionIndex, actionIndex, true
 		}
 	}
 	return nil, 0, 0, false
+}
+
+func cleanCutoverPredicateCandidate(statement ast.Stmt, executionParam, actionParam string) (*ast.IfStmt, *ast.CallExpr, bool, int, int, bool) {
+	conditional, ok := statement.(*ast.IfStmt)
+	if !ok {
+		return nil, nil, false, 0, 0, false
+	}
+	call, negated := cleanCutoverBooleanCall(conditional.Cond)
+	if call == nil {
+		return nil, nil, false, 0, 0, false
+	}
+	executionIndex, actionIndex, ok := cleanCutoverCallParameterIndexes(call, executionParam, actionParam)
+	return conditional, call, negated, executionIndex, actionIndex, ok
+}
+
+func cleanCutoverPredicateRejects(conditional *ast.IfStmt, negated bool, remaining []ast.Stmt) bool {
+	if negated {
+		return cleanCutoverBlockReturnsNil(conditional.Body) && cleanCutoverStatementsReturnNonNil(remaining)
+	}
+	return cleanCutoverBlockReturnsNonNil(conditional.Body) && cleanCutoverStatementsReturnNil(remaining)
 }
 
 func cleanCutoverBooleanCall(expression ast.Expr) (*ast.CallExpr, bool) {
@@ -300,7 +338,7 @@ func cleanCutoverStatementsReturnNil(statements []ast.Stmt) bool {
 			continue
 		}
 		identifier, ok := result.Results[0].(*ast.Ident)
-		if ok && identifier.Name == "nil" {
+		if ok && identifier.Name == forwardOnlyNilIdentifier {
 			return true
 		}
 	}
@@ -314,7 +352,7 @@ func cleanCutoverStatementsReturnNonNil(statements []ast.Stmt) bool {
 			continue
 		}
 		identifier, isIdentifier := result.Results[0].(*ast.Ident)
-		if !isIdentifier || identifier.Name != "nil" {
+		if !isIdentifier || identifier.Name != forwardOnlyNilIdentifier {
 			return true
 		}
 	}
