@@ -91,15 +91,23 @@ func initializeControllerStore(store *Store) error {
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("create repository controller store parent: %w", err)
 	}
-	staging, err := os.MkdirTemp(parent, "."+filepath.Base(store.dir)+".init-*")
+	staging, err := prepareControllerStoreStaging(store, parent)
 	if err != nil {
-		return fmt.Errorf("create repository controller store staging directory: %w", err)
+		return err
 	}
 	defer func() { _ = os.RemoveAll(staging) }()
+	return publishControllerStoreStaging(store, parent, staging)
+}
 
+func prepareControllerStoreStaging(store *Store, parent string) (string, error) {
+	staging, err := os.MkdirTemp(parent, "."+filepath.Base(store.dir)+".init-*")
+	if err != nil {
+		return "", fmt.Errorf("create repository controller store staging directory: %w", err)
+	}
 	for _, name := range controllerStoreDirs {
 		if err := os.Mkdir(filepath.Join(staging, name), 0o700); err != nil {
-			return fmt.Errorf("create repository controller store staging layout: %w", err)
+			_ = os.RemoveAll(staging)
+			return "", fmt.Errorf("create repository controller store staging layout: %w", err)
 		}
 	}
 	head := RepositoryControllerHead{
@@ -109,11 +117,17 @@ func initializeControllerStore(store *Store) error {
 		Status:               ControllerStatusActive,
 	}
 	if err := writeJSONAtomic(filepath.Join(staging, "head.json"), head); err != nil {
-		return fmt.Errorf("create repository controller staged head: %w", err)
+		_ = os.RemoveAll(staging)
+		return "", fmt.Errorf("create repository controller staged head: %w", err)
 	}
 	if err := syncDirectoryPath(staging); err != nil {
-		return fmt.Errorf("sync repository controller staged store: %w", err)
+		_ = os.RemoveAll(staging)
+		return "", fmt.Errorf("sync repository controller staged store: %w", err)
 	}
+	return staging, nil
+}
+
+func publishControllerStoreStaging(store *Store, parent, staging string) error {
 	winner, err := existingControllerStoreWinner(store)
 	if err != nil {
 		return err
@@ -122,19 +136,23 @@ func initializeControllerStore(store *Store) error {
 		return nil
 	}
 	if err := os.Rename(staging, store.dir); err != nil {
-		winner, winnerErr := existingControllerStoreWinner(store)
-		if winnerErr == nil && winner {
-			return nil
-		}
-		if winnerErr != nil {
-			return winnerErr
-		}
-		return fmt.Errorf("publish repository controller store: %w", err)
+		return resolveControllerStorePublishRace(store, err)
 	}
 	if err := syncDirectoryPath(parent); err != nil {
 		return fmt.Errorf("sync repository controller store parent: %w", err)
 	}
 	return nil
+}
+
+func resolveControllerStorePublishRace(store *Store, publishErr error) error {
+	winner, err := existingControllerStoreWinner(store)
+	if err != nil {
+		return err
+	}
+	if winner {
+		return nil
+	}
+	return fmt.Errorf("publish repository controller store: %w", publishErr)
 }
 
 func existingControllerStoreWinner(store *Store) (bool, error) {
