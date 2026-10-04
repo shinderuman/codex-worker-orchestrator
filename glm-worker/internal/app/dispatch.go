@@ -48,7 +48,6 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		return dispatchStateCommand, nil
 	case ModeReset,
 		ModeAccept,
-		ModeIsolate,
 		ModePark,
 		ModeUnpark,
 		ModeExecutionMilestonesRevise,
@@ -198,8 +197,6 @@ func executeLockedMutation(cmd Command, cfg config.AppConfig, st *state.StateSto
 		return executeDispositionReset(cmd, st, stdout)
 	case ModeAccept:
 		return parentAccept(st, stdout)
-	case ModeIsolate:
-		return isolateInterruptedTask(st, cfg, stdout)
 	case ModePark:
 		return workflow.NewWorkflow(cfg, st, nil, stdout).ExecutePark(stdout)
 	case ModeUnpark:

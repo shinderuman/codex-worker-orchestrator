@@ -16,7 +16,6 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "new task with later option-shaped token", args: []string{"調査して", "--unknown"}, mode: ModeNewTask, payload: "調査して --unknown"},
 		{name: "resume", args: []string{"--resume"}, mode: ModeResume},
 		{name: "stop", args: []string{"--stop"}, mode: ModeStop},
-		{name: "isolate", args: []string{"--isolate"}, mode: ModeIsolate},
 		{name: "status", args: []string{"--status"}, mode: ModeStatus},
 		{name: "stats", args: []string{"--stats"}, mode: ModeStats},
 		{name: "reset", args: []string{"--reset"}, mode: ModeReset},
@@ -47,6 +46,15 @@ func TestParseCommandModes(t *testing.T) {
 func TestParentUsageCommandIsRetired(t *testing.T) {
 	if _, ok := commandParsers["--parent-usage"]; ok {
 		t.Fatal("retired --parent-usage command remains registered")
+	}
+}
+
+func TestIsolateCommandIsRetired(t *testing.T) {
+	if _, ok := commandParsers["--isolate"]; ok {
+		t.Fatal("retired --isolate command remains registered")
+	}
+	if _, err := ParseCommand([]string{"--isolate"}); err == nil || !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("retired --isolate command is not rejected as unknown: %v", err)
 	}
 }
 
@@ -157,7 +165,6 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		nil,
 		{"--resume", "extra"},
 		{"--stop", "extra"},
-		{"--isolate", "extra"},
 		{"--status", "extra"},
 		{"--stats", "extra"},
 		{"--reset", "extra"},

@@ -1,12 +1,10 @@
 package workflow
 
 import (
-	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -23,15 +21,7 @@ func (w *Workflow) verifyInterruptedRetention(checkpoint state.ResumeCheckpoint)
 	if err := verifyHeadAncestry(w.config.RepoRoot, stop.Head, current.Head); err != nil {
 		return w.failClosedRetention(checkpoint, "HEADが停止時commitを祖先に含まない位置へ移動しています", err)
 	}
-
-	record, err := w.state.LoadIsolationRecord()
-	if errors.Is(err, state.ErrNoIsolationRecord) {
-		return w.verifyHeadMoveWithoutIsolation(checkpoint, stop.Head, current.Head)
-	}
-	if err != nil {
-		return w.failClosedRetention(checkpoint, "隔離記録を読み込めません", err)
-	}
-	return w.verifyIsolationIntegration(checkpoint, stop, current, record)
+	return w.verifyHeadMoveAfterStop(checkpoint, stop.Head, current.Head)
 }
 
 func (w *Workflow) verifyStoppedCheckoutState(checkpoint state.ResumeCheckpoint, _ *state.GitSnapshot) (state.GitSnapshot, error) {
@@ -49,84 +39,13 @@ func (w *Workflow) verifyStoppedCheckoutState(checkpoint state.ResumeCheckpoint,
 	return current, nil
 }
 
-func (w *Workflow) verifyHeadMoveWithoutIsolation(checkpoint state.ResumeCheckpoint, stopHead, currentHead string) error {
+func (w *Workflow) verifyHeadMoveAfterStop(checkpoint state.ResumeCheckpoint, stopHead, currentHead string) error {
 	nonParent, err := headDeltaNonParentPaths(w.config.RepoRoot, stopHead, currentHead)
 	if err != nil {
 		return w.failClosedRetention(checkpoint, "HEAD移動の変更範囲を確認できません", err)
 	}
 	if len(nonParent) > 0 {
-		return w.failClosedRetention(checkpoint, fmt.Sprintf("隔離記録がないままHEADが移動し親管理外file(%s)が変化しています", strings.Join(nonParent, ", ")), nil)
-	}
-	return nil
-}
-
-func (w *Workflow) verifyIsolationIntegration(checkpoint state.ResumeCheckpoint, stop *state.GitSnapshot, current state.GitSnapshot, record state.IsolationRecord) error {
-	if err := w.verifyIsolationRecordIdentity(checkpoint, record); err != nil {
-		return err
-	}
-	if err := w.verifyIsolationOriginHead(checkpoint, stop.Head, record.OriginHead); err != nil {
-		return err
-	}
-	tip, err := state.ResolveBranchTip(w.config.RepoRoot, record.Branch)
-	if err != nil {
-		return w.failClosedRetention(checkpoint, "隔離記録のbranchが現在repoで解決できません", err)
-	}
-	if err := w.verifyIsolationTipIntegration(checkpoint, tip, current.Head); err != nil {
-		return err
-	}
-	return w.verifyIsolationOriginRecord(checkpoint, record)
-}
-
-func (w *Workflow) verifyIsolationRecordIdentity(checkpoint state.ResumeCheckpoint, record state.IsolationRecord) error {
-	taskID := w.state.ReadOr("task.id", "")
-	if record.OriginTaskID != taskID {
-		return w.failClosedRetention(checkpoint, fmt.Sprintf("隔離記録の元task(%s)が現在task(%s)と一致しません", record.OriginTaskID, taskID), nil)
-	}
-	if record.OriginRepoRoot != w.config.RepoRoot {
-		return w.failClosedRetention(checkpoint, fmt.Sprintf("隔離記録の元repo(%s)が現在repo(%s)と一致しません", record.OriginRepoRoot, w.config.RepoRoot), nil)
-	}
-	return nil
-}
-
-func (w *Workflow) verifyIsolationOriginHead(checkpoint state.ResumeCheckpoint, stopHead, originHead string) error {
-	if originHead == stopHead {
-		return nil
-	}
-	if err := verifyHeadAncestry(w.config.RepoRoot, stopHead, originHead); err != nil {
-		return w.failClosedRetention(checkpoint, "隔離記録の作成HEADが停止時HEADと一致しません", err)
-	}
-	nonParent, err := headDeltaNonParentPaths(w.config.RepoRoot, stopHead, originHead)
-	if err != nil {
-		return w.failClosedRetention(checkpoint, "停止時HEADから隔離作成HEADまでの変更範囲を確認できません", err)
-	}
-	if len(nonParent) > 0 {
-		return w.failClosedRetention(checkpoint, fmt.Sprintf("停止時HEADから隔離作成HEADの間に親管理外file(%s)が変化しています", strings.Join(nonParent, ", ")), nil)
-	}
-	return nil
-}
-
-func (w *Workflow) verifyIsolationTipIntegration(checkpoint state.ResumeCheckpoint, tip, currentHead string) error {
-	if err := verifyHeadAncestry(w.config.RepoRoot, tip, currentHead); err != nil {
-		return w.failClosedRetention(checkpoint, "隔離branchのtipが現在HEADへ統合されていません(保持照合は隔離branchのtipを現在HEADの祖先として含む統合済み状態だけを受理します)", err)
-	}
-	nonParent, err := headDeltaNonParentPaths(w.config.RepoRoot, tip, currentHead)
-	if err != nil {
-		return w.failClosedRetention(checkpoint, "隔離branch統合後の変更範囲を確認できません", err)
-	}
-	if len(nonParent) > 0 {
-		return w.failClosedRetention(checkpoint, fmt.Sprintf("隔離branch統合後に親管理外file(%s)が変化しています", strings.Join(nonParent, ", ")), nil)
-	}
-	return nil
-}
-
-func (w *Workflow) verifyIsolationOriginRecord(checkpoint state.ResumeCheckpoint, record state.IsolationRecord) error {
-	origin, err := w.state.AttachSiblingStore(config.RepoHashFor(record.Worktree)).LoadIsolationOrigin()
-	if err != nil {
-		return w.failClosedRetention(checkpoint, "隔離worktree側の出自記録を読み込めません(隔離側state dirは元task完了まで残してください)", err)
-	}
-	if origin.IsolationID != record.IsolationID || origin.OriginTaskID != record.OriginTaskID ||
-		origin.OriginRepoRoot != record.OriginRepoRoot || origin.Branch != record.Branch {
-		return w.failClosedRetention(checkpoint, "隔離記録と隔離worktree側の出自記録が一致しません", nil)
+		return w.failClosedRetention(checkpoint, fmt.Sprintf("停止後のHEAD移動で親管理外file(%s)が変化しています", strings.Join(nonParent, ", ")), nil)
 	}
 	return nil
 }

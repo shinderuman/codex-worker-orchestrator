@@ -55,7 +55,6 @@ const (
 	ModeAccept
 	ModeResume
 	ModeStop
-	ModeIsolate
 	ModePark
 	ModeUnpark
 	ModeStatus
@@ -134,9 +133,6 @@ var commandParsers = map[string]commandParser{
 	},
 	"--stop": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeStop, "usage: glm-worker --stop")
-	},
-	"--isolate": func(args []string) (Command, error) {
-		return singleArgCommand(args, ModeIsolate, "usage: glm-worker --isolate")
 	},
 	"--park": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModePark, "usage: glm-worker --park")

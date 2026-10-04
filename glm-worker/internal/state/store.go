@@ -218,7 +218,6 @@ func taskStateFileNames() []string {
 		"worker.ready",
 		"reviewer.id",
 		"reviewer.ready",
-		isolationOriginStateFile,
 	}
 	return append(names, newTaskTransitionStateFileNames()...)
 }

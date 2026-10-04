@@ -44,10 +44,6 @@ type statusOutput struct {
 	Telemetry           *string                               `json:"telemetry"`
 	SessionAging        []state.SessionAging                  `json:"session_aging"`
 
-	Isolation *statusIsolation `json:"isolation,omitempty"`
-
-	IsolationOrigin *statusIsolationOrigin `json:"isolation_origin,omitempty"`
-
 	Parked *statusParked `json:"parked,omitempty"`
 }
 
@@ -61,24 +57,6 @@ type statusParked struct {
 	CreatedAt       string `json:"created_at"`
 	WorkerSession   string `json:"worker_session,omitempty"`
 	ReviewerSession string `json:"reviewer_session,omitempty"`
-}
-
-type statusIsolation struct {
-	IsolationID string `json:"isolation_id"`
-	Worktree    string `json:"worktree"`
-	Branch      string `json:"branch"`
-	TaskID      string `json:"origin_task_id"`
-	RepoRoot    string `json:"origin_repo_root"`
-	Head        string `json:"origin_head"`
-	CreatedAt   string `json:"created_at"`
-}
-
-type statusIsolationOrigin struct {
-	IsolationID    string `json:"isolation_id"`
-	OriginRepoRoot string `json:"origin_repo_root"`
-	OriginTaskID   string `json:"origin_task_id"`
-	Branch         string `json:"branch"`
-	CreatedAt      string `json:"created_at"`
 }
 
 type statusProbes struct {
@@ -163,10 +141,6 @@ func parentStatusReadDigest(st *state.StateStore) string {
 	if checkpoint, err := st.LoadResumeCheckpoint(); err == nil {
 		checkpointAvailable = checkpoint.IsStopped()
 	}
-	isolation := ""
-	if record, err := st.LoadIsolationRecord(); err == nil {
-		isolation = record.IsolationID + record.Branch + record.OriginHead
-	}
 	return parentevidence.StringDigest(
 		st.ReadOr("task.id", ""),
 		string(st.TaskStatus()),
@@ -175,7 +149,6 @@ func parentStatusReadDigest(st *state.StateStore) string {
 		strconv.FormatBool(st.Exists("pending-decision")),
 		st.OpenParentReviewLabel(),
 		strconv.FormatBool(checkpointAvailable),
-		isolation,
 		string(probe.State),
 	)
 }
@@ -207,7 +180,6 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 
 	fillStatusTaskDetail(st, taskID, &output)
 	output.ResumeAvailable = fillStatusCheckpoint(st, &output)
-	fillStatusIsolation(st, &output)
 	fillStatusParked(st, &output)
 	output.Probes = statusProbesDetail(logs, time.Now())
 	fillStatusTelemetry(taskID, logErr, logs, &output)
@@ -229,29 +201,6 @@ func fillStatusParked(st *state.StateStore, output *statusOutput) {
 		CreatedAt:       record.CreatedAt,
 		WorkerSession:   record.WorkerSessionID,
 		ReviewerSession: record.ReviewerSessionID,
-	}
-}
-
-func fillStatusIsolation(st *state.StateStore, output *statusOutput) {
-	if record, err := st.LoadIsolationRecord(); err == nil {
-		output.Isolation = &statusIsolation{
-			IsolationID: record.IsolationID,
-			Worktree:    record.Worktree,
-			Branch:      record.Branch,
-			TaskID:      record.OriginTaskID,
-			RepoRoot:    record.OriginRepoRoot,
-			Head:        record.OriginHead,
-			CreatedAt:   record.CreatedAt,
-		}
-	}
-	if origin, err := st.LoadIsolationOrigin(); err == nil {
-		output.IsolationOrigin = &statusIsolationOrigin{
-			IsolationID:    origin.IsolationID,
-			OriginRepoRoot: origin.OriginRepoRoot,
-			OriginTaskID:   origin.OriginTaskID,
-			Branch:         origin.Branch,
-			CreatedAt:      origin.CreatedAt,
-		}
 	}
 }
 
