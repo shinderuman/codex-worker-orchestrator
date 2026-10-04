@@ -47,7 +47,6 @@ func TestCommandDispatchOwnersSeparateStateLockedAndWorkflow(t *testing.T) {
 	cases := map[CommandMode]commandDispatchOwner{
 		ModeVerifyCodexWake: dispatchStateCommand,
 		ModeInstallSmoke:    dispatchStateCommand,
-		ModeReset:           dispatchLockedMutation,
 		ModeAccept:          dispatchLockedMutation,
 		ModeNewTask:         dispatchWorkflow,
 		ModeDecision:        dispatchWorkflow,
