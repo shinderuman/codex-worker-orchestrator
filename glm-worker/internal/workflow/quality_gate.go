@@ -161,7 +161,7 @@ func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
 }
 
 func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) error {
-	targets, err := w.currentQualitySurfaceReviewTargets()
+	targets, err := w.qualitySurfaceFailureReviewTargets(cause)
 	if err != nil {
 		return fmt.Errorf("quality-surface review targets: %w", err)
 	}
@@ -172,6 +172,13 @@ func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) e
 		reason = fmt.Sprintf("%s: %v", reason, cause)
 	}
 	return w.emitResult(qualitySurfaceFailClosedResult(phase, reason, targets))
+}
+
+func (w *Workflow) qualitySurfaceFailureReviewTargets(cause error) ([]string, error) {
+	if cause != nil {
+		return w.currentReviewDiffTargets()
+	}
+	return w.currentQualitySurfaceReviewTargets()
 }
 
 func (w *Workflow) currentQualitySurfaceReviewTargets() ([]string, error) {
