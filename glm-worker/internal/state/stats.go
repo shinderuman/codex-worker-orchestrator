@@ -73,10 +73,10 @@ type TaskStats struct {
 	ProbeOutcome           map[string]int `json:"probe_outcome,omitempty"`
 
 	RepoSearchCalls             int            `json:"repo_search_calls,omitempty"`
-	RepoSearchQueriesByCategory map[string]int   `json:"repo_search_queries_by_category,omitempty"`
-	RepoSearchOutcomes          map[string]int   `json:"repo_search_outcomes,omitempty"`
-	RepoSearchResults           int              `json:"repo_search_results,omitempty"`
-	RepoSearchDurationMS        int64            `json:"repo_search_duration_ms,omitempty"`
+	RepoSearchQueriesByCategory map[string]int `json:"repo_search_queries_by_category,omitempty"`
+	RepoSearchOutcomes          map[string]int `json:"repo_search_outcomes,omitempty"`
+	RepoSearchResults           int            `json:"repo_search_results,omitempty"`
+	RepoSearchDurationMS        int64          `json:"repo_search_duration_ms,omitempty"`
 
 	TransientRetries int `json:"transient_retries,omitempty"`
 
