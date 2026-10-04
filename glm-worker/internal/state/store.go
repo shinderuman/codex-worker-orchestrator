@@ -208,17 +208,6 @@ func (s *StateStore) resumeTaskWithID(taskID string) (string, error) {
 	return taskID, nil
 }
 
-func taskStateFileNames() []string {
-	names := []string{
-		"task.id",
-		"worker.id",
-		"worker.ready",
-		"reviewer.id",
-		"reviewer.ready",
-	}
-	return append(names, newTaskTransitionStateFileNames()...)
-}
-
 func (s *StateStore) TaskID() (string, error) {
 	taskID, err := s.Read("task.id")
 	if err != nil || taskID == "" {
