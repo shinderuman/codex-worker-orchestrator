@@ -58,6 +58,17 @@ func TestIsolateCommandIsRetired(t *testing.T) {
 	}
 }
 
+func TestParkCommandsAreRetired(t *testing.T) {
+	for _, name := range []string{"--park", "--unpark"} {
+		if _, ok := commandParsers[name]; ok {
+			t.Fatalf("retired %s command remains registered", name)
+		}
+		if _, err := ParseCommand([]string{name}); err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("retired %s command is not rejected as unknown: %v", name, err)
+		}
+	}
+}
+
 func TestGLMProviderAutoResumeCommandsAreRetired(t *testing.T) {
 	for _, name := range []string{
 		"--verify-auto-resume",
