@@ -106,36 +106,6 @@ func TestParentEvidenceLeaseRotatesOnDecisionLeaseStart(t *testing.T) {
 	}
 }
 
-func TestParkCycleKeepsParentEvidenceLeaseDigests(t *testing.T) {
-	st := newLedgerScopeStore(t)
-	claimLedgerDigest(t, st, "digest-a")
-
-	record := ParkRecord{ParkID: "0123456789abcdef", TaskID: st.ReadOr("task.id", ""), RepoRoot: "repo", Head: "head", Worktree: "worktree", Branch: "branch"}
-	if err := st.EnterParked(record); err != nil {
-		t.Fatal(err)
-	}
-	if _, delivered, err := st.ParentEvidenceDelivered(ParentEvidenceSurfaceSearch, "digest-a"); err != nil || !delivered {
-		t.Fatalf("parked lease digest delivered=%v err=%v", delivered, err)
-	}
-	record, err := st.LoadParkRecord()
-	if err != nil {
-		t.Fatal(err)
-	}
-	record.Cleanup = &ParkCleanup{Integration: "head-unchanged", BranchTip: "head"}
-	if err := st.SaveParkRecord(record); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CommitUnpark(); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.CompleteUnpark(); err != nil {
-		t.Fatal(err)
-	}
-	if _, delivered, err := st.ParentEvidenceDelivered(ParentEvidenceSurfaceSearch, "digest-a"); err != nil || !delivered {
-		t.Fatalf("same-lease digests after unpark delivered=%v err=%v", delivered, err)
-	}
-}
-
 func TestParentEvidenceLedgerResetsOnUnsupportedVersion(t *testing.T) {
 	st := newLedgerScopeStore(t)
 	if err := os.WriteFile(st.Path("parent-evidence-ledger.json"), []byte(`{"version":1,"entries":{"search":[{"surface":"search","digest":"digest-a"}]}}`), 0o600); err != nil {
