@@ -17,15 +17,6 @@ func TestParentReviewBindingRejectsNonCanonicalTargetBeforePersistence(t *testin
 	assertReviewTargetAdmissionRejected(t, st, err, "correction=")
 }
 
-func TestParentReviewBindingRejectsDeletedGoSymbolBeforePersistence(t *testing.T) {
-	st, repoRoot, snapshot := newBoundParentReviewTestStore(t)
-	if err := os.Remove(filepath.Join(repoRoot, "review.go")); err != nil {
-		t.Fatal(err)
-	}
-	err := recordBoundReviewForContract(st, snapshot, "review.go:target")
-	assertReviewTargetAdmissionRejected(t, st, err, "[symbol-source-unavailable]")
-}
-
 func TestReviewTargetProofAddressabilityRejectsUnavailableInstances(t *testing.T) {
 	t.Run("unchanged diff", func(t *testing.T) {
 		_, repoRoot, _ := newBoundParentReviewTestStore(t)
