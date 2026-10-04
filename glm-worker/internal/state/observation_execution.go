@@ -92,6 +92,11 @@ func (s *StateStore) ObservationExecutions() ([]ObservationExecutionRecord, erro
 	if err := json.Unmarshal(data, &records); err != nil {
 		return nil, fmt.Errorf("observation実行記録をdecodeできません: %w", err)
 	}
+	for index, record := range records {
+		if strings.TrimSpace(record.TaskID) == "" {
+			return nil, fmt.Errorf("observation実行記録[%d]はcurrent schema必須のtask_idを欠いています", index)
+		}
+	}
 	return records, nil
 }
 
@@ -221,14 +226,34 @@ func (s *StateStore) AppendObservationExecution(record ObservationExecutionRecor
 }
 
 func (s *StateStore) writeObservationExecutions(records []ObservationExecutionRecord) error {
-	if len(records) > observationExecutionsRetention {
-		records = records[len(records)-observationExecutionsRetention:]
-	}
+	records = trimObservationExecutions(records)
 	encoded, err := json.Marshal(records)
 	if err != nil {
 		return fmt.Errorf("observation実行記録をencodeできません: %w", err)
 	}
 	return s.Write(observationExecutionsStateFile, string(encoded))
+}
+
+func trimObservationExecutions(records []ObservationExecutionRecord) []ObservationExecutionRecord {
+	completed := 0
+	for _, record := range records {
+		if record.Status != ObservationExecutionStatusInFlight {
+			completed++
+		}
+	}
+	dropCompleted := completed - observationExecutionsRetention
+	if dropCompleted <= 0 {
+		return records
+	}
+	trimmed := make([]ObservationExecutionRecord, 0, len(records)-dropCompleted)
+	for _, record := range records {
+		if record.Status != ObservationExecutionStatusInFlight && dropCompleted > 0 {
+			dropCompleted--
+			continue
+		}
+		trimmed = append(trimmed, record)
+	}
+	return trimmed
 }
 
 func validateObservationInFlightRecord(record ObservationExecutionRecord) error {

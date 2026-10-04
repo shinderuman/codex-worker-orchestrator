@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -12,7 +14,7 @@ const exitSourceCancelled = "cancelled"
 
 func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutcome {
 	if ctx == nil {
-		return RunIsolatedGoTest(input)
+		ctx = context.Background()
 	}
 	if err := ValidateExecutionID(input.ExecutionID); err != nil {
 		return goTestInputFailure(err)
@@ -21,6 +23,9 @@ func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutc
 		return goTestConfinementFailure(err)
 	}
 	started := time.Now()
+	deadline := time.Duration(input.ResolvedGoTestDeadlineMS()) * time.Millisecond
+	executionCtx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
 	tempRoot, err := os.MkdirTemp("", "glm-worker-observation-")
 	if err != nil {
 		return goTestWrapperFailure(started, fmt.Sprintf("隔離temp rootを作成できません: %v", err))
@@ -32,20 +37,33 @@ func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutc
 		return outcome
 	}
 	if err := prepareIsolatedGoTestRoot(tempRoot, input.ModuleDir); err != nil {
+		if stopErr := executionCtx.Err(); stopErr != nil {
+			outcome := goTestContextStopOutcome(stopErr, deadline)
+			outcome.DurationMS = time.Since(started).Milliseconds()
+			return outcome
+		}
 		return goTestInputFailure(err)
 	}
-	run := runIsolatedGoTestProcessContext(ctx, input, tempRoot)
+	if stopErr := executionCtx.Err(); stopErr != nil {
+		outcome := goTestContextStopOutcome(stopErr, deadline)
+		outcome.DurationMS = time.Since(started).Milliseconds()
+		return outcome
+	}
+	run := runIsolatedGoTestProcessContext(executionCtx, input, tempRoot, deadline)
 	run.outcome.DurationMS = time.Since(started).Milliseconds()
 	return finalizeIsolatedGoTestOutcome(input, run)
 }
 
-func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tempRoot string) isolatedGoTestRun {
+func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tempRoot string, deadline time.Duration) isolatedGoTestRun {
 	launchArgs, err := confinedLaunchArgs(tempRoot, append([]string{"go"}, isolatedGoTestArgs(input.Race)...))
 	if err != nil {
 		return isolatedGoTestRun{outcome: goTestConfinementFailure(err)}
 	}
-	env, err := isolatedGoTestEnv(tempRoot)
+	env, err := isolatedGoTestEnvContext(ctx, tempRoot)
 	if err != nil {
+		if stopErr := ctx.Err(); stopErr != nil {
+			return isolatedGoTestRun{outcome: goTestContextStopOutcome(stopErr, deadline)}
+		}
 		return isolatedGoTestRun{outcome: goTestConfinementFailure(err)}
 	}
 	command := newObservationProcessGroupCmd(launchArgs[0], launchArgs[1:]...)
@@ -59,19 +77,55 @@ func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tem
 	}
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
-	deadline := time.Duration(input.ResolvedGoTestDeadlineMS()) * time.Millisecond
-	timer := time.NewTimer(deadline)
-	defer timer.Stop()
 	select {
 	case runErr := <-waitDone:
 		return capturedIsolatedGoTestRun(classifyIsolatedGoTestOutcome(runErr, time.Now().Add(time.Nanosecond), deadline), gateLog)
-	case <-timer.C:
-		terminateObservationProcessGroup(command.Process.Pid)
-		return capturedIsolatedGoTestRun(goTestDeadlineOutcome(boundedGoTestWait(waitDone), deadline), gateLog)
 	case <-ctx.Done():
 		terminateObservationProcessGroup(command.Process.Pid)
-		return capturedIsolatedGoTestRun(goTestCancelledOutcome(boundedGoTestWait(waitDone), ctx.Err()), gateLog)
+		return capturedIsolatedGoTestRun(goTestContextStopOutcomeWithRunErr(boundedGoTestWait(waitDone), ctx.Err(), deadline), gateLog)
 	}
+}
+
+func isolatedGoTestEnvContext(ctx context.Context, tempRoot string) ([]string, error) {
+	allowed := []string{"PATH", "TZ", "LANG", "LC_ALL", "LC_CTYPE"}
+	env := make([]string, 0, len(allowed)+10)
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		for _, candidate := range allowed {
+			if name == candidate {
+				env = append(env, entry)
+			}
+		}
+	}
+	moduleCache, err := isolatedGoModuleCacheContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(env,
+		"HOME="+filepath.Join(tempRoot, "home"),
+		"TMPDIR="+filepath.Join(tempRoot, "tmp"),
+		"GOTMPDIR="+filepath.Join(tempRoot, "tmp"),
+		"GOCACHE="+filepath.Join(tempRoot, "cache"),
+		"GOMODCACHE="+moduleCache,
+		"GOFLAGS=-mod=readonly",
+		"GOPROXY=off",
+		"GOENV=off",
+		"GOTOOLCHAIN=local",
+	), nil
+}
+
+func isolatedGoModuleCacheContext(ctx context.Context) (string, error) {
+	command := exec.CommandContext(ctx, "go", "env", "GOMODCACHE")
+	command.Env = append(os.Environ(), "GOENV=off")
+	output, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("隔離go testのmodule cacheを解決できません: %w", err)
+	}
+	path := strings.TrimSpace(string(output))
+	if path == "" || !filepath.IsAbs(path) {
+		return "", fmt.Errorf("隔離go testのmodule cacheがabsolute pathではありません: %q", path)
+	}
+	return filepath.Clean(path), nil
 }
 
 func boundedGoTestWait(waitDone <-chan error) error {
@@ -81,6 +135,17 @@ func boundedGoTestWait(waitDone <-chan error) error {
 	case <-time.After(deadlineGrace):
 		return context.DeadlineExceeded
 	}
+}
+
+func goTestContextStopOutcome(err error, deadline time.Duration) GoTestOutcome {
+	return goTestContextStopOutcomeWithRunErr(nil, err, deadline)
+}
+
+func goTestContextStopOutcomeWithRunErr(runErr, stopErr error, deadline time.Duration) GoTestOutcome {
+	if stopErr == context.DeadlineExceeded {
+		return goTestDeadlineOutcome(runErr, deadline)
+	}
+	return goTestCancelledOutcome(runErr, stopErr)
 }
 
 func goTestCancelledOutcome(runErr, cancelErr error) GoTestOutcome {

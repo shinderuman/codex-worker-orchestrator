@@ -2,8 +2,21 @@
 
 package app
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
-func unsupportedPlatformStdinIsTerminal(_ *os.File) (bool, error) {
-	return false, nil
+func unsupportedPlatformStdinIsTerminal(file *os.File) (bool, error) {
+	info, err := file.Stat()
+	if err != nil {
+		return false, err
+	}
+	if info.Mode()&os.ModeCharDevice == 0 {
+		return false, nil
+	}
+	if nullInfo, err := os.Stat(os.DevNull); err == nil && os.SameFile(info, nullInfo) {
+		return false, nil
+	}
+	return false, fmt.Errorf("terminal state cannot be verified for character-device stdin on this platform")
 }
