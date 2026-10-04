@@ -1,0 +1,21 @@
+name: Temporary current closure scan
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-1311-from-1310
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Scan stale deleted-owner references
+        shell: bash
+        run: |
+          set -uo pipefail
+          patterns='CanonicalAuthorityActive|internal/sessionrotation|sessionrotation\.|PrintReviewEvidence|BuildReviewManifest'
+          git grep -n -E "$patterns" -- ':!*.md' ':!*.json' ':!.github/workflows/tmp-current-closure-scan.yml' || true
