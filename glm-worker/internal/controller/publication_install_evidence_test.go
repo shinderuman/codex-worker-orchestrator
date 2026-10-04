@@ -12,11 +12,11 @@ func TestCandidateEvidenceRequiresInstallWhenPolicyRequiresInstall(t *testing.T)
 		t.Fatal(err)
 	}
 	candidate := AcceptedCandidate{
-		AttemptID: source.Attempt.AttemptID,
+		AttemptID:  source.Attempt.AttemptID,
 		SnapshotID: source.Snapshot.ID,
-		BaseOID: source.Head.IntegrationTip,
-		TreeOID: tree,
-		Policy: policy,
+		BaseOID:    source.Head.IntegrationTip,
+		TreeOID:    tree,
+		Policy:     policy,
 	}
 	refs := storePublicationTestEvidence(t, fixture.store, candidate)
 	if err := fixture.store.validateCandidateEvidence(candidate, refs); err == nil {
@@ -27,15 +27,15 @@ func TestCandidateEvidenceRequiresInstallWhenPolicyRequiresInstall(t *testing.T)
 		t.Fatal(err)
 	}
 	installRef, err := fixture.store.StoreCandidateEvidence(CandidateEvidence{
-		SchemaVersion: controllerSchemaVersion,
+		SchemaVersion:      controllerSchemaVersion,
 		RepositoryIdentity: fixture.store.identity.LineageID,
-		AttemptID: candidate.AttemptID,
-		SnapshotID: candidate.SnapshotID,
-		BaseOID: candidate.BaseOID,
-		TreeOID: candidate.TreeOID,
-		Kind: "install",
-		Result: "pass",
-		Artifact: artifact,
+		AttemptID:          candidate.AttemptID,
+		SnapshotID:         candidate.SnapshotID,
+		BaseOID:            candidate.BaseOID,
+		TreeOID:            candidate.TreeOID,
+		Kind:               "install",
+		Result:             "pass",
+		Artifact:           artifact,
 	})
 	if err != nil {
 		t.Fatal(err)
