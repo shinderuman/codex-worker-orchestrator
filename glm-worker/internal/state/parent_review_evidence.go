@@ -108,11 +108,7 @@ func validateParentReviewEvidenceProof(binding *ParentReviewBinding) error {
 }
 
 func (s *StateStore) openBoundParentReviewState(value packet.Result, producer ParentReviewProducer, snapshot SnapshotDigest) error {
-	repoRoot := s.ReadOr("repo-root", "")
-	if repoRoot == "" {
-		return fmt.Errorf("review target admission requires repository root")
-	}
-	if err := validateCanonicalReviewTargets(repoRoot, value.Targets); err != nil {
+	if err := validateCanonicalReviewTargets(value.Targets); err != nil {
 		return err
 	}
 	binding, err := newParentReviewBinding(value, snapshot)
@@ -134,13 +130,9 @@ func (s *StateStore) openBoundParentReviewState(value packet.Result, producer Pa
 	return s.writeParentReviewState(state)
 }
 
-func validateCanonicalReviewTargets(repoRoot string, targets []string) error {
+func validateCanonicalReviewTargets(targets []string) error {
 	for _, raw := range targets {
-		target, err := reviewtarget.ParseTarget(raw)
-		if err != nil {
-			return fmt.Errorf("review target admission rejected before binding: %w", err)
-		}
-		if err := reviewtarget.ValidateProofAddressable(repoRoot, target); err != nil {
+		if _, err := reviewtarget.ParseTarget(raw); err != nil {
 			return fmt.Errorf("review target admission rejected before binding: %w", err)
 		}
 	}
