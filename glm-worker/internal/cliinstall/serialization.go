@@ -13,6 +13,11 @@ import (
 const installLockFileName = ".codex-worker-orchestrator-cli-install.lock"
 
 func Install(buildDir, binDir string) ([]Result, error) {
+	normalized, err := normalizeBinDir(binDir)
+	if err != nil {
+		return nil, err
+	}
+	binDir = normalized
 	if buildDir == "" || binDir == "" {
 		return installUnlocked(buildDir, binDir)
 	}
@@ -31,6 +36,11 @@ func Install(buildDir, binDir string) ([]Result, error) {
 }
 
 func Retire(binDir string) ([]Result, error) {
+	normalized, err := normalizeBinDir(binDir)
+	if err != nil {
+		return nil, err
+	}
+	binDir = normalized
 	if binDir == "" {
 		return retireUnlocked(binDir)
 	}
@@ -43,6 +53,17 @@ func Retire(binDir string) ([]Result, error) {
 	}
 	results, retireErr := retireUnlocked(binDir)
 	return results, joinCloseError(retireErr, lock.Close())
+}
+
+func normalizeBinDir(binDir string) (string, error) {
+	if binDir == "" {
+		return "", nil
+	}
+	absolute, err := filepath.Abs(binDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve binary directory: %w", err)
+	}
+	return filepath.Clean(absolute), nil
 }
 
 func acquireInstallLock(binDir string) (*repolock.Lock, error) {
