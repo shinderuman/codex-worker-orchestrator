@@ -222,8 +222,7 @@ func stopFinishedResult(status state.TaskStatus) string {
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
 		state.TaskStatusQualityGateRecoverable,
-		state.TaskStatusInterrupted,
-		state.TaskStatusParked:
+		state.TaskStatusInterrupted:
 		return "terminal"
 	default:
 		return "exited"
