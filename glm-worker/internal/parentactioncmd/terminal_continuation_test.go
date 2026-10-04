@@ -37,7 +37,7 @@ func TestTerminalOverflowPersistsExactBoundedContinuation(t *testing.T) {
 		"task_id":                    "task-1",
 		"task_status":                "waiting-decision",
 		"required_action":            "decision",
-		"allowed_actions":            []string{"decision", "park"},
+		"allowed_actions":            []string{"decision", "controller-execution"},
 		"required_action_parameters": map[string]string{},
 		"resume_kind":                "decision",
 		"pending_decision":           true,
@@ -57,8 +57,8 @@ func TestTerminalOverflowPersistsExactBoundedContinuation(t *testing.T) {
 			"continuation":        strings.Repeat("parent-request-detail-", 180),
 		},
 		"action_specs": map[string]any{
-			"decision": map[string]any{"kind": "staged", "prepare_command": []string{"glm-parent-action", "prepare", "decision"}},
-			"park":     map[string]any{"kind": "direct", "command": []string{"glm-parent-action", "park"}},
+			"decision":             map[string]any{"kind": "staged", "prepare_command": []string{"glm-parent-action", "prepare", "decision"}},
+			"controller-execution": map[string]any{"kind": "staged", "prepare_command": []string{"glm-parent-action", "prepare", "controller-execution"}},
 		},
 	})
 	if _, err := projectParentActionTerminalEnvelope(terminal, handoff); err == nil {
