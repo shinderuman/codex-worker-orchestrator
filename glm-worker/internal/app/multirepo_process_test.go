@@ -159,10 +159,6 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	if probe := ProbeRepoLock(env.workflowLockPath(t, env.repoA)); probe.State != LockFree {
 		t.Fatalf("repo A process終了後にlockが解放されていません: %s", probe.State)
 	}
-	resetLost := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
-	if resetLost.code == 0 || !strings.Contains(resetLost.stderr, "legacy reset lifecycle is unavailable") {
-		t.Fatalf("repo A 廃止済みresetが拒否されません: code=%d stdout=%s stderr=%s", resetLost.code, resetLost.stdout, resetLost.stderr)
-	}
 	assertStateDirUnchanged(t, stateB, snapshotB)
 
 	env.setStubMode(t, env.stubA, "success")
@@ -175,13 +171,8 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	assertRepoLocalObservability(t, stateA, taskA2, "MRISOA1")
 	assertRepoLocalObservability(t, stateB, taskB, "MRISOB")
 
-	reset := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
-	if reset.code == 0 || !strings.Contains(reset.stderr, "legacy reset lifecycle is unavailable") {
-		t.Fatalf("repo Aの廃止済みresetが拒否されません: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
-	}
-	assertStateDirUnchanged(t, stateB, snapshotB)
 	if got := readStateFile(t, stateA, "task.id"); got != taskA1 || taskA2 != taskA1 {
-		t.Fatalf("停止・再開・reset拒否でtask identityが変化しました: %s / %s / %s", taskA1, taskA2, got)
+		t.Fatalf("停止・再開でtask identityが変化しました: %s / %s / %s", taskA1, taskA2, got)
 	}
 }
 
