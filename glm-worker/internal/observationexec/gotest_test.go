@@ -1,6 +1,7 @@
 package observationexec
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,7 @@ func TestRunIsolatedGoTestPassesAndWritesOnlyArtifactLog(t *testing.T) {
 	before := snapshotTree(t, moduleDir)
 	artifactDir := t.TempDir()
 
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: artifactDir, ExecutionID: "pass-run-0001", DeadlineMS: 120000,
 	})
 	if outcome.Status != StatusPass || outcome.ExitCode != 0 {
@@ -84,7 +85,7 @@ func TestRunIsolatedGoTestReportsTargetFailureWithoutSuccessPromotion(t *testing
 	moduleDir := writeIsolatedModule(t, "package example\n\nimport \"testing\"\n\nfunc TestFails(t *testing.T) {\n\tt.Fatal(\"isolated failure\")\n}\n")
 	artifactDir := t.TempDir()
 
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: artifactDir, ExecutionID: "fail-run-0001", DeadlineMS: 120000,
 	})
 	if outcome.Status != StatusFail || outcome.ExitCode == 0 {
@@ -111,7 +112,7 @@ func TestRunIsolatedGoTestDeadlineIsBounded(t *testing.T) {
 	artifactDir := t.TempDir()
 	started := time.Now()
 
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: artifactDir, ExecutionID: "deadline-run-0001", DeadlineMS: 1000,
 	})
 	elapsed := time.Since(started)
@@ -134,7 +135,7 @@ func TestRunIsolatedGoTestRejectsSymlinkedInModuleInput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: t.TempDir(), ExecutionID: "symlink-run-0001", DeadlineMS: 60000,
 	})
 	if outcome.Status != StatusFail || outcome.ExitSource != exitSourceInputInvalid {
@@ -147,7 +148,7 @@ func TestRunIsolatedGoTestRejectsSymlinkedInModuleInput(t *testing.T) {
 
 func TestRunIsolatedGoTestRejectsUnsafeExecutionID(t *testing.T) {
 	moduleDir := writeIsolatedModule(t, "package example\n\nimport \"testing\"\n\nfunc TestValue(t *testing.T) {}\n")
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: t.TempDir(), ExecutionID: "../escape", DeadlineMS: 60000,
 	})
 	if outcome.Status != StatusFail || outcome.ExitSource != exitSourceInputInvalid {
