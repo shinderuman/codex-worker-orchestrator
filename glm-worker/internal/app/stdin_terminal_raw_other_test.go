@@ -5,7 +5,6 @@ package app
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -16,9 +15,15 @@ func TestSetStdinFileRawUnsupportedPlatformBehavior(t *testing.T) {
 	}
 	defer func() { _ = nullDevice.Close() }()
 
-	_, _, err = setStdinFileRaw(nullDevice)
-	if err == nil || !strings.Contains(err.Error(), "raw mode is not implemented") {
-		t.Fatalf("terminalらしきstdinをfail closedする必要があります: err=%v", err)
+	restore, applied, err := setStdinFileRaw(nullDevice)
+	if err != nil {
+		t.Fatalf("non-terminal character device was rejected: %v", err)
+	}
+	if applied {
+		t.Fatal("non-terminal character deviceでraw適用扱いになっています")
+	}
+	if err := restore(); err != nil {
+		t.Fatalf("non-terminal character deviceの復元がerrorを返しています: %v", err)
 	}
 
 	pipeReader, _, pipeErr := os.Pipe()
@@ -26,7 +31,7 @@ func TestSetStdinFileRawUnsupportedPlatformBehavior(t *testing.T) {
 		t.Fatal(pipeErr)
 	}
 	defer func() { _ = pipeReader.Close() }()
-	restore, applied, err := setStdinFileRaw(pipeReader)
+	restore, applied, err = setStdinFileRaw(pipeReader)
 	if err != nil {
 		t.Fatal(err)
 	}
