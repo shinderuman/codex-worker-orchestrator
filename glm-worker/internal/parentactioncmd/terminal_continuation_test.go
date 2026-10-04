@@ -129,6 +129,60 @@ func TestTerminalOverflowPersistsExactBoundedContinuation(t *testing.T) {
 	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
 }
 
+func TestTerminalOverflowRemainsStructuredWhenContinuationPersistenceFails(t *testing.T) {
+	terminal := mustJSONRaw(t, map[string]any{
+		"status":           "NEEDS_SOL_DECISION",
+		"risk":             "HIGH",
+		"decision":         "choose bounded transport",
+		"evidence":         "short evidence",
+		"options":          strings.Repeat("mandatory-option-", 300),
+		"recommendation":   strings.Repeat("mandatory-recommendation-", 160),
+		"test_obligations": "preserve the canonical next action",
+		"targets":          []string{"target.go:1-2"},
+	})
+	handoff := representativeHandoff(t, "small", "small")
+	if _, err := projectParentActionTerminalEnvelope(terminal, handoff); err == nil {
+		t.Fatal("fixture must overflow the terminal projection budget")
+	}
+
+	cfg := config.AppConfig{
+		RepoRoot:  t.TempDir(),
+		StateBase: t.TempDir(),
+		RepoHash:  "terminal-continuation-failure-test",
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("task.id", "task-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path("artifacts"), []byte("not-a-directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	projectionErr := writeProjectedTerminalEnvelopeWithContinuation(cfg, &stdout, terminal, handoff)
+	if projectionErr == nil {
+		t.Fatal("overflow with unavailable continuation must remain fail-closed")
+	}
+	machineJSON, err := decodeSingleMachineJSON(stdout.Bytes(), "overflow failure envelope")
+	if err != nil {
+		t.Fatalf("structured overflow was lost: %v", err)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Status != "parent_action_terminal_projection_overflow" {
+		t.Fatalf("status=%q", envelope.Status)
+	}
+	if envelope.Continuation != nil {
+		t.Fatalf("continuation unexpectedly present: %+v", envelope.Continuation)
+	}
+	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
+}
+
 func writeProjectedTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
 	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, false)
 }
