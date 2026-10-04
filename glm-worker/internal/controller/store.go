@@ -97,8 +97,6 @@ func initializeControllerStore(store *Store) error {
 	}
 	defer func() { _ = os.RemoveAll(staging) }()
 
-	staged := *store
-	staged.dir = staging
 	for _, name := range controllerStoreDirs {
 		if err := os.Mkdir(filepath.Join(staging, name), 0o700); err != nil {
 			return fmt.Errorf("create repository controller store staging layout: %w", err)
@@ -110,7 +108,7 @@ func initializeControllerStore(store *Store) error {
 		ControllerGeneration: 0,
 		Status:               ControllerStatusActive,
 	}
-	if err := writeJSONAtomic(staged.headPath(), head); err != nil {
+	if err := writeJSONAtomic(filepath.Join(staging, "head.json"), head); err != nil {
 		return fmt.Errorf("create repository controller staged head: %w", err)
 	}
 	if err := syncDirectoryPath(staging); err != nil {
