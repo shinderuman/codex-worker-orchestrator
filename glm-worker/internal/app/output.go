@@ -43,20 +43,6 @@ type statusOutput struct {
 	ResumeAvailable     bool                                  `json:"resume_available"`
 	Telemetry           *string                               `json:"telemetry"`
 	SessionAging        []state.SessionAging                  `json:"session_aging"`
-
-	Parked *statusParked `json:"parked,omitempty"`
-}
-
-type statusParked struct {
-	ParkID          string `json:"park_id"`
-	FromStatus      string `json:"from_status"`
-	TaskID          string `json:"task_id"`
-	Worktree        string `json:"worktree"`
-	Branch          string `json:"branch"`
-	RepoRoot        string `json:"repo_root"`
-	CreatedAt       string `json:"created_at"`
-	WorkerSession   string `json:"worker_session,omitempty"`
-	ReviewerSession string `json:"reviewer_session,omitempty"`
 }
 
 type statusProbes struct {
@@ -180,28 +166,9 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 
 	fillStatusTaskDetail(st, taskID, &output)
 	output.ResumeAvailable = fillStatusCheckpoint(st, &output)
-	fillStatusParked(st, &output)
 	output.Probes = statusProbesDetail(logs, time.Now())
 	fillStatusTelemetry(taskID, logErr, logs, &output)
 	return output
-}
-
-func fillStatusParked(st *state.StateStore, output *statusOutput) {
-	record, err := st.LoadParkRecord()
-	if err != nil {
-		return
-	}
-	output.Parked = &statusParked{
-		ParkID:          record.ParkID,
-		FromStatus:      string(record.FromStatus),
-		TaskID:          record.TaskID,
-		Worktree:        record.Worktree,
-		Branch:          record.Branch,
-		RepoRoot:        record.RepoRoot,
-		CreatedAt:       record.CreatedAt,
-		WorkerSession:   record.WorkerSessionID,
-		ReviewerSession: record.ReviewerSessionID,
-	}
 }
 
 func lockStatePtr(lockState LockState) *string {
