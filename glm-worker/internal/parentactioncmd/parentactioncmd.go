@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute|controller-semantic|controller-execution|controller-publication|controller-evidence> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | park | unpark | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute|controller-semantic|controller-execution|controller-publication|controller-evidence> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -184,31 +184,18 @@ func executeGitEvidenceAction(cfg config.AppConfig, args []string, stdout io.Wri
 	return runFinalizationCheck(cfg.RepoRoot, validationDir, args[1], stdout)
 }
 
-func executeParentReadOrParkAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	switch args[0] {
-	case actionPark:
-		if len(args) != 1 {
-			return fmt.Errorf("usage: glm-parent-action park")
-		}
-		return runWorker(cfg.RepoRoot, []string{"--park"}, nil, stdout, stderr, nil)
-	case actionUnpark:
-		if len(args) != 1 {
-			return fmt.Errorf("usage: glm-parent-action unpark")
-		}
-		return runWorker(cfg.RepoRoot, []string{"--unpark"}, nil, stdout, stderr, nil)
-	default:
-		if len(args) != 2 {
-			return fmt.Errorf("usage: glm-parent-action evidence <manifest.json>")
-		}
-		manifestPath, absErr := filepath.Abs(args[1])
-		if absErr != nil {
-			return fmt.Errorf("evidence manifestの絶対pathを解決できません: %w", absErr)
-		}
-		if _, err := os.Stat(manifestPath); err != nil {
-			return fmt.Errorf("evidence manifestを確認できません: %w", err)
-		}
-		return runWorker(cfg.RepoRoot, []string{"--evidence", manifestPath}, nil, stdout, stderr, nil)
+func executeParentReadAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
+	if len(args) != 2 || args[0] != "evidence" {
+		return fmt.Errorf("usage: glm-parent-action evidence <manifest.json>")
 	}
+	manifestPath, absErr := filepath.Abs(args[1])
+	if absErr != nil {
+		return fmt.Errorf("evidence manifestの絶対pathを解決できません: %w", absErr)
+	}
+	if _, err := os.Stat(manifestPath); err != nil {
+		return fmt.Errorf("evidence manifestを確認できません: %w", err)
+	}
+	return runWorker(cfg.RepoRoot, []string{"--evidence", manifestPath}, nil, stdout, stderr, nil)
 }
 
 func executeApproveSurfaceAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
