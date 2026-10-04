@@ -18,6 +18,7 @@ type parentActionTerminalEnvelopePayload struct {
 	HandoffError    string                               `json:"handoff_error,omitempty"`
 	ProjectionError string                               `json:"projection_error,omitempty"`
 	Projection      *parentActionTerminalProjectionStats `json:"projection,omitempty"`
+	Continuation    *parentActionTerminalContinuation    `json:"continuation,omitempty"`
 }
 
 type terminalHandoffLoader func() (json.RawMessage, error)
@@ -55,7 +56,7 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	if err != nil {
 		return writeTerminalHandoffFailure(stdout, terminalJSON, fmt.Errorf("canonical handoff failed after parent action: %w", err))
 	}
-	return writeProjectedTerminalEnvelope(stdout, terminalJSON, handoffJSON)
+	return writeProjectedTerminalEnvelopeWithContinuation(cfg, stdout, terminalJSON, handoffJSON)
 }
 
 func writeFailedTerminalAction(stdout io.Writer, terminalBytes []byte, terminalErr error, loadRecoveryHandoff terminalHandoffLoader) error {
@@ -104,10 +105,6 @@ func readTerminalHandoff(cfg config.AppConfig, action string, stderr io.Writer, 
 		return nil, err
 	}
 	return decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
-}
-
-func writeProjectedTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
-	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, false)
 }
 
 func writeProjectedRecoveryTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
