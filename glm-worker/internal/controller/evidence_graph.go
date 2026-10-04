@@ -178,12 +178,8 @@ func (w *evidenceGraphWalker) walkTaskRevisionChain(
 	upper := maxGeneration + 1
 	for {
 		key := revisionChainCacheKey(subject, current)
-		if generation, ok := w.validatedTaskChains[key]; ok {
-			if generation >= upper {
-				return evidenceGraphError(current, "task index revision chain authority is inconsistent")
-			}
-			rememberValidatedRevisionChain(w.validatedTaskChains, validated)
-			return nil
+		if done, err := reuseValidatedRevisionChain(w.validatedTaskChains, key, current, upper, validated, "task index revision chain authority is inconsistent"); done {
+			return err
 		}
 		if err := w.addRef(current); err != nil {
 			return err
@@ -221,12 +217,8 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 	upper := maxGeneration + 1
 	for {
 		key := revisionChainCacheKey(subject, current)
-		if generation, ok := w.validatedEpisodeChains[key]; ok {
-			if generation >= upper {
-				return evidenceGraphError(current, "episode index revision chain authority is inconsistent")
-			}
-			rememberValidatedRevisionChain(w.validatedEpisodeChains, validated)
-			return nil
+		if done, err := reuseValidatedRevisionChain(w.validatedEpisodeChains, key, current, upper, validated, "episode index revision chain authority is inconsistent"); done {
+			return err
 		}
 		if err := w.addRef(current); err != nil {
 			return err
@@ -253,6 +245,25 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 
 func revisionChainCacheKey(subject string, ref EvidenceObjectRef) string {
 	return subject + "\x00" + evidenceRefKey(ref)
+}
+
+func reuseValidatedRevisionChain(
+	cache map[string]uint64,
+	key string,
+	ref EvidenceObjectRef,
+	upper uint64,
+	validated map[string]uint64,
+	reason string,
+) (bool, error) {
+	generation, ok := cache[key]
+	if !ok {
+		return false, nil
+	}
+	if generation >= upper {
+		return true, evidenceGraphError(ref, reason)
+	}
+	rememberValidatedRevisionChain(cache, validated)
+	return true, nil
 }
 
 func rememberValidatedRevisionChain(cache map[string]uint64, validated map[string]uint64) {
