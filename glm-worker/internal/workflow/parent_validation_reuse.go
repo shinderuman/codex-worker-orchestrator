@@ -1,0 +1,82 @@
+package workflow
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+)
+
+func (w *Workflow) reusableParentValidationPass(request packet.ParentValidationRequest, workingDir string) (parentValidationGateRecord, bool) {
+	snapshot, err := w.captureSnapshot(w.config.RepoRoot)
+	if err != nil {
+		return parentValidationGateRecord{}, false
+	}
+	repository, err := filepath.EvalSymlinks(w.config.RepoRoot)
+	if err != nil {
+		return parentValidationGateRecord{}, false
+	}
+	taskID := w.state.ReadOr("task.id", "")
+	if taskID == "" {
+		return parentValidationGateRecord{}, false
+	}
+	entries, err := os.ReadDir(w.state.Path(qualitygate.RunDirectory))
+	if err != nil {
+		return parentValidationGateRecord{}, false
+	}
+
+	var latest qualitygate.RunRecord
+	found := false
+	for _, entry := range entries {
+		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
+			continue
+		}
+		record, err := qualitygate.Read(w.state, entry.Name())
+		if err != nil || !sameParentValidationRunIdentity(record, request.Form, repository, workingDir, taskID, snapshot.Head, snapshot.IndexDigest, snapshot.WorktreeDigest) {
+			continue
+		}
+		if !found || latest.StartedAt.Before(record.StartedAt) {
+			latest = record
+			found = true
+		}
+	}
+	if !found || qualitygate.VerifyTerminalPass(latest) != nil {
+		return parentValidationGateRecord{}, false
+	}
+	return parentValidationGateRecordFromQualityGate(latest), true
+}
+
+func sameParentValidationRunIdentity(record qualitygate.RunRecord, form, repository, workingDir, taskID, head, indexDigest, worktreeDigest string) bool {
+	recordRepository, err := filepath.EvalSymlinks(record.Repository)
+	if err != nil {
+		return false
+	}
+	recordWorkingDir, err := filepath.EvalSymlinks(record.WorkingDir)
+	if err != nil {
+		return false
+	}
+	return record.Form == form &&
+		record.TaskID == taskID &&
+		filepath.Clean(recordRepository) == filepath.Clean(repository) &&
+		filepath.Clean(recordWorkingDir) == filepath.Clean(workingDir) &&
+		record.Head == head &&
+		record.IndexDigest == indexDigest &&
+		record.WorktreeDigest == worktreeDigest
+}
+
+func parentValidationGateRecordFromQualityGate(record qualitygate.RunRecord) parentValidationGateRecord {
+	return parentValidationGateRecord{
+		ValidationRunID: record.ValidationRunID,
+		Form:            record.Form,
+		Repository:      record.Repository,
+		WorkingDir:      record.WorkingDir,
+		Head:            record.Head,
+		IndexDigest:     record.IndexDigest,
+		WorktreeDigest:  record.WorktreeDigest,
+		Status:          record.Status,
+		ExitCode:        record.ExitCode,
+		DurationMS:      record.DurationMS,
+		Log:             record.Log,
+	}
+}
