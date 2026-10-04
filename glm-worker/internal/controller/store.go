@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 )
 
 type Store struct {
@@ -90,6 +91,26 @@ func initializeControllerStore(store *Store) error {
 	parent := filepath.Dir(store.dir)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("create repository controller store parent: %w", err)
+	}
+	lock, err := repolock.AcquireWait(controllerStoreInitializationLockPath(store, parent))
+	if err != nil {
+		return fmt.Errorf("acquire repository controller initialization lock: %w", err)
+	}
+	result := initializeControllerStoreLocked(store, parent)
+	return errors.Join(result, lock.Close())
+}
+
+func controllerStoreInitializationLockPath(store *Store, parent string) string {
+	return filepath.Join(parent, "."+filepath.Base(store.dir)+".init.lock")
+}
+
+func initializeControllerStoreLocked(store *Store, parent string) error {
+	winner, err := existingControllerStoreWinner(store)
+	if err != nil {
+		return err
+	}
+	if winner {
+		return nil
 	}
 	staging, err := prepareControllerStoreStaging(store, parent)
 	if err != nil {
