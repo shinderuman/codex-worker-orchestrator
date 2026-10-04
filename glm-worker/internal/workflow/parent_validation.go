@@ -225,6 +225,9 @@ func (w *Workflow) runParentValidationGate(request packet.ParentValidationReques
 	if err != nil {
 		return parentValidationGateRecord{}, err
 	}
+	if record, ok := w.reusableParentValidationPass(request, workingDir); ok {
+		return record, nil
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return parentValidationGateRecord{}, fmt.Errorf("parent validation executableを解決できません: %w", err)
