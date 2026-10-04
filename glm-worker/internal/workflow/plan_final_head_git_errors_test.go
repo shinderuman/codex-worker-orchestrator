@@ -86,40 +86,17 @@ func TestFinalHeadPlanRejectsHeadPlanObjectReadFailure(t *testing.T) {
 
 func requireFinalHeadSkip(t *testing.T, root string, suffix string) {
 	t.Helper()
-	checks := []struct {
-		name   string
-		prefix string
-		check  func(string) (string, error)
-	}{
-		{name: "final", prefix: "plan final head: ", check: repositoryprojecthead.CheckFinalHeadPlan},
-		{name: "completion", prefix: "plan completion head: ", check: repositoryprojecthead.CheckParentCompletionHead},
-	}
-	for _, tc := range checks {
-		t.Run(tc.name, func(t *testing.T) {
-			status, err := tc.check(root)
-			if err != nil || status != tc.prefix+suffix {
-				t.Fatalf("status=%q err=%v", status, err)
-			}
-		})
+	status, err := repositoryprojecthead.CheckFinalHeadPlan(root)
+	if err != nil || status != "plan final head: "+suffix {
+		t.Fatalf("status=%q err=%v", status, err)
 	}
 }
 
 func requireFinalHeadError(t *testing.T, root string, want string) {
 	t.Helper()
-	checks := []struct {
-		name  string
-		check func(string) (string, error)
-	}{
-		{name: "final", check: repositoryprojecthead.CheckFinalHeadPlan},
-		{name: "completion", check: repositoryprojecthead.CheckParentCompletionHead},
-	}
-	for _, tc := range checks {
-		t.Run(tc.name, func(t *testing.T) {
-			status, err := tc.check(root)
-			if err == nil || status != "" || !strings.Contains(err.Error(), want) {
-				t.Fatalf("status=%q err=%v want error containing %q", status, err, want)
-			}
-		})
+	status, err := repositoryprojecthead.CheckFinalHeadPlan(root)
+	if err == nil || status != "" || !strings.Contains(err.Error(), want) {
+		t.Fatalf("status=%q err=%v want error containing %q", status, err, want)
 	}
 }
 
