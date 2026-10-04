@@ -89,7 +89,7 @@ func TestTerminalOverflowPersistsExactBoundedContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var envelope parentActionTerminalContinuationEnvelope
+	var envelope parentActionTerminalEnvelopePayload
 	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
 		t.Fatal(err)
 	}
@@ -102,23 +102,27 @@ func TestTerminalOverflowPersistsExactBoundedContinuation(t *testing.T) {
 	if envelope.Projection.ProjectedBytes != stdout.Len() {
 		t.Fatalf("projected_bytes=%d stdout=%d", envelope.Projection.ProjectedBytes, stdout.Len())
 	}
-	if envelope.Continuation.Kind != "terminal-json-artifact" {
-		t.Fatalf("continuation kind=%q", envelope.Continuation.Kind)
+	if envelope.Continuation == nil {
+		t.Fatal("continuation missing")
 	}
-	if envelope.Continuation.Bytes != len(terminal) {
-		t.Fatalf("continuation bytes=%d terminal=%d", envelope.Continuation.Bytes, len(terminal))
+	continuation := envelope.Continuation
+	if continuation.Kind != "terminal-json-artifact" {
+		t.Fatalf("continuation kind=%q", continuation.Kind)
 	}
-	persisted, err := os.ReadFile(envelope.Continuation.Locator)
+	if continuation.Bytes != len(terminal) {
+		t.Fatalf("continuation bytes=%d terminal=%d", continuation.Bytes, len(terminal))
+	}
+	persisted, err := os.ReadFile(continuation.Locator)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(persisted, terminal) {
 		t.Fatalf("continuation does not preserve exact semantic terminal")
 	}
-	if !strings.HasPrefix(envelope.Continuation.Locator, st.ArtifactDir("task-1")+string(os.PathSeparator)) {
-		t.Fatalf("continuation locator escaped task artifact dir: %s", envelope.Continuation.Locator)
+	if !strings.HasPrefix(continuation.Locator, st.ArtifactDir("task-1")+string(os.PathSeparator)) {
+		t.Fatalf("continuation locator escaped task artifact dir: %s", continuation.Locator)
 	}
-	if envelope.Continuation.SHA256 == "" {
+	if continuation.SHA256 == "" {
 		t.Fatal("continuation sha256 missing")
 	}
 	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
