@@ -87,12 +87,21 @@ func controllerStoreDir(cfg config.AppConfig, identity RepositoryIdentity) strin
 }
 
 func initializeControllerStore(store *Store) error {
-	if err := os.MkdirAll(store.dir, 0o700); err != nil {
-		return fmt.Errorf("create repository controller store: %w", err)
+	parent := filepath.Dir(store.dir)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return fmt.Errorf("create repository controller store parent: %w", err)
 	}
+	staging, err := os.MkdirTemp(parent, "."+filepath.Base(store.dir)+".init-*")
+	if err != nil {
+		return fmt.Errorf("create repository controller store staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+
+	staged := *store
+	staged.dir = staging
 	for _, name := range controllerStoreDirs {
-		if err := os.Mkdir(filepath.Join(store.dir, name), 0o700); err != nil {
-			return fmt.Errorf("create repository controller store: %w", err)
+		if err := os.Mkdir(filepath.Join(staging, name), 0o700); err != nil {
+			return fmt.Errorf("create repository controller store staging layout: %w", err)
 		}
 	}
 	head := RepositoryControllerHead{
@@ -101,8 +110,22 @@ func initializeControllerStore(store *Store) error {
 		ControllerGeneration: 0,
 		Status:               ControllerStatusActive,
 	}
-	if err := writeJSONAtomic(store.headPath(), head); err != nil {
-		return fmt.Errorf("create repository controller head: %w", err)
+	if err := writeJSONAtomic(staged.headPath(), head); err != nil {
+		return fmt.Errorf("create repository controller staged head: %w", err)
+	}
+	if err := syncDirectoryPath(staging); err != nil {
+		return fmt.Errorf("sync repository controller staged store: %w", err)
+	}
+	if err := os.Rename(staging, store.dir); err != nil {
+		if _, statErr := os.Stat(store.dir); statErr == nil {
+			if layoutErr := validateControllerStoreLayout(store); layoutErr == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("publish repository controller store: %w", err)
+	}
+	if err := syncDirectoryPath(parent); err != nil {
+		return fmt.Errorf("sync repository controller store parent: %w", err)
 	}
 	return nil
 }
