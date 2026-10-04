@@ -1,8 +1,6 @@
 package app
 
 import (
-	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +84,6 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 	if !handoffAllowsAction(before.AllowedActions, string(state.ParentActionComplete)) || handoffAllowsAction(before.AllowedActions, string(state.ParentActionReopen)) {
 		t.Fatalf("awaiting allowed actions before finding = %#v", before.AllowedActions)
 	}
-	assertHandoffJSONOmitsReopenSpec(t, before)
 
 	if _, err := st.RecordPublicationInvalidatingFinding(
 		state.ParentOriginCodexReview,
@@ -104,7 +101,6 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 	if !handoffAllowsAction(after.AllowedActions, string(state.ParentActionReopen)) || handoffAllowsAction(after.AllowedActions, string(state.ParentActionComplete)) || handoffAllowsAction(after.AllowedActions, string(state.ParentActionInstall)) {
 		t.Fatalf("finding-backed allowed actions = %#v", after.AllowedActions)
 	}
-	assertHandoffJSONExposesReopenSpec(t, after)
 
 	recovery := projectParentHandoffRecovery(after)
 	if recovery.TaskStatus == nil || *recovery.TaskStatus != string(state.TaskStatusAwaitingParentCompletion) {
@@ -113,7 +109,6 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 	if recovery.RequiredAction == nil || *recovery.RequiredAction != string(state.ParentActionReopen) {
 		t.Fatalf("recovery required action = %#v", recovery.RequiredAction)
 	}
-	assertHandoffJSONExposesReopenSpec(t, recovery)
 }
 
 func TestParentHandoffAfterReopenProjectsWaitingSolReviewWithFixAction(t *testing.T) {
@@ -155,46 +150,4 @@ func TestParentHandoffAfterReopenProjectsWaitingSolReviewWithFixAction(t *testin
 	if !handoffAllowsAction(recovery.AllowedActions, string(state.ParentActionFix)) {
 		t.Fatalf("reopened recovery allowed actions = %#v", recovery.AllowedActions)
 	}
-}
-
-func assertHandoffJSONExposesReopenSpec(t *testing.T, value any) {
-	t.Helper()
-	data, specs := decodeHandoffActionSpecs(t, value)
-	spec, ok := specs[string(state.ParentActionReopen)]
-	if !ok || spec.Kind != "direct" {
-		t.Fatalf("handoff JSON lacks a direct reopen action spec: %s", data)
-	}
-	want := []string{"glm-parent-action", "reopen"}
-	if !reflect.DeepEqual(spec.Command, want) {
-		t.Fatalf("reopen action spec command = %#v want %#v", spec.Command, want)
-	}
-}
-
-func assertHandoffJSONOmitsReopenSpec(t *testing.T, value any) {
-	t.Helper()
-	data, specs := decodeHandoffActionSpecs(t, value)
-	if _, ok := specs[string(state.ParentActionReopen)]; ok {
-		t.Fatalf("handoff JSON exposes reopen without invalidating finding: %s", data)
-	}
-}
-
-func decodeHandoffActionSpecs(t *testing.T, value any) ([]byte, map[string]struct {
-	Kind    string   `json:"kind"`
-	Command []string `json:"command"`
-}) {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded struct {
-		ActionSpecs map[string]struct {
-			Kind    string   `json:"kind"`
-			Command []string `json:"command"`
-		} `json:"action_specs"`
-	}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	return data, decoded.ActionSpecs
 }

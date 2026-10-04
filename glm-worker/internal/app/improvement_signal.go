@@ -1,67 +1,37 @@
 package app
 
-import (
-	"strconv"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-)
+import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 
 type parentHandoffImprovementSignal struct {
 	Signal     state.ImprovementSignal `json:"signal"`
 	ActionSpec parentHandoffActionSpec `json:"action_spec"`
 }
 
-const (
-	improvementSignalKindParameter   = parentactiongrammar.SignalKindParameter
-	improvementSignalCountParameter  = "signal-count"
-	improvementSignalCallIDParameter = parentactiongrammar.SourceCallIDParameter
-	improvementSignalReasonParameter = "reason"
-	invalidPacketOutcome             = "invalid_packet"
-)
+const invalidPacketOutcome = "invalid_packet"
 
 func projectImprovementSignal(output *parentHandoffOutput) *parentHandoffImprovementSignal {
-	if output == nil {
+	if output == nil || output.Controller == nil {
 		return nil
 	}
-	signal := improvementSignalAdvisory(improvementSignalFromMaterial(output.LastMaterial))
-	return canonicalImprovementSignal(output.Controller != nil, signal)
+	return projectCanonicalImprovementSignal(improvementSignalFromMaterial(output.LastMaterial))
 }
 
 func projectRecoveryImprovementSignal(output *parentHandoffRecoveryOutput) *parentHandoffImprovementSignal {
-	if output == nil {
+	if output == nil || output.Controller == nil {
 		return nil
 	}
-	signal := improvementSignalAdvisory(improvementSignalFromRecoveryMaterial(output.LastMaterial))
-	return canonicalImprovementSignal(output.Controller != nil, signal)
+	return projectCanonicalImprovementSignal(improvementSignalFromRecoveryMaterial(output.LastMaterial))
 }
 
-func improvementSignalAdvisory(signal *state.ImprovementSignal) *parentHandoffImprovementSignal {
+func projectCanonicalImprovementSignal(signal *state.ImprovementSignal) *parentHandoffImprovementSignal {
 	if signal == nil {
 		return nil
 	}
-	spec, ok := parentactiongrammar.Project(string(state.ParentActionImprovementDisposition), improvementSignalParameters(*signal))
+	spec, ok := parentActionSpec("controller-semantic", nil)
 	if !ok {
 		return nil
 	}
-	return &parentHandoffImprovementSignal{
-		Signal:     *signal,
-		ActionSpec: parentHandoffActionSpec(spec),
-	}
-}
-
-func improvementSignalParameters(signal state.ImprovementSignal) map[string]string {
-	parameters := map[string]string{
-		improvementSignalKindParameter:  signal.Kind,
-		improvementSignalCountParameter: strconv.Itoa(signal.Count),
-	}
-	if signal.SourceCallID != "" {
-		parameters[improvementSignalCallIDParameter] = signal.SourceCallID
-	}
-	if signal.Reason != "" {
-		parameters[improvementSignalReasonParameter] = signal.Reason
-	}
-	return parameters
+	return &parentHandoffImprovementSignal{Signal: *signal, ActionSpec: spec}
 }
 
 func improvementSignalFromMaterial(material *parentHandoffMaterial) *state.ImprovementSignal {
@@ -86,18 +56,5 @@ func invalidPacketImprovementSignal(callID *string, rejectReason string) *state.
 	if reason == "" {
 		reason = state.ImprovementSignalInvalidPacket
 	}
-	return &state.ImprovementSignal{
-		Kind:         state.ImprovementSignalInvalidPacket,
-		Count:        1,
-		SourceCallID: *callID,
-		Reason:       reason,
-	}
-}
-
-func canonicalImprovementSignal(canonical bool, signal *parentHandoffImprovementSignal) *parentHandoffImprovementSignal {
-	if canonical && signal != nil {
-		spec, _ := parentActionSpec("controller-semantic", nil)
-		signal.ActionSpec = spec
-	}
-	return signal
+	return &state.ImprovementSignal{Kind: state.ImprovementSignalInvalidPacket, Count: 1, SourceCallID: *callID, Reason: reason}
 }

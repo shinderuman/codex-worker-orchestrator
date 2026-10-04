@@ -9,18 +9,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestParentHandoffProjectsDefectBindingAction(t *testing.T) {
-	taskPath := "IMPLEMENTATION_TASKS/follow-up.md"
-	spec, ok := parentActionSpec(string(state.ParentActionBindDefectTask), map[string]string{"task": taskPath})
-	if !ok {
-		t.Fatal("bind-defect-task action spec was not projected")
+func TestParentHandoffMapsDefectBindingToControllerSemanticAction(t *testing.T) {
+	action := canonicalParentAction(string(state.ParentActionBindDefectTask))
+	if action != "controller-semantic" {
+		t.Fatalf("canonical defect action = %q", action)
 	}
-	wantCommand := []string{"glm-parent-action", "bind-defect-task", "--task", taskPath}
-	if spec.Kind != "direct" || !reflect.DeepEqual(spec.Command, wantCommand) || spec.Parameters["task"] != taskPath {
-		t.Fatalf("spec = %#v want command %#v", spec, wantCommand)
-	}
-	if _, ok := parentActionSpec(string(state.ParentActionBindDefectTask), nil); ok {
-		t.Fatal("bind-defect-task projected without machine-bound task parameter")
+	spec, ok := parentActionSpec(action, nil)
+	if !ok || spec.Kind != "staged" || !reflect.DeepEqual(spec.PrepareCommand, []string{"glm-parent-action", "prepare", "controller-semantic"}) {
+		t.Fatalf("controller semantic spec = %#v ok=%t", spec, ok)
 	}
 }
 
