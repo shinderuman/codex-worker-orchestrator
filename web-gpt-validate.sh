@@ -184,7 +184,7 @@ export GOCACHE="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/codex-worker-orchestrator-focuse
 
 run_repository_lint() {
 	(
-		cd "$control_root"
+		cd "$control_root" || return $?
 		HARNESSLINT_REPO_ROOT="$target_root" HARNESSLINT_CONTROL_ROOT="$control_root" ./harnesslint --controlled-check
 	)
 }
@@ -198,7 +198,7 @@ run_full_go_test() {
 }
 
 run_build_vet() {
-	go -C "$target_root/glm-worker" vet ./...
+	go -C "$target_root/glm-worker" vet ./... || return $?
 	go -C "$target_root/glm-worker" build ./...
 }
 
