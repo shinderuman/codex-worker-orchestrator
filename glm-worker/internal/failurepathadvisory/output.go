@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 )
 
 type advisoryOutput struct {
@@ -51,6 +52,13 @@ func ParseStructuredOutput(raw []byte) ([]Finding, error) {
 	var output advisoryOutput
 	if err := decoder.Decode(&output); err != nil {
 		return nil, fmt.Errorf("failure-path reviewerの出力を解析できません: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("failure-path reviewerの出力に複数のJSON値があります")
+		}
+		return nil, fmt.Errorf("failure-path reviewerの出力末尾を解析できません: %w", err)
 	}
 	if len(output.Findings) > findingsMaxItems {
 		return nil, fmt.Errorf("failure-path reviewerのfindingsが上限を超えています: %d", len(output.Findings))
