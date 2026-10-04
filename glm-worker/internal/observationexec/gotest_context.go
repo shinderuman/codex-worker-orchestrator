@@ -13,7 +13,7 @@ import (
 
 const exitSourceCancelled = "cancelled"
 
-func RunIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
+func runIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	if ctx == nil {
 		ctx = context.Background()
 	}
