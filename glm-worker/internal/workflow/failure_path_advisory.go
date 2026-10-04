@@ -51,7 +51,7 @@ func (w *Workflow) attachFailurePathAdvisory(request string, reviewResult packet
 		w.recordFailurePathMeasurementFailure("registry-load", err)
 		return reviewResult
 	}
-	if registry.HasTaskRecord(taskID) || w.stopRequested() {
+	if registry.HasTaskReviewRecord(taskID, reviewNumber) || w.stopRequested() {
 		return reviewResult
 	}
 	trigger, proceed := w.failurePathAdvisoryTriggerGate(taskID, reviewNumber, registry, registryPath)
@@ -155,6 +155,7 @@ func resolveFailurePathAdvisoryAttachment(reviewResult packet.Result, record fai
 		}
 		return record, nil
 	}
+	markVisibleFailurePathFindings(record.Findings, len(bounded.Findings))
 	record.Advisory = &failurepathadvisory.AdvisoryOutcome{
 		Status:        failurepathadvisory.AdvisoryShown,
 		FindingsShown: len(bounded.Findings),
@@ -162,6 +163,19 @@ func resolveFailurePathAdvisoryAttachment(reviewResult packet.Result, record fai
 		Truncated:     bounded.Truncated,
 	}
 	return record, bounded
+}
+
+func markVisibleFailurePathFindings(findings []failurepathadvisory.Finding, shown int) {
+	visible := 0
+	for index := range findings {
+		findings[index].VisibleIndex = nil
+		if findings[index].Status != failurepathadvisory.FindingStatusVerified || visible >= shown {
+			continue
+		}
+		visibleIndex := visible
+		findings[index].VisibleIndex = &visibleIndex
+		visible++
+	}
 }
 
 func packetAdvisoryFromFindings(callID string, findings []failurepathadvisory.Finding) *packet.FailurePathAdvisory {
