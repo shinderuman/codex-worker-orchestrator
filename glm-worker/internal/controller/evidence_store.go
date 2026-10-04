@@ -102,7 +102,13 @@ func createEvidenceObject(path, digest string, data []byte) error {
 	}
 	if err := os.Link(temporary, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return validateRacedEvidenceObject(path, digest, data)
+			if err := validateRacedEvidenceObject(path, digest, data); err != nil {
+				return err
+			}
+			if err := syncDirectoryPath(dir); err != nil {
+				return fmt.Errorf("sync raced evidence object namespace %s: %w", digest, err)
+			}
+			return nil
 		}
 		return fmt.Errorf("publish evidence object %s: %w", digest, err)
 	}
