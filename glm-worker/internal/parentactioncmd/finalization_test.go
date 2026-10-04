@@ -216,7 +216,7 @@ func TestExecuteRejectsInvalidFinalizationForm(t *testing.T) {
 }
 
 func TestFinalizationGitSummaryClassifiesRemoteSyncState(t *testing.T) {
-	fixture := newPushBindingFixture(t)
+	fixture := newFinalizationRemoteFixture(t)
 	summary, err := readFinalizationGitSummary(fixture.repo)
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestFinalizationGitSummaryClassifiesRemoteSyncState(t *testing.T) {
 		t.Fatalf("remote = %#v", summary.Remote)
 	}
 
-	writePushBindingFile(t, fixture.repo, "binding.txt", "base\nsecond\n")
+	writeFinalizationRemoteFile(t, fixture.repo, "binding.txt", "base\nsecond\n")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-am", "second")
 	summary, err = readFinalizationGitSummary(fixture.repo)
 	if err != nil {
@@ -242,7 +242,7 @@ func TestFinalizationGitSummaryClassifiesRemoteSyncState(t *testing.T) {
 	}
 
 	runFinalizationGit(t, fixture.repo, "checkout", "-q", "-b", "side")
-	writePushBindingFile(t, fixture.repo, "side.txt", "side\n")
+	writeFinalizationRemoteFile(t, fixture.repo, "side.txt", "side\n")
 	runFinalizationGit(t, fixture.repo, "add", "side.txt")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "divergent")
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "side:refs/heads/"+fixture.branch)
@@ -259,7 +259,7 @@ func TestFinalizationGitSummaryClassifiesRemoteSyncState(t *testing.T) {
 }
 
 func TestFinalizationGitSummaryKeepsMissingRemoteURLUnverified(t *testing.T) {
-	fixture := newPushBindingFixture(t)
+	fixture := newFinalizationRemoteFixture(t)
 	runFinalizationGit(t, fixture.repo, "config", "--unset", "remote.origin.url")
 	summary, err := readFinalizationGitSummary(fixture.repo)
 	if err != nil {
