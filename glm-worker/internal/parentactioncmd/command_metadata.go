@@ -109,16 +109,6 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		Execute:          parentActionExecutionDirectWorker,
 		TerminalEnvelope: true,
 	},
-	actionPark: {
-		Action:           actionPark,
-		Execute:          parentActionExecutionReadOrPark,
-		TerminalEnvelope: true,
-	},
-	actionUnpark: {
-		Action:           actionUnpark,
-		Execute:          parentActionExecutionReadOrPark,
-		TerminalEnvelope: true,
-	},
 	"evidence": {
 		Action:  "evidence",
 		Execute: parentActionExecutionReadOrPark,
@@ -312,8 +302,6 @@ func isLegacyParentActionInvocation(execution parentActionExecutionKind, action 
 		return true
 	case parentActionExecutionDirectWorker:
 		return false
-	case parentActionExecutionReadOrPark:
-		return action == actionPark || action == actionUnpark
 	case parentActionExecutionContinuationOrApprove:
 		return false
 	case parentActionExecutionGitEvidence:
