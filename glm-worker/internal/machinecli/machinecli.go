@@ -66,8 +66,7 @@ func TaskStatusPtr(status state.TaskStatus) *string {
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
 		state.TaskStatusQualityGateRecoverable,
-		state.TaskStatusInterrupted,
-		state.TaskStatusParked:
+		state.TaskStatusInterrupted:
 		value := string(status)
 		return &value
 	}
