@@ -1,4 +1,4 @@
-name: Temporary current closure scan
+name: Temporary current closure rewrite
 
 on:
   push:
@@ -6,16 +6,149 @@ on:
       - web-gpt/issue-1311-from-1310
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  scan:
+  rewrite:
+    if: github.event.head_commit.message == 'Arm temporary closure rewrite'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Scan stale deleted-owner references
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: glm-worker/go.mod
+          cache: false
+      - name: Remove deleted-owner test closure
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          EXPECTED_HEAD: ${{ github.sha }}
         run: |
-          set -uo pipefail
-          patterns='CanonicalAuthorityActive|internal/sessionrotation|sessionrotation\.|PrintReviewEvidence|BuildReviewManifest|SessionRotationEvaluation|CompleteParentAwaiting'
-          git grep -n -E "$patterns" -- ':!*.md' ':!*.json' ':!.github/workflows/tmp-current-closure-scan.yml' || true
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+
+          def replace_exact(path, old, new, count=1):
+              p = root / path
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} matches, found {actual}')
+              p.write_text(text.replace(old, new, count))
+
+          session_import = '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"\n'
+          old_completion = '''\tif _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {\n\t\treturn sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)\n\t}); err != nil {\n'''
+          new_completion = '''\tif _, err := st.CompleteParentAwaiting(nil); err != nil {\n'''
+
+          replace_exact('glm-worker/internal/app/execute_test.go', session_import, '')
+          replace_exact('glm-worker/internal/app/execute_test.go', old_completion, new_completion)
+          replace_exact('glm-worker/internal/app/parent_review_test.go', session_import, '')
+          replace_exact('glm-worker/internal/app/parent_review_test.go', old_completion, new_completion)
+
+          handoff = root / 'glm-worker/internal/app/parent_handoff_test.go'
+          text = handoff.read_text()
+          if text.count(session_import) != 1:
+              raise SystemExit('parent_handoff_test.go: unexpected sessionrotation import count')
+          text = text.replace(session_import, '', 1)
+          old_handoff_completion = old_completion
+          if text.count(old_handoff_completion) != 2:
+              raise SystemExit(f'parent_handoff_test.go: expected 2 evaluator calls, found {text.count(old_handoff_completion)}')
+          text = text.replace(old_handoff_completion, '''\tif _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {\n''', 1)
+          start = text.find('func TestSessionRotationCompletionFailsClosedWithoutParentIdentity')
+          end = text.find('func TestSessionRotationNewThreadBindRetiresOldDirective', start)
+          if start < 0 or end < 0:
+              raise SystemExit('parent_handoff_test.go: retired evaluator test boundary not found')
+          text = text[:start] + text[end:]
+          anchor = 'func TestSessionRotationAcceptWritesPendingDirectiveProjectedByHandoff'
+          pos = text.find(anchor)
+          if pos < 0:
+              raise SystemExit('parent_handoff_test.go: insertion anchor not found')
+          helper = '''func completeParentWithPendingRotation(st *state.StateStore, parentThreadID string) (bool, error) {\n\ttaskID, err := st.TaskID()\n\tif err != nil {\n\t\treturn false, err\n\t}\n\treturn st.CompleteParentAwaiting(func(string) (*state.SessionRotationEvaluation, error) {\n\t\treturn &state.SessionRotationEvaluation{\n\t\t\tParentThreadID: parentThreadID,\n\t\t\tTaskID:         taskID,\n\t\t\tTerminal:       state.SessionRotationTerminalAccept,\n\t\t\tDecision: state.SessionRotationDecision{\n\t\t\t\tRequired: true,\n\t\t\t\tReason:   state.SessionRotationReasonEvidenceUnavailable,\n\t\t\t},\n\t\t}, nil\n\t})\n}\n\n'''
+          text = text[:pos] + helper + text[pos:]
+          if 'sessionrotation.' in text or 'internal/sessionrotation' in text:
+              raise SystemExit('parent_handoff_test.go: stale sessionrotation reference remains')
+          handoff.write_text(text)
+
+          canonical = root / 'glm-worker/internal/app/canonical_lifecycle_guard_test.go'
+          canonical.write_text('''package app\n\nimport (\n\t"testing"\n\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"\n)\n\nfunc TestOrdinaryWorkflowModesUseCanonicalAdmission(t *testing.T) {\n\tcfg := newCanonicalAppConfig(t)\n\tfor _, mode := range []CommandMode{ModeNewTask, ModeResume, ModeDecision, ModeFix, ModeAccept, ModeApproveSurface} {\n\t\tif !retainedCanonicalWorkflowMode(mode) {\n\t\t\tt.Fatalf("ordinary workflow mode %d does not enter canonical admission", mode)\n\t\t}\n\t}\n\tif _, err := controller.Activate(cfg); err != nil {\n\t\tt.Fatalf("canonical activation failed: %v", err)\n\t}\n}\n''')
+
+          for path in [
+              'glm-worker/internal/app/parent_review_evidence_projection_test.go',
+              'glm-worker/internal/app/session_rotation_authority_test.go',
+          ]:
+              p = root / path
+              if not p.exists():
+                  raise SystemExit(f'{path}: expected stale test file missing')
+              p.unlink()
+          PY
+
+          gofmt -w \
+            glm-worker/internal/app/canonical_lifecycle_guard_test.go \
+            glm-worker/internal/app/execute_test.go \
+            glm-worker/internal/app/parent_handoff_test.go \
+            glm-worker/internal/app/parent_review_test.go
+
+          if git grep -n -E 'CanonicalAuthorityActive|internal/sessionrotation|sessionrotation\.|PrintReviewEvidence|BuildReviewManifest' -- ':!*.md' ':!*.json' ':!.github/workflows/tmp-current-closure-scan.yml'; then
+            echo 'stale deleted-owner references remain' >&2
+            exit 1
+          fi
+          git diff --check
+          (cd glm-worker && go test ./internal/app)
+
+          python3 <<'PY'
+          import base64
+          import json
+          import os
+          import pathlib
+          import urllib.request
+
+          repo = os.environ['REPO']
+          branch = os.environ['BRANCH']
+          expected = os.environ['EXPECTED_HEAD']
+          token = os.environ['GH_TOKEN']
+          api = f'https://api.github.com/repos/{repo}'
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+
+          def request(method, url, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(req) as response:
+                  return json.load(response)
+
+          ref = request('GET', f'{api}/git/ref/heads/{branch}')
+          if ref['object']['sha'] != expected:
+              raise SystemExit(f'branch moved: expected {expected}, got {ref["object"]["sha"]}')
+          commit = request('GET', f'{api}/git/commits/{expected}')
+          tree_entries = []
+          modified = [
+              'glm-worker/internal/app/canonical_lifecycle_guard_test.go',
+              'glm-worker/internal/app/execute_test.go',
+              'glm-worker/internal/app/parent_handoff_test.go',
+              'glm-worker/internal/app/parent_review_test.go',
+          ]
+          for path in modified:
+              content = pathlib.Path(path).read_text()
+              blob = request('POST', f'{api}/git/blobs', {'content': content, 'encoding': 'utf-8'})
+              tree_entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
+          for path in [
+              'glm-worker/internal/app/parent_review_evidence_projection_test.go',
+              'glm-worker/internal/app/session_rotation_authority_test.go',
+          ]:
+              tree_entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': None})
+          tree = request('POST', f'{api}/git/trees', {'base_tree': commit['tree']['sha'], 'tree': tree_entries})
+          new_commit = request('POST', f'{api}/git/commits', {
+              'message': 'Remove stale deleted-owner app test closure',
+              'tree': tree['sha'],
+              'parents': [expected],
+          })
+          request('PATCH', f'{api}/git/refs/heads/{branch}', {'sha': new_commit['sha'], 'force': False})
+          print(new_commit['sha'])
+          PY
