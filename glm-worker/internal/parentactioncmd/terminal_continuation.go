@@ -37,6 +37,9 @@ func writeProjectedTerminalEnvelopeWithContinuation(cfg config.AppConfig, stdout
 	}
 	continuation, continuationErr := persistParentActionTerminalContinuation(cfg, terminalJSON)
 	if continuationErr != nil {
+		if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
+			return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr), fmt.Errorf("encode projection overflow envelope: %w", encodeErr))
+		}
 		return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr))
 	}
 	failure.Continuation = &continuation
@@ -98,8 +101,5 @@ func writeTerminalContinuationAtomic(path string, data []byte) error {
 	if err := temp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tempPath, path); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0o600)
+	return os.Rename(tempPath, path)
 }
