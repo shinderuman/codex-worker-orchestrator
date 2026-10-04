@@ -157,8 +157,15 @@ func (s *Store) requireNoModelRuntimeEvidence(attemptID string) error {
 		return err
 	}
 	for _, entry := range entries {
+		identity, canonical, err := canonicalJSONRecordEntry(entry)
+		if err != nil {
+			return err
+		}
+		if !canonical {
+			continue
+		}
 		var mutation MutationRecord
-		if err := readJSON(filepath.Join(s.dir, "mutations", entry.Name()), &mutation); err != nil {
+		if err := readJSON(s.mutationPath(identity), &mutation); err != nil {
 			return err
 		}
 		if mutation.AttemptID == attemptID && strings.HasPrefix(mutation.Command, "model:") {

@@ -9,12 +9,13 @@ import (
 )
 
 type Finding struct {
-	Target   string        `json:"target"`
-	Class    string        `json:"class"`
-	Issue    string        `json:"issue,omitempty"`
-	Evidence string        `json:"evidence,omitempty"`
-	Status   string        `json:"status"`
-	Label    *FindingLabel `json:"label,omitempty"`
+	Target       string        `json:"target"`
+	Class        string        `json:"class"`
+	Issue        string        `json:"issue,omitempty"`
+	Evidence     string        `json:"evidence,omitempty"`
+	Status       string        `json:"status"`
+	VisibleIndex *int          `json:"visible_index,omitempty"`
+	Label        *FindingLabel `json:"label,omitempty"`
 }
 
 type FindingLabel struct {
@@ -213,6 +214,15 @@ func (r Registry) HasTaskRecord(taskID string) bool {
 	return false
 }
 
+func (r Registry) HasTaskReviewRecord(taskID string, reviewNumber int) bool {
+	for _, record := range r.Records {
+		if record.TaskID == taskID && record.ReviewNumber == reviewNumber {
+			return true
+		}
+	}
+	return false
+}
+
 func (r Registry) CohortSize() int {
 	size := 0
 	for _, record := range r.Records {
@@ -286,8 +296,8 @@ func ApplyLabels(registry Registry, input LabelInput) (Registry, error) {
 		return Registry{}, err
 	}
 	recordIndex := -1
-	for index, record := range registry.Records {
-		if record.TaskID == input.TaskID {
+	for index := len(registry.Records) - 1; index >= 0; index-- {
+		if registry.Records[index].TaskID == input.TaskID {
 			recordIndex = index
 			break
 		}
@@ -300,10 +310,11 @@ func ApplyLabels(registry Registry, input LabelInput) (Registry, error) {
 		return Registry{}, fmt.Errorf("failure-path advisory labelsはobserved record以外へ適用できません: %s", record.Outcome)
 	}
 	for _, disposition := range input.FindingDispositions {
-		if disposition.Index >= len(record.Findings) {
-			return Registry{}, fmt.Errorf("failure-path advisory labelsのindex %dがfindings範囲外です", disposition.Index)
+		rawIndex, ok := visibleFindingRawIndex(record, disposition.Index)
+		if !ok {
+			return Registry{}, fmt.Errorf("failure-path advisory labelsのindex %dがSol-visible findings範囲外です", disposition.Index)
 		}
-		record.Findings[disposition.Index].Label = &FindingLabel{Disposition: disposition.Disposition}
+		record.Findings[rawIndex].Label = &FindingLabel{Disposition: disposition.Disposition}
 	}
 	record.Assessment = &SolAssessment{
 		AvoidedReviewFixWaves: input.AvoidedReviewFixWaves,
@@ -317,6 +328,31 @@ func ApplyLabels(registry Registry, input LabelInput) (Registry, error) {
 	updated.Records = append([]Record(nil), registry.Records...)
 	updated.Records[recordIndex] = record
 	return updated, nil
+}
+
+func visibleFindingRawIndex(record Record, visibleIndex int) (int, bool) {
+	for index, finding := range record.Findings {
+		if finding.VisibleIndex != nil && *finding.VisibleIndex == visibleIndex {
+			return index, true
+		}
+	}
+	if record.Advisory == nil || record.Advisory.Status != AdvisoryShown || visibleIndex >= record.Advisory.FindingsShown {
+		return 0, false
+	}
+	visible := 0
+	for index, finding := range record.Findings {
+		if finding.Status != FindingStatusVerified {
+			continue
+		}
+		if visible == visibleIndex {
+			return index, true
+		}
+		visible++
+		if visible >= record.Advisory.FindingsShown {
+			break
+		}
+	}
+	return 0, false
 }
 
 func boundText(text string, limit int) string {

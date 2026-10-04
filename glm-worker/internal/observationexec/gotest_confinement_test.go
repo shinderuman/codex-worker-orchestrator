@@ -1,6 +1,7 @@
 package observationexec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -89,7 +90,7 @@ func TestRunIsolatedGoTestConfinementUnavailablePreventsTargetStart(t *testing.T
 	defer func() { observationConfinementAdmission = original }()
 	observationConfinementAdmission = func() error { return errors.New("confinement unavailable in test") }
 
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: t.TempDir(), ExecutionID: "confinement-off-0001", DeadlineMS: 60000,
 	})
 	if outcome.Status != StatusFail || outcome.ExitSource != exitSourceConfinement {
@@ -113,7 +114,7 @@ func TestRunIsolatedGoTestConfinementInitFailureIsTypedWithoutTargetStart(t *tes
 		t.Skip("この環境ではconfinement初期化が成功するため初期化失敗経路を検証できません")
 	}
 	moduleDir := writeIsolatedModule(t, "package example\n\nimport \"os\"\n\nfunc TestTargetStarted(t *testing.T) {\n\t_ = os.WriteFile(\"target-started.txt\", []byte(\"ran\"), 0o600)\n}\n")
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: t.TempDir(), ExecutionID: "confinement-init-0001", DeadlineMS: 60000,
 	})
 	if outcome.Status != StatusFail || outcome.ExitSource != exitSourceConfinement {
@@ -148,7 +149,7 @@ func TestRunIsolatedGoTestConfinementBlocksWritesOutsideAllowedRoots(t *testing.
 	testSource := fmt.Sprintf(confinementProbeTestSource, sentinel, outsideDirect, outsideDirect, outsideChild)
 	writeIsolatedModuleFile(t, moduleDir, "example_test.go", testSource)
 
-	outcome := RunIsolatedGoTest(GoTestInput{
+	outcome := RunIsolatedGoTest(context.Background(), GoTestInput{
 		ModuleDir: moduleDir, ArtifactDir: t.TempDir(), ExecutionID: "confinement-run-001", DeadlineMS: 300000,
 	})
 	if outcome.Status != StatusPass {

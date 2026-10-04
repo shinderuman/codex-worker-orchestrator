@@ -42,19 +42,44 @@ func writeProjectedTerminalEnvelopeWithContinuation(cfg config.AppConfig, stdout
 		}
 		return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr))
 	}
+	return writeTerminalProjectionContinuation(stdout, failure, continuation, err)
+}
+
+func writeTerminalProjectionContinuation(stdout io.Writer, failure parentActionTerminalEnvelopePayload, continuation parentActionTerminalContinuation, projectionErr error) error {
+	plainFailure := cloneTerminalProjectionFailure(failure)
 	failure.Continuation = &continuation
 	if stats := failure.Projection; stats != nil {
 		if statsErr := finalizeProjectionStats(&failure, stats); statsErr != nil {
-			return errors.Join(err, statsErr)
+			return encodeTerminalProjectionFallback(stdout, plainFailure, errors.Join(projectionErr, statsErr))
 		}
 		if stats.ProjectedBytes > stats.BudgetBytes {
-			return fmt.Errorf("%w; terminal continuation envelope exceeds budget: projected=%d budget=%d", err, stats.ProjectedBytes, stats.BudgetBytes)
+			budgetErr := fmt.Errorf("terminal continuation envelope exceeds budget: projected=%d budget=%d", stats.ProjectedBytes, stats.BudgetBytes)
+			return encodeTerminalProjectionFallback(stdout, plainFailure, errors.Join(projectionErr, budgetErr))
 		}
 	}
 	if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
-		return fmt.Errorf("%w; encode projection overflow continuation envelope: %w", err, encodeErr)
+		return fmt.Errorf("%w; encode projection overflow continuation envelope: %w", projectionErr, encodeErr)
 	}
-	return err
+	return projectionErr
+}
+
+func cloneTerminalProjectionFailure(failure parentActionTerminalEnvelopePayload) parentActionTerminalEnvelopePayload {
+	clone := failure
+	if failure.Projection != nil {
+		stats := *failure.Projection
+		stats.OmittedFields = append([]string(nil), failure.Projection.OmittedFields...)
+		stats.ProjectedFields = append([]string(nil), failure.Projection.ProjectedFields...)
+		clone.Projection = &stats
+	}
+	clone.Continuation = nil
+	return clone
+}
+
+func encodeTerminalProjectionFallback(stdout io.Writer, failure parentActionTerminalEnvelopePayload, cause error) error {
+	if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
+		return errors.Join(cause, fmt.Errorf("encode projection overflow fallback envelope: %w", encodeErr))
+	}
+	return cause
 }
 
 func persistParentActionTerminalContinuation(cfg config.AppConfig, terminalJSON json.RawMessage) (parentActionTerminalContinuation, error) {

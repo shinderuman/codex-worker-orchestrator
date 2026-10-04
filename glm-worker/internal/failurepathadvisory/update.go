@@ -38,7 +38,7 @@ func UpdateRegistry(path string, update RegistryUpdate) (Registry, error) {
 
 func AppendRecord(path string, record Record) (Registry, error) {
 	return UpdateRegistry(path, func(registry Registry) (Registry, error) {
-		if registry.HasTaskRecord(record.TaskID) {
+		if registry.HasTaskReviewRecord(record.TaskID, record.ReviewNumber) {
 			return registry, nil
 		}
 		if cohortOutcomes[record.Outcome] && registry.CohortSize() >= CohortCap {

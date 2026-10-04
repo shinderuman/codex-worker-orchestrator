@@ -1,7 +1,7 @@
 package observationexec
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,13 +32,23 @@ type GoTestOutcome struct {
 }
 
 type moduleTreeCopier struct {
-	files int64
-	bytes int64
+	files    int64
+	bytes    int64
+	maxBytes int64
 }
 
 type isolatedGoTestRun struct {
-	outcome GoTestOutcome
-	gateLog []byte
+	outcome      GoTestOutcome
+	gateLog      []byte
+	gateLogTotal int64
+	logTruncated bool
+}
+
+type boundedTailBuffer struct {
+	mu    sync.Mutex
+	data  []byte
+	total int64
+	limit int
 }
 
 const (
@@ -59,37 +70,15 @@ const (
 
 var observationConfinementAdmission = ConfinementAdmission
 
-func RunIsolatedGoTest(input GoTestInput) GoTestOutcome {
-	if err := ValidateExecutionID(input.ExecutionID); err != nil {
-		return goTestInputFailure(err)
-	}
-	if err := observationConfinementAdmission(); err != nil {
-		return goTestConfinementFailure(err)
-	}
-	started := time.Now()
-	tempRoot, err := os.MkdirTemp("", "glm-worker-observation-")
-	if err != nil {
-		return goTestWrapperFailure(started, fmt.Sprintf("隔離temp rootを作成できません: %v", err))
-	}
-	defer func() { _ = os.RemoveAll(tempRoot) }()
-	if err := ConfinementPreflight(tempRoot); err != nil {
-		outcome := goTestConfinementFailure(err)
-		outcome.DurationMS = time.Since(started).Milliseconds()
-		return outcome
-	}
-	if err := prepareIsolatedGoTestRoot(tempRoot, input.ModuleDir); err != nil {
-		return goTestInputFailure(err)
-	}
-	run := runIsolatedGoTestProcess(input, tempRoot)
-	run.outcome.DurationMS = time.Since(started).Milliseconds()
-	return finalizeIsolatedGoTestOutcome(input, run)
+func RunIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
+	return runIsolatedGoTest(ctx, input)
 }
 
 func prepareIsolatedGoTestRoot(tempRoot string, moduleDir string) error {
 	if err := copyModuleTree(filepath.Join(tempRoot, "input"), moduleDir); err != nil {
 		return err
 	}
-	for _, bounded := range []string{filepath.Join(tempRoot, "tmp"), filepath.Join(tempRoot, "cache")} {
+	for _, bounded := range []string{filepath.Join(tempRoot, "tmp"), filepath.Join(tempRoot, "cache"), filepath.Join(tempRoot, "home")} {
 		if err := os.MkdirAll(bounded, 0o700); err != nil {
 			return fmt.Errorf("隔離実行のbounded dirを作成できません: %w", err)
 		}
@@ -97,26 +86,41 @@ func prepareIsolatedGoTestRoot(tempRoot string, moduleDir string) error {
 	return nil
 }
 
-func runIsolatedGoTestProcess(input GoTestInput, tempRoot string) isolatedGoTestRun {
-	launchArgs, err := confinedLaunchArgs(tempRoot, append([]string{"go"}, isolatedGoTestArgs(input.Race)...))
-	if err != nil {
-		return isolatedGoTestRun{outcome: goTestConfinementFailure(err)}
+func (b *boundedTailBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	written := len(p)
+	b.total += int64(written)
+	if b.limit <= 0 || written == 0 {
+		return written, nil
 	}
-	command := newObservationProcessGroupCmd(launchArgs[0], launchArgs[1:]...)
-	command.Dir = filepath.Join(tempRoot, "input")
-	command.Env = isolatedGoTestEnv(tempRoot)
-	var gateLog bytes.Buffer
-	command.Stdout = &gateLog
-	command.Stderr = &gateLog
-	if err := command.Start(); err != nil {
-		return isolatedGoTestRun{outcome: goTestStartFailure(err), gateLog: gateLog.Bytes()}
+	if written >= b.limit {
+		if cap(b.data) < b.limit {
+			b.data = make([]byte, b.limit)
+		} else {
+			b.data = b.data[:b.limit]
+		}
+		copy(b.data, p[written-b.limit:])
+		return written, nil
 	}
-	deadline := time.Duration(input.ResolvedGoTestDeadlineMS()) * time.Millisecond
-	deadlineAt := time.Now().Add(deadline)
-	timer := time.AfterFunc(deadline, func() { terminateObservationProcessGroup(command.Process.Pid) })
-	runErr := command.Wait()
-	timer.Stop()
-	return isolatedGoTestRun{outcome: classifyIsolatedGoTestOutcome(runErr, deadlineAt, deadline), gateLog: gateLog.Bytes()}
+	if overflow := len(b.data) + written - b.limit; overflow > 0 {
+		copy(b.data, b.data[overflow:])
+		b.data = b.data[:len(b.data)-overflow]
+	}
+	b.data = append(b.data, p...)
+	return written, nil
+}
+
+func (b *boundedTailBuffer) snapshot() ([]byte, int64, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	data := append([]byte(nil), b.data...)
+	return data, b.total, b.total > int64(len(b.data))
+}
+
+func capturedIsolatedGoTestRun(outcome GoTestOutcome, gateLog *boundedTailBuffer) isolatedGoTestRun {
+	data, total, truncated := gateLog.snapshot()
+	return isolatedGoTestRun{outcome: outcome, gateLog: data, gateLogTotal: total, logTruncated: truncated}
 }
 
 func isolatedGoTestArgs(race bool) []string {
@@ -139,12 +143,25 @@ func classifyIsolatedGoTestOutcome(runErr error, deadlineAt time.Time, deadline 
 	return outcome
 }
 
+func goTestDeadlineOutcome(runErr error, deadline time.Duration) GoTestOutcome {
+	exitCode := 1
+	if runErr != nil {
+		exitCode = goTestExitCode(runErr)
+	}
+	return GoTestOutcome{
+		Status:     StatusFail,
+		ExitCode:   exitCode,
+		ExitSource: exitSourceDeadline,
+		Detail:     fmt.Sprintf("deadline(%s)を超過したため隔離process groupを終了しました", deadline),
+	}
+}
+
 func goTestStartFailure(err error) GoTestOutcome {
 	return GoTestOutcome{Status: StatusFail, ExitCode: 1, ExitSource: exitSourceWrapper, Detail: boundedDetail(fmt.Sprintf("隔離go testを開始できません: %v", err))}
 }
 
 func finalizeIsolatedGoTestOutcome(input GoTestInput, run isolatedGoTestRun) GoTestOutcome {
-	logPath, logErr := writeGoTestLog(input.ArtifactDir, input.ExecutionID, run.gateLog)
+	logPath, logErr := writeGoTestLog(input.ArtifactDir, input.ExecutionID, run.gateLog, run.gateLogTotal, run.logTruncated)
 	if logErr != nil {
 		run.outcome.Status = StatusFail
 		if run.outcome.ExitCode == 0 && run.outcome.ExitSource == exitSourceTarget {
@@ -153,6 +170,9 @@ func finalizeIsolatedGoTestOutcome(input GoTestInput, run isolatedGoTestRun) GoT
 		}
 		run.outcome.Detail = strings.TrimSpace(run.outcome.Detail + "; gate logを保存できません: " + logErr.Error())
 		return run.outcome
+	}
+	if run.logTruncated {
+		run.outcome.Detail = strings.TrimSpace(run.outcome.Detail + fmt.Sprintf("; gate logは末尾%d bytesへ切り詰めました(total=%d)", len(run.gateLog), run.gateLogTotal))
 	}
 	run.outcome.LogPath = logPath
 	return run.outcome
@@ -197,7 +217,7 @@ func copyModuleTree(destination string, source string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("隔離入力のmodule dir %sがdirectoryではありません", source)
 	}
-	copier := &moduleTreeCopier{files: 1, bytes: 0}
+	copier := &moduleTreeCopier{files: 1, maxBytes: copyMaxBytes}
 	return copier.copyDir(destination, source)
 }
 
@@ -244,8 +264,13 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 	if c.files > copyMaxFiles {
 		return fmt.Errorf("隔離入力のfile数が上限(%d)を超えました", copyMaxFiles)
 	}
-	if c.bytes > copyMaxBytes {
-		return fmt.Errorf("隔離入力の合計sizeが上限(%d bytes)を超えました", copyMaxBytes)
+	limit := c.maxBytes
+	if limit <= 0 {
+		limit = copyMaxBytes
+	}
+	remaining := limit - c.bytes
+	if remaining < 0 {
+		return fmt.Errorf("隔離入力の合計sizeが上限(%d bytes)を超えました", limit)
 	}
 	src, err := os.Open(source)
 	if err != nil {
@@ -256,57 +281,60 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 	if err != nil {
 		return fmt.Errorf("隔離入力のcopy先を作れません: %w", err)
 	}
-	written, err := io.Copy(dst, src)
-	closeErr := dst.Close()
+	committed := false
+	defer func() {
+		_ = dst.Close()
+		if !committed {
+			_ = os.Remove(destination)
+		}
+	}()
+	written, err := io.Copy(dst, io.LimitReader(src, remaining))
 	if err != nil {
 		return fmt.Errorf("隔離入力fileをcopyできません: %w", err)
 	}
-	if closeErr != nil {
-		return fmt.Errorf("隔離入力fileを保存できません: %w", closeErr)
+	var extra [1]byte
+	extraN, extraErr := src.Read(extra[:])
+	if extraN > 0 {
+		return fmt.Errorf("隔離入力の合計sizeが上限(%d bytes)を超えました", limit)
+	}
+	if extraErr != nil && !errors.Is(extraErr, io.EOF) {
+		return fmt.Errorf("隔離入力fileのsize境界を確認できません: %w", extraErr)
+	}
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("隔離入力fileを保存できません: %w", err)
 	}
 	c.bytes += written
+	committed = true
 	return nil
 }
 
-func isolatedGoTestEnv(tempRoot string) []string {
-	allowed := []string{"PATH", "HOME", "TZ", "LANG", "LC_ALL", "LC_CTYPE"}
-	env := make([]string, 0, len(allowed)+8)
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		for _, candidate := range allowed {
-			if name == candidate {
-				env = append(env, entry)
-			}
-		}
-	}
-	return append(env,
-		"TMPDIR="+filepath.Join(tempRoot, "tmp"),
-		"GOTMPDIR="+filepath.Join(tempRoot, "tmp"),
-		"GOCACHE="+filepath.Join(tempRoot, "cache"),
-		"GOFLAGS=-mod=readonly",
-		"GOPROXY=off",
-		"GOENV=off",
-		"GOTOOLCHAIN=local",
-	)
-}
-
-func writeGoTestLog(artifactDir string, executionID string, data []byte) (string, error) {
+func writeGoTestLog(artifactDir string, executionID string, data []byte, total int64, truncated bool) (string, error) {
 	dir := filepath.Join(artifactDir, "observation-exec", executionID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("observation実行artifact dirを作成できません: %w", err)
 	}
 	path := filepath.Join(dir, "go-test.log")
-	if err := os.WriteFile(path, boundedLog(data), 0o600); err != nil {
+	if err := os.WriteFile(path, durableBoundedLog(data, total, truncated), 0o600); err != nil {
 		return "", fmt.Errorf("observation実行logを保存できません: %w", err)
 	}
 	return path, nil
 }
 
-func boundedLog(data []byte) []byte {
-	if len(data) <= logMaxBytes {
-		return data
+func durableBoundedLog(data []byte, total int64, truncated bool) []byte {
+	if !truncated {
+		return append([]byte(nil), data...)
 	}
-	return data[len(data)-logMaxBytes:]
+	header := []byte(fmt.Sprintf("[observation output truncated: retained final bytes; total=%d]\n", total))
+	keep := logMaxBytes - len(header)
+	if keep < 0 {
+		keep = 0
+	}
+	if len(data) > keep {
+		data = data[len(data)-keep:]
+	}
+	result := make([]byte, 0, len(header)+len(data))
+	result = append(result, header...)
+	return append(result, data...)
 }
 
 func boundedDetail(reason string) string {

@@ -124,8 +124,19 @@ acquire_install_lock() {
 			return 1
 		fi
 		ticket_started=$(cat "$ticket/started")
-		current_started=
-		if current_started=$(LC_ALL=C ps -p "$owner_pid" -o lstart= 2>/dev/null); then
+		owner_probe=
+		if owner_probe=$(LC_ALL=C ps -p "$owner_pid" -o pid= 2>/dev/null); then
+			if [ -z "$owner_probe" ]; then
+				printf 'git hook: cannot verify live hook activation owner: %s\n' "$ticket" >&2
+				release_install_lock
+				return 1
+			fi
+			current_started=
+			if ! current_started=$(LC_ALL=C ps -p "$owner_pid" -o lstart= 2>/dev/null); then
+				printf 'git hook: cannot verify hook activation owner identity: %s\n' "$ticket" >&2
+				release_install_lock
+				return 1
+			fi
 			if [ -z "$current_started" ]; then
 				printf 'git hook: cannot verify live hook activation owner: %s\n' "$ticket" >&2
 				release_install_lock
@@ -138,8 +149,8 @@ acquire_install_lock() {
 			fi
 		else
 			status=$?
-			if [ "$status" -ne 1 ]; then
-				printf 'git hook: cannot verify hook activation owner identity: %s\n' "$ticket" >&2
+			if [ "$status" -ne 1 ] || [ -n "$owner_probe" ]; then
+				printf 'git hook: cannot establish hook activation owner absence: %s\n' "$ticket" >&2
 				release_install_lock
 				return 1
 			fi

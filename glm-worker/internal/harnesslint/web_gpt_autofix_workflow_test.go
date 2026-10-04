@@ -23,8 +23,9 @@ func TestWebGPTAutofixWorkflowSeparatesReadAndWriteCapabilities(t *testing.T) {
 		"actions: read\n      contents: write",
 		"Checkout target at expected head for publication",
 		"sh ../control/web-gpt-autofix.sh publish",
-		"uses: actions/upload-artifact@v4",
-		"uses: actions/download-artifact@v4",
+		"uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+		"uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+		"uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
 	})
 	for _, forbidden := range []string{"\n  push:", "\n  pull_request:"} {
 		if strings.Contains(text, forbidden) {
@@ -35,9 +36,9 @@ func TestWebGPTAutofixWorkflowSeparatesReadAndWriteCapabilities(t *testing.T) {
 	if len(publish) != 2 {
 		t.Fatal("publish job missing")
 	}
-	for _, forbidden := range []string{"harnesslint", "install-quality-tools.sh", "setup-go"} {
+	for _, forbidden := range []string{"harnesslint", "install-quality-tools.sh", "setup-go", "actions/checkout@v", "actions/download-artifact@v", "actions/upload-artifact@v"} {
 		if strings.Contains(publish[1], forbidden) {
-			t.Fatalf("write-capable publish job must not execute quality tooling: %q", forbidden)
+			t.Fatalf("write-capable publish job must not execute unapproved tooling or mutable action tags: %q", forbidden)
 		}
 	}
 }

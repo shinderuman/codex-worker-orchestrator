@@ -86,14 +86,36 @@ func validateExistingEvidenceObject(path, digest string, data []byte) (bool, err
 }
 
 func createEvidenceObject(path, digest string, data []byte) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, os.ErrExist) {
-		return validateRacedEvidenceObject(path, digest, data)
-	}
+	dir := filepath.Dir(path)
+	file, err := os.CreateTemp(dir, ".evidence-object-*.tmp")
 	if err != nil {
-		return fmt.Errorf("create evidence object %s: %w", digest, err)
+		return fmt.Errorf("create evidence object temp %s: %w", digest, err)
 	}
-	return writeEvidenceObject(file, path, digest, data)
+	temporary := file.Name()
+	defer func() { _ = os.Remove(temporary) }()
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("chmod evidence object temp %s: %w", digest, err)
+	}
+	if err := writeEvidenceObject(file, temporary, digest, data); err != nil {
+		return err
+	}
+	if err := os.Link(temporary, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			if err := validateRacedEvidenceObject(path, digest, data); err != nil {
+				return err
+			}
+			if err := syncDirectoryPath(dir); err != nil {
+				return fmt.Errorf("sync raced evidence object namespace %s: %w", digest, err)
+			}
+			return nil
+		}
+		return fmt.Errorf("publish evidence object %s: %w", digest, err)
+	}
+	if err := syncDirectoryPath(dir); err != nil {
+		return fmt.Errorf("publish evidence object %s durably: %w", digest, err)
+	}
+	return nil
 }
 
 func validateRacedEvidenceObject(path, digest string, data []byte) error {

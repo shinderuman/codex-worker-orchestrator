@@ -75,6 +75,21 @@ func TestQualitySurfaceTargetsRemainQualitySurfaceScoped(t *testing.T) {
 	}
 }
 
+func TestQualitySurfaceBaselineFailureUsesCurrentDiffTargets(t *testing.T) {
+	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"pkg/ordinary.go"}, nil
+	}
+	targets, err := w.qualitySurfaceFailureReviewTargets(errors.New("baseline unavailable"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"pkg/ordinary.go:@diff"}
+	if !reflect.DeepEqual(targets, want) {
+		t.Fatalf("baseline failure targets = %#v want %#v", targets, want)
+	}
+}
+
 func TestNonConvergenceAndParentValidationPreserveCanonicalTargets(t *testing.T) {
 	input := packet.Result{Targets: []string{"pkg/reviewer.go:12-20"}}
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})

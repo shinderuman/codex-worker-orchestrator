@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 )
 
 type Store struct {
@@ -87,12 +88,47 @@ func controllerStoreDir(cfg config.AppConfig, identity RepositoryIdentity) strin
 }
 
 func initializeControllerStore(store *Store) error {
-	if err := os.MkdirAll(store.dir, 0o700); err != nil {
-		return fmt.Errorf("create repository controller store: %w", err)
+	parent := filepath.Dir(store.dir)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return fmt.Errorf("create repository controller store parent: %w", err)
+	}
+	lock, err := repolock.AcquireWait(controllerStoreInitializationLockPath(store, parent))
+	if err != nil {
+		return fmt.Errorf("acquire repository controller initialization lock: %w", err)
+	}
+	result := initializeControllerStoreLocked(store, parent)
+	return errors.Join(result, lock.Close())
+}
+
+func controllerStoreInitializationLockPath(store *Store, parent string) string {
+	return filepath.Join(parent, "."+filepath.Base(store.dir)+".init.lock")
+}
+
+func initializeControllerStoreLocked(store *Store, parent string) error {
+	winner, err := existingControllerStoreWinner(store)
+	if err != nil {
+		return err
+	}
+	if winner {
+		return nil
+	}
+	staging, err := prepareControllerStoreStaging(store, parent)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+	return publishControllerStoreStaging(store, parent, staging)
+}
+
+func prepareControllerStoreStaging(store *Store, parent string) (string, error) {
+	staging, err := os.MkdirTemp(parent, "."+filepath.Base(store.dir)+".init-*")
+	if err != nil {
+		return "", fmt.Errorf("create repository controller store staging directory: %w", err)
 	}
 	for _, name := range controllerStoreDirs {
-		if err := os.Mkdir(filepath.Join(store.dir, name), 0o700); err != nil {
-			return fmt.Errorf("create repository controller store: %w", err)
+		if err := os.Mkdir(filepath.Join(staging, name), 0o700); err != nil {
+			_ = os.RemoveAll(staging)
+			return "", fmt.Errorf("create repository controller store staging layout: %w", err)
 		}
 	}
 	head := RepositoryControllerHead{
@@ -101,10 +137,63 @@ func initializeControllerStore(store *Store) error {
 		ControllerGeneration: 0,
 		Status:               ControllerStatusActive,
 	}
-	if err := writeJSONAtomic(store.headPath(), head); err != nil {
-		return fmt.Errorf("create repository controller head: %w", err)
+	if err := writeJSONAtomic(filepath.Join(staging, "head.json"), head); err != nil {
+		_ = os.RemoveAll(staging)
+		return "", fmt.Errorf("create repository controller staged head: %w", err)
+	}
+	if err := syncDirectoryPath(staging); err != nil {
+		_ = os.RemoveAll(staging)
+		return "", fmt.Errorf("sync repository controller staged store: %w", err)
+	}
+	return staging, nil
+}
+
+func publishControllerStoreStaging(store *Store, parent, staging string) error {
+	winner, err := existingControllerStoreWinner(store)
+	if err != nil {
+		return err
+	}
+	if winner {
+		return nil
+	}
+	if err := os.Rename(staging, store.dir); err != nil {
+		return resolveControllerStorePublishRace(store, err)
+	}
+	if err := syncDirectoryPath(parent); err != nil {
+		return fmt.Errorf("sync repository controller store parent: %w", err)
 	}
 	return nil
+}
+
+func resolveControllerStorePublishRace(store *Store, publishErr error) error {
+	winner, err := existingControllerStoreWinner(store)
+	if err != nil {
+		return err
+	}
+	if winner {
+		return nil
+	}
+	return fmt.Errorf("publish repository controller store: %w", publishErr)
+}
+
+func existingControllerStoreWinner(store *Store) (bool, error) {
+	info, err := os.Lstat(store.dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect repository controller initialization winner: %w", err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("repository controller initialization target exists and is not a directory")
+	}
+	if err := validateControllerStoreLayout(store); err != nil {
+		return false, fmt.Errorf("repository controller initialization target is incomplete or ambiguous: %w", err)
+	}
+	if _, err := store.LoadHead(); err != nil {
+		return false, fmt.Errorf("repository controller initialization winner is invalid: %w", err)
+	}
+	return true, nil
 }
 
 func validateControllerStoreLayout(store *Store) error {

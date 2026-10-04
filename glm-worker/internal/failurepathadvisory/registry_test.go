@@ -14,7 +14,20 @@ func advisoryRegistryPath(t *testing.T) string {
 }
 
 func observedRecord(taskID string, findings ...Finding) Record {
-	return Record{TaskID: taskID, Outcome: OutcomeObserved, Findings: findings}
+	record := Record{TaskID: taskID, Outcome: OutcomeObserved, Findings: findings}
+	visible := 0
+	for index := range record.Findings {
+		if record.Findings[index].Status != FindingStatusVerified {
+			continue
+		}
+		visibleIndex := visible
+		record.Findings[index].VisibleIndex = &visibleIndex
+		visible++
+	}
+	if visible > 0 {
+		record.Advisory = &AdvisoryOutcome{Status: AdvisoryShown, FindingsShown: visible}
+	}
+	return record
 }
 
 func verifiedFinding(target string) Finding {

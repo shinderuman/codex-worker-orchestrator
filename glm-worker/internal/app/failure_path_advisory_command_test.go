@@ -39,13 +39,15 @@ func newFailurePathAdvisoryRegistryState(t *testing.T) (*state.StateStore, failu
 	if err != nil {
 		t.Fatal(err)
 	}
+	visibleIndex := 0
 	record := failurepathadvisory.Record{
 		TaskID:  "trial-task",
 		Outcome: failurepathadvisory.OutcomeObserved,
 		Classes: []string{failurepathadvisory.ClassExternalModelInvocation},
 		Findings: []failurepathadvisory.Finding{
-			{Target: "glm-worker/internal/runner/probe.go:90", Class: failurepathadvisory.ClassExternalModelInvocation, Issue: "deadlineなし"},
+			{Target: "glm-worker/internal/runner/probe.go:90", Class: failurepathadvisory.ClassExternalModelInvocation, Issue: "deadlineなし", Status: failurepathadvisory.FindingStatusVerified, VisibleIndex: &visibleIndex},
 		},
+		Advisory: &failurepathadvisory.AdvisoryOutcome{Status: failurepathadvisory.AdvisoryShown, FindingsShown: 1},
 		AddedGLM: &failurepathadvisory.AddedGLMUsage{Calls: 1, InputTokens: 200, OutputTokens: 60, WallDurationMS: 4000},
 	}
 	registry := failurepathadvisory.Registry{}.WithRecord(record)
