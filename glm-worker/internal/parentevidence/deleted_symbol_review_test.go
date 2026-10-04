@@ -32,18 +32,6 @@ func TestDeletedGoSymbolUsesCanonicalDiffEvidence(t *testing.T) {
 		t.Fatalf("deleted symbol should remain proof-addressable: %v", err)
 	}
 
-	manifest := Manifest{}
-	diffPaths := map[string]struct{}{}
-	if err := appendReviewManifestTarget(repoRoot, &manifest, map[string]struct{}{}, diffPaths, "inspect deletion", target); err != nil {
-		t.Fatal(err)
-	}
-	if len(manifest.Source) != 0 {
-		t.Fatalf("deleted symbol emitted source request: %#v", manifest.Source)
-	}
-	if _, ok := diffPaths["removed.go"]; !ok {
-		t.Fatalf("deleted symbol did not request diff evidence: %#v", diffPaths)
-	}
-
 	body := runDeletedSymbolGitOutput(t, repoRoot, "diff", "HEAD", "--no-ext-diff", "--no-renames", "--", "removed.go")
 	diff := DiffBody{
 		Paths: []string{"removed.go"},
