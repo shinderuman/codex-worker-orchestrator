@@ -7,7 +7,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type commandDispatchOwner uint8
@@ -48,8 +47,6 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		return dispatchStateCommand, nil
 	case ModeReset,
 		ModeAccept,
-		ModePark,
-		ModeUnpark,
 		ModeExecutionMilestonesRevise,
 		modeRotateInstructionBaseline,
 		modeRecoverParentAction,
@@ -197,10 +194,6 @@ func executeLockedMutation(cmd Command, cfg config.AppConfig, st *state.StateSto
 		return executeDispositionReset(cmd, st, stdout)
 	case ModeAccept:
 		return parentAccept(st, stdout)
-	case ModePark:
-		return workflow.NewWorkflow(cfg, st, nil, stdout).ExecutePark(stdout)
-	case ModeUnpark:
-		return workflow.NewWorkflow(cfg, st, nil, stdout).ExecuteUnpark(stdout)
 	case ModeExecutionMilestonesRevise:
 		return executeExecutionMilestoneRevision(cmd, cfg, st, stdout)
 	case modeRotateInstructionBaseline:
