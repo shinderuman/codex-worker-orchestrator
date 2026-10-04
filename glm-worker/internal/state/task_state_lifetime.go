@@ -44,7 +44,6 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: ResultCorrectionStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: stopWorktreePatchFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: stopIndexPatchFile, lifetime: taskBoundStateFreshTaskClear},
-	{name: isolationStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: resumeStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: workerEndSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: reviewStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
