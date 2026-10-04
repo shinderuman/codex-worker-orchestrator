@@ -77,7 +77,15 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 }
 
 func (r realCommandRunner) run(dir, name string, args ...string) (commandResult, error) {
-	return r.runEnv(dir, name, nil, args...)
+	var env []string
+	switch name {
+	case "shellcheck":
+		env = []string{"SHELLCHECK_OPTS="}
+		args = append([]string{"--norc"}, args...)
+	case "shfmt":
+		args = append([]string{"-i=0"}, args...)
+	}
+	return r.runEnv(dir, name, env, args...)
 }
 
 func (r realCommandRunner) runEnv(dir, name string, env []string, args ...string) (commandResult, error) {
