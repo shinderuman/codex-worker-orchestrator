@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -126,4 +127,8 @@ func TestTerminalOverflowPersistsExactBoundedContinuation(t *testing.T) {
 		t.Fatal("continuation sha256 missing")
 	}
 	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
+}
+
+func writeProjectedTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
+	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, false)
 }
