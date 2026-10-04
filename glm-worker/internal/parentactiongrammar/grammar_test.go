@@ -22,8 +22,8 @@ func TestProjectPreservesCurrentActionSpecs(t *testing.T) {
 		},
 		{
 			name:   "controller publication",
-			action: string(parentaction.ActionControllerPublication),
-			want:   Spec{Kind: "staged", PrepareCommand: []string{Binary, "prepare", string(parentaction.ActionControllerPublication)}},
+			action: "controller-publication",
+			want:   Spec{Kind: "staged", PrepareCommand: []string{Binary, "prepare", "controller-publication"}},
 		},
 		{
 			name:   "observation execute",
