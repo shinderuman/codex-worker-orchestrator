@@ -15,7 +15,6 @@ type parentActionCommandDescriptor struct {
 	Execute          parentActionExecutionKind
 	TerminalExecute  parentActionExecutionKind
 	TerminalEnvelope bool
-	InProcessHandoff bool
 	Payload          parentaction.PayloadAction
 }
 
@@ -24,19 +23,13 @@ const (
 	parentActionExecutionController
 	parentActionExecutionPayload
 	parentActionExecutionSessionRotation
-	parentActionExecutionLifecycle
-	parentActionExecutionComplete
-	parentActionExecutionInstall
 	parentActionExecutionWait
 	parentActionExecutionContinuationOrApprove
 	parentActionExecutionDirectWorker
 	parentActionExecutionStartSingle
 	parentActionExecutionRead
 	parentActionExecutionGitEvidence
-	parentActionExecutionReviewEvidence
 	parentActionExecutionPreflightDecision
-	parentActionExecutionDefectRegistration
-	parentActionExecutionImprovementDisposition
 	parentActionExecutionObservationExecute
 )
 
@@ -139,9 +132,6 @@ func executeParentActionCommand(
 	if terminal {
 		execution = descriptor.TerminalExecute
 	}
-	if err := rejectLegacyParentActionInvocation(execution, descriptor.Action); err != nil {
-		return err
-	}
 	if err, handled := executeStandardParentAction(cfg, descriptor, execution, args, stdout, stderr); handled {
 		return err
 	}
@@ -156,31 +146,10 @@ func executeStandardParentAction(
 	stdout io.Writer,
 	stderr io.Writer,
 ) (error, bool) {
-	if err, handled := executeLifecycleParentAction(cfg, execution, args, stdout, stderr); handled {
-		return err, true
+	if execution == parentActionExecutionSessionRotation {
+		return executeSessionRotationAction(cfg, args, stdout), true
 	}
 	return executeInterfaceParentAction(cfg, descriptor, execution, args, stdout, stderr)
-}
-
-func executeLifecycleParentAction(
-	cfg config.AppConfig,
-	execution parentActionExecutionKind,
-	args []string,
-	stdout io.Writer,
-	stderr io.Writer,
-) (error, bool) {
-	switch execution {
-	case parentActionExecutionSessionRotation:
-		return executeSessionRotationAction(cfg, args, stdout), true
-	case parentActionExecutionLifecycle:
-		return executeParentLifecycleAction(cfg, args, stdout), true
-	case parentActionExecutionComplete:
-		return executeComplete(cfg, args, stdout), true
-	case parentActionExecutionInstall:
-		return executeInstall(cfg, args, stdout, stderr), true
-	default:
-		return nil, false
-	}
 }
 
 func executeInterfaceParentAction(
@@ -222,58 +191,8 @@ func executeSpecialParentAction(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	switch execution {
-	case parentActionExecutionReviewEvidence:
-		return executeParentReviewEvidence(cfg, args, stdout)
-	case parentActionExecutionPreflightDecision:
+	if execution == parentActionExecutionPreflightDecision {
 		return executePreflightedDecision(cfg, args, stdout, stderr)
-	case parentActionExecutionDefectRegistration:
-		return executeDefectRegistrationAction(cfg, args, stdout)
-	case parentActionExecutionImprovementDisposition:
-		return executeImprovementDisposition(cfg, args, stdout)
-	default:
-		return fmt.Errorf("%s", usage)
 	}
-}
-
-func rejectLegacyParentActionInvocation(execution parentActionExecutionKind, action string) error {
-	if !isLegacyParentActionInvocation(execution, action) {
-		return nil
-	}
-	return fmt.Errorf("legacy parent action is unavailable after canonical controller cutover; use %s", legacyParentActionReplacement(execution, action))
-}
-
-func isLegacyParentActionInvocation(execution parentActionExecutionKind, action string) bool {
-	switch execution {
-	case parentActionExecutionLifecycle,
-		parentActionExecutionComplete,
-		parentActionExecutionInstall,
-		parentActionExecutionReviewEvidence,
-		parentActionExecutionDefectRegistration,
-		parentActionExecutionImprovementDisposition:
-		return true
-	case parentActionExecutionDirectWorker:
-		return false
-	case parentActionExecutionContinuationOrApprove:
-		return false
-	case parentActionExecutionGitEvidence:
-		return action == "push-binding"
-	default:
-		return false
-	}
-}
-
-func legacyParentActionReplacement(execution parentActionExecutionKind, action string) string {
-	if execution == parentActionExecutionDefectRegistration || execution == parentActionExecutionImprovementDisposition || action == actionRecordPublicationFinding {
-		return "--authority controller-semantic"
-	}
-	if execution == parentActionExecutionReviewEvidence {
-		return "--authority controller-evidence"
-	}
-	return "--authority controller-execution"
-}
-
-func parentActionUsesInProcessHandoff(action string) bool {
-	descriptor, ok := lookupParentActionCommand(action)
-	return ok && descriptor.InProcessHandoff
+	return fmt.Errorf("%s", usage)
 }
