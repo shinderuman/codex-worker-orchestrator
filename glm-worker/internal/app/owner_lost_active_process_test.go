@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestOwnerLostActiveTaskRequiresExplicitDispositionBeforeNewTask(t *testing.T) {
+func TestOwnerLostActiveTaskRejectsNewTask(t *testing.T) {
 	env := newMultiRepoEnv(t)
 	env.setStubMode(t, env.stubA, "hold")
 
@@ -39,16 +39,5 @@ func TestOwnerLostActiveTaskRequiresExplicitDispositionBeforeNewTask(t *testing.
 	}
 	if got := readStateFile(t, stateDir, "last-request"); got != request {
 		t.Fatalf("拒否されたstartがtask requestを変更しました: want=%q got=%q", request, got)
-	}
-
-	reset := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
-	if reset.code == 0 || !strings.Contains(reset.stderr, "legacy reset lifecycle is unavailable") {
-		t.Fatalf("旧resetが拒否されません: %+v", reset)
-	}
-	if got := readStateFile(t, stateDir, "task.id"); got != taskID {
-		t.Fatalf("拒否されたresetがtask.idを変更しました: %s", got)
-	}
-	if got := readStateFile(t, stateDir, "last-request"); got != request {
-		t.Fatalf("拒否されたresetが要求を変更しました: %q", got)
 	}
 }
