@@ -53,40 +53,57 @@ func ParseStructuredOutput(raw []byte) ([]Finding, error) {
 	if err := decoder.Decode(&output); err != nil {
 		return nil, fmt.Errorf("failure-path reviewerの出力を解析できません: %w", err)
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("failure-path reviewerの出力に複数のJSON値があります")
-		}
-		return nil, fmt.Errorf("failure-path reviewerの出力末尾を解析できません: %w", err)
+	if err := requireStructuredOutputEOF(decoder); err != nil {
+		return nil, err
 	}
 	if len(output.Findings) > findingsMaxItems {
 		return nil, fmt.Errorf("failure-path reviewerのfindingsが上限を超えています: %d", len(output.Findings))
 	}
+	classes := knownFailurePathClasses()
+	for index, finding := range output.Findings {
+		bounded, err := validateAndBoundFinding(index, finding, classes)
+		if err != nil {
+			return nil, err
+		}
+		output.Findings[index] = bounded
+	}
+	return output.Findings, nil
+}
+
+func requireStructuredOutputEOF(decoder *json.Decoder) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("failure-path reviewerの出力に複数のJSON値があります")
+		}
+		return fmt.Errorf("failure-path reviewerの出力末尾を解析できません: %w", err)
+	}
+	return nil
+}
+
+func knownFailurePathClasses() map[string]struct{} {
 	classes := make(map[string]struct{}, len(Classes))
 	for _, class := range Classes {
 		classes[class] = struct{}{}
 	}
-	statuses := map[string]struct{}{
-		FindingStatusVerified:      {},
-		FindingStatusIndeterminate: {},
+	return classes
+}
+
+func validateAndBoundFinding(index int, finding Finding, classes map[string]struct{}) (Finding, error) {
+	if finding.Target == "" {
+		return Finding{}, fmt.Errorf("failure-path reviewerのfindings[%d].targetが空です", index)
 	}
-	for index, finding := range output.Findings {
-		if finding.Target == "" {
-			return nil, fmt.Errorf("failure-path reviewerのfindings[%d].targetが空です", index)
-		}
-		if _, known := classes[finding.Class]; !known {
-			return nil, fmt.Errorf("failure-path reviewerのfindings[%d].classが不正です: %q", index, finding.Class)
-		}
-		if finding.Issue == "" {
-			return nil, fmt.Errorf("failure-path reviewerのfindings[%d].issueが空です", index)
-		}
-		if _, known := statuses[finding.Status]; !known {
-			return nil, fmt.Errorf("failure-path reviewerのfindings[%d].statusが不正です: %q", index, finding.Status)
-		}
-		output.Findings[index].Target = boundText(finding.Target, findingTextBoundBytes)
-		output.Findings[index].Issue = boundText(finding.Issue, findingTextBoundBytes)
-		output.Findings[index].Evidence = boundText(finding.Evidence, findingTextBoundBytes)
+	if _, known := classes[finding.Class]; !known {
+		return Finding{}, fmt.Errorf("failure-path reviewerのfindings[%d].classが不正です: %q", index, finding.Class)
 	}
-	return output.Findings, nil
+	if finding.Issue == "" {
+		return Finding{}, fmt.Errorf("failure-path reviewerのfindings[%d].issueが空です", index)
+	}
+	if finding.Status != FindingStatusVerified && finding.Status != FindingStatusIndeterminate {
+		return Finding{}, fmt.Errorf("failure-path reviewerのfindings[%d].statusが不正です: %q", index, finding.Status)
+	}
+	finding.Target = boundText(finding.Target, findingTextBoundBytes)
+	finding.Issue = boundText(finding.Issue, findingTextBoundBytes)
+	finding.Evidence = boundText(finding.Evidence, findingTextBoundBytes)
+	return finding, nil
 }
