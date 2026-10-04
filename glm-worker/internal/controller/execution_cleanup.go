@@ -222,6 +222,14 @@ func (s *Store) applySuspensionGC(op ExecutionOperation) error {
 			return err
 		}
 	}
+	manifest := s.suspensionPath(op.Suspension.SnapshotID)
+	if err := os.Remove(manifest); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove GC suspension manifest: %w", err)
+	} else if err == nil {
+		if err := syncDirectoryPath(filepath.Dir(manifest)); err != nil {
+			return fmt.Errorf("durably remove GC suspension manifest: %w", err)
+		}
+	}
 	return s.commitExecutionCleanup(op)
 }
 
