@@ -22,11 +22,6 @@ type parentActionTerminalContinuation struct {
 	SHA256  string `json:"sha256"`
 }
 
-type parentActionTerminalContinuationEnvelope struct {
-	parentActionTerminalEnvelopePayload
-	Continuation parentActionTerminalContinuation `json:"continuation"`
-}
-
 func writeProjectedTerminalEnvelopeWithContinuation(cfg config.AppConfig, stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
 	envelope, err := projectParentActionTerminalEnvelope(terminalJSON, handoffJSON)
 	if err == nil {
@@ -44,41 +39,19 @@ func writeProjectedTerminalEnvelopeWithContinuation(cfg config.AppConfig, stdout
 	if continuationErr != nil {
 		return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr))
 	}
-	wrapped := parentActionTerminalContinuationEnvelope{
-		parentActionTerminalEnvelopePayload: failure,
-		Continuation:                       continuation,
-	}
-	if stats := wrapped.Projection; stats != nil {
-		if statsErr := finalizeTerminalContinuationStats(&wrapped, stats); statsErr != nil {
+	failure.Continuation = &continuation
+	if stats := failure.Projection; stats != nil {
+		if statsErr := finalizeProjectionStats(&failure, stats); statsErr != nil {
 			return errors.Join(err, statsErr)
 		}
 		if stats.ProjectedBytes > stats.BudgetBytes {
 			return fmt.Errorf("%w; terminal continuation envelope exceeds budget: projected=%d budget=%d", err, stats.ProjectedBytes, stats.BudgetBytes)
 		}
 	}
-	if encodeErr := json.NewEncoder(stdout).Encode(wrapped); encodeErr != nil {
+	if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
 		return fmt.Errorf("%w; encode projection overflow continuation envelope: %w", err, encodeErr)
 	}
 	return err
-}
-
-func finalizeTerminalContinuationStats(envelope *parentActionTerminalContinuationEnvelope, stats *parentActionTerminalProjectionStats) error {
-	for iteration := 0; iteration < 3; iteration++ {
-		raw, err := json.Marshal(envelope)
-		if err != nil {
-			return fmt.Errorf("marshal projected terminal continuation envelope: %w", err)
-		}
-		projectedBytes := encodedJSONLineBytes(raw)
-		if stats.ProjectedBytes == projectedBytes {
-			break
-		}
-		stats.ProjectedBytes = projectedBytes
-		stats.SavedBytes = stats.RawBytes - stats.ProjectedBytes
-		if stats.SavedBytes < 0 {
-			stats.SavedBytes = 0
-		}
-	}
-	return nil
 }
 
 func persistParentActionTerminalContinuation(cfg config.AppConfig, terminalJSON json.RawMessage) (parentActionTerminalContinuation, error) {
