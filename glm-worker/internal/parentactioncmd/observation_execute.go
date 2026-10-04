@@ -74,7 +74,7 @@ const (
 )
 
 var (
-	resolveObservationShadowEvalWorker = resolveGLMWorker
+	resolveObservationShadowEvalWorker     = resolveGLMWorker
 	dispatchObservationExecutionForAction = dispatchObservationExecution
 )
 
