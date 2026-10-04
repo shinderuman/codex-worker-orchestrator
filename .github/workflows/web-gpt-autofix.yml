@@ -131,20 +131,20 @@ jobs:
           CONTROL_REF: ${{ github.ref }}
         run: test "$CONTROL_REF" = refs/heads/main
       - name: Checkout canonical publication control source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.sha }}
           path: control
           persist-credentials: false
           fetch-depth: 1
       - name: Checkout target at expected head for publication
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ inputs.expected_head_sha }}
           path: target
           fetch-depth: 1
       - name: Download prepared patch
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: web-gpt-autofix-prepared-${{ github.run_id }}
           path: prepared
@@ -157,7 +157,7 @@ jobs:
           sh ../control/web-gpt-autofix.sh publish "$TARGET_BRANCH" "$EXPECTED_HEAD_SHA" "../prepared/autofix.patch" "$RUNNER_TEMP/web-gpt-autofix-published.json"
       - name: Upload publication result
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: web-gpt-autofix-result-${{ github.run_id }}
           path: ${{ runner.temp }}/web-gpt-autofix-published.json
