@@ -322,7 +322,7 @@ func TestLoadRespectsClaudeConfigDirEnv(t *testing.T) {
 		t.Fatalf("ClaudeConfigDir = %q, want /override/claude-config", loaded.ClaudeConfigDir)
 	}
 	if loaded.ClaudeSettingsPath != "/override/claude-config/settings.json" {
-		t.Fatalf("ClaudeSettingsPath = %q, want %q", loaded.ClaudeSettingsPath)
+		t.Fatalf("ClaudeSettingsPath = %q, want /override/claude-config/settings.json", loaded.ClaudeSettingsPath)
 	}
 	if loaded.CodexBin != "codex" {
 		t.Fatalf("CodexBin = %q, want codex", loaded.CodexBin)
