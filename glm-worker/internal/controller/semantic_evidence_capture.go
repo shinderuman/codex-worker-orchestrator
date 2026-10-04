@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func (s *Store) captureAttemptSemanticEvidence(op ExecutionOperation, seal *AttemptSeal) error {
@@ -65,7 +64,14 @@ func (s *Store) captureAttemptFindings(attemptID string) ([]EvidenceObjectRef, e
 	}
 	var refs []EvidenceObjectRef
 	for _, entry := range entries {
-		finding, err := s.LoadFinding(strings.TrimSuffix(entry.Name(), ".json"))
+		identity, canonical, err := canonicalJSONRecordEntry(entry)
+		if err != nil {
+			return nil, err
+		}
+		if !canonical {
+			continue
+		}
+		finding, err := s.LoadFinding(identity)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +127,6 @@ func (s *Store) operationProjectSnapshot(op ExecutionOperation, id string) (Proj
 				return project, nil
 			}
 		}
-	}
 	if op.Publication != nil && op.Publication.Project != nil && op.Publication.Project.SnapshotID == id {
 		return *op.Publication.Project, nil
 	}
