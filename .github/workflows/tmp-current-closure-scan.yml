@@ -72,8 +72,16 @@ jobs:
               raise SystemExit('parent_handoff_test.go: stale sessionrotation reference remains')
           handoff.write_text(text)
 
-          canonical = root / 'glm-worker/internal/app/canonical_lifecycle_guard_test.go'
-          canonical.write_text('''package app\n\nimport (\n\t"testing"\n\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"\n)\n\nfunc TestOrdinaryWorkflowModesUseCanonicalAdmission(t *testing.T) {\n\tcfg := newCanonicalAppConfig(t)\n\tfor _, mode := range []CommandMode{ModeNewTask, ModeResume, ModeDecision, ModeFix, ModeAccept, ModeApproveSurface} {\n\t\tif !retainedCanonicalWorkflowMode(mode) {\n\t\t\tt.Fatalf("ordinary workflow mode %d does not enter canonical admission", mode)\n\t\t}\n\t}\n\tif _, err := controller.Activate(cfg); err != nil {\n\t\tt.Fatalf("canonical activation failed: %v", err)\n\t}\n}\n''')
+          replace_exact(
+              'glm-worker/internal/app/canonical_lifecycle_guard_test.go',
+              '''\tif active, err := controller.CanonicalAuthorityActive(cfg); err != nil || active {\n\t\tt.Fatalf("pristine fixture reported canonical authority: active=%v err=%v", active, err)\n\t}\n''',
+              '',
+          )
+          replace_exact(
+              'glm-worker/internal/app/canonical_lifecycle_guard_test.go',
+              '''\tif active, err := controller.CanonicalAuthorityActive(cfg); err != nil || !active {\n\t\tt.Fatalf("explicit activation did not establish canonical authority: active=%v err=%v", active, err)\n\t}\n''',
+              '',
+          )
 
           for path in [
               'glm-worker/internal/app/parent_review_evidence_projection_test.go',
