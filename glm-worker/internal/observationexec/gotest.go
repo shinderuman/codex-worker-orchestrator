@@ -1,6 +1,7 @@
 package observationexec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -68,6 +69,10 @@ const (
 )
 
 var observationConfinementAdmission = ConfinementAdmission
+
+func RunIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
+	return runIsolatedGoTest(ctx, input)
+}
 
 func prepareIsolatedGoTestRoot(tempRoot string, moduleDir string) error {
 	if err := copyModuleTree(filepath.Join(tempRoot, "input"), moduleDir); err != nil {
