@@ -33,9 +33,9 @@ Repo-searchが返すmodel-visible source surfaceを、result件数ごとの固�
 
 ## External feasibility
 
-status: applicable
+status: observation
 
-Exa / Parallel等の外部search serviceは、agent向けretrievalでdocument単位ではなくretrieval全体の情報密度・budgetを最適化する設計を提供している。ただし外部サービスの削減率をこのrepositoryへ外挿しない。
+assumption: Exa / Parallel等の外部search serviceで用いられるretrieval全体の情報密度・budget最適化という設計がrepository searchにも適用可能かは未検証であり、外部サービスの削減率をこのrepositoryへ外挿しない。
 
 ## Contract
 

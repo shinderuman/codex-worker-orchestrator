@@ -43,6 +43,8 @@ type qualityToolCommandTimeoutError struct {
 	tool string
 }
 
+const shellcheckToolName = "shellcheck"
+
 var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
 var golangCILineOnly = regexp.MustCompile(`^(.+?):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
 var shellcheckLine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*[^:]+:\s*(.+?)(?:\s+\[([A-Z0-9]+)\])?$`)
@@ -67,7 +69,7 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 		return r.golangciLintPath, r.lintGoToolchain
 	case deadcodeToolName:
 		return r.deadcodePath, r.goToolchain
-	case "shellcheck":
+	case shellcheckToolName:
 		return r.shellcheckPath, r.goToolchain
 	case "shfmt":
 		return r.shfmtPath, r.goToolchain
@@ -77,7 +79,15 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 }
 
 func (r realCommandRunner) run(dir, name string, args ...string) (commandResult, error) {
-	return r.runEnv(dir, name, nil, args...)
+	var env []string
+	switch name {
+	case shellcheckToolName:
+		env = []string{"SHELLCHECK_OPTS="}
+		args = append([]string{"--norc"}, args...)
+	case "shfmt":
+		args = append([]string{"-i=0"}, args...)
+	}
+	return r.runEnv(dir, name, env, args...)
 }
 
 func (r realCommandRunner) runEnv(dir, name string, env []string, args ...string) (commandResult, error) {
@@ -211,7 +221,7 @@ func runExternalChecks(root string, paths []string, runner commandRunner) ([]Vio
 	}
 	violations = append(violations, deadcodeViolations...)
 	for _, path := range shellFiles(paths) {
-		result, err := runner.run(root, "shellcheck", "-f", "gcc", path)
+		result, err := runner.run(root, shellcheckToolName, "-f", "gcc", path)
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +332,7 @@ func parseShellcheck(result commandResult, path string) []Violation {
 		}
 		rule := strings.ToLower(match[5])
 		if rule == "" {
-			rule = "shellcheck"
+			rule = shellcheckToolName
 		}
 		violations = append(violations, Violation{
 			Rule: rule, Path: filepath.ToSlash(match[1]), Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4],
@@ -330,7 +340,7 @@ func parseShellcheck(result commandResult, path string) []Violation {
 	}
 	if len(violations) == 0 {
 		violations = append(violations, Violation{
-			Rule: "shellcheck", Path: path, Line: 1, Column: 1, Message: compactOutput(result.output, "shellcheck failed"),
+			Rule: shellcheckToolName, Path: path, Line: 1, Column: 1, Message: compactOutput(result.output, "shellcheck failed"),
 		})
 	}
 	return violations
