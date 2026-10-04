@@ -45,8 +45,7 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		return dispatchRuntimeControl, nil
 	case ModeVerifyCodexWake, ModeInstallSmoke, ModeQualityGate:
 		return dispatchStateCommand, nil
-	case ModeReset,
-		ModeAccept,
+	case ModeAccept,
 		ModeExecutionMilestonesRevise,
 		modeRotateInstructionBaseline,
 		modeRecoverParentAction,
@@ -190,8 +189,6 @@ func executeStateCommand(cmd Command, cfg config.AppConfig, st *state.StateStore
 
 func executeLockedMutation(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	switch cmd.Mode {
-	case ModeReset:
-		return executeDispositionReset(cmd, st, stdout)
 	case ModeAccept:
 		return parentAccept(st, stdout)
 	case ModeExecutionMilestonesRevise:
