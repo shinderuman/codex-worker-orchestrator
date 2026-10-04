@@ -114,11 +114,20 @@ func initializeControllerStore(store *Store) error {
 	if err := syncDirectoryPath(staging); err != nil {
 		return fmt.Errorf("sync repository controller staged store: %w", err)
 	}
+	winner, err := existingControllerStoreWinner(store)
+	if err != nil {
+		return err
+	}
+	if winner {
+		return nil
+	}
 	if err := os.Rename(staging, store.dir); err != nil {
-		if _, statErr := os.Stat(store.dir); statErr == nil {
-			if layoutErr := validateControllerStoreLayout(store); layoutErr == nil {
-				return nil
-			}
+		winner, winnerErr := existingControllerStoreWinner(store)
+		if winnerErr == nil && winner {
+			return nil
+		}
+		if winnerErr != nil {
+			return winnerErr
 		}
 		return fmt.Errorf("publish repository controller store: %w", err)
 	}
@@ -126,6 +135,26 @@ func initializeControllerStore(store *Store) error {
 		return fmt.Errorf("sync repository controller store parent: %w", err)
 	}
 	return nil
+}
+
+func existingControllerStoreWinner(store *Store) (bool, error) {
+	info, err := os.Lstat(store.dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect repository controller initialization winner: %w", err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("repository controller initialization target exists and is not a directory")
+	}
+	if err := validateControllerStoreLayout(store); err != nil {
+		return false, fmt.Errorf("repository controller initialization target is incomplete or ambiguous: %w", err)
+	}
+	if _, err := store.LoadHead(); err != nil {
+		return false, fmt.Errorf("repository controller initialization winner is invalid: %w", err)
+	}
+	return true, nil
 }
 
 func validateControllerStoreLayout(store *Store) error {
