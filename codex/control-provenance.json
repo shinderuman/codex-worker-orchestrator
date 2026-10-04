@@ -618,7 +618,7 @@
     {
       "id": "publication-guard-setup",
       "classification": "machine-enforced",
-      "purpose": "Fail closed when the local publication guard hooks or bound glm-parent-action executable are not demonstrably effective.",
+      "purpose": "Detect ineffective local publication guard hooks or bound glm-parent-action executable through the live setup inspection surface.",
       "machine_owners": [
         {
           "path": "glm-worker/internal/publicationguard/setup.go",
@@ -638,10 +638,10 @@
       "postconditions": [
         {
           "path": "glm-worker/internal/publicationguard/setup.go",
-          "symbol": "VerifyPublicationGuardSetup"
+          "symbol": "publicationGuardPrimaryDefects"
         }
       ],
-      "residual_parent_judgment": "The parent decides when and how to repair or reinstall the publication guard; the machine only proves the local setup before publication admission."
+      "residual_parent_judgment": "The parent decides when and how to repair or reinstall the publication guard; machine inspection reports concrete setup defects before publication admission."
     },
     {
       "id": "quality-snapshot-binding",
@@ -678,31 +678,27 @@
     {
       "id": "remote-completion-sync",
       "classification": "machine-enforced",
-      "purpose": "Block task completion until local final state is proven synchronized with the bound remote branch.",
+      "purpose": "Publish an accepted candidate only after the bound remote ref is observed or updated and persist canonical publication authority from the observed result.",
       "machine_owners": [
         {
-          "path": "glm-worker/internal/parentactioncmd/complete.go",
-          "symbol": "verifyParentCompletion"
+          "path": "glm-worker/internal/controller/publication_publish.go",
+          "symbol": "Store.PublishAcceptedCandidate"
         }
       ],
       "tests": [
         {
-          "path": "glm-worker/internal/parentactioncmd/complete_test.go",
-          "symbol": "TestCompleteFinalizesAfterParentPush"
-        },
-        {
-          "path": "glm-worker/internal/parentactioncmd/complete_test.go",
-          "symbol": "TestCompleteKeepsAwaitingWhileFinalHeadIsAhead"
+          "path": "glm-worker/internal/controller/publication_candidate_test.go",
+          "symbol": "TestCandidateAcceptancePromotionPublicationAndPortableEvidence"
         }
       ],
       "postconditions": [
         {
-          "path": "glm-worker/internal/parentactioncmd/complete.go",
-          "symbol": "verifyCompletionRemoteSync"
+          "path": "glm-worker/internal/controller/publication_publish.go",
+          "symbol": "Store.validateCandidatePublicationRemote"
         },
         {
-          "path": "glm-worker/internal/parentactioncmd/complete.go",
-          "symbol": "verifyCompletionUnchanged"
+          "path": "glm-worker/internal/controller/publication_apply.go",
+          "symbol": "Store.commitPublicationOperation"
         }
       ],
       "projection_guards": [
@@ -714,7 +710,7 @@
           ]
         }
       ],
-      "residual_parent_judgment": "The parent performs or authorizes the remote write; the machine only proves the required synchronization postcondition."
+      "residual_parent_judgment": "The parent authorizes semantic publication; the controller owns remote synchronization and the recorded publication postcondition."
     },
     {
       "id": "repo-search-exhaustive-activation",
@@ -787,27 +783,27 @@
     {
       "id": "runtime-install-completion",
       "classification": "partial",
-      "purpose": "Track runtime-install evidence required for completion without claiming all installation effects are repository-local.",
+      "purpose": "Require exact-source install evidence in canonical candidate evidence whenever publication policy marks installation as required.",
       "machine_owners": [
         {
-          "path": "glm-worker/internal/parentactioncmd/runtime_install.go",
-          "symbol": "runtimeInstallRequirementForTask"
+          "path": "glm-worker/internal/controller/publication_candidate_records.go",
+          "symbol": "Store.validateCandidateEvidence"
         }
       ],
       "tests": [
         {
-          "path": "glm-worker/internal/parentactioncmd/runtime_install_test.go",
-          "symbol": "TestRuntimeInstallEvidenceRejectsLaterRuntimeChange"
+          "path": "glm-worker/internal/controller/publication_install_evidence_test.go",
+          "symbol": "TestCandidateEvidenceRequiresInstallWhenPolicyRequiresInstall"
         }
       ],
       "postconditions": [
         {
-          "path": "glm-worker/internal/parentactioncmd/runtime_install.go",
-          "symbol": "verifyRuntimeInstallCompletion"
+          "path": "glm-worker/internal/controller/publication_candidate_records.go",
+          "symbol": "Store.validateCandidateEvidenceRecord"
         }
       ],
       "residual_parent_judgment": "The parent evaluates whether external runtime installation evidence is sufficient for the intended environment.",
-      "boundary": "Completion checks are mechanical, but the installed runtime environment has effects beyond repository state."
+      "boundary": "Candidate evidence admission is mechanical, but the installed runtime environment has effects beyond repository state."
     },
     {
       "id": "session-rotation-claim-bind-start",
@@ -885,20 +881,20 @@
       "purpose": "Track machine evidence bindings used before Sol acceptance without treating semantic review quality as mechanical.",
       "machine_owners": [
         {
-          "path": "glm-worker/internal/parentevidence/review.go",
-          "symbol": "BuildReviewManifest"
+          "path": "glm-worker/internal/parentevidence/review_proof.go",
+          "symbol": "Projector.markReviewProof"
         }
       ],
       "tests": [
         {
-          "path": "glm-worker/internal/state/parent_review_evidence_test.go",
-          "symbol": "TestParentReviewEvidenceProofInvalidatedBySnapshotChange"
+          "path": "glm-worker/internal/parentevidence/review_coverage_accumulation_test.go",
+          "symbol": "TestReviewCoverageSnapshotChangeRejectsAccumulation"
         }
       ],
       "postconditions": [
         {
-          "path": "glm-worker/internal/parentevidence/review.go",
-          "symbol": "Projector.markReviewProof"
+          "path": "glm-worker/internal/state/parent_review_coverage.go",
+          "symbol": "StateStore.AccumulateParentReviewEvidenceCoverage"
         }
       ],
       "residual_parent_judgment": "The parent must actually evaluate the relevant evidence and findings before acceptance.",
