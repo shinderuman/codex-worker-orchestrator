@@ -31,7 +31,6 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeCodexLimit,
 		ModeModelRouting,
 		ModeTestImpact,
-		ModeBundle,
 		ModeReviewGap,
 		ModeRepoSearch,
 		ModeRepoSearchEval,
@@ -80,7 +79,6 @@ func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error 
 		ModeModelRouting,
 		ModeTestImpact,
 		ModeRepoSearchEval,
-		ModeBundle,
 		ModeReviewGap,
 		ModeShadowEval,
 		ModeFailurePathAdvisory:
@@ -152,8 +150,6 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 		return report.PrintTestImpact(st, stdout)
 	case ModeRepoSearchEval:
 		return report.PrintRepoSearchEval(st, stdout)
-	case ModeBundle:
-		return executeBundleProjection(cfg, st, cmd.Payload, stdout)
 	case ModeReviewGap:
 		return printReviewGap(cfg, st, cmd.Payload, stdout)
 	case ModeShadowEval, ModeFailurePathAdvisory:
@@ -161,10 +157,6 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 	default:
 		return fmt.Errorf("command mode %d is not read-only analysis", cmd.Mode)
 	}
-}
-
-func executeBundleProjection(cfg config.AppConfig, _ *state.StateStore, _ string, _ io.Writer) error {
-	return rejectLegacyBundleProjection(cfg)
 }
 
 func executeShadowObservation(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
