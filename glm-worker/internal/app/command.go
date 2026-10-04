@@ -68,7 +68,6 @@ const (
 	ModeQualityGate
 	ModeModelRouting
 	ModeTestImpact
-	ModeBundle
 	ModeReviewGap
 	ModeRepoSearch
 	ModeRepoSearchEval
@@ -183,9 +182,6 @@ var commandParsers = map[string]commandParser{
 	"--packet-check":  packetCheckCommand,
 	"--project-state": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeProjectState, "usage: glm-worker --project-state")
-	},
-	"bundle": func(args []string) (Command, error) {
-		return optionalPayloadCommand(args, ModeBundle, "usage: glm-worker bundle [task-id]")
 	},
 	"--review-gap": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeReviewGap, "usage: glm-worker --review-gap [task-id]")
