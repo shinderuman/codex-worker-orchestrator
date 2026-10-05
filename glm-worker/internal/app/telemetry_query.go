@@ -2,14 +2,16 @@ package app
 
 import (
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const telemetryQueryCompactFlag = "--compact"
+
+const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>] [--compact]"
 
 func telemetryQueryCommand(args []string, mode CommandMode, flag string) (Command, error) {
 	query, err := parseTelemetryQueryArgs(args[1:])
