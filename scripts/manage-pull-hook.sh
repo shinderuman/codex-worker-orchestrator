@@ -38,6 +38,14 @@ if ! git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1; then
 	exit 0
 fi
 
+snapshot_revision=
+if [ "$mode" = install ]; then
+	if ! snapshot_revision=$(git -C "$repo_root" rev-parse --verify 'HEAD^{commit}'); then
+		printf '%s\n' 'git hook: cannot resolve installer-owned hook snapshot revision' >&2
+		exit 1
+	fi
+fi
+
 common_dir=$(git -C "$repo_root" rev-parse --git-common-dir)
 case "$common_dir" in
 /*) ;;
@@ -336,12 +344,12 @@ install_managed_hooks() {
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
 	mkdir -p "$staging_hooks_path"
 
-	printf '%s\n' "$publication_guard_path" >"$staging_hooks_path/glm-publication-guard.path"
+	printf '%s\nsnapshot=%s\n' "$publication_guard_path" "$snapshot_revision" >"$staging_hooks_path/glm-publication-guard.path"
 	chmod 600 "$staging_hooks_path/glm-publication-guard.path"
 
 	for hook in $required_hooks; do
 		staged_hook="$staging_hooks_path/$hook"
-		if ! git -C "$repo_root" show "HEAD:.githooks/$hook" >"$staged_hook"; then
+		if ! git -C "$repo_root" show "$snapshot_revision:.githooks/$hook" >"$staged_hook"; then
 			printf 'git hook: committed source missing: .githooks/%s\n' "$hook" >&2
 			exit 1
 		fi
@@ -388,8 +396,15 @@ verify_managed_install() {
 		return 1
 	fi
 	guard_path_file="$managed_hooks_path/glm-publication-guard.path"
-	if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ] || [ "$(cat "$guard_path_file")" != "$publication_guard_path" ]; then
-		printf '%s\n' 'git hook: glm-publication-guard path postcondition failed' >&2
+	if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ]; then
+		printf '%s\n' 'git hook: glm-publication-guard binding postcondition failed' >&2
+		return 1
+	fi
+	binding_guard=$(sed -n '1p' "$guard_path_file")
+	binding_snapshot=$(sed -n '2p' "$guard_path_file")
+	binding_lines=$(awk 'END {print NR}' "$guard_path_file")
+	if [ "$binding_guard" != "$publication_guard_path" ] || [ "$binding_snapshot" != "snapshot=$snapshot_revision" ] || [ "$binding_lines" -ne 2 ]; then
+		printf '%s\n' 'git hook: glm-publication-guard snapshot binding postcondition failed' >&2
 		return 1
 	fi
 	for hook in $required_hooks; do
@@ -398,8 +413,8 @@ verify_managed_install() {
 			printf 'git hook: managed snapshot postcondition failed: %s\n' "$active_hook" >&2
 			return 1
 		fi
-		if ! git -C "$repo_root" show "HEAD:.githooks/$hook" | cmp -s - "$active_hook"; then
-			printf 'git hook: managed snapshot differs from committed source: .githooks/%s\n' "$hook" >&2
+		if ! git -C "$repo_root" show "$snapshot_revision:.githooks/$hook" | cmp -s - "$active_hook"; then
+			printf 'git hook: managed snapshot differs from installer source revision: .githooks/%s\n' "$hook" >&2
 			return 1
 		fi
 	done
