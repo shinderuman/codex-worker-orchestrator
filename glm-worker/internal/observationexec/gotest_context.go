@@ -84,7 +84,7 @@ func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tem
 	go func() { waitDone <- command.Wait() }()
 	select {
 	case runErr := <-waitDone:
-		return capturedIsolatedGoTestRun(classifyIsolatedGoTestOutcome(runErr, time.Now().Add(time.Nanosecond), deadline), gateLog)
+		return capturedIsolatedGoTestRun(classifyCompletedIsolatedGoTestOutcome(runErr), gateLog)
 	case <-ctx.Done():
 		terminateObservationProcessGroup(command.Process.Pid)
 		return capturedIsolatedGoTestRun(goTestContextStopOutcomeWithRunErr(boundedGoTestWait(waitDone), ctx.Err(), deadline), gateLog)
