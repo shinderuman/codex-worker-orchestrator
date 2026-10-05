@@ -73,11 +73,21 @@ func (s *StateStore) ObservationExecuteAdmission() (ObservationExecutionAdmissio
 }
 
 func (s *StateStore) ObservationExecutionRound() (int, error) {
-	stats, err := s.CurrentTaskStats()
-	if err != nil {
-		return 0, fmt.Errorf("decision roundの統計を読めません: %w", err)
+	if _, err := os.Stat(s.Path(parentEvidenceLeasePath)); err != nil {
+		if os.IsNotExist(err) {
+			return 0, fmt.Errorf("decision roundのcanonical lifecycle identityがありません")
+		}
+		return 0, fmt.Errorf("decision roundのcanonical lifecycle identityを確認できません: %w", err)
 	}
-	return stats.DecisionCommands, nil
+	epoch, err := s.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return 0, fmt.Errorf("decision roundのcanonical lifecycle identityを読めません: %w", err)
+	}
+	round := int(epoch)
+	if epoch <= 0 || int64(round) != epoch {
+		return 0, fmt.Errorf("decision roundのcanonical lifecycle identityが不正です: %d", epoch)
+	}
+	return round, nil
 }
 
 func (s *StateStore) ObservationExecutions() ([]ObservationExecutionRecord, error) {
