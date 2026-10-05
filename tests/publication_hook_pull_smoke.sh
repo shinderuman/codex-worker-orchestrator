@@ -54,7 +54,7 @@ for hook in reference-transaction pre-push; do
 	grep -Fq 'glm-publication-guard.path' "$source_root/.githooks/$hook"
 done
 
-git clone -q "$remote" "$publisher"
+git clone -q --branch main "$remote" "$publisher"
 git -C "$publisher" config user.name publication-publisher
 git -C "$publisher" config user.email publication-publisher@example.invalid
 printf '%s\n' 'advanced' >>"$publisher/README.md"
