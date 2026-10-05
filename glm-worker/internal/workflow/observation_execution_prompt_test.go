@@ -53,6 +53,10 @@ func TestObservationDecisionInjectsMachineExecutionResults(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("waiting decision state = %s pending=%v", st.TaskStatus(), st.Exists("pending-decision"))
 	}
+	admission, err := st.ObservationExecuteAdmission()
+	if err != nil {
+		t.Fatal(err)
+	}
 	taskID, err := st.TaskID()
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +68,7 @@ func TestObservationDecisionInjectsMachineExecutionResults(t *testing.T) {
 		ParamsDigest:       "digest-inject",
 		Status:             state.ObservationExecutionStatusPass,
 		Artifacts:          []string{comparisonArtifact},
-		DecisionRound:      0,
+		DecisionRound:      admission.Round,
 		CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := seedObservationExecutionArtifact(t, record.Artifacts[0]); err != nil {

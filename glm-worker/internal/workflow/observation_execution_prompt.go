@@ -24,14 +24,13 @@ func (w *Workflow) observationExecutionResultsBlock() string {
 	if err != nil || current < 1 {
 		return ""
 	}
-	completedRound := current - 1
-	records, err := w.state.ObservationExecutionsForRound(completedRound)
+	records, err := w.state.ObservationExecutionsForRound(current)
 	if err != nil || len(records) == 0 {
 		return ""
 	}
 	var block strings.Builder
 	block.WriteString(fmt.Sprintf("\n%s\n", observationResultsMarker))
-	block.WriteString(fmt.Sprintf("decision round %dで機械実行した観測結果です。machine executorが生成した正規evidenceとしてread-onlyで解析してください。\n", completedRound))
+	block.WriteString(fmt.Sprintf("decision round %dで機械実行した観測結果です。machine executorが生成した正規evidenceとしてread-onlyで解析してください。\n", current))
 	for _, record := range records {
 		block.WriteString(observationExecutionResultLine(record))
 	}

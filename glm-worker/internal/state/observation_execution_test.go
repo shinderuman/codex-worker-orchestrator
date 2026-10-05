@@ -22,10 +22,7 @@ func newObservationExecutionStore(t *testing.T, declaration string) *StateStore 
 
 func admitObservationDecisionBoundary(t *testing.T, st *StateStore) {
 	t.Helper()
-	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Touch("pending-decision"); err != nil {
+	if err := st.WaitForDecision(); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole), Model: "opus"}); err != nil {
@@ -43,8 +40,15 @@ func TestObservationExecuteAdmissionRequiresPendingObservationDecision(t *testin
 	if err != nil {
 		t.Fatalf("pending observation decisionがadmitされません: %v", err)
 	}
-	if admission.TaskID == "" || admission.Round != 0 {
+	if admission.TaskID == "" || admission.Round <= 0 {
 		t.Fatalf("admission = %+v", admission)
+	}
+	epoch, err := st.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(admission.Round) != epoch {
+		t.Fatalf("admission round = %d want canonical lease %d", admission.Round, epoch)
 	}
 	plan, err := st.ParentActionPlan()
 	if err != nil {
@@ -70,11 +74,59 @@ func TestObservationExecuteAdmissionRejectsImplementationTask(t *testing.T) {
 	}
 }
 
+func TestObservationExecuteAdmissionDoesNotDependOnTaskStats(t *testing.T) {
+	st := newObservationExecutionStore(t, observationExecutionDeclaration)
+	admitObservationDecisionBoundary(t, st)
+	expected, err := st.ObservationExecuteAdmission()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Remove(currentStatsFile); err != nil {
+		t.Fatal(err)
+	}
+	missingStats, err := st.ObservationExecuteAdmission()
+	if err != nil {
+		t.Fatalf("missing TaskStats invalidated canonical observation admission: %v", err)
+	}
+	if missingStats != expected {
+		t.Fatalf("missing TaskStats changed admission: got=%+v want=%+v", missingStats, expected)
+	}
+	if err := st.Write(currentStatsFile, "{not-json"); err != nil {
+		t.Fatal(err)
+	}
+	corruptStats, err := st.ObservationExecuteAdmission()
+	if err != nil {
+		t.Fatalf("corrupt TaskStats invalidated canonical observation admission: %v", err)
+	}
+	if corruptStats != expected {
+		t.Fatalf("corrupt TaskStats changed admission: got=%+v want=%+v", corruptStats, expected)
+	}
+}
+
+func TestObservationExecuteAdmissionFailsClosedWithoutCanonicalDecisionIdentity(t *testing.T) {
+	st := newObservationExecutionStore(t, observationExecutionDeclaration)
+	admitObservationDecisionBoundary(t, st)
+	if err := st.Remove(parentEvidenceLeasePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ObservationExecuteAdmission(); err == nil {
+		t.Fatal("missing canonical decision identity was admitted")
+	}
+}
+
 func TestObservationExecutionRecordsRoundScopedAndBounded(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
-	for round := 0; round < 3; round++ {
+	rounds := make([]int, 0, 3)
+	digests := make([]string, 0, 3)
+	for index := 0; index < 3; index++ {
 		admitObservationDecisionBoundary(t, st)
-		record := observationExecutionRecordFixture("exec-"+string(rune('a'+round)), round)
+		admission, err := st.ObservationExecuteAdmission()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rounds = append(rounds, admission.Round)
+		record := observationExecutionRecordFixture("exec-"+string(rune('a'+index)), admission.Round)
+		digests = append(digests, record.ParamsDigest)
 		if err := st.AppendObservationExecution(record); err != nil {
 			t.Fatal(err)
 		}
@@ -85,24 +137,57 @@ func TestObservationExecutionRecordsRoundScopedAndBounded(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	round, err := st.ObservationExecutionRound()
+	if rounds[0] >= rounds[1] || rounds[1] >= rounds[2] {
+		t.Fatalf("canonical decision rounds did not advance: %v", rounds)
+	}
+	exists, err := st.HasObservationExecution("shadow-eval", digests[0], rounds[0])
+	if err != nil || !exists {
+		t.Fatalf("first roundの記録が見つかりません: %v", err)
+	}
+	exists, err = st.HasObservationExecution("shadow-eval", digests[0], rounds[2])
+	if err != nil || exists {
+		t.Fatalf("later roundにfirst roundの記録が混入しています: %v", err)
+	}
+	records, err := st.ObservationExecutionsForRound(rounds[1])
+	if err != nil || len(records) != 1 || records[0].ExecutionID != "exec-b" {
+		t.Fatalf("second roundの記録抽出が不正です: %+v %v", records, err)
+	}
+}
+
+func TestObservationExecutionRoundAdvancesWhenTaskStatsWriteIsLost(t *testing.T) {
+	st := newObservationExecutionStore(t, observationExecutionDeclaration)
+	admitObservationDecisionBoundary(t, st)
+	first, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if round != 3 {
-		t.Fatalf("round = %d want 3", round)
+	record := observationExecutionRecordFixture("exec-first", first.Round)
+	record.ParamsDigest = "shared-digest"
+	if err := st.AppendObservationExecution(record); err != nil {
+		t.Fatal(err)
 	}
-	exists, err := st.HasObservationExecution("shadow-eval", "digest-a", 0)
-	if err != nil || !exists {
-		t.Fatalf("round 0の記録が見つかりません: %v", err)
+
+	failWritesFor(t, st, currentStatsFile)
+	if _, err := st.BeginParentDecision(); err != nil {
+		t.Fatalf("best-effort TaskStats write loss made canonical decision fatal: %v", err)
 	}
-	exists, err = st.HasObservationExecution("shadow-eval", "digest-a", round)
-	if err != nil || exists {
-		t.Fatalf("現在roundにround 0の記録が混入しています: %v", err)
+	if err := st.CommitParentActionBegin(); err != nil {
+		t.Fatal(err)
 	}
-	records, err := st.ObservationExecutionsForRound(1)
-	if err != nil || len(records) != 1 || records[0].ExecutionID != "exec-b" {
-		t.Fatalf("round 1の記録抽出が不正です: %+v %v", records, err)
+	admitObservationDecisionBoundary(t, st)
+	second, err := st.ObservationExecuteAdmission()
+	if err != nil {
+		t.Fatalf("later canonical decision was not admitted after TaskStats write loss: %v", err)
+	}
+	if second.Round <= first.Round {
+		t.Fatalf("canonical decision round did not advance: first=%d second=%d", first.Round, second.Round)
+	}
+	exists, err := st.HasObservationExecution(record.Operation, record.ParamsDigest, second.Round)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("prior-round execution suppressed the same operation in a later canonical decision round")
 	}
 }
 
@@ -195,7 +280,7 @@ func observationExecutionRecordFixture(executionID string, round int) Observatio
 	return ObservationExecutionRecord{
 		ExecutionID:        executionID,
 		Operation:          "shadow-eval",
-		ParamsDigest:       "digest-" + string(rune('a'+round)),
+		ParamsDigest:       "digest-" + executionID,
 		Status:             ObservationExecutionStatusPass,
 		DecisionRound:      round,
 		CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339),
