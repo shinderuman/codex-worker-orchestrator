@@ -7,11 +7,15 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
+type TerminalMetadataChange struct {
+	Path     string
+	NewBytes []byte
+	Delete   bool
+}
+
 type TerminalMetadata struct {
-	Plan         []byte
-	Tasks        map[string][]byte
-	ChangedPaths []string
-	Successor    string
+	Changes   []TerminalMetadataChange
+	Successor string
 }
 
 func RetireTerminalMetadata(plan []byte, tasks map[string][]byte, target string, blocker bool) (TerminalMetadata, error) {
@@ -26,30 +30,46 @@ func RetireTerminalMetadata(plan []byte, tasks map[string][]byte, target string,
 	if err := validateRetirementCorpus(schedule, tasks); err != nil {
 		return TerminalMetadata{}, err
 	}
-	result := TerminalMetadata{Tasks: map[string][]byte{}, ChangedPaths: []string{target, "IMPLEMENTATION_PLAN.local.md"}}
-	result.Tasks, result.ChangedPaths, err = retireInboundDependencies(tasks, target, result.ChangedPaths)
+	updatedTasks, changedPaths, err := retireInboundDependencies(tasks, target, []string{target, "IMPLEMENTATION_PLAN.local.md"})
 	if err != nil {
 		return TerminalMetadata{}, err
 	}
+	result := TerminalMetadata{}
 	if !blocker {
 		if len(schedule.Next) == 0 {
 			return TerminalMetadata{}, fmt.Errorf("terminal focus has no mechanical NEXT successor; parent scheduling decision required")
 		}
 		result.Successor = schedule.Next[0]
-		deps, err := taskcontract.ParseTaskDependencyState(result.Tasks[result.Successor])
+		deps, err := taskcontract.ParseTaskDependencyState(updatedTasks[result.Successor])
 		if err != nil || len(deps.Outstanding) != 0 {
 			return TerminalMetadata{}, fmt.Errorf("first NEXT requires dependency/priority decision")
 		}
 	}
-	updated, err := taskcontract.RetirePlanTask(string(plan), target, result.Successor)
+	updatedPlan, err := taskcontract.RetirePlanTask(string(plan), target, result.Successor)
 	if err != nil {
 		return TerminalMetadata{}, err
 	}
-	result.Plan = []byte(updated)
-	if err := validateRetirementCorpus(taskcontract.ParsePlanSchedule(updated), result.Tasks); err != nil {
+	if err := validateRetirementCorpus(taskcontract.ParsePlanSchedule(updatedPlan), updatedTasks); err != nil {
 		return TerminalMetadata{}, err
 	}
-	sort.Strings(result.ChangedPaths)
+	sort.Strings(changedPaths)
+	result.Changes = make([]TerminalMetadataChange, 0, len(changedPaths))
+	for _, path := range changedPaths {
+		change := TerminalMetadataChange{Path: path}
+		switch path {
+		case target:
+			change.Delete = true
+		case "IMPLEMENTATION_PLAN.local.md":
+			change.NewBytes = []byte(updatedPlan)
+		default:
+			content, ok := updatedTasks[path]
+			if !ok {
+				return TerminalMetadata{}, fmt.Errorf("terminal metadata changed Task is missing: %s", path)
+			}
+			change.NewBytes = content
+		}
+		result.Changes = append(result.Changes, change)
+	}
 	return result, nil
 }
 
