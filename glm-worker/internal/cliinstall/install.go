@@ -56,6 +56,7 @@ const (
 var managedNames = []string{
 	"glm-worker",
 	"glm-parent-action",
+	"glm-publication-guard",
 	"glm-codex-context",
 	"commentlint",
 	"harnesslint",
