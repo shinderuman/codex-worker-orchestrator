@@ -336,7 +336,7 @@ repo="$tmp/preexisting-other"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .external-hooks
 if sh "$helper" install "$repo" >"$tmp/preexisting-other.stdout" 2>"$tmp/preexisting-other.stderr"; then
-	printf '%s\n' 'external hook owner was accepted without ownership state' >&2
+	printf '%s\n' 'external hook owner was accepted without current ownership state' >&2
 	exit 1
 fi
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .external-hooks
