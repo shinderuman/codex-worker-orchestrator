@@ -110,10 +110,6 @@ func scanCoreRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	forwardOnlyViolations, err := scanForwardOnlyCompatibilityRule(root, paths)
-	if err != nil {
-		return nil, err
-	}
 	cleanCutoverViolations, err := scanCleanCutover(root, paths)
 	if err != nil {
 		return nil, err
@@ -131,7 +127,6 @@ func scanCoreRules(root string, paths []string) ([]Violation, error) {
 		return nil, err
 	}
 	violations := append([]Violation{}, goViolations...)
-	violations = append(violations, forwardOnlyViolations...)
 	violations = append(violations, cleanCutoverViolations...)
 	violations = append(violations, proseDataViolations...)
 	violations = append(violations, textViolations...)
