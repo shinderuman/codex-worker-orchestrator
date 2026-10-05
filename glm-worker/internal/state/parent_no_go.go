@@ -8,7 +8,7 @@ import (
 const ParentOutcomeNoGo = "no-go"
 
 func (s *StateStore) AwaitObservationNoGo(expected ObservationExecutionAdmission) (bool, error) {
-	if err := s.ValidateObservationLifecycleAdmission(expected); err != nil {
+	if err := s.ValidateObservationExecuteAdmission(expected); err != nil {
 		return false, fmt.Errorf("terminal no-go lifecycle admission is no longer valid: %w", err)
 	}
 	taskID := expected.TaskID
