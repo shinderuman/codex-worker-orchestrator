@@ -109,13 +109,15 @@ func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, e
 func (s guardSurface) unverifiedOutcome() string { return s.outcomePrefix + "_unverified" }
 
 func (w *Workflow) gateExternalFeasibility(phase string, keepTaskStatus bool) (externalFeasibility, error) {
-	activeTaskPath := w.readActiveTaskState()
+	activeTaskPath, err := w.resolveAndPinActiveTask()
+	if err != nil {
+		return externalFeasibility{}, w.failClosedExternalFeasibility(phase, externalFeasibilityGuardSurface.unavailableOutcome(), "canonical task authorityを解決できないためExternal feasibility宣言を確認できません", err, !keepTaskStatus)
+	}
 	if activeTaskPath == "" {
 		return externalFeasibility{}, nil
 	}
-
 	if !activeTaskFileExists(w.config.RepoRoot, activeTaskPath) {
-		return externalFeasibility{}, nil
+		return externalFeasibility{}, w.failClosedExternalFeasibility(phase, externalFeasibilityGuardSurface.unavailableOutcome(), "canonical task file "+activeTaskPath+"が存在しないためExternal feasibility宣言を確認できません", nil, !keepTaskStatus)
 	}
 	content, err := os.ReadFile(filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath)))
 	if err != nil {
