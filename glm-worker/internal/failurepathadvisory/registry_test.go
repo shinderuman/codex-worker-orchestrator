@@ -108,9 +108,9 @@ func TestParseStructuredOutputRejectsInvalidPayloads(t *testing.T) {
 func TestApplyLabelsValidatesAndStoresDispositions(t *testing.T) {
 	registry := Registry{}.WithRecord(observedRecord("task-a", verifiedFinding("a:1"), verifiedFinding("a:2")))
 	labels := LabelInput{
-		Schema:              LabelsSchema,
-		TaskID:              "task-a",
-		ReviewNumber:        1,
+		Schema:       LabelsSchema,
+		TaskID:       "task-a",
+		ReviewNumber: 1,
 		FindingDispositions: []FindingDispositionInput{
 			{Index: 0, Disposition: DispositionTruePositive},
 			{Index: 1, Disposition: DispositionFalsePositive},
