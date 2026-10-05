@@ -8,10 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 type statsWarningEvent struct {
@@ -89,13 +86,6 @@ type TaskStats struct {
 	CompletionTerminal    string                 `json:"completion_terminal,omitempty"`
 }
 
-type ParentCodexIdentity struct {
-	Version   int    `json:"version"`
-	TaskID    string `json:"task_id"`
-	ThreadID  string `json:"thread_id"`
-	SessionID string `json:"session_id"`
-}
-
 type TaskStatsEvidence struct {
 	TaskID string
 	Status TaskStatus
@@ -110,15 +100,10 @@ type taskStatsArchiveIdentity struct {
 }
 
 const (
-	currentStatsFile        = "task-stats.json"
-	parentCodexIdentityFile = "parent-codex-identity.json"
+	currentStatsFile = "task-stats.json"
+	taskStatsVersion = 3
 
-	taskStatsVersion           = 3
-	parentCodexIdentityVersion = 1
-
-	ParentActionCodexThreadIDEnv  = "GLM_PARENT_ACTION_CODEX_THREAD_ID"
-	ParentActionCodexSessionIDEnv = "GLM_PARENT_ACTION_CODEX_SESSION_ID"
-	SessionRotationClaimIDEnv     = "GLM_SESSION_ROTATION_CLAIM_ID"
+	SessionRotationClaimIDEnv = "GLM_SESSION_ROTATION_CLAIM_ID"
 )
 
 var errUnsupportedTaskStatsVersion = errors.New("unsupported task stats version")
@@ -356,241 +341,4 @@ func (s *StateStore) ArchivedTaskStatsEvidence(taskID string) (TaskStatsEvidence
 		return TaskStatsEvidence{}, fmt.Errorf("task stats archiveを読めません: 未知のtask status %q", identity.Status)
 	}
 	return TaskStatsEvidence{TaskID: identity.TaskID, Status: identity.Status, Proven: true}, nil
-}
-
-func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string, readSessionLimit func() *SessionLimitReading) error {
-	if !ValidUUIDFormat(threadID) || !ValidUUIDFormat(sessionID) {
-		return fmt.Errorf("parent Codex identityが不正です: thread=%s session=%s", threadID, sessionID)
-	}
-	taskID := s.ReadOr("task.id", "")
-	if taskID == "" {
-		return nil
-	}
-	bound, err := s.parentCodexIdentityAlreadyBound(taskID, threadID, sessionID)
-	if err != nil || bound {
-		return err
-	}
-	identity := ParentCodexIdentity{Version: parentCodexIdentityVersion, TaskID: taskID, ThreadID: threadID, SessionID: sessionID}
-	if err := s.captureParentCodexLimitBaseline(threadID, readSessionLimit); err != nil {
-		return err
-	}
-	return s.writeParentCodexIdentity(identity)
-}
-
-func (s *StateStore) parentCodexIdentityAlreadyBound(taskID, threadID, sessionID string) (bool, error) {
-	identity, err := s.readParentCodexIdentity()
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if identity.TaskID != taskID || identity.ThreadID != threadID || identity.SessionID != sessionID {
-		return false, fmt.Errorf(
-			"保存済みparent Codex identityと矛盾します: stored thread=%s session=%s, observed thread=%s session=%s",
-			identity.ThreadID, identity.SessionID, threadID, sessionID,
-		)
-	}
-	return true, nil
-}
-
-func (s *StateStore) captureParentCodexLimitBaseline(threadID string, readSessionLimit func() *SessionLimitReading) error {
-	if readSessionLimit != nil {
-		if reading := readSessionLimit(); reading != nil {
-			return s.SaveSessionLimitBaseline(threadID, *reading)
-		}
-	}
-	return nil
-}
-
-func (s *StateStore) CurrentParentCodexIdentity() (ParentCodexIdentity, error) {
-	return s.readParentCodexIdentity()
-}
-
-func (s *StateStore) readParentCodexIdentity() (ParentCodexIdentity, error) {
-	data, err := os.ReadFile(s.Path(parentCodexIdentityFile))
-	if err != nil {
-		return ParentCodexIdentity{}, err
-	}
-	var identity ParentCodexIdentity
-	if err := json.Unmarshal(data, &identity); err != nil {
-		return ParentCodexIdentity{}, fmt.Errorf("parent Codex identityを読めません: %w", err)
-	}
-	if identity.Version != parentCodexIdentityVersion || identity.TaskID == "" || identity.TaskID != s.ReadOr("task.id", "") || !ValidUUIDFormat(identity.ThreadID) || !ValidUUIDFormat(identity.SessionID) {
-		return ParentCodexIdentity{}, fmt.Errorf("parent Codex identityのschemaが不正です")
-	}
-	return identity, nil
-}
-
-func (s *StateStore) writeParentCodexIdentity(identity ParentCodexIdentity) error {
-	data, err := json.MarshalIndent(identity, "", "  ")
-	if err != nil {
-		return fmt.Errorf("parent Codex identityをJSON化できません: %w", err)
-	}
-	return writeFileAtomic(s.Path(parentCodexIdentityFile), append(data, '\n'), 0o600)
-}
-
-func (s *StateStore) RecordModelCall(role SessionRole, model string) {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.ModelCalls++
-		if stats.ModelCallsByAlias == nil {
-			stats.ModelCallsByAlias = make(map[string]int)
-		}
-		stats.ModelCallsByAlias[model]++
-		switch role {
-		case ReviewerRole:
-			stats.ReviewerCalls++
-		case FailurePathReviewerRole:
-			stats.FailurePathReviewerCalls++
-		default:
-			stats.WorkerCalls++
-		}
-	})
-}
-
-func (s *StateStore) RecordTransientRetry() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.TransientRetries++
-	})
-}
-
-func (s *StateStore) RecordModelDuration(model string, duration time.Duration) {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		if stats.ModelDurationMSByAlias == nil {
-			stats.ModelDurationMSByAlias = make(map[string]int64)
-		}
-		stats.ModelDurationMSByAlias[model] += duration.Milliseconds()
-	})
-}
-
-func (s *StateStore) RecordDecision() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.DecisionCommands++
-	})
-}
-
-func (s *StateStore) RecordFix() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.FixCommands++
-	})
-}
-
-func (s *StateStore) RecordResume() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.ResumeCommands++
-	})
-}
-
-func (s *StateStore) RecordAutoFix() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.AutoFixRounds++
-	})
-}
-
-func (s *StateStore) RecordRateLimit(model string) {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.RateLimits++
-		if stats.RateLimitsByAlias == nil {
-			stats.RateLimitsByAlias = make(map[string]int)
-		}
-		stats.RateLimitsByAlias[model]++
-	})
-}
-
-func (s *StateStore) RecordProviderUnavailable(model string) {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.ProviderUnavailable++
-		if stats.ProviderUnavailableByAlias == nil {
-			stats.ProviderUnavailableByAlias = make(map[string]int)
-		}
-		stats.ProviderUnavailableByAlias[model]++
-	})
-}
-
-func (s *StateStore) RecordResultCorrection() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.ResultCorrections++
-	})
-}
-
-func (s *StateStore) RecordStructuredRetryExhausted() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.StructuredRetryExhausted++
-	})
-}
-
-func (s *StateStore) RecordRiskFloor(category string) {
-	if category == "" {
-		return
-	}
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		addInt(&stats.RiskFloorByCategory, category, 1)
-	})
-}
-
-func (s *StateStore) RecordSnapshotMismatch(axis string) {
-	if axis == "" {
-		return
-	}
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.SnapshotMismatches++
-		for _, a := range strings.Split(axis, ",") {
-			addInt(&stats.SnapshotMismatchByAxis, a, 1)
-		}
-	})
-}
-
-func (s *StateStore) RecordPacketReject(category string) {
-	if category == "" {
-		return
-	}
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		addInt(&stats.PacketRejectByCategory, category, 1)
-	})
-}
-
-func (s *StateStore) RecordProbeOutcome(outcome string) {
-	if outcome == "" {
-		return
-	}
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		addInt(&stats.ProbeOutcome, outcome, 1)
-	})
-}
-
-func (s *StateStore) RecordSolResult(value packet.Result, producer ParentReviewProducer) error {
-	return s.recordSolResult(value, producer, nil)
-}
-
-func (s *StateStore) RecordSolResultWithReviewSnapshot(value packet.Result, producer ParentReviewProducer, snapshot SnapshotDigest) error {
-	return s.recordSolResult(value, producer, &snapshot)
-}
-
-func (s *StateStore) recordSolResult(value packet.Result, producer ParentReviewProducer, reviewSnapshot *SnapshotDigest) error {
-	var err error
-	if value.Status == packet.StatusNeedsSolReview && reviewSnapshot != nil {
-		err = s.openBoundParentReviewState(value, producer, *reviewSnapshot)
-	} else {
-		err = s.openParentReviewState(string(value.Status), string(value.Risk), producer, false)
-	}
-	if err != nil {
-		return err
-	}
-	s.recordSolOutcomeStats(value, producer)
-	return nil
-}
-
-func (s *StateStore) recordSolOutcomeStats(value packet.Result, producer ParentReviewProducer) {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.SolPacketBytes += value.ByteSize()
-		switch value.Status {
-		case packet.StatusNeedsSolDecision:
-			stats.NeedsSolDecisionPackets++
-		case packet.StatusNeedsSolReview:
-			stats.NeedsSolReviewPackets++
-		case packet.StatusPass:
-			stats.PassPackets++
-		}
-		stats.openParentReview(string(value.Status), string(value.Risk), producer)
-	})
 }
