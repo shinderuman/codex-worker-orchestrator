@@ -1,110 +1,31 @@
 package controller
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 )
 
-const (
-	publicationGuardConfigKey = "core.hooksPath"
-	publicationGuardHookName  = "pre-push"
-)
-
-type PublicationGuardStatus struct {
-	ConfigPath     string `json:"config_path"`
-	ConfigValue    string `json:"config_value"`
-	HookPath       string `json:"hook_path"`
-	HookTarget     string `json:"hook_target"`
-	WorkerPath     string `json:"worker_path"`
-	WorkerExpected string `json:"worker_expected"`
+type PublicationRefGuardInput struct {
+	OldOID string
+	NewOID string
+	Ref    string
 }
 
-type PublicationGuardInput struct {
-	Repository string `json:"repository"`
-	Remote     string `json:"remote"`
-	Ref        string `json:"ref"`
-	OldOID     string `json:"old_oid"`
-	NewOID     string `json:"new_oid"`
+type PublicationPushGuardInput struct {
+	RemoteName string
+	LocalRef   string
+	LocalOID   string
+	RemoteRef  string
+	RemoteOID  string
 }
 
-func (s *Store) VerifyPublicationGuardSetup() (PublicationGuardStatus, error) {
-	return verifyPublicationGuardSetup(s.identity.PrimaryRoot)
-}
-
-func verifyPublicationGuardSetup(repo string) (PublicationGuardStatus, error) {
-	root, err := canonicalPath(repo)
-	if err != nil {
-		return PublicationGuardStatus{}, err
+func (s *Store) GuardPublicationRefUpdate(input PublicationRefGuardInput) error {
+	if !validPublicationGuardOID(input.OldOID) || !validPublicationGuardOID(input.NewOID) || strings.TrimSpace(input.Ref) == "" {
+		return fmt.Errorf("invalid publication ref update")
 	}
-	commonDir, err := gitCommonDir(root)
-	if err != nil {
-		return PublicationGuardStatus{}, err
-	}
-	configPath := filepath.Join(commonDir, "config")
-	if info, err := os.Lstat(configPath); err != nil || !info.Mode().IsRegular() {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard Git config is unavailable")
-	}
-	value, err := gitTrimmed(root, "config", "--local", "--get", publicationGuardConfigKey)
-	if err != nil || value == "" {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard hooksPath is unavailable")
-	}
-	if filepath.IsAbs(value) {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard hooksPath must be repository-owned")
-	}
-	hookRoot, err := canonicalPath(filepath.Join(commonDir, value))
-	if err != nil {
-		return PublicationGuardStatus{}, err
-	}
-	hookPath := filepath.Join(hookRoot, publicationGuardHookName)
-	hookInfo, err := os.Lstat(hookPath)
-	if err != nil || !hookInfo.Mode().IsRegular() || hookInfo.Mode().Perm()&0o111 == 0 {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard hook is unavailable")
-	}
-	target, err := os.ReadFile(hookPath)
-	if err != nil {
-		return PublicationGuardStatus{}, err
-	}
-	line := firstExecutableHookLine(string(target))
-	if !strings.HasPrefix(line, "exec ") {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard hook does not directly exec worker")
-	}
-	fields := strings.Fields(line)
-	if len(fields) != 3 || fields[2] != "controller-publication-guard" {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard hook has unexpected command")
-	}
-	workerPath := fields[1]
-	if !filepath.IsAbs(workerPath) {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard worker path is not absolute")
-	}
-	workerInfo, err := os.Lstat(workerPath)
-	if err != nil || !workerInfo.Mode().IsRegular() || workerInfo.Mode().Perm()&0o111 == 0 {
-		return PublicationGuardStatus{}, fmt.Errorf("publication guard worker is unavailable")
-	}
-	return PublicationGuardStatus{ConfigPath: configPath, ConfigValue: value, HookPath: hookPath, HookTarget: line, WorkerPath: workerPath, WorkerExpected: workerPath}, nil
-}
-
-func firstExecutableHookLine(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		return line
-	}
-	return ""
-}
-
-func (s *Store) ValidatePublicationGuard(input PublicationGuardInput) error {
-	repository, err := canonicalPath(input.Repository)
-	if err != nil {
-		return err
-	}
-	if repository != s.identity.PrimaryRoot {
-		return fmt.Errorf("publication guard repository is outside controller ownership")
+	if !strings.HasPrefix(input.Ref, "refs/heads/") {
+		return nil
 	}
 	op, present, err := s.pendingPublicationGuardOperation()
 	if err != nil {
@@ -116,16 +37,63 @@ func (s *Store) ValidatePublicationGuard(input PublicationGuardInput) error {
 	effect, found := publicationGuardEffect(op.Transition.Effects, MutationSurfaceRef, input.Ref)
 	if !found {
 		if publicationGuardOwnsGitMutation(op.Transition.Effects) {
-			return fmt.Errorf("publication ref update rejected: pending controller transition owns another Git mutation")
+			return fmt.Errorf("publication ref update rejected: pending controller publication does not authorize ref %s", input.Ref)
 		}
 		return nil
 	}
 	if effect.ExpectedOld != input.OldOID || effect.ExpectedNew != input.NewOID {
-		return fmt.Errorf("publication ref update differs from pending controller authority")
+		return fmt.Errorf("publication ref update rejected: update does not match pending controller transition")
+	}
+	return nil
+}
+
+func (s *Store) GuardPublicationPush(input PublicationPushGuardInput) error {
+	if err := validatePublicationPushGuardInput(input); err != nil {
+		return err
+	}
+	op, present, err := s.pendingPublicationGuardOperation()
+	if err != nil {
+		return err
+	}
+	if !present {
+		return fmt.Errorf("publication push rejected: no pending controller publication authority")
 	}
 	policy, ok := publicationGuardPolicy(op)
-	if !ok || policy.Remote != input.Remote || policy.LocalRef != input.Ref {
-		return fmt.Errorf("publication ref update lacks exact pending publication policy")
+	if !ok {
+		return fmt.Errorf("publication push rejected: pending controller transition is not a publication operation")
+	}
+	if err := validatePublicationPushTarget(policy, input); err != nil {
+		return err
+	}
+	return validatePublicationPushEffect(op.Transition.Effects, input)
+}
+
+func validatePublicationPushGuardInput(input PublicationPushGuardInput) error {
+	if strings.TrimSpace(input.RemoteName) == "" ||
+		!strings.HasPrefix(input.LocalRef, "refs/heads/") ||
+		!strings.HasPrefix(input.RemoteRef, "refs/heads/") ||
+		!validPublicationGuardOID(input.LocalOID) ||
+		!validPublicationGuardOID(input.RemoteOID) {
+		return fmt.Errorf("invalid publication push update")
+	}
+	return nil
+}
+
+func validatePublicationPushTarget(policy PublicationPolicy, input PublicationPushGuardInput) error {
+	if policy.Remote != input.RemoteName || policy.LocalRef != input.LocalRef || policy.RemoteRef != input.RemoteRef {
+		return fmt.Errorf("publication push rejected: target does not match pending controller publication policy")
+	}
+	return nil
+}
+
+func validatePublicationPushEffect(effects []EffectExpectation, input PublicationPushGuardInput) error {
+	resource := input.RemoteName + ":" + input.RemoteRef
+	effect, found := publicationGuardEffect(effects, MutationSurfaceHistory, resource)
+	if !found {
+		return fmt.Errorf("publication push rejected: pending controller transition does not authorize remote history mutation")
+	}
+	if effect.ExpectedOld != input.RemoteOID || effect.ExpectedNew != input.LocalOID {
+		return fmt.Errorf("publication push rejected: update does not match pending controller transition")
 	}
 	return nil
 }
@@ -186,9 +154,14 @@ func publicationGuardOwnsGitMutation(effects []EffectExpectation) bool {
 	return false
 }
 
-func (s *Store) ValidatePublicationGuardRequest(input PublicationGuardInput) error {
-	if input.Repository == "" || input.Ref == "" || input.Remote == "" || input.OldOID == "" || input.NewOID == "" {
-		return errors.New("publication guard input is incomplete")
+func validPublicationGuardOID(value string) bool {
+	if len(value) != 40 {
+		return false
 	}
-	return s.ValidatePublicationGuard(input)
+	for _, ch := range value {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
 }
