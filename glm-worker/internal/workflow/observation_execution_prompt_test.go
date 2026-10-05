@@ -53,7 +53,7 @@ func TestObservationDecisionInjectsMachineExecutionResults(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("waiting decision state = %s pending=%v", st.TaskStatus(), st.Exists("pending-decision"))
 	}
-	admission, err := st.ObservationExecuteAdmission()
+	admission, err := st.ObservationLifecycleAdmission()
 	if err != nil {
 		t.Fatal(err)
 	}
