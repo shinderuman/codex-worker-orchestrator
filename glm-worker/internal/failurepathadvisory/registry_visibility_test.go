@@ -30,8 +30,9 @@ func TestApplyLabelsUsesSolVisibleFindingIndexes(t *testing.T) {
 		}},
 	}
 	updated, err := ApplyLabels(registry, LabelInput{
-		Schema: LabelsSchema,
-		TaskID: "task-a",
+		Schema:       LabelsSchema,
+		TaskID:       "task-a",
+		ReviewNumber: 4,
 		FindingDispositions: []FindingDispositionInput{
 			{Index: 0, Disposition: DispositionTruePositive},
 			{Index: 1, Disposition: DispositionFalsePositive},
@@ -54,6 +55,7 @@ func TestApplyLabelsUsesSolVisibleFindingIndexes(t *testing.T) {
 	_, err = ApplyLabels(registry, LabelInput{
 		Schema:              LabelsSchema,
 		TaskID:              "task-a",
+		ReviewNumber:        4,
 		FindingDispositions: []FindingDispositionInput{{Index: 2, Disposition: DispositionTruePositive}},
 	})
 	if err == nil {
@@ -61,7 +63,7 @@ func TestApplyLabelsUsesSolVisibleFindingIndexes(t *testing.T) {
 	}
 }
 
-func TestApplyLabelsUsesLatestTaskReviewRecord(t *testing.T) {
+func TestApplyLabelsUsesExactTaskReviewRecord(t *testing.T) {
 	zero := 0
 	registry := Registry{
 		Schema: AdvisorySchema,
@@ -73,15 +75,22 @@ func TestApplyLabelsUsesLatestTaskReviewRecord(t *testing.T) {
 	updated, err := ApplyLabels(registry, LabelInput{
 		Schema:              LabelsSchema,
 		TaskID:              "task-a",
+		ReviewNumber:        1,
 		FindingDispositions: []FindingDispositionInput{{Index: 0, Disposition: DispositionTruePositive}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Records[0].Findings[0].Label != nil {
-		t.Fatal("older review record was labeled")
+	if updated.Records[0].Findings[0].Label == nil {
+		t.Fatal("selected review record was not labeled")
 	}
-	if updated.Records[1].Findings[0].Label == nil {
-		t.Fatal("latest review record was not labeled")
+	if updated.Records[1].Findings[0].Label != nil {
+		t.Fatal("different review record was labeled")
+	}
+	if _, err := ApplyLabels(registry, LabelInput{Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 3}); err == nil {
+		t.Fatal("missing task/review identity was accepted")
+	}
+	if _, err := ApplyLabels(registry, LabelInput{Schema: LabelsSchema, TaskID: "task-a"}); err == nil {
+		t.Fatal("missing review identity was accepted")
 	}
 }
