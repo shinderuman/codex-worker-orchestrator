@@ -48,8 +48,8 @@ func (s *Store) GuardPublicationRefUpdate(input PublicationRefGuardInput) error 
 }
 
 func (s *Store) GuardPublicationPush(input PublicationPushGuardInput) error {
-	if strings.TrimSpace(input.RemoteName) == "" || !strings.HasPrefix(input.LocalRef, "refs/heads/") || !strings.HasPrefix(input.RemoteRef, "refs/heads/") || !validPublicationGuardOID(input.LocalOID) || !validPublicationGuardOID(input.RemoteOID) {
-		return fmt.Errorf("invalid publication push update")
+	if err := validatePublicationPushGuardInput(input); err != nil {
+		return err
 	}
 	op, present, err := s.pendingPublicationGuardOperation()
 	if err != nil {
@@ -62,11 +62,33 @@ func (s *Store) GuardPublicationPush(input PublicationPushGuardInput) error {
 	if !ok {
 		return fmt.Errorf("publication push rejected: pending controller transition is not a publication operation")
 	}
+	if err := validatePublicationPushTarget(policy, input); err != nil {
+		return err
+	}
+	return validatePublicationPushEffect(op.Transition.Effects, input)
+}
+
+func validatePublicationPushGuardInput(input PublicationPushGuardInput) error {
+	if strings.TrimSpace(input.RemoteName) == "" ||
+		!strings.HasPrefix(input.LocalRef, "refs/heads/") ||
+		!strings.HasPrefix(input.RemoteRef, "refs/heads/") ||
+		!validPublicationGuardOID(input.LocalOID) ||
+		!validPublicationGuardOID(input.RemoteOID) {
+		return fmt.Errorf("invalid publication push update")
+	}
+	return nil
+}
+
+func validatePublicationPushTarget(policy PublicationPolicy, input PublicationPushGuardInput) error {
 	if policy.Remote != input.RemoteName || policy.LocalRef != input.LocalRef || policy.RemoteRef != input.RemoteRef {
 		return fmt.Errorf("publication push rejected: target does not match pending controller publication policy")
 	}
+	return nil
+}
+
+func validatePublicationPushEffect(effects []EffectExpectation, input PublicationPushGuardInput) error {
 	resource := input.RemoteName + ":" + input.RemoteRef
-	effect, found := publicationGuardEffect(op.Transition.Effects, MutationSurfaceHistory, resource)
+	effect, found := publicationGuardEffect(effects, MutationSurfaceHistory, resource)
 	if !found {
 		return fmt.Errorf("publication push rejected: pending controller transition does not authorize remote history mutation")
 	}
@@ -137,10 +159,8 @@ func validPublicationGuardOID(value string) bool {
 		return false
 	}
 	for _, ch := range value {
-		if ch < '0' || ch > '9' {
-			if ch < 'a' || ch > 'f' {
-				return false
-			}
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
 		}
 	}
 	return true
