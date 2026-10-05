@@ -52,25 +52,33 @@ func RetireTerminalMetadata(plan []byte, tasks map[string][]byte, target string,
 	if err := validateRetirementCorpus(taskcontract.ParsePlanSchedule(updatedPlan), updatedTasks); err != nil {
 		return TerminalMetadata{}, err
 	}
+	result.Changes, err = terminalMetadataChanges([]byte(updatedPlan), updatedTasks, changedPaths, target)
+	if err != nil {
+		return TerminalMetadata{}, err
+	}
+	return result, nil
+}
+
+func terminalMetadataChanges(plan []byte, tasks map[string][]byte, changedPaths []string, target string) ([]TerminalMetadataChange, error) {
 	sort.Strings(changedPaths)
-	result.Changes = make([]TerminalMetadataChange, 0, len(changedPaths))
+	changes := make([]TerminalMetadataChange, 0, len(changedPaths))
 	for _, path := range changedPaths {
 		change := TerminalMetadataChange{Path: path}
 		switch path {
 		case target:
 			change.Delete = true
 		case "IMPLEMENTATION_PLAN.local.md":
-			change.NewBytes = []byte(updatedPlan)
+			change.NewBytes = plan
 		default:
-			content, ok := updatedTasks[path]
+			content, ok := tasks[path]
 			if !ok {
-				return TerminalMetadata{}, fmt.Errorf("terminal metadata changed Task is missing: %s", path)
+				return nil, fmt.Errorf("terminal metadata changed Task is missing: %s", path)
 			}
 			change.NewBytes = content
 		}
-		result.Changes = append(result.Changes, change)
+		changes = append(changes, change)
 	}
-	return result, nil
+	return changes, nil
 }
 
 func validateRetirementCorpus(schedule taskcontract.PlanSchedule, tasks map[string][]byte) error {
