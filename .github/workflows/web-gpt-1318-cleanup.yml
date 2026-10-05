@@ -1,0 +1,39 @@
+name: Web GPT 1318 Cleanup
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-1318-controller-publication-hook-cutover
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]' && github.event.head_commit.message == 'Temporary cleanup installer smoke wording'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Restore unrelated wording
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tests/install_hook_ownership_smoke.sh')
+          text = path.read_text()
+          old = 'external hook owner was accepted without ownership state'
+          new = 'external hook owner was accepted without current ownership state'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale wording occurrence, got {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          git diff --check
+          git diff --exit-code -- . ':!tests/install_hook_ownership_smoke.sh'
+      - name: Commit cleanup
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tests/install_hook_ownership_smoke.sh
+          git commit -m 'Restore installer smoke wording'
+          git push origin HEAD:${GITHUB_REF_NAME}
