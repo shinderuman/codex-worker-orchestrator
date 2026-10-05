@@ -89,7 +89,15 @@ jobs:
           diag_path = Path('glm-worker/internal/app/canonical_workflow_integration_test.go')
           diag = diag_path.read_text()
           old = '\t\tt.Fatalf("quiescent controller handoff: %#v", handoff)\n'
-          new = '\t\tif handoff.Inconsistency != nil {\n\t\t\tt.Fatalf("quiescent controller handoff inconsistency=%q: %#v", *handoff.Inconsistency, handoff)\n\t\t}\n\t\tt.Fatalf("quiescent controller handoff: %#v", handoff)\n'
+          new = (
+              '\t\tbinding, bindingErr := st.LoadControllerRuntimeBinding()\n'
+              '\t\tstore, storeErr := controller.Open(cfg)\n'
+              '\t\tif storeErr != nil {\n'
+              '\t\t\tt.Fatalf("quiescent controller handoff: %#v binding=%#v bindingErr=%v controllerErr=%v", handoff, binding, bindingErr, storeErr)\n'
+              '\t\t}\n'
+              '\t\thead, headErr := store.LoadHead()\n'
+              '\t\tt.Fatalf("quiescent controller handoff: %#v binding=%#v bindingErr=%v execution=%#v root=%#v headErr=%v", handoff, binding, bindingErr, head.ExecutionTaskRef, head.RootTaskRef, headErr)\n'
+          )
           if diag.count(old) != 1:
               raise SystemExit('canonical handoff diagnostic boundary is not unique')
           diag_path.write_text(diag.replace(old, new, 1))
