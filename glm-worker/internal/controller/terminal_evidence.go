@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func (s *Store) LoadTerminalTaskRecord(ref EvidenceObjectRef) (TerminalTaskRecord, error) {
@@ -212,7 +214,7 @@ func (s *Store) terminalAttemptProven(attempt AttemptRecord) (bool, error) {
 }
 
 func (s *Store) validateTerminalMetadataFile(record TerminalTaskRecord, file TerminalMetadataFile) error {
-	if !parentManagedPath(file.Path) || (file.Path != implementationPlanPath && file.Path != record.TaskRef.TaskPath && !bindingContainsPath(record.Bindings, file.Path)) {
+	if !state.IsParentManagedPath(file.Path) || (file.Path != state.ParentPlanFile && file.Path != record.TaskRef.TaskPath && !bindingContainsPath(record.Bindings, file.Path)) {
 		return fmt.Errorf("terminal metadata path is outside exact retirement ownership")
 	}
 	old, err := readCommittedObject(s.identity.PrimaryRoot, record.SourceProject.HeadOID, file.Path)
