@@ -144,3 +144,42 @@ func TestPublicationGuardAuthorizesOnlyExactPendingRemotePublication(t *testing.
 		t.Fatal("wrong remote publication target admitted")
 	}
 }
+
+func TestPublicationGuardAuthorizesTerminalMetadataPublicationEffects(t *testing.T) {
+	fixture, policy := newPublicationTestFixture(t)
+	source := publicationTestEdit(t, fixture, "terminal.txt", "terminal result\n")
+	published, candidate := publishTerminalTestSource(t, fixture, policy, source)
+	op, head, err := fixture.store.planTerminalMetadata(TerminalTaskInput{
+		ExpectedGeneration: published.Head.ControllerGeneration,
+		ProjectSnapshotID:  published.Head.ProjectSnapshotID,
+		CandidateID:        candidate.CandidateID,
+		TaskRef:            candidate.TaskRef,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.prepareExecutionOperation(&op, head); err != nil {
+		t.Fatal(err)
+	}
+	if len(op.Transition.Effects) < 2 {
+		t.Fatalf("terminal publication effects = %#v", op.Transition.Effects)
+	}
+	history := op.Transition.Effects[0]
+	ref := op.Transition.Effects[1]
+	if err := fixture.store.GuardPublicationPush(PublicationPushGuardInput{
+		RemoteName: policy.Remote,
+		LocalRef:   policy.LocalRef,
+		LocalOID:   history.ExpectedNew,
+		RemoteRef:  policy.RemoteRef,
+		RemoteOID:  history.ExpectedOld,
+	}); err != nil {
+		t.Fatalf("terminal remote publication rejected: %v", err)
+	}
+	if err := fixture.store.GuardPublicationRefUpdate(PublicationRefGuardInput{
+		OldOID: ref.ExpectedOld,
+		NewOID: ref.ExpectedNew,
+		Ref:    ref.Resource,
+	}); err != nil {
+		t.Fatalf("terminal local ref update rejected: %v", err)
+	}
+}
