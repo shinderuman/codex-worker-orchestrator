@@ -9,11 +9,27 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func parentValidationTerminalPassT(t *testing.T, record qualitygate.RunRecord) qualitygate.RunRecord {
+	t.Helper()
+	completed := time.Now().UTC()
+	record.CompletedAt = &completed
+	record.Status = qualitygate.StatusPass
+	record.ExitCode = 0
+	record.ExitSource = state.ValidationExitSourceTarget
+	record.Log = filepath.Join(t.TempDir(), "gate.log")
+	if err := os.WriteFile(record.Log, []byte("pass\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
 
 func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 	st := newStateStoreT(t)
@@ -41,12 +57,12 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 	previous := parentValidationGateRunner
 	defer func() { parentValidationGateRunner = previous }()
 	gateCalls := 0
-	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
 		gateCalls++
 		if request.Form != packet.ParentValidationGoTest || request.WorkingDir != "glm-worker" {
 			t.Fatalf("parent validation request = %#v", request)
 		}
-		record := parentValidationGateRecord{
+		record := qualitygate.RunRecord{
 			Form:           request.Form,
 			Repository:     w.config.RepoRoot,
 			WorkingDir:     workingDir,
@@ -60,7 +76,7 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 				t.Fatalf("first gate ran after unexpected model phases: %v", r.phases)
 			}
 			record.ValidationRunID = "run-fail"
-			record.Status = "fail"
+			record.Status = qualitygate.StatusFail
 			record.ExitCode = 1
 			record.Log = "/evidence/run-fail/gate.log"
 			return record, nil
@@ -69,12 +85,10 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 				t.Fatalf("second gate ran after reviewer or unexpected model phase: %v", r.phases)
 			}
 			record.ValidationRunID = "run-pass"
-			record.Status = "pass"
-			record.Log = "/evidence/run-pass/gate.log"
-			return record, nil
+			return parentValidationTerminalPassT(t, record), nil
 		default:
 			t.Fatalf("unexpected parent validation call %d", gateCalls)
-			return parentValidationGateRecord{}, nil
+			return qualitygate.RunRecord{}, nil
 		}
 	}
 
@@ -129,9 +143,9 @@ func exhaustParentValidationFixBudget(t *testing.T, st *state.StateStore) (strin
 		t.Fatal(err)
 	}
 	gateCalls := 0
-	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
 		gateCalls++
-		return parentValidationGateRecord{
+		return qualitygate.RunRecord{
 			ValidationRunID: fmt.Sprintf("run-fail-%d", gateCalls),
 			Form:            request.Form,
 			Repository:      w.config.RepoRoot,
@@ -139,7 +153,7 @@ func exhaustParentValidationFixBudget(t *testing.T, st *state.StateStore) (strin
 			Head:            fixedSnapshot.Head,
 			IndexDigest:     fixedSnapshot.IndexDigest,
 			WorktreeDigest:  fixedSnapshot.WorktreeDigest,
-			Status:          "fail",
+			Status:          qualitygate.StatusFail,
 			ExitCode:        1,
 			Log:             fmt.Sprintf("/evidence/run-fail-%d/gate.log", gateCalls),
 		}, nil
@@ -212,12 +226,12 @@ func TestParentValidationNonConvergenceFixRerunsGateBeforeReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	gateRuns := 0
-	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
 		gateRuns++
 		if !reflect.DeepEqual(fixRunner.phases, []string{"worker-explicit-fix"}) {
 			t.Fatalf("revalidation ran at unexpected phases: %v", fixRunner.phases)
 		}
-		return parentValidationGateRecord{
+		return parentValidationTerminalPassT(t, qualitygate.RunRecord{
 			ValidationRunID: "run-pass",
 			Form:            request.Form,
 			Repository:      fixWorkflow.config.RepoRoot,
@@ -225,9 +239,7 @@ func TestParentValidationNonConvergenceFixRerunsGateBeforeReview(t *testing.T) {
 			Head:            fixedSnapshot.Head,
 			IndexDigest:     fixedSnapshot.IndexDigest,
 			WorktreeDigest:  fixedSnapshot.WorktreeDigest,
-			Status:          "pass",
-			Log:             "/evidence/run-pass/gate.log",
-		}, nil
+		}), nil
 	}
 
 	if err := fixWorkflow.ExecuteExplicitFixWithExecutionMilestones("make the failing gate pass", state.ParentOriginGLMReviewer, "", ""); err != nil {
@@ -283,9 +295,9 @@ func TestParentValidationBudgetExhaustionKeepsFailureTargets(t *testing.T) {
 	}
 	previous := parentValidationGateRunner
 	defer func() { parentValidationGateRunner = previous }()
-	parentValidationGateRunner = func(_ *Workflow, _ packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+	parentValidationGateRunner = func(_ *Workflow, _ packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
 		t.Error("pre-gate violation must not reach the parent gate")
-		return parentValidationGateRecord{}, errors.New("unexpected parent gate call")
+		return qualitygate.RunRecord{}, errors.New("unexpected parent gate call")
 	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -339,7 +351,7 @@ func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
 	if err := os.MkdirAll(workingDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	record := parentValidationGateRecord{
+	record := qualitygate.RunRecord{
 		ValidationRunID: "run-pass",
 		Form:            packet.ParentValidationGoTest,
 		Repository:      w.config.RepoRoot,
@@ -347,7 +359,7 @@ func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
 		Head:            fixedSnapshot.Head,
 		IndexDigest:     fixedSnapshot.IndexDigest,
 		WorktreeDigest:  "stale-worktree",
-		Status:          "pass",
+		Status:          qualitygate.StatusPass,
 	}
 	err := w.validateParentValidationRecord(packet.ParentValidationRequest{
 		Form:       packet.ParentValidationGoTest,
@@ -355,6 +367,32 @@ func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
 	}, record)
 	if err == nil || !strings.Contains(err.Error(), "snapshot") {
 		t.Fatalf("stale parent validation evidence was accepted: %v", err)
+	}
+}
+
+func TestParentValidationRecordRejectsStatusOnlyPass(t *testing.T) {
+	st := newStateStoreT(t)
+	w := newWorkflowT(t, st, &scriptedRunner{})
+	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
+	if err := os.MkdirAll(workingDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record := qualitygate.RunRecord{
+		ValidationRunID: "run-pass",
+		Form:            packet.ParentValidationGoTest,
+		Repository:      w.config.RepoRoot,
+		WorkingDir:      workingDir,
+		Head:            fixedSnapshot.Head,
+		IndexDigest:     fixedSnapshot.IndexDigest,
+		WorktreeDigest:  fixedSnapshot.WorktreeDigest,
+		Status:          qualitygate.StatusPass,
+	}
+	err := w.validateParentValidationRecord(packet.ParentValidationRequest{
+		Form:       packet.ParentValidationGoTest,
+		WorkingDir: "glm-worker",
+	}, record)
+	if err == nil || !strings.Contains(err.Error(), "terminal integrity") {
+		t.Fatalf("status-only parent validation PASS was accepted: %v", err)
 	}
 }
 
