@@ -6,6 +6,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationguard"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
@@ -19,32 +20,67 @@ func Run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
 		return usageError()
 	}
-	cfg, err := config.Load()
+	cfg, active, err := activeGuardConfig()
 	if err != nil {
 		return err
 	}
-	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
-	if err != nil {
-		return fmt.Errorf("inspect repository publication guard activation: %w", err)
-	}
-	if !decision.Active {
+	if !active {
 		return nil
 	}
+	if err := requireGuardSetup(cfg.RepoRoot); err != nil {
+		return err
+	}
+	return runActiveGuard(args, cfg)
+}
+
+func activeGuardConfig() (config.AppConfig, bool, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return config.AppConfig{}, false, err
+	}
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil {
+		return config.AppConfig{}, false, fmt.Errorf("inspect repository publication guard activation: %w", err)
+	}
+	return cfg, decision.Active, nil
+}
+
+func requireGuardSetup(repoRoot string) error {
+	report, err := publicationguard.InspectPublicationGuardSetup(repoRoot)
+	if err != nil {
+		return err
+	}
+	if len(report.Defects) == 0 {
+		return nil
+	}
+	defect := report.Defects[0]
+	return fmt.Errorf("publication guard setup invalid: %s %s at %s", defect.Hook, defect.Defect, defect.Path)
+}
+
+func runActiveGuard(args []string, cfg config.AppConfig) error {
 	exists, err := controller.Exists(cfg)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		if args[0] == "ref-update" {
-			_, err := parseRefUpdate(args[1:])
-			return err
-		}
-		return fmt.Errorf("publication push rejected: controller authority is unavailable")
+		return runWithoutController(args)
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
 		return err
 	}
+	return runWithController(args, store)
+}
+
+func runWithoutController(args []string) error {
+	if args[0] != "ref-update" {
+		return fmt.Errorf("publication push rejected: controller authority is unavailable")
+	}
+	_, err := parseRefUpdate(args[1:])
+	return err
+}
+
+func runWithController(args []string, store *controller.Store) error {
 	switch args[0] {
 	case "ref-update":
 		input, err := parseRefUpdate(args[1:])
