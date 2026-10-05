@@ -16,6 +16,14 @@ type Task struct {
 	Content []byte
 }
 
+type Dependency struct {
+	Task        string
+	Outstanding []string
+	Fulfilled   []string
+}
+
+type TerminalMetadata = repositoryproject.TerminalMetadata
+
 type Project struct {
 	Head         string
 	Plan         []byte
@@ -89,7 +97,20 @@ func TaskCorpusEntries(root, revision string) ([]taskcontract.TaskCorpusEntry, e
 	return entries, nil
 }
 
-func (p Project) RetireTerminalMetadata(taskPath string, blocker bool) (repositoryproject.TerminalMetadata, error) {
+func (p Project) Dependencies() []Dependency {
+	dependencies := p.Graph.Dependencies()
+	result := make([]Dependency, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		result = append(result, Dependency{
+			Task:        dependency.Task,
+			Outstanding: append([]string(nil), dependency.Outstanding...),
+			Fulfilled:   append([]string(nil), dependency.Fulfilled...),
+		})
+	}
+	return result
+}
+
+func (p Project) RetireTerminalMetadata(taskPath string, blocker bool) (TerminalMetadata, error) {
 	contents := make(map[string][]byte, len(p.Tasks))
 	for _, task := range p.Tasks {
 		contents[task.Path] = task.Content
