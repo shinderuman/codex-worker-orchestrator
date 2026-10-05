@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type ObservationExecutionRecord struct {
@@ -45,24 +43,17 @@ const (
 
 func (s *StateStore) ObservationExecuteAdmission() (ObservationExecutionAdmission, error) {
 	if s.TaskStatus() != TaskStatusWaitingDecision || !s.Exists("pending-decision") {
-		return ObservationExecutionAdmission{}, fmt.Errorf("observation-executeはPoC/observation taskのpending Sol decision境界だけでadmitされます")
+		return ObservationExecutionAdmission{}, fmt.Errorf("observation capability is only available at the pending Sol decision boundary")
 	}
 	open, err := s.CurrentParentReview()
 	if err != nil {
 		return ObservationExecutionAdmission{}, fmt.Errorf("pending decisionのparent review状態を読めません: %w", err)
 	}
 	if open == nil || open.PacketStatus != "NEEDS_SOL_DECISION" {
-		return ObservationExecutionAdmission{}, fmt.Errorf("observation-executeはNEEDS_SOL_DECISION待ちの境界だけでadmitされます")
+		return ObservationExecutionAdmission{}, fmt.Errorf("observation capability is only available while NEEDS_SOL_DECISION is pending")
 	}
 	taskID, err := s.TaskID()
 	if err != nil {
-		return ObservationExecutionAdmission{}, err
-	}
-	content, err := os.ReadFile(s.TaskAuthorityContentPath(taskID))
-	if err != nil {
-		return ObservationExecutionAdmission{}, fmt.Errorf("task authority snapshotを読めません: %w", err)
-	}
-	if _, err := parseObservationExecutionDeclaration(content); err != nil {
 		return ObservationExecutionAdmission{}, err
 	}
 	round, err := s.ObservationExecutionRound()
@@ -70,6 +61,17 @@ func (s *StateStore) ObservationExecuteAdmission() (ObservationExecutionAdmissio
 		return ObservationExecutionAdmission{}, err
 	}
 	return ObservationExecutionAdmission{TaskID: taskID, Round: round}, nil
+}
+
+func (s *StateStore) ValidateObservationExecuteAdmission(expected ObservationExecutionAdmission) error {
+	current, err := s.ObservationExecuteAdmission()
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return fmt.Errorf("observation lifecycle admission changed: task=%s round=%d", current.TaskID, current.Round)
+	}
+	return nil
 }
 
 func (s *StateStore) ObservationExecutionRound() (int, error) {
@@ -315,15 +317,4 @@ func validateObservationExecutionArtifacts(artifactRoot string, artifacts []stri
 		}
 	}
 	return nil
-}
-
-func parseObservationExecutionDeclaration(content []byte) (taskcontract.ExternalFeasibility, error) {
-	declaration, err := taskcontract.ParseExternalFeasibility(content)
-	if err != nil {
-		return taskcontract.ExternalFeasibility{}, fmt.Errorf("ACTIVE taskのExternal feasibility宣言を受理できません: %w", err)
-	}
-	if declaration.Status != taskcontract.StatusPoC && declaration.Status != taskcontract.StatusObservation {
-		return taskcontract.ExternalFeasibility{}, fmt.Errorf("observation-executeはstatus %sではadmitされません(poc/observationだけが対象です)", declaration.Status)
-	}
-	return declaration, nil
 }

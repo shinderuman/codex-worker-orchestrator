@@ -38,7 +38,7 @@ func TestObservationExecuteAdmissionRequiresPendingObservationDecision(t *testin
 	admitObservationDecisionBoundary(t, st)
 	admission, err := st.ObservationExecuteAdmission()
 	if err != nil {
-		t.Fatalf("pending observation decisionがadmitされません: %v", err)
+		t.Fatalf("pending decision lifecycleがadmitされません: %v", err)
 	}
 	if admission.TaskID == "" || admission.Round <= 0 {
 		t.Fatalf("admission = %+v", admission)
@@ -54,23 +54,8 @@ func TestObservationExecuteAdmissionRequiresPendingObservationDecision(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.Allows(ParentActionObservationExecute) {
-		t.Fatalf("waiting-decision planにobservation-executeがありません: %#v", plan)
-	}
-}
-
-func TestObservationExecuteAdmissionRejectsImplementationTask(t *testing.T) {
-	st := newObservationExecutionStore(t, "# active\n\n## External feasibility\n\nstatus: implementation\nassumption: a\nevidence-source: producer\nevidence: e\ngo: g\n")
-	admitObservationDecisionBoundary(t, st)
-	if _, err := st.ObservationExecuteAdmission(); err == nil {
-		t.Fatal("implementation taskでobservation-executeがadmitされました")
-	}
-	plan, err := st.ParentActionPlan()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.Allows(ParentActionObservationExecute) {
-		t.Fatalf("implementation decision planにobservation-executeがあります: %#v", plan)
+	if plan.Allows(ParentActionObservationExecute) || plan.Allows(ParentActionNoGo) {
+		t.Fatalf("generic state plan contains repository observation policy: %#v", plan)
 	}
 }
 
@@ -86,7 +71,7 @@ func TestObservationExecuteAdmissionDoesNotDependOnTaskStats(t *testing.T) {
 	}
 	missingStats, err := st.ObservationExecuteAdmission()
 	if err != nil {
-		t.Fatalf("missing TaskStats invalidated canonical observation admission: %v", err)
+		t.Fatalf("missing TaskStats invalidated canonical observation lifecycle: %v", err)
 	}
 	if missingStats != expected {
 		t.Fatalf("missing TaskStats changed admission: got=%+v want=%+v", missingStats, expected)
@@ -96,7 +81,7 @@ func TestObservationExecuteAdmissionDoesNotDependOnTaskStats(t *testing.T) {
 	}
 	corruptStats, err := st.ObservationExecuteAdmission()
 	if err != nil {
-		t.Fatalf("corrupt TaskStats invalidated canonical observation admission: %v", err)
+		t.Fatalf("corrupt TaskStats invalidated canonical observation lifecycle: %v", err)
 	}
 	if corruptStats != expected {
 		t.Fatalf("corrupt TaskStats changed admission: got=%+v want=%+v", corruptStats, expected)

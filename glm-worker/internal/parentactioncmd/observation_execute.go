@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/observationexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -60,7 +62,7 @@ type observationExecutionOutcome struct {
 }
 
 type observationExecutionPlan struct {
-	admission    state.ObservationExecutionAdmission
+	admission    parentcontinuation.ObservationCapabilityAdmission
 	request      observationexec.Request
 	referenceAbs string
 	moduleDir    string
@@ -88,7 +90,7 @@ func prepareObservationExecuteAdmission(cfg config.AppConfig) error {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	_, err = st.ObservationExecuteAdmission()
+	_, err = parentcontinuation.CurrentObservationCapabilityAdmission(st)
 	return err
 }
 
@@ -120,7 +122,7 @@ func executeObservationExecuteAction(cfg config.AppConfig, args []string, stdout
 	outcome := dispatchObservationExecutionForAction(ctx, cfg, st, plan, executionID)
 	stop()
 
-	lock, err = repolock.Acquire(st.LockPath())
+	lock, err = repolock.AcquireWait(st.LockPath())
 	if err != nil {
 		return err
 	}
@@ -160,7 +162,7 @@ func beginObservationExecution(
 }
 
 func prepareObservationExecutionPlan(cfg config.AppConfig, st *state.StateStore, token string) (observationExecutionPlan, error) {
-	admission, err := st.ObservationExecuteAdmission()
+	admission, err := parentcontinuation.CurrentObservationCapabilityAdmission(st)
 	if err != nil {
 		return observationExecutionPlan{}, err
 	}
@@ -172,10 +174,10 @@ func prepareObservationExecutionPlan(cfg config.AppConfig, st *state.StateStore,
 	if err != nil {
 		return observationExecutionPlan{}, err
 	}
-	if err := rejectDuplicateObservationExecution(st, request, admission.Round); err != nil {
+	if err := rejectDuplicateObservationExecution(st, request, admission.Lifecycle.Round); err != nil {
 		return observationExecutionPlan{}, err
 	}
-	referenceAbs, err := observationexec.ValidateReferenceLocator(st.ArtifactDir(admission.TaskID), request.Reference)
+	referenceAbs, err := observationexec.ValidateReferenceLocator(st.ArtifactDir(admission.Lifecycle.TaskID), request.Reference)
 	if err != nil {
 		return observationExecutionPlan{}, err
 	}
@@ -208,14 +210,14 @@ func newObservationExecutionInFlightRecord(
 ) state.ObservationExecutionRecord {
 	return state.ObservationExecutionRecord{
 		ExecutionID:      executionID,
-		TaskID:           plan.admission.TaskID,
+		TaskID:           plan.admission.Lifecycle.TaskID,
 		Operation:        string(plan.request.Operation),
 		ParamsDigest:     plan.request.Digest(),
 		Status:           state.ObservationExecutionStatusInFlight,
 		Head:             snapshot.Head,
 		IndexDigest:      snapshot.IndexDigest,
 		WorktreeDigest:   snapshot.WorktreeDigest,
-		DecisionRound:    plan.admission.Round,
+		DecisionRound:    plan.admission.Lifecycle.Round,
 		StartedAtRFC3339: startedAt.Format(time.RFC3339Nano),
 	}
 }
@@ -230,7 +232,7 @@ func newObservationExecutionRecord(
 ) state.ObservationExecutionRecord {
 	return state.ObservationExecutionRecord{
 		ExecutionID:        executionID,
-		TaskID:             plan.admission.TaskID,
+		TaskID:             plan.admission.Lifecycle.TaskID,
 		Operation:          string(plan.request.Operation),
 		ParamsDigest:       plan.request.Digest(),
 		Status:             outcome.Status,
@@ -242,7 +244,7 @@ func newObservationExecutionRecord(
 		Head:               snapshot.Head,
 		IndexDigest:        snapshot.IndexDigest,
 		WorktreeDigest:     snapshot.WorktreeDigest,
-		DecisionRound:      plan.admission.Round,
+		DecisionRound:      plan.admission.Lifecycle.Round,
 		StartedAtRFC3339:   startedAt.Format(time.RFC3339Nano),
 		CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -264,7 +266,7 @@ func encodeObservationExecuteOutput(stdout io.Writer, record state.ObservationEx
 	})
 }
 
-func observationExecutionContext(st *state.StateStore, admission state.ObservationExecutionAdmission) (context.Context, context.CancelFunc) {
+func observationExecutionContext(st *state.StateStore, admission parentcontinuation.ObservationCapabilityAdmission) (context.Context, context.CancelFunc) {
 	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	ctx, cancel := context.WithCancel(signalCtx)
 	go watchObservationExecutionBoundary(ctx, cancel, st, admission)
@@ -278,7 +280,7 @@ func watchObservationExecutionBoundary(
 	ctx context.Context,
 	cancel context.CancelFunc,
 	st *state.StateStore,
-	admission state.ObservationExecutionAdmission,
+	admission parentcontinuation.ObservationCapabilityAdmission,
 ) {
 	ticker := time.NewTicker(observationStatePollInterval)
 	defer ticker.Stop()
@@ -287,7 +289,17 @@ func watchObservationExecutionBoundary(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if verifyObservationExecutionBoundary(st, admission) != nil {
+			lock, err := repolock.Acquire(st.LockPath())
+			if errors.Is(err, repolock.ErrRepoLockHeld) {
+				continue
+			}
+			if err != nil {
+				cancel()
+				return
+			}
+			verifyErr := verifyObservationExecutionBoundary(st, admission)
+			closeErr := lock.Close()
+			if verifyErr != nil || closeErr != nil {
 				cancel()
 				return
 			}
@@ -295,13 +307,9 @@ func watchObservationExecutionBoundary(
 	}
 }
 
-func verifyObservationExecutionBoundary(st *state.StateStore, expected state.ObservationExecutionAdmission) error {
-	current, err := st.ObservationExecuteAdmission()
-	if err != nil {
+func verifyObservationExecutionBoundary(st *state.StateStore, expected parentcontinuation.ObservationCapabilityAdmission) error {
+	if err := parentcontinuation.ValidateObservationCapabilityAdmission(st, expected); err != nil {
 		return fmt.Errorf("observation execution boundary changed: %w", err)
-	}
-	if current.TaskID != expected.TaskID || current.Round != expected.Round {
-		return fmt.Errorf("observation execution boundary changed: task=%s round=%d", current.TaskID, current.Round)
 	}
 	return nil
 }
@@ -314,11 +322,11 @@ func dispatchObservationExecution(
 	executionID string,
 ) observationExecutionOutcome {
 	if plan.request.Operation == observationexec.OperationShadowEval {
-		return runObservationShadowEval(ctx, cfg, plan.admission.TaskID, plan.referenceAbs, plan.request)
+		return runObservationShadowEval(ctx, cfg, plan.admission.Lifecycle.TaskID, plan.referenceAbs, plan.request)
 	}
 	outcome := observationexec.RunIsolatedGoTestContext(ctx, observationexec.GoTestInput{
 		ModuleDir:   plan.moduleDir,
-		ArtifactDir: st.ArtifactDir(plan.admission.TaskID),
+		ArtifactDir: st.ArtifactDir(plan.admission.Lifecycle.TaskID),
 		ExecutionID: executionID,
 		Race:        plan.request.Operation == observationexec.OperationGoTestRace,
 		DeadlineMS:  plan.request.ResolvedDeadlineMS(),

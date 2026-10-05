@@ -18,7 +18,7 @@ type projectContinuationAutomation struct {
 }
 
 func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
-	output := buildParentHandoffFromContinuation(st, parentcontinuation.Build(cfg, st))
+	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
 	applyCanonicalControllerHandoff(cfg, &output)
 	return output
 }

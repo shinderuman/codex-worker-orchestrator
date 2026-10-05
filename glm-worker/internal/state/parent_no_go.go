@@ -3,45 +3,15 @@ package state
 import (
 	"errors"
 	"fmt"
-	"os"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 const ParentOutcomeNoGo = "no-go"
 
-func (s *StateStore) ObservationNoGoEligible() bool {
-	if s.TaskStatus() != TaskStatusWaitingDecision || !s.Exists("pending-decision") {
-		return false
+func (s *StateStore) AwaitObservationNoGo(expected ObservationExecutionAdmission) (bool, error) {
+	if err := s.ValidateObservationExecuteAdmission(expected); err != nil {
+		return false, fmt.Errorf("terminal no-go lifecycle admission is no longer valid: %w", err)
 	}
-	open, err := s.CurrentParentReview()
-	if err != nil || open == nil || open.PacketStatus != string(packet.StatusNeedsSolDecision) {
-		return false
-	}
-	taskID, err := s.TaskID()
-	if err != nil {
-		return false
-	}
-	content, err := os.ReadFile(s.TaskAuthorityContentPath(taskID))
-	if err != nil {
-		return false
-	}
-	declaration, err := taskcontract.ParseExternalFeasibility(content)
-	if err != nil {
-		return false
-	}
-	return declaration.Status == taskcontract.StatusPoC || declaration.Status == taskcontract.StatusObservation
-}
-
-func (s *StateStore) AwaitObservationNoGo() (bool, error) {
-	if !s.ObservationNoGoEligible() {
-		return false, fmt.Errorf("terminal no-go is only available for a pending PoC/observation Sol decision")
-	}
-	taskID, err := s.TaskID()
-	if err != nil {
-		return false, err
-	}
+	taskID := expected.TaskID
 	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
 	if err != nil {
 		return false, err
