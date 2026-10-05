@@ -15,6 +15,9 @@ func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if !c.EvidenceValid || c.State != candidatePromoted {
 		return ExecutionOperationResult{}, fmt.Errorf("publication requires promoted candidate with current evidence")
 	}
+	if err := s.validateCandidatePublicationLocal(c); err != nil {
+		return ExecutionOperationResult{}, err
+	}
 	remote, err := s.observeCandidateRemote(head, c)
 	if err != nil {
 		return ExecutionOperationResult{}, err
@@ -48,6 +51,9 @@ func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOpera
 }
 
 func (s *Store) applyCandidatePublication(op ExecutionOperation, c AcceptedCandidate) error {
+	if err := s.validateCandidatePublicationLocal(c); err != nil {
+		return err
+	}
 	remote, err := observePublicationRemote(s.identity.PrimaryRoot, c.Policy)
 	if err != nil {
 		return err
@@ -140,6 +146,20 @@ func (s *Store) pushAndObserveCandidate(op ExecutionOperation, c AcceptedCandida
 		return "", s.abortRacedPublication(op, observed)
 	}
 	return observed, nil
+}
+
+func (s *Store) validateCandidatePublicationLocal(c AcceptedCandidate) error {
+	local, exists, err := readExecutionRef(s.identity.PrimaryRoot, c.Policy.LocalRef)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("publication local ref is missing")
+	}
+	if local != c.CommitOID {
+		return fmt.Errorf("publication local ref no longer matches promoted candidate")
+	}
+	return nil
 }
 
 func (s *Store) validateCandidatePublicationRemote(c AcceptedCandidate, remote string) error {

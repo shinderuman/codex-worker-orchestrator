@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -65,13 +66,54 @@ func runPreToolUse(stdin io.Reader, stdout io.Writer) error {
 }
 
 func managedHookBypass(command string) (string, string) {
-	if strings.Contains(command, "--no-verify") {
-		return "managed_git_hook_bypass", "Git operation rejected: --no-verify may not bypass managed repository guards"
+	if strings.Contains(command, "--no-verify") || managedGitCommitShortNoVerify(command) {
+		return "managed_git_hook_bypass", "Git operation rejected: hook bypass may not bypass managed repository guards"
 	}
 	if strings.Contains(strings.ToLower(command), "core.hookspath") {
 		return "managed_git_hook_bypass", "Git operation rejected: core.hooksPath may not bypass managed repository guards"
 	}
 	return "", ""
+}
+
+func managedGitCommitShortNoVerify(command string) bool {
+	fields := strings.Fields(command)
+	for index, field := range fields {
+		if shellCommandStart(fields, index) && filepath.Base(strings.Trim(field, `"'`)) == "git" && gitCommandHasCommitShortNoVerify(fields[index+1:]) {
+			return true
+		}
+	}
+	return false
+}
+
+func gitCommandHasCommitShortNoVerify(fields []string) bool {
+	commit := false
+	for _, raw := range fields {
+		token := strings.Trim(raw, `"'`)
+		if shellCommandBoundary(token) {
+			return false
+		}
+		if token == "commit" {
+			commit = true
+			continue
+		}
+		if commit && token == "-n" {
+			return true
+		}
+	}
+	return false
+}
+
+func shellCommandStart(fields []string, index int) bool {
+	return index == 0 || shellCommandBoundary(strings.Trim(fields[index-1], `"'`))
+}
+
+func shellCommandBoundary(token string) bool {
+	switch token {
+	case ";", "&&", "||", "|":
+		return true
+	default:
+		return false
+	}
 }
 
 func activeGuardConfig() (config.AppConfig, bool, error) {

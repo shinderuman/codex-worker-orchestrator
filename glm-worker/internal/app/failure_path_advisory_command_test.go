@@ -41,9 +41,10 @@ func newFailurePathAdvisoryRegistryState(t *testing.T) (*state.StateStore, failu
 	}
 	visibleIndex := 0
 	record := failurepathadvisory.Record{
-		TaskID:  "trial-task",
-		Outcome: failurepathadvisory.OutcomeObserved,
-		Classes: []string{failurepathadvisory.ClassExternalModelInvocation},
+		TaskID:       "trial-task",
+		ReviewNumber: 1,
+		Outcome:      failurepathadvisory.OutcomeObserved,
+		Classes:      []string{failurepathadvisory.ClassExternalModelInvocation},
 		Findings: []failurepathadvisory.Finding{
 			{Target: "glm-worker/internal/runner/probe.go:90", Class: failurepathadvisory.ClassExternalModelInvocation, Issue: "deadlineなし", Status: failurepathadvisory.FindingStatusVerified, VisibleIndex: &visibleIndex},
 		},
@@ -80,8 +81,9 @@ func TestExecuteFailurePathAdvisoryAppliesLabels(t *testing.T) {
 	labelsPath := filepath.Join(t.TempDir(), "labels.json")
 	zero, two := 0, 2
 	labels := failurepathadvisory.LabelInput{
-		Schema: failurepathadvisory.LabelsSchema,
-		TaskID: record.TaskID,
+		Schema:       failurepathadvisory.LabelsSchema,
+		TaskID:       record.TaskID,
+		ReviewNumber: record.ReviewNumber,
 		FindingDispositions: []failurepathadvisory.FindingDispositionInput{
 			{Index: 0, Disposition: failurepathadvisory.DispositionTruePositive},
 		},
@@ -131,7 +133,7 @@ func TestExecuteFailurePathAdvisoryAppliesLabels(t *testing.T) {
 func TestExecuteFailurePathAdvisoryRejectsLabelsForUnknownTask(t *testing.T) {
 	st, _ := newFailurePathAdvisoryRegistryState(t)
 	labelsPath := filepath.Join(t.TempDir(), "labels.json")
-	labels := failurepathadvisory.LabelInput{Schema: failurepathadvisory.LabelsSchema, TaskID: "missing-task"}
+	labels := failurepathadvisory.LabelInput{Schema: failurepathadvisory.LabelsSchema, TaskID: "missing-task", ReviewNumber: 1}
 	data, err := json.Marshal(labels)
 	if err != nil {
 		t.Fatal(err)

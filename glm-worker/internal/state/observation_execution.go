@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type ObservationExecutionRecord struct {
@@ -19,6 +20,7 @@ type ObservationExecutionRecord struct {
 	ExitCode           int      `json:"exit_code,omitempty"`
 	ExitSource         string   `json:"exit_source,omitempty"`
 	DurationMS         int64    `json:"duration_ms,omitempty"`
+	DeadlineMS         int64    `json:"deadline_ms,omitempty"`
 	Head               string   `json:"head,omitempty"`
 	IndexDigest        string   `json:"index_digest,omitempty"`
 	WorktreeDigest     string   `json:"worktree_digest,omitempty"`
@@ -33,12 +35,14 @@ type ObservationExecutionAdmission struct {
 }
 
 const (
-	observationExecutionsStateFile = "observation-executions"
-	observationExecutionsRetention = 16
+	observationExecutionsStateFile    = "observation-executions"
+	observationExecutionsRetention    = 16
+	observationExecutionRecoveryGrace = 10 * time.Second
 
-	ObservationExecutionStatusInFlight = "in-flight"
-	ObservationExecutionStatusPass     = "pass"
-	ObservationExecutionStatusFail     = "fail"
+	ObservationExecutionStatusInFlight      = "in-flight"
+	ObservationExecutionStatusPass          = "pass"
+	ObservationExecutionStatusFail          = "fail"
+	ObservationExecutionStatusIndeterminate = "indeterminate"
 )
 
 func (s *StateStore) ObservationExecuteAdmission() (ObservationExecutionAdmission, error) {
@@ -145,6 +149,40 @@ func (s *StateStore) HasObservationExecution(operation, paramsDigest string, rou
 		}
 	}
 	return false, nil
+}
+
+func (s *StateStore) RecoverStaleObservationExecutions(now time.Time) error {
+	records, err := s.ObservationExecutions()
+	if err != nil {
+		return err
+	}
+	changed := false
+	for index := range records {
+		record := &records[index]
+		if record.Status != ObservationExecutionStatusInFlight {
+			continue
+		}
+		if err := validateObservationInFlightRecord(*record); err != nil {
+			return fmt.Errorf("observation in-flight記録[%d]を回収できません: %w", index, err)
+		}
+		startedAt, err := time.Parse(time.RFC3339Nano, record.StartedAtRFC3339)
+		if err != nil {
+			return fmt.Errorf("observation in-flight記録[%d]のstarted_atが不正です: %w", index, err)
+		}
+		recoveryAt := startedAt.Add(time.Duration(record.DeadlineMS)*time.Millisecond + observationExecutionRecoveryGrace)
+		if now.Before(recoveryAt) {
+			continue
+		}
+		record.Status = ObservationExecutionStatusIndeterminate
+		record.Detail = "observation execution crossed its durable recovery horizon without completion; the operation may have run and automatic replay is refused"
+		record.ExitSource = "recovery"
+		record.CompletedAtRFC3339 = now.UTC().Format(time.RFC3339Nano)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return s.writeObservationExecutions(records)
 }
 
 func (s *StateStore) BeginObservationExecution(record ObservationExecutionRecord) error {
@@ -269,8 +307,8 @@ func trimObservationExecutions(records []ObservationExecutionRecord) []Observati
 }
 
 func validateObservationInFlightRecord(record ObservationExecutionRecord) error {
-	if record.ExecutionID == "" || record.TaskID == "" || record.Operation == "" || record.ParamsDigest == "" || record.StartedAtRFC3339 == "" {
-		return fmt.Errorf("observation in-flight記録に必須fieldがありません")
+	if record.ExecutionID == "" || record.TaskID == "" || record.Operation == "" || record.ParamsDigest == "" || record.StartedAtRFC3339 == "" || record.DeadlineMS <= 0 {
+		return fmt.Errorf("observation in-flight記録にcurrent schema必須fieldがありません")
 	}
 	if record.Status != ObservationExecutionStatusInFlight || record.CompletedAtRFC3339 != "" || len(record.Artifacts) != 0 {
 		return fmt.Errorf("observation in-flight記録のlifecycle fieldが不正です")
@@ -282,8 +320,8 @@ func validateObservationExecutionRecord(record ObservationExecutionRecord, artif
 	if record.ExecutionID == "" || record.TaskID == "" || record.Operation == "" || record.ParamsDigest == "" {
 		return fmt.Errorf("observation実行記録に必須fieldがありません")
 	}
-	if record.Status != ObservationExecutionStatusPass && record.Status != ObservationExecutionStatusFail {
-		return fmt.Errorf("observation実行status %qはpass/failのどちらかです", record.Status)
+	if record.Status != ObservationExecutionStatusPass && record.Status != ObservationExecutionStatusFail && record.Status != ObservationExecutionStatusIndeterminate {
+		return fmt.Errorf("observation実行status %qはpass/fail/indeterminateのいずれかです", record.Status)
 	}
 	if record.CompletedAtRFC3339 == "" {
 		return fmt.Errorf("observation実行記録に完了時刻がありません")

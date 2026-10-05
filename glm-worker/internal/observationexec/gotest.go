@@ -131,18 +131,6 @@ func isolatedGoTestArgs(race bool) []string {
 	return args
 }
 
-func classifyIsolatedGoTestOutcome(runErr error, deadlineAt time.Time, deadline time.Duration) GoTestOutcome {
-	if runErr == nil {
-		return GoTestOutcome{Status: StatusPass, ExitCode: 0, ExitSource: exitSourceTarget}
-	}
-	outcome := GoTestOutcome{Status: StatusFail, ExitCode: goTestExitCode(runErr), ExitSource: exitSourceTarget}
-	if !time.Now().Before(deadlineAt) {
-		outcome.ExitSource = exitSourceDeadline
-		outcome.Detail = fmt.Sprintf("deadline(%s)を超過したため隔離process groupを終了しました", deadline)
-	}
-	return outcome
-}
-
 func goTestDeadlineOutcome(runErr error, deadline time.Duration) GoTestOutcome {
 	exitCode := 1
 	if runErr != nil {

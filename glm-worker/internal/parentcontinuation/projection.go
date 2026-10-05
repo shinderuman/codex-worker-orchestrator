@@ -358,14 +358,11 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		TemporaryBlockReason: temporaryBlockReason(status),
 		Interrupted:          status == state.TaskStatusInterrupted,
 	})
-	binding, err := st.LoadControllerRuntimeBinding()
+	lifecycleTask, err := canonicalLifecycleTask(st, task, quiescent)
 	if err != nil {
 		return Request{}, true, err
 	}
-	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
-		return Request{}, true, errors.New("controller runtime binding does not match canonical execution task")
-	}
-	attribution := repositoryproject.DeriveTaskAttribution(binding.TaskPath, task.TaskPath, policy.Continuation)
+	attribution := repositoryproject.DeriveTaskAttribution(lifecycleTask, task.TaskPath, policy.Continuation)
 	if authorityTask, err := st.CurrentTaskAuthorityPath(); err == nil {
 		attribution = repositoryproject.BindTaskAuthority(attribution, authorityTask)
 	}
@@ -375,6 +372,20 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		Continuation:       policy.Continuation,
 		TaskAttribution:    attribution,
 	}, true, nil
+}
+
+func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
+	binding, err := st.LoadControllerRuntimeBinding()
+	if err != nil {
+		if quiescent && errors.Is(err, os.ErrNotExist) {
+			return task.TaskPath, nil
+		}
+		return "", err
+	}
+	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
+		return "", errors.New("controller runtime binding does not match canonical execution task")
+	}
+	return binding.TaskPath, nil
 }
 
 func quiescentControllerTask(cfg config.AppConfig, admissionError error) (controller.SemanticTaskRef, error) {

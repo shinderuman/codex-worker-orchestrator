@@ -22,7 +22,7 @@ func TestInspectPublicationGuardSetupRequiresBinding(t *testing.T) {
 
 func TestInspectPublicationGuardSetupAcceptsExecutableBinding(t *testing.T) {
 	repo := newPublicationGuardTestRepo(t)
-	bindCanonicalPublicationGuardT(t, filepath.Join(repo, ".githooks"))
+	bindCanonicalPublicationGuardT(t, repo, filepath.Join(repo, ".githooks"))
 	report, err := InspectPublicationGuardSetup(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestInspectPublicationGuardSetupAcceptsCanonicalCustomHooksPath(t *testing.
 			t.Fatal(err)
 		}
 	}
-	bindCanonicalPublicationGuardT(t, hooks)
+	bindCanonicalPublicationGuardT(t, repo, hooks)
 	runPublicationGuardGit(t, repo, "config", "core.hooksPath", hooks)
 	report, err := InspectPublicationGuardSetup(repo)
 	if err != nil {
@@ -54,10 +54,51 @@ func TestInspectPublicationGuardSetupAcceptsCanonicalCustomHooksPath(t *testing.
 	}
 }
 
+func TestInspectPublicationGuardSetupUsesInstallerSnapshotAfterHeadMoves(t *testing.T) {
+	repo := newPublicationGuardTestRepo(t)
+	hooks := t.TempDir()
+	for _, name := range publicationGuardHookNames {
+		body, err := os.ReadFile(filepath.Join(repo, ".githooks", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(hooks, name), body, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bindCanonicalPublicationGuardT(t, repo, hooks)
+	runPublicationGuardGit(t, repo, "config", "core.hooksPath", hooks)
+
+	if err := os.WriteFile(filepath.Join(repo, ".githooks", "pre-push"), []byte("#!/bin/sh\n# newer canonical hook\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runPublicationGuardGit(t, repo, "add", ".githooks/pre-push")
+	runPublicationGuardGit(t, repo, "-c", "core.hooksPath="+t.TempDir(), "commit", "-q", "-m", "advance canonical hook")
+
+	report, err := InspectPublicationGuardSetup(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Defects) != 0 {
+		t.Fatalf("HEAD movement invalidated installed snapshot: %#v", report.Defects)
+	}
+
+	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	report, err = InspectPublicationGuardSetup(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Defects) != 1 || report.Defects[0].Hook != "pre-push" || report.Defects[0].Defect != PublicationGuardHookIdentityMismatch {
+		t.Fatalf("tampered snapshot defects = %#v", report.Defects)
+	}
+}
+
 func TestInspectPublicationGuardSetupRejectsReplacedHookIdentity(t *testing.T) {
 	repo := newPublicationGuardTestRepo(t)
 	hooks := filepath.Join(repo, ".githooks")
-	bindCanonicalPublicationGuardT(t, hooks)
+	bindCanonicalPublicationGuardT(t, repo, hooks)
 	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +117,7 @@ func TestInspectPublicationGuardSetupRejectsBindingWithoutCanonicalContract(t *t
 	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writePublicationGuardBindingT(t, filepath.Join(repo, ".githooks"), target+"\n")
+	writePublicationGuardBindingT(t, filepath.Join(repo, ".githooks"), target+"\nsnapshot="+publicationGuardTestHead(t, repo)+"\n")
 	report, err := InspectPublicationGuardSetup(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -92,8 +133,9 @@ func TestInspectPublicationGuardSetupRejectsBindingShapesHooksReject(t *testing.
 		name string
 		body string
 	}{
-		{name: "missing newline", body: target},
-		{name: "leading whitespace", body: " " + target + "\n"},
+		{name: "missing snapshot", body: target + "\n"},
+		{name: "missing newline", body: target + "\nsnapshot=deadbeef"},
+		{name: "leading whitespace", body: " " + target + "\nsnapshot=deadbeef\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := newPublicationGuardTestRepo(t)
@@ -130,10 +172,20 @@ func newPublicationGuardTestRepo(t *testing.T) string {
 	return repo
 }
 
-func bindCanonicalPublicationGuardT(t *testing.T, hooksDir string) {
+func bindCanonicalPublicationGuardT(t *testing.T, repo, hooksDir string) {
 	t.Helper()
 	target := canonicalPublicationGuardT(t)
-	writePublicationGuardBindingT(t, hooksDir, target+"\n")
+	writePublicationGuardBindingT(t, hooksDir, target+"\nsnapshot="+publicationGuardTestHead(t, repo)+"\n")
+}
+
+func publicationGuardTestHead(t *testing.T, repo string) string {
+	t.Helper()
+	command := exec.Command("git", "-C", repo, "rev-parse", "HEAD")
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(output[:len(output)-1])
 }
 
 func canonicalPublicationGuardT(t *testing.T) string {

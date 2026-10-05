@@ -68,12 +68,11 @@ type observationExecutionPlan struct {
 	moduleDir    string
 }
 
-const (
-	observationExecuteUsage       = "usage: glm-parent-action observation-execute <token>"
-	observationExecuteDetailLimit = 2048
-	observationShadowOutputLimit  = 1 << 20
-	observationStatePollInterval  = 200 * time.Millisecond
-)
+const observationExecuteUsage = "usage: glm-parent-action observation-execute <token>"
+const observationExecuteDetailLimit = 2048
+const observationShadowOutputLimit = 1 << 20
+const observationStatePollInterval = 200 * time.Millisecond
+const observationFinalizationLockTimeout = 10 * time.Second
 
 var (
 	resolveObservationShadowEvalWorker    = resolveGLMWorker
@@ -122,19 +121,55 @@ func executeObservationExecuteAction(cfg config.AppConfig, args []string, stdout
 	outcome := dispatchObservationExecutionForAction(ctx, cfg, st, plan, executionID)
 	stop()
 
-	lock, err = repolock.AcquireWait(st.LockPath())
+	record, err := finalizeObservationExecution(st, plan, outcome, executionID, snapshot, startedAt, started)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = lock.Close() }()
-	if err := verifyObservationExecutionBoundary(st, plan.admission); err != nil {
-		return err
-	}
-	record := newObservationExecutionRecord(plan, outcome, executionID, snapshot, startedAt, time.Since(started).Milliseconds())
-	if err := st.CompleteObservationExecution(record); err != nil {
-		return err
-	}
 	return encodeObservationExecuteOutput(stdout, record)
+}
+
+func finalizeObservationExecution(
+	st *state.StateStore,
+	plan observationExecutionPlan,
+	outcome observationExecutionOutcome,
+	executionID string,
+	snapshot state.GitSnapshot,
+	startedAt time.Time,
+	dispatchStarted time.Time,
+) (state.ObservationExecutionRecord, error) {
+	finalizeCtx, cancelFinalize := context.WithTimeout(context.Background(), observationFinalizationLockTimeout)
+	lock, err := repolock.AcquireContext(finalizeCtx, st.LockPath())
+	cancelFinalize()
+	if err != nil {
+		return state.ObservationExecutionRecord{}, fmt.Errorf("observation post-dispatch finalization lock unavailable: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if boundaryErr := verifyObservationExecutionBoundary(st, plan.admission); boundaryErr != nil {
+		return state.ObservationExecutionRecord{}, resolveObservationExecutionIndeterminate(
+			st,
+			executionID,
+			"observation execution boundary changed after dispatch; the operation may have run and automatic replay is refused: "+boundaryErr.Error(),
+			boundaryErr,
+		)
+	}
+	record := newObservationExecutionRecord(plan, outcome, executionID, snapshot, startedAt, time.Since(dispatchStarted).Milliseconds())
+	if completionErr := st.CompleteObservationExecution(record); completionErr != nil {
+		return state.ObservationExecutionRecord{}, resolveObservationExecutionIndeterminate(
+			st,
+			executionID,
+			"observation dispatch completed but durable completion could not be established; automatic replay is refused: "+completionErr.Error(),
+			completionErr,
+		)
+	}
+	return record, nil
+}
+
+func resolveObservationExecutionIndeterminate(st *state.StateStore, executionID, detail string, primary error) error {
+	recoveryErr := st.ResolveObservationExecutionIndeterminate(executionID, detail, time.Now().UTC())
+	if recoveryErr == nil {
+		return primary
+	}
+	return errors.Join(primary, fmt.Errorf("resolve in-flight observation as indeterminate: %w", recoveryErr))
 }
 
 func beginObservationExecution(
@@ -172,6 +207,9 @@ func prepareObservationExecutionPlan(cfg config.AppConfig, st *state.StateStore,
 	}
 	request, err := observationexec.ParseRequest(payload)
 	if err != nil {
+		return observationExecutionPlan{}, err
+	}
+	if err := st.RecoverStaleObservationExecutions(time.Now().UTC()); err != nil {
 		return observationExecutionPlan{}, err
 	}
 	if err := rejectDuplicateObservationExecution(st, request, admission.Lifecycle.Round); err != nil {
@@ -214,6 +252,7 @@ func newObservationExecutionInFlightRecord(
 		Operation:        string(plan.request.Operation),
 		ParamsDigest:     plan.request.Digest(),
 		Status:           state.ObservationExecutionStatusInFlight,
+		DeadlineMS:       plan.request.ResolvedDeadlineMS(),
 		Head:             snapshot.Head,
 		IndexDigest:      snapshot.IndexDigest,
 		WorktreeDigest:   snapshot.WorktreeDigest,
@@ -241,6 +280,7 @@ func newObservationExecutionRecord(
 		ExitCode:           outcome.ExitCode,
 		ExitSource:         outcome.ExitSource,
 		DurationMS:         durationMS,
+		DeadlineMS:         plan.request.ResolvedDeadlineMS(),
 		Head:               snapshot.Head,
 		IndexDigest:        snapshot.IndexDigest,
 		WorktreeDigest:     snapshot.WorktreeDigest,

@@ -56,7 +56,9 @@ assert_managed_hooks() {
 	repo=$1
 	managed=$(managed_hooks_path "$repo")
 	test "$(git -C "$repo" config --local --get-all core.hooksPath)" = "$managed"
-	test "$(cat "$managed/glm-publication-guard.path")" = "$guard_bin"
+	test "$(sed -n '1p' "$managed/glm-publication-guard.path")" = "$guard_bin"
+	test "$(sed -n '2p' "$managed/glm-publication-guard.path")" = "snapshot=$(git -C "$repo" rev-parse HEAD)"
+	test "$(awk 'END {print NR}' "$managed/glm-publication-guard.path")" -eq 2
 	for hook in post-merge pre-commit reference-transaction pre-push; do
 		test -f "$managed/$hook"
 		test ! -L "$managed/$hook"
@@ -160,6 +162,7 @@ if sh "$helper" install "$repo" >"$tmp/atomic-refresh.stdout" 2>"$tmp/atomic-ref
 	exit 1
 fi
 grep -Fq 'committed source missing: .githooks/reference-transaction' "$tmp/atomic-refresh.stderr"
+cmp "$before/glm-publication-guard.path" "$managed/glm-publication-guard.path"
 for hook in post-merge pre-commit reference-transaction pre-push; do
 	cmp "$before/$hook" "$managed/$hook"
 	test -x "$managed/$hook"
@@ -177,6 +180,7 @@ git -C "$repo" add .githooks/pre-push
 git -C "$repo" commit -qm 'change required hook'
 install_with_activation_failure "$repo" "$tmp/fakemv-activation"
 grep -Fq 'failed to activate validated managed snapshot' "$tmp/fakemv-activation/install.stderr"
+cmp "$before/glm-publication-guard.path" "$managed/glm-publication-guard.path"
 for hook in post-merge pre-commit reference-transaction pre-push; do
 	cmp "$before/$hook" "$managed/$hook"
 	test -x "$managed/$hook"
@@ -195,10 +199,11 @@ chmod 755 "$repo/.githooks/pre-push"
 git -C "$repo" add .githooks/pre-push
 git -C "$repo" commit -qm 'change hook before verification failure'
 install_with_verification_failure "$repo" "$tmp/fakecmp-verification"
+cmp "$before/glm-publication-guard.path" "$managed/glm-publication-guard.path"
 for hook in post-merge pre-commit reference-transaction pre-push; do
 	cmp "$before/$hook" "$managed/$hook"
 done
-test "$(cat "$managed/glm-publication-guard.path")" = "$guard_bin"
+test "$(sed -n '1p' "$managed/glm-publication-guard.path")" = "$guard_bin"
 
 repo="$tmp/detached-first"
 new_repo "$repo"
