@@ -19,10 +19,24 @@ func TestEvaluateObservationCapability(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if policy.Admitted != tc.admitted || policy.Status != tc.status {
+			if policy.Admitted != tc.admitted || policy.Status != tc.status || policy.AuthorityDigest == "" {
 				t.Fatalf("policy = %+v", policy)
 			}
 		})
+	}
+}
+
+func TestEvaluateObservationCapabilityDigestTracksTaskAuthority(t *testing.T) {
+	first, err := EvaluateObservationCapability([]byte("# task\n\n## External feasibility\n\nstatus: observation\nassumption: producer behavior\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := EvaluateObservationCapability([]byte("# task changed\n\n## External feasibility\n\nstatus: observation\nassumption: producer behavior\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.AuthorityDigest == second.AuthorityDigest {
+		t.Fatal("task authority change did not change observation policy identity")
 	}
 }
 
