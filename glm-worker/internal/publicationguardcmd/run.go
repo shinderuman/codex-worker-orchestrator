@@ -78,22 +78,26 @@ func managedHookBypass(command string) (string, string) {
 func managedGitCommitShortNoVerify(command string) bool {
 	fields := strings.Fields(command)
 	for index, field := range fields {
-		if !shellCommandStart(fields, index) || filepath.Base(strings.Trim(field, `"'`)) != "git" {
+		if shellCommandStart(fields, index) && filepath.Base(strings.Trim(field, `"'`)) == "git" && gitCommandHasCommitShortNoVerify(fields[index+1:]) {
+			return true
+		}
+	}
+	return false
+}
+
+func gitCommandHasCommitShortNoVerify(fields []string) bool {
+	commit := false
+	for _, raw := range fields {
+		token := strings.Trim(raw, `"'`)
+		if shellCommandBoundary(token) {
+			return false
+		}
+		if token == "commit" {
+			commit = true
 			continue
 		}
-		commit := false
-		for _, raw := range fields[index+1:] {
-			token := strings.Trim(raw, `"'`)
-			if shellCommandBoundary(token) {
-				break
-			}
-			if token == "commit" {
-				commit = true
-				continue
-			}
-			if commit && token == "-n" {
-				return true
-			}
+		if commit && token == "-n" {
+			return true
 		}
 	}
 	return false
