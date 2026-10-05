@@ -270,11 +270,11 @@ func modelDeadlineDeadlineArgument(arguments []ast.Expr) ast.Expr {
 	if len(arguments) < 2 {
 		return nil
 	}
-	return forwardOnlyUnparen(arguments[1])
+	return modelDeadlineUnparen(arguments[1])
 }
 
 func modelDeadlineZeroTimeLiteral(expression ast.Expr) bool {
-	literal, ok := forwardOnlyUnparen(expression).(*ast.CompositeLit)
+	literal, ok := modelDeadlineUnparen(expression).(*ast.CompositeLit)
 	if !ok {
 		return false
 	}
@@ -284,4 +284,14 @@ func modelDeadlineZeroTimeLiteral(expression ast.Expr) bool {
 	}
 	packageIdentifier, ok := selector.X.(*ast.Ident)
 	return ok && packageIdentifier.Name == "time" && selector.Sel.Name == "Time"
+}
+
+func modelDeadlineUnparen(expression ast.Expr) ast.Expr {
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			return expression
+		}
+		expression = parenthesized.X
+	}
 }

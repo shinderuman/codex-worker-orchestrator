@@ -55,6 +55,30 @@
       "residual_parent_judgment": "The parent reads and semantically interprets the projected authority content after the machine proves source selection and snapshot coherence."
     },
     {
+      "id": "clean-cutover-rejection-only-surface",
+      "classification": "machine-enforced",
+      "purpose": "Reject parent-action registry roots that the current explicit dispatch contract unconditionally rejects, so retired rejection-only surfaces do not remain in the production graph.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/harnesslint/clean_cutover.go",
+          "symbol": "scanCleanCutover"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/harnesslint/clean_cutover_test.go",
+          "symbol": "TestCleanCutoverRejectsRegisteredParentActionRejectionRoots"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/harnesslint/clean_cutover.go",
+          "symbol": "cleanCutoverParentActionViolations"
+        }
+      ],
+      "residual_parent_judgment": "The parent applies the repository-wide forward-only policy to semantic compatibility questions outside this explicit mechanically decidable owner contract."
+    },
+    {
       "id": "codex-auto-resume-automation-transaction",
       "classification": "partial",
       "purpose": "Track the boundary between repository-side Codex auto-resume transaction checks and the external automation write.",
@@ -194,35 +218,10 @@
     },
     {
       "id": "forward-only-compatibility",
-      "classification": "machine-enforced",
-      "purpose": "Reject concrete backward-compatibility, migration, and retired-surface reintroduction patterns through the shared repository lint gate.",
-      "machine_owners": [
-        {
-          "path": "glm-worker/internal/harnesslint/run.go",
-          "symbol": "checkRules"
-        },
-        {
-          "path": "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go",
-          "symbol": "scanForwardOnlyCompatibilityRule"
-        }
-      ],
-      "tests": [
-        {
-          "path": "glm-worker/internal/harnesslint/forward_only_semantic_test.go",
-          "symbol": "TestForwardOnlySemanticRejectsDualParentWaitReader"
-        },
-        {
-          "path": "glm-worker/internal/harnesslint/forward_only_shell_state_test.go",
-          "symbol": "TestForwardOnlyCompatibilityRejectsShellStateCompatibility"
-        }
-      ],
-      "postconditions": [
-        {
-          "path": "glm-worker/internal/harnesslint/forward_only.go",
-          "symbol": "forwardOnlyViolation"
-        }
-      ],
-      "residual_parent_judgment": "The parent decides whether a requested compatibility change is semantically justified; the machine gate only rejects the concrete backward patterns it owns."
+      "classification": "semantic-parent-only",
+      "purpose": "Keep the repository-wide no-backward-compatibility policy explicit without claiming that compatibility intent across arbitrary source is machine-decidable.",
+      "residual_parent_judgment": "The parent applies the forward-only policy to proposed parser, command, state, schema, protocol, migration, fallback, alias, and compatibility changes, while explicit owner-local machine contracts enforce mechanically decidable retired surfaces.",
+      "boundary": "Compatibility intent across arbitrary source requires semantic interpretation; repository-local closed contracts and clean-cutover checks remain independently machine-enforced."
     },
     {
       "id": "goal-task-review-semantic-disposition",
