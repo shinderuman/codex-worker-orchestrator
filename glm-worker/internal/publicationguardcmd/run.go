@@ -25,11 +25,9 @@ type preToolUseOutput struct {
 	Reason   string `json:"reason"`
 }
 
-const Contract = "controller-publication-guard-v1"
-
 func Run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 1 && args[0] == "probe" {
-		_, err := fmt.Fprintln(stdout, Contract)
+		_, err := fmt.Fprintln(stdout, publicationguard.Contract)
 		return err
 	}
 	if len(args) == 1 && args[0] == "pre-tool-use" {
