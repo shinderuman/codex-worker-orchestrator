@@ -10,29 +10,29 @@ func TestSelectedTaskParentRequestProjection(t *testing.T) {
 		want  Continuation
 	}{
 		{
-			name: "current task",
+			name:  "current task",
 			input: SelectedTaskContinuationInput{Task: task, RequiredAction: "none"},
-			want: Continuation{State: ContinuationContinueNow, Task: task, RequiredAction: "none", Reason: ReasonCurrentTask},
+			want:  Continuation{State: ContinuationContinueNow, Task: task, RequiredAction: "none", Reason: ReasonCurrentTask},
 		},
 		{
-			name: "not started",
+			name:  "not started",
 			input: SelectedTaskContinuationInput{Task: task, RequiredAction: "none", StartRequired: true},
-			want: Continuation{State: ContinuationContinueNow, Task: task, RequiredAction: ActionStart, Reason: ReasonCurrentTask},
+			want:  Continuation{State: ContinuationContinueNow, Task: task, RequiredAction: ActionStart, Reason: ReasonCurrentTask},
 		},
 		{
-			name: "rate limited",
+			name:  "rate limited",
 			input: SelectedTaskContinuationInput{Task: task, RequiredAction: "resume", TemporaryBlockReason: "rate-limited"},
-			want: Continuation{State: ContinuationBlocked, Task: task, RequiredAction: "resume", Reason: "rate-limited"},
+			want:  Continuation{State: ContinuationBlocked, Task: task, RequiredAction: "resume", Reason: "rate-limited"},
 		},
 		{
-			name: "provider unavailable",
+			name:  "provider unavailable",
 			input: SelectedTaskContinuationInput{Task: task, RequiredAction: "resume", TemporaryBlockReason: "provider-unavailable"},
-			want: Continuation{State: ContinuationBlocked, Task: task, RequiredAction: "resume", Reason: "provider-unavailable"},
+			want:  Continuation{State: ContinuationBlocked, Task: task, RequiredAction: "resume", Reason: "provider-unavailable"},
 		},
 		{
-			name: "interrupted",
+			name:  "interrupted",
 			input: SelectedTaskContinuationInput{Task: task, RequiredAction: "resume", Interrupted: true},
-			want: Continuation{State: ContinuationExplicitStop, Task: task, RequiredAction: "resume", Reason: ReasonUserInterruption},
+			want:  Continuation{State: ContinuationExplicitStop, Task: task, RequiredAction: "resume", Reason: ReasonUserInterruption},
 		},
 	}
 	for _, tc := range cases {
