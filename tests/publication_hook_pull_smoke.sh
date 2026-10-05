@@ -40,11 +40,13 @@ git -C "$repo" commit -qm initial
 git -C "$repo" remote add origin "$remote"
 git -C "$repo" push -q -u origin main
 
+install_revision=$(git -C "$repo" rev-parse HEAD)
 sh "$source_root/scripts/manage-pull-hook.sh" install "$repo" "$guard"
 managed=$(git -C "$repo" config --local --get-all core.hooksPath)
 test -x "$managed/reference-transaction"
 test -x "$managed/pre-push"
-test "$(cat "$managed/glm-publication-guard.path")" = "$guard"
+test "$(sed -n '1p' "$managed/glm-publication-guard.path")" = "$guard"
+test "$(sed -n '2p' "$managed/glm-publication-guard.path")" = "snapshot=$install_revision"
 
 for hook in reference-transaction pre-push; do
 	if grep -Fq 'push-binding' "$source_root/.githooks/$hook" || grep -Fq 'glm-parent-action.path' "$source_root/.githooks/$hook"; then
@@ -76,3 +78,4 @@ fi
 
 after=$(git -C "$repo" rev-parse HEAD)
 test "$after" = "$remote_head"
+test "$(sed -n '2p' "$managed/glm-publication-guard.path")" = "snapshot=$install_revision"
