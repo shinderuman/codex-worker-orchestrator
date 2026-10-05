@@ -358,14 +358,20 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		TemporaryBlockReason: temporaryBlockReason(status),
 		Interrupted:          status == state.TaskStatusInterrupted,
 	})
-	binding, err := st.LoadControllerRuntimeBinding()
-	if err != nil {
-		return Request{}, true, err
+	lifecycleTask := task.TaskPath
+	binding, bindingErr := st.LoadControllerRuntimeBinding()
+	switch {
+	case bindingErr == nil:
+		if binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest {
+			return Request{}, true, errors.New("controller runtime binding does not match canonical execution task")
+		}
+		lifecycleTask = binding.TaskPath
+	case quiescent && errors.Is(bindingErr, os.ErrNotExist):
+		// A quiescent controller has no live runtime binding; the controller semantic task is canonical.
+	default:
+		return Request{}, true, bindingErr
 	}
-	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
-		return Request{}, true, errors.New("controller runtime binding does not match canonical execution task")
-	}
-	attribution := repositoryproject.DeriveTaskAttribution(binding.TaskPath, task.TaskPath, policy.Continuation)
+	attribution := repositoryproject.DeriveTaskAttribution(lifecycleTask, task.TaskPath, policy.Continuation)
 	if authorityTask, err := st.CurrentTaskAuthorityPath(); err == nil {
 		attribution = repositoryproject.BindTaskAuthority(attribution, authorityTask)
 	}
