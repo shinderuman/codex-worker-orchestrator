@@ -1,19 +1,19 @@
 #!/bin/sh
 set -u
 
+if ! command -v glm-publication-guard >/dev/null 2>&1; then
+	printf '%s\n' '{"decision":"block","reason":"current publication guard unavailable; do not bypass managed repository guards"}'
+	exit 0
+fi
+
 payload=$(
 	while IFS= read -r line || [ -n "$line" ]; do
 		printf '%s\n' "$line"
 	done
 )
 
-if ! command -v glm-parent-action >/dev/null 2>&1; then
-	printf '%s\n' '{"decision":"block","reason":"glm-parent-action unavailable; do not bypass managed publication guards"}'
-	exit 0
-fi
-
-if ! output=$(glm-parent-action push-binding push-guard --pre-tool-use "$payload" 2>/dev/null); then
-	printf '%s\n' '{"decision":"block","reason":"publication command guard unavailable; do not bypass managed publication guards"}'
+if ! output=$(printf '%s\n' "$payload" | glm-publication-guard pre-tool-use 2>/dev/null); then
+	printf '%s\n' '{"decision":"block","reason":"current publication guard classification unavailable; do not bypass managed repository guards"}'
 	exit 0
 fi
 

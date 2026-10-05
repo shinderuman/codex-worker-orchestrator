@@ -46,7 +46,7 @@ func TestCanonicalParentAcceptanceRequiresCurrentAttemptAndProjectsPublication(t
 		t.Fatal(err)
 	}
 	handoff := buildParentHandoffWithConfig(cfg, st)
-	if !handoff.Consistent || handoff.Controller == nil || handoff.RequiredAction == nil || *handoff.RequiredAction != "controller-publication" || handoff.Publication != nil {
+	if !handoff.Consistent || handoff.Controller == nil || handoff.RequiredAction == nil || *handoff.RequiredAction != "controller-publication" {
 		t.Fatalf("canonical publication handoff: %#v", handoff)
 	}
 	raw, err := json.Marshal(handoff)

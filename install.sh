@@ -106,6 +106,7 @@ build_binaries() {
 		cd "$repo_root/glm-worker"
 		go build -buildvcs=false -trimpath -ldflags "$runtime_ldflags" -o "$build_dir/glm-worker" ./cmd/glm-worker
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-parent-action" ./cmd/glm-parent-action
+		go build -buildvcs=false -trimpath -o "$build_dir/glm-publication-guard" ./cmd/glm-publication-guard
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-codex-context" ./cmd/glm-codex-context
 		go build -buildvcs=false -trimpath -o "$build_dir/codex-install" ./cmd/codex-install
 		go build -buildvcs=false -trimpath -o "$build_dir/repo-cli-install" ./cmd/repo-cli-install
@@ -141,7 +142,7 @@ merge_claude_settings() {
 }
 
 install_pull_hook() {
-	sh "$repo_root/scripts/manage-pull-hook.sh" install "$repo_root" "$bin_dir/glm-parent-action"
+	sh "$repo_root/scripts/manage-pull-hook.sh" install "$repo_root" "$bin_dir/glm-publication-guard"
 }
 
 require git

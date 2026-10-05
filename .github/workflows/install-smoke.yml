@@ -27,6 +27,9 @@ jobs:
           - name: hook-ownership
             command: sh ./tests/install_hook_ownership_smoke.sh
             quality_setup: false
+          - name: publication-pull-fast-forward
+            command: sh ./tests/publication_hook_pull_smoke.sh
+            quality_setup: true
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
