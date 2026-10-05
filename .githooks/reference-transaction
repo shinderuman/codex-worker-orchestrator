@@ -31,11 +31,15 @@ if [ ! -x "$publication_guard" ]; then
   printf '%s\n' 'publication guard rejected: configured controller guard is not executable' >&2
   exit 1
 fi
+if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+  printf '%s\n' 'publication guard rejected: repository root unavailable' >&2
+  exit 1
+fi
 
 while IFS=' ' read -r old_oid new_oid ref_name; do
   case "$ref_name" in
   refs/heads/*)
-    if ! "$publication_guard" ref-update --old "$old_oid" --new "$new_oid" --ref "$ref_name" >/dev/null; then
+    if ! (cd "$repo_root" && "$publication_guard" ref-update --old "$old_oid" --new "$new_oid" --ref "$ref_name" >/dev/null); then
       printf 'publication ref update rejected: %s\n' "$ref_name" >&2
       exit 1
     fi
