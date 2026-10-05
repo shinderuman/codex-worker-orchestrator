@@ -69,7 +69,7 @@ var pocGoNoGoBoilerplateTiers = []pocGoNoGoBoilerplate{
 	},
 	{
 		decision:       "実producer観測結果のGo/No-Go。昇格は親が宣言をimplementation+producer evidence+goへ書き換えてから",
-		options:        "Go: 親が宣言をimplementationへmigrationして再委譲; No-Go: 撤退; 観測継続: 宣言をpoc/observationのまま再実行",
+		options:        "Go: 親が宣言をimplementationへmigrationして再委譲; No-Go: 撤退; 観測継続: 宣言のまま再実行",
 		recommendation: "GLM側では昇格せず親Solが実producer evidenceで判断",
 	},
 	{
