@@ -8,9 +8,6 @@ import (
 
 func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T) {
 	st := newParentActionTestStore(t)
-	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/observation.md", []byte("# observation\n\n## External feasibility\n\nstatus: observation\nassumption: representative producer behavior\n")); err != nil {
-		t.Fatal(err)
-	}
 	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
 		t.Fatal(err)
 	}
@@ -20,18 +17,18 @@ func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole), Model: "opus"}); err != nil {
 		t.Fatal(err)
 	}
-
-	if !st.ObservationNoGoEligible() {
-		t.Fatal("observation decision should admit terminal no-go")
+	admission, err := st.ObservationLifecycleAdmission()
+	if err != nil {
+		t.Fatal(err)
 	}
 	plan, err := st.ParentActionPlan()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.RequiredAction != ParentActionDecision || !plan.Allows(ParentActionDecision) || !plan.Allows(ParentActionNoGo) {
-		t.Fatalf("observation decision plan = %#v", plan)
+	if plan.RequiredAction != ParentActionDecision || !plan.Allows(ParentActionDecision) || plan.Allows(ParentActionNoGo) {
+		t.Fatalf("generic decision plan = %#v", plan)
 	}
-	awaited, err := st.AwaitObservationNoGo()
+	awaited, err := st.AwaitObservationNoGo(admission)
 	if err != nil || !awaited {
 		t.Fatalf("await no-go = %v err=%v", awaited, err)
 	}
@@ -91,11 +88,8 @@ func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T
 	}
 }
 
-func TestAwaitObservationNoGoRejectsGenericDecision(t *testing.T) {
+func TestAwaitObservationNoGoRejectsStaleLifecycleAdmission(t *testing.T) {
 	st := newParentActionTestStore(t)
-	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/normal.md", []byte("# normal\n\n## External feasibility\n\nstatus: not-applicable\n")); err != nil {
-		t.Fatal(err)
-	}
 	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
 		t.Fatal(err)
 	}
@@ -105,21 +99,15 @@ func TestAwaitObservationNoGoRejectsGenericDecision(t *testing.T) {
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{}); err != nil {
 		t.Fatal(err)
 	}
-
-	if st.ObservationNoGoEligible() {
-		t.Fatal("generic decision must not admit terminal no-go")
-	}
-	plan, err := st.ParentActionPlan()
+	admission, err := st.ObservationLifecycleAdmission()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Allows(ParentActionNoGo) {
-		t.Fatalf("generic decision plan exposes no-go: %#v", plan)
-	}
-	if awaited, err := st.AwaitObservationNoGo(); err == nil || awaited {
-		t.Fatalf("generic no-go = %v err=%v", awaited, err)
+	admission.Round++
+	if awaited, err := st.AwaitObservationNoGo(admission); err == nil || awaited {
+		t.Fatalf("stale no-go = %v err=%v", awaited, err)
 	}
 	if st.TaskStatus() != TaskStatusWaitingDecision || !st.Exists("pending-decision") {
-		t.Fatalf("generic decision was mutated: status:%s pending:%v", st.TaskStatus(), st.Exists("pending-decision"))
+		t.Fatalf("stale admission mutated state: status:%s pending:%v", st.TaskStatus(), st.Exists("pending-decision"))
 	}
 }
