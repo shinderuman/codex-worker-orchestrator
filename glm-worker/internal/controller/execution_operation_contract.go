@@ -18,62 +18,83 @@ type executionOperationContract struct {
 	projectResult   func(ExecutionOperation, RepositoryControllerHead, *ExecutionOperationResult) error
 }
 
-func (s *Store) executionOperationContract(kind string) (executionOperationContract, error) {
-	switch kind {
-	case executionModelCall:
+type executionOperationContractFactory func(*Store) executionOperationContract
+
+var executionOperationContractTable = map[string]executionOperationContractFactory{
+	executionModelCall: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsNone,
 			validate:        s.validateModelCallAdmission,
 			apply:           s.applyModelCallAdmission,
 			verifyCommitted: s.verifyCommittedModelCallAdmission,
 			projectResult:   s.projectExecutionAdmissionResult,
-		}, nil
-	case terminalRetire:
+		}
+	},
+	terminalRetire: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsOneOrMore,
 			validate:        s.validateTerminalMetadataOperation,
 			apply:           s.applyTerminalMetadata,
 			verifyCommitted: s.verifyCommittedTerminalMetadata,
-		}, nil
-	case executionSuspend:
+		}
+	},
+	executionSuspend: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsSingle,
 			validate:        s.validateSuspensionOperation,
 			apply:           s.applyExecutionSuspension,
 			verifyCommitted: s.verifyCommittedSuspension,
-		}, nil
-	case executionMaterialize:
+		}
+	},
+	executionMaterialize: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsSingle,
 			validate:        s.validateMaterializationOperation,
 			apply:           s.applyExecutionMaterialization,
 			verifyCommitted: s.verifyCommittedMaterialization,
 			projectResult:   s.projectExecutionAdmissionResult,
-		}, nil
-	case executionCleanup:
+		}
+	},
+	executionCleanup: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsSingle,
 			validate:        s.validateCleanupOperation,
 			apply:           s.applyExecutionCleanup,
 			verifyCommitted: s.verifyCommittedCleanup,
-		}, nil
-	case executionGC:
+		}
+	},
+	executionGC: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsSingle,
 			validate:        validateSuspensionGCOperation,
 			apply:           s.applySuspensionGC,
 			verifyCommitted: s.verifyCommittedSuspensionGC,
-		}, nil
-	case publicationAccept, publicationPromote, publicationPublish, publicationRebind, publicationAdopt, publicationRevalidate, publicationReenter:
-		return executionOperationContract{
-			effects:         executionOperationEffectsOneOrMore,
-			validate:        s.validatePublicationOperation,
-			apply:           s.applyPublicationOperation,
-			verifyCommitted: s.verifyCommittedPublication,
-			projectResult:   projectPublicationExecutionResult,
-		}, nil
-	default:
+		}
+	},
+	publicationAccept:     publicationExecutionOperationContract,
+	publicationPromote:    publicationExecutionOperationContract,
+	publicationPublish:    publicationExecutionOperationContract,
+	publicationRebind:     publicationExecutionOperationContract,
+	publicationAdopt:      publicationExecutionOperationContract,
+	publicationRevalidate: publicationExecutionOperationContract,
+	publicationReenter:    publicationExecutionOperationContract,
+}
+
+func (s *Store) executionOperationContract(kind string) (executionOperationContract, error) {
+	factory, ok := executionOperationContractTable[kind]
+	if !ok {
 		return executionOperationContract{}, fmt.Errorf("unknown execution operation")
+	}
+	return factory(s), nil
+}
+
+func publicationExecutionOperationContract(s *Store) executionOperationContract {
+	return executionOperationContract{
+		effects:         executionOperationEffectsOneOrMore,
+		validate:        s.validatePublicationOperation,
+		apply:           s.applyPublicationOperation,
+		verifyCommitted: s.verifyCommittedPublication,
+		projectResult:   projectPublicationExecutionResult,
 	}
 }
 
