@@ -17,7 +17,7 @@ func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole), Model: "opus"}); err != nil {
 		t.Fatal(err)
 	}
-	admission, err := st.ObservationLifecycleAdmission()
+	admission, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestAwaitObservationNoGoRejectsStaleLifecycleAdmission(t *testing.T) {
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{}); err != nil {
 		t.Fatal(err)
 	}
-	admission, err := st.ObservationLifecycleAdmission()
+	admission, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatal(err)
 	}
