@@ -12,7 +12,6 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		return
 	}
 	output.Controller = &report
-	output.Publication = nil
 	if !output.Consistent {
 		return
 	}

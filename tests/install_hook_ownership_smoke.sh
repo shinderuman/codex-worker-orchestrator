@@ -9,7 +9,7 @@ real_git=$(command -v git)
 real_mv=$(command -v mv)
 real_cmp=$(command -v cmp)
 mkdir -p "$tmp/bin"
-guard_bin="$tmp/bin/glm-parent-action"
+guard_bin="$tmp/bin/glm-publication-guard"
 printf '#!/bin/sh\nexit 0\n' >"$guard_bin"
 chmod 755 "$guard_bin"
 PATH="$tmp/bin:$PATH"
@@ -56,7 +56,7 @@ assert_managed_hooks() {
 	repo=$1
 	managed=$(managed_hooks_path "$repo")
 	test "$(git -C "$repo" config --local --get-all core.hooksPath)" = "$managed"
-	test "$(cat "$managed/glm-parent-action.path")" = "$guard_bin"
+	test "$(cat "$managed/glm-publication-guard.path")" = "$guard_bin"
 	for hook in post-merge pre-commit reference-transaction pre-push; do
 		test -f "$managed/$hook"
 		test ! -L "$managed/$hook"
@@ -198,7 +198,7 @@ install_with_verification_failure "$repo" "$tmp/fakecmp-verification"
 for hook in post-merge pre-commit reference-transaction pre-push; do
 	cmp "$before/$hook" "$managed/$hook"
 done
-test "$(cat "$managed/glm-parent-action.path")" = "$guard_bin"
+test "$(cat "$managed/glm-publication-guard.path")" = "$guard_bin"
 
 repo="$tmp/detached-first"
 new_repo "$repo"

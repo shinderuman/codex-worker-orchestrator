@@ -140,9 +140,6 @@ func TestParentHandoffAfterReopenProjectsWaitingSolReviewWithFixAction(t *testin
 	if handoffAllowsAction(output.AllowedActions, string(state.ParentActionAccept)) || handoffAllowsAction(output.AllowedActions, string(state.ParentActionComplete)) || handoffAllowsAction(output.AllowedActions, string(state.ParentActionReopen)) {
 		t.Fatalf("reopened allowed actions keep terminal actions: %#v", output.AllowedActions)
 	}
-	if output.Publication != nil {
-		t.Fatalf("reopened handoff keeps publication projection: %#v", output.Publication)
-	}
 	recovery := projectParentHandoffRecovery(output)
 	if recovery.TaskStatus == nil || *recovery.TaskStatus != string(state.TaskStatusWaitingSolReview) {
 		t.Fatalf("reopened recovery handoff task status = %#v", recovery.TaskStatus)
