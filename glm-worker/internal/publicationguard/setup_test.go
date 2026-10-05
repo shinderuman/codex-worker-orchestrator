@@ -20,7 +20,7 @@ func TestInspectPublicationGuardSetupRequiresBinding(t *testing.T) {
 	}
 }
 
-func TestInspectPublicationGuardSetupAcceptsCanonicalIdentity(t *testing.T) {
+func TestInspectPublicationGuardSetupAcceptsExecutableBinding(t *testing.T) {
 	repo := newPublicationGuardTestRepo(t)
 	bindCanonicalPublicationGuardT(t, filepath.Join(repo, ".githooks"))
 	report, err := InspectPublicationGuardSetup(repo)
