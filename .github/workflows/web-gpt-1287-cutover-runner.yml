@@ -72,35 +72,35 @@ jobs:
 
           projection_path = Path('glm-worker/internal/parentcontinuation/projection.go')
           projection = projection_path.read_text()
+          fallback_before = (
+              '\ttask, canonical, err := controller.WorkflowExecutionTask(cfg)\n'
+              '\tif canonical && err != nil {\n'
+              '\t\ttask, err = quiescentControllerTask(cfg, err)\n'
+              '\t}\n'
+          )
+          fallback_after = (
+              '\ttask, canonical, err := controller.WorkflowExecutionTask(cfg)\n'
+              '\tquiescent := canonical && err != nil\n'
+              '\tif quiescent {\n'
+              '\t\ttask, err = quiescentControllerTask(cfg, err)\n'
+              '\t}\n'
+          )
+          if projection.count(fallback_before) != 1:
+              raise SystemExit('canonical quiescent fallback boundary is not unique')
+          projection = projection.replace(fallback_before, fallback_after, 1)
           strict = (
               '\tif binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest {\n'
               '\t\treturn Request{}, true, errors.New("controller runtime binding does not match canonical execution task")\n'
               '\t}\n'
           )
-          handover = (
-              '\tif binding.TaskPath == task.TaskPath && binding.TaskContractDigest != task.ContractDigest {\n'
-              '\t\treturn Request{}, true, errors.New("controller runtime binding contract digest does not match canonical execution task")\n'
+          live_only = (
+              '\tif !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {\n'
+              '\t\treturn Request{}, true, errors.New("controller runtime binding does not match canonical execution task")\n'
               '\t}\n'
           )
           if projection.count(strict) != 1:
-              raise SystemExit('canonical handover attribution boundary is not unique')
-          projection_path.write_text(projection.replace(strict, handover, 1))
-
-          diag_path = Path('glm-worker/internal/app/canonical_workflow_integration_test.go')
-          diag = diag_path.read_text()
-          old = '\t\tt.Fatalf("quiescent controller handoff: %#v", handoff)\n'
-          new = (
-              '\t\tbinding, bindingErr := st.LoadControllerRuntimeBinding()\n'
-              '\t\tstore, storeErr := controller.Open(cfg)\n'
-              '\t\tif storeErr != nil {\n'
-              '\t\t\tt.Fatalf("quiescent controller handoff: %#v binding=%#v bindingErr=%v controllerErr=%v", handoff, binding, bindingErr, storeErr)\n'
-              '\t\t}\n'
-              '\t\thead, headErr := store.LoadHead()\n'
-              '\t\tt.Fatalf("quiescent controller handoff: %#v binding=%#v bindingErr=%v execution=%#v root=%#v headErr=%v", handoff, binding, bindingErr, head.ExecutionTaskRef, head.RootTaskRef, headErr)\n'
-          )
-          if diag.count(old) != 1:
-              raise SystemExit('canonical handoff diagnostic boundary is not unique')
-          diag_path.write_text(diag.replace(old, new, 1))
+              raise SystemExit('canonical live binding validation boundary is not unique')
+          projection_path.write_text(projection.replace(strict, live_only, 1))
           BOOT
 
           changed_go="$(git status --porcelain | awk '{print $2}' | grep '\.go$' || true)"
@@ -108,7 +108,11 @@ jobs:
             gofmt -w $changed_go
           fi
           cd glm-worker
-          go test ./internal/app -run TestCanonicalWorkflow606F11DispatchAndRootResume -count=1 -v
-          exit 1
-      - name: Never commit diagnostic cutover
-        run: exit 1
+          go test ./...
+      - name: Commit validated cutover
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal
+          git commit -m "Use one controller runtime binding"
+          git push
