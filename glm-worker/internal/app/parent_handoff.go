@@ -8,34 +8,32 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 )
 
 type parentHandoffOutput struct {
-	Controller               *controller.ControllerStatusReport       `json:"controller,omitempty"`
-	Version                  int                                      `json:"version"`
-	Consistent               bool                                     `json:"consistent"`
-	Inconsistency            *string                                  `json:"inconsistency"`
-	TaskID                   *string                                  `json:"task_id"`
-	TaskStatus               *string                                  `json:"task_status"`
-	RequiredAction           *string                                  `json:"required_action"`
-	AllowedActions           []string                                 `json:"allowed_actions"`
-	RequiredActionParameters map[string]string                        `json:"required_action_parameters,omitempty"`
-	ResumeKind               *string                                  `json:"resume_kind"`
-	PendingDecision          bool                                     `json:"pending_decision"`
-	ParentReviewOpen         *string                                  `json:"parent_review_open"`
-	Baseline                 *state.GitBaselineEvidence               `json:"baseline"`
-	Snapshot                 *state.SnapshotDigest                    `json:"snapshot"`
-	ArtifactDir              *string                                  `json:"artifact_dir"`
-	LastMaterial             *parentHandoffMaterial                   `json:"last_material"`
-	Validations              []parentHandoffValidation                `json:"validations"`
-	RoutingEvidence          []parentHandoffRoutingEvidence           `json:"routing_evidence"`
-	SessionRotation          *state.SessionRotationProjection         `json:"session_rotation"`
-	ParentRequest            *ParentRequestCompletionProjection       `json:"parent_request"`
-	Publication              *publicationsequence.PublicationSequence `json:"publication,omitempty"`
+	Controller               *controller.ControllerStatusReport `json:"controller,omitempty"`
+	Version                  int                                `json:"version"`
+	Consistent               bool                               `json:"consistent"`
+	Inconsistency            *string                            `json:"inconsistency"`
+	TaskID                   *string                            `json:"task_id"`
+	TaskStatus               *string                            `json:"task_status"`
+	RequiredAction           *string                            `json:"required_action"`
+	AllowedActions           []string                           `json:"allowed_actions"`
+	RequiredActionParameters map[string]string                  `json:"required_action_parameters,omitempty"`
+	ResumeKind               *string                            `json:"resume_kind"`
+	PendingDecision          bool                               `json:"pending_decision"`
+	ParentReviewOpen         *string                            `json:"parent_review_open"`
+	Baseline                 *state.GitBaselineEvidence         `json:"baseline"`
+	Snapshot                 *state.SnapshotDigest              `json:"snapshot"`
+	ArtifactDir              *string                            `json:"artifact_dir"`
+	LastMaterial             *parentHandoffMaterial             `json:"last_material"`
+	Validations              []parentHandoffValidation          `json:"validations"`
+	RoutingEvidence          []parentHandoffRoutingEvidence     `json:"routing_evidence"`
+	SessionRotation          *state.SessionRotationProjection   `json:"session_rotation"`
+	ParentRequest            *ParentRequestCompletionProjection `json:"parent_request"`
 }
 
 type parentHandoffRecoveryOutput struct {
@@ -209,10 +207,6 @@ func buildParentHandoffFromContinuation(st *state.StateStore, continuation paren
 	applyParentLastMaterial(st, taskID, &output)
 	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
 	output.RoutingEvidence = currentParentRoutingEvidence(st, repoRoot, taskID, output.Snapshot)
-	if output.Consistent && (taskStatus == state.TaskStatusAwaitingParentCompletion || taskStatus == state.TaskStatusComplete) {
-		sequence := publicationsequence.ProjectPublicationSequence(repoRoot, st)
-		output.Publication = &sequence
-	}
 	return output
 }
 
