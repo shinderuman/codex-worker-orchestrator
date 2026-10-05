@@ -1,0 +1,28 @@
+name: Web GPT 1318 Mode Repair
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-1318-controller-publication-hook-cutover
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'Temporary restore PreToolUse executable mode'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Restore executable mode
+        run: |
+          chmod 755 .codex/hooks/publication-pre-tool-use.sh
+          git diff --check
+          test "$(git diff --summary -- .codex/hooks/publication-pre-tool-use.sh)" = ' mode change 100644 => 100755 .codex/hooks/publication-pre-tool-use.sh'
+      - name: Commit mode
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .codex/hooks/publication-pre-tool-use.sh
+          git commit -m 'Restore publication PreToolUse executable mode'
+          git push origin HEAD:${GITHUB_REF_NAME}
