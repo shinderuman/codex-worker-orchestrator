@@ -30,13 +30,13 @@ func admitObservationDecisionBoundary(t *testing.T, st *StateStore) {
 	}
 }
 
-func TestObservationLifecycleAdmissionRequiresPendingDecision(t *testing.T) {
+func TestObservationExecuteAdmissionRequiresPendingObservationDecision(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
-	if _, err := st.ObservationLifecycleAdmission(); err == nil {
+	if _, err := st.ObservationExecuteAdmission(); err == nil {
 		t.Fatal("pending decisionがない状態でadmitされました")
 	}
 	admitObservationDecisionBoundary(t, st)
-	admission, err := st.ObservationLifecycleAdmission()
+	admission, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatalf("pending decision lifecycleがadmitされません: %v", err)
 	}
@@ -59,17 +59,17 @@ func TestObservationLifecycleAdmissionRequiresPendingDecision(t *testing.T) {
 	}
 }
 
-func TestObservationLifecycleAdmissionDoesNotDependOnTaskStats(t *testing.T) {
+func TestObservationExecuteAdmissionDoesNotDependOnTaskStats(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
 	admitObservationDecisionBoundary(t, st)
-	expected, err := st.ObservationLifecycleAdmission()
+	expected, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Remove(currentStatsFile); err != nil {
 		t.Fatal(err)
 	}
-	missingStats, err := st.ObservationLifecycleAdmission()
+	missingStats, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatalf("missing TaskStats invalidated canonical observation lifecycle: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestObservationLifecycleAdmissionDoesNotDependOnTaskStats(t *testing.T) {
 	if err := st.Write(currentStatsFile, "{not-json"); err != nil {
 		t.Fatal(err)
 	}
-	corruptStats, err := st.ObservationLifecycleAdmission()
+	corruptStats, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatalf("corrupt TaskStats invalidated canonical observation lifecycle: %v", err)
 	}
@@ -88,13 +88,13 @@ func TestObservationLifecycleAdmissionDoesNotDependOnTaskStats(t *testing.T) {
 	}
 }
 
-func TestObservationLifecycleAdmissionFailsClosedWithoutCanonicalDecisionIdentity(t *testing.T) {
+func TestObservationExecuteAdmissionFailsClosedWithoutCanonicalDecisionIdentity(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
 	admitObservationDecisionBoundary(t, st)
 	if err := st.Remove(parentEvidenceLeasePath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.ObservationLifecycleAdmission(); err == nil {
+	if _, err := st.ObservationExecuteAdmission(); err == nil {
 		t.Fatal("missing canonical decision identity was admitted")
 	}
 }
@@ -105,7 +105,7 @@ func TestObservationExecutionRecordsRoundScopedAndBounded(t *testing.T) {
 	digests := make([]string, 0, 3)
 	for index := 0; index < 3; index++ {
 		admitObservationDecisionBoundary(t, st)
-		admission, err := st.ObservationLifecycleAdmission()
+		admission, err := st.ObservationExecuteAdmission()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +142,7 @@ func TestObservationExecutionRecordsRoundScopedAndBounded(t *testing.T) {
 func TestObservationExecutionRoundAdvancesWhenTaskStatsWriteIsLost(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
 	admitObservationDecisionBoundary(t, st)
-	first, err := st.ObservationLifecycleAdmission()
+	first, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestObservationExecutionRoundAdvancesWhenTaskStatsWriteIsLost(t *testing.T)
 		t.Fatal(err)
 	}
 	admitObservationDecisionBoundary(t, st)
-	second, err := st.ObservationLifecycleAdmission()
+	second, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		t.Fatalf("later canonical decision was not admitted after TaskStats write loss: %v", err)
 	}
