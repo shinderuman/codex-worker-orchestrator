@@ -12,8 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
-const Contract = "controller-publication-guard-v1"
-
 type preToolUseInput struct {
 	ToolName  string `json:"tool_name"`
 	ToolInput struct {
@@ -26,6 +24,8 @@ type preToolUseOutput struct {
 	Code     string `json:"code"`
 	Reason   string `json:"reason"`
 }
+
+const Contract = "controller-publication-guard-v1"
 
 func Run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 1 && args[0] == "probe" {
