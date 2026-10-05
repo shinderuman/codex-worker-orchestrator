@@ -20,6 +20,9 @@ func (s *Store) validateExecutionOperation(op ExecutionOperation) (executionOper
 	if err != nil {
 		return executionOperationContract{}, err
 	}
+	if contract.validate == nil || contract.apply == nil || contract.verifyCommitted == nil {
+		return executionOperationContract{}, fmt.Errorf("execution operation contract is incomplete")
+	}
 	if err := validateExecutionOperationEffects(op, contract.effects); err != nil {
 		return executionOperationContract{}, err
 	}
