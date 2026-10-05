@@ -108,9 +108,9 @@ func TestParseStructuredOutputRejectsInvalidPayloads(t *testing.T) {
 func TestApplyLabelsValidatesAndStoresDispositions(t *testing.T) {
 	registry := Registry{}.WithRecord(observedRecord("task-a", verifiedFinding("a:1"), verifiedFinding("a:2")))
 	labels := LabelInput{
-		Schema:       LabelsSchema,
-		TaskID:       "task-a",
-		ReviewNumber: 1,
+		Schema:              LabelsSchema,
+		TaskID:              "task-a",
+		ReviewNumber:        1,
 		FindingDispositions: []FindingDispositionInput{
 			{Index: 0, Disposition: DispositionTruePositive},
 			{Index: 1, Disposition: DispositionFalsePositive},
@@ -145,8 +145,8 @@ func TestApplyLabelsRejectsInvalidInput(t *testing.T) {
 		WithRecord(Record{TaskID: "task-b", ReviewNumber: 1, Outcome: OutcomeMissingDeadline})
 	negative := -1
 	cases := map[string]LabelInput{
-		"unknown-task": {Schema: LabelsSchema, TaskID: "task-zz", ReviewNumber: 1},
-		"non-observed": {Schema: LabelsSchema, TaskID: "task-b", ReviewNumber: 1},
+		"unknown-task":   {Schema: LabelsSchema, TaskID: "task-zz", ReviewNumber: 1},
+		"non-observed":   {Schema: LabelsSchema, TaskID: "task-b", ReviewNumber: 1},
 		"missing-review": {Schema: LabelsSchema, TaskID: "task-a"},
 		"index-range": {Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 1,
 			FindingDispositions: []FindingDispositionInput{{Index: 5, Disposition: DispositionTruePositive}}},
