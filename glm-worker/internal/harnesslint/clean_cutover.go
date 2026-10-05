@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	cleanCutoverRule         = "clean-cutover-rejection-only-surface"
-	parentActionMetadataPath = "glm-worker/internal/parentactioncmd/command_metadata.go"
-	parentActionRegistryName = "parentActionCommands"
-	parentActionDispatchName = "executeParentActionCommand"
+	cleanCutoverRule          = "clean-cutover-rejection-only-surface"
+	cleanCutoverNilIdentifier = "nil"
+	parentActionMetadataPath  = "glm-worker/internal/parentactioncmd/command_metadata.go"
+	parentActionRegistryName  = "parentActionCommands"
+	parentActionDispatchName  = "executeParentActionCommand"
 )
 
 func scanCleanCutover(root string, paths []string) ([]Violation, error) {
@@ -234,7 +235,7 @@ func cleanCutoverIdentAndNil(identifierExpr, nilExpr ast.Expr, name string) bool
 		return false
 	}
 	nilIdentifier, ok := nilExpr.(*ast.Ident)
-	return ok && nilIdentifier.Name == forwardOnlyNilIdentifier
+	return ok && nilIdentifier.Name == cleanCutoverNilIdentifier
 }
 
 func cleanCutoverBlockReturnsIdentifier(block *ast.BlockStmt, name string) bool {
@@ -338,7 +339,7 @@ func cleanCutoverStatementsReturnNil(statements []ast.Stmt) bool {
 			continue
 		}
 		identifier, ok := result.Results[0].(*ast.Ident)
-		if ok && identifier.Name == forwardOnlyNilIdentifier {
+		if ok && identifier.Name == cleanCutoverNilIdentifier {
 			return true
 		}
 	}
@@ -352,7 +353,7 @@ func cleanCutoverStatementsReturnNonNil(statements []ast.Stmt) bool {
 			continue
 		}
 		identifier, isIdentifier := result.Results[0].(*ast.Ident)
-		if !isIdentifier || identifier.Name != forwardOnlyNilIdentifier {
+		if !isIdentifier || identifier.Name != cleanCutoverNilIdentifier {
 			return true
 		}
 	}

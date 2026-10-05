@@ -186,7 +186,7 @@ func TestControlProvenanceRequiresKnownCurrentMachineControls(t *testing.T) {
 		id        string
 		ownerPath string
 	}{
-		{id: forwardOnlyCompatibilityRule, ownerPath: "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go"},
+		{id: cleanCutoverRule, ownerPath: "glm-worker/internal/harnesslint/clean_cutover.go"},
 		{id: publicationGuardSetupControlID, ownerPath: "glm-worker/internal/publicationguard/setup.go"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {

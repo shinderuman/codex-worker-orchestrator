@@ -106,7 +106,15 @@ func validateControlProvenanceRegistry(root string, registry controlProvenanceRe
 
 func validateKnownMachineControlCoverage(root string, controls []controlProvenanceControl) []Violation {
 	known := []knownMachineControl{
-		{id: forwardOnlyCompatibilityRule, ownerPath: "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go"},
+		{
+			id:                           cleanCutoverRule,
+			ownerPath:                    "glm-worker/internal/harnesslint/clean_cutover.go",
+			canonicalOwnerSymbol:         "scanCleanCutover",
+			canonicalTestPath:            "glm-worker/internal/harnesslint/clean_cutover_test.go",
+			canonicalTestSymbol:          "TestCleanCutoverRejectsRegisteredParentActionRejectionRoots",
+			canonicalPostconditionPath:   "glm-worker/internal/harnesslint/clean_cutover.go",
+			canonicalPostconditionSymbol: "cleanCutoverParentActionViolations",
+		},
 		{
 			id:                           parentActionMachineProjectionControlID,
 			ownerPath:                    parentActionGrammarOwnerPath,
