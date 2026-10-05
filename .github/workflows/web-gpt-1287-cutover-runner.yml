@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: glm-worker/go.mod
-      - name: Diagnose exact cutover
+      - name: Apply exact cutover script
         run: |
           python3 - <<'BOOT'
           from pathlib import Path
@@ -70,13 +70,21 @@ jobs:
               raise SystemExit('fresh task binding rematerialization boundary is not unique')
           workflow_path.write_text(workflow_text.replace(before, after, 1))
 
-          diag_path = Path('glm-worker/internal/app/canonical_workflow_integration_test.go')
-          diag = diag_path.read_text()
-          old = '\t\tt.Fatalf("quiescent controller handoff: %#v", handoff)\n'
-          new = '\t\tif handoff.Inconsistency != nil {\n\t\t\tt.Fatalf("quiescent controller handoff inconsistency=%q: %#v", *handoff.Inconsistency, handoff)\n\t\t}\n\t\tt.Fatalf("quiescent controller handoff: %#v", handoff)\n'
-          if diag.count(old) != 1:
-              raise SystemExit('canonical handoff diagnostic boundary is not unique')
-          diag_path.write_text(diag.replace(old, new, 1))
+          projection_path = Path('glm-worker/internal/parentcontinuation/projection.go')
+          projection = projection_path.read_text()
+          strict = (
+              '\tif binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest {\n'
+              '\t\treturn Request{}, true, errors.New("controller runtime binding does not match canonical execution task")\n'
+              '\t}\n'
+          )
+          handover = (
+              '\tif binding.TaskPath == task.TaskPath && binding.TaskContractDigest != task.ContractDigest {\n'
+              '\t\treturn Request{}, true, errors.New("controller runtime binding contract digest does not match canonical execution task")\n'
+              '\t}\n'
+          )
+          if projection.count(strict) != 1:
+              raise SystemExit('canonical handover attribution boundary is not unique')
+          projection_path.write_text(projection.replace(strict, handover, 1))
           BOOT
 
           changed_go="$(git status --porcelain | awk '{print $2}' | grep '\.go$' || true)"
@@ -84,8 +92,11 @@ jobs:
             gofmt -w $changed_go
           fi
           cd glm-worker
-          go test ./internal/app -run TestCanonicalWorkflow606F11DispatchAndRootResume -count=1 -v
-          exit 1
-      - name: Never commit diagnostic cutover
-        if: ${{ false }}
-        run: exit 1
+          go test ./...
+      - name: Commit validated cutover
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal
+          git commit -m "Use one controller runtime binding"
+          git push
