@@ -35,11 +35,11 @@ func runControllerPublicationGuard(
 	if err != nil {
 		return true, err
 	}
-	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, nil)
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
 	if err != nil {
 		return true, fmt.Errorf("inspect repository publication guard activation: %w", err)
 	}
-	if !active {
+	if !decision.Active {
 		return true, writeControllerPublicationGuardAllowed(stdout)
 	}
 	exists, err := controller.Exists(cfg)
