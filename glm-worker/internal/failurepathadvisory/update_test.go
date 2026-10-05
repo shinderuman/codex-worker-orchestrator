@@ -18,8 +18,9 @@ func labeledSeedRegistry() Registry {
 func labelsForTaskA() RegistryUpdate {
 	return func(registry Registry) (Registry, error) {
 		return ApplyLabels(registry, LabelInput{
-			Schema: LabelsSchema,
-			TaskID: "task-a",
+			Schema:       LabelsSchema,
+			TaskID:       "task-a",
+			ReviewNumber: 1,
 			FindingDispositions: []FindingDispositionInput{
 				{Index: 0, Disposition: DispositionTruePositive},
 			},
