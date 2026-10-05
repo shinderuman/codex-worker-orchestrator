@@ -19,6 +19,7 @@ func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testin
 		Operation:        "shadow-eval",
 		ParamsDigest:     "digest-inflight",
 		Status:           ObservationExecutionStatusInFlight,
+		DeadlineMS:       30_000,
 		DecisionRound:    0,
 		StartedAtRFC3339: started,
 	}
