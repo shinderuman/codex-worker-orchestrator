@@ -71,8 +71,8 @@ func TestRequiredWorkerRulesDoNotRouteStateFromTestPackageName(t *testing.T) {
 
 func TestWorkerRuleContextBlockPreservesCanonicalRendering(t *testing.T) {
 	codexDir := t.TempDir()
-	writeRuleFile(t, codexDir, "cli.md", "CLI CONTRACT")
-	writeRuleFile(t, codexDir, "go.md", "GO CONTRACT")
+	writeRulePolicyFile(t, codexDir, "cli.md", "CLI CONTRACT")
+	writeRulePolicyFile(t, codexDir, "go.md", "GO CONTRACT")
 
 	got, err := workerRuleContextBlock(codexDir, []workerRule{ruleCLI, ruleGo})
 	if err != nil {
@@ -86,5 +86,16 @@ func TestWorkerRuleContextBlockPreservesCanonicalRendering(t *testing.T) {
 		"\n--- go.md ---\nGO CONTRACT\n"
 	if got != want {
 		t.Fatalf("context block mismatch\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func writeRulePolicyFile(t *testing.T, codexDir string, name string, content string) {
+	t.Helper()
+	dir := filepath.Join(codexDir, "instructions", "worker")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
