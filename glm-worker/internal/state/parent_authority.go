@@ -12,13 +12,18 @@ import (
 	"strings"
 )
 
+func ParentManagedRootPaths() []string {
+	paths := append([]string(nil), parentManagedFiles...)
+	return append(paths, ParentTasksDir)
+}
+
 func IsParentManagedPath(path string) bool {
 	for _, name := range parentManagedFiles {
 		if path == name {
 			return true
 		}
 	}
-	return strings.HasPrefix(path, ParentTasksDir+"/")
+	return path == ParentTasksDir || strings.HasPrefix(path, ParentTasksDir+"/")
 }
 
 func CaptureParentFileState(repoRoot, name string) (ParentFileState, error) {
