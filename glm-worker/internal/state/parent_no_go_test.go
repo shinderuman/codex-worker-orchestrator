@@ -8,10 +8,7 @@ import (
 
 func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T) {
 	st := newParentActionTestStore(t)
-	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Touch("pending-decision"); err != nil {
+	if err := st.WaitForDecision(); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole), Model: "opus"}); err != nil {
@@ -90,10 +87,7 @@ func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T
 
 func TestAwaitObservationNoGoRejectsStaleLifecycleAdmission(t *testing.T) {
 	st := newParentActionTestStore(t)
-	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Touch("pending-decision"); err != nil {
+	if err := st.WaitForDecision(); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{}); err != nil {
