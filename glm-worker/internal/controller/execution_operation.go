@@ -211,7 +211,7 @@ func (s *Store) reconcileCommittedExecutionPhase(record TransitionRecord) error 
 	return s.writeTransitionState(phase)
 }
 
-func (s *Store) executionOperationResult(op ExecutionOperation, head RepositoryControllerHead, contract executionOperationContract) (ExecutionOperationResult, error) {
+func (_ *Store) executionOperationResult(op ExecutionOperation, head RepositoryControllerHead, contract executionOperationContract) (ExecutionOperationResult, error) {
 	result := ExecutionOperationResult{TransitionID: op.Transition.TransitionID, Head: head, Suspension: op.Suspension, SealRef: op.SealRef}
 	if contract.projectResult != nil {
 		if err := contract.projectResult(op, head, &result); err != nil {
