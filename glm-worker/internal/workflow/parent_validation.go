@@ -100,12 +100,7 @@ func (w *Workflow) validateParentValidationRecord(request packet.ParentValidatio
 			Message: "parent validation完了後にrepository snapshotが変化したためvalidation evidenceを採用できません",
 		}
 	}
-	if record.Status == qualitygate.StatusPass {
-		if err := qualitygate.VerifyTerminalPass(record); err != nil {
-			return &WorkerError{Phase: "parent-validation", Message: fmt.Sprintf("parent validation PASS evidenceがterminal integrityを満たしません: %v", err)}
-		}
-	}
-	return nil
+	return validateParentValidationTerminalPass(record)
 }
 
 func (w *Workflow) fixBeforeParentValidation(
