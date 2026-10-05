@@ -35,8 +35,8 @@ const (
 	PublicationGuardBindingInvalid       = "does not name an absolute executable regular file"
 	PublicationGuardBindingContract      = "does not expose the canonical publication guard contract"
 
-	publicationTrackedHooksPath = ".githooks"
-	publicationGuardBindingName = "glm-publication-guard.path"
+	publicationTrackedHooksPath  = ".githooks"
+	publicationGuardBindingName  = "glm-publication-guard.path"
 	publicationGuardProbeTimeout = 5 * time.Second
 )
 
@@ -76,36 +76,48 @@ func InspectPublicationGuardSetup(repoRoot string) (PublicationGuardSetupReport,
 
 func publicationGuardBindingDefect(hooksDir string) *PublicationGuardHookDefect {
 	path := filepath.Join(hooksDir, publicationGuardBindingName)
-	info, err := os.Lstat(path)
-	if err != nil {
-		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookMissing}
+	target, defect := publicationGuardBindingTarget(path)
+	if defect != nil {
+		return defect
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookNotRegular}
-	}
-	data, err := os.ReadFile(path)
-	if err != nil || len(data) == 0 {
-		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookEmpty}
-	}
-	lineEnd := bytes.IndexByte(data, '\n')
-	if lineEnd <= 0 {
-		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
-	}
-	target := string(data[:lineEnd])
-	if !filepath.IsAbs(target) {
-		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
-	}
-	targetInfo, err := os.Stat(target)
-	if err != nil || !targetInfo.Mode().IsRegular() || targetInfo.Mode().Perm()&0o111 == 0 {
-		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), publicationGuardProbeTimeout)
-	defer cancel()
-	output, err := exec.CommandContext(ctx, target, "probe").Output()
-	if err != nil || string(output) != Contract+"\n" {
+	if !publicationGuardHasCanonicalContract(target) {
 		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingContract}
 	}
 	return nil
+}
+
+func publicationGuardBindingTarget(path string) (string, *PublicationGuardHookDefect) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookMissing}
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookNotRegular}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return "", &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookEmpty}
+	}
+	lineEnd := bytes.IndexByte(data, '\n')
+	if lineEnd <= 0 {
+		return "", &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
+	}
+	target := string(data[:lineEnd])
+	if !filepath.IsAbs(target) {
+		return "", &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil || !targetInfo.Mode().IsRegular() || targetInfo.Mode().Perm()&0o111 == 0 {
+		return "", &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
+	}
+	return target, nil
+}
+
+func publicationGuardHasCanonicalContract(target string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), publicationGuardProbeTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, target, "probe").Output()
+	return err == nil && string(output) == Contract+"\n"
 }
 
 func publicationGuardPrimaryDefects(defects []PublicationGuardHookDefect) []PublicationGuardHookDefect {
