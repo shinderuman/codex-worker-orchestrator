@@ -40,10 +40,8 @@ const (
 
 	TaskStatusNone TaskStatus = "none"
 
-	ExecutionMilestonesStateFile    = "execution-milestones.json"
-	ResultCorrectionStateFile       = "result-correction.json"
-	ControllerAttemptStateFile      = "controller-attempt"
-	CanonicalExecutionTaskStateFile = "execution-task"
+	ExecutionMilestonesStateFile = "execution-milestones.json"
+	ResultCorrectionStateFile    = "result-correction.json"
 )
 
 var removeStatePath = os.Remove

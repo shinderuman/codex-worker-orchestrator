@@ -198,8 +198,8 @@ func executeRetainedCanonicalWorkflow(
 		if err != nil {
 			return err
 		}
-		boundAttempt := st.ReadOr(state.ControllerAttemptStateFile, "")
-		if boundAttempt == "" || boundAttempt != head.LiveAttemptID {
+		binding, err := st.LoadControllerRuntimeBinding()
+		if err != nil || head.ExecutionTaskRef == nil || binding.AttemptID != head.LiveAttemptID || binding.TaskPath != head.ExecutionTaskRef.TaskPath || binding.TaskContractDigest != head.ExecutionTaskRef.ContractDigest {
 			return fmt.Errorf("parent acceptance requires review reentry for the current controller attempt")
 		}
 		return parentAccept(st, stdout)

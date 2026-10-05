@@ -9,7 +9,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
@@ -48,14 +47,11 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 }
 
 func (w *Workflow) readActiveTaskState() string {
-	if w.state.Exists(state.CanonicalExecutionTaskStateFile) {
-		return w.state.ReadOr(state.CanonicalExecutionTaskStateFile, "")
-	}
 	return w.state.ReadOr(activeTaskStateKey, "")
 }
 
 func (w *Workflow) activeTaskStateSet() bool {
-	return w.state.Exists(state.CanonicalExecutionTaskStateFile) || w.state.Exists(activeTaskStateKey)
+	return w.state.Exists(activeTaskStateKey)
 }
 
 func (w *Workflow) resolveAndPinActiveTask() (string, error) {
@@ -70,25 +66,16 @@ func (w *Workflow) resolveControllerExecutionTask() (string, bool, error) {
 	if err != nil || !canonical {
 		return "", canonical, err
 	}
-	if w.activeTaskStateSet() && w.readActiveTaskState() != task.TaskPath {
-		return "", true, fmt.Errorf("pinned execution task differs from canonical controller execution task")
+	binding, err := w.state.LoadControllerRuntimeBinding()
+	if err != nil {
+		return "", true, fmt.Errorf("read controller runtime binding: %w", err)
+	}
+	if binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest {
+		return "", true, fmt.Errorf("controller runtime binding differs from canonical controller execution task")
 	}
 	if !activeTaskFileExists(w.config.RepoRoot, task.TaskPath) {
 		return "", true, fmt.Errorf("controller execution task file is missing: %s", task.TaskPath)
 	}
-	if err := w.state.Write(state.CanonicalExecutionTaskStateFile, task.TaskPath); err != nil {
-		return "", true, err
-	}
-	harnessActive, err := w.repositoryHarnessActive()
-	if err != nil {
-		return "", true, err
-	}
-	if harnessActive {
-		if err := w.state.Write(activeTaskStateKey, task.TaskPath); err != nil {
-			return "", true, err
-		}
-	}
-
 	if err := w.recordInitialExecutionUnitDisposition(task.TaskPath); err != nil {
 		return "", true, err
 	}

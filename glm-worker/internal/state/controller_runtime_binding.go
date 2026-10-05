@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -65,6 +66,17 @@ func (s *StateStore) LoadControllerRuntimeBinding() (ControllerRuntimeBinding, e
 		return ControllerRuntimeBinding{}, err
 	}
 	return binding, nil
+}
+
+func (s *StateStore) CurrentWorkflowTaskPath() (string, error) {
+	binding, err := s.LoadControllerRuntimeBinding()
+	if err == nil {
+		return binding.TaskPath, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	return s.ReadOr("active-task", ""), nil
 }
 
 func (s *StateStore) ClearControllerRuntimeBinding() error {

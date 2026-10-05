@@ -343,7 +343,8 @@ func markInconsistent(projection *Projection, detail string) {
 
 func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan state.ParentActionPlan) (Request, bool, error) {
 	task, canonical, err := controller.WorkflowExecutionTask(cfg)
-	if canonical && err != nil {
+	quiescent := canonical && err != nil
+	if quiescent {
 		task, err = quiescentControllerTask(cfg, err)
 	}
 	if err != nil || !canonical {
@@ -361,7 +362,14 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		continuation.State = repositoryproject.ContinuationExplicitStop
 		continuation.Reason = repositoryproject.ReasonUserInterruption
 	}
-	attribution := repositoryproject.DeriveTaskAttribution(st.ReadOr(state.CanonicalExecutionTaskStateFile, ""), task.TaskPath, continuation)
+	binding, err := st.LoadControllerRuntimeBinding()
+	if err != nil {
+		return Request{}, true, err
+	}
+	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
+		return Request{}, true, errors.New("controller runtime binding does not match canonical execution task")
+	}
+	attribution := repositoryproject.DeriveTaskAttribution(binding.TaskPath, task.TaskPath, continuation)
 	if authorityTask, err := st.CurrentTaskAuthorityPath(); err == nil {
 		attribution = repositoryproject.BindTaskAuthority(attribution, authorityTask)
 	}

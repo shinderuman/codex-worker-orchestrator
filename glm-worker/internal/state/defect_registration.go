@@ -99,7 +99,10 @@ func (s *StateStore) CurrentPendingDefectRegistrations() ([]PendingDefectRegistr
 	if err != nil {
 		return nil, err
 	}
-	activeTask := s.ReadOr("active-task", "")
+	activeTask, err := s.CurrentWorkflowTaskPath()
+	if err != nil {
+		return nil, fmt.Errorf("pending defect registration current task binding is unreadable: %w", err)
+	}
 	if activeTask == "" {
 		return nil, fmt.Errorf("pending defect registration has no current active task binding")
 	}

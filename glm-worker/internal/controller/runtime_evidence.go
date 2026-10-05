@@ -44,30 +44,30 @@ func (s *Store) boundAttemptRuntime(source Admission) (*state.StateStore, string
 	if !info.IsDir() {
 		return nil, "", fmt.Errorf("runtime evidence source is not a directory")
 	}
-	bound, err := runtime.Read(state.ControllerAttemptStateFile)
+	binding, err := runtime.LoadControllerRuntimeBinding()
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, "", s.requireNoModelRuntimeEvidence(source.Attempt.AttemptID)
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("read runtime attempt binding: %w", err)
+		return nil, "", fmt.Errorf("read runtime controller binding: %w", err)
 	}
-	if bound != source.Attempt.AttemptID {
+	if binding.AttemptID != source.Attempt.AttemptID {
 		return nil, "", fmt.Errorf("runtime evidence belongs to another attempt")
 	}
-	taskID, err := validateRuntimeEvidenceTask(runtime, source)
+	if binding.TaskPath != source.Attempt.SemanticTaskRef.TaskPath || binding.TaskContractDigest != source.Attempt.SemanticTaskRef.ContractDigest {
+		return nil, "", fmt.Errorf("runtime evidence semantic task binding is stale")
+	}
+	taskID, err := validateRuntimeEvidenceTask(runtime)
 	return runtime, taskID, err
 }
 
-func validateRuntimeEvidenceTask(runtime *state.StateStore, source Admission) (string, error) {
+func validateRuntimeEvidenceTask(runtime *state.StateStore) (string, error) {
 	taskID, err := runtime.TaskID()
 	if err != nil {
 		return "", err
 	}
 	if taskID == "" || filepath.Base(taskID) != taskID || strings.ContainsAny(taskID, `/\`) {
 		return "", fmt.Errorf("runtime evidence task identity is invalid")
-	}
-	if task := runtime.ReadOr(state.CanonicalExecutionTaskStateFile, ""); task != "" && task != source.Attempt.SemanticTaskRef.TaskPath {
-		return "", fmt.Errorf("runtime evidence semantic task binding is stale")
 	}
 	return taskID, nil
 }

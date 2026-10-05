@@ -86,7 +86,12 @@ func CurrentDisposition(st *state.StateStore) (*Disposition, error) {
 	if disposition.TaskID != taskID {
 		return nil, fmt.Errorf("execution-unit disposition task identity changed: disposition=%q current=%q", disposition.TaskID, taskID)
 	}
-	if activeTaskPath := strings.TrimSpace(st.ReadOr("active-task", "")); activeTaskPath == "" || disposition.ActiveTaskPath != activeTaskPath {
+	activeTaskPath, err := st.CurrentWorkflowTaskPath()
+	if err != nil {
+		return nil, fmt.Errorf("execution-unit disposition task binding is unavailable: %w", err)
+	}
+	activeTaskPath = strings.TrimSpace(activeTaskPath)
+	if activeTaskPath == "" || disposition.ActiveTaskPath != activeTaskPath {
 		return nil, fmt.Errorf("execution-unit disposition ACTIVE task changed: disposition=%q current=%q", disposition.ActiveTaskPath, activeTaskPath)
 	}
 	return disposition, nil

@@ -3,22 +3,39 @@ package workflow
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func (w *Workflow) bindCanonicalWorkflowAttempt(admission controller.Admission) error {
-	previous := w.state.ReadOr(state.ControllerAttemptStateFile, "")
-	if previous != "" && previous != admission.Attempt.AttemptID {
-		if previous != admission.Attempt.PredecessorAttemptID {
+	target := state.ControllerRuntimeBinding{
+		AttemptID:          admission.Attempt.AttemptID,
+		TaskPath:           admission.Attempt.SemanticTaskRef.TaskPath,
+		TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest,
+	}
+	previous, err := w.state.LoadControllerRuntimeBinding()
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
+		return fmt.Errorf("read controller runtime binding: %w", err)
+	case previous.AttemptID == target.AttemptID:
+		if previous.TaskPath != target.TaskPath || previous.TaskContractDigest != target.TaskContractDigest {
+			return fmt.Errorf("workflow runtime binding does not match canonical controller task")
+		}
+	default:
+		if previous.AttemptID != admission.Attempt.PredecessorAttemptID {
 			return fmt.Errorf("workflow session does not belong to the canonical attempt predecessor")
 		}
 		if err := w.reenterCanonicalWorkflow(admission); err != nil {
 			return err
 		}
 	}
-	return w.state.Write(state.ControllerAttemptStateFile, admission.Attempt.AttemptID)
+	if err := w.state.SaveControllerRuntimeBinding(target); err != nil {
+		return err
+	}
+	return w.state.Remove(activeTaskStateKey)
 }
 
 func (w *Workflow) reenterCanonicalWorkflow(admission controller.Admission) error {
