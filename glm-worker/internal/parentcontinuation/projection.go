@@ -350,7 +350,14 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 	if err != nil || !canonical {
 		return Request{}, canonical, err
 	}
-	continuation := canonicalControllerContinuation(st.TaskStatus(), plan, task.TaskPath)
+	status := st.TaskStatus()
+	policy := repositoryproject.SelectedTaskParentRequestProjection(repositoryproject.SelectedTaskContinuationInput{
+		Task:                 task.TaskPath,
+		RequiredAction:       string(plan.RequiredAction),
+		StartRequired:        status == state.TaskStatusNone,
+		TemporaryBlockReason: temporaryBlockReason(status),
+		Interrupted:          status == state.TaskStatusInterrupted,
+	})
 	binding, err := st.LoadControllerRuntimeBinding()
 	if err != nil {
 		return Request{}, true, err
@@ -358,27 +365,16 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
 		return Request{}, true, errors.New("controller runtime binding does not match canonical execution task")
 	}
-	attribution := repositoryproject.DeriveTaskAttribution(binding.TaskPath, task.TaskPath, continuation)
+	attribution := repositoryproject.DeriveTaskAttribution(binding.TaskPath, task.TaskPath, policy.Continuation)
 	if authorityTask, err := st.CurrentTaskAuthorityPath(); err == nil {
 		attribution = repositoryproject.BindTaskAuthority(attribution, authorityTask)
 	}
-	return Request{Continuation: continuation, TaskAttribution: attribution}, true, nil
-}
-
-func canonicalControllerContinuation(status state.TaskStatus, plan state.ParentActionPlan, taskPath string) repositoryproject.Continuation {
-	continuation := repositoryproject.Continuation{State: repositoryproject.ContinuationContinueNow, Task: taskPath, RequiredAction: string(plan.RequiredAction), Reason: repositoryproject.ReasonCurrentTask}
-	if status == state.TaskStatusNone {
-		continuation.RequiredAction = repositoryproject.ActionStart
-	}
-	if reason := temporaryBlockReason(status); reason != "" {
-		continuation.State = repositoryproject.ContinuationBlocked
-		continuation.Reason = reason
-	}
-	if status == state.TaskStatusInterrupted {
-		continuation.State = repositoryproject.ContinuationExplicitStop
-		continuation.Reason = repositoryproject.ReasonUserInterruption
-	}
-	return continuation
+	return Request{
+		CompletionAdmitted: policy.CompletionAdmitted,
+		StopAdmitted:       policy.StopAdmitted,
+		Continuation:       policy.Continuation,
+		TaskAttribution:    attribution,
+	}, true, nil
 }
 
 func quiescentControllerTask(cfg config.AppConfig, admissionError error) (controller.SemanticTaskRef, error) {
