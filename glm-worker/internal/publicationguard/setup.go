@@ -2,11 +2,13 @@ package publicationguard
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type PublicationGuardHookDefect struct {
@@ -23,14 +25,19 @@ type PublicationGuardSetupReport struct {
 }
 
 const (
-	PublicationGuardHookMissing       = "is missing"
-	PublicationGuardHookNotRegular    = "is not a regular file"
-	PublicationGuardHookEmpty         = "is empty"
-	PublicationGuardHookNotExecutable = "is not executable"
-	PublicationGuardBindingInvalid    = "does not name an absolute executable regular file"
+	Contract = "controller-publication-guard-v1"
+
+	PublicationGuardHookMissing          = "is missing"
+	PublicationGuardHookNotRegular       = "is not a regular file"
+	PublicationGuardHookEmpty            = "is empty"
+	PublicationGuardHookNotExecutable    = "is not executable"
+	PublicationGuardHookIdentityMismatch = "does not match the committed canonical hook"
+	PublicationGuardBindingInvalid       = "does not name an absolute executable regular file"
+	PublicationGuardBindingContract      = "does not expose the canonical publication guard contract"
 
 	publicationTrackedHooksPath = ".githooks"
 	publicationGuardBindingName = "glm-publication-guard.path"
+	publicationGuardProbeTimeout = 5 * time.Second
 )
 
 var publicationGuardHookNames = []string{"reference-transaction", "pre-push"}
@@ -56,7 +63,7 @@ func InspectPublicationGuardSetup(repoRoot string) (PublicationGuardSetupReport,
 	}
 	report.HooksDir = resolved
 	for _, name := range publicationGuardHookNames {
-		if defect := publicationGuardHookDefect(resolved, name); defect != nil {
+		if defect := publicationGuardHookDefect(repoRoot, resolved, name); defect != nil {
 			report.Defects = append(report.Defects, *defect)
 		}
 	}
@@ -92,6 +99,12 @@ func publicationGuardBindingDefect(hooksDir string) *PublicationGuardHookDefect 
 	if err != nil || !targetInfo.Mode().IsRegular() || targetInfo.Mode().Perm()&0o111 == 0 {
 		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), publicationGuardProbeTimeout)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, target, "probe").Output()
+	if err != nil || string(output) != Contract+"\n" {
+		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingContract}
+	}
 	return nil
 }
 
@@ -115,7 +128,7 @@ func publicationGuardPrimaryDefects(defects []PublicationGuardHookDefect) []Publ
 	return primary
 }
 
-func publicationGuardHookDefect(hooksDir, name string) *PublicationGuardHookDefect {
+func publicationGuardHookDefect(repoRoot, hooksDir, name string) *PublicationGuardHookDefect {
 	path := filepath.Join(hooksDir, name)
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -130,6 +143,14 @@ func publicationGuardHookDefect(hooksDir, name string) *PublicationGuardHookDefe
 	}
 	if info.Mode().Perm()&0o111 == 0 {
 		return &PublicationGuardHookDefect{Hook: name, Path: path, Defect: PublicationGuardHookNotExecutable}
+	}
+	active, err := os.ReadFile(resolved)
+	if err != nil {
+		return &PublicationGuardHookDefect{Hook: name, Path: path, Defect: PublicationGuardHookIdentityMismatch}
+	}
+	canonical, err := exec.Command("git", "-C", repoRoot, "show", "HEAD:.githooks/"+name).Output()
+	if err != nil || !bytes.Equal(active, canonical) {
+		return &PublicationGuardHookDefect{Hook: name, Path: path, Defect: PublicationGuardHookIdentityMismatch}
 	}
 	return nil
 }
