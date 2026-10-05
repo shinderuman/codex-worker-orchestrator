@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -32,16 +33,27 @@ func CurrentObservationCapabilityAdmission(st *state.StateStore) (ObservationCap
 	return ObservationCapabilityAdmission{Lifecycle: lifecycle, Policy: policy}, nil
 }
 
-func ProjectParentActionPlan(st *state.StateStore) (state.ParentActionPlan, error) {
-	plan, err := st.ParentActionPlan()
+func ValidateObservationCapabilityAdmission(st *state.StateStore, expected ObservationCapabilityAdmission) error {
+	current, err := CurrentObservationCapabilityAdmission(st)
 	if err != nil {
-		return state.ParentActionPlan{}, err
+		return err
 	}
-	if plan.RequiredAction != state.ParentActionDecision {
-		return plan, nil
+	if current != expected {
+		return fmt.Errorf("observation capability admission changed: task=%s round=%d status=%s", current.Lifecycle.TaskID, current.Lifecycle.Round, current.Policy.Status)
 	}
-	if _, err := CurrentObservationCapabilityAdmission(st); err == nil {
-		plan.AllowedActions = append(plan.AllowedActions, state.ParentActionObservationExecute, state.ParentActionNoGo)
+	return nil
+}
+
+func BuildWithRepositoryPolicy(cfg config.AppConfig, st *state.StateStore) Projection {
+	projection := Build(cfg, st)
+	if !projection.Consistent || projection.ActionPlan == nil || projection.ActionPlan.RequiredAction != state.ParentActionDecision {
+		return projection
 	}
-	return plan, nil
+	if _, err := CurrentObservationCapabilityAdmission(st); err != nil {
+		return projection
+	}
+	plan := *projection.ActionPlan
+	plan.AllowedActions = append(append([]state.ParentAction(nil), plan.AllowedActions...), state.ParentActionObservationExecute, state.ParentActionNoGo)
+	projection.ActionPlan = &plan
+	return projection
 }
