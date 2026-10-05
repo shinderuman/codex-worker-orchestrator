@@ -29,9 +29,8 @@ type Project struct {
 	Plan         []byte
 	Schedule     taskcontract.PlanSchedule
 	RootTaskPath string
-	Entries      []taskcontract.TaskCorpusEntry
 	Tasks        []Task
-	Graph        *repositoryproject.TaskGraph
+	graph        *repositoryproject.TaskGraph
 }
 
 func Load(root, revision string) (Project, error) {
@@ -52,7 +51,7 @@ func Load(root, revision string) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
-	entries, err := TaskCorpusEntries(root, head)
+	entries, err := taskCorpusEntries(root, head, false)
 	if err != nil {
 		return Project{}, err
 	}
@@ -72,14 +71,22 @@ func Load(root, revision string) (Project, error) {
 		Plan:         plan,
 		Schedule:     schedule,
 		RootTaskPath: rootTaskPath,
-		Entries:      entries,
 		Tasks:        tasks,
-		Graph:        graph,
+		graph:        graph,
 	}, nil
 }
 
 func TaskCorpusEntries(root, revision string) ([]taskcontract.TaskCorpusEntry, error) {
-	output, err := gitOutput(root, "ls-tree", "-r", "-z", revision, "--", taskcontract.TasksDir)
+	return taskCorpusEntries(root, revision, true)
+}
+
+func taskCorpusEntries(root, revision string, includeTrees bool) ([]taskcontract.TaskCorpusEntry, error) {
+	args := []string{"ls-tree", "-r"}
+	if includeTrees {
+		args = append(args, "-t")
+	}
+	args = append(args, "-z", revision, "--", taskcontract.TasksDir)
+	output, err := gitOutput(root, args...)
 	if err != nil {
 		return nil, fmt.Errorf("enumerate committed task corpus: %w", err)
 	}
@@ -98,7 +105,7 @@ func TaskCorpusEntries(root, revision string) ([]taskcontract.TaskCorpusEntry, e
 }
 
 func (p Project) Dependencies() []Dependency {
-	dependencies := p.Graph.Dependencies()
+	dependencies := p.graph.Dependencies()
 	result := make([]Dependency, 0, len(dependencies))
 	for _, dependency := range dependencies {
 		result = append(result, Dependency{
