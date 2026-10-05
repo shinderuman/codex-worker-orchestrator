@@ -5,14 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"strconv"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 )
 
 type CommandMode int
@@ -89,22 +88,6 @@ const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|exter
 const approveSurfaceUsage = "usage: glm-worker --approve-surface current-diff"
 
 const acceptedFixScopeCurrentDiffCLI = "current-diff"
-
-const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
-
-const repoSearchUsage = "usage: glm-worker --repo-search <question> --scope <path|symbol:<identifier>> [--scope ...] --budget <bytes>"
-
-const evidenceUsage = "usage: glm-worker --evidence <manifest.json>"
-
-const repoSearchMaxBudgetBytes = 64 * 1024
-
-const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>] [--compact]"
-
-const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
-
-const shadowEvalUsage = "usage: glm-worker --shadow-eval <task-id> [--reference <reference.json>]"
-
-const failurePathAdvisoryUsage = "usage: glm-worker --failure-path-advisory [--labels <labels.json>]"
 
 var commandParsers = map[string]commandParser{
 	"--decision-stdin": func(args []string) (Command, error) {
@@ -224,112 +207,6 @@ func requiredPayloadCommand(args []string, mode CommandMode, usage string) (Comm
 		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	return Command{Mode: mode, Payload: args[1]}, nil
-}
-
-func evidenceCommand(args []string) (Command, error) {
-	if len(args) != 2 {
-		return Command{}, machinecli.UsageErrorf("%s", evidenceUsage)
-	}
-	return Command{Mode: ModeEvidence, EvidenceManifest: args[1]}, nil
-}
-
-func shadowEvalCommand(args []string) (Command, error) {
-	if len(args) < 2 || len(args)%2 != 0 {
-		return Command{}, machinecli.UsageErrorf("%s", shadowEvalUsage)
-	}
-	command := Command{Mode: ModeShadowEval, Payload: args[1]}
-	for index := 2; index < len(args); index += 2 {
-		if args[index] != "--reference" || args[index+1] == "" || command.ReferencePath != "" {
-			return Command{}, machinecli.UsageErrorf("%s", shadowEvalUsage)
-		}
-		command.ReferencePath = args[index+1]
-	}
-	return command, nil
-}
-
-func failurePathAdvisoryCommand(args []string) (Command, error) {
-	if len(args) == 1 {
-		return Command{Mode: ModeFailurePathAdvisory}, nil
-	}
-	if len(args) == 3 && args[1] == "--labels" && args[2] != "" {
-		return Command{Mode: ModeFailurePathAdvisory, ReferencePath: args[2]}, nil
-	}
-	return Command{}, machinecli.UsageErrorf("%s", failurePathAdvisoryUsage)
-}
-
-func parentHandoffCommand(args []string) (Command, error) {
-	if len(args) == 1 {
-		return Command{Mode: ModeHandoff}, nil
-	}
-	if len(args) == 2 && args[1] == "recovery" {
-		return Command{Mode: ModeHandoff, Payload: "recovery"}, nil
-	}
-	return Command{}, machinecli.UsageErrorf("usage: glm-worker --handoff [recovery]")
-}
-
-func verifyCodexWakeCommand(args []string) (Command, error) {
-	if len(args) != 3 || !state.ValidUUIDFormat(args[1]) {
-		return Command{}, machinecli.UsageErrorf("%s", verifyCodexWakeUsage)
-	}
-	return Command{
-		Mode: ModeVerifyCodexWake,
-		Verify: VerifyArgs{
-			ThreadID: args[1],
-			RFC3339:  args[2],
-		},
-	}, nil
-}
-
-func installSmokeCommand(args []string) (Command, error) {
-	if len(args) == 1 {
-		return Command{Mode: ModeInstallSmoke}, nil
-	}
-	if len(args) == 3 && args[1] == "--role" && validInstallSmokeRoles[args[2]] {
-		return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
-	}
-	return Command{}, machinecli.UsageErrorf("usage: glm-worker --install-smoke %s", installSmokeUsage)
-}
-
-func repoSearchCommand(args []string) (Command, error) {
-	if len(args) < 2 || args[1] == "" || len(args[2:])%2 != 0 {
-		return Command{}, machinecli.UsageErrorf("%s", repoSearchUsage)
-	}
-	command := Command{Mode: ModeRepoSearch, Payload: args[1]}
-	seenBudget := false
-	for index := 2; index < len(args); index += 2 {
-		budgetSeen, err := applyRepoSearchOption(&command, args[index], args[index+1])
-		if err != nil {
-			return Command{}, err
-		}
-		seenBudget = seenBudget || budgetSeen
-	}
-	if len(command.SearchScopes) == 0 || !seenBudget {
-		return Command{}, machinecli.UsageErrorf("%s", repoSearchUsage)
-	}
-	return command, nil
-}
-
-func applyRepoSearchOption(command *Command, name string, value string) (bool, error) {
-	switch name {
-	case "--scope":
-		if value == "" {
-			return false, machinecli.UsageErrorf("%s", repoSearchUsage)
-		}
-		command.SearchScopes = append(command.SearchScopes, value)
-		return false, nil
-	case "--budget":
-		budget, err := strconv.Atoi(value)
-		if err != nil || budget <= 0 || budget > repoSearchMaxBudgetBytes {
-			return false, machinecli.UsageErrorf("%s", repoSearchUsage)
-		}
-		if command.SearchBudgetBytes != 0 {
-			return false, machinecli.UsageErrorf("%s", repoSearchUsage)
-		}
-		command.SearchBudgetBytes = budget
-		return true, nil
-	default:
-		return false, machinecli.UsageErrorf("%s", repoSearchUsage)
-	}
 }
 
 func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFixOptions bool) (Command, error) {
