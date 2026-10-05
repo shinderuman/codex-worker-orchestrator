@@ -157,7 +157,7 @@ func parsePushUpdate(args []string) (controller.PublicationPushGuardInput, error
 		LocalOID:   args[5],
 		RemoteRef:  args[7],
 		RemoteOID:  args[9],
-	}
+	}, nil
 }
 
 func usageError() error {
