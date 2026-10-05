@@ -17,7 +17,7 @@ func (s *StateStore) ResolveObservationExecutionIndeterminate(executionID, detai
 			continue
 		}
 		if record.Status != ObservationExecutionStatusInFlight {
-			return fmt.Errorf("observation execution %s is not in-flight", executionID)
+			return nil
 		}
 		record.Status = ObservationExecutionStatusIndeterminate
 		record.Detail = strings.TrimSpace(detail)
