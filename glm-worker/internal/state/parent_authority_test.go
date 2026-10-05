@@ -29,6 +29,10 @@ func TestIsParentManagedPathOwnsProtectionSet(t *testing.T) {
 			t.Fatalf("non-managed path %q was recognized", path)
 		}
 	}
+	wantRoots := []string{ParentRulesFile, ParentPlanFile, ParentHistoryFile, ParentTasksDir}
+	if roots := ParentManagedRootPaths(); !reflect.DeepEqual(roots, wantRoots) {
+		t.Fatalf("managed roots = %v want %v", roots, wantRoots)
+	}
 }
 
 func TestCaptureParentFileStatesEnumeratesCurrentProtectionSetDeterministically(t *testing.T) {

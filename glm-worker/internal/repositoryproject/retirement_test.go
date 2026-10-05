@@ -17,18 +17,27 @@ func TestTerminalMetadataRetirementKeepsSourceAndRejectsSemanticScheduleChoices(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := result.Tasks[child]; ok {
-		t.Fatal("terminal Task not removed")
+	changes := terminalMetadataChangesByPath(t, result)
+	if change := changes[child]; !change.Delete || change.NewBytes != nil {
+		t.Fatalf("terminal Task change = %#v", change)
 	}
-	deps, err := taskcontract.ParseTaskDependencyState(result.Tasks[root])
+	rootChange, ok := changes[root]
+	if !ok || rootChange.Delete {
+		t.Fatalf("dependency retirement change = %#v", rootChange)
+	}
+	deps, err := taskcontract.ParseTaskDependencyState(rootChange.NewBytes)
 	if err != nil || len(deps.Outstanding) != 0 || len(deps.Fulfilled) != 1 || deps.Fulfilled[0] != child {
 		t.Fatal("dependency retirement mismatch")
 	}
 	quoted := "````text\n## Dependencies\n- `" + child + "`\n````"
-	if !strings.Contains(string(result.Tasks[root]), quoted) || !bytes.Equal(tasks[root], source) {
+	if !strings.Contains(string(rootChange.NewBytes), quoted) || !bytes.Equal(tasks[root], source) {
 		t.Fatal("lossless source or input was rewritten")
 	}
-	active, err := taskcontract.ParsePlanSchedule(string(result.Plan)).ActiveTask()
+	planChange, ok := changes["IMPLEMENTATION_PLAN.local.md"]
+	if !ok || planChange.Delete {
+		t.Fatalf("plan retirement change = %#v", planChange)
+	}
+	active, err := taskcontract.ParsePlanSchedule(string(planChange.NewBytes)).ActiveTask()
 	if err != nil || active != root {
 		t.Fatal("blocker retirement replaced root")
 	}
@@ -47,4 +56,16 @@ func TestTerminalMetadataRetirementKeepsSourceAndRejectsSemanticScheduleChoices(
 	if _, err := RetireTerminalMetadata(plan, tasks, child, false); err == nil {
 		t.Fatal("arbitrary nonfocus promoted as terminal root")
 	}
+}
+
+func terminalMetadataChangesByPath(t *testing.T, metadata TerminalMetadata) map[string]TerminalMetadataChange {
+	t.Helper()
+	changes := make(map[string]TerminalMetadataChange, len(metadata.Changes))
+	for _, change := range metadata.Changes {
+		if change.Path == "" || changes[change.Path].Path != "" {
+			t.Fatalf("ambiguous terminal metadata change %#v", change)
+		}
+		changes[change.Path] = change
+	}
+	return changes
 }

@@ -47,5 +47,3 @@ type TerminalMetadataOperation struct {
 }
 
 const terminalRetire = "RETIRE_TERMINAL_TASK_METADATA"
-
-const implementationPlanPath = "IMPLEMENTATION_PLAN.local.md"

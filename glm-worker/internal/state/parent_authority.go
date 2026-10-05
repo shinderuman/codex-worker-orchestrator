@@ -12,6 +12,11 @@ import (
 	"strings"
 )
 
+func ParentManagedRootPaths() []string {
+	paths := append([]string(nil), parentManagedFiles...)
+	return append(paths, ParentTasksDir)
+}
+
 func IsParentManagedPath(path string) bool {
 	for _, name := range parentManagedFiles {
 		if path == name {

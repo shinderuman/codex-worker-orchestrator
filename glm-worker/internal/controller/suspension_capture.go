@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]workspaceTreeEntry, error) {
@@ -23,7 +25,7 @@ func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]wor
 	}
 	var result []workspaceTreeEntry
 	for path, entry := range paths {
-		if parentManagedPath(path) {
+		if state.IsParentManagedPath(path) {
 			continue
 		}
 		captured, exists, err := captureSuspensionEntry(repo, entry)

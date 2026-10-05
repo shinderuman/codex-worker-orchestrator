@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type ExecutionTrees struct {
@@ -152,10 +154,6 @@ func validateSuspensionPath(path string) error {
 	return nil
 }
 
-func parentManagedPath(path string) bool {
-	return path == "IMPLEMENTATION_RULES.md" || path == implementationPlanPath || path == "IMPLEMENTATION_HISTORY.md" || path == "IMPLEMENTATION_TASKS" || strings.HasPrefix(path, "IMPLEMENTATION_TASKS/")
-}
-
 func newSuspensionIndex(repo, tree string) (string, error) {
 	file, err := os.CreateTemp("", "controller-index-")
 	if err != nil {
@@ -195,7 +193,7 @@ func normalizeParentPaths(repo, index, base string) (string, error) {
 	}
 	var remove bytes.Buffer
 	for _, path := range bytes.Split(current, []byte{0}) {
-		if parentManagedPath(string(path)) {
+		if state.IsParentManagedPath(string(path)) {
 			remove.Write(path)
 			remove.WriteByte(0)
 		}
@@ -203,7 +201,9 @@ func normalizeParentPaths(repo, index, base string) (string, error) {
 	if _, err := suspensionGit(repo, index, remove.Bytes(), "update-index", "--force-remove", "-z", "--stdin"); err != nil {
 		return "", err
 	}
-	data, err := runGitBinary(repo, nil, "ls-tree", "-r", "-z", base, "--", "IMPLEMENTATION_RULES.md", implementationPlanPath, "IMPLEMENTATION_HISTORY.md", "IMPLEMENTATION_TASKS")
+	args := []string{"ls-tree", "-r", "-z", base, "--"}
+	args = append(args, state.ParentManagedRootPaths()...)
+	data, err := runGitBinary(repo, nil, args...)
 	if err != nil {
 		return "", err
 	}
