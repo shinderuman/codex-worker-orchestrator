@@ -20,6 +20,7 @@ func TestObservationExecutionRetentionNeverEvictsInFlightClaims(t *testing.T) {
 		Operation:        "shadow-eval",
 		ParamsDigest:     "active-digest",
 		Status:           ObservationExecutionStatusInFlight,
+		DeadlineMS:       30_000,
 		DecisionRound:    0,
 		StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
 	}
