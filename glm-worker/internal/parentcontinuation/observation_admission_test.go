@@ -71,10 +71,7 @@ func observationCapabilityFixture(t *testing.T, declaration string) *state.State
 	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/observation.md", []byte(declaration)); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Touch("pending-decision"); err != nil {
+	if err := st.WaitForDecision(); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"}); err != nil {
