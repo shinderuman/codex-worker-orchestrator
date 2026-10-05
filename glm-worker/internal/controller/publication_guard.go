@@ -120,7 +120,7 @@ func (s *Store) pendingPublicationGuardOperation() (ExecutionOperation, bool, er
 	if head.ControllerGeneration != record.PreparedGeneration || phase.Phase != TransitionPhasePrepared {
 		return ExecutionOperation{}, false, fmt.Errorf("publication guard rejected stale controller transition")
 	}
-	if err := s.validateExecutionOperation(op); err != nil {
+	if _, err := s.validateExecutionOperation(op); err != nil {
 		return ExecutionOperation{}, false, fmt.Errorf("publication guard rejected invalid controller operation: %w", err)
 	}
 	return op, true, nil
