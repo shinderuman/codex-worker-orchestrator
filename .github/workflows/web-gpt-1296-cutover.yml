@@ -1,0 +1,141 @@
+name: Web GPT 1296 Cutover
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-1296-repository-project-policy
+
+permissions:
+  contents: write
+
+jobs:
+  cutover:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-1296-repository-project-policy
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: glm-worker/go.mod
+      - name: Apply exact committed project cutover
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} matches, got {actual}')
+              p.write_text(text.replace(old, new, count))
+
+          def replace_between(path, start, end, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(start) != 1 or text.count(end) != 1:
+                  raise SystemExit(f'{path}: replacement boundary is not unique')
+              a = text.index(start)
+              b = text.index(end, a)
+              p.write_text(text[:a] + new + text[b:])
+
+          replace(
+              'glm-worker/internal/controller/episode.go',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"\n',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"\n',
+          )
+          replace_between(
+              'glm-worker/internal/controller/episode.go',
+              'func (s *Store) projectDependencyAuthority(\n',
+              'func validateEpisodeAcyclic(\n',
+              '''func (s *Store) projectDependencyAuthority(
+\tproject ProjectSnapshot,
+) (map[string]SemanticTaskRef, map[string][]string, error) {
+\tcommitted, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, project.HeadOID)
+\tif err != nil {
+\t\treturn nil, nil, err
+\t}
+\tbyPath := make(map[string]SemanticTaskRef, len(committed.Tasks))
+\tfor _, task := range committed.Tasks {
+\t\tref := SemanticTaskRef{TaskPath: task.Path, ContractDigest: digestBytes(task.Content)}
+\t\tbyPath[ref.TaskPath] = ref
+\t}
+\tdependencies := make(map[string][]string, len(committed.Tasks))
+\tfor _, dependency := range committed.Dependencies() {
+\t\tdependencies[dependency.Task] = append([]string(nil), dependency.Outstanding...)
+\t}
+\treturn byPath, dependencies, nil
+}
+
+''',
+          )
+
+          replace(
+              'glm-worker/internal/controller/terminal_planning.go',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"\n',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"\n',
+          )
+          replace(
+              'glm-worker/internal/controller/terminal_planning.go',
+              '''\tplan, err := readCommittedObject(s.identity.PrimaryRoot, head.IntegrationTip, implementationPlanPath)
+\tif err != nil {
+\t\treturn ExecutionOperation{}, head, err
+\t}
+\t_, _, contents, err := committedTaskCorpus(s.identity.PrimaryRoot, head.IntegrationTip)
+\tif err != nil {
+\t\treturn ExecutionOperation{}, head, err
+\t}
+\tblocker := !c.TaskRef.Equal(c.RootTaskRef)
+\tmetadata, err := repositoryproject.RetireTerminalMetadata(plan, contents, c.TaskRef.TaskPath, blocker)
+''',
+              '''\tcommitted, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, head.IntegrationTip)
+\tif err != nil {
+\t\treturn ExecutionOperation{}, head, err
+\t}
+\tblocker := !c.TaskRef.Equal(c.RootTaskRef)
+\tmetadata, err := committed.RetireTerminalMetadata(c.TaskRef.TaskPath, blocker)
+''',
+          )
+          replace(
+              'glm-worker/internal/controller/terminal_planning.go',
+              'metadata repositoryproject.TerminalMetadata',
+              'metadata repositoryprojectcommit.TerminalMetadata',
+              2,
+          )
+
+          replace(
+              'glm-worker/internal/repositoryprojecthead/corpus.go',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"\n',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"\n',
+          )
+          replace(
+              'glm-worker/internal/repositoryprojecthead/corpus.go',
+              '\tentries, err := taskCorpusEntries(root, head)\n',
+              '\tentries, err := repositoryprojectcommit.TaskCorpusEntries(root, head)\n',
+          )
+          replace_between(
+              'glm-worker/internal/repositoryprojecthead/corpus.go',
+              'func taskCorpusEntries(root, head string)',
+              'func validateActiveTask(root, head, path string)',
+              '',
+          )
+          PY
+
+          gofmt -w \
+            glm-worker/internal/controller/episode.go \
+            glm-worker/internal/controller/terminal_planning.go \
+            glm-worker/internal/repositoryprojecthead/corpus.go
+          cd glm-worker
+          go test ./...
+      - name: Commit validated cutover
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            glm-worker/internal/controller/episode.go \
+            glm-worker/internal/controller/terminal_planning.go \
+            glm-worker/internal/repositoryprojecthead/corpus.go
+          git commit -m "Use committed repository-project projection"
+          git push
