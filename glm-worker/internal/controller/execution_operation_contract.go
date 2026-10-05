@@ -77,6 +77,13 @@ func (s *Store) executionOperationContract(kind string) (executionOperationContr
 	}
 }
 
+func validateExecutionOperationContract(contract executionOperationContract) error {
+	if contract.validate == nil || contract.apply == nil || contract.verifyCommitted == nil {
+		return fmt.Errorf("execution operation contract is incomplete")
+	}
+	return nil
+}
+
 func validateExecutionOperationEffects(op ExecutionOperation, policy executionOperationEffectPolicy) error {
 	switch policy {
 	case executionOperationEffectsNone:
