@@ -9,24 +9,24 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func (w *Workflow) reusableParentValidationPass(request packet.ParentValidationRequest, workingDir string) (parentValidationGateRecord, bool) {
+func (w *Workflow) reusableParentValidationPass(request packet.ParentValidationRequest, workingDir string) (qualitygate.RunRecord, bool) {
 	snapshot, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
-		return parentValidationGateRecord{}, false
+		return qualitygate.RunRecord{}, false
 	}
 	repository, err := filepath.EvalSymlinks(w.config.RepoRoot)
 	if err != nil {
-		return parentValidationGateRecord{}, false
+		return qualitygate.RunRecord{}, false
 	}
 	taskID := w.state.ReadOr("task.id", "")
 	if taskID == "" {
-		return parentValidationGateRecord{}, false
+		return qualitygate.RunRecord{}, false
 	}
 	latest, found := w.latestParentValidationRun(request.Form, repository, workingDir, taskID, snapshot)
 	if !found || qualitygate.VerifyTerminalPass(latest) != nil {
-		return parentValidationGateRecord{}, false
+		return qualitygate.RunRecord{}, false
 	}
-	return parentValidationGateRecordFromQualityGate(latest), true
+	return latest, true
 }
 
 func (w *Workflow) latestParentValidationRun(form, repository, workingDir, taskID string, snapshot state.GitSnapshot) (qualitygate.RunRecord, bool) {
@@ -68,20 +68,4 @@ func sameParentValidationRunIdentity(record qualitygate.RunRecord, form, reposit
 		record.Head == head &&
 		record.IndexDigest == indexDigest &&
 		record.WorktreeDigest == worktreeDigest
-}
-
-func parentValidationGateRecordFromQualityGate(record qualitygate.RunRecord) parentValidationGateRecord {
-	return parentValidationGateRecord{
-		ValidationRunID: record.ValidationRunID,
-		Form:            record.Form,
-		Repository:      record.Repository,
-		WorkingDir:      record.WorkingDir,
-		Head:            record.Head,
-		IndexDigest:     record.IndexDigest,
-		WorktreeDigest:  record.WorktreeDigest,
-		Status:          record.Status,
-		ExitCode:        record.ExitCode,
-		DurationMS:      record.DurationMS,
-		Log:             record.Log,
-	}
 }
