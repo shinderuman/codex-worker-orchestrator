@@ -6,9 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
@@ -46,120 +45,33 @@ func ResolveCommittedTaskAuthorityAt(repoRoot, revision string) (CommittedTaskAu
 }
 
 func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (CommittedTaskAuthority, error) {
-	plan, err := readCommittedObject(repoRoot, head, "IMPLEMENTATION_PLAN.local.md")
-	if err != nil {
-		return CommittedTaskAuthority{}, fmt.Errorf("read committed implementation plan: %w", err)
-	}
-	schedule := taskcontract.ParsePlanSchedule(string(plan))
-	rootPath, err := schedule.ValidateComplete()
+	project, err := repositoryprojectcommit.Load(repoRoot, head)
 	if err != nil {
 		return CommittedTaskAuthority{}, err
 	}
-	entries, refs, contents, err := committedTaskCorpus(repoRoot, head)
-	if err != nil {
-		return CommittedTaskAuthority{}, err
+	refs := make([]SemanticTaskRef, 0, len(project.Tasks))
+	for _, task := range project.Tasks {
+		refs = append(refs, SemanticTaskRef{TaskPath: task.Path, ContractDigest: digestBytes(task.Content)})
 	}
-	if err := repositoryproject.ValidateClosure(schedule, entries, "committed Plan/task corpus closure is invalid"); err != nil {
-		return CommittedTaskAuthority{}, err
-	}
-	graph, err := repositoryproject.BuildTaskGraph(scheduleEntries(schedule), contents)
-	if err != nil {
-		return CommittedTaskAuthority{}, fmt.Errorf("build committed semantic task graph: %w", err)
-	}
-	root, ok := findTaskRef(refs, rootPath)
+	root, ok := findTaskRef(refs, project.RootTaskPath)
 	if !ok {
-		return CommittedTaskAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", rootPath)
+		return CommittedTaskAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", project.RootTaskPath)
 	}
 	snapshot := ProjectSnapshot{
 		SchemaVersion:       controllerSchemaVersion,
 		RepositoryIdentity:  repositoryID,
-		HeadOID:             head,
-		PlanDigest:          digestBytes(plan),
+		HeadOID:             project.Head,
+		PlanDigest:          digestBytes(project.Plan),
 		TaskCorpusDigest:    digestTaskRefs(refs),
-		SemanticGraphDigest: digestDependencies(graph.Dependencies()),
-		ScheduleDigest:      digestSchedule(schedule),
-		Active:              append([]string(nil), schedule.Active...),
-		Next:                append([]string(nil), schedule.Next...),
-		Blocked:             append([]string(nil), schedule.Blocked...),
+		SemanticGraphDigest: digestDependencies(project.Dependencies()),
+		ScheduleDigest:      digestSchedule(project.Schedule),
+		Active:              append([]string(nil), project.Schedule.Active...),
+		Next:                append([]string(nil), project.Schedule.Next...),
+		Blocked:             append([]string(nil), project.Schedule.Blocked...),
 		Tasks:               append([]SemanticTaskRef(nil), refs...),
 	}
 	snapshot.SnapshotID = projectSnapshotID(snapshot)
 	return CommittedTaskAuthority{Task: root, ProjectSnapshotID: snapshot.SnapshotID, Snapshot: snapshot}, nil
-}
-
-func committedTaskCorpus(repoRoot, head string) ([]taskcontract.TaskCorpusEntry, []SemanticTaskRef, map[string][]byte, error) {
-	entries, err := committedTaskEntries(repoRoot, head)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	refs, contents, err := loadCommittedTasks(repoRoot, head, entries)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return entries, refs, contents, nil
-}
-
-func committedTaskEntries(repoRoot, head string) ([]taskcontract.TaskCorpusEntry, error) {
-	command := exec.Command("git", "-C", repoRoot, "ls-tree", "-r", "-z", head, "--", taskcontract.TasksDir)
-	output, err := command.Output()
-	if err != nil {
-		return nil, fmt.Errorf("enumerate committed task corpus: %w", err)
-	}
-	var entries []taskcontract.TaskCorpusEntry
-	for _, record := range strings.Split(string(output), "\x00") {
-		entry, include, err := parseCommittedTaskEntry(record)
-		if err != nil {
-			return nil, err
-		}
-		if include {
-			entries = append(entries, entry)
-		}
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
-	return entries, nil
-}
-
-func parseCommittedTaskEntry(record string) (taskcontract.TaskCorpusEntry, bool, error) {
-	if record == "" {
-		return taskcontract.TaskCorpusEntry{}, false, nil
-	}
-	metadata, path, found := strings.Cut(record, "\t")
-	if !found || !strings.HasSuffix(path, ".md") {
-		return taskcontract.TaskCorpusEntry{}, false, nil
-	}
-	fields := strings.Fields(metadata)
-	if len(fields) < 2 {
-		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("committed task corpus entry %q is malformed", record)
-	}
-	regular := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
-	return taskcontract.TaskCorpusEntry{Path: filepath.ToSlash(path), Regular: regular}, true, nil
-}
-
-func loadCommittedTasks(
-	repoRoot string,
-	head string,
-	entries []taskcontract.TaskCorpusEntry,
-) ([]SemanticTaskRef, map[string][]byte, error) {
-	refs := make([]SemanticTaskRef, 0, len(entries))
-	contents := make(map[string][]byte, len(entries))
-	for _, entry := range entries {
-		if !entry.Regular {
-			continue
-		}
-		content, err := readCommittedObject(repoRoot, head, entry.Path)
-		if err != nil {
-			return nil, nil, fmt.Errorf("read committed semantic task %s: %w", entry.Path, err)
-		}
-		contents[entry.Path] = content
-		refs = append(refs, SemanticTaskRef{TaskPath: entry.Path, ContractDigest: digestBytes(content)})
-	}
-	return refs, contents, nil
-}
-
-func scheduleEntries(schedule taskcontract.PlanSchedule) []string {
-	entries := append([]string(nil), schedule.Active...)
-	entries = append(entries, schedule.Next...)
-	return append(entries, schedule.Blocked...)
 }
 
 func findTaskRef(refs []SemanticTaskRef, path string) (SemanticTaskRef, bool) {
@@ -179,8 +91,8 @@ func digestTaskRefs(refs []SemanticTaskRef) string {
 	return digestStrings(parts...)
 }
 
-func digestDependencies(dependencies []repositoryproject.Dependency) string {
-	copied := append([]repositoryproject.Dependency(nil), dependencies...)
+func digestDependencies(dependencies []repositoryprojectcommit.Dependency) string {
+	copied := append([]repositoryprojectcommit.Dependency(nil), dependencies...)
 	sort.Slice(copied, func(i, j int) bool { return copied[i].Task < copied[j].Task })
 	parts := []string{"controller-semantic-graph-v1"}
 	for _, dependency := range copied {

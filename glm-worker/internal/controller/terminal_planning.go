@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"
 )
 
 func (s *Store) RetireTerminalTask(input TerminalTaskInput) (ExecutionOperationResult, error) {
@@ -33,23 +33,19 @@ func (s *Store) planTerminalMetadata(input TerminalTaskInput) (ExecutionOperatio
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	plan, err := readCommittedObject(s.identity.PrimaryRoot, head.IntegrationTip, implementationPlanPath)
-	if err != nil {
-		return ExecutionOperation{}, head, err
-	}
-	_, _, contents, err := committedTaskCorpus(s.identity.PrimaryRoot, head.IntegrationTip)
+	committed, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, head.IntegrationTip)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
 	blocker := !c.TaskRef.Equal(c.RootTaskRef)
-	metadata, err := repositoryproject.RetireTerminalMetadata(plan, contents, c.TaskRef.TaskPath, blocker)
+	metadata, err := committed.RetireTerminalMetadata(c.TaskRef.TaskPath, blocker)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
 	return s.buildTerminalMetadataOperation(head, c, candidateRef, project, metadata)
 }
 
-func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot, metadata repositoryproject.TerminalMetadata) (ExecutionOperation, RepositoryControllerHead, error) {
+func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot, metadata repositoryprojectcommit.TerminalMetadata) (ExecutionOperation, RepositoryControllerHead, error) {
 	record, err := executionTransition(head, terminalRetire)
 	if err != nil {
 		return ExecutionOperation{}, head, err
@@ -98,7 +94,7 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 	return op, head, nil
 }
 
-func (s *Store) terminalMetadataTree(base string, metadata repositoryproject.TerminalMetadata) ([]TerminalMetadataFile, string, error) {
+func (s *Store) terminalMetadataTree(base string, metadata repositoryprojectcommit.TerminalMetadata) ([]TerminalMetadataFile, string, error) {
 	index, err := newSuspensionIndex(s.identity.PrimaryRoot, base)
 	if err != nil {
 		return nil, "", err

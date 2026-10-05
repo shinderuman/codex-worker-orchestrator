@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"
 )
 
 type EpisodeState string
@@ -335,22 +335,17 @@ func blockingFindingResult(
 func (s *Store) projectDependencyAuthority(
 	project ProjectSnapshot,
 ) (map[string]SemanticTaskRef, map[string][]string, error) {
-	_, refs, contents, err := committedTaskCorpus(s.identity.PrimaryRoot, project.HeadOID)
+	committed, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, project.HeadOID)
 	if err != nil {
 		return nil, nil, err
 	}
-	paths := make([]string, 0, len(refs))
-	byPath := make(map[string]SemanticTaskRef, len(refs))
-	for _, ref := range refs {
-		paths = append(paths, ref.TaskPath)
+	byPath := make(map[string]SemanticTaskRef, len(committed.Tasks))
+	for _, task := range committed.Tasks {
+		ref := SemanticTaskRef{TaskPath: task.Path, ContractDigest: digestBytes(task.Content)}
 		byPath[ref.TaskPath] = ref
 	}
-	graph, err := repositoryproject.BuildTaskGraph(paths, contents)
-	if err != nil {
-		return nil, nil, err
-	}
-	dependencies := make(map[string][]string, len(refs))
-	for _, dependency := range graph.Dependencies() {
+	dependencies := make(map[string][]string, len(committed.Tasks))
+	for _, dependency := range committed.Dependencies() {
 		dependencies[dependency.Task] = append([]string(nil), dependency.Outstanding...)
 	}
 	return byPath, dependencies, nil

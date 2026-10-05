@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"
 )
 
 func validatePreparedPlan(root, head string, prepared repositoryproject.FinalHeadPlan) error {
@@ -21,48 +21,11 @@ func validatePreparedPlan(root, head string, prepared repositoryproject.FinalHea
 			return err
 		}
 	}
-	entries, err := taskCorpusEntries(root, head)
+	entries, err := repositoryprojectcommit.TaskCorpusEntries(root, head)
 	if err != nil {
 		return err
 	}
 	return repositoryproject.ValidateClosure(prepared.Schedule, entries, "HEADのPlanとIMPLEMENTATION_TASKS corpusのclosureが成立しません")
-}
-
-func taskCorpusEntries(root, head string) ([]taskcontract.TaskCorpusEntry, error) {
-	output, err := gitOutput(root, "ls-tree", "-r", "-t", "-z", head, "--", taskcontract.TasksDir)
-	if err != nil {
-		return nil, fmt.Errorf("HEADのtask corpusを列挙できません: %w", err)
-	}
-	var entries []taskcontract.TaskCorpusEntry
-	for _, record := range strings.Split(output, "\x00") {
-		if record == "" {
-			continue
-		}
-		entry, ok, err := parseTaskCorpusRecord(record)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			entries = append(entries, entry)
-		}
-	}
-	return entries, nil
-}
-
-func parseTaskCorpusRecord(record string) (taskcontract.TaskCorpusEntry, bool, error) {
-	metadata, path, found := strings.Cut(record, "\t")
-	if !found {
-		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("HEADのtask corpus entry %qを読み込めません", record)
-	}
-	if !strings.HasSuffix(path, ".md") {
-		return taskcontract.TaskCorpusEntry{}, false, nil
-	}
-	fields := strings.Fields(metadata)
-	if len(fields) < 2 {
-		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("HEADのtask corpus entry %qを読み込めません", record)
-	}
-	regularBlob := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
-	return taskcontract.TaskCorpusEntry{Path: path, Regular: regularBlob}, true, nil
 }
 
 func validateActiveTask(root, head, path string) error {
