@@ -15,8 +15,7 @@ func TestPreToolUseBlocksManagedGitHookBypass(t *testing.T) {
 	} {
 		t.Run(command, func(t *testing.T) {
 			var output bytes.Buffer
-			payload := `{"tool_name":"Bash","tool_input":{"command":` + jsonString(t, command) + `}}`
-			if err := Run([]string{"pre-tool-use"}, strings.NewReader(strings.ReplaceAll(payload, `\"`, `"`)), &output); err != nil {
+			if err := Run([]string{"pre-tool-use"}, strings.NewReader(preToolUsePayload(t, "Bash", command)), &output); err != nil {
 				t.Fatal(err)
 			}
 			var decision preToolUseOutput
@@ -32,8 +31,7 @@ func TestPreToolUseBlocksManagedGitHookBypass(t *testing.T) {
 
 func TestPreToolUseAllowsOrdinaryGitPull(t *testing.T) {
 	var output bytes.Buffer
-	payload := `{"tool_name":"Bash","tool_input":{"command":"git pull --ff-only origin main"}}`
-	if err := Run([]string{"pre-tool-use"}, strings.NewReader(strings.ReplaceAll(payload, `\"`, `"`)), &output); err != nil {
+	if err := Run([]string{"pre-tool-use"}, strings.NewReader(preToolUsePayload(t, "Bash", "git pull --ff-only origin main")), &output); err != nil {
 		t.Fatal(err)
 	}
 	if output.Len() != 0 {
@@ -43,8 +41,7 @@ func TestPreToolUseAllowsOrdinaryGitPull(t *testing.T) {
 
 func TestPreToolUseIgnoresNonBashTools(t *testing.T) {
 	var output bytes.Buffer
-	payload := `{"tool_name":"Read","tool_input":{"command":"git push --no-verify origin main"}}`
-	if err := Run([]string{"pre-tool-use"}, strings.NewReader(strings.ReplaceAll(payload, `\"`, `"`)), &output); err != nil {
+	if err := Run([]string{"pre-tool-use"}, strings.NewReader(preToolUsePayload(t, "Read", "git push --no-verify origin main")), &output); err != nil {
 		t.Fatal(err)
 	}
 	if output.Len() != 0 {
@@ -52,9 +49,11 @@ func TestPreToolUseIgnoresNonBashTools(t *testing.T) {
 	}
 }
 
-func jsonString(t *testing.T, value string) string {
+func preToolUsePayload(t *testing.T, toolName, command string) string {
 	t.Helper()
-	data, err := json.Marshal(value)
+	input := preToolUseInput{ToolName: toolName}
+	input.ToolInput.Command = command
+	data, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
 	}
