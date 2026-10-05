@@ -142,7 +142,8 @@ func (s *Store) RecoverExecutionOperation(transitionID string) (ExecutionOperati
 }
 
 func (s *Store) recoverExecutionOperationLocked(op ExecutionOperation) (ExecutionOperationResult, error) {
-	if err := s.validateExecutionOperation(op); err != nil {
+	contract, err := s.validateExecutionOperation(op)
+	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	head, phase, err := s.loadExecutionRecoveryAuthority(op)
@@ -153,36 +154,35 @@ func (s *Store) recoverExecutionOperationLocked(op ExecutionOperation) (Executio
 		return s.finishPublicationAbort(op, head, phase)
 	}
 	if executionAlreadyFinalized(op, head) {
-		if err := s.verifyCommittedExecutionTarget(op, head); err != nil {
+		if err := contract.verifyCommitted(op, head); err != nil {
 			return ExecutionOperationResult{}, err
 		}
 		if err := s.reconcileFinalizedExecutionPhase(op.Transition); err != nil {
 			return ExecutionOperationResult{}, err
 		}
-		return s.executionOperationResult(op, head)
+		return s.executionOperationResult(op, head, contract)
 	}
 	if head.PendingTransitionID != op.Transition.TransitionID {
 		return ExecutionOperationResult{}, fmt.Errorf("execution transition no longer owns controller")
 	}
 	if head.ControllerGeneration == op.Transition.CommittedGeneration {
-		return s.finalizeCommittedExecution(op, head)
+		return s.finalizeCommittedExecution(op, head, contract)
 	}
 	if !executionPreparedForRecovery(op, head) {
 		return ExecutionOperationResult{}, fmt.Errorf("execution transition generation is unexpected")
 	}
-	err = s.applyExecutionOperation(op)
-	if err != nil {
+	if err := contract.apply(op); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	head, err = s.finalizeAuthorityTransitionLocked(op.Transition)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	return s.executionOperationResult(op, head)
+	return s.executionOperationResult(op, head, contract)
 }
 
-func (s *Store) finalizeCommittedExecution(op ExecutionOperation, head RepositoryControllerHead) (ExecutionOperationResult, error) {
-	if err := s.verifyCommittedExecutionTarget(op, head); err != nil {
+func (s *Store) finalizeCommittedExecution(op ExecutionOperation, head RepositoryControllerHead, contract executionOperationContract) (ExecutionOperationResult, error) {
+	if err := contract.verifyCommitted(op, head); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	if err := s.reconcileCommittedExecutionPhase(op.Transition); err != nil {
@@ -192,30 +192,7 @@ func (s *Store) finalizeCommittedExecution(op ExecutionOperation, head Repositor
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	return s.executionOperationResult(op, next)
-}
-
-func (s *Store) applyExecutionOperation(op ExecutionOperation) error {
-	var err error
-	switch op.Transition.Kind {
-	case executionModelCall:
-		err = s.applyModelCallAdmission(op)
-	case terminalRetire:
-		err = s.applyTerminalMetadata(op)
-	case executionSuspend:
-		err = s.applyExecutionSuspension(op)
-	case executionMaterialize:
-		err = s.applyExecutionMaterialization(op)
-	case executionCleanup:
-		err = s.applyExecutionCleanup(op)
-	case executionGC:
-		err = s.applySuspensionGC(op)
-	case publicationAccept, publicationPromote, publicationPublish, publicationRebind, publicationAdopt, publicationRevalidate, publicationReenter:
-		err = s.applyPublicationOperation(op)
-	default:
-		err = fmt.Errorf("unsupported execution operation %q", op.Transition.Kind)
-	}
-	return err
+	return s.executionOperationResult(op, next, contract)
 }
 
 func (s *Store) reconcileCommittedExecutionPhase(record TransitionRecord) error {
@@ -234,31 +211,13 @@ func (s *Store) reconcileCommittedExecutionPhase(record TransitionRecord) error 
 	return s.writeTransitionState(phase)
 }
 
-func (s *Store) executionOperationResult(op ExecutionOperation, head RepositoryControllerHead) (ExecutionOperationResult, error) {
+func (s *Store) executionOperationResult(op ExecutionOperation, head RepositoryControllerHead, contract executionOperationContract) (ExecutionOperationResult, error) {
 	result := ExecutionOperationResult{TransitionID: op.Transition.TransitionID, Head: head, Suspension: op.Suspension, SealRef: op.SealRef}
-	if op.Publication != nil {
-		result.CandidateRef = op.Publication.After
+	if contract.projectResult != nil {
+		if err := contract.projectResult(op, head, &result); err != nil {
+			return ExecutionOperationResult{}, err
+		}
 	}
-	if op.Transition.Kind != executionMaterialize && op.Transition.Kind != executionModelCall {
-		return result, nil
-	}
-	workspace, err := ResolveWorkspaceIdentity(op.Workspace.Root, s.identity)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	snapshot, err := CaptureWorkspaceSnapshot(workspace.Root)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	authority, err := MutationAuthorityFromHead(head)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	admission, err := s.AdmitMutation(authority, workspace, snapshot)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	result.Admission = &admission
 	return result, nil
 }
 
