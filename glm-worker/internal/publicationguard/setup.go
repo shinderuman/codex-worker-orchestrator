@@ -30,7 +30,7 @@ const (
 	PublicationGuardBindingInvalid    = "does not name an absolute executable regular file"
 
 	publicationTrackedHooksPath = ".githooks"
-	publicationGuardBindingName = "glm-parent-action.path"
+	publicationGuardBindingName = "glm-publication-guard.path"
 )
 
 var publicationGuardHookNames = []string{"reference-transaction", "pre-push"}
