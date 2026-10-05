@@ -20,7 +20,7 @@ func TestInspectPublicationGuardSetupRequiresBinding(t *testing.T) {
 
 func TestInspectPublicationGuardSetupAcceptsExecutableBinding(t *testing.T) {
 	repo := newPublicationGuardTestRepo(t)
-	target := filepath.Join(t.TempDir(), "glm-parent-action")
+	target := filepath.Join(t.TempDir(), "glm-publication-guard")
 	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestInspectPublicationGuardSetupAcceptsExecutableBinding(t *testing.T) {
 }
 
 func TestInspectPublicationGuardSetupRejectsBindingShapesHooksReject(t *testing.T) {
-	target := filepath.Join(t.TempDir(), "glm-parent-action")
+	target := filepath.Join(t.TempDir(), "glm-publication-guard")
 	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
