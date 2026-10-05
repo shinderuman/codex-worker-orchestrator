@@ -69,10 +69,11 @@ type observationExecutionPlan struct {
 }
 
 const (
-	observationExecuteUsage       = "usage: glm-parent-action observation-execute <token>"
-	observationExecuteDetailLimit = 2048
-	observationShadowOutputLimit  = 1 << 20
-	observationStatePollInterval  = 200 * time.Millisecond
+	observationExecuteUsage             = "usage: glm-parent-action observation-execute <token>"
+	observationExecuteDetailLimit       = 2048
+	observationShadowOutputLimit        = 1 << 20
+	observationStatePollInterval        = 200 * time.Millisecond
+	observationFinalizationLockTimeout  = 10 * time.Second
 )
 
 var (
@@ -122,16 +123,32 @@ func executeObservationExecuteAction(cfg config.AppConfig, args []string, stdout
 	outcome := dispatchObservationExecutionForAction(ctx, cfg, st, plan, executionID)
 	stop()
 
-	lock, err = repolock.AcquireWait(st.LockPath())
+	finalizeCtx, cancelFinalize := context.WithTimeout(context.Background(), observationFinalizationLockTimeout)
+	lock, err = repolock.AcquireContext(finalizeCtx, st.LockPath())
+	cancelFinalize()
 	if err != nil {
-		return err
+		return fmt.Errorf("observation post-dispatch finalization lock unavailable: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
-	if err := verifyObservationExecutionBoundary(st, plan.admission); err != nil {
-		return err
+	if boundaryErr := verifyObservationExecutionBoundary(st, plan.admission); boundaryErr != nil {
+		if recoveryErr := st.ResolveObservationExecutionIndeterminate(
+			executionID,
+			"observation execution boundary changed after dispatch; the operation may have run and automatic replay is refused: "+boundaryErr.Error(),
+			time.Now().UTC(),
+		); recoveryErr != nil {
+			return fmt.Errorf("%w; additionally failed to resolve in-flight observation: %v", boundaryErr, recoveryErr)
+		}
+		return boundaryErr
 	}
 	record := newObservationExecutionRecord(plan, outcome, executionID, snapshot, startedAt, time.Since(started).Milliseconds())
 	if err := st.CompleteObservationExecution(record); err != nil {
+		if recoveryErr := st.ResolveObservationExecutionIndeterminate(
+			executionID,
+			"observation dispatch completed but durable completion could not be established; automatic replay is refused: "+err.Error(),
+			time.Now().UTC(),
+		); recoveryErr != nil {
+			return fmt.Errorf("%w; additionally failed to resolve in-flight observation: %v", err, recoveryErr)
+		}
 		return err
 	}
 	return encodeObservationExecuteOutput(stdout, record)
@@ -174,6 +191,9 @@ func prepareObservationExecutionPlan(cfg config.AppConfig, st *state.StateStore,
 	if err != nil {
 		return observationExecutionPlan{}, err
 	}
+	if err := st.RecoverStaleObservationExecutions(time.Now().UTC()); err != nil {
+		return observationExecutionPlan{}, err
+	}
 	if err := rejectDuplicateObservationExecution(st, request, admission.Lifecycle.Round); err != nil {
 		return observationExecutionPlan{}, err
 	}
@@ -214,6 +234,7 @@ func newObservationExecutionInFlightRecord(
 		Operation:        string(plan.request.Operation),
 		ParamsDigest:     plan.request.Digest(),
 		Status:           state.ObservationExecutionStatusInFlight,
+		DeadlineMS:       plan.request.ResolvedDeadlineMS(),
 		Head:             snapshot.Head,
 		IndexDigest:      snapshot.IndexDigest,
 		WorktreeDigest:   snapshot.WorktreeDigest,
@@ -241,6 +262,7 @@ func newObservationExecutionRecord(
 		ExitCode:           outcome.ExitCode,
 		ExitSource:         outcome.ExitSource,
 		DurationMS:         durationMS,
+		DeadlineMS:         plan.request.ResolvedDeadlineMS(),
 		Head:               snapshot.Head,
 		IndexDigest:        snapshot.IndexDigest,
 		WorktreeDigest:     snapshot.WorktreeDigest,
