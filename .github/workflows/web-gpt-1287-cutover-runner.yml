@@ -49,21 +49,23 @@ jobs:
 
           workflow_path = Path('glm-worker/internal/workflow/workflow.go')
           workflow_text = workflow_path.read_text()
-          before = '''\tif err := w.initializeNewTaskState(threadID, claimID); err != nil {
-\t\treturn "", err
-\t}
-\tif err := w.persistParentActionCodexIdentity(); err != nil {
-'''
-          after = '''\tif err := w.initializeNewTaskState(threadID, claimID); err != nil {
-\t\treturn "", err
-\t}
-\tif w.canonicalAdmission != nil {
-\t\tif err := w.bindCanonicalWorkflowAttempt(*w.canonicalAdmission); err != nil {
-\t\t\treturn "", err
-\t\t}
-\t}
-\tif err := w.persistParentActionCodexIdentity(); err != nil {
-'''
+          before = (
+              '\tif err := w.initializeNewTaskState(threadID, claimID); err != nil {\n'
+              '\t\treturn "", err\n'
+              '\t}\n'
+              '\tif err := w.persistParentActionCodexIdentity(); err != nil {\n'
+          )
+          after = (
+              '\tif err := w.initializeNewTaskState(threadID, claimID); err != nil {\n'
+              '\t\treturn "", err\n'
+              '\t}\n'
+              '\tif w.canonicalAdmission != nil {\n'
+              '\t\tif err := w.bindCanonicalWorkflowAttempt(*w.canonicalAdmission); err != nil {\n'
+              '\t\t\treturn "", err\n'
+              '\t\t}\n'
+              '\t}\n'
+              '\tif err := w.persistParentActionCodexIdentity(); err != nil {\n'
+          )
           if workflow_text.count(before) != 1:
               raise SystemExit('fresh task binding rematerialization boundary is not unique')
           workflow_path.write_text(workflow_text.replace(before, after, 1))
