@@ -3,7 +3,7 @@ set -eu
 
 mode=${1:-}
 repo_root=${2:-}
-glm_parent_action_path=${3:-}
+publication_guard_path=${3:-}
 required_hooks='post-merge pre-commit reference-transaction pre-push'
 
 if [ "$mode" != install ] && [ "$mode" != retire ]; then
@@ -14,19 +14,19 @@ if [ -z "$repo_root" ]; then
 	printf '%s\n' 'repository path is required' >&2
 	exit 2
 fi
-if [ "$mode" = install ] && [ -z "$glm_parent_action_path" ]; then
-	glm_parent_action_path=$(command -v glm-parent-action || true)
+if [ "$mode" = install ] && [ -z "$publication_guard_path" ]; then
+	publication_guard_path=$(command -v glm-publication-guard || true)
 fi
 if [ "$mode" = install ]; then
-	case "$glm_parent_action_path" in
+	case "$publication_guard_path" in
 	/*) ;;
 	*)
-		printf '%s\n' 'git hook: absolute glm-parent-action path is required' >&2
+		printf '%s\n' 'git hook: absolute glm-publication-guard path is required' >&2
 		exit 1
 		;;
 	esac
-	if [ ! -x "$glm_parent_action_path" ]; then
-		printf 'git hook: glm-parent-action is not executable: %s\n' "$glm_parent_action_path" >&2
+	if [ ! -x "$publication_guard_path" ]; then
+		printf 'git hook: glm-publication-guard is not executable: %s\n' "$publication_guard_path" >&2
 		exit 1
 	fi
 fi
@@ -336,8 +336,8 @@ install_managed_hooks() {
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
 	mkdir -p "$staging_hooks_path"
 
-	printf '%s\n' "$glm_parent_action_path" >"$staging_hooks_path/glm-parent-action.path"
-	chmod 600 "$staging_hooks_path/glm-parent-action.path"
+	printf '%s\n' "$publication_guard_path" >"$staging_hooks_path/glm-publication-guard.path"
+	chmod 600 "$staging_hooks_path/glm-publication-guard.path"
 
 	for hook in $required_hooks; do
 		staged_hook="$staging_hooks_path/$hook"
@@ -387,9 +387,9 @@ verify_managed_install() {
 		printf 'git hook: managed core.hooksPath postcondition mismatch: %s\n' "$current_hooks_path" >&2
 		return 1
 	fi
-	guard_path_file="$managed_hooks_path/glm-parent-action.path"
-	if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ] || [ "$(cat "$guard_path_file")" != "$glm_parent_action_path" ]; then
-		printf '%s\n' 'git hook: glm-parent-action path postcondition failed' >&2
+	guard_path_file="$managed_hooks_path/glm-publication-guard.path"
+	if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ] || [ "$(cat "$guard_path_file")" != "$publication_guard_path" ]; then
+		printf '%s\n' 'git hook: glm-publication-guard path postcondition failed' >&2
 		return 1
 	fi
 	for hook in $required_hooks; do
