@@ -34,29 +34,37 @@ func RetireTerminalMetadata(plan []byte, tasks map[string][]byte, target string,
 	if err != nil {
 		return TerminalMetadata{}, err
 	}
-	result := TerminalMetadata{}
-	if !blocker {
-		if len(schedule.Next) == 0 {
-			return TerminalMetadata{}, fmt.Errorf("terminal focus has no mechanical NEXT successor; parent scheduling decision required")
-		}
-		result.Successor = schedule.Next[0]
-		deps, err := taskcontract.ParseTaskDependencyState(updatedTasks[result.Successor])
-		if err != nil || len(deps.Outstanding) != 0 {
-			return TerminalMetadata{}, fmt.Errorf("first NEXT requires dependency/priority decision")
-		}
+	successor, err := terminalRetirementSuccessor(schedule, updatedTasks, blocker)
+	if err != nil {
+		return TerminalMetadata{}, err
 	}
-	updatedPlan, err := taskcontract.RetirePlanTask(string(plan), target, result.Successor)
+	updatedPlan, err := taskcontract.RetirePlanTask(string(plan), target, successor)
 	if err != nil {
 		return TerminalMetadata{}, err
 	}
 	if err := validateRetirementCorpus(taskcontract.ParsePlanSchedule(updatedPlan), updatedTasks); err != nil {
 		return TerminalMetadata{}, err
 	}
-	result.Changes, err = terminalMetadataChanges([]byte(updatedPlan), updatedTasks, changedPaths, target)
+	changes, err := terminalMetadataChanges([]byte(updatedPlan), updatedTasks, changedPaths, target)
 	if err != nil {
 		return TerminalMetadata{}, err
 	}
-	return result, nil
+	return TerminalMetadata{Changes: changes, Successor: successor}, nil
+}
+
+func terminalRetirementSuccessor(schedule taskcontract.PlanSchedule, tasks map[string][]byte, blocker bool) (string, error) {
+	if blocker {
+		return "", nil
+	}
+	if len(schedule.Next) == 0 {
+		return "", fmt.Errorf("terminal focus has no mechanical NEXT successor; parent scheduling decision required")
+	}
+	successor := schedule.Next[0]
+	deps, err := taskcontract.ParseTaskDependencyState(tasks[successor])
+	if err != nil || len(deps.Outstanding) != 0 {
+		return "", fmt.Errorf("first NEXT requires dependency/priority decision")
+	}
+	return successor, nil
 }
 
 func terminalMetadataChanges(plan []byte, tasks map[string][]byte, changedPaths []string, target string) ([]TerminalMetadataChange, error) {
