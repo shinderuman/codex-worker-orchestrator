@@ -100,13 +100,13 @@ func (s *Store) terminalMetadataTree(base string, metadata repositoryprojectcomm
 		return nil, "", err
 	}
 	defer func() { _ = os.Remove(index) }()
-	var files []TerminalMetadataFile
-	for _, path := range metadata.ChangedPaths {
-		newBytes := metadata.Tasks[path]
-		if path == implementationPlanPath {
-			newBytes = metadata.Plan
+	files := make([]TerminalMetadataFile, 0, len(metadata.Changes))
+	for _, change := range metadata.Changes {
+		newBytes := change.NewBytes
+		if change.Delete {
+			newBytes = nil
 		}
-		file, err := s.planTerminalMetadataFile(base, path, index, newBytes)
+		file, err := s.planTerminalMetadataFile(base, change.Path, index, newBytes)
 		if err != nil {
 			return nil, "", err
 		}
