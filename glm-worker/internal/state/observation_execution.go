@@ -35,8 +35,8 @@ type ObservationExecutionAdmission struct {
 }
 
 const (
-	observationExecutionsStateFile = "observation-executions"
-	observationExecutionsRetention = 16
+	observationExecutionsStateFile    = "observation-executions"
+	observationExecutionsRetention    = 16
 	observationExecutionRecoveryGrace = 10 * time.Second
 
 	ObservationExecutionStatusInFlight      = "in-flight"
