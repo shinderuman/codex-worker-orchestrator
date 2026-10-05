@@ -222,7 +222,7 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 		return "", err
 	}
 	if w.canonicalAdmission != nil {
-		if err := w.state.Write(state.ControllerAttemptStateFile, w.canonicalAdmission.Attempt.AttemptID); err != nil {
+		if err := w.bindCanonicalWorkflowAttempt(*w.canonicalAdmission); err != nil {
 			return "", err
 		}
 	}

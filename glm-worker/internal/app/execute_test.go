@@ -611,10 +611,7 @@ func bindCanonicalAppTask(t *testing.T, cfg config.AppConfig, st *state.StateSto
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write(state.ControllerAttemptStateFile, admission.Attempt.AttemptID); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Write(state.CanonicalExecutionTaskStateFile, admission.Attempt.SemanticTaskRef.TaskPath); err != nil {
+	if err := st.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{AttemptID: admission.Attempt.AttemptID, TaskPath: admission.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest}); err != nil {
 		t.Fatal(err)
 	}
 }

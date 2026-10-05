@@ -343,29 +343,42 @@ func markInconsistent(projection *Projection, detail string) {
 
 func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan state.ParentActionPlan) (Request, bool, error) {
 	task, canonical, err := controller.WorkflowExecutionTask(cfg)
-	if canonical && err != nil {
+	quiescent := canonical && err != nil
+	if quiescent {
 		task, err = quiescentControllerTask(cfg, err)
 	}
 	if err != nil || !canonical {
 		return Request{}, canonical, err
 	}
-	continuation := repositoryproject.Continuation{State: repositoryproject.ContinuationContinueNow, Task: task.TaskPath, RequiredAction: string(plan.RequiredAction), Reason: repositoryproject.ReasonCurrentTask}
-	if st.TaskStatus() == state.TaskStatusNone {
-		continuation.RequiredAction = repositoryproject.ActionStart
+	continuation := canonicalControllerContinuation(st.TaskStatus(), plan, task.TaskPath)
+	binding, err := st.LoadControllerRuntimeBinding()
+	if err != nil {
+		return Request{}, true, err
 	}
-	if reason := temporaryBlockReason(st.TaskStatus()); reason != "" {
-		continuation.State = repositoryproject.ContinuationBlocked
-		continuation.Reason = reason
+	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
+		return Request{}, true, errors.New("controller runtime binding does not match canonical execution task")
 	}
-	if st.TaskStatus() == state.TaskStatusInterrupted {
-		continuation.State = repositoryproject.ContinuationExplicitStop
-		continuation.Reason = repositoryproject.ReasonUserInterruption
-	}
-	attribution := repositoryproject.DeriveTaskAttribution(st.ReadOr(state.CanonicalExecutionTaskStateFile, ""), task.TaskPath, continuation)
+	attribution := repositoryproject.DeriveTaskAttribution(binding.TaskPath, task.TaskPath, continuation)
 	if authorityTask, err := st.CurrentTaskAuthorityPath(); err == nil {
 		attribution = repositoryproject.BindTaskAuthority(attribution, authorityTask)
 	}
 	return Request{Continuation: continuation, TaskAttribution: attribution}, true, nil
+}
+
+func canonicalControllerContinuation(status state.TaskStatus, plan state.ParentActionPlan, taskPath string) repositoryproject.Continuation {
+	continuation := repositoryproject.Continuation{State: repositoryproject.ContinuationContinueNow, Task: taskPath, RequiredAction: string(plan.RequiredAction), Reason: repositoryproject.ReasonCurrentTask}
+	if status == state.TaskStatusNone {
+		continuation.RequiredAction = repositoryproject.ActionStart
+	}
+	if reason := temporaryBlockReason(status); reason != "" {
+		continuation.State = repositoryproject.ContinuationBlocked
+		continuation.Reason = reason
+	}
+	if status == state.TaskStatusInterrupted {
+		continuation.State = repositoryproject.ContinuationExplicitStop
+		continuation.Reason = repositoryproject.ReasonUserInterruption
+	}
+	return continuation
 }
 
 func quiescentControllerTask(cfg config.AppConfig, admissionError error) (controller.SemanticTaskRef, error) {

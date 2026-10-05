@@ -59,10 +59,9 @@ func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionunit.Dec
 }
 
 func (w *Workflow) recordExecutionUnitDisposition(executionUnit string) error {
-	return executionunit.RecordDisposition(
-		w.state,
-		w.state.ReadOr(activeTaskStateKey, ""),
-		executionUnit,
-		w.now().UTC(),
-	)
+	activeTaskPath, err := w.state.CurrentWorkflowTaskPath()
+	if err != nil {
+		return err
+	}
+	return executionunit.RecordDisposition(w.state, activeTaskPath, executionUnit, w.now().UTC())
 }

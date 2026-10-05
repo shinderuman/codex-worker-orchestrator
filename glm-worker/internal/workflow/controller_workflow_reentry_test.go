@@ -21,7 +21,7 @@ func TestCanonicalReentryPreservesPendingDecisionAndRefreshesStoppedReview(t *te
 			if _, err := st.StartNewTask(); err != nil {
 				t.Fatal(err)
 			}
-			if err := st.Write(state.ControllerAttemptStateFile, "predecessor"); err != nil {
+			if err := st.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{AttemptID: "predecessor", TaskPath: admission.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest}); err != nil {
 				t.Fatal(err)
 			}
 			if err := st.Write("worker.id", "old-worker-session"); err != nil {
@@ -67,8 +67,9 @@ func TestCanonicalReentryPreservesPendingDecisionAndRefreshesStoppedReview(t *te
 					t.Fatalf("stale review was not replaced by worker reentry: %#v", current)
 				}
 			}
-			if st.ReadOr(state.ControllerAttemptStateFile, "") != admission.Attempt.AttemptID {
-				t.Fatal("workflow attempt binding was not refreshed")
+			binding, err := st.LoadControllerRuntimeBinding()
+			if err != nil || binding.AttemptID != admission.Attempt.AttemptID || binding.TaskPath != admission.Attempt.SemanticTaskRef.TaskPath || binding.TaskContractDigest != admission.Attempt.SemanticTaskRef.ContractDigest {
+				t.Fatalf("workflow runtime binding was not refreshed: %#v %v", binding, err)
 			}
 		})
 	}
@@ -80,7 +81,7 @@ func TestCanonicalReentryRejectsUnrelatedWorkflowSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write(state.ControllerAttemptStateFile, "unrelated-attempt"); err != nil {
+	if err := st.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{AttemptID: "unrelated-attempt", TaskPath: admission.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Write("worker.id", "preserved-session"); err != nil {
@@ -92,5 +93,40 @@ func TestCanonicalReentryRejectsUnrelatedWorkflowSession(t *testing.T) {
 	}
 	if st.ReadOr("worker.id", "") != "preserved-session" {
 		t.Fatal("rejected reentry consumed the session")
+	}
+}
+
+func TestCanonicalReentryRejectsMismatchedCurrentTaskBinding(t *testing.T) {
+	for _, mismatch := range []string{"path", "digest"} {
+		t.Run(mismatch, func(t *testing.T) {
+			cfg, st := newWorkflowGuardFixture(t, t.TempDir())
+			admission, err := controller.Activate(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			binding := state.ControllerRuntimeBinding{
+				AttemptID:          admission.Attempt.AttemptID,
+				TaskPath:           admission.Attempt.SemanticTaskRef.TaskPath,
+				TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest,
+			}
+			if mismatch == "path" {
+				binding.TaskPath = "IMPLEMENTATION_TASKS/stale.md"
+			} else {
+				binding.TaskContractDigest = "stale-digest"
+			}
+			if err := st.SaveControllerRuntimeBinding(binding); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Write("worker.id", "preserved-session"); err != nil {
+				t.Fatal(err)
+			}
+			w := NewWorkflow(cfg, st, nil, io.Discard)
+			if err := w.bindCanonicalWorkflowAttempt(admission); err == nil {
+				t.Fatal("mismatched semantic task binding rebound the current attempt")
+			}
+			if st.ReadOr("worker.id", "") != "preserved-session" {
+				t.Fatal("rejected semantic task mismatch consumed the session")
+			}
+		})
 	}
 }

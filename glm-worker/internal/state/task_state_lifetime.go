@@ -20,8 +20,7 @@ const (
 )
 
 var taskBoundStatePolicies = []taskBoundStatePolicy{
-	{name: ControllerAttemptStateFile, lifetime: taskBoundStateFreshTaskClear},
-	{name: CanonicalExecutionTaskStateFile, lifetime: taskBoundStateFreshTaskClear},
+	{name: controllerRuntimeBindingStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "task.status", lifetime: taskBoundStateFreshTaskClear},
 	{name: parentCodexIdentityFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "isolation.policy", lifetime: taskBoundStateFreshTaskClear},

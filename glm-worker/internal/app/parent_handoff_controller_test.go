@@ -28,7 +28,11 @@ func TestCanonicalParentAcceptanceRequiresCurrentAttemptAndProjectsPublication(t
 		t.Fatal(err)
 	}
 	for _, attempt := range []string{"", "unrelated-attempt"} {
-		if err := st.Write(state.ControllerAttemptStateFile, attempt); err != nil {
+		if attempt == "" {
+			if err := st.ClearControllerRuntimeBinding(); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := st.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{AttemptID: attempt, TaskPath: admission.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest}); err != nil {
 			t.Fatal(err)
 		}
 		err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard)
@@ -39,7 +43,7 @@ func TestCanonicalParentAcceptanceRequiresCurrentAttemptAndProjectsPublication(t
 			t.Fatal("rejected acceptance consumed review")
 		}
 	}
-	if err := st.Write(state.ControllerAttemptStateFile, admission.Attempt.AttemptID); err != nil {
+	if err := st.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{AttemptID: admission.Attempt.AttemptID, TaskPath: admission.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest}); err != nil {
 		t.Fatal(err)
 	}
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err != nil {

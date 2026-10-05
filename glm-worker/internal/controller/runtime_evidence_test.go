@@ -97,7 +97,7 @@ func TestAcceptedCandidateBundlePreservesBoundRuntimeEvidence(t *testing.T) {
 }
 
 func TestRuntimeEvidenceFailurePreservesSourceAuthority(t *testing.T) {
-	for _, failure := range []string{"missing-transcript", "stale-attempt", "artifact-symlink", "missing-runtime"} {
+	for _, failure := range []string{"missing-transcript", "stale-attempt", "stale-task", "artifact-symlink", "missing-runtime"} {
 		t.Run(failure, func(t *testing.T) {
 			fixture := newFindingAcceptanceFixture(t)
 			runtime := bindRuntimeEvidenceFixture(t, fixture.store, fixture.source)
@@ -119,7 +119,21 @@ func TestRuntimeEvidenceFailurePreservesSourceAuthority(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "stale-attempt":
-				if err := runtime.runtime.Write(state.ControllerAttemptStateFile, "replacement-attempt"); err != nil {
+				binding, err := runtime.runtime.LoadControllerRuntimeBinding()
+				if err != nil {
+					t.Fatal(err)
+				}
+				binding.AttemptID = "replacement-attempt"
+				if err := runtime.runtime.SaveControllerRuntimeBinding(binding); err != nil {
+					t.Fatal(err)
+				}
+			case "stale-task":
+				binding, err := runtime.runtime.LoadControllerRuntimeBinding()
+				if err != nil {
+					t.Fatal(err)
+				}
+				binding.TaskPath = "IMPLEMENTATION_TASKS/stale.md"
+				if err := runtime.runtime.SaveControllerRuntimeBinding(binding); err != nil {
 					t.Fatal(err)
 				}
 			case "artifact-symlink":
@@ -154,10 +168,11 @@ func bindRuntimeEvidenceFixture(t *testing.T, store *Store, source Admission) ru
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, value := range map[string]string{state.ControllerAttemptStateFile: source.Attempt.AttemptID, state.CanonicalExecutionTaskStateFile: source.Attempt.SemanticTaskRef.TaskPath, "task.id": source.Attempt.AttemptID} {
-		if err := runtime.Write(name, value); err != nil {
-			t.Fatal(err)
-		}
+	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{AttemptID: source.Attempt.AttemptID, TaskPath: source.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: source.Attempt.SemanticTaskRef.ContractDigest}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Write("task.id", source.Attempt.AttemptID); err != nil {
+		t.Fatal(err)
 	}
 	sessionID := "d9bc7b1e-c37a-42b0-863e-c1f968fe201d"
 	store.config.ClaudeConfigDir = filepath.Join(t.TempDir(), "claude")

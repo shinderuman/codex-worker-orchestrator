@@ -64,7 +64,8 @@ func completionLifecycleUnmet(st *state.StateStore, activeTask string, evidence 
 	if plan.RequiredAction != state.ParentActionNone {
 		unmet = append(unmet, "pending_parent_action")
 	}
-	if pinned := st.ReadOr("active-task", ""); pinned != activeTask {
+	pinned, err := st.CurrentWorkflowTaskPath()
+	if err != nil || pinned != activeTask {
 		unmet = append(unmet, "active_task_mismatch")
 	}
 	return unmet

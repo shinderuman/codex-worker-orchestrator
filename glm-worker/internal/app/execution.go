@@ -190,21 +190,25 @@ func executeRetainedCanonicalWorkflow(
 		return err
 	}
 	if cmd.Mode == ModeAccept {
-		store, err := controller.Open(cfg)
-		if err != nil {
-			return err
-		}
-		head, err := store.LoadHead()
-		if err != nil {
-			return err
-		}
-		boundAttempt := st.ReadOr(state.ControllerAttemptStateFile, "")
-		if boundAttempt == "" || boundAttempt != head.LiveAttemptID {
-			return fmt.Errorf("parent acceptance requires review reentry for the current controller attempt")
-		}
-		return parentAccept(st, stdout)
+		return acceptRetainedCanonicalWorkflow(cfg, st, stdout)
 	}
 	return executeWorkflow(cmd, cfg, st, rf, stdout)
+}
+
+func acceptRetainedCanonicalWorkflow(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	binding, err := st.LoadControllerRuntimeBinding()
+	if err != nil || head.ExecutionTaskRef == nil || binding.AttemptID != head.LiveAttemptID || binding.TaskPath != head.ExecutionTaskRef.TaskPath || binding.TaskContractDigest != head.ExecutionTaskRef.ContractDigest {
+		return fmt.Errorf("parent acceptance requires review reentry for the current controller attempt")
+	}
+	return parentAccept(st, stdout)
 }
 
 func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
