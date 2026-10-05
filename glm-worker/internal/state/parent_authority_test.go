@@ -12,6 +12,7 @@ func TestIsParentManagedPathOwnsProtectionSet(t *testing.T) {
 		ParentRulesFile,
 		ParentPlanFile,
 		ParentHistoryFile,
+		ParentTasksDir,
 		ParentTasksDir + "/task.md",
 		ParentTasksDir + "/nested/task.md",
 	} {
@@ -21,13 +22,16 @@ func TestIsParentManagedPathOwnsProtectionSet(t *testing.T) {
 	}
 	for _, path := range []string{
 		"",
-		ParentTasksDir,
 		ParentTasksDir + "-archive/task.md",
 		"docs/task.md",
 	} {
 		if IsParentManagedPath(path) {
 			t.Fatalf("non-managed path %q was recognized", path)
 		}
+	}
+	wantRoots := []string{ParentRulesFile, ParentPlanFile, ParentHistoryFile, ParentTasksDir}
+	if roots := ParentManagedRootPaths(); !reflect.DeepEqual(roots, wantRoots) {
+		t.Fatalf("managed roots = %v want %v", roots, wantRoots)
 	}
 }
 
