@@ -46,14 +46,22 @@ func ValidateObservationCapabilityAdmission(st *state.StateStore, expected Obser
 
 func BuildWithRepositoryPolicy(cfg config.AppConfig, st *state.StateStore) Projection {
 	projection := Build(cfg, st)
-	if !projection.Consistent || projection.ActionPlan == nil || projection.ActionPlan.RequiredAction != state.ParentActionDecision {
+	if !projection.Consistent || projection.ActionPlan == nil {
 		return projection
 	}
-	if _, err := CurrentObservationCapabilityAdmission(st); err != nil {
+	admission, err := CurrentObservationCapabilityAdmission(st)
+	if err != nil {
 		return projection
 	}
-	plan := *projection.ActionPlan
-	plan.AllowedActions = append(append([]state.ParentAction(nil), plan.AllowedActions...), state.ParentActionObservationExecute, state.ParentActionNoGo)
+	plan := projectObservationCapabilityActions(*projection.ActionPlan, admission.Policy.Admitted)
 	projection.ActionPlan = &plan
 	return projection
+}
+
+func projectObservationCapabilityActions(plan state.ParentActionPlan, admitted bool) state.ParentActionPlan {
+	if !admitted || plan.RequiredAction != state.ParentActionDecision {
+		return plan
+	}
+	plan.AllowedActions = append(append([]state.ParentAction(nil), plan.AllowedActions...), state.ParentActionObservationExecute, state.ParentActionNoGo)
+	return plan
 }
