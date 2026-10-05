@@ -45,6 +45,16 @@ func TestExecutionOperationContractRejectsUnknownKind(t *testing.T) {
 	}
 }
 
+func TestExecutionOperationContractRequiresCommittedVerification(t *testing.T) {
+	contract := executionOperationContract{
+		validate: func(ExecutionOperation) error { return nil },
+		apply:    func(ExecutionOperation) error { return nil },
+	}
+	if err := validateExecutionOperationContract(contract); err == nil {
+		t.Fatal("contract without committed verification was accepted")
+	}
+}
+
 func TestFixtureExecutionOperationUsesOneContractBoundary(t *testing.T) {
 	calls := []string{}
 	contract := executionOperationContract{
