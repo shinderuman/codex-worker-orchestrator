@@ -84,6 +84,7 @@ type Registry struct {
 type LabelInput struct {
 	Schema                string                    `json:"schema"`
 	TaskID                string                    `json:"task_id"`
+	ReviewNumber          int                       `json:"review_number"`
 	FindingDispositions   []FindingDispositionInput `json:"finding_dispositions"`
 	AvoidedReviewFixWaves int                       `json:"avoided_review_fix_waves,omitempty"`
 	FalseNegatives        *int                      `json:"false_negatives,omitempty"`
@@ -263,6 +264,9 @@ func validateLabels(input LabelInput) error {
 	if input.TaskID == "" {
 		return fmt.Errorf("failure-path advisory labelsのtask_idが空です")
 	}
+	if input.ReviewNumber <= 0 {
+		return fmt.Errorf("failure-path advisory labelsのreview_numberが不正です: %d", input.ReviewNumber)
+	}
 	seen := make(map[int]struct{}, len(input.FindingDispositions))
 	for index, disposition := range input.FindingDispositions {
 		if disposition.Index < 0 {
@@ -297,13 +301,13 @@ func ApplyLabels(registry Registry, input LabelInput) (Registry, error) {
 	}
 	recordIndex := -1
 	for index := len(registry.Records) - 1; index >= 0; index-- {
-		if registry.Records[index].TaskID == input.TaskID {
+		if registry.Records[index].TaskID == input.TaskID && registry.Records[index].ReviewNumber == input.ReviewNumber {
 			recordIndex = index
 			break
 		}
 	}
 	if recordIndex < 0 {
-		return Registry{}, fmt.Errorf("failure-path advisory labelsのtask %sがregistryに存在しません", input.TaskID)
+		return Registry{}, fmt.Errorf("failure-path advisory labelsのtask %s review %dがregistryに存在しません", input.TaskID, input.ReviewNumber)
 	}
 	record := registry.Records[recordIndex]
 	if record.Outcome != OutcomeObserved {
