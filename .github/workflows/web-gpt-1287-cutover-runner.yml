@@ -46,6 +46,27 @@ jobs:
           if active.count(unused) != 1:
               raise SystemExit('workflow activetask state import is not unique')
           active_path.write_text(active.replace(unused, '', 1))
+
+          workflow_path = Path('glm-worker/internal/workflow/workflow.go')
+          workflow_text = workflow_path.read_text()
+          before = '''\tif err := w.initializeNewTaskState(threadID, claimID); err != nil {
+\t\treturn "", err
+\t}
+\tif err := w.persistParentActionCodexIdentity(); err != nil {
+'''
+          after = '''\tif err := w.initializeNewTaskState(threadID, claimID); err != nil {
+\t\treturn "", err
+\t}
+\tif w.canonicalAdmission != nil {
+\t\tif err := w.bindCanonicalWorkflowAttempt(*w.canonicalAdmission); err != nil {
+\t\t\treturn "", err
+\t\t}
+\t}
+\tif err := w.persistParentActionCodexIdentity(); err != nil {
+'''
+          if workflow_text.count(before) != 1:
+              raise SystemExit('fresh task binding rematerialization boundary is not unique')
+          workflow_path.write_text(workflow_text.replace(before, after, 1))
           BOOT
 
           changed_go="$(git status --porcelain | awk '{print $2}' | grep '\.go$' || true)"
