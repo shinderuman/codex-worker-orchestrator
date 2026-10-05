@@ -23,7 +23,7 @@ func IsParentManagedPath(path string) bool {
 			return true
 		}
 	}
-	return path == ParentTasksDir || strings.HasPrefix(path, ParentTasksDir+"/")
+	return strings.HasPrefix(path, ParentTasksDir+"/")
 }
 
 func CaptureParentFileState(repoRoot, name string) (ParentFileState, error) {
