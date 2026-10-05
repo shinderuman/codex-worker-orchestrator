@@ -4,12 +4,6 @@ import "fmt"
 
 type executionOperationEffectPolicy uint8
 
-const (
-	executionOperationEffectsNone executionOperationEffectPolicy = iota
-	executionOperationEffectsSingle
-	executionOperationEffectsOneOrMore
-)
-
 type executionOperationContract struct {
 	effects         executionOperationEffectPolicy
 	validate        func(ExecutionOperation) error
@@ -19,6 +13,13 @@ type executionOperationContract struct {
 }
 
 type executionOperationContractFactory func(*Store) executionOperationContract
+
+const (
+	executionOperationEffectsNone executionOperationEffectPolicy = iota
+	executionOperationEffectsSingle
+	executionOperationEffectsOneOrMore
+	executionOperationEffectAuthorityIncomplete = "execution operation effect authority is incomplete"
+)
 
 var executionOperationContractTable = map[string]executionOperationContractFactory{
 	executionModelCall: func(s *Store) executionOperationContract {
@@ -109,15 +110,15 @@ func validateExecutionOperationEffects(op ExecutionOperation, policy executionOp
 	switch policy {
 	case executionOperationEffectsNone:
 		if len(op.Transition.Effects) != 0 {
-			return fmt.Errorf("execution operation effect authority is incomplete")
+			return fmt.Errorf(executionOperationEffectAuthorityIncomplete)
 		}
 	case executionOperationEffectsSingle:
 		if len(op.Transition.Effects) != 1 {
-			return fmt.Errorf("execution operation effect authority is incomplete")
+			return fmt.Errorf(executionOperationEffectAuthorityIncomplete)
 		}
 	case executionOperationEffectsOneOrMore:
 		if len(op.Transition.Effects) == 0 {
-			return fmt.Errorf("execution operation effect authority is incomplete")
+			return fmt.Errorf(executionOperationEffectAuthorityIncomplete)
 		}
 	default:
 		return fmt.Errorf("execution operation effect policy is invalid")
