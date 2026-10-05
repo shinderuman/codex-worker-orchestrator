@@ -16,6 +16,7 @@ func TestPreToolUseBlocksManagedGitHookBypass(t *testing.T) {
 		t.Run(command, func(t *testing.T) {
 			var output bytes.Buffer
 			payload := `{"tool_name":"Bash","tool_input":{"command":` + jsonString(t, command) + `}}`
+			payload = strings.ReplaceAll(payload, `\"`, `"`)
 			if err := Run([]string{"pre-tool-use"}, strings.NewReader(payload), &output); err != nil {
 				t.Fatal(err)
 			}
@@ -33,6 +34,7 @@ func TestPreToolUseBlocksManagedGitHookBypass(t *testing.T) {
 func TestPreToolUseAllowsOrdinaryGitPull(t *testing.T) {
 	var output bytes.Buffer
 	payload := `{"tool_name":"Bash","tool_input":{"command":"git pull --ff-only origin main"}}`
+	payload = strings.ReplaceAll(payload, `\"`, `"`)
 	if err := Run([]string{"pre-tool-use"}, strings.NewReader(payload), &output); err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +46,7 @@ func TestPreToolUseAllowsOrdinaryGitPull(t *testing.T) {
 func TestPreToolUseIgnoresNonBashTools(t *testing.T) {
 	var output bytes.Buffer
 	payload := `{"tool_name":"Read","tool_input":{"command":"git push --no-verify origin main"}}`
+	payload = strings.ReplaceAll(payload, `\"`, `"`)
 	if err := Run([]string{"pre-tool-use"}, strings.NewReader(payload), &output); err != nil {
 		t.Fatal(err)
 	}
