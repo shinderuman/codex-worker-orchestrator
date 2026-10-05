@@ -1,0 +1,162 @@
+name: Web GPT 1286 Relocate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  relocate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: glm-worker/go.mod
+      - name: Relocate focused owners
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/app/output.go')
+          text = path.read_text()
+
+          for old in [
+              '\t"fmt"\n',
+              '\t"path/filepath"\n',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"\n',
+              '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"\n',
+          ]:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one import: {old!r}')
+              text = text.replace(old, '', 1)
+
+          type_start = text.index('\ntype acceptOutput struct {')
+          status_start = text.index('\nfunc msPtr(', type_start)
+          text = text[:type_start] + '\n' + text[status_start:]
+
+          tail_start = text.index('\nfunc parentAccept(')
+          if 'func (e *VerificationError) Error()' not in text[tail_start:]:
+              raise SystemExit('verification tail not found')
+          text = text[:tail_start].rstrip() + '\n'
+          path.write_text(text)
+
+          Path('glm-worker/internal/app/codex_wake_verification.go').write_text('''package app
+
+import (
+    "fmt"
+    "io"
+    "path/filepath"
+
+    "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
+    "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+    "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+)
+
+type VerificationError struct {
+    Outcome autoresume.Outcome
+    Reason  string
+}
+
+type verifyAutoResumeOutput struct {
+    AutomationKey  string `json:"automation_key"`
+    TargetThread   string `json:"target_thread"`
+    ExpectedAtUTC  string `json:"expected_at_utc"`
+    TOMLDTStart    string `json:"toml_dtstart"`
+    DBNextRunAtUTC string `json:"db_next_run_at_utc"`
+}
+
+func (e *VerificationError) Error() string {
+    return fmt.Sprintf("verification %s: %s", outcomeLabel(e.Outcome), e.Reason)
+}
+
+func printVerifyCodexWake(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+    key := autoresume.CodexWakeAutomationKey(cmd.Verify.ThreadID)
+    return printAutomationVerification(key, cmd.Verify.RFC3339, cmd.Verify.ThreadID, cfg, stdout)
+}
+
+func printAutomationVerification(automationKey, expectedRFC3339, expectedThreadID string, cfg config.AppConfig, stdout io.Writer) error {
+    params := autoresume.Params{
+        AutomationKey:    automationKey,
+        ExpectedRFC3339:  expectedRFC3339,
+        ExpectedThreadID: expectedThreadID,
+        AutomationsDir:   filepath.Join(cfg.CodexConfigDir, "automations"),
+        DBPath:           filepath.Join(cfg.CodexConfigDir, "sqlite", "codex-dev.db"),
+    }
+    result := autoresume.Verify(params, autoresume.ReadDBRowSqlite3)
+    if result.Outcome != autoresume.Pass {
+        return &VerificationError{Outcome: result.Outcome, Reason: result.Reason}
+    }
+    return machinecli.WriteJSON(stdout, verifyAutoResumeOutput{
+        AutomationKey:  result.AutomationKey,
+        TargetThread:   result.TargetThread,
+        ExpectedAtUTC:  result.ExpectedUTC,
+        TOMLDTStart:    result.TOMLDTStart,
+        DBNextRunAtUTC: result.DBNextRunUTC,
+    })
+}
+
+func outcomeLabel(o autoresume.Outcome) string {
+    switch o {
+    case autoresume.Pass:
+        return "pass"
+    case autoresume.Fail:
+        return "fail"
+    default:
+        return "unavailable"
+    }
+}
+''')
+          PY
+          gofmt -w glm-worker/internal/app/output.go glm-worker/internal/app/parent_accept.go glm-worker/internal/app/codex_wake_verification.go
+          cd glm-worker
+          go test ./internal/app
+      - name: Write validated relocation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, urllib.request
+          token = os.environ['GH_TOKEN']
+          repo = os.environ['REPO']
+          branch = os.environ['BRANCH']
+
+          def request(method, url, payload=None):
+              data = None if payload is None else json.dumps(payload).encode()
+              req = urllib.request.Request(
+                  url, data=data, method=method,
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+              )
+              with urllib.request.urlopen(req) as resp:
+                  return json.load(resp)
+
+          def put(path, message):
+              url = f'https://api.github.com/repos/{repo}/contents/{path}'
+              current = request('GET', url + f'?ref={branch}')
+              payload = {
+                  'message': message,
+                  'content': base64.b64encode(open(path, 'rb').read()).decode(),
+                  'branch': branch,
+                  'sha': current['sha'],
+              }
+              request('PUT', url, payload)
+
+          def create(path, message):
+              url = f'https://api.github.com/repos/{repo}/contents/{path}'
+              payload = {
+                  'message': message,
+                  'content': base64.b64encode(open(path, 'rb').read()).decode(),
+                  'branch': branch,
+              }
+              request('PUT', url, payload)
+
+          put('glm-worker/internal/app/output.go', 'Keep output owner focused on status projection')
+          create('glm-worker/internal/app/codex_wake_verification.go', 'Move Codex wake verification to focused owner')
+          PY
