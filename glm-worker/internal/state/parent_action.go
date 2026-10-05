@@ -166,14 +166,7 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 		pendingDecisionResume = pendingDecisionContinuesCheckpoint(pending, checkpoint, s.readExact("last-decision"))
 		qualitySurfaceApproval = checkpoint.QualitySurfaceApprovalPending && !checkpoint.IsStopped()
 	}
-	plan, err := s.parentActionPlanForStatus(status, pending, pendingDecisionResume, openReview, stopKind, qualitySurfaceApproval)
-	if err != nil {
-		return ParentActionPlan{}, err
-	}
-	if status == TaskStatusWaitingDecision && s.ObservationNoGoEligible() {
-		plan.AllowedActions = append(plan.AllowedActions, ParentActionObservationExecute, ParentActionNoGo)
-	}
-	return plan, nil
+	return s.parentActionPlanForStatus(status, pending, pendingDecisionResume, openReview, stopKind, qualitySurfaceApproval)
 }
 
 func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
