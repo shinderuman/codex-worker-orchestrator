@@ -15,7 +15,7 @@ type ObservationCapabilityAdmission struct {
 }
 
 func CurrentObservationCapabilityAdmission(st *state.StateStore) (ObservationCapabilityAdmission, error) {
-	lifecycle, err := st.ObservationLifecycleAdmission()
+	lifecycle, err := st.ObservationExecuteAdmission()
 	if err != nil {
 		return ObservationCapabilityAdmission{}, err
 	}
