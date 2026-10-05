@@ -12,22 +12,9 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-type parentValidationGateRecord struct {
-	ValidationRunID string `json:"validation_run_id"`
-	Form            string `json:"form"`
-	Repository      string `json:"repository"`
-	WorkingDir      string `json:"working_dir"`
-	Head            string `json:"head"`
-	IndexDigest     string `json:"index_digest"`
-	WorktreeDigest  string `json:"worktree_digest"`
-	Status          string `json:"status"`
-	ExitCode        int    `json:"exit_code"`
-	DurationMS      int64  `json:"duration_ms"`
-	Log             string `json:"log"`
-}
 
 type parentValidationStartOutput struct {
 	ValidationRunID string `json:"validation_run_id"`
@@ -47,7 +34,7 @@ const parentValidationGateFailureKind = "quality_gate_failed"
 
 var errParentValidationNonConverged = errors.New("parent validation non-convergence emitted a terminal result")
 
-var parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+var parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
 	return w.runParentValidationGate(request)
 }
 
@@ -73,10 +60,10 @@ func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, r
 		return packet.Result{}, err
 	}
 	switch record.Status {
-	case "pass":
+	case qualitygate.StatusPass:
 		result.ParentValidationEvidence = parentValidationEvidence(record)
 		return result, nil
-	case "fail":
+	case qualitygate.StatusFail:
 		return w.fixBeforeParentValidation(checkpoint, parentValidationFailureResult(record), *request)
 	default:
 		return packet.Result{}, &WorkerError{
@@ -86,7 +73,7 @@ func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, r
 	}
 }
 
-func (w *Workflow) validateParentValidationRecord(request packet.ParentValidationRequest, record parentValidationGateRecord) error {
+func (w *Workflow) validateParentValidationRecord(request packet.ParentValidationRequest, record qualitygate.RunRecord) error {
 	resolvedRoot, err := filepath.EvalSymlinks(w.config.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("parent validation repository rootを解決できません: %w", err)
@@ -113,7 +100,7 @@ func (w *Workflow) validateParentValidationRecord(request packet.ParentValidatio
 			Message: "parent validation完了後にrepository snapshotが変化したためvalidation evidenceを採用できません",
 		}
 	}
-	return nil
+	return validateParentValidationTerminalPass(record)
 }
 
 func (w *Workflow) fixBeforeParentValidation(
@@ -220,22 +207,22 @@ func sameParentValidationRequest(left, right packet.ParentValidationRequest) boo
 	return left.Form == right.Form && left.WorkingDir == right.WorkingDir
 }
 
-func (w *Workflow) runParentValidationGate(request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+func (w *Workflow) runParentValidationGate(request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
 	workingDir, err := resolveParentValidationWorkingDir(w.config.RepoRoot, request.WorkingDir)
 	if err != nil {
-		return parentValidationGateRecord{}, err
+		return qualitygate.RunRecord{}, err
 	}
 	if record, ok := w.reusableParentValidationPass(request, workingDir); ok {
 		return record, nil
 	}
 	executable, err := os.Executable()
 	if err != nil {
-		return parentValidationGateRecord{}, fmt.Errorf("parent validation executableを解決できません: %w", err)
+		return qualitygate.RunRecord{}, fmt.Errorf("parent validation executableを解決できません: %w", err)
 	}
 	stdout, stderr, runErr := runParentValidationCommand(executable, workingDir, "--quality-gate", request.Form)
 	runID, err := parentValidationRunID(stdout, stderr, runErr)
 	if err != nil {
-		return parentValidationGateRecord{}, err
+		return qualitygate.RunRecord{}, err
 	}
 	recordOut, recordErrOut, recordErr := runParentValidationCommand(
 		executable,
@@ -245,14 +232,14 @@ func (w *Workflow) runParentValidationGate(request packet.ParentValidationReques
 		runID,
 	)
 	if recordErr != nil {
-		return parentValidationGateRecord{}, fmt.Errorf("parent validation run %sのexact snapshot evidenceを取得できません: %s: %w", runID, strings.TrimSpace(recordErrOut), recordErr)
+		return qualitygate.RunRecord{}, fmt.Errorf("parent validation run %sのexact snapshot evidenceを取得できません: %s: %w", runID, strings.TrimSpace(recordErrOut), recordErr)
 	}
-	var record parentValidationGateRecord
-	if err := json.Unmarshal(bytes.TrimSpace([]byte(recordOut)), &record); err != nil {
-		return parentValidationGateRecord{}, fmt.Errorf("parent validation run evidenceを解析できません: %w", err)
+	record, err := qualitygate.Decode(bytes.TrimSpace([]byte(recordOut)))
+	if err != nil {
+		return qualitygate.RunRecord{}, fmt.Errorf("parent validation run evidenceを解析できません: %w", err)
 	}
 	if record.ValidationRunID != runID || record.Form != request.Form || filepath.Clean(record.WorkingDir) != filepath.Clean(workingDir) {
-		return parentValidationGateRecord{}, fmt.Errorf("parent validation run identityが要求と一致しません")
+		return qualitygate.RunRecord{}, fmt.Errorf("parent validation run identityが要求と一致しません")
 	}
 	return record, nil
 }
@@ -324,7 +311,7 @@ func parentValidationRunID(stdout, stderr string, runErr error) (string, error) 
 	return "", fmt.Errorf("parent validation command failed without structured quality-gate evidence: %w", runErr)
 }
 
-func parentValidationEvidence(record parentValidationGateRecord) *packet.ParentValidationEvidence {
+func parentValidationEvidence(record qualitygate.RunRecord) *packet.ParentValidationEvidence {
 	return &packet.ParentValidationEvidence{
 		ValidationRunID: record.ValidationRunID,
 		Form:            record.Form,
@@ -340,7 +327,7 @@ func parentValidationEvidence(record parentValidationGateRecord) *packet.ParentV
 	}
 }
 
-func parentValidationFailureResult(record parentValidationGateRecord) packet.Result {
+func parentValidationFailureResult(record qualitygate.RunRecord) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusFixRequired,
 		Risk:                packet.RiskLow,

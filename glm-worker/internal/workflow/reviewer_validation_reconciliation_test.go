@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -19,7 +20,7 @@ func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
 		Unverified:                 originalUnverified,
 		ParentValidation:           packet.ParentValidationGoTest,
 		ParentValidationWorkingDir: "glm-worker",
-		ParentValidationEvidence: parentValidationEvidence(parentValidationGateRecord{
+		ParentValidationEvidence: parentValidationEvidence(qualitygate.RunRecord{
 			ValidationRunID: "run-pass",
 			Form:            packet.ParentValidationGoTest,
 			Repository:      "/repo",
@@ -57,7 +58,7 @@ func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
 
 func TestReviewerPromptDoesNotReconcileMissingFailedMismatchedOrIncompleteEvidence(t *testing.T) {
 	const originalUnverified = "parent validation still unverified"
-	complete := parentValidationGateRecord{
+	complete := qualitygate.RunRecord{
 		ValidationRunID: "run",
 		Form:            packet.ParentValidationGoTest,
 		Repository:      "/repo",
