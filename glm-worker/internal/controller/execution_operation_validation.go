@@ -4,81 +4,36 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
-func (s *Store) validateExecutionOperation(op ExecutionOperation) error {
+func (s *Store) validateExecutionOperation(op ExecutionOperation) (executionOperationContract, error) {
 	digest, err := executionOperationDigest(op)
 	if err != nil {
-		return err
+		return executionOperationContract{}, err
 	}
 	if op.Transition.OperationDigest == "" || op.Transition.OperationDigest != digest {
-		return fmt.Errorf("execution operation content integrity failed")
+		return executionOperationContract{}, fmt.Errorf("execution operation content integrity failed")
 	}
-	if op.Transition.Kind != executionModelCall && (len(op.Transition.Effects) == 0 || (op.Publication == nil && op.Terminal == nil && len(op.Transition.Effects) != 1)) {
-		return fmt.Errorf("execution operation effect authority is incomplete")
+	contract, err := s.executionOperationContract(op.Transition.Kind)
+	if err != nil {
+		return executionOperationContract{}, err
 	}
-	return s.validateTypedExecutionOperation(op)
-}
-
-func (s *Store) validateTypedExecutionOperation(op ExecutionOperation) error {
-	switch op.Transition.Kind {
-	case executionModelCall:
-		return s.validateModelCallAdmission(op)
-	case terminalRetire:
-		return s.validateTerminalMetadataOperation(op)
-	case executionSuspend:
-		return s.validateSuspensionOperation(op)
-	case executionMaterialize:
-		return s.validateMaterializationOperation(op)
-	case executionCleanup:
-		return s.validateCleanupOperation(op)
-	case executionGC:
-		return validateSuspensionGCOperation(op)
-	case publicationAccept, publicationPromote, publicationPublish, publicationRebind, publicationAdopt, publicationRevalidate, publicationReenter:
-		return s.validatePublicationOperation(op)
-	default:
-		return fmt.Errorf("unknown execution operation")
+	if err := validateExecutionOperationEffects(op, contract.effects); err != nil {
+		return executionOperationContract{}, err
 	}
+	if err := contract.validate(op); err != nil {
+		return executionOperationContract{}, err
+	}
+	return contract, nil
 }
 
 func executionOperationDigest(op ExecutionOperation) (string, error) {
 	op.Transition.OperationDigest = ""
 	data, err := json.Marshal(op)
 	return digestStrings("controller-execution-operation-v1", string(data)), err
-}
-
-func (s *Store) verifyCommittedExecutionTarget(op ExecutionOperation, head RepositoryControllerHead) error {
-	switch op.Transition.Kind {
-	case executionModelCall:
-		return s.verifyCommittedModelCallAdmission(op, head)
-	case terminalRetire:
-		return s.verifyCommittedTerminalMetadata(op, head)
-	case executionMaterialize:
-		return s.verifyCommittedMaterialization(op, head)
-	case executionSuspend:
-		return s.verifyCommittedSuspension(op, head)
-	case executionCleanup:
-		for _, path := range []string{op.Workspace.Root, op.Workspace.GitDir} {
-			if _, err := os.Lstat(path); !os.IsNotExist(err) {
-				return fmt.Errorf("committed cleanup target was recreated")
-			}
-		}
-	case publicationAccept, publicationPromote, publicationPublish, publicationRebind, publicationAdopt, publicationRevalidate, publicationReenter:
-		return s.verifyCommittedPublication(op, head)
-	case executionGC:
-		_, exists, err := readExecutionRef(s.identity.PrimaryRoot, suspensionRef(op.Suspension.SnapshotID))
-		if err != nil {
-			return err
-		}
-		if exists {
-			return fmt.Errorf("committed suspension GC ref was recreated")
-		}
-	}
-	return nil
 }
 
 func (s *Store) validateExecutionLaneLocation(workspace WorkspaceIdentity) error {
@@ -106,7 +61,6 @@ func readExecutionRef(repo, ref string) (string, bool, error) {
 }
 
 func (s *Store) validateSuspensionOperation(op ExecutionOperation) error {
-
 	if op.Suspension == nil || op.Episode == nil || op.SealRef == nil {
 		return fmt.Errorf("suspension operation is incomplete")
 	}
@@ -124,7 +78,6 @@ func (s *Store) validateSuspensionOperation(op ExecutionOperation) error {
 }
 
 func (s *Store) validateMaterializationOperation(op ExecutionOperation) error {
-
 	if op.Workspace == nil || op.Rebound == nil || op.Attempt == nil || op.Lease == nil {
 		return fmt.Errorf("materialization operation is incomplete")
 	}
@@ -138,7 +91,6 @@ func (s *Store) validateMaterializationOperation(op ExecutionOperation) error {
 }
 
 func (s *Store) validateCleanupOperation(op ExecutionOperation) error {
-
 	if op.Workspace == nil || op.CleanupSnapshot == nil || op.SealRef == nil {
 		return fmt.Errorf("cleanup operation is incomplete")
 	}
@@ -152,7 +104,6 @@ func (s *Store) validateCleanupOperation(op ExecutionOperation) error {
 }
 
 func validateSuspensionGCOperation(op ExecutionOperation) error {
-
 	if op.Suspension == nil || op.SealRef == nil || op.Transition.Effects[0].Resource != suspensionRef(op.Suspension.SnapshotID) || op.Transition.Effects[0].ExpectedOld != op.Suspension.RetainedCommitOID {
 		return fmt.Errorf("suspension GC authority is inconsistent")
 	}
