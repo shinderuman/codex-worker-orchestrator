@@ -73,7 +73,7 @@ func TestInspectPublicationGuardSetupUsesInstallerSnapshotAfterHeadMoves(t *test
 		t.Fatal(err)
 	}
 	runPublicationGuardGit(t, repo, "add", ".githooks/pre-push")
-	runPublicationGuardGit(t, repo, "commit", "-q", "-m", "advance canonical hook")
+	runPublicationGuardGit(t, repo, "-c", "core.hooksPath="+t.TempDir(), "commit", "-q", "-m", "advance canonical hook")
 
 	report, err := InspectPublicationGuardSetup(repo)
 	if err != nil {
