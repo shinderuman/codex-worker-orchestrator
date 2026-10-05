@@ -1,6 +1,9 @@
 package controller
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type executionOperationEffectPolicy uint8
 
@@ -110,15 +113,15 @@ func validateExecutionOperationEffects(op ExecutionOperation, policy executionOp
 	switch policy {
 	case executionOperationEffectsNone:
 		if len(op.Transition.Effects) != 0 {
-			return fmt.Errorf(executionOperationEffectAuthorityIncomplete)
+			return errors.New(executionOperationEffectAuthorityIncomplete)
 		}
 	case executionOperationEffectsSingle:
 		if len(op.Transition.Effects) != 1 {
-			return fmt.Errorf(executionOperationEffectAuthorityIncomplete)
+			return errors.New(executionOperationEffectAuthorityIncomplete)
 		}
 	case executionOperationEffectsOneOrMore:
 		if len(op.Transition.Effects) == 0 {
-			return fmt.Errorf(executionOperationEffectAuthorityIncomplete)
+			return errors.New(executionOperationEffectAuthorityIncomplete)
 		}
 	default:
 		return fmt.Errorf("execution operation effect policy is invalid")
