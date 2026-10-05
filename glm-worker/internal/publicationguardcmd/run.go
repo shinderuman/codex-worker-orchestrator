@@ -1,8 +1,10 @@
 package publicationguardcmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -12,10 +14,26 @@ import (
 
 const Contract = "controller-publication-guard-v1"
 
-func Run(args []string, stdout io.Writer) error {
+type preToolUseInput struct {
+	ToolName  string `json:"tool_name"`
+	ToolInput struct {
+		Command string `json:"command"`
+	} `json:"tool_input"`
+}
+
+type preToolUseOutput struct {
+	Decision string `json:"decision"`
+	Code     string `json:"code"`
+	Reason   string `json:"reason"`
+}
+
+func Run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 1 && args[0] == "probe" {
 		_, err := fmt.Fprintln(stdout, Contract)
 		return err
+	}
+	if len(args) == 1 && args[0] == "pre-tool-use" {
+		return runPreToolUse(stdin, stdout)
 	}
 	if len(args) == 0 {
 		return usageError()
@@ -31,6 +49,31 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 	return runActiveGuard(args, cfg)
+}
+
+func runPreToolUse(stdin io.Reader, stdout io.Writer) error {
+	var input preToolUseInput
+	if err := json.NewDecoder(stdin).Decode(&input); err != nil {
+		return fmt.Errorf("decode publication PreToolUse input: %w", err)
+	}
+	if input.ToolName != "Bash" {
+		return nil
+	}
+	code, reason := managedHookBypass(input.ToolInput.Command)
+	if reason == "" {
+		return nil
+	}
+	return json.NewEncoder(stdout).Encode(preToolUseOutput{Decision: "block", Code: code, Reason: reason})
+}
+
+func managedHookBypass(command string) (string, string) {
+	if strings.Contains(command, "--no-verify") {
+		return "managed_git_hook_bypass", "Git operation rejected: --no-verify may not bypass managed repository guards"
+	}
+	if strings.Contains(strings.ToLower(command), "core.hookspath") {
+		return "managed_git_hook_bypass", "Git operation rejected: core.hooksPath may not bypass managed repository guards"
+	}
+	return "", ""
 }
 
 func activeGuardConfig() (config.AppConfig, bool, error) {
@@ -120,5 +163,5 @@ func parsePushUpdate(args []string) (controller.PublicationPushGuardInput, error
 }
 
 func usageError() error {
-	return fmt.Errorf("usage: glm-publication-guard probe | ref-update --old <oid> --new <oid> --ref <ref> | push-update --remote-name <name> --local-ref <ref> --local-oid <oid> --remote-ref <ref> --remote-oid <oid>")
+	return fmt.Errorf("usage: glm-publication-guard probe | pre-tool-use | ref-update --old <oid> --new <oid> --ref <ref> | push-update --remote-name <name> --local-ref <ref> --local-oid <oid> --remote-ref <ref> --remote-oid <oid>")
 }
