@@ -16,6 +16,9 @@ func Run(args []string, stdout io.Writer) error {
 		_, err := fmt.Fprintln(stdout, Contract)
 		return err
 	}
+	if len(args) == 0 {
+		return usageError()
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -32,14 +35,15 @@ func Run(args []string, stdout io.Writer) error {
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("active repository publication guard requires existing controller authority")
+		if args[0] == "ref-update" {
+			_, err := parseRefUpdate(args[1:])
+			return err
+		}
+		return fmt.Errorf("publication push rejected: controller authority is unavailable")
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
 		return err
-	}
-	if len(args) == 0 {
-		return usageError()
 	}
 	switch args[0] {
 	case "ref-update":
