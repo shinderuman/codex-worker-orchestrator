@@ -39,6 +39,13 @@ jobs:
           if generated.count(broken) != 1:
               raise SystemExit('generated corrupt-binding test literal is not unique')
           test_path.write_text(generated.replace(broken, fixed, 1))
+
+          active_path = Path('glm-worker/internal/workflow/activetask.go')
+          active = active_path.read_text()
+          unused = '\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"\n'
+          if active.count(unused) != 1:
+              raise SystemExit('workflow activetask state import is not unique')
+          active_path.write_text(active.replace(unused, '', 1))
           BOOT
 
           changed_go="$(git status --porcelain | awk '{print $2}' | grep '\.go$' || true)"
