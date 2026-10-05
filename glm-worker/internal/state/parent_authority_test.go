@@ -12,7 +12,6 @@ func TestIsParentManagedPathOwnsProtectionSet(t *testing.T) {
 		ParentRulesFile,
 		ParentPlanFile,
 		ParentHistoryFile,
-		ParentTasksDir,
 		ParentTasksDir + "/task.md",
 		ParentTasksDir + "/nested/task.md",
 	} {
@@ -22,6 +21,7 @@ func TestIsParentManagedPathOwnsProtectionSet(t *testing.T) {
 	}
 	for _, path := range []string{
 		"",
+		ParentTasksDir,
 		ParentTasksDir + "-archive/task.md",
 		"docs/task.md",
 	} {
