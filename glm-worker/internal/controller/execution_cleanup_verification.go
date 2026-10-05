@@ -25,7 +25,7 @@ func validateSuspensionGCOperation(op ExecutionOperation) error {
 	return nil
 }
 
-func (_ *Store) verifyCommittedCleanup(op ExecutionOperation, _ RepositoryControllerHead) error {
+func (*Store) verifyCommittedCleanup(op ExecutionOperation, _ RepositoryControllerHead) error {
 	if op.Workspace == nil {
 		return fmt.Errorf("cleanup operation is incomplete")
 	}
