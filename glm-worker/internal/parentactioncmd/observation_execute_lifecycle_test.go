@@ -104,3 +104,57 @@ func TestObservationExecuteCancelsWhenDecisionBoundaryChanges(t *testing.T) {
 		t.Fatal("observation execution did not cancel promptly after lifecycle change")
 	}
 }
+
+func TestObservationExecuteCancelsWhenTaskAuthorityChanges(t *testing.T) {
+	cfg, st := newObservationExecuteTestState(t)
+	token := stageObservationPayload(t, cfg, "OPERATION: shadow-eval\nREFERENCE: -\nWORKING_DIR: -\nDEADLINE_MS: default\n")
+
+	started := make(chan struct{})
+	original := dispatchObservationExecutionForAction
+	t.Cleanup(func() { dispatchObservationExecutionForAction = original })
+	dispatchObservationExecutionForAction = func(
+		ctx context.Context,
+		_ config.AppConfig,
+		_ *state.StateStore,
+		_ observationExecutionPlan,
+		_ string,
+	) observationExecutionOutcome {
+		close(started)
+		select {
+		case <-ctx.Done():
+			return observationExecutionOutcome{Status: state.ObservationExecutionStatusFail, ExitSource: "cancelled", Detail: ctx.Err().Error(), ExitCode: 1}
+		case <-time.After(5 * time.Second):
+			t.Fatal("observation context was not cancelled after task authority change")
+			return observationExecutionOutcome{}
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- execute(cfg, []string{actionObservationExecute, token}, &bytes.Buffer{}, nil)
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("observation dispatch did not start")
+	}
+	lock, err := repolock.Acquire(st.LockPath())
+	if err != nil {
+		t.Fatalf("task authority mutation could not acquire repository lock: %v", err)
+	}
+	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/observation.md", []byte("# changed observation\n\n## External feasibility\n\nstatus: observation\nassumption: changed producer behavior\n")); err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "observation execution boundary changed") {
+			t.Fatalf("task authority change did not fail closed after cancellation: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("observation execution did not cancel promptly after task authority change")
+	}
+}
