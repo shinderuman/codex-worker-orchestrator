@@ -14,7 +14,7 @@ func advisoryRegistryPath(t *testing.T) string {
 }
 
 func observedRecord(taskID string, findings ...Finding) Record {
-	record := Record{TaskID: taskID, Outcome: OutcomeObserved, Findings: findings}
+	record := Record{TaskID: taskID, ReviewNumber: 1, Outcome: OutcomeObserved, Findings: findings}
 	visible := 0
 	for index := range record.Findings {
 		if record.Findings[index].Status != FindingStatusVerified {
@@ -108,8 +108,9 @@ func TestParseStructuredOutputRejectsInvalidPayloads(t *testing.T) {
 func TestApplyLabelsValidatesAndStoresDispositions(t *testing.T) {
 	registry := Registry{}.WithRecord(observedRecord("task-a", verifiedFinding("a:1"), verifiedFinding("a:2")))
 	labels := LabelInput{
-		Schema: LabelsSchema,
-		TaskID: "task-a",
+		Schema:       LabelsSchema,
+		TaskID:       "task-a",
+		ReviewNumber: 1,
 		FindingDispositions: []FindingDispositionInput{
 			{Index: 0, Disposition: DispositionTruePositive},
 			{Index: 1, Disposition: DispositionFalsePositive},
@@ -141,24 +142,25 @@ func TestApplyLabelsValidatesAndStoresDispositions(t *testing.T) {
 
 func TestApplyLabelsRejectsInvalidInput(t *testing.T) {
 	registry := Registry{}.WithRecord(observedRecord("task-a", verifiedFinding("a:1"))).
-		WithRecord(Record{TaskID: "task-b", Outcome: OutcomeMissingDeadline})
+		WithRecord(Record{TaskID: "task-b", ReviewNumber: 1, Outcome: OutcomeMissingDeadline})
 	negative := -1
 	cases := map[string]LabelInput{
-		"unknown-task": {Schema: LabelsSchema, TaskID: "task-zz"},
-		"non-observed": {Schema: LabelsSchema, TaskID: "task-b"},
-		"index-range": {Schema: LabelsSchema, TaskID: "task-a",
+		"unknown-task": {Schema: LabelsSchema, TaskID: "task-zz", ReviewNumber: 1},
+		"non-observed": {Schema: LabelsSchema, TaskID: "task-b", ReviewNumber: 1},
+		"missing-review": {Schema: LabelsSchema, TaskID: "task-a"},
+		"index-range": {Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 1,
 			FindingDispositions: []FindingDispositionInput{{Index: 5, Disposition: DispositionTruePositive}}},
-		"bad-disposition": {Schema: LabelsSchema, TaskID: "task-a",
+		"bad-disposition": {Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 1,
 			FindingDispositions: []FindingDispositionInput{{Index: 0, Disposition: "maybe"}}},
-		"duplicate-index": {Schema: LabelsSchema, TaskID: "task-a",
+		"duplicate-index": {Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 1,
 			FindingDispositions: []FindingDispositionInput{
 				{Index: 0, Disposition: DispositionTruePositive},
 				{Index: 0, Disposition: DispositionFalsePositive},
 			}},
-		"negative-false-negatives":     {Schema: LabelsSchema, TaskID: "task-a", FalseNegatives: &negative},
-		"negative-escaped-findings":    {Schema: LabelsSchema, TaskID: "task-a", EscapedFindings: &negative},
-		"negative-human-interventions": {Schema: LabelsSchema, TaskID: "task-a", HumanInterventions: &negative},
-		"bad-schema":                   {Schema: "other", TaskID: "task-a"},
+		"negative-false-negatives":     {Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 1, FalseNegatives: &negative},
+		"negative-escaped-findings":    {Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 1, EscapedFindings: &negative},
+		"negative-human-interventions": {Schema: LabelsSchema, TaskID: "task-a", ReviewNumber: 1, HumanInterventions: &negative},
+		"bad-schema":                   {Schema: "other", TaskID: "task-a", ReviewNumber: 1},
 	}
 	for name, input := range cases {
 		if _, err := ApplyLabels(registry, input); err == nil {
@@ -173,6 +175,7 @@ func TestApplyLabelsStoresAssessmentCounts(t *testing.T) {
 	updated, err := ApplyLabels(registry, LabelInput{
 		Schema:             LabelsSchema,
 		TaskID:             "task-a",
+		ReviewNumber:       1,
 		FalseNegatives:     &zero,
 		HumanInterventions: &two,
 	})
@@ -193,7 +196,7 @@ func TestApplyLabelsStoresAssessmentCounts(t *testing.T) {
 
 func TestLoadLabelsParsesAssessmentCounts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "labels.json")
-	body := `{"schema":"` + LabelsSchema + `","task_id":"task-a","finding_dispositions":[],` +
+	body := `{"schema":"` + LabelsSchema + `","task_id":"task-a","review_number":1,"finding_dispositions":[],` +
 		`"false_negatives":0,"escaped_findings":1}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -201,6 +204,9 @@ func TestLoadLabelsParsesAssessmentCounts(t *testing.T) {
 	labels, err := LoadLabels(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if labels.ReviewNumber != 1 {
+		t.Fatalf("review_number = %d want 1", labels.ReviewNumber)
 	}
 	if labels.FalseNegatives == nil || *labels.FalseNegatives != 0 {
 		t.Fatalf("false_negatives = %+v want measured zero", labels.FalseNegatives)
