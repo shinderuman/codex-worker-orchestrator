@@ -52,12 +52,18 @@ func TestRunParentValidationGateReusesCurrentTaskExactSnapshotPass(t *testing.T)
 func TestReusableParentValidationPassRequiresSameEvidenceIdentity(t *testing.T) {
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, &scriptedRunner{})
-	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
-	otherWorkingDir := filepath.Join(w.config.RepoRoot, "other")
-	for _, dir := range []string{workingDir, otherWorkingDir} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+	for _, relative := range []string{"glm-worker", "other"} {
+		if err := os.MkdirAll(filepath.Join(w.config.RepoRoot, relative), 0o700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	workingDir, err := resolveParentValidationWorkingDir(w.config.RepoRoot, "glm-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherWorkingDir, err := resolveParentValidationWorkingDir(w.config.RepoRoot, "other")
+	if err != nil {
+		t.Fatal(err)
 	}
 	taskID, err := st.TaskID()
 	if err != nil {
