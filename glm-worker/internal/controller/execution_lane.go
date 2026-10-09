@@ -172,13 +172,24 @@ func (s *Store) hasSuspendedExecution(task SemanticTaskRef) bool {
 	return false
 }
 
-func (s *Store) plannedExecutionLane() (WorkspaceIdentity, error) {
-	name := s.identity.LineageID[:16] + "-lane"
+func executionLaneName(identity RepositoryIdentity) string {
+	return identity.LineageID[:16] + "-lane"
+}
+
+func (s *Store) executionLaneRoot() (string, error) {
 	base, err := canonicalPath(s.dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, executionLaneName(s.identity)), nil
+}
+
+func (s *Store) plannedExecutionLane() (WorkspaceIdentity, error) {
+	name := executionLaneName(s.identity)
+	root, err := s.executionLaneRoot()
 	if err != nil {
 		return WorkspaceIdentity{}, err
 	}
-	root := filepath.Join(base, name)
 	gitDir := filepath.Join(s.identity.CommonDir, "worktrees", name)
 	for _, path := range []string{root, gitDir} {
 		if _, err := os.Lstat(path); err == nil || !os.IsNotExist(err) {

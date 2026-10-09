@@ -31,11 +31,12 @@ type controllerEvidenceExportFixture struct {
 }
 
 type exportManifestEntry struct {
-	Path       string `json:"path"`
-	SHA256     string `json:"sha256"`
-	Bytes      int64  `json:"bytes"`
-	Missing    bool   `json:"missing,omitempty"`
-	Unreadable string `json:"unreadable,omitempty"`
+	Path         string `json:"path"`
+	SHA256       string `json:"sha256"`
+	Bytes        int64  `json:"bytes"`
+	Missing      bool   `json:"missing,omitempty"`
+	Unreadable   string `json:"unreadable,omitempty"`
+	Unattributed string `json:"unattributed,omitempty"`
 }
 
 func newControllerEvidenceExportFixture(t *testing.T) *controllerEvidenceExportFixture {
@@ -100,7 +101,8 @@ func newControllerEvidenceExportFixture(t *testing.T) *controllerEvidenceExportF
 	if err := os.MkdirAll(projects, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(projects, "session-export-worker.jsonl"), []byte("{\"line\":1}\n"), 0o600); err != nil {
+	transcript := "{\"timestamp\":\"" + time.Now().UTC().Format(time.RFC3339Nano) + "\",\"line\":1}\n"
+	if err := os.WriteFile(filepath.Join(projects, "session-export-worker.jsonl"), []byte(transcript), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	telemetryPath := runtime.ModelCallLogPath(runtimeTask)
@@ -181,8 +183,11 @@ func TestControllerEvidenceExportWritesArchiveWithoutMutatingAuthorities(t *test
 		t.Fatalf("export output action = %q", output.Action)
 	}
 	exported := output.Export
-	if exported == nil || exported.ArchivePath == "" || exported.LiveSection != "collected" || exported.Coverage != "partial" {
+	if exported == nil || exported.ArchivePath == "" || exported.RuntimeSection != "collected" || exported.Coverage != "partial" {
 		t.Fatalf("export result = %#v", exported)
+	}
+	if exported.AttemptSection != "absent" || exported.RuntimeSection != "collected" || exported.Target.RuntimeTaskID != fixture.taskID {
+		t.Fatalf("export sections = %#v", exported)
 	}
 	if exported.Target.AttemptID != fixture.sessions || exported.Target.Live != true {
 		t.Fatalf("export target = %#v", exported.Target)
@@ -208,18 +213,31 @@ func TestControllerEvidenceExportWritesArchiveWithoutMutatingAuthorities(t *test
 	if err := json.Unmarshal(repeat.Bytes(), &repeatOutput); err != nil {
 		t.Fatal(err)
 	}
-	if repeatOutput.Export == nil || repeatOutput.Export.ArchivePath == exported.ArchivePath {
-		t.Fatalf("repeated export reused archive path: %#v", repeatOutput.Export)
+	if repeatOutput.Export == nil || repeatOutput.Export.ArchivePath != exported.ArchivePath {
+		t.Fatalf("repeated export changed the fixed archive path: %#v", repeatOutput.Export)
 	}
-	if _, err := os.Stat(repeatOutput.Export.ArchivePath); err != nil {
-		t.Fatalf("repeated export archive is missing: %v", err)
+	verifyExportArchive(t, repeatOutput.Export)
+	replacedDigest := archiveFileDigest(t, exported.ArchivePath)
+	if replacedDigest == firstArchiveDigest {
+		t.Fatal("repeated export did not replace the fixed archive")
 	}
-	if _, err := os.Stat(exported.ArchivePath); err != nil {
-		t.Fatalf("previous export archive was removed by a repeated export: %v", err)
+	requireSoleFixedExportArchive(t, exported.ArchivePath)
+
+	exportDir := filepath.Dir(exported.ArchivePath)
+	if err := os.Chmod(exportDir, 0o500); err != nil {
+		t.Fatal(err)
 	}
-	if archiveFileDigest(t, exported.ArchivePath) != firstArchiveDigest {
-		t.Fatal("repeated export overwrote previous export bytes")
+	failureErr := runExportAction(t, fixture, `{"action":"export-task-bundle"}`, new(bytes.Buffer))
+	if chmodErr := os.Chmod(exportDir, 0o700); chmodErr != nil {
+		t.Fatal(chmodErr)
 	}
+	if failureErr == nil {
+		t.Fatal("export succeeded without write access to the export directory")
+	}
+	if archiveFileDigest(t, exported.ArchivePath) != replacedDigest {
+		t.Fatal("failed export disturbed the last good fixed archive")
+	}
+	requireSoleFixedExportArchive(t, exported.ArchivePath)
 
 	fixture.cfg.ClaudeConfigDir = t.TempDir()
 	var isolated bytes.Buffer
@@ -230,7 +248,7 @@ func TestControllerEvidenceExportWritesArchiveWithoutMutatingAuthorities(t *test
 	if err := json.Unmarshal(isolated.Bytes(), &isolatedOutput); err != nil {
 		t.Fatal(err)
 	}
-	if isolatedOutput.Export == nil || isolatedOutput.Export.LiveSection != "collected" {
+	if isolatedOutput.Export == nil || isolatedOutput.Export.RuntimeSection != "collected" {
 		t.Fatalf("isolated-home export result = %#v", isolatedOutput.Export)
 	}
 	missingTranscript := false
@@ -241,6 +259,25 @@ func TestControllerEvidenceExportWritesArchiveWithoutMutatingAuthorities(t *test
 	}
 	if !missingTranscript {
 		t.Fatal("isolated-home export did not record the bound session transcript as missing")
+	}
+}
+
+func requireSoleFixedExportArchive(t *testing.T, archivePath string) {
+	t.Helper()
+	dir := filepath.Dir(archivePath)
+	archives, err := filepath.Glob(filepath.Join(dir, "*.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archives) != 1 || archives[0] != archivePath {
+		t.Fatalf("fixed archive contract accumulated archives: %v", archives)
+	}
+	leftovers, err := filepath.Glob(filepath.Join(dir, ".evidence-export-*.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leftovers) != 0 {
+		t.Fatalf("export left temporary archives behind: %v", leftovers)
 	}
 }
 
@@ -292,7 +329,7 @@ func verifyExportArchive(t *testing.T, exported *controllerEvidenceExportOutput)
 		t.Fatal("export manifest lists no entries")
 	}
 	for _, entry := range manifest.Entries {
-		if entry.Missing || entry.Unreadable != "" {
+		if entry.Missing || entry.Unreadable != "" || entry.Unattributed != "" {
 			if _, ok := contents[entry.Path]; ok {
 				t.Fatalf("manifest-only entry %s has archive bytes", entry.Path)
 			}
@@ -352,21 +389,55 @@ func TestControllerEvidenceExportSucceedsWhileWorkflowLockHeldAndWriterActive(t 
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatal(err)
 	}
-	if output.Export == nil || output.Export.LiveSection != "collected" {
+	if output.Export == nil || output.Export.RuntimeSection != "collected" {
 		t.Fatalf("concurrent export result = %#v", output.Export)
 	}
 	verifyExportArchive(t, output.Export)
 }
 
+func TestControllerEvidenceExportFailsClosedOnUnreadableAttemptInventory(t *testing.T) {
+	fixture := newControllerEvidenceExportFixture(t)
+	var stdout bytes.Buffer
+	if err := runExportAction(t, fixture, `{"action":"export-task-bundle"}`, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	var output controllerEvidenceOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	goodDigest := archiveFileDigest(t, output.Export.ArchivePath)
+
+	attemptsDirs, err := filepath.Glob(filepath.Join(filepath.Dir(fixture.cfg.StateBase), "controllers", "*", "attempts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attemptsDirs) != 1 {
+		t.Fatalf("controller attempt inventories = %v", attemptsDirs)
+	}
+	corrupt := filepath.Join(attemptsDirs[0], "attempt-inventory-corrupt.json")
+	if err := os.WriteFile(corrupt, []byte(`{"schema_version":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runExportAction(t, fixture, `{"action":"export-task-bundle"}`, new(bytes.Buffer)); err == nil {
+		t.Fatal("export succeeded with an unreadable attempt inventory")
+	}
+	if archiveFileDigest(t, output.Export.ArchivePath) != goodDigest {
+		t.Fatal("inventory failure replaced the last good fixed archive")
+	}
+}
+
 func TestControllerEvidenceExportRejectsInvalidCommands(t *testing.T) {
 	fixture := newControllerEvidenceExportFixture(t)
 	if err := runExportAction(t, fixture, `{"action":"export-task-bundle","task_path":"a.md","attempt_id":"b"}`, io.Discard); err == nil {
-		t.Fatal("export accepted conflicting target fields")
+		t.Fatal("export accepted retired selector fields")
 	}
-	if err := runExportAction(t, fixture, `{"action":"cleanup-durability","task_path":"a.md"}`, io.Discard); err == nil {
+	if err := runExportAction(t, fixture, `{"action":"cleanup-durability","task_id":"a"}`, io.Discard); err == nil {
 		t.Fatal("non-export action accepted export target fields")
 	}
-	if err := runExportAction(t, fixture, `{"action":"export-task-bundle","task_path":"IMPLEMENTATION_TASKS/missing.md"}`, io.Discard); err == nil {
-		t.Fatal("export accepted an unknown task path")
+	if err := runExportAction(t, fixture, `{"action":"export-task-bundle","task_id":"runtime-task-unknown"}`, io.Discard); err == nil {
+		t.Fatal("export accepted an unknown task id")
+	}
+	if err := runExportAction(t, fixture, `{"action":"export-task-bundle","task_id":"`+fixture.taskID+`"}`, io.Discard); err != nil {
+		t.Fatalf("export rejected the live runtime task id: %v", err)
 	}
 }

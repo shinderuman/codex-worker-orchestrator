@@ -228,6 +228,11 @@ func TestBundleFailsLoudlyWhenRequiredHistoricalEvidenceIsMissing(t *testing.T) 
 
 func storeBundleAttemptSeal(t *testing.T, store *Store, source, attemptID, taskPath, episodeID string, generation uint64) (EvidenceObjectRef, AttemptSeal) {
 	t.Helper()
+	return storeBundleAttemptSealForTask(t, store, source, attemptID, SemanticTaskRef{TaskPath: taskPath, ContractDigest: attemptID + "-contract"}, episodeID, generation)
+}
+
+func storeBundleAttemptSealForTask(t *testing.T, store *Store, source, attemptID string, task SemanticTaskRef, episodeID string, generation uint64) (EvidenceObjectRef, AttemptSeal) {
+	t.Helper()
 	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
 	tree := controllerGitOutput(t, source, "rev-parse", "HEAD^{tree}")
 	archive, roots, err := store.CaptureGitObjectArchive(source, attemptID+":git", []string{commit, tree})
@@ -244,7 +249,7 @@ func storeBundleAttemptSeal(t *testing.T, store *Store, source, attemptID, taskP
 	}
 	record := AttemptSeal{
 		SchemaVersion: evidenceSchemaVersion, RepositoryIdentity: store.Identity().LineageID,
-		SemanticTaskRef: SemanticTaskRef{TaskPath: taskPath, ContractDigest: attemptID + "-contract"},
+		SemanticTaskRef: task,
 		RootTaskRef:     SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/ROOT.md", ContractDigest: "root-contract"},
 		AttemptID:       attemptID, EpisodeID: episodeID, EpisodeRevision: episodeRevision, ControllerGeneration: generation,
 		SealingTransitionID: bundleTransitionID(generation), RevokedLeaseID: "lease-" + attemptID,

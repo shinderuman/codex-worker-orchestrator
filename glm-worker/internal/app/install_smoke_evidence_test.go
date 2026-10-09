@@ -2,12 +2,14 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -303,8 +305,12 @@ func TestInstallSmokeLaunchFailureRecordsWrapperEvidence(t *testing.T) {
 	}
 }
 
-func TestInstallSmokeSuccessWritesNoEvidenceArtifact(t *testing.T) {
-	cfg, st, _, _ := newInstallSmokeEnv(t)
+func TestInstallSmokeSuccessWritesEvidenceAndRunMetadata(t *testing.T) {
+	cfg, st := newInstallSmokeScriptEnv(t, "#!/bin/sh\nset -eu\nprintf '%s\\n' 'install smoke success fixture'\n")
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var stdout bytes.Buffer
 	if err := runInstallSmoke("worker", cfg, st, &stdout); err != nil {
@@ -313,8 +319,102 @@ func TestInstallSmokeSuccessWritesNoEvidenceArtifact(t *testing.T) {
 	if err := validateSingleMachineJSONObject(stdout.Bytes()); err != nil {
 		t.Fatalf("install smoke成功時のmachine stdoutが単一JSON objectではありません: %v: %q", err, stdout.String())
 	}
-	if _, err := os.Stat(st.Path(installSmokeRunDirectory)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("成功runでevidence artifactが作成されています: %v", err)
+	record := readSingleValidationEvent(t, st, taskID)
+	var output installSmokeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Result != "pass" || output.EvidenceWarning != "" ||
+		output.Evidence != installSmokeRelativeEvidence(record.Validation.ValidationRunID) {
+		t.Fatalf("成功output = %#v want evidence %q", output, installSmokeRelativeEvidence(record.Validation.ValidationRunID))
+	}
+	if record.Validation.Source != "install-smoke" || record.Validation.Result != "pass" ||
+		record.Validation.Scope != "worker" || record.Validation.Attribution != "task" {
+		t.Fatalf("validation = %#v", record.Validation)
+	}
+	runID := record.Validation.ValidationRunID
+	if !qualitygate.ValidRunID(runID) {
+		t.Fatalf("成功validationにrun idが関連付けられていません: %#v", record.Validation)
+	}
+	if record.Validation.Evidence != installSmokeRelativeEvidence(runID) {
+		t.Fatalf("validation evidence = %q want %q", record.Validation.Evidence, installSmokeRelativeEvidence(runID))
+	}
+	data, err := os.ReadFile(st.Path(record.Validation.Evidence))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "install smoke success fixture") {
+		t.Fatalf("成功runのraw出力がevidenceへ保存されていません: %q", string(data))
+	}
+	runData, err := os.ReadFile(st.Path(filepath.Join(installSmokeRunDirectory, runID, qualitygate.RunFile)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runRecord qualitygate.RunRecord
+	if err := json.Unmarshal(runData, &runRecord); err != nil {
+		t.Fatal(err)
+	}
+	if runRecord.ValidationRunID != runID || runRecord.Form != "install-smoke" || runRecord.Status != qualitygate.StatusPass ||
+		runRecord.Repository != cfg.RepoRoot || runRecord.WorkingDir != cfg.RepoRoot || runRecord.TaskID != taskID ||
+		runRecord.Log != installSmokeRelativeEvidence(runID) || runRecord.CompletedAt == nil {
+		t.Fatalf("run record = %#v", runRecord)
+	}
+}
+
+func TestInstallSmokeSuccessDisclosesEvidenceSaveFailure(t *testing.T) {
+	cfg, st := newInstallSmokeScriptEnv(t, "#!/bin/sh\nset -eu\nprintf '%s\\n' 'install smoke success fixture'\n")
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runsDir := st.Path(installSmokeRunDirectory)
+	if err := os.MkdirAll(runsDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(runsDir, 0o700) })
+
+	var stdout bytes.Buffer
+	if err := runInstallSmoke("worker", cfg, st, &stdout); err != nil {
+		t.Fatalf("evidence保存失敗がsmoke合否に影響しています: %v", err)
+	}
+	if err := validateSingleMachineJSONObject(stdout.Bytes()); err != nil {
+		t.Fatalf("machine stdoutが単一JSON objectではありません: %v: %q", err, stdout.String())
+	}
+	var output installSmokeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Result != "pass" || output.Evidence != "" || output.EvidenceWarning == "" {
+		t.Fatalf("保存失敗時の成功output = %#v", output)
+	}
+	record := readSingleValidationEvent(t, st, taskID)
+	if record.Validation.Result != "pass" || record.Validation.ValidationRunID != "" || record.Validation.Evidence != "" {
+		t.Fatalf("保存失敗時のvalidation = %#v", record.Validation)
+	}
+}
+
+func TestInstallSmokeRunRecordWriteFailureWarns(t *testing.T) {
+	cfg, st := newInstallSmokeScriptEnv(t, "#!/bin/sh\nexit 0\n")
+	runID := "0123456789abcdef0123456789abcdef"
+	runDir := st.Path(filepath.Join(installSmokeRunDirectory, runID))
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, installSmokeEvidenceLog), []byte("saved log tail\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(runDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(runDir, 0o700) })
+
+	warning := writeInstallSmokeRunRecord(st, cfg, runID, installSmokeOutcome{
+		role: "worker", result: "pass", exitCode: 0,
+		exitSource: state.ValidationExitSourceTarget, durationMS: 5,
+		started: time.Now().UTC(),
+	})
+	if warning == "" {
+		t.Fatal("run metadata保存失敗がwarningとして開示されていません")
 	}
 }
 

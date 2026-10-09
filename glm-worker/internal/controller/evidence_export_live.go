@@ -19,20 +19,26 @@ import (
 )
 
 type evidenceLiveCollector struct {
-	store          *Store
-	runtime        *state.StateStore
-	taskID         string
-	attempt        AttemptRecord
-	builder        *evidenceExportBuilder
-	observedAt     time.Time
-	missing        []string
-	unreadable     []string
-	sessionIDs     []string
-	parentThreadID string
+	store             *Store
+	runtime           *state.StateStore
+	taskID            string
+	attempt           AttemptRecord
+	builder           *evidenceExportBuilder
+	observedAt        time.Time
+	prefix            string
+	inProgress        bool
+	workspace         WorkspaceIdentity
+	workspaceResolved bool
+	windowEnd         time.Time
+	windowEndBasis    string
+	missing           []string
+	unreadable        []string
+	unattributed      []string
+	sessionIDs        []string
+	parentThreadID    string
 }
 
 const (
-	evidenceExportSourceProjection = "sealed-projection"
 	evidenceExportSourceState      = "live-state"
 	evidenceExportSourceTask       = "live-task"
 	evidenceExportSourceArtifact   = "live-artifact"
@@ -40,66 +46,164 @@ const (
 	evidenceExportSourceGitState   = "git-observation"
 	evidenceExportSourceGitDiff    = "git-diff"
 	evidenceExportSourceUntracked  = "git-untracked"
-	evidenceExportSourceGitObjects = "git-object-archive"
 )
 
-const evidenceExportRuntimeStateDir = "live/state"
+const (
+	evidenceExportRuntimeStateDir    = "live/state"
+	evidenceExportBoundStateDir      = "bound/state"
+	evidenceExportLiveEndBasis       = "observation-time"
+	evidenceExportBoundNoEndBoundary = "no-attempt-end-boundary"
+)
 
 var errEvidenceExportRuntimeAbsent = errors.New("live attempt has no runtime evidence yet")
 
-func (s *Store) collectLiveSection(
+func (c *evidenceLiveCollector) attemptWorkspaceRoot() (string, bool) {
+	if !c.workspaceResolved {
+		return "", false
+	}
+	return c.workspace.Root, true
+}
+
+func (s *Store) collectRuntimeSection(
 	builder *evidenceExportBuilder,
 	target EvidenceExportTarget,
 	attempt AttemptRecord,
-) (EvidenceExportLiveSection, *EvidenceExportGitObservation, error) {
+) (EvidenceExportRuntimeSection, *EvidenceExportGitAudit, error) {
 	if !target.Live {
-		return EvidenceExportLiveSection{Status: evidenceExportLiveAbsent, AbsenceReason: "target attempt is not live"}, nil, nil
+		return s.collectBoundRuntimeSection(builder, attempt)
 	}
-	lease, err := s.loadLease(builder.head.LiveLeaseID)
+	workspace, err := s.liveAttemptWorkspace(builder.head, attempt)
 	if err != nil {
-		return EvidenceExportLiveSection{}, nil, fmt.Errorf("evidence export live lease is unavailable: %w", err)
-	}
-	if lease.AttemptID != attempt.AttemptID {
-		return EvidenceExportLiveSection{}, nil, fmt.Errorf("evidence export live lease is bound to another attempt")
+		return EvidenceExportRuntimeSection{}, nil, err
 	}
 	runtime, taskID, err := s.resolveExportRuntime(attempt)
 	if errors.Is(err, errEvidenceExportRuntimeAbsent) {
-		return EvidenceExportLiveSection{Status: evidenceExportLiveAbsent, AbsenceReason: err.Error()}, nil, nil
+		return EvidenceExportRuntimeSection{Status: evidenceExportRuntimeAbsent, AbsenceReason: err.Error()}, nil, nil
 	}
 	if err != nil {
-		return EvidenceExportLiveSection{}, nil, err
+		return EvidenceExportRuntimeSection{}, nil, err
 	}
 	binding, err := runtime.LoadControllerRuntimeBinding()
 	if err != nil {
-		return EvidenceExportLiveSection{}, nil, fmt.Errorf("evidence export live runtime source is not bound: %w", err)
+		return EvidenceExportRuntimeSection{}, nil, fmt.Errorf("evidence export live runtime source is not bound: %w", err)
 	}
 	collector := &evidenceLiveCollector{
 		store: s, runtime: runtime, taskID: taskID,
-		attempt: attempt, builder: builder, observedAt: time.Now().UTC(),
+		attempt: attempt, builder: builder, observedAt: builder.observedAt,
+		prefix: evidenceExportRuntimeModeLive, inProgress: true,
+		workspace: workspace, workspaceResolved: true,
+		windowEnd: builder.observedAt, windowEndBasis: evidenceExportLiveEndBasis,
 	}
 	if err := collector.collectRuntime(); err != nil {
-		return EvidenceExportLiveSection{}, nil, err
+		return EvidenceExportRuntimeSection{}, nil, err
 	}
 	if err := collector.collectTranscripts(); err != nil {
-		return EvidenceExportLiveSection{}, nil, err
+		return EvidenceExportRuntimeSection{}, nil, err
 	}
-	git, err := collector.observeGit(lease)
+	if err := collector.collectValidationEvidence(); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	collector.collectInstructionSnapshots()
+	git, err := collector.observeGit()
 	if err != nil {
-		return EvidenceExportLiveSection{}, nil, err
+		return EvidenceExportRuntimeSection{}, nil, err
 	}
 	if err := verifyExportRuntimeBindingStable(runtime, binding); err != nil {
-		return EvidenceExportLiveSection{}, nil, err
+		return EvidenceExportRuntimeSection{}, nil, err
 	}
-	live := EvidenceExportLiveSection{
-		Status:         evidenceExportLiveCollected,
-		RuntimeTaskID:  taskID,
-		WorkspaceID:    lease.WorkspaceID,
-		SessionIDs:     collector.sessionIDs,
-		ParentThreadID: collector.parentThreadID,
-		Missing:        collector.missing,
-		Unreadable:     collector.unreadable,
+	section := collector.section(evidenceExportRuntimeModeLive, attempt, workspace.ID)
+	return section, git, nil
+}
+
+func (s *Store) collectBoundRuntimeSection(
+	builder *evidenceExportBuilder,
+	attempt AttemptRecord,
+) (EvidenceExportRuntimeSection, *EvidenceExportGitAudit, error) {
+	runtime, taskID, err := s.resolveExportRuntime(attempt)
+	if errors.Is(err, errEvidenceExportRuntimeAbsent) {
+		return EvidenceExportRuntimeSection{
+			Status:        evidenceExportRuntimeAbsent,
+			AbsenceReason: "target attempt is not live and its runtime session has no bound evidence",
+		}, nil, nil
 	}
-	return live, git, nil
+	if err != nil {
+		return EvidenceExportRuntimeSection{
+			Status:        evidenceExportRuntimeAbsent,
+			AbsenceReason: fmt.Sprintf("target attempt runtime session is unavailable: %v", err),
+		}, nil, nil
+	}
+	binding, err := runtime.LoadControllerRuntimeBinding()
+	if err != nil {
+		return EvidenceExportRuntimeSection{
+			Status:        evidenceExportRuntimeAbsent,
+			AbsenceReason: fmt.Sprintf("target attempt runtime session is unavailable: %v", err),
+		}, nil, nil
+	}
+	end, endBasis := boundRuntimeWindowEnd(builder)
+	collector := &evidenceLiveCollector{
+		store: s, runtime: runtime, taskID: taskID,
+		attempt: attempt, builder: builder, observedAt: builder.observedAt,
+		prefix: evidenceExportRuntimeModeBound, inProgress: false,
+		windowEnd: end, windowEndBasis: endBasis,
+	}
+	if err := collector.resolveBoundAttemptWorkspace(); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	if err := collector.collectRuntime(); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	if err := collector.collectTranscripts(); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	if err := collector.collectValidationEvidence(); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	collector.collectInstructionSnapshots()
+	if err := verifyExportRuntimeBindingStable(runtime, binding); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	return collector.section(evidenceExportRuntimeModeBound, attempt, ""), nil, nil
+}
+
+func boundRuntimeWindowEnd(builder *evidenceExportBuilder) (time.Time, string) {
+	if builder.attemptSection.Status == evidenceExportAttemptPresent && builder.attemptSection.Window != nil &&
+		!builder.attemptSection.Window.End.IsZero() {
+		return builder.attemptSection.Window.End, builder.attemptSection.Window.EndBasis
+	}
+	return time.Time{}, evidenceExportBoundNoEndBoundary
+}
+
+func (c *evidenceLiveCollector) resolveBoundAttemptWorkspace() error {
+	workspace, resolved, err := c.store.attemptWorkspaceForExport(c.builder.head, c.attempt)
+	if err != nil {
+		return err
+	}
+	if resolved {
+		c.workspace, c.workspaceResolved = workspace, true
+	}
+	return nil
+}
+
+func (c *evidenceLiveCollector) section(mode string, attempt AttemptRecord, workspaceID string) EvidenceExportRuntimeSection {
+	basis := evidenceExportBasisLiveRuntime
+	if mode == evidenceExportRuntimeModeBound {
+		basis = evidenceExportBasisRuntimeBinding
+	}
+	return EvidenceExportRuntimeSection{
+		Status:         evidenceExportRuntimeCollected,
+		Mode:           mode,
+		RuntimeTaskID:  c.taskID,
+		Basis:          basis,
+		WorkspaceID:    workspaceID,
+		SessionIDs:     c.sessionIDs,
+		ParentThreadID: c.parentThreadID,
+		Window: &EvidenceExportWindow{
+			Start: attempt.CreatedAt, End: c.windowEnd, EndBasis: c.windowEndBasis,
+		},
+		Missing:      c.missing,
+		Unreadable:   c.unreadable,
+		Unattributed: c.unattributed,
+	}
 }
 
 func (s *Store) resolveExportRuntime(attempt AttemptRecord) (*state.StateStore, string, error) {
@@ -152,36 +256,82 @@ func (c *evidenceLiveCollector) collectRuntime() error {
 	if err != nil {
 		return err
 	}
+	stateDir := c.runtimeStateDir()
 	for _, entry := range entries {
-		if entry.Name() == "lock" || entry.IsDir() {
+		if entry.IsDir() || evidenceExportEphemeralStateFile(entry.Name()) {
 			continue
 		}
-		c.addFile(c.runtime.Path(entry.Name()), evidenceExportRuntimeStateDir+"/"+entry.Name(), evidenceExportSourceState, false)
+		if entry.Name() == evidenceExportParentEvidenceFile {
+			c.collectParentEvidenceAggregate(c.runtime.Path(entry.Name()), stateDir+"/"+entry.Name())
+			continue
+		}
+		c.addFile(c.runtime.Path(entry.Name()), stateDir+"/"+entry.Name(), evidenceExportSourceState, false)
 	}
 	c.collectTaskFiles()
 	return c.collectArtifactTree()
 }
 
+func (c *evidenceLiveCollector) runtimeStateDir() string {
+	if c.prefix == evidenceExportRuntimeModeBound {
+		return evidenceExportBoundStateDir
+	}
+	return evidenceExportRuntimeStateDir
+}
+
+func (c *evidenceLiveCollector) collectParentEvidenceAggregate(path, rawEntryPath string) {
+	aggregatePath := strings.TrimSuffix(rawEntryPath, ".jsonl") + ".aggregate.json"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		c.recordUnreadable(aggregatePath, err.Error())
+		return
+	}
+	aggregate, err := aggregateParentEvidence(data, rawEntryPath)
+	if err != nil {
+		c.recordUnreadable(aggregatePath, err.Error())
+		return
+	}
+	c.commit(EvidenceExportEntry{
+		Path: aggregatePath, Source: evidenceExportSourceState,
+		SHA256: digestBytes(aggregate), Bytes: int64(len(aggregate)),
+		CollectedAt: c.observedAt, Basis: evidenceExportBasisLiveRuntime,
+		OmittedPayload: evidenceExportParentEvidenceOmission,
+	}, aggregate)
+}
+
 func (c *evidenceLiveCollector) collectTaskFiles() {
 	files := []struct {
 		path         string
-		entry        string
+		name         string
 		appendTarget bool
 	}{
-		{c.runtime.ModelCallLogPath(c.taskID), "live/task/telemetry.jsonl", true},
-		{c.runtime.TaskEventLogPath(c.taskID), "live/task/events.jsonl", true},
-		{c.runtime.TaskLiveStatusPath(c.taskID), "live/task/live.json", false},
-		{c.runtime.RoundLogPath(c.taskID), "live/task/rounds.jsonl", true},
-		{c.runtime.TaskLifecycleLogPath(c.taskID), "live/task/lifecycle.jsonl", true},
-		{c.runtime.TaskAuthorityPathPath(c.taskID), "live/task/authority.path", false},
-		{c.runtime.TaskAuthorityContentPath(c.taskID), "live/task/authority.md", false},
+		{c.runtime.ModelCallLogPath(c.taskID), "telemetry.jsonl", true},
+		{c.runtime.TaskEventLogPath(c.taskID), "events.jsonl", true},
+		{c.runtime.TaskLiveStatusPath(c.taskID), "live.json", false},
+		{c.runtime.RoundLogPath(c.taskID), "rounds.jsonl", true},
+		{c.runtime.TaskLifecycleLogPath(c.taskID), "lifecycle.jsonl", true},
+		{c.runtime.TaskAuthorityPathPath(c.taskID), "authority.path", false},
+		{c.runtime.TaskAuthorityContentPath(c.taskID), "authority.md", false},
 	}
 	for _, file := range files {
 		if _, err := os.Lstat(file.path); err != nil {
 			continue
 		}
-		c.addFile(file.path, file.entry, evidenceExportSourceTask, file.appendTarget)
+		c.addFile(file.path, c.taskEntry(file.name), evidenceExportSourceTask, file.appendTarget)
 	}
+}
+
+func (c *evidenceLiveCollector) taskEntry(name string) string {
+	if c.prefix == evidenceExportRuntimeModeBound {
+		return "bound/task/" + name
+	}
+	return "live/task/" + name
+}
+
+func (c *evidenceLiveCollector) transcriptEntry(prefix string) string {
+	if c.prefix == evidenceExportRuntimeModeBound {
+		return "bound/transcripts/" + prefix
+	}
+	return "live/transcripts/" + prefix
 }
 
 func (c *evidenceLiveCollector) collectArtifactTree() error {
@@ -207,7 +357,7 @@ func (c *evidenceLiveCollector) collectArtifactTree() error {
 		if err != nil {
 			return err
 		}
-		c.addFile(path, "live/task/artifacts/"+filepath.ToSlash(relative), evidenceExportSourceArtifact, false)
+		c.addFile(path, c.taskEntry("artifacts/"+filepath.ToSlash(relative)), evidenceExportSourceArtifact, false)
 		return nil
 	})
 }
@@ -303,7 +453,8 @@ func (c *evidenceLiveCollector) collectClaudeTranscripts(ids []string) error {
 			continue
 		}
 		for index, path := range paths {
-			c.addFile(path, fmt.Sprintf("live/transcripts/claude/%s/%d", id, index), evidenceExportSourceTranscript, true)
+			capture := claudeCaptureRecord(c.builder.association, id, index, len(paths))
+			c.addWindowedFile(path, c.transcriptEntry(fmt.Sprintf("claude/%s/%d", id, index)), evidenceExportSourceTranscript, true, capture)
 		}
 	}
 	return nil
@@ -337,7 +488,8 @@ func (c *evidenceLiveCollector) collectParentRolloutChain(rollouts []codexrollou
 		return
 	}
 	for index, rollout := range chain {
-		c.addFile(rollout.AbsolutePath, fmt.Sprintf("live/transcripts/parent/%s/%d", parentThreadID, index), evidenceExportSourceTranscript, true)
+		capture := rolloutCaptureRecord(c.parentRolloutCaptureRecords(), rollout.ID)
+		c.addWindowedFile(rollout.AbsolutePath, c.transcriptEntry(fmt.Sprintf("parent/%s/%d", parentThreadID, index)), evidenceExportSourceTranscript, true, capture)
 	}
 }
 
@@ -354,7 +506,52 @@ func (c *evidenceLiveCollector) collectGuardianTranscripts(rollouts []codexrollo
 			c.recordUnreadable("live/transcripts/guardian/"+rollout.ID, "guardian rollout id is not a safe archive segment")
 			continue
 		}
-		c.addFile(rollout.AbsolutePath, "live/transcripts/guardian/"+rollout.ID, evidenceExportSourceTranscript, true)
+		capture := rolloutCaptureRecord(c.guardianCaptureRecords(), rollout.ID)
+		c.addWindowedFile(rollout.AbsolutePath, c.transcriptEntry("guardian/"+rollout.ID), evidenceExportSourceTranscript, true, capture)
+	}
+	return nil
+}
+
+func (c *evidenceLiveCollector) parentRolloutCaptureRecords() []runtimeTranscriptWindowRecord {
+	if c.builder.association == nil {
+		return nil
+	}
+	return c.builder.association.ParentRollouts
+}
+
+func (c *evidenceLiveCollector) guardianCaptureRecords() []runtimeTranscriptWindowRecord {
+	if c.builder.association == nil {
+		return nil
+	}
+	return c.builder.association.GuardianRollouts
+}
+
+func claudeCaptureRecord(association *runtimeSessionAssociation, sessionID string, index, currentFiles int) *runtimeTranscriptWindowRecord {
+	if association == nil {
+		return nil
+	}
+	count := 0
+	var match *runtimeTranscriptWindowRecord
+	for i := range association.ModelTranscripts {
+		if association.ModelTranscripts[i].SessionID != sessionID {
+			continue
+		}
+		if count == index {
+			match = &association.ModelTranscripts[i]
+		}
+		count++
+	}
+	if count == 0 || count != currentFiles {
+		return nil
+	}
+	return match
+}
+
+func rolloutCaptureRecord(records []runtimeTranscriptWindowRecord, rolloutID string) *runtimeTranscriptWindowRecord {
+	for i := range records {
+		if records[i].RolloutID == rolloutID {
+			return &records[i]
+		}
 	}
 	return nil
 }
@@ -366,19 +563,17 @@ func evidenceExportSegmentSafe(segment string) bool {
 	return !strings.ContainsAny(segment, `/\`)
 }
 
-func (c *evidenceLiveCollector) observeGit(lease ExecutionLease) (*EvidenceExportGitObservation, error) {
-	workspace, err := ResolveWorkspaceIdentity(c.store.config.RepoRoot, c.store.identity)
-	if err != nil {
-		return nil, fmt.Errorf("evidence export workspace identity: %w", err)
-	}
-	if workspace.ID != lease.WorkspaceID {
-		return nil, fmt.Errorf("evidence export workspace identity %s does not match attempt lease workspace %s", workspace.ID, lease.WorkspaceID)
-	}
-	snapshot, err := CaptureWorkspaceSnapshot(c.store.config.RepoRoot)
+func (c *evidenceLiveCollector) observeGit() (*EvidenceExportGitAudit, error) {
+	snapshot, err := CaptureWorkspaceSnapshot(c.workspace.Root)
 	if err != nil {
 		return nil, fmt.Errorf("evidence export workspace observation: %w", err)
 	}
-	observation := &EvidenceExportGitObservation{Snapshot: snapshot, WorkspaceID: workspace.ID}
+	audit := &EvidenceExportGitAudit{
+		ExecutionBaseOID: c.attempt.ExecutionBaseOID,
+		HeadOID:          snapshot.Head,
+		WorkspaceID:      c.workspace.ID,
+		Snapshot:         &snapshot,
+	}
 	snapshotData, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return nil, err
@@ -387,25 +582,16 @@ func (c *evidenceLiveCollector) observeGit(lease ExecutionLease) (*EvidenceExpor
 	if err := c.collectGitDiffs(); err != nil {
 		return nil, err
 	}
-	if err := c.collectUntrackedFiles(); err != nil {
-		return nil, err
-	}
-	archiveDigest, roots, err := c.collectGitObjectArchive(snapshot)
-	if err != nil {
-		return nil, err
-	}
-	observation.ObjectArchiveDigest = archiveDigest
-	observation.ObjectArchiveRoots = roots
-	return observation, nil
+	return audit, c.collectUntrackedFiles()
 }
 
 func (c *evidenceLiveCollector) collectGitDiffs() error {
-	staged, err := runGitBinary(c.store.config.RepoRoot, nil, "diff", "--cached", "--binary")
+	staged, err := runGitBinary(c.workspace.Root, nil, "diff", "--cached", "--binary")
 	if err != nil {
 		return fmt.Errorf("evidence export staged diff: %w", err)
 	}
 	c.addBytes("live/git/diff-staged.patch", evidenceExportSourceGitDiff, staged, false)
-	unstaged, err := runGitBinary(c.store.config.RepoRoot, nil, "diff", "--binary")
+	unstaged, err := runGitBinary(c.workspace.Root, nil, "diff", "--binary")
 	if err != nil {
 		return fmt.Errorf("evidence export unstaged diff: %w", err)
 	}
@@ -414,7 +600,7 @@ func (c *evidenceLiveCollector) collectGitDiffs() error {
 }
 
 func (c *evidenceLiveCollector) collectUntrackedFiles() error {
-	output, err := runGitBinary(c.store.config.RepoRoot, nil, "ls-files", "--others", "--exclude-standard", "-z")
+	output, err := runGitBinary(c.workspace.Root, nil, "ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
 		return fmt.Errorf("evidence export untracked discovery: %w", err)
 	}
@@ -427,7 +613,7 @@ func (c *evidenceLiveCollector) collectUntrackedFiles() error {
 			c.recordUnreadable("live/git/untracked/"+filepath.ToSlash(relative), "path escapes repository")
 			continue
 		}
-		c.addFile(filepath.Join(c.store.config.RepoRoot, filepath.FromSlash(relative)), entryPath, evidenceExportSourceUntracked, false)
+		c.addFile(filepath.Join(c.workspace.Root, filepath.FromSlash(relative)), entryPath, evidenceExportSourceUntracked, false)
 	}
 	return nil
 }
@@ -440,20 +626,11 @@ func evidenceExportUntrackedEntryPath(relative string) (string, bool) {
 	return "live/git/untracked/" + slash, true
 }
 
-func (c *evidenceLiveCollector) collectGitObjectArchive(snapshot WorkspaceSnapshot) (string, []GitObjectArchiveRoot, error) {
-	rootOIDs := []string{c.attempt.ExecutionBaseOID}
-	if snapshot.Head != "" && snapshot.Head != c.attempt.ExecutionBaseOID {
-		rootOIDs = append(rootOIDs, snapshot.Head)
-	}
-	data, roots, err := buildGitObjectArchiveEnvelope(c.store.config.RepoRoot, rootOIDs)
-	if err != nil {
-		return "", nil, fmt.Errorf("evidence export git object observation: %w", err)
-	}
-	c.addBytes("live/git/object-archive.json", evidenceExportSourceGitObjects, data, false)
-	return digestBytes(data), roots, nil
+func (c *evidenceLiveCollector) addFile(sourcePath, entryPath, source string, appendTarget bool) {
+	c.addFileBasis(sourcePath, entryPath, source, evidenceExportBasisLiveRuntime, appendTarget)
 }
 
-func (c *evidenceLiveCollector) addFile(sourcePath, entryPath, source string, appendTarget bool) {
+func (c *evidenceLiveCollector) addFileBasis(sourcePath, entryPath, source, basis string, appendTarget bool) {
 	before, err := os.Lstat(sourcePath)
 	if errors.Is(err, os.ErrNotExist) {
 		c.recordMissing(entryPath)
@@ -487,11 +664,56 @@ func (c *evidenceLiveCollector) addFile(sourcePath, entryPath, source string, ap
 		SHA256:      digestBytes(data),
 		Bytes:       int64(len(data)),
 		CollectedAt: c.observedAt,
-		InProgress:  appendTarget,
+		InProgress:  appendTarget && c.inProgress,
 		Changing:    evidenceExportFileChanged(before, after) || (!appendTarget && after.ModTime().After(c.observedAt)),
+		Basis:       basis,
 	}
 	entry.Records, entry.TrailingFragment = evidenceExportJSONLStats(entryPath, data)
 	c.commit(entry, data)
+}
+
+func (c *evidenceLiveCollector) addWindowedFile(sourcePath, entryPath, source string, appendTarget bool, capture *runtimeTranscriptWindowRecord) {
+	before, err := os.Lstat(sourcePath)
+	if errors.Is(err, os.ErrNotExist) {
+		c.recordMissing(entryPath)
+		return
+	}
+	if err != nil {
+		c.recordUnreadable(entryPath, err.Error())
+		return
+	}
+	if !before.Mode().IsRegular() {
+		c.recordUnreadable(entryPath, "source is not a regular file")
+		return
+	}
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		c.recordUnreadable(entryPath, err.Error())
+		return
+	}
+	after, err := os.Lstat(sourcePath)
+	if err != nil {
+		c.recordUnreadable(entryPath, err.Error())
+		return
+	}
+	window, windowed := scanTranscriptWindow(data, c.attempt.CreatedAt, c.windowEnd, capture)
+	if window.Unattributed != "" {
+		c.recordUnattributed(entryPath, window.Unattributed, window)
+		return
+	}
+	entry := EvidenceExportEntry{
+		Path:        entryPath,
+		Source:      source,
+		SHA256:      digestBytes(windowed),
+		Bytes:       int64(len(windowed)),
+		CollectedAt: c.observedAt,
+		InProgress:  appendTarget && c.inProgress,
+		Changing:    evidenceExportFileChanged(before, after) || after.ModTime().After(c.observedAt),
+		Basis:       evidenceExportBasisLiveRuntime,
+		Window:      &window,
+	}
+	entry.Records, entry.TrailingFragment = evidenceExportJSONLStats(entryPath, windowed)
+	c.commit(entry, windowed)
 }
 
 func (c *evidenceLiveCollector) addSymlink(sourcePath, entryPath, source string) {
@@ -503,6 +725,7 @@ func (c *evidenceLiveCollector) addSymlink(sourcePath, entryPath, source string)
 	c.commit(EvidenceExportEntry{
 		Path: entryPath, Source: source,
 		SHA256: digestBytes([]byte(target)), Bytes: int64(len(target)), Symlink: target,
+		Basis: evidenceExportBasisLiveRuntime,
 	}, []byte(target))
 }
 
@@ -513,31 +736,46 @@ func (c *evidenceLiveCollector) addBytes(entryPath, source string, data []byte, 
 		SHA256:      digestBytes(data),
 		Bytes:       int64(len(data)),
 		CollectedAt: c.observedAt,
-		InProgress:  appendTarget,
+		InProgress:  appendTarget && c.inProgress,
+		Basis:       evidenceExportBasisLiveRuntime,
 	}
 	entry.Records, entry.TrailingFragment = evidenceExportJSONLStats(entryPath, data)
 	c.commit(entry, data)
 }
 
 func (c *evidenceLiveCollector) commit(entry EvidenceExportEntry, data []byte) {
-	c.builder.files = append(c.builder.files, EvidenceExportFile{Path: entry.Path, Data: data})
-	c.builder.entries = append(c.builder.entries, entry)
+	c.builder.commit(entry, data)
 }
 
 func (c *evidenceLiveCollector) recordMissing(entryPath string) {
-	c.builder.entries = append(c.builder.entries, EvidenceExportEntry{Path: entryPath, Source: evidenceExportSourceMissingFor(entryPath), Missing: true})
+	c.builder.entries = append(c.builder.entries, EvidenceExportEntry{
+		Path: entryPath, Source: evidenceExportSourceMissingFor(entryPath), Missing: true,
+		Basis: evidenceExportBasisLiveRuntime,
+	})
 	c.missing = append(c.missing, entryPath)
 }
 
 func (c *evidenceLiveCollector) recordUnreadable(entryPath, reason string) {
-	c.builder.entries = append(c.builder.entries, EvidenceExportEntry{Path: entryPath, Unreadable: reason})
+	c.builder.entries = append(c.builder.entries, EvidenceExportEntry{Path: entryPath, Unreadable: reason, Basis: evidenceExportBasisLiveRuntime})
 	c.unreadable = append(c.unreadable, entryPath)
+}
+
+func (c *evidenceLiveCollector) recordUnattributed(entryPath, reason string, window evidenceTranscriptWindow) {
+	c.builder.entries = append(c.builder.entries, EvidenceExportEntry{
+		Path: entryPath, Source: evidenceExportSourceTranscript,
+		Unattributed: reason, Basis: evidenceExportBasisLiveRuntime, Window: &window,
+	})
+	c.unattributed = append(c.unattributed, entryPath)
 }
 
 func evidenceExportSourceMissingFor(entryPath string) string {
 	switch {
 	case strings.HasPrefix(entryPath, "live/transcripts/"):
 		return evidenceExportSourceTranscript
+	case strings.Contains(entryPath, "/validation/install-smoke/"):
+		return evidenceExportSourceInstallSmoke
+	case strings.Contains(entryPath, "/validation/"):
+		return evidenceExportSourceGateRun
 	default:
 		return evidenceExportSourceTask
 	}

@@ -11,22 +11,20 @@ import (
 )
 
 type parentExportBundleSelection struct {
-	attemptID string
-	taskPath  string
+	taskID string
 }
 
 type parentExportBundleRequest struct {
-	Action    string `json:"action"`
-	AttemptID string `json:"attempt_id,omitempty"`
-	TaskPath  string `json:"task_path,omitempty"`
+	Action string `json:"action"`
+	TaskID string `json:"task_id,omitempty"`
 }
 
 type parentExportBundleExport struct {
 	Target                       json.RawMessage `json:"target"`
 	ArchivePath                  string          `json:"archive_path"`
 	ManifestDigest               string          `json:"manifest_digest"`
-	SealedSection                string          `json:"sealed_section"`
-	LiveSection                  string          `json:"live_section"`
+	AttemptSection               string          `json:"attempt_section"`
+	RuntimeSection               string          `json:"runtime_section"`
 	Coverage                     string          `json:"coverage"`
 	AuthorityChangedDuringExport bool            `json:"authority_changed_during_export"`
 	ControllerGenerationBefore   uint64          `json:"controller_generation_before"`
@@ -45,7 +43,7 @@ type parentExportBundleResult struct {
 
 const (
 	exportBundleAction = "export-task-bundle"
-	exportBundleUsage  = "usage: glm-parent-action export-bundle [--attempt-id <id> | --task-path <path>]"
+	exportBundleUsage  = "usage: glm-parent-action export-bundle [--task-id <glm-worker task id>]"
 )
 
 var resolveExportBundleWorker = resolveGLMWorker
@@ -56,9 +54,8 @@ func executeExportBundleAction(cfg config.AppConfig, args []string, stdout, stde
 		return err
 	}
 	payload, err := json.Marshal(parentExportBundleRequest{
-		Action:    exportBundleAction,
-		AttemptID: selection.attemptID,
-		TaskPath:  selection.taskPath,
+		Action: exportBundleAction,
+		TaskID: selection.taskID,
 	})
 	if err != nil {
 		return fmt.Errorf("encode export bundle request: %w", err)
@@ -101,9 +98,6 @@ func parseExportBundleSelection(args []string) (parentExportBundleSelection, err
 			return parentExportBundleSelection{}, err
 		}
 	}
-	if selection.attemptID != "" && selection.taskPath != "" {
-		return parentExportBundleSelection{}, fmt.Errorf("%s", exportBundleUsage)
-	}
 	return selection, nil
 }
 
@@ -112,16 +106,11 @@ func applyExportBundleSelector(selection *parentExportBundleSelection, flag, val
 		return fmt.Errorf("%s", exportBundleUsage)
 	}
 	switch flag {
-	case "--attempt-id":
-		if selection.attemptID != "" {
+	case "--task-id":
+		if selection.taskID != "" {
 			return fmt.Errorf("%s", exportBundleUsage)
 		}
-		selection.attemptID = value
-	case "--task-path":
-		if selection.taskPath != "" {
-			return fmt.Errorf("%s", exportBundleUsage)
-		}
-		selection.taskPath = value
+		selection.taskID = value
 	default:
 		return fmt.Errorf("%s", exportBundleUsage)
 	}
@@ -149,7 +138,7 @@ func decodeExportBundleWorkerOutput(raw []byte) (*parentExportBundleExport, erro
 		return nil, errors.New("export bundle worker output has no export target")
 	}
 	if output.Export.ArchivePath == "" || output.Export.ManifestDigest == "" ||
-		output.Export.SealedSection == "" || output.Export.LiveSection == "" || output.Export.Coverage == "" {
+		output.Export.AttemptSection == "" || output.Export.RuntimeSection == "" || output.Export.Coverage == "" {
 		return nil, fmt.Errorf("export bundle worker output is incomplete: %#v", output.Export)
 	}
 	return output.Export, nil

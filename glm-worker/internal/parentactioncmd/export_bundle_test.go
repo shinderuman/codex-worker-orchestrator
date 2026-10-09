@@ -14,36 +14,33 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
-const exportBundleWorkerJSON = `{"action":"export-task-bundle","export":{"target":{"kind":"execution-task","task":{"task_path":"IMPLEMENTATION_TASKS/root.md"},"attempt_id":"0123456789abcdef","episode_id":"0123456789abcdef","live":true},"archive_path":"/exports/attempt.zip","manifest_digest":"digest-1","sealed_section":"collected","live_section":"collected","coverage":"partial","authority_changed_during_export":false,"controller_generation_before":1,"controller_generation_after":1}}`
+const exportBundleWorkerJSON = `{"action":"export-task-bundle","export":{"target":{"kind":"task-id","task":{"task_path":"IMPLEMENTATION_TASKS/root.md"},"attempt_id":"0123456789abcdef","runtime_task_id":"runtime-task-1","selection_basis":"live-runtime-binding","live":true},"archive_path":"/exports/attempt.zip","manifest_digest":"digest-1","attempt_section":"absent","runtime_section":"collected","coverage":"partial","authority_changed_during_export":false,"controller_generation_before":1,"controller_generation_after":1}}`
 
 func TestExportBundleSelectionStrictness(t *testing.T) {
 	valid := map[string]struct {
-		args      []string
-		attemptID string
-		taskPath  string
+		args   []string
+		taskID string
 	}{
-		"default":    {args: []string{"export-bundle"}},
-		"attempt id": {args: []string{"export-bundle", "--attempt-id", "0123456789abcdef"}, attemptID: "0123456789abcdef"},
-		"task path":  {args: []string{"export-bundle", "--task-path", "IMPLEMENTATION_TASKS/root.md"}, taskPath: "IMPLEMENTATION_TASKS/root.md"},
+		"default": {args: []string{"export-bundle"}},
+		"task id": {args: []string{"export-bundle", "--task-id", "runtime-task-1"}, taskID: "runtime-task-1"},
 	}
 	for name, validCase := range valid {
 		t.Run(name, func(t *testing.T) {
 			selection, err := parseExportBundleSelection(validCase.args)
-			if err != nil || selection.attemptID != validCase.attemptID || selection.taskPath != validCase.taskPath {
+			if err != nil || selection.taskID != validCase.taskID {
 				t.Fatalf("selection = %#v err = %v", selection, err)
 			}
 		})
 	}
 	for name, args := range map[string][]string{
-		"both selectors":    {"export-bundle", "--attempt-id", "a", "--task-path", "b"},
-		"duplicate attempt": {"export-bundle", "--attempt-id", "a", "--attempt-id", "b"},
-		"duplicate task":    {"export-bundle", "--task-path", "a", "--task-path", "b"},
-		"positional target": {"export-bundle", "attempt-1"},
-		"missing value":     {"export-bundle", "--attempt-id"},
-		"empty attempt":     {"export-bundle", "--attempt-id", ""},
-		"empty task path":   {"export-bundle", "--task-path", ""},
+		"duplicate task id": {"export-bundle", "--task-id", "a", "--task-id", "b"},
+		"retired attempt":   {"export-bundle", "--attempt-id", "a"},
+		"retired task path": {"export-bundle", "--task-path", "a"},
+		"positional target": {"export-bundle", "runtime-task-1"},
+		"missing value":     {"export-bundle", "--task-id"},
+		"empty task id":     {"export-bundle", "--task-id", ""},
 		"unknown option":    {"export-bundle", "--live", "true"},
-		"unknown bare flag": {"export-bundle", "--attempt-id", "a", "extra"},
+		"unknown bare flag": {"export-bundle", "--task-id", "a", "extra"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := parseExportBundleSelection(args); err == nil {
@@ -64,9 +61,8 @@ func TestExportBundleTransportsAuthorityRequestAndFlattensExport(t *testing.T) {
 	cfg := config.AppConfig{RepoRoot: repo}
 
 	for name, args := range map[string][]string{
-		"default":    {"export-bundle"},
-		"attempt id": {"export-bundle", "--attempt-id", "0123456789abcdef"},
-		"task path":  {"export-bundle", "--task-path", "IMPLEMENTATION_TASKS/root.md"},
+		"default": {"export-bundle"},
+		"task id": {"export-bundle", "--task-id", "runtime-task-1"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, captureFile := range []string{"argv", "stdin"} {
@@ -96,11 +92,17 @@ func TestExportBundleTransportsAuthorityRequestAndFlattensExport(t *testing.T) {
 			if request["action"] != "export-task-bundle" {
 				t.Fatalf("worker request = %#v", request)
 			}
-			if _, present := request["attempt_id"]; present != (args[0] == "export-bundle" && len(args) == 3 && args[1] == "--attempt-id") {
-				t.Fatalf("worker request attempt_id presence = %v args = %v", present, args)
+			if _, present := request["attempt_id"]; present {
+				t.Fatalf("worker request kept retired attempt_id: %#v", request)
 			}
-			if _, present := request["task_path"]; present != (args[0] == "export-bundle" && len(args) == 3 && args[1] == "--task-path") {
-				t.Fatalf("worker request task_path presence = %v args = %v", present, args)
+			if _, present := request["task_path"]; present {
+				t.Fatalf("worker request kept retired task_path: %#v", request)
+			}
+			if request["task_id"] != nil && request["task_id"] != "runtime-task-1" {
+				t.Fatalf("worker request task_id = %#v", request["task_id"])
+			}
+			if _, present := request["task_id"]; present != (len(args) == 3 && args[1] == "--task-id") {
+				t.Fatalf("worker request task_id presence = %v args = %v", present, args)
 			}
 			assertExportBundleFlattenedOutput(t, stdout.Bytes())
 		})
@@ -125,11 +127,11 @@ func TestExportBundleRejectsFailedOrMalformedWorkerOutput(t *testing.T) {
 		"multiple JSON values": {workerOutput: exportBundleWorkerJSON + "\n" + exportBundleWorkerJSON, exitCode: 0},
 		"missing export":       {workerOutput: `{"action":"export-task-bundle"}`, exitCode: 0},
 		"null export":          {workerOutput: `{"action":"export-task-bundle","export":null}`, exitCode: 0},
-		"wrong action":         {workerOutput: `{"action":"build-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","sealed_section":"collected","live_section":"absent","coverage":"sealed-only","target":{"kind":"execution-task","live":false}}}`, exitCode: 0},
-		"missing archive path": {workerOutput: `{"action":"export-task-bundle","export":{"manifest_digest":"d","sealed_section":"collected","live_section":"collected","coverage":"partial","target":{"kind":"execution-task","live":true}}}`, exitCode: 0},
-		"missing coverage":     {workerOutput: `{"action":"export-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","sealed_section":"collected","live_section":"collected","target":{"kind":"execution-task","live":true}}}`, exitCode: 0},
-		"missing target":       {workerOutput: `{"action":"export-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","sealed_section":"collected","live_section":"collected","coverage":"partial"}}`, exitCode: 0},
-		"unknown worker field": {workerOutput: `{"action":"export-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","sealed_section":"collected","live_section":"collected","coverage":"partial","target":{"kind":"execution-task","live":true}},"bundle":{}}`, exitCode: 0},
+		"wrong action":         {workerOutput: `{"action":"build-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","attempt_section":"present","runtime_section":"absent","coverage":"attempt-only","target":{"kind":"task-id","live":false}}}`, exitCode: 0},
+		"missing archive path": {workerOutput: `{"action":"export-task-bundle","export":{"manifest_digest":"d","attempt_section":"absent","runtime_section":"collected","coverage":"partial","target":{"kind":"task-id","live":true}}}`, exitCode: 0},
+		"missing coverage":     {workerOutput: `{"action":"export-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","attempt_section":"absent","runtime_section":"collected","target":{"kind":"task-id","live":true}}}`, exitCode: 0},
+		"missing target":       {workerOutput: `{"action":"export-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","attempt_section":"absent","runtime_section":"collected","coverage":"partial"}}`, exitCode: 0},
+		"unknown worker field": {workerOutput: `{"action":"export-task-bundle","export":{"archive_path":"/exports/a.zip","manifest_digest":"d","attempt_section":"absent","runtime_section":"collected","coverage":"partial","target":{"kind":"task-id","live":true}},"bundle":{}}`, exitCode: 0},
 		"empty worker output":  {workerOutput: "", exitCode: 0},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -177,7 +179,7 @@ func assertExportBundleFlattenedOutput(t *testing.T, raw []byte) {
 	if _, nested := output["export"]; nested {
 		t.Fatalf("export stdout kept the nested export envelope: %s", string(raw))
 	}
-	for _, field := range []string{"archive_path", "manifest_digest", "sealed_section", "live_section", "coverage", "authority_changed_during_export", "controller_generation_before", "controller_generation_after"} {
+	for _, field := range []string{"archive_path", "manifest_digest", "attempt_section", "runtime_section", "coverage", "authority_changed_during_export", "controller_generation_before", "controller_generation_after"} {
 		if _, present := output[field]; !present {
 			t.Fatalf("export stdout is missing top-level %s: %s", field, string(raw))
 		}

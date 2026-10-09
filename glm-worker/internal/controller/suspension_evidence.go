@@ -19,7 +19,7 @@ func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicat
 		BaselineIndexTree: snapshot.Baseline.IndexTree, BaselineWorktreeTree: snapshot.Baseline.WorktreeTree,
 		CurrentIndexTree: snapshot.Current.IndexTree, CurrentWorktreeTree: snapshot.Current.WorktreeTree,
 		ParentAuthorityDigest: snapshot.Current.ParentAuthorityDigest, OperationalSnapshotID: snapshot.SnapshotID,
-		GitObjectArchive: archive, GitObjectArchiveRoots: roots, Coverage: "complete",
+		GitObjectArchive: archive, GitObjectArchiveRoots: roots,
 	}
 	if op.Transition.Kind == publicationAdopt {
 		seal.Disposition = string(AttemptStateSuspendedForAdvancement)
@@ -31,9 +31,11 @@ func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicat
 	if err := s.captureAttemptSemanticEvidence(op, &seal); err != nil {
 		return EvidencePublicationInput{}, EvidenceObjectRef{}, err
 	}
-	if err := s.captureAttemptRuntimeEvidence(op.Source, &seal); err != nil {
+	runtimeCaptured, err := s.captureAttemptRuntimeEvidence(op.Source, &seal)
+	if err != nil {
 		return EvidencePublicationInput{}, EvidenceObjectRef{}, err
 	}
+	applyAttemptSealRuntimeCoverage(&seal, runtimeCaptured)
 	sealRef, _, err := s.StoreAttemptSeal(seal)
 	if err != nil {
 		return EvidencePublicationInput{}, EvidenceObjectRef{}, err

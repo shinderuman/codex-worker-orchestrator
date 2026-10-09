@@ -2,9 +2,6 @@ package app
 
 import (
 	"archive/zip"
-	"crypto/rand"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,8 +17,8 @@ type controllerEvidenceExportOutput struct {
 	Target                       controller.EvidenceExportTarget `json:"target"`
 	ArchivePath                  string                          `json:"archive_path"`
 	ManifestDigest               string                          `json:"manifest_digest"`
-	SealedSection                string                          `json:"sealed_section"`
-	LiveSection                  string                          `json:"live_section"`
+	AttemptSection               string                          `json:"attempt_section"`
+	RuntimeSection               string                          `json:"runtime_section"`
 	Coverage                     string                          `json:"coverage"`
 	AuthorityChangedDuringExport bool                            `json:"authority_changed_during_export"`
 	ControllerGenerationBefore   uint64                          `json:"controller_generation_before"`
@@ -34,8 +31,7 @@ func executeControllerEvidenceExport(
 	command controllerEvidenceCommand,
 ) (controllerEvidenceOutput, error) {
 	export, result, err := store.ExportEvidence(controller.EvidenceExportRequest{
-		TaskPath:  command.TaskPath,
-		AttemptID: command.AttemptID,
+		TaskID: command.TaskID,
 	})
 	if err != nil {
 		return controllerEvidenceOutput{}, err
@@ -48,8 +44,8 @@ func executeControllerEvidenceExport(
 		Target:                       result.Target,
 		ArchivePath:                  archivePath,
 		ManifestDigest:               result.ManifestDigest,
-		SealedSection:                result.SealedStatus,
-		LiveSection:                  result.LiveStatus,
+		AttemptSection:               result.AttemptSectionStatus,
+		RuntimeSection:               result.RuntimeStatus,
 		Coverage:                     result.Coverage,
 		AuthorityChangedDuringExport: result.AuthorityChangedDuringExport,
 		ControllerGenerationBefore:   result.ControllerGenerationBefore,
@@ -58,34 +54,18 @@ func executeControllerEvidenceExport(
 }
 
 func writeEvidenceExportArchive(cfg config.AppConfig, export controller.EvidenceExport, baseName string) (string, error) {
-	name, err := evidenceExportArchiveFileName(baseName, export.Manifest.CreatedAt)
-	if err != nil {
-		return "", err
+	if !evidenceExportArchiveNameSafe(baseName) {
+		return "", fmt.Errorf("evidence export archive name is invalid: %q", baseName)
 	}
 	dir := filepath.Join(filepath.Dir(cfg.StateBase), "exports", cfg.RepoHash)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create evidence export directory: %w", err)
 	}
-	path := filepath.Join(dir, name)
+	path := filepath.Join(dir, baseName)
 	if err := writeEvidenceExportArchiveFile(path, export); err != nil {
 		return "", err
 	}
 	return path, nil
-}
-
-func evidenceExportArchiveFileName(baseName string, observedAt time.Time) (string, error) {
-	if !evidenceExportArchiveNameSafe(baseName) {
-		return "", fmt.Errorf("evidence export archive name is invalid: %q", baseName)
-	}
-	var collision [4]byte
-	if _, err := rand.Read(collision[:]); err != nil {
-		return "", fmt.Errorf("generate evidence export archive collision id: %w", err)
-	}
-	name := fmt.Sprintf("%s-%d-%s.zip", strings.TrimSuffix(baseName, ".zip"), observedAt.UnixNano(), hex.EncodeToString(collision[:]))
-	if !evidenceExportArchiveNameSafe(name) {
-		return "", fmt.Errorf("evidence export archive name is invalid: %q", name)
-	}
-	return name, nil
 }
 
 func evidenceExportArchiveNameSafe(name string) bool {
@@ -125,10 +105,7 @@ func writeEvidenceExportArchiveFile(path string, export controller.EvidenceExpor
 }
 
 func publishEvidenceExportArchive(temporary, path string) error {
-	if err := os.Link(temporary, path); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("evidence export archive already exists: %s", path)
-		}
+	if err := os.Rename(temporary, path); err != nil {
 		return fmt.Errorf("publish evidence export archive: %w", err)
 	}
 	return nil

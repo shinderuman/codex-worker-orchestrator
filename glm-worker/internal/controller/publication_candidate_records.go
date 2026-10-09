@@ -7,17 +7,25 @@ import (
 	"strings"
 )
 
+const (
+	candidateEvidenceKindReview     = "review"
+	candidateEvidenceKindValidation = "validation"
+	candidateEvidenceKindInstall    = "install"
+
+	evidenceKindCandidateEvidence = "candidate-evidence"
+)
+
 func (s *Store) StoreCandidateEvidence(record CandidateEvidence) (EvidenceObjectRef, error) {
 	if record.SchemaVersion != controllerSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.AttemptID == "" || record.SnapshotID == "" || record.BaseOID == "" || record.TreeOID == "" || record.Result != "pass" {
 		return EvidenceObjectRef{}, fmt.Errorf("candidate evidence identity/result is incomplete")
 	}
-	if record.Kind != "review" && record.Kind != "validation" && record.Kind != "install" {
+	if record.Kind != candidateEvidenceKindReview && record.Kind != candidateEvidenceKindValidation && record.Kind != candidateEvidenceKindInstall {
 		return EvidenceObjectRef{}, fmt.Errorf("unsupported candidate evidence kind")
 	}
 	if _, err := s.LoadEvidenceObject(record.Artifact); err != nil {
 		return EvidenceObjectRef{}, err
 	}
-	return s.putEvidenceJSON("candidate-evidence", record.AttemptID+":"+record.Kind, record)
+	return s.putEvidenceJSON(evidenceKindCandidateEvidence, record.AttemptID+":"+record.Kind, record)
 }
 
 func (s *Store) storeAcceptedCandidate(candidate AcceptedCandidate) (EvidenceObjectRef, error) {
@@ -80,7 +88,7 @@ func (s *Store) validateCandidateProofs(candidate AcceptedCandidate) error {
 func (s *Store) validateCandidateEvidence(candidate AcceptedCandidate, refs []EvidenceObjectRef) error {
 	seen := map[string]bool{}
 	for _, ref := range refs {
-		if err := validateTypedEvidenceRef(ref, "candidate-evidence"); err != nil {
+		if err := validateTypedEvidenceRef(ref, evidenceKindCandidateEvidence); err != nil {
 			return err
 		}
 		kind, err := s.validateCandidateEvidenceRecord(candidate, ref)
@@ -89,7 +97,7 @@ func (s *Store) validateCandidateEvidence(candidate AcceptedCandidate, refs []Ev
 		}
 		seen[kind] = true
 	}
-	if !seen["review"] || !seen["validation"] || (candidate.Policy.RequireInstall && !seen["install"]) {
+	if !seen[candidateEvidenceKindReview] || !seen[candidateEvidenceKindValidation] || (candidate.Policy.RequireInstall && !seen[candidateEvidenceKindInstall]) {
 		return fmt.Errorf("candidate review/validation/install evidence requires re-entry")
 	}
 	return nil
@@ -129,7 +137,7 @@ func (s *Store) validateCandidateEvidenceRecord(candidate AcceptedCandidate, ref
 	if _, err := s.LoadEvidenceObject(record.Artifact); err != nil {
 		return "", err
 	}
-	if record.Kind != "review" && record.Kind != "validation" && record.Kind != "install" {
+	if record.Kind != candidateEvidenceKindReview && record.Kind != candidateEvidenceKindValidation && record.Kind != candidateEvidenceKindInstall {
 		return "", fmt.Errorf("invalid candidate evidence kind")
 	}
 	return record.Kind, nil

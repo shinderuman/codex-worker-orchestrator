@@ -17,8 +17,7 @@ type controllerEvidenceCommand struct {
 	Ref             *controller.EvidenceObjectRef `json:"ref,omitempty"`
 	LogicalIdentity string                        `json:"logical_identity,omitempty"`
 	RootOIDs        []string                      `json:"root_oids,omitempty"`
-	TaskPath        string                        `json:"task_path,omitempty"`
-	AttemptID       string                        `json:"attempt_id,omitempty"`
+	TaskID          string                        `json:"task_id,omitempty"`
 }
 
 type controllerEvidenceOutput struct {
@@ -105,7 +104,7 @@ func executeControllerEvidence(
 	store *controller.Store,
 	command controllerEvidenceCommand,
 ) (controllerEvidenceOutput, error) {
-	if command.Action != controllerEvidenceExportBundle && (command.TaskPath != "" || command.AttemptID != "") {
+	if command.Action != controllerEvidenceExportBundle && command.TaskID != "" {
 		return controllerEvidenceOutput{}, fmt.Errorf("controller evidence action %q does not accept export target fields", command.Action)
 	}
 	switch command.Action {

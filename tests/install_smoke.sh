@@ -249,12 +249,15 @@ export_runtime_hash=$(printf '%s\0%s\0' "$export_lineage" "$export_task_path" | 
 export_runtime_dir="$home/.glm-worker/sessions/$export_runtime_hash"
 export_workflow_lock="$export_controller_store.workflow.lock"
 
-run_single_export >"$tmp/export-stopped.json"
-grep -q '"live_section":"absent"' "$tmp/export-stopped.json"
-grep -q '"archive_path":"' "$tmp/export-stopped.json"
+if run_single_export >"$tmp/export-stopped.out" 2>"$tmp/export-stopped.stderr"; then
+	printf '%s\n' 'no-arg export succeeded before the runtime task identity existed' >&2
+	exit 1
+fi
 test ! -e "$repo/.glm-worker-parent-actions"
-export_stopped_archive=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-stopped.json")
-test -f "$export_stopped_archive"
+if find "$home/.glm-worker/exports" -type f -name '*.zip' 2>/dev/null | grep -q .; then
+	printf '%s\n' 'failed identity export wrote an archive' >&2
+	exit 1
+fi
 
 mkdir -p "$export_runtime_dir/telemetry" "$export_runtime_dir/events" "$export_runtime_dir/artifacts/runtime-task-smoke-1"
 printf '%s' 'runtime-task-smoke-1' >"$export_runtime_dir/task.id"
@@ -270,16 +273,40 @@ test -n "$export_generation_before"
 find "$home/.glm-worker/sessions" -mindepth 1 -maxdepth 1 | LC_ALL=C sort >"$tmp/export-sessions-before"
 
 run_single_export >"$tmp/export-live.json"
-grep -q '"live_section":"collected"' "$tmp/export-live.json"
+grep -q '"runtime_section":"collected"' "$tmp/export-live.json"
+grep -q '"attempt_section":"absent"' "$tmp/export-live.json"
 grep -q '"coverage":"partial"' "$tmp/export-live.json"
 export_archive_path=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-live.json")
 test -f "$export_archive_path"
 unzip -p "$export_archive_path" manifest.json >"$tmp/export-manifest.json"
-grep -q 'glm-controller-evidence-export-v1' "$tmp/export-manifest.json"
+grep -q 'glm-controller-evidence-export-v2' "$tmp/export-manifest.json"
 grep -q '"trailing_fragment": true' "$tmp/export-manifest.json"
 grep -q 'live/transcripts/claude/session-smoke-worker' "$tmp/export-manifest.json"
 unzip -p "$export_archive_path" live/task/telemetry.jsonl | grep -q 'partial'
 unzip -p "$export_archive_path" live/git/untracked/untracked-export.txt | grep -q 'untracked export bytes'
+unzip -p "$export_archive_path" analysis-index.json | grep -q '"schema_version": 1'
+if unzip -l "$export_archive_path" | grep -q 'object-archive'; then
+	printf '%s\n' 'live export embedded a git object archive payload' >&2
+	exit 1
+fi
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle --task-id runtime-task-smoke-1
+) >"$tmp/export-task-id.json"
+grep -q '"runtime_section":"collected"' "$tmp/export-task-id.json"
+grep -q '"runtime_task_id":"runtime-task-smoke-1"' "$tmp/export-task-id.json"
+export_task_id_archive=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-task-id.json")
+test -f "$export_task_id_archive"
+test "$export_task_id_archive" = "$export_archive_path"
+unzip -p "$export_task_id_archive" manifest.json >"$tmp/export-task-id-manifest.json"
+grep -q 'glm-controller-evidence-export-v2' "$tmp/export-task-id-manifest.json"
+grep -q '"kind": "task-id"' "$tmp/export-task-id-manifest.json"
+grep -q '"runtime_task_id": "runtime-task-smoke-1"' "$tmp/export-task-id-manifest.json"
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle --task-id runtime-task-unknown
+) >"$tmp/export-unknown.out" 2>"$tmp/export-unknown.stderr" && exit 1
+grep -q 'unknown to the controller' "$tmp/export-unknown.stderr"
 git -C "$repo" status --porcelain >"$tmp/export-git-after"
 cmp "$tmp/export-git-before" "$tmp/export-git-after"
 export_generation_after=$(sed -n 's/^  "controller_generation": \([0-9]*\).*/\1/p' "$export_controller_store/head.json")
@@ -346,15 +373,15 @@ kill "$export_writer_pid" 2>/dev/null || true
 kill "$export_lock_pid" 2>/dev/null || true
 wait "$export_writer_pid" 2>/dev/null || true
 wait "$export_lock_pid" 2>/dev/null || true
-grep -q '"live_section":"collected"' "$tmp/export-concurrent.json"
+grep -q '"runtime_section":"collected"' "$tmp/export-concurrent.json"
 grep -q '"archive_path":"' "$tmp/export-concurrent.json"
 export_concurrent_archive=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-concurrent.json")
 test -f "$export_concurrent_archive"
-test -f "$export_stopped_archive"
 test -f "$export_archive_path"
-test "$export_stopped_archive" != "$export_archive_path"
-test "$export_archive_path" != "$export_concurrent_archive"
-test "$export_stopped_archive" != "$export_concurrent_archive"
+test "$export_concurrent_archive" = "$export_archive_path"
+export_zip_dir=$(dirname "$export_archive_path")
+export_zip_count=$(find "$export_zip_dir" -type f -name '*.zip' | wc -l | tr -d ' ')
+test "$export_zip_count" = 1
 rm -f "$repo/untracked-export.txt"
 git -C "$repo" status --porcelain >"$tmp/export-git-restored"
 if [ -s "$tmp/export-git-restored" ]; then

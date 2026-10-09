@@ -2,69 +2,145 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type EvidenceExportRequest struct {
-	TaskPath  string
-	AttemptID string
+	TaskID string
 }
 
 type EvidenceExportTarget struct {
-	Kind      string          `json:"kind"`
-	Task      SemanticTaskRef `json:"task"`
-	AttemptID string          `json:"attempt_id,omitempty"`
-	EpisodeID string          `json:"episode_id,omitempty"`
-	Live      bool            `json:"live"`
+	Kind           string          `json:"kind"`
+	Task           SemanticTaskRef `json:"task"`
+	AttemptID      string          `json:"attempt_id,omitempty"`
+	EpisodeID      string          `json:"episode_id,omitempty"`
+	RuntimeTaskID  string          `json:"runtime_task_id,omitempty"`
+	SelectionBasis string          `json:"selection_basis"`
+	Live           bool            `json:"live"`
+}
+
+type EvidenceExportWindow struct {
+	Start    time.Time `json:"start"`
+	End      time.Time `json:"end"`
+	EndBasis string    `json:"end_basis"`
 }
 
 type EvidenceExportEntry struct {
-	Path             string    `json:"path"`
-	Source           string    `json:"source"`
-	SHA256           string    `json:"sha256"`
-	Bytes            int64     `json:"bytes"`
-	CollectedAt      time.Time `json:"collected_at,omitempty"`
-	InProgress       bool      `json:"in_progress,omitempty"`
-	Changing         bool      `json:"changing,omitempty"`
-	TrailingFragment bool      `json:"trailing_fragment,omitempty"`
-	Records          int       `json:"records,omitempty"`
-	Symlink          string    `json:"symlink,omitempty"`
-	Missing          bool      `json:"missing,omitempty"`
-	Unreadable       string    `json:"unreadable,omitempty"`
+	Path             string                    `json:"path"`
+	Source           string                    `json:"source"`
+	SHA256           string                    `json:"sha256"`
+	Bytes            int64                     `json:"bytes"`
+	CollectedAt      time.Time                 `json:"collected_at,omitempty"`
+	InProgress       bool                      `json:"in_progress,omitempty"`
+	Changing         bool                      `json:"changing,omitempty"`
+	TrailingFragment bool                      `json:"trailing_fragment,omitempty"`
+	Records          int                       `json:"records,omitempty"`
+	Symlink          string                    `json:"symlink,omitempty"`
+	Missing          bool                      `json:"missing,omitempty"`
+	Unreadable       string                    `json:"unreadable,omitempty"`
+	Unattributed     string                    `json:"unattributed,omitempty"`
+	Basis            string                    `json:"basis,omitempty"`
+	CanonicalDigest  string                    `json:"canonical_digest,omitempty"`
+	CanonicalKind    string                    `json:"canonical_kind,omitempty"`
+	LogicalIdentity  string                    `json:"logical_identity,omitempty"`
+	Window           *evidenceTranscriptWindow `json:"window,omitempty"`
+	OmittedPayload   string                    `json:"omitted_payload,omitempty"`
 }
 
-type EvidenceExportBundleSummary struct {
-	Kind                string `json:"kind"`
-	RootDigest          string `json:"root_digest"`
-	EvidenceGraphDigest string `json:"evidence_graph_digest"`
-	Objects             int    `json:"objects"`
+type EvidenceExportReference struct {
+	Kind            string `json:"kind"`
+	Digest          string `json:"digest"`
+	LogicalIdentity string `json:"logical_identity,omitempty"`
+	Relation        string `json:"relation,omitempty"`
 }
 
-type EvidenceExportSealedSection struct {
-	Status        string                       `json:"status"`
-	AbsenceReason string                       `json:"absence_reason,omitempty"`
-	TaskBundle    *EvidenceExportBundleSummary `json:"task_bundle,omitempty"`
-	EpisodeBundle *EvidenceExportBundleSummary `json:"episode_bundle,omitempty"`
+type EvidenceExportAttemptSection struct {
+	Status          string                             `json:"status"`
+	AbsenceReason   string                             `json:"absence_reason,omitempty"`
+	SealDigest      string                             `json:"seal_digest,omitempty"`
+	Disposition     string                             `json:"disposition,omitempty"`
+	Coverage        string                             `json:"coverage,omitempty"`
+	Missing         []string                           `json:"missing,omitempty"`
+	Unreadable      []string                           `json:"unreadable,omitempty"`
+	RuntimeTaskID   string                             `json:"runtime_task_id,omitempty"`
+	RuntimeEvidence bool                               `json:"runtime_evidence"`
+	Window          *EvidenceExportWindow              `json:"window,omitempty"`
+	Predecessors    []EvidenceExportPredecessorSection `json:"predecessors,omitempty"`
+	References      []EvidenceExportReference          `json:"references,omitempty"`
 }
 
-type EvidenceExportLiveSection struct {
-	Status         string   `json:"status"`
-	AbsenceReason  string   `json:"absence_reason,omitempty"`
-	Coverage       string   `json:"coverage"`
-	RuntimeTaskID  string   `json:"runtime_task_id,omitempty"`
-	WorkspaceID    string   `json:"workspace_id,omitempty"`
-	SessionIDs     []string `json:"session_ids,omitempty"`
-	ParentThreadID string   `json:"parent_thread_id,omitempty"`
-	Missing        []string `json:"missing,omitempty"`
-	Unreadable     []string `json:"unreadable,omitempty"`
+type EvidenceExportPredecessorSection struct {
+	AttemptID     string                `json:"attempt_id"`
+	Task          SemanticTaskRef       `json:"task"`
+	SealDigest    string                `json:"seal_digest,omitempty"`
+	EntriesPrefix string                `json:"entries_prefix"`
+	Relation      string                `json:"relation"`
+	Status        string                `json:"status"`
+	Problem       string                `json:"problem,omitempty"`
+	RuntimeTaskID string                `json:"runtime_task_id,omitempty"`
+	SessionIDs    []string              `json:"session_ids,omitempty"`
+	Window        *EvidenceExportWindow `json:"window,omitempty"`
 }
 
-type EvidenceExportGitObservation struct {
-	Snapshot            WorkspaceSnapshot      `json:"snapshot"`
-	WorkspaceID         string                 `json:"workspace_id"`
-	ObjectArchiveDigest string                 `json:"object_archive_digest,omitempty"`
-	ObjectArchiveRoots  []GitObjectArchiveRoot `json:"object_archive_roots,omitempty"`
+type EvidenceExportRuntimeSection struct {
+	Status         string                `json:"status"`
+	AbsenceReason  string                `json:"absence_reason,omitempty"`
+	Coverage       string                `json:"coverage"`
+	Mode           string                `json:"mode,omitempty"`
+	RuntimeTaskID  string                `json:"runtime_task_id,omitempty"`
+	Basis          string                `json:"basis,omitempty"`
+	WorkspaceID    string                `json:"workspace_id,omitempty"`
+	SessionIDs     []string              `json:"session_ids,omitempty"`
+	ParentThreadID string                `json:"parent_thread_id,omitempty"`
+	Window         *EvidenceExportWindow `json:"window,omitempty"`
+	Missing        []string              `json:"missing,omitempty"`
+	Unreadable     []string              `json:"unreadable,omitempty"`
+	Unattributed   []string              `json:"unattributed,omitempty"`
+}
+
+type EvidenceExportGitArchive struct {
+	LogicalIdentity string                 `json:"logical_identity"`
+	Digest          string                 `json:"digest"`
+	Bytes           int64                  `json:"bytes"`
+	ObjectFormat    string                 `json:"object_format"`
+	PackDigest      string                 `json:"pack_digest"`
+	Roots           []GitObjectArchiveRoot `json:"roots"`
+}
+
+type EvidenceExportGitTaskDiff struct {
+	Basis string `json:"basis"`
+	Path  string `json:"path"`
+}
+
+type EvidenceExportGitAudit struct {
+	ExecutionBaseOID     string                     `json:"execution_base_oid"`
+	HeadOID              string                     `json:"head_oid,omitempty"`
+	WorkspaceID          string                     `json:"workspace_id,omitempty"`
+	Snapshot             *WorkspaceSnapshot         `json:"snapshot,omitempty"`
+	BaselineIndexTree    string                     `json:"baseline_index_tree,omitempty"`
+	BaselineWorktreeTree string                     `json:"baseline_worktree_tree,omitempty"`
+	CurrentIndexTree     string                     `json:"current_index_tree,omitempty"`
+	CurrentWorktreeTree  string                     `json:"current_worktree_tree,omitempty"`
+	CandidateCommitOID   string                     `json:"candidate_commit_oid,omitempty"`
+	CandidateTreeOID     string                     `json:"candidate_tree_oid,omitempty"`
+	CandidateBaseOID     string                     `json:"candidate_base_oid,omitempty"`
+	TaskDiff             *EvidenceExportGitTaskDiff `json:"task_diff,omitempty"`
+	Archives             []EvidenceExportGitArchive `json:"archives,omitempty"`
+}
+
+type EvidenceExportAnalysisRef struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Bytes  int64  `json:"bytes"`
 }
 
 type EvidenceExportControllerObservation struct {
@@ -86,9 +162,10 @@ type EvidenceExportManifest struct {
 	RepositoryIdentity string                              `json:"repository_identity"`
 	Target             EvidenceExportTarget                `json:"target"`
 	Controller         EvidenceExportControllerObservation `json:"controller"`
-	Sealed             EvidenceExportSealedSection         `json:"sealed_section"`
-	Live               EvidenceExportLiveSection           `json:"live_section"`
-	Git                *EvidenceExportGitObservation       `json:"git_observation,omitempty"`
+	Attempt            EvidenceExportAttemptSection        `json:"attempt_section"`
+	Runtime            EvidenceExportRuntimeSection        `json:"runtime_section"`
+	Git                *EvidenceExportGitAudit             `json:"git_audit,omitempty"`
+	AnalysisIndex      EvidenceExportAnalysisRef           `json:"analysis_index"`
 	Entries            []EvidenceExportEntry               `json:"entries"`
 }
 
@@ -106,8 +183,8 @@ type EvidenceExportResult struct {
 	Target                       EvidenceExportTarget
 	ArchiveName                  string
 	ManifestDigest               string
-	SealedStatus                 string
-	LiveStatus                   string
+	AttemptSectionStatus         string
+	RuntimeStatus                string
 	Coverage                     string
 	AuthorityChangedDuringExport bool
 	ControllerGenerationBefore   uint64
@@ -115,34 +192,75 @@ type EvidenceExportResult struct {
 }
 
 type evidenceExportBuilder struct {
-	store   *Store
-	head    RepositoryControllerHead
-	files   []EvidenceExportFile
-	entries []EvidenceExportEntry
+	store          *Store
+	head           RepositoryControllerHead
+	observedAt     time.Time
+	files          []EvidenceExportFile
+	entries        []EvidenceExportEntry
+	attemptSection EvidenceExportAttemptSection
+	analysisRef    EvidenceExportAnalysisRef
+	association    *runtimeSessionAssociation
+	archiveRefs    []evidenceExportArchiveSource
+	validationRuns []collectedValidationRun
+
+	workspaceRoot           string
+	workspaceRootResolved   bool
+	validationStore         *state.StateStore
+	validationStoreResolved bool
 }
 
-const evidenceExportFormat = "glm-controller-evidence-export-v1"
+type evidenceExportLiveCandidate struct {
+	attempt       AttemptRecord
+	exists        bool
+	runtimeTaskID string
+}
+
+type evidenceExportTaskMatch struct {
+	attempt AttemptRecord
+	basis   string
+}
+
+const evidenceExportFormat = "glm-controller-evidence-export-v2"
 
 const (
-	evidenceExportTargetExecutionTask = "execution-task"
-	evidenceExportTargetTaskPath      = "task-path"
-	evidenceExportTargetAttemptID     = "attempt-id"
+	evidenceExportTargetTaskID  = "task-id"
+	evidenceExportTargetRunning = "running-task"
+	evidenceExportTargetRecent  = "recent-task"
 
-	evidenceExportSealedPresent = "present"
-	evidenceExportSealedAbsent  = "absent"
+	evidenceExportAttemptPresent = "present"
+	evidenceExportAttemptAbsent  = "absent"
 
-	evidenceExportLiveCollected = "collected"
-	evidenceExportLiveAbsent    = "absent"
+	evidenceExportRuntimeCollected = "collected"
+	evidenceExportRuntimeAbsent    = "absent"
 
-	evidenceExportCoveragePartial    = "partial"
-	evidenceExportCoverageSealedOnly = "sealed-only"
-	evidenceExportCoverageOpen       = "open"
+	evidenceExportRuntimeModeLive  = "in-progress"
+	evidenceExportRuntimeModeBound = "bound"
+
+	evidenceExportCoveragePartial     = "partial"
+	evidenceExportCoverageAttemptOnly = "attempt-only"
+	evidenceExportCoverageOpen        = "open"
+
+	evidenceExportBasisLiveBinding        = "live-runtime-binding"
+	evidenceExportBasisSessionAssociation = "session-association"
+	evidenceExportBasisRuntimeBinding     = "runtime-binding"
+	evidenceExportBasisLiveAttempt        = "live-attempt"
+	evidenceExportBasisExecutionTimeline  = "canonical-execution-timeline"
+	evidenceExportBasisAttemptSeal        = "attempt-seal"
+	evidenceExportBasisPredecessorSeal    = "predecessor-attempt-seal"
+	evidenceExportBasisLiveRuntime        = "live-runtime"
+
+	evidenceExportPredecessorCollected           = "collected"
+	evidenceExportPredecessorPartial             = "partial"
+	evidenceExportPredecessorRelation            = "resumed-from"
+	evidenceExportPredecessorAssociationRelation = "runtime-task-association"
+	evidenceExportPredecessorRoot                = "predecessors"
 )
 
+const evidenceExportPayloadOmission = "git pack payload omitted from portable projection; canonical object retained by the controller evidence authority"
+
+var errEvidenceExportRuntimeTaskUnresolved = errors.New("evidence export cannot resolve the runtime task identity required by the fixed archive contract")
+
 func (s *Store) ExportEvidence(request EvidenceExportRequest) (EvidenceExport, EvidenceExportResult, error) {
-	if request.TaskPath != "" && request.AttemptID != "" {
-		return EvidenceExport{}, EvidenceExportResult{}, fmt.Errorf("evidence export target is ambiguous: specify either task_path or attempt_id")
-	}
 	head, err := s.LoadHead()
 	if err != nil {
 		return EvidenceExport{}, EvidenceExportResult{}, err
@@ -151,21 +269,29 @@ func (s *Store) ExportEvidence(request EvidenceExportRequest) (EvidenceExport, E
 	if err != nil {
 		return EvidenceExport{}, EvidenceExportResult{}, err
 	}
-	builder := &evidenceExportBuilder{store: s, head: head}
-	sealed, err := builder.collectSealedSection(target)
+	builder := &evidenceExportBuilder{store: s, head: head, observedAt: time.Now().UTC()}
+	gitAudit, err := builder.collectAttemptSection(target, attempt)
 	if err != nil {
 		return EvidenceExport{}, EvidenceExportResult{}, err
 	}
-	live, git, err := s.collectLiveSection(builder, target, attempt)
+	runtimeSection, liveGit, err := s.collectRuntimeSection(builder, target, attempt)
 	if err != nil {
 		return EvidenceExport{}, EvidenceExportResult{}, err
+	}
+	if gitAudit == nil {
+		gitAudit = liveGit
+	} else {
+		evidenceExportMergeGitAudit(gitAudit, liveGit)
 	}
 	headAfter, err := s.LoadHead()
 	if err != nil {
 		return EvidenceExport{}, EvidenceExportResult{}, err
 	}
 	observation := evidenceExportControllerObservation(head, headAfter)
-	manifest, err := builder.finish(target, sealed, live, git, observation)
+	if err := builder.buildAnalysisIndex(runtimeSection, gitAudit); err != nil {
+		return EvidenceExport{}, EvidenceExportResult{}, err
+	}
+	manifest, err := builder.finish(target, runtimeSection, gitAudit, observation)
 	if err != nil {
 		return EvidenceExport{}, EvidenceExportResult{}, err
 	}
@@ -174,89 +300,44 @@ func (s *Store) ExportEvidence(request EvidenceExportRequest) (EvidenceExport, E
 	return EvidenceExport{Manifest: manifest, Files: builder.files}, result, nil
 }
 
+func evidenceExportMergeGitAudit(attemptAudit, liveGit *EvidenceExportGitAudit) {
+	if attemptAudit == nil || liveGit == nil {
+		return
+	}
+	attemptAudit.HeadOID = liveGit.HeadOID
+	attemptAudit.WorkspaceID = liveGit.WorkspaceID
+	attemptAudit.Snapshot = liveGit.Snapshot
+}
+
 func (s *Store) resolveEvidenceExportTarget(head RepositoryControllerHead, request EvidenceExportRequest) (EvidenceExportTarget, AttemptRecord, error) {
-	switch {
-	case request.AttemptID != "":
-		return s.resolveAttemptExportTarget(head, request.AttemptID)
-	case request.TaskPath != "":
-		return s.resolveTaskPathExportTarget(head, request.TaskPath)
-	default:
-		return s.resolveExecutionExportTarget(head)
-	}
-}
-
-func (s *Store) resolveAttemptExportTarget(head RepositoryControllerHead, attemptID string) (EvidenceExportTarget, AttemptRecord, error) {
-	attempt, err := s.loadAttempt(attemptID)
-	if err != nil {
-		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export attempt %s is unknown to the controller: %w", attemptID, err)
-	}
-	live := head.LiveAttemptID == attemptID
-	target := EvidenceExportTarget{
-		Kind:      evidenceExportTargetAttemptID,
-		Task:      attempt.SemanticTaskRef,
-		AttemptID: attemptID,
-		EpisodeID: attempt.EpisodeID,
-		Live:      live,
-	}
-	if !live {
-		return target, attempt, nil
-	}
-	if err := verifyEvidenceExportLiveAttemptBinding(head, attempt); err != nil {
-		return EvidenceExportTarget{}, AttemptRecord{}, err
-	}
-	return target, attempt, nil
-}
-
-func (s *Store) resolveTaskPathExportTarget(head RepositoryControllerHead, taskPath string) (EvidenceExportTarget, AttemptRecord, error) {
-	candidates, err := s.taskPathExportCandidates(head, taskPath)
+	live, err := s.liveExportCandidate(head)
 	if err != nil {
 		return EvidenceExportTarget{}, AttemptRecord{}, err
 	}
-	switch len(candidates) {
-	case 0:
-		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export task path %q is unknown to the controller evidence authority", taskPath)
-	case 1:
-		task := candidates[0]
-		if head.ExecutionTaskRef != nil && head.ExecutionTaskRef.Equal(task) && head.LiveAttemptID != "" {
-			attempt, err := s.resolveLiveAttempt(head)
-			if err != nil {
-				return EvidenceExportTarget{}, AttemptRecord{}, err
-			}
-			return EvidenceExportTarget{Kind: evidenceExportTargetTaskPath, Task: task, AttemptID: attempt.AttemptID, EpisodeID: attempt.EpisodeID, Live: true}, attempt, nil
-		}
-		return EvidenceExportTarget{Kind: evidenceExportTargetTaskPath, Task: task}, AttemptRecord{}, nil
-	default:
-		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export task path %q is ambiguous across %d contract authorities", taskPath, len(candidates))
+	if request.TaskID != "" {
+		return s.resolveTaskIDExportTarget(head, request.TaskID, live)
 	}
+	return s.resolveDefaultExportTarget(head, live)
 }
 
-func (s *Store) resolveExecutionExportTarget(head RepositoryControllerHead) (EvidenceExportTarget, AttemptRecord, error) {
-	if head.ExecutionTaskRef == nil {
-		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export requires a current execution task or an explicit target")
-	}
-	task := *head.ExecutionTaskRef
+func (s *Store) liveExportCandidate(head RepositoryControllerHead) (evidenceExportLiveCandidate, error) {
 	if head.LiveAttemptID == "" {
-		return EvidenceExportTarget{Kind: evidenceExportTargetExecutionTask, Task: task}, AttemptRecord{}, nil
+		return evidenceExportLiveCandidate{}, nil
 	}
-	attempt, err := s.resolveLiveAttempt(head)
-	if err != nil {
-		return EvidenceExportTarget{}, AttemptRecord{}, err
-	}
-	return EvidenceExportTarget{
-		Kind: evidenceExportTargetExecutionTask, Task: task,
-		AttemptID: attempt.AttemptID, EpisodeID: attempt.EpisodeID, Live: true,
-	}, attempt, nil
-}
-
-func (s *Store) resolveLiveAttempt(head RepositoryControllerHead) (AttemptRecord, error) {
 	attempt, err := s.loadAttempt(head.LiveAttemptID)
 	if err != nil {
-		return AttemptRecord{}, fmt.Errorf("evidence export live attempt is unavailable: %w", err)
+		return evidenceExportLiveCandidate{}, fmt.Errorf("evidence export live attempt is unavailable: %w", err)
 	}
 	if err := verifyEvidenceExportLiveAttemptBinding(head, attempt); err != nil {
-		return AttemptRecord{}, err
+		return evidenceExportLiveCandidate{}, err
 	}
-	return attempt, nil
+	candidate := evidenceExportLiveCandidate{attempt: attempt, exists: true}
+	_, taskID, err := s.resolveExportRuntime(attempt)
+	if err != nil && !errors.Is(err, errEvidenceExportRuntimeAbsent) {
+		return evidenceExportLiveCandidate{}, err
+	}
+	candidate.runtimeTaskID = taskID
+	return candidate, nil
 }
 
 func verifyEvidenceExportLiveAttemptBinding(head RepositoryControllerHead, attempt AttemptRecord) error {
@@ -266,155 +347,329 @@ func verifyEvidenceExportLiveAttemptBinding(head RepositoryControllerHead, attem
 	return nil
 }
 
-func (s *Store) taskPathExportCandidates(head RepositoryControllerHead, taskPath string) ([]SemanticTaskRef, error) {
-	seen := map[string]SemanticTaskRef{}
-	if head.ExecutionTaskRef != nil && head.ExecutionTaskRef.TaskPath == taskPath {
-		seen[semanticTaskEvidenceKey(*head.ExecutionTaskRef)] = *head.ExecutionTaskRef
+func (s *Store) resolveTaskIDExportTarget(head RepositoryControllerHead, taskID string, live evidenceExportLiveCandidate) (EvidenceExportTarget, AttemptRecord, error) {
+	if taskID == "" || filepath.Base(taskID) != taskID || strings.ContainsAny(taskID, `/\`) {
+		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export task id %q is not a valid runtime task id", taskID)
 	}
-	if head.EvidenceHeadRef == nil {
-		return semanticTaskRefValues(seen), nil
+	if live.exists && live.runtimeTaskID == taskID {
+		return evidenceExportTargetFor(live.attempt, evidenceExportTargetTaskID, evidenceExportBasisLiveBinding, taskID, true), live.attempt, nil
 	}
-	evidenceHead, err := s.LoadEvidenceHead(*head.EvidenceHeadRef)
+	matches, err := s.attemptsForRuntimeTaskID(head, taskID)
+	if err != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, err
+	}
+	if len(matches) == 0 {
+		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export task id %s is unknown to the controller and runtime authorities", taskID)
+	}
+	match, err := evidenceExportTaskIDTargetMatch(taskID, matches)
+	if err != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, err
+	}
+	if match.attempt.AttemptID == head.LiveAttemptID {
+		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export task id %s is bound to the live attempt without a usable runtime source", taskID)
+	}
+	return evidenceExportTargetFor(match.attempt, evidenceExportTargetTaskID, match.basis, taskID, false), match.attempt, nil
+}
+
+func evidenceExportTaskIDTargetMatch(taskID string, matches []evidenceExportTaskMatch) (evidenceExportTaskMatch, error) {
+	taskPath := matches[0].attempt.SemanticTaskRef.TaskPath
+	latest := matches[0]
+	for _, match := range matches[1:] {
+		if match.attempt.SemanticTaskRef.TaskPath != taskPath {
+			return evidenceExportTaskMatch{}, fmt.Errorf("evidence export task id %s binds attempts of different tasks", taskID)
+		}
+		if attemptOrderLess(latest.attempt, match.attempt) {
+			latest = match
+		}
+	}
+	return latest, nil
+}
+
+func (s *Store) resolveDefaultExportTarget(head RepositoryControllerHead, live evidenceExportLiveCandidate) (EvidenceExportTarget, AttemptRecord, error) {
+	if live.exists {
+		if live.runtimeTaskID == "" {
+			return EvidenceExportTarget{}, AttemptRecord{}, errEvidenceExportRuntimeTaskUnresolved
+		}
+		return evidenceExportTargetFor(live.attempt, evidenceExportTargetRunning, evidenceExportBasisLiveAttempt, live.runtimeTaskID, true), live.attempt, nil
+	}
+	attempts, err := s.listAttempts()
+	if err != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, err
+	}
+	if len(attempts) == 0 {
+		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("evidence export requires a running task or a previously executed task")
+	}
+	attempt := attempts[len(attempts)-1]
+	taskID, err := s.attemptRuntimeTaskIdentity(head, attempt)
+	if err != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, err
+	}
+	return evidenceExportTargetFor(attempt, evidenceExportTargetRecent, evidenceExportBasisExecutionTimeline, taskID, false), attempt, nil
+}
+
+func (s *Store) attemptRuntimeTaskIdentity(head RepositoryControllerHead, attempt AttemptRecord) (string, error) {
+	if attempt.AttemptSealID == "" {
+		_, taskID, err := s.resolveExportRuntime(attempt)
+		if err != nil || taskID == "" {
+			return "", errEvidenceExportRuntimeTaskUnresolved
+		}
+		return taskID, nil
+	}
+	ids, err := s.attemptRuntimeTaskIDs(head, attempt)
+	if err != nil || len(ids) == 0 {
+		return "", errEvidenceExportRuntimeTaskUnresolved
+	}
+	for _, id := range ids[1:] {
+		if id != ids[0] {
+			return "", errEvidenceExportRuntimeTaskUnresolved
+		}
+	}
+	return ids[0], nil
+}
+
+func evidenceExportTargetFor(attempt AttemptRecord, kind, basis, runtimeTaskID string, live bool) EvidenceExportTarget {
+	return EvidenceExportTarget{
+		Kind: kind, Task: attempt.SemanticTaskRef,
+		AttemptID: attempt.AttemptID, EpisodeID: attempt.EpisodeID,
+		RuntimeTaskID: runtimeTaskID, SelectionBasis: basis, Live: live,
+	}
+}
+
+func (s *Store) attemptsForRuntimeTaskID(head RepositoryControllerHead, taskID string) ([]evidenceExportTaskMatch, error) {
+	attempts, err := s.listAttempts()
 	if err != nil {
 		return nil, err
 	}
-	for _, subject := range evidenceHead.TaskHeads {
-		revision, err := s.LoadTaskIndexRevision(subject.RevisionRef)
+	matches, err := s.sealedRuntimeTaskMatches(head, taskID, attempts)
+	if err != nil {
+		return nil, err
+	}
+	for _, match := range s.runtimeBindingMatches(taskID) {
+		if _, sealed := matches[match.attempt.AttemptID]; !sealed {
+			matches[match.attempt.AttemptID] = match
+		}
+	}
+	result := make([]evidenceExportTaskMatch, 0, len(matches))
+	for _, match := range matches {
+		result = append(result, match)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].attempt.AttemptID < result[j].attempt.AttemptID })
+	return result, nil
+}
+
+func (s *Store) sealedRuntimeTaskMatches(head RepositoryControllerHead, taskID string, attempts []AttemptRecord) (map[string]evidenceExportTaskMatch, error) {
+	matches := map[string]evidenceExportTaskMatch{}
+	for _, attempt := range attempts {
+		if attempt.AttemptID == head.LiveAttemptID || attempt.AttemptSealID == "" {
+			continue
+		}
+		associated, err := s.attemptRuntimeTaskIDs(head, attempt)
 		if err != nil {
 			return nil, err
 		}
-		if revision.TaskRef.TaskPath == taskPath {
-			seen[semanticTaskEvidenceKey(revision.TaskRef)] = revision.TaskRef
+		if containsString(associated, taskID) {
+			matches[attempt.AttemptID] = evidenceExportTaskMatch{attempt: attempt, basis: evidenceExportBasisSessionAssociation}
 		}
 	}
-	return semanticTaskRefValues(seen), nil
+	return matches, nil
 }
 
-func semanticTaskRefValues(refs map[string]SemanticTaskRef) []SemanticTaskRef {
-	result := make([]SemanticTaskRef, 0, len(refs))
-	for _, ref := range refs {
-		result = append(result, ref)
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
 	}
-	return result
+	return false
 }
 
-func (b *evidenceExportBuilder) collectSealedSection(target EvidenceExportTarget) (EvidenceExportSealedSection, error) {
-	if b.head.EvidenceHeadRef == nil {
-		return EvidenceExportSealedSection{Status: evidenceExportSealedAbsent, AbsenceReason: "controller evidence authority is not published yet"}, nil
-	}
-	evidenceHead, err := b.store.LoadEvidenceHead(*b.head.EvidenceHeadRef)
+func (s *Store) attemptRuntimeTaskIDs(head RepositoryControllerHead, attempt AttemptRecord) ([]string, error) {
+	_, seal, err := s.findAttemptSeal(head, attempt)
 	if err != nil {
-		return EvidenceExportSealedSection{}, err
+		return nil, err
 	}
-	subject, ok := evidenceSubjectHead(evidenceHead.TaskHeads, taskEvidenceSubjectID(target.Task))
-	if !ok {
-		return EvidenceExportSealedSection{Status: evidenceExportSealedAbsent, AbsenceReason: "task evidence root is not published yet"}, nil
-	}
-	taskBundle, err := b.store.BuildTaskEvidenceBundle(subject.RevisionRef)
-	if err != nil {
-		return EvidenceExportSealedSection{}, err
-	}
-	sealed := EvidenceExportSealedSection{
-		Status:     evidenceExportSealedPresent,
-		TaskBundle: evidenceExportBundleSummary(&taskBundle),
-	}
-	if err := b.addProjection("sealed/task-bundle.json", taskBundle); err != nil {
-		return EvidenceExportSealedSection{}, err
-	}
-	episodeID := target.EpisodeID
-	if episodeID == "" {
-		episodeID, err = b.store.episodeIDForTaskRevision(subject.RevisionRef)
+	ids := make([]string, 0, len(seal.SessionAssociationRefs))
+	for _, ref := range seal.SessionAssociationRefs {
+		id, err := s.associationRuntimeTaskID(ref, attempt.AttemptID)
 		if err != nil {
-			return EvidenceExportSealedSection{}, err
+			return nil, err
+		}
+		if id != "" {
+			ids = append(ids, id)
 		}
 	}
-	sealed.EpisodeBundle, err = b.appendEpisodeBundle(evidenceHead, episodeID)
-	return sealed, err
+	return ids, nil
 }
 
-func (b *evidenceExportBuilder) appendEpisodeBundle(evidenceHead EvidenceHead, episodeID string) (*EvidenceExportBundleSummary, error) {
-	if episodeID == "" {
-		return nil, nil
-	}
-	episodeSubject, ok := evidenceSubjectHead(evidenceHead.EpisodeHeads, episodeID)
-	if !ok {
-		return nil, nil
-	}
-	episodeBundle, err := b.store.BuildEpisodeEvidenceBundle(episodeSubject.RevisionRef)
+func (s *Store) associationRuntimeTaskID(ref EvidenceObjectRef, attemptID string) (string, error) {
+	data, err := s.LoadEvidenceObject(ref)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	if err := b.addProjection("sealed/episode-bundle.json", episodeBundle); err != nil {
-		return nil, err
+	var association runtimeSessionAssociation
+	if err := json.Unmarshal(data, &association); err != nil {
+		return "", fmt.Errorf("evidence export session association for attempt %s is invalid: %w", attemptID, err)
 	}
-	return evidenceExportBundleSummary(&episodeBundle), nil
+	if association.AttemptID != attemptID {
+		return "", fmt.Errorf("evidence export session association binds attempt %s, not %s", association.AttemptID, attemptID)
+	}
+	return association.RuntimeTaskID, nil
 }
 
-func (s *Store) episodeIDForTaskRevision(rootRef EvidenceObjectRef) (string, error) {
-	current := rootRef
+func (s *Store) findAttemptSeal(head RepositoryControllerHead, attempt AttemptRecord) (EvidenceObjectRef, AttemptSeal, error) {
+	root, err := s.attemptTaskEvidenceRoot(head, attempt)
+	if err != nil {
+		return EvidenceObjectRef{}, AttemptSeal{}, err
+	}
+	current := root
 	for {
 		revision, err := s.LoadTaskIndexRevision(current)
 		if err != nil {
-			return "", err
+			return EvidenceObjectRef{}, AttemptSeal{}, err
 		}
-		for _, sealRef := range revision.AttemptSeals {
-			seal, err := s.LoadAttemptSeal(sealRef)
-			if err != nil {
-				return "", err
-			}
-			if seal.EpisodeID != "" {
-				return seal.EpisodeID, nil
-			}
+		ref, seal, found, err := s.attemptSealInRevision(revision, attempt)
+		if err != nil {
+			return EvidenceObjectRef{}, AttemptSeal{}, err
+		}
+		if found {
+			return ref, seal, nil
 		}
 		if revision.PreviousRevision == nil {
-			return "", nil
+			return EvidenceObjectRef{}, AttemptSeal{}, fmt.Errorf("attempt %s has no published attempt seal", attempt.AttemptID)
 		}
 		current = *revision.PreviousRevision
 	}
 }
 
-func evidenceExportBundleSummary(bundle *EvidenceBundleProjection) *EvidenceExportBundleSummary {
-	return &EvidenceExportBundleSummary{
-		Kind:                bundle.Kind,
-		RootDigest:          bundle.RootRef.Digest,
-		EvidenceGraphDigest: bundle.EvidenceGraphDigest,
-		Objects:             len(bundle.Objects),
+func (s *Store) attemptTaskEvidenceRoot(head RepositoryControllerHead, attempt AttemptRecord) (EvidenceObjectRef, error) {
+	if head.EvidenceHeadRef == nil {
+		return EvidenceObjectRef{}, fmt.Errorf("attempt %s has no published evidence authority", attempt.AttemptID)
 	}
+	evidenceHead, err := s.LoadEvidenceHead(*head.EvidenceHeadRef)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	subject, ok := evidenceSubjectHead(evidenceHead.TaskHeads, taskEvidenceSubjectID(attempt.SemanticTaskRef))
+	if !ok {
+		return EvidenceObjectRef{}, fmt.Errorf("attempt %s task evidence root is not published", attempt.AttemptID)
+	}
+	return subject.RevisionRef, nil
 }
 
-func (b *evidenceExportBuilder) addProjection(path string, bundle EvidenceBundleProjection) error {
-	data, err := json.Marshal(bundle)
-	if err != nil {
-		return err
+func (s *Store) attemptSealInRevision(revision TaskIndexRevision, attempt AttemptRecord) (EvidenceObjectRef, AttemptSeal, bool, error) {
+	for _, ref := range revision.AttemptSeals {
+		seal, err := s.LoadAttemptSeal(ref)
+		if err != nil {
+			return EvidenceObjectRef{}, AttemptSeal{}, false, err
+		}
+		if seal.AttemptID == attempt.AttemptID && (attempt.AttemptSealID == "" || seal.AttemptSealID == attempt.AttemptSealID) {
+			return ref, seal, true, nil
+		}
 	}
-	b.files = append(b.files, EvidenceExportFile{Path: path, Data: data})
-	b.entries = append(b.entries, EvidenceExportEntry{
-		Path: path, Source: evidenceExportSourceProjection,
-		SHA256: digestBytes(data), Bytes: int64(len(data)),
+	return EvidenceObjectRef{}, AttemptSeal{}, false, nil
+}
+
+func (s *Store) runtimeBindingMatches(taskID string) []evidenceExportTaskMatch {
+	entries, err := os.ReadDir(s.config.StateBase)
+	if err != nil {
+		return nil
+	}
+	var matches []evidenceExportTaskMatch
+	for _, entry := range entries {
+		if match, ok := s.runtimeDirTaskMatch(entry, taskID); ok {
+			matches = append(matches, match)
+		}
+	}
+	return matches
+}
+
+func (s *Store) runtimeDirTaskMatch(entry os.DirEntry, taskID string) (evidenceExportTaskMatch, bool) {
+	if !entry.IsDir() {
+		return evidenceExportTaskMatch{}, false
+	}
+	runtime := state.AttachStateStore(config.AppConfig{StateBase: s.config.StateBase, RepoHash: entry.Name()})
+	binding, err := runtime.LoadControllerRuntimeBinding()
+	if err != nil || binding.AttemptID == "" {
+		return evidenceExportTaskMatch{}, false
+	}
+	bindingTaskID, err := runtime.TaskID()
+	if err != nil || bindingTaskID != taskID {
+		return evidenceExportTaskMatch{}, false
+	}
+	if entry.Name() != digestStrings(s.identity.LineageID, binding.TaskPath) {
+		return evidenceExportTaskMatch{}, false
+	}
+	attempt, err := s.loadAttempt(binding.AttemptID)
+	if err != nil || attempt.SemanticTaskRef.TaskPath != binding.TaskPath {
+		return evidenceExportTaskMatch{}, false
+	}
+	return evidenceExportTaskMatch{attempt: attempt, basis: evidenceExportBasisRuntimeBinding}, true
+}
+
+func (s *Store) listAttempts() ([]AttemptRecord, error) {
+	entries, err := os.ReadDir(filepath.Join(s.dir, "attempts"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	attempts := make([]AttemptRecord, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		var attempt AttemptRecord
+		if err := readJSON(filepath.Join(s.dir, "attempts", entry.Name()), &attempt); err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, attempt)
+	}
+	sort.Slice(attempts, func(i, j int) bool {
+		return attemptOrderLess(attempts[i], attempts[j])
 	})
-	return nil
+	return attempts, nil
+}
+
+func attemptOrderLess(left, right AttemptRecord) bool {
+	if !left.CreatedAt.Equal(right.CreatedAt) {
+		return left.CreatedAt.Before(right.CreatedAt)
+	}
+	if left.StartControllerGeneration != right.StartControllerGeneration {
+		return left.StartControllerGeneration < right.StartControllerGeneration
+	}
+	return left.AttemptID < right.AttemptID
+}
+
+func (b *evidenceExportBuilder) hasEntry(path string) bool {
+	for _, entry := range b.entries {
+		if entry.Path == path {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *evidenceExportBuilder) finish(
 	target EvidenceExportTarget,
-	sealed EvidenceExportSealedSection,
-	live EvidenceExportLiveSection,
-	git *EvidenceExportGitObservation,
+	runtimeSection EvidenceExportRuntimeSection,
+	git *EvidenceExportGitAudit,
 	observation EvidenceExportControllerObservation,
 ) (EvidenceExportManifest, error) {
-	if live.Status == evidenceExportLiveCollected {
-		live.Coverage = evidenceExportCoveragePartial
+	if runtimeSection.Status == evidenceExportRuntimeCollected {
+		runtimeSection.Coverage = evidenceExportCoveragePartial
 	}
 	manifest := EvidenceExportManifest{
 		SchemaVersion:      evidenceSchemaVersion,
 		Format:             evidenceExportFormat,
-		CreatedAt:          time.Now().UTC(),
+		CreatedAt:          b.observedAt,
 		RepositoryIdentity: b.store.identity.LineageID,
 		Target:             target,
 		Controller:         observation,
-		Sealed:             sealed,
-		Live:               live,
+		Attempt:            b.attemptSection,
+		Runtime:            runtimeSection,
 		Git:                git,
+		AnalysisIndex:      b.analysisRef,
 		Entries:            b.entries,
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
@@ -458,17 +713,17 @@ func evidenceExportExecutionTaskChanged(before, after *SemanticTaskRef) bool {
 func evidenceExportResult(target EvidenceExportTarget, manifest EvidenceExportManifest, observation EvidenceExportControllerObservation, manifestDigest string) EvidenceExportResult {
 	result := EvidenceExportResult{
 		Target:                       target,
-		SealedStatus:                 manifest.Sealed.Status,
-		LiveStatus:                   manifest.Live.Status,
+		AttemptSectionStatus:         manifest.Attempt.Status,
+		RuntimeStatus:                manifest.Runtime.Status,
 		AuthorityChangedDuringExport: observation.AuthorityChangedDuringExport,
 		ControllerGenerationBefore:   observation.GenerationBefore,
 		ControllerGenerationAfter:    observation.GenerationAfter,
 	}
 	switch {
-	case manifest.Live.Status == evidenceExportLiveCollected:
+	case manifest.Runtime.Status == evidenceExportRuntimeCollected:
 		result.Coverage = evidenceExportCoveragePartial
-	case manifest.Sealed.Status == evidenceExportSealedPresent:
-		result.Coverage = evidenceExportCoverageSealedOnly
+	case manifest.Attempt.Status == evidenceExportAttemptPresent:
+		result.Coverage = evidenceExportCoverageAttemptOnly
 	default:
 		result.Coverage = evidenceExportCoverageOpen
 	}
@@ -478,8 +733,5 @@ func evidenceExportResult(target EvidenceExportTarget, manifest EvidenceExportMa
 }
 
 func evidenceExportArchiveName(target EvidenceExportTarget) string {
-	if target.AttemptID != "" {
-		return target.AttemptID + ".zip"
-	}
-	return "task-" + taskEvidenceSubjectID(target.Task) + ".zip"
+	return target.RuntimeTaskID + ".zip"
 }
