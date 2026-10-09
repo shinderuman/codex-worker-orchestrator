@@ -96,6 +96,577 @@ Parent/operatorの一回のread-only操作でportable archiveを取得し、top-
 - 添付ZIPと新completed Bundleを実際に比較し、instruction→execution→failure/retry→review→validationの再構成を検証する。旧不完全sealは正直にmissingを示す。defective Attempt697のclosureへ旧runtime587を根拠なく再帰属しない。design artifactのf618を当該旧model runtimeとする断定はcanonical bindingで再検証し、既存証跡が対応しなければ訂正する。
 この選択はBundleの既存要求を具体化する。CLI admission/recovery/abandon/volatile-ref/quality policy等は実装しない。
 
+### ユーザーによる新BundleのAuditと修正要求（2026-10-08）
+
+以下のAudit評価はユーザーが提供した比較結果であり、今回の追加修正の要求sourceとする。評価中のPASS表現を実装・validationの新しい機械証拠へ置換しない。
+
+````text
+はい。今回の新Bundleは、前回の37MB版とは別物になっており、**実際にDogfood Auditへ使える水準まで戻っています**。
+
+ただし、「旧Bundleと完全に同等以上」と無条件で合格にするにはまだ2点ほど気になります。今回のTaskがBundle自身の修復中であるため過去証拠の欠落があり得る、という点はご指定どおり減点していません。
+
+### 結論
+
+私の判定は、
+
+> **Audit可能。旧Bundleの主要なAudit能力はほぼ復旧しており、一部は旧Bundleより改善している。**
+>
+> ただし、**不要・冗長なデータがまだかなり残っている**のと、**旧Bundleにあった`IMPLEMENTATION_HISTORY.md` snapshotがない**点は確認対象にした方がよい。
+
+です。
+
+前回の「37MBのほぼGit archive」は完全に解消されています。
+
+| | 旧Bundle代表 `343d70e8...` | 今回 |
+|---|---:|---:|
+| ZIP | 15.39 MB | **6.99 MB** |
+| 展開時 | 94.92 MB | **42.61 MB** |
+| entries | 71 | **106** |
+| Git object archive | なし | **なし** |
+| parent raw evidence | 60.3MB rollout丸ごと | **Task windowのみ11.9MB** |
+| GLM transcript | 2 | **3** |
+| Guardian transcript | 1 | **6** |
+| telemetry | 46KB | **898KB / 62 calls** |
+| events | 125KB | **1.29MB / 2,894 events** |
+| lifecycle | あり | **あり / 55 transitions** |
+| review rounds | あり | **あり / 9 rounds** |
+| Git差分 | task diff | **staged + unstaged + relevant untracked** |
+| analysis index | あり | **あり、かなり詳細** |
+
+しかも今回のTaskは約23時間に及んでいるのに、ZIPは旧30分程度のBundleの半分以下です。これはかなりまともになっています。
+
+### 実際に何をAuditできるか
+
+今回のBundleだけで、少なくとも以下はかなり追えます。
+
+**GLMについては十分です。** `telemetry.jsonl`には62 model callsがあり、worker/reviewer、session ID、phase、prompt、response、token usage、resume、outcome等が残っています。GLM transcriptもworker 2 session + reviewer 1 sessionが実体として入っています。
+
+したがって、
+
+```text
+Codexが何を依頼
+→ GLMが何を読んだ
+→ 何を実行
+→ どの結果を返した
+→ Codexがどう判断
+→ 再実行・修正
+```
+
+を追えます。
+
+**Codex parentもかなり改善しています。** 旧Bundleはparent rollout全60.3MBを突っ込んで、analysis-indexに「実際にこのTaskなのは末尾365KB」と書いていました。
+
+今回は元parent rollout 36.46MBに対し、
+
+```text
+start_offset = 24,532,760
+end_offset   = 36,462,816
+```
+
+の**Task該当部分11.93MBだけを収録**しています。
+
+その中には実際に、
+
+- Reasoning
+- command/tool call
+- tool result
+- token count
+- thread settings
+- model切替
+- approval/Guardianとのやり取り
+
+が残っています。
+
+なので旧Bundleに別途あった`codex-parent/logs/*`や`runtime-settings.json`がなくても、Audit能力そのものはほぼ失われていません。むしろ重複保存が減っています。
+
+**Guardianも追えます。** 6つのGuardian transcriptがTask windowに従って収録されています。最初のGuardianについては元1.10MBから該当62KBだけ切り出しており、他はTask中に発生したものなので全体が入っています。この設計は旧Bundleより良いです。
+
+**rate limitや反復も追えます。** lifecycleだけを見ても、
+
+```text
+active → rate-limited
+rate-limited → active
+```
+
+が4回記録されています。
+
+task events・telemetry・parent rolloutと合わせれば、
+
+> rate limit前に何をしていたか
+> 復帰後に同じ処理へ再入したか
+> 同じmodel sessionで何回resumeしたか
+
+など、これまでDogfoodで見ていたものを追えます。
+
+**validationも生データがあります。** ZIPには実際の、
+
+- quality gate: 14 run分の`run.json + gate.log`
+- install smoke: 2 run分の`run.json + smoke.log`
+
+があります。
+
+つまり「PASSだと親が言っている」だけではなく、raw validation evidenceを確認できます。
+
+**Git evidenceは今回の方が明確に良いです。**
+
+```text
+git/snapshot.json
+git/diff-staged.patch
+git/diff-unstaged.patch
+git/untracked/<actual files>
+```
+
+があります。
+
+Git object archiveは**0個**です。
+
+今回ならこれで十分です。前回のようにrepoを丸ごとportableに復元するためのpackを何個も持つ必要はありません。
+
+さらに、manifest記載の105 entriesについて、私の方で全ファイルを再hashしましたが、
+
+```text
+missing = 0
+hash mismatch = 0
+size mismatch = 0
+ZIP CRC error = 0
+```
+
+でした。Bundle自身の整合性も取れています。
+
+---
+
+### 旧Bundleより明確に良くなったところ
+
+特に大きいのはparent rolloutです。
+
+旧Bundle：
+
+```text
+parent rollout total 60.26MB
+実Task window       0.365MB
+
+でも60.26MB全部ZIPへ格納
+```
+
+今回：
+
+```text
+parent source total 36.46MB
+Task window         11.93MB
+
+ZIPには11.93MBのみ
+```
+
+です。
+
+これはまさに以前欲しかった、
+
+> **必要な証拠は残すが、セッション丸ごとは詰めない**
+
+になっています。
+
+Gitも同じです。
+
+前回問題のBundle：
+
+```text
+Git pack
+→ base64
+→ JSON
+→ base64
+→ ZIP
+```
+
+今回：
+
+```text
+OID/snapshot
+diff
+必要なuntracked bytes
+```
+
+です。
+
+この二点だけでも前回の設計失敗はほぼ撤回されています。
+
+---
+
+## ただし、ゴミはあります
+
+ここはご指摘の基準で見ると問題があります。
+
+一番ひどいのは、
+
+```text
+live/state/parent-evidence.jsonl
+12,827,542 bytes
+42,103 records
+```
+
+です。
+
+中身を分類すると、
+
+```text
+status                 42,004
+handoff                    33
+handoff-recovery           29
+source                     21
+evidence-telemetry         13
+validations                 3
+```
+
+です。
+
+**42,103件中42,004件が`status`です。**
+
+さらにdigestはわずか**104種類**しかありません。同じstatus projectionが何千回も並んでいます。
+
+一例では同じdigestが、
+
+```text
+8,169回
+7,600回
+7,090回
+6,561回
+4,091回
+...
+```
+
+繰り返されています。
+
+しかも、
+
+```text
+rejected_duplicate:
+7,873 records
+```
+
+までそのまま保存しています。
+
+これはかなり明確に**Auditノイズ**です。
+
+ZIP上では圧縮が非常によく効くため12.8MB→342KBしかありません。したがってストレージ上は大した問題ではありません。
+
+しかしAudit側から見ると、
+
+> 4万行読ませて、その99%以上がstatus projection
+
+なのは無駄です。
+
+**これは削減候補と考えてよいです。**
+
+---
+
+もう一つ気になるのが`analysis-index.json`のvalidationです。
+
+現在、
+
+```text
+validation_runs = 114
+```
+
+ですが内訳は、
+
+```text
+canonical/実証拠由来     約19
+task-event観測由来       95
+```
+
+で、その95件は全部、
+
+```text
+result: "unknown"
+basis: "task-event-block-observations"
+```
+
+です。
+
+さらに完全な重複が7件あります。
+
+rawのtask eventsを残すこと自体は必要ですが、それをcanonical validation runと同じ`validation_runs`配列へ大量に並べるのは少し悪いです。
+
+たとえば、
+
+```text
+canonical_validation_runs
+observed_validation_actions
+```
+
+のように分ける方がAuditしやすいです。
+
+**データそのものを捨てる必要はありませんが、現在のanalysis indexは少しノイズ過多です。**
+
+---
+
+もっと小さいところでは、
+
+```text
+parent-evidence-ledger.lock
+parent-wait.lock
+parent-wait-recovery.lock
+worker.ready
+reviewer.ready
+worker.id
+reviewer.id
+```
+
+のようなruntime ephemeral stateまで入っています。
+
+全部合わせても100バイト程度なので容量問題ではありませんが、通常のDogfood Auditに本当に必要かという意味ではかなり怪しいです。
+
+「state directoryをとりあえず全部入れる」という方向へ戻らないようにした方がよいです。
+
+---
+
+## 旧Bundleにあって今回ないもので気になるもの
+
+一番は、
+
+```text
+IMPLEMENTATION_HISTORY.md
+```
+
+です。
+
+旧Bundleは、
+
+```text
+IMPLEMENTATION_RULES.md
+IMPLEMENTATION_PLAN.local.md
+IMPLEMENTATION_HISTORY.md
+ACTIVE TASK
+```
+
+を保存していました。
+
+今回は、
+
+```text
+Rules
+Plan
+Task
+```
+
+はありますが、History snapshotがありません。
+
+今回のTaskだけを監査するには致命的ではありません。実際、parent transcriptやTask自身からかなり復元できます。
+
+ただしこのリポジトリではHistoryが過去の実施内容・判断を記録するauthorityの一部なので、**将来あるTaskがHistory上の既存判断を前提にしていた場合、Bundle単体Auditで確認できません。**
+
+ファイル自体も小さいので、これは旧Bundleから落とす合理的理由があまりありません。
+
+したがって「旧Bundle同等以上」を厳密に要求するなら、私は**History snapshotは戻した方がよい項目**と判定します。
+
+---
+
+### 今回特有の欠損について
+
+今回のmanifestは、
+
+```text
+target.kind = running-task
+live = true
+
+attempt_section.status = absent
+absence_reason = "task evidence root is not published yet"
+```
+
+です。
+
+つまりこれは**completed Taskの最終Bundleではなく、作業中Taskをlive exportしたBundle**です。
+
+そのため、
+
+```text
+attempt/* sealed evidence
+completed finalization evidence
+```
+
+がまだないことは、今回については問題にしません。
+
+しかもmanifestが「ないものをある」と偽らず、明示的に`absent`と理由を記録しているので、この挙動自体は良いです。
+
+ただし、このZIPだけでは当然、
+
+> **completed後にも同じraw evidenceがsealed bundleとして残る**
+
+ところまでは実証できません。
+
+そこはこのTask完了後のBundleで初めて確認できます。
+
+---
+
+## 総合判定
+
+現段階ではこうです。
+
+**Audit能力そのものは合格圏です。**
+
+以前やっていた、
+
+```text
+Task instructions
+↓
+Codex parent
+↓
+GLM worker / reviewer
+↓
+tool execution
+↓
+failure / retry / rate-limit
+↓
+review
+↓
+validation
+↓
+Git result
+```
+
+というDogfood Auditを、今回のBundleからかなりの精度で再構築できます。
+
+前回の37MB Bundleとは比較にならないほど改善しています。
+
+ただし「これで完成、旧Bundle以上」とする前に気になるのは次の3点だけです。
+
+- **`parent-evidence.jsonl`が4.2万件、ほぼstatus反復で明確にノイジー。**
+- **`analysis-index.validation_runs`が95件の`unknown`観測をcanonical validationと混在させ、重複も7件ある。**
+- **旧Bundleにあった`IMPLEMENTATION_HISTORY.md` snapshotが落ちている。**
+
+この3つのうち、Audit能力に直接関係するのはHistoryだけです。残り2つは**「Auditできるがゴミを大量に食わせるな」問題**です。
+
+したがって私は、**「機能的にはほぼ復旧。前回の設計失敗は解消。ただしBundleの情報設計としてまだ掃除すべき箇所がある」**と評価します。
+````
+
+Sol判断: 上記3点は本Task内の未完了修正として扱い、後続Taskへ退避して完了扱いしない。Historyはcurrent Rules上のbounded exceptional decision sourceとしてraw snapshotを収録し、通常completion ledgerへの意味変更やHistory編集はしない。parent-evidenceの反復削減はportable read-only projectionで行い、canonical raw ledgerは保持する。集約した反復のcount、時間範囲、association/source locator、異なる状態への遷移、エラーと拒否の区別を監査可能に残す。validationの実run evidenceとtask-event action観測を機械可読で区別し、unknownを成功runへ昇格せず、重複のprovenance/retry relationとraw task eventsを保持する。ephemeral lock/readinessを無差別収録せず、必要なsession associationはcanonical identityから保持する。既存の停止中・実行中・完了後の取得、read-only、path traversal/rebind fail-closed境界とGit payload削減は維持する。実Bundleで削減結果と証拠coverageを比較してから再reviewする。
+
+### Sol設計採否: 同一Taskの継続Attempt証拠（2026-10-08）
+
+実ZIP比較で、同じruntime Task IDの継続Attemptだけが取得され、前半Attemptのparent/Guardian/GLM証拠がportable Bundleから落ちることを確認した。Task IDによるAudit再構成を成立させるため、GLM提案Aを以下の範囲で採用する。
+
+- current targetからcanonical `PredecessorAttemptID` / `ResumedFromSealID`を辿り、同じruntime Taskにcanonicalにboundしたpredecessorのsealed evidenceを既存seal walk/materialization ownerで取得する。Task path一致や時刻だけで別Taskの証拠を混ぜず、repository・Attempt/seal identity・runtime Task associationを検証する。contract digestの変更は旧要求snapshotのまま明示する。
+- portable entryは `predecessors/<attemptID>/…` の独立prefixへ置く。各Attemptのraw証拠・window・要求・validation/retry・source digest/basisをそのAttemptのまま保持し、current Attemptのentry/analysisへ再帰属させない。
+- v2 manifestのattempt sectionへpredecessor identity/seal digest/prefix/window/relationと取得状態を追加し、analysis-indexもpredecessorごとのassociationとraw entry relationを機械可読にする。公開CLI、公開Task UUID体系は変更しない。
+- canonical sealのwindowから取得し、推測で現在のwindowを広げない。immutable seal/storeを改変せず、新DB・archive authorityを作らない。
+- cycle・不正identity・曖昧なchain・missing/unreadable sealを安全に検出し、該当predecessorを取得成功扱いしない。current evidenceを失わせず、partial/missing理由を明示する。unknown/different Taskを証拠として採用しない。
+- 一段・複数段の継続、未知/誤Task binding・broken/cyclic lineage、live/completed・引数なし/Task ID指定、read-onlyを回帰testで確認する。実ZIPで前半parent/Guardian/worker evidenceの取得と現在証拠の維持を比較する。
+
+これは現在のBundle Taskのraw Audit coverageを満たす修正であり、Task/Attemptのexecution lifecycle、CLI admission、汎用recoveryの追加には拡張しない。
+
+### ユーザー追加要求: 固定Task ZIPと全Attemptの累積証拠（2026-10-09）
+
+````text
+# Dogfood Bundleの既存仕様退行を修正する
+
+現在の`glm-parent-action export-bundle`について、旧`glm-worker bundle`から退行した仕様を修正する。
+
+今回の問題は2点ある。
+
+1. 同一Task IDのZIPを上書きせず、timestampと乱数を付けて毎回別ファイルを生成している。
+2. 同一Task IDの後続Bundleで、以前のBundleに含まれていたCodex・GLM・Guardianのraw evidenceが失われている。
+
+どちらも既存のDogfood Audit運用を損なう変更であり、ユーザーはこれらの仕様変更を要求していない。
+
+## 1. Task ID単位の固定ファイル名と上書きを復旧する
+
+旧`glm-worker bundle`と同様、出力先を以下の形式にする。
+
+`<runtime Task ID>.zip`
+
+同一Task IDについて再度`export-bundle`を実行した場合、同じファイルをatomic overwriteする。
+
+- timestamp・乱数などのsuffixを付けない。
+- 同一Taskのエクスポート履歴を別ファイルとして蓄積しない。
+- 一時ファイルにZIPを完全に書き出し、成功後にatomic replacementする。
+- エクスポートが失敗した場合、既存の正常なZIPを破壊しない。
+- 生成日時が必要ならmanifestの`created_at`を利用する。
+- canonical evidenceの不変性と、取得用ZIPの上書き可否を混同しない。
+
+旧実装の`bundleArchivePath`および`writeBundleArchiveAtomically`を確認すること。ただし、旧CLIや旧内部実装そのものを復活させる必要はない。
+
+公開コマンドは現行の`glm-parent-action export-bundle`を維持する。
+
+## 2. 同一Task IDの全Attemptの証拠を累積収録する
+
+実際に、同一runtime Task IDの以下の2つのBundleで問題が発生している。
+
+- `d0d22e0b-6bb6-4efe-97ac-54efd75f0ad4-1791435963436525000-3f20e79b.zip`
+- `d0d22e0b-6bb6-4efe-97ac-54efd75f0ad4-1791443139653337000-c3cad813.zip`
+
+1個目は約6.99MB、2個目は約1.66MB。
+
+ファイルサイズそのものが問題なのではない。
+
+2個目ではAttemptが切り替わり、Codex・GLM・Guardianのraw transcriptが現在のAttemptの時間窓に限定され、過去のAttemptの証拠が収録されなくなっている。
+
+**Task IDを指定したBundleは、そのTaskに属する全Attemptを対象にすること。**
+
+- Attemptが切り替わっても、それ以前のAttemptの証拠を失わない。
+- Codex parent、GLM worker/reviewer、Guardianのtranscriptを、Taskと各Attemptとの正規の対応関係に基づいて収録する。
+- Task events、model-call telemetry、review、validation、retry/failure、Git evidence等についてもTask全体のAuditに必要な証拠を維持する。
+- transcriptの時間窓は各Attemptに対して正しく適用する。現在のAttemptの時間窓をTask全体に適用しない。
+- 無関係なTaskやsessionのデータを混入させない。
+- 同一データの不要な重複収録は避ける。
+- 過去のraw evidenceが実際に消失している場合はmissingとして明示し、捏造・誤帰属しない。
+- `coverage: partial`という表示だけで、取得可能な過去証拠の収録漏れを許容しない。
+
+新しいBundleの証拠が、以前のBundleの証拠を意味的に包含することが必要である。ZIP内部のbyte単位の包含や、ファイルサイズの単調増加は要求しない。
+
+## 3. 確認・検証
+
+まず旧Bundle実装、現行exporter、Task/Attempt/Sessionのassociation、controllerのcanonical evidence、関連テストを確認して原因を特定する。
+
+次のregressionを実施する。
+
+1. 同一Taskを2回エクスポートして、`archive_path`が一致し、ZIPが正常に上書きされること。
+2. エクスポート失敗時に既存ZIPが保持されること。
+3. 1つのTaskにAttempt A・Bがあり、Bの実行中にエクスポートしてもA・B双方のraw evidenceが含まれること。
+4. Attempt切替後も、以前収録できたTask証拠を失わないこと。
+5. 別Taskの証拠が混入しないこと。
+6. 証拠の欠落がある場合、manifest/indexが欠落内容を正確に報告すること。
+
+可能であれば上記2つの実Bundleを回帰検証の入力として使用し、少なくとも観測された症状を再現するテストを追加する。
+
+修正後は、**同じTask IDを繰り返しexportしたとき、最新のZIP一つだけで、その時点までのTask全体をAuditできること**を確認する。
+
+## 4. 実装範囲の制約
+
+- まず現在のGit・Task lifecycle・repository rulesを確認し、正規の作業経路で対応する。
+- 調査・実装・検証・独立reviewは既存のCodex/GLM責務分担に従う。
+- 新たなCLI、互換alias、別のBundle保存機構、不要なfallbackを追加しない。
+- 今回の修正を口実に他のBundle仕様、controller lifecycle、Git publicationを再設計しない。
+- 既存のcanonical evidence、manifest整合性、digest検証、fail-closedを弱めない。
+- 関連のない変更を行わない。
+- 正式な実装完了条件・品質検証を省略しない。
+
+修正内容、根本原因、旧仕様との対応、回帰テスト結果を報告すること。
+````
+
+Sol判断: 固定archive名と失敗時の旧ZIP保持を現在Taskの要求へ加える。runtime Task IDからcanonicalに対応する全Attemptを対象とする最新要求を優先し、predecessor chainだけを取得すれば十分とはしない。各Attemptの旧contract、window、raw evidence、validation/retry/source associationを独立に保持し、無関係なTaskを混ぜない。旧ZIPを第二authorityとして累積保存する設計にはせず、旧実装の出力path/atomic replacement contractと現在のcanonical associationを調査して復元する。
+
+### Audit内容の親確認と後方互換性の禁止（2026-10-09）
+
+````text
+Codex自身で
+
+- Auditが可能なデータが含まれているか
+- 新旧でデグレしている仕様はないか
+- 無駄なデータが含まれていないか
+- 余計な仕様を追加していないか
+
+をチェックするようにしてくれ
+
+Auditに必要なデータを追加する分には構わないが明確な理由を必ず用意しろ
+
+glm-controller-evidence-export-v2
+って名前は後方互換性を持たないというこのリポジトリのポリシーとしてどうなんだよ
+他に今回の作業で後方互換性に近いことやってないだろうな
+絶対に後方互換性は禁止だぞ
+後方互換性を保つための運用コストを俺は払えないんだから
+````
+
+Sol判断: 現行formatを一つだけ定義する版識別子は旧形式への互換性そのものではない。旧format/schema/parser/command/stateの受入れ・変換・promotion・alias・互換fallback・併存を追加しない。旧Bundleを比較用証拠として読むことと、旧Bundle形式をproduction入力として支持することは区別する。過去Attemptの現在canonicalな証拠を既存ownerから収集することは、古い形式の移行・推定associationを導入する根拠にしない。各追加entryはAudit上の必要理由を示す。
+
 ## Resolved references
 
 - ユーザー添付: `/Users/shinderumanm/Downloads/cb487b31-44f2-4f3c-bb02-f611ad9506af-1791342109400865000-06c72f94.zip`。9,294,561 bytes、56 entries。manifestのformatは `glm-controller-evidence-export-v1`、target Attemptは `cb487b31-44f2-4f3c-bb02-f611ad9506af`、runtime Task IDは `587fd325-5e33-447c-a6d4-1c9fbae79015`。live raw sectionにGLM2 session、events/lifecycle/rounds、Task authority、Git diff等がある。添付自体にparent/Guardian rolloutとanalysis-indexのentryはないため、添付の欠落を今回要求の免除としない。
@@ -141,6 +712,11 @@ status: not-applicable
 5. Git root重複pack、多重Base64がなく、Git reconstructionが必要なら単一raw packとmanifest metadataで検証できる。
 6. export前後のcontroller/runtime/Git/Task/Plan不変、active worker lock保持中の成功、新Task不生成、path traversal/rebind fail-closedを回帰テストで証明する。
 7. repository lint、full Go tests、vet、build、install-smoke、独立reviewを通す。実行結果と不足coverageを区別する。
+8. History raw snapshotをlive/stopped/completedの既存canonical capture/export ownerで取得し、association basisと欠損理由を保持する。Historyの意味・内容を変更しない。
+9. parent-evidenceの重複statusをportable projectionで削減し、count/time window/状態遷移/error・rejection/source associationを残す。canonical raw ledgerを変更せず、実Bundleの反復量とAudit再構成能力を比較する。
+10. validation indexの実runとaction観測を分離し、完全重複をprovenanceを残して整理する。unknownをPASSとせず、raw task events、run metadata/log、retry relationを失わない。
+11. archiveは `<runtime Task ID>.zip` の固定pathへ完成済みtemp ZIPからatomic replacementし、失敗時は旧正常ZIPを保持する。同一Taskのexport履歴を別fileへ蓄積しない。
+12. 同じruntime Taskにcanonicalに対応する全Attemptの証拠を各Attemptの正しいwindow/bindingで収録する。後続Bundleは以前の取得可能なTask証拠を意味的に包含し、別Taskを混入させず、実消失は正確にmissingを示す。最新ZIP一つでTask全体をAuditできることを実出力と回帰testで確認する。
 
 ## Historical invariants
 
