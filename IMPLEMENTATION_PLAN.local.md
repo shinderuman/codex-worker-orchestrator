@@ -8,11 +8,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`
+- `IMPLEMENTATION_TASKS/dogfood-bundle-audit-restoration.md`
 
 ## NEXT（優先順）
-- `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
+
+- `IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md`
+- `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
+- `IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`
 - `IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`
+- `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
 - `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
 - `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`
 - `IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`
@@ -21,12 +25,20 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
-
 - `IMPLEMENTATION_TASKS/user-requirement-ingress-binding.md`
-- `IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`
 - `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
 - `IMPLEMENTATION_TASKS/101-live-sol-ab.md`
-- `IMPLEMENTATION_TASKS/102-model-routing-redesign.md`
 - `IMPLEMENTATION_TASKS/103-compaction-threshold-change.md`
 - `IMPLEMENTATION_TASKS/104-test-impact-selection.md`
 - `IMPLEMENTATION_TASKS/106-review-call-reduction.md`
+- `IMPLEMENTATION_TASKS/102-model-routing-redesign.md`
+- `IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`
+
+## 優先順位の判断
+現在のACTIVEはDogfood Audit向けBundleの修正とする。通常経路の不整合停止はBundle完了後のNEXT先頭に置き、CLI admissionはその次に保持し、誤起動したCLI Taskと旧repo-search評価のcheckpoint・証跡を保全する。
+
+
+- バグ修正を先に行い、その後をCodex Reductionの作業にする。Bundle取得復旧をACTIVE、通常経路のsnapshot不整合停止の調査・修正をNEXT先頭、その次にCLIの誤Task-start回帰を置き、repo-searchのcontext budget / dedup評価とsemantic objective / lexical query分離評価をその直後へ置く。
+- 中間評価、publication / rotation費用評価、usage比較可能性の確認はrepo-search評価より後に置く。実際の採否に必要な測定は各TaskのContract内で行い、未成立の依存を理由に別の評価Taskを先行必須へしない。
+- cleanupは対応表に列挙されたTaskの完了後、post-105再評価は022直前、022は他の実行可能Taskがなくなった後に行う。並べ替えでこれらの条件を解除しない。
+- BLOCKEDは条件付きの実行候補であり、並べ替えだけで解除しない。要求保存だけのoptional pauseとprovider cost最適化は、Codex ReductionとQuality Deltaの評価より後順位にする。
