@@ -17,6 +17,7 @@ type controllerEvidenceCommand struct {
 	Ref             *controller.EvidenceObjectRef `json:"ref,omitempty"`
 	LogicalIdentity string                        `json:"logical_identity,omitempty"`
 	RootOIDs        []string                      `json:"root_oids,omitempty"`
+	TaskID          string                        `json:"task_id,omitempty"`
 }
 
 type controllerEvidenceOutput struct {
@@ -25,6 +26,7 @@ type controllerEvidenceOutput struct {
 	Bundle       *controller.EvidenceBundleProjection `json:"bundle,omitempty"`
 	ArchiveRef   *controller.EvidenceObjectRef        `json:"archive_ref,omitempty"`
 	ArchiveRoots []controller.GitObjectArchiveRoot    `json:"archive_roots,omitempty"`
+	Export       *controllerEvidenceExportOutput      `json:"export,omitempty"`
 }
 
 const (
@@ -34,6 +36,7 @@ const (
 	controllerEvidenceAttemptBundle  controllerEvidenceAction = "build-attempt-bundle"
 	controllerEvidenceTaskBundle     controllerEvidenceAction = "build-task-bundle"
 	controllerEvidenceEpisodeBundle  controllerEvidenceAction = "build-episode-bundle"
+	controllerEvidenceExportBundle   controllerEvidenceAction = "export-task-bundle"
 )
 
 func runControllerEvidence(
@@ -101,6 +104,9 @@ func executeControllerEvidence(
 	store *controller.Store,
 	command controllerEvidenceCommand,
 ) (controllerEvidenceOutput, error) {
+	if command.Action != controllerEvidenceExportBundle && command.TaskID != "" {
+		return controllerEvidenceOutput{}, fmt.Errorf("controller evidence action %q does not accept export target fields", command.Action)
+	}
 	switch command.Action {
 	case controllerEvidenceCleanup:
 		return executeControllerEvidenceCleanup(store, command)
@@ -114,6 +120,8 @@ func executeControllerEvidence(
 		return executeControllerEvidenceTaskBundle(store, command)
 	case controllerEvidenceEpisodeBundle:
 		return executeControllerEvidenceEpisodeBundle(store, command)
+	case controllerEvidenceExportBundle:
+		return executeControllerEvidenceExport(cfg, store, command)
 	default:
 		return controllerEvidenceOutput{}, fmt.Errorf("unsupported controller evidence action %q", command.Action)
 	}

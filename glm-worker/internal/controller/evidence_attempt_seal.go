@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const (
+	attemptSealCoverageComplete   = "complete"
+	attemptSealCoverageIncomplete = "incomplete"
+)
+
 func canonicalizeAttemptSeal(record AttemptSeal) AttemptSeal {
 	record.FindingRecordRefs = canonicalEvidenceRefs(record.FindingRecordRefs)
 	record.ReviewValidationRefs = canonicalEvidenceRefs(record.ReviewValidationRefs)
@@ -193,7 +198,7 @@ func validateAttemptSealDedicatedRefs(record AttemptSeal) error {
 
 func validateAttemptSealCoverage(record AttemptSeal) error {
 	switch record.Coverage {
-	case "complete", "open", "incomplete", "corrupt":
+	case attemptSealCoverageComplete, "open", attemptSealCoverageIncomplete, "corrupt":
 	default:
 		return fmt.Errorf("attempt seal coverage status %q is invalid", record.Coverage)
 	}
@@ -210,7 +215,7 @@ func validateAttemptSealCoverage(record AttemptSeal) error {
 			return fmt.Errorf("attempt seal coverage contains an empty missing/unreadable identity")
 		}
 	}
-	if record.Coverage == "complete" && (len(record.Missing) != 0 || len(record.Unreadable) != 0) {
+	if record.Coverage == attemptSealCoverageComplete && (len(record.Missing) != 0 || len(record.Unreadable) != 0) {
 		return fmt.Errorf("attempt seal complete coverage contains missing or unreadable evidence")
 	}
 	return nil

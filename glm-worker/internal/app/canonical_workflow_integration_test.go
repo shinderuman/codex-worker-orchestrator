@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -49,7 +50,7 @@ func (r *canonicalWorkflowRunner) Run(role state.SessionRole, phase, _ string, r
 	if err != nil {
 		r.t.Fatal(err)
 	}
-	r.transcript, err = json.Marshal(map[string]string{"sessionId": sessionID, "task": r.task, "prompt": prompt})
+	r.transcript, err = json.Marshal(map[string]string{"timestamp": time.Now().UTC().Format(time.RFC3339Nano), "sessionId": sessionID, "task": r.task, "prompt": prompt})
 	if err != nil {
 		r.t.Fatal(err)
 	}

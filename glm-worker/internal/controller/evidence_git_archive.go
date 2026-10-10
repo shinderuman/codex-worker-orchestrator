@@ -28,14 +28,26 @@ const gitCommitObjectType = "commit"
 const gitObjectArchiveMediaType = "application/vnd.codex.git-object-archive+json"
 
 func (s *Store) CaptureGitObjectArchive(repoPath, logicalIdentity string, rootOIDs []string) (EvidenceObjectRef, []GitObjectArchiveRoot, error) {
-	roots, objectIDs, objectFormat, err := collectGitObjectClosure(repoPath, rootOIDs)
+	data, roots, err := buildGitObjectArchiveEnvelope(repoPath, rootOIDs)
 	if err != nil {
 		return EvidenceObjectRef{}, nil, err
+	}
+	ref, err := s.PutEvidenceObject("git-object-archive", gitObjectArchiveMediaType, logicalIdentity, true, data)
+	if err != nil {
+		return EvidenceObjectRef{}, nil, err
+	}
+	return ref, append([]GitObjectArchiveRoot(nil), roots...), nil
+}
+
+func buildGitObjectArchiveEnvelope(repoPath string, rootOIDs []string) ([]byte, []GitObjectArchiveRoot, error) {
+	roots, objectIDs, objectFormat, err := collectGitObjectClosure(repoPath, rootOIDs)
+	if err != nil {
+		return nil, nil, err
 	}
 	packInput := []byte(strings.Join(objectIDs, "\n") + "\n")
 	pack, err := runGitBinary(repoPath, packInput, "pack-objects", "--stdout")
 	if err != nil {
-		return EvidenceObjectRef{}, nil, err
+		return nil, nil, err
 	}
 	envelope := gitObjectArchiveEnvelope{
 		SchemaVersion: evidenceSchemaVersion,
@@ -46,13 +58,9 @@ func (s *Store) CaptureGitObjectArchive(repoPath, logicalIdentity string, rootOI
 	}
 	data, err := json.Marshal(envelope)
 	if err != nil {
-		return EvidenceObjectRef{}, nil, fmt.Errorf("encode git object archive: %w", err)
+		return nil, nil, fmt.Errorf("encode git object archive: %w", err)
 	}
-	ref, err := s.PutEvidenceObject("git-object-archive", gitObjectArchiveMediaType, logicalIdentity, true, data)
-	if err != nil {
-		return EvidenceObjectRef{}, nil, err
-	}
-	return ref, append([]GitObjectArchiveRoot(nil), roots...), nil
+	return data, roots, nil
 }
 
 func (s *Store) VerifyGitObjectArchive(ref EvidenceObjectRef) ([]GitObjectArchiveRoot, error) {

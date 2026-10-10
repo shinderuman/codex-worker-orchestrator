@@ -21,7 +21,11 @@ func TestNormalizeBinDirMakesRelativePathAbsoluteBeforeAuthorityUse(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, "relative", "bin")
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(workingDir, "relative", "bin")
 	if got != want || !filepath.IsAbs(got) {
 		t.Fatalf("normalized binDir = %q want %q", got, want)
 	}

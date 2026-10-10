@@ -226,6 +226,168 @@ cmp "$tmp/parent-action-unknown.stderr" "$tmp/parent-action-install.stderr"
 grep -Fq "\"vcs_revision\":\"$repo_revision\"" "$tmp/runtime-status.json"
 grep -Fq '"vcs_modified":false' "$tmp/runtime-status.json"
 grep -Fq '"relationship":"same"' "$tmp/runtime-status.json"
+
+run_single_export() {
+	(
+		cd "$repo"
+		HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle
+	)
+}
+
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --authority controller-activate
+) >"$tmp/controller-activation.json"
+export_attempt_id=$(sed -n 's/.*"attempt_id":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
+export_task_path=$(sed -n 's/.*"task_path":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
+export_contract_digest=$(sed -n 's/.*"contract_digest":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
+test -n "$export_attempt_id" && test -n "$export_task_path" && test -n "$export_contract_digest"
+repo_physical_export=$(CDPATH='' cd -- "$repo" && pwd -P)
+export_lineage=$(printf 'git-common-lineage-v1\0%s\0' "$repo_physical_export/.git" | shasum -a 256 | cut -d' ' -f1)
+export_controller_store="$home/.glm-worker/controllers/$export_lineage"
+export_runtime_hash=$(printf '%s\0%s\0' "$export_lineage" "$export_task_path" | shasum -a 256 | cut -d' ' -f1)
+export_runtime_dir="$home/.glm-worker/sessions/$export_runtime_hash"
+export_workflow_lock="$export_controller_store.workflow.lock"
+
+if run_single_export >"$tmp/export-stopped.out" 2>"$tmp/export-stopped.stderr"; then
+	printf '%s\n' 'no-arg export succeeded before the runtime task identity existed' >&2
+	exit 1
+fi
+test ! -e "$repo/.glm-worker-parent-actions"
+if find "$home/.glm-worker/exports" -type f -name '*.zip' 2>/dev/null | grep -q .; then
+	printf '%s\n' 'failed identity export wrote an archive' >&2
+	exit 1
+fi
+
+mkdir -p "$export_runtime_dir/telemetry" "$export_runtime_dir/events" "$export_runtime_dir/artifacts/runtime-task-smoke-1"
+printf '%s' 'runtime-task-smoke-1' >"$export_runtime_dir/task.id"
+printf '{"version":1,"attempt_id":"%s","task_path":"%s","task_contract_digest":"%s"}' \
+	"$export_attempt_id" "$export_task_path" "$export_contract_digest" >"$export_runtime_dir/controller-runtime-binding.json"
+printf '%s' 'session-smoke-worker' >"$export_runtime_dir/worker.id"
+printf '%s' '{"version":3,"call_id":"c1","partial' >"$export_runtime_dir/telemetry/runtime-task-smoke-1.jsonl"
+printf 'smoke artifact\n' >"$export_runtime_dir/artifacts/runtime-task-smoke-1/report.txt"
+printf 'untracked export bytes\n' >"$repo/untracked-export.txt"
+git -C "$repo" status --porcelain >"$tmp/export-git-before"
+export_generation_before=$(sed -n 's/^  "controller_generation": \([0-9]*\).*/\1/p' "$export_controller_store/head.json")
+test -n "$export_generation_before"
+find "$home/.glm-worker/sessions" -mindepth 1 -maxdepth 1 | LC_ALL=C sort >"$tmp/export-sessions-before"
+
+run_single_export >"$tmp/export-live.json"
+grep -q '"runtime_section":"collected"' "$tmp/export-live.json"
+grep -q '"attempt_section":"absent"' "$tmp/export-live.json"
+grep -q '"coverage":"partial"' "$tmp/export-live.json"
+export_archive_path=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-live.json")
+test -f "$export_archive_path"
+unzip -p "$export_archive_path" manifest.json >"$tmp/export-manifest.json"
+grep -q 'glm-controller-evidence-export-v2' "$tmp/export-manifest.json"
+grep -q '"trailing_fragment": true' "$tmp/export-manifest.json"
+grep -q 'live/transcripts/claude/session-smoke-worker' "$tmp/export-manifest.json"
+unzip -p "$export_archive_path" live/task/telemetry.jsonl | grep -q 'partial'
+unzip -p "$export_archive_path" live/git/untracked/untracked-export.txt | grep -q 'untracked export bytes'
+unzip -p "$export_archive_path" analysis-index.json | grep -q '"schema_version": 1'
+if unzip -l "$export_archive_path" | grep -q 'object-archive'; then
+	printf '%s\n' 'live export embedded a git object archive payload' >&2
+	exit 1
+fi
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle --task-id runtime-task-smoke-1
+) >"$tmp/export-task-id.json"
+grep -q '"runtime_section":"collected"' "$tmp/export-task-id.json"
+grep -q '"runtime_task_id":"runtime-task-smoke-1"' "$tmp/export-task-id.json"
+export_task_id_archive=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-task-id.json")
+test -f "$export_task_id_archive"
+test "$export_task_id_archive" = "$export_archive_path"
+unzip -p "$export_task_id_archive" manifest.json >"$tmp/export-task-id-manifest.json"
+grep -q 'glm-controller-evidence-export-v2' "$tmp/export-task-id-manifest.json"
+grep -q '"kind": "task-id"' "$tmp/export-task-id-manifest.json"
+grep -q '"runtime_task_id": "runtime-task-smoke-1"' "$tmp/export-task-id-manifest.json"
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle --task-id runtime-task-unknown
+) >"$tmp/export-unknown.out" 2>"$tmp/export-unknown.stderr" && exit 1
+grep -q 'unknown to the controller' "$tmp/export-unknown.stderr"
+git -C "$repo" status --porcelain >"$tmp/export-git-after"
+cmp "$tmp/export-git-before" "$tmp/export-git-after"
+export_generation_after=$(sed -n 's/^  "controller_generation": \([0-9]*\).*/\1/p' "$export_controller_store/head.json")
+test "$export_generation_before" = "$export_generation_after"
+find "$home/.glm-worker/sessions" -mindepth 1 -maxdepth 1 | LC_ALL=C sort >"$tmp/export-sessions-after"
+cmp "$tmp/export-sessions-before" "$tmp/export-sessions-after"
+if (
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" controller-evidence definitely-not-a-token
+) >"$tmp/export-bad-token.stdout" 2>"$tmp/export-bad-token.stderr"; then
+	printf '%s\n' 'glm-parent-action controller-evidence accepted an invalid token' >&2
+	exit 1
+fi
+
+cat >"$tmp/hold-workflow-lock.go" <<'EOF_HOLD_LOCK'
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	file, err := os.OpenFile(os.Args[1], os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println("locked")
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM)
+	<-signals
+}
+EOF_HOLD_LOCK
+(
+	cd "$tmp"
+	HOME="$home" GOMODCACHE="$go_mod_cache" go run hold-workflow-lock.go "$export_workflow_lock"
+) >"$tmp/export-lock-held.out" 2>"$tmp/export-lock-held.stderr" &
+export_lock_pid=$!
+export_lock_ready=0
+for _ in $(seq 1 100); do
+	if grep -q locked "$tmp/export-lock-held.out" 2>/dev/null; then
+		export_lock_ready=1
+		break
+	fi
+	sleep 0.1
+done
+test "$export_lock_ready" -eq 1
+(
+	while :; do
+		printf '%s\n' '{"version":3,"call_id":"active-writer"}' >>"$export_runtime_dir/telemetry/runtime-task-smoke-1.jsonl"
+		sleep 0.01
+	done
+) &
+export_writer_pid=$!
+run_single_export >"$tmp/export-concurrent.json"
+kill "$export_writer_pid" 2>/dev/null || true
+kill "$export_lock_pid" 2>/dev/null || true
+wait "$export_writer_pid" 2>/dev/null || true
+wait "$export_lock_pid" 2>/dev/null || true
+grep -q '"runtime_section":"collected"' "$tmp/export-concurrent.json"
+grep -q '"archive_path":"' "$tmp/export-concurrent.json"
+export_concurrent_archive=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-concurrent.json")
+test -f "$export_concurrent_archive"
+test -f "$export_archive_path"
+test "$export_concurrent_archive" = "$export_archive_path"
+export_zip_dir=$(dirname "$export_archive_path")
+export_zip_count=$(find "$export_zip_dir" -type f -name '*.zip' | wc -l | tr -d ' ')
+test "$export_zip_count" = 1
+rm -f "$repo/untracked-export.txt"
+git -C "$repo" status --porcelain >"$tmp/export-git-restored"
+if [ -s "$tmp/export-git-restored" ]; then
+	printf '%s\n' 'export scenario left the fixture repository dirty' >&2
+	exit 1
+fi
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f ! -name '.codex-worker-orchestrator-cli-install.lock' -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/first.sha"
 run_install
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f ! -name '.codex-worker-orchestrator-cli-install.lock' -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/second.sha"

@@ -31,6 +31,7 @@ const (
 	parentActionExecutionGitEvidence
 	parentActionExecutionPreflightDecision
 	parentActionExecutionObservationExecute
+	parentActionExecutionExportBundle
 )
 
 var parentActionCommands = map[string]parentActionCommandDescriptor{
@@ -82,6 +83,10 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 	"evidence": {
 		Action:  "evidence",
 		Execute: parentActionExecutionRead,
+	},
+	"export-bundle": {
+		Action:  "export-bundle",
+		Execute: parentActionExecutionExportBundle,
 	},
 	"finalize-check": {
 		Action:  "finalize-check",
@@ -175,6 +180,8 @@ func executeInterfaceParentAction(
 		return executeStartSingleAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionRead:
 		return executeParentReadAction(cfg, args, stdout, stderr), true
+	case parentActionExecutionExportBundle:
+		return executeExportBundleAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionGitEvidence:
 		return executeGitEvidenceAction(cfg, args, stdout), true
 	case parentActionExecutionObservationExecute:

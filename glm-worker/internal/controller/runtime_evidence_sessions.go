@@ -7,18 +7,35 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexrollout"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type runtimeTranscriptWindowRecord struct {
+	SessionID     string `json:"session_id,omitempty"`
+	RolloutID     string `json:"rollout_id,omitempty"`
+	TotalBytes    int64  `json:"total_bytes"`
+	StartOffset   int64  `json:"start_offset"`
+	EndOffset     int64  `json:"end_offset"`
+	RecordsBefore int    `json:"records_before,omitempty"`
+	RecordsAfter  int    `json:"records_after,omitempty"`
+	Basis         string `json:"basis"`
+}
+
 type runtimeSessionAssociation struct {
-	AttemptID     string                     `json:"attempt_id"`
-	RuntimeTaskID string                     `json:"runtime_task_id"`
-	Task          SemanticTaskRef            `json:"semantic_task_ref"`
-	SessionIDs    []string                   `json:"session_ids"`
-	Parent        *state.ParentCodexIdentity `json:"parent,omitempty"`
+	AttemptID        string                          `json:"attempt_id"`
+	RuntimeTaskID    string                          `json:"runtime_task_id"`
+	Task             SemanticTaskRef                 `json:"semantic_task_ref"`
+	SessionIDs       []string                        `json:"session_ids"`
+	Parent           *state.ParentCodexIdentity      `json:"parent,omitempty"`
+	WindowStart      time.Time                       `json:"window_start"`
+	WindowEnd        time.Time                       `json:"window_end"`
+	ModelTranscripts []runtimeTranscriptWindowRecord `json:"model_transcripts,omitempty"`
+	ParentRollouts   []runtimeTranscriptWindowRecord `json:"parent_rollouts,omitempty"`
+	GuardianRollouts []runtimeTranscriptWindowRecord `json:"guardian_rollouts,omitempty"`
 }
 
 func (c *attemptRuntimeEvidence) captureSessions() error {
@@ -38,7 +55,12 @@ func (c *attemptRuntimeEvidence) captureSessions() error {
 	if err != nil {
 		return err
 	}
-	association := runtimeSessionAssociation{AttemptID: c.seal.AttemptID, RuntimeTaskID: c.taskID, Task: c.seal.SemanticTaskRef, SessionIDs: ids, Parent: parent}
+	association := runtimeSessionAssociation{
+		AttemptID: c.seal.AttemptID, RuntimeTaskID: c.taskID, Task: c.seal.SemanticTaskRef,
+		SessionIDs: ids, Parent: parent,
+		WindowStart: c.seal.StartedAt, WindowEnd: c.seal.SealedAt,
+		ModelTranscripts: c.modelTranscripts, ParentRollouts: c.parentRollouts, GuardianRollouts: c.guardianRollouts,
+	}
 	data, err := json.Marshal(association)
 	if err != nil {
 		return err
@@ -66,7 +88,8 @@ func (c *attemptRuntimeEvidence) captureClaudeSessions(ids []string) error {
 			return fmt.Errorf("required model transcript is missing for session %s", id)
 		}
 		for i, path := range paths {
-			if err := c.addFile(path, "model-transcript", fmt.Sprintf("session/%s/%d", id, i)); err != nil {
+			logical := fmt.Sprintf("session/%s/%d", id, i)
+			if err := c.addWindowedFile(path, evidenceKindModelTranscript, c.seal.AttemptID+":"+logical, id, ""); err != nil {
 				return err
 			}
 		}
@@ -91,7 +114,8 @@ func (c *attemptRuntimeEvidence) captureCodexSessions() (*state.ParentCodexIdent
 		return nil, err
 	}
 	for i, rollout := range chain {
-		if err := c.addFile(rollout.AbsolutePath, "parent-transcript", fmt.Sprintf("parent/%s/%d", parent.ThreadID, i)); err != nil {
+		logical := fmt.Sprintf("parent/%s/%d", parent.ThreadID, i)
+		if err := c.addRawTranscriptFile(rollout.AbsolutePath, evidenceKindParentTranscript, c.seal.AttemptID+":"+logical, rollout.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -174,14 +198,10 @@ func (c *attemptRuntimeEvidence) modelSessionIDs() (map[string]struct{}, error) 
 
 func (c *attemptRuntimeEvidence) captureGuardianSessions(parentThreadID string, rollouts []codexrollout.Rollout) error {
 	for _, rollout := range rollouts {
-		if rollout.ParentThreadID != parentThreadID || !rollout.GuardianSource || rollout.FirstTimestamp.IsZero() || rollout.FirstTimestamp.After(c.seal.SealedAt) {
+		if rollout.ParentThreadID != parentThreadID || !rollout.GuardianSource {
 			continue
 		}
-		last, ok := codexrollout.LastTimestamp(rollout.AbsolutePath)
-		if !ok || last.Before(c.seal.StartedAt) {
-			continue
-		}
-		if err := c.addFile(rollout.AbsolutePath, "guardian-transcript", "guardian/"+rollout.ID); err != nil {
+		if err := c.addRawTranscriptFile(rollout.AbsolutePath, evidenceKindGuardianTranscript, c.seal.AttemptID+":guardian/"+rollout.ID, rollout.ID); err != nil {
 			return err
 		}
 	}
