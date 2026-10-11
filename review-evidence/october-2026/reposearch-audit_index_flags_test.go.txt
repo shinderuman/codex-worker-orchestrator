@@ -1,0 +1,25 @@
+package reposearch
+
+import (
+ "context"
+ "os"
+ "os/exec"
+ "path/filepath"
+ "testing"
+)
+
+func TestAuditSearchTracksAssumeUnchangedContent(t *testing.T) {
+ repo:=t.TempDir()
+ git:=func(args ...string){c:=exec.Command("git",append([]string{"-C",repo},args...)...);if b,e:=c.CombinedOutput();e!=nil{t.Fatalf("git: %v %s",e,b)}}
+ git("init","-q");git("config","user.name","audit");git("config","user.email","audit@example.invalid")
+ path:=filepath.Join(repo,"data.txt")
+ if e:=os.WriteFile(path,[]byte("oldneedle\n"),0600);e!=nil{t.Fatal(e)}
+ git("add",".");git("commit","-qm","base");git("update-index","--assume-unchanged","data.txt")
+ opts:=Options{CacheRoot:t.TempDir()}
+ initial,e:=Search(context.Background(),repo,"oldneedle",opts);if e!=nil{t.Fatal(e)};if len(initial.Results)!=1{t.Fatal("invalid initial fixture")}
+ if e:=os.WriteFile(path,[]byte("newneedle\n"),0600);e!=nil{t.Fatal(e)}
+ cached,e:=Search(context.Background(),repo,"newneedle",opts);if e!=nil{t.Fatal(e)}
+ opts.DisableCache=true;opts.CacheRoot=""
+ fresh,e:=Search(context.Background(),repo,"newneedle",opts);if e!=nil{t.Fatal(e)}
+ if len(cached.Results)!=len(fresh.Results){t.Fatalf("cached=%d (%s), fresh=%d for existing tracked text",len(cached.Results),cached.CacheStatus,len(fresh.Results))}
+}

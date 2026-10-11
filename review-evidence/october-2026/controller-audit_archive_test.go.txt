@@ -1,0 +1,31 @@
+package controller
+
+import (
+ "encoding/json"
+ "math/rand"
+ "os"
+ "os/exec"
+ "path/filepath"
+ "strings"
+ "testing"
+)
+
+func TestAuditArchiveHistoryOverlap(t *testing.T) {
+ repo:=t.TempDir()
+ git:=func(args ...string) string { c:=exec.Command("git",append([]string{"-C",repo},args...)...);b,e:=c.CombinedOutput();if e!=nil{t.Fatalf("git: %v %s",e,b)};return strings.TrimSpace(string(b)) }
+ git("init","-q");git("config","user.name","audit");git("config","user.email","audit@example.invalid")
+ data:=make([]byte,256*1024);_,_ = rand.New(rand.NewSource(1)).Read(data)
+ if e:=os.WriteFile(filepath.Join(repo,"old.bin"),data,0600);e!=nil{t.Fatal(e)}
+ git("add",".");git("commit","-qm","base")
+ old:=git("rev-parse","HEAD")
+ git("rm","old.bin");git("commit","-qm","remove data")
+ current:=git("rev-parse","HEAD")
+ a,_,e:=buildGitObjectArchiveEnvelope(repo,[]string{old});if e!=nil{t.Fatal(e)}
+ b,_,e:=buildGitObjectArchiveEnvelope(repo,[]string{current});if e!=nil{t.Fatal(e)}
+ var ae,be gitObjectArchiveEnvelope
+ if e=json.Unmarshal(a,&ae);e!=nil{t.Fatal(e)};if e=json.Unmarshal(b,&be);e!=nil{t.Fatal(e)}
+ _,ao,_,e:=collectGitObjectClosure(repo,[]string{old});if e!=nil{t.Fatal(e)}
+ _,bo,_,e:=collectGitObjectClosure(repo,[]string{current});if e!=nil{t.Fatal(e)}
+ seen:=map[string]bool{};for _,x:=range ao{seen[x]=true};overlap:=0;for _,x:=range bo{if seen[x]{overlap++}}
+ t.Logf("old_objects=%d current_objects=%d overlap=%d old_pack=%d current_pack=%d combined_envelopes=%d current_tracked_files=0",len(ao),len(bo),overlap,len(ae.Pack),len(be.Pack),len(a)+len(b))
+}

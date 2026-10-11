@@ -1,0 +1,42 @@
+package controller
+
+import (
+ "os"
+ "os/exec"
+ "path/filepath"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
+)
+
+func auditTextconvRepo(t *testing.T) string {
+ t.Helper()
+ repo := t.TempDir()
+ git := func(args ...string) { t.Helper(); c := exec.Command("git", append([]string{"-C", repo}, args...)...); if b, err := c.CombinedOutput(); err != nil { t.Fatalf("git %v: %v: %s", args, err, b) } }
+ git("init", "-q"); git("config", "user.email", "audit@example.invalid"); git("config", "user.name", "audit")
+ for p, b := range map[string]string{"file.txt":"before\n", ".gitattributes":"file.txt diff=audit\n"} { if err:=os.WriteFile(filepath.Join(repo,p),[]byte(b),0600);err!=nil{t.Fatal(err)} }
+ driver := filepath.Join(t.TempDir(), "driver.sh")
+ if err:=os.WriteFile(driver,[]byte("#!/bin/sh\nprintf constant\n"),0700);err!=nil{t.Fatal(err)}
+ git("config", "diff.audit.textconv", driver)
+ git("add", "file.txt", ".gitattributes");git("commit", "-qm", "base")
+ return repo
+}
+
+func TestAuditSnapshotDetectsTextconvHiddenChange(t *testing.T) {
+ repo:=auditTextconvRepo(t)
+ before,err:=CaptureWorkspaceSnapshot(repo);if err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(filepath.Join(repo,"file.txt"),[]byte("after\n"),0600);err!=nil{t.Fatal(err)}
+ after,err:=CaptureWorkspaceSnapshot(repo);if err!=nil{t.Fatal(err)}
+ if before==after{t.Fatalf("tracked bytes changed but controller snapshot unchanged: %s",after.ID)}
+}
+
+func TestAuditTaskDiffContainsTextconvHiddenChange(t *testing.T) {
+ repo:=auditTextconvRepo(t)
+ cfg:=config.AppConfig{RepoRoot:repo,StateBase:t.TempDir(),RepoHash:"audit-textconv"}
+ st,err:=state.NewStateStore(cfg);if err!=nil{t.Fatal(err)}
+ if err:=state.CaptureGitBaseline(cfg,st);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(filepath.Join(repo,"file.txt"),[]byte("after\n"),0600);err!=nil{t.Fatal(err)}
+ patch,available,err:=taskdiff.Capture(repo,st);if err!=nil{t.Fatal(err)}
+ if available && len(patch)==0{t.Fatal("available=true with empty task patch despite tracked content change")}
+}

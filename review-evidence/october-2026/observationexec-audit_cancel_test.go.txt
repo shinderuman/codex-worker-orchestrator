@@ -1,0 +1,23 @@
+//go:build darwin
+
+package observationexec
+
+import (
+ "context"
+ "os"
+ "path/filepath"
+ "testing"
+)
+
+func TestAuditCancelledObservationDoesNotLaunchPreflight(t *testing.T) {
+ bin:=t.TempDir()
+ marker:=filepath.Join(t.TempDir(),"preflight-ran")
+ t.Setenv("AUDIT_PREFLIGHT_MARKER",marker)
+ // targetを起動しないpreflight専用fixture。実confinement成功の証拠には使わない。
+ if e:=os.WriteFile(filepath.Join(bin,"sandbox-exec"),[]byte("#!/bin/sh\nprintf ran > \"$AUDIT_PREFLIGHT_MARKER\"\n"),0700);e!=nil{t.Fatal(e)}
+ t.Setenv("PATH",bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+ ctx,cancel:=context.WithCancel(context.Background());cancel()
+ out:=RunIsolatedGoTest(ctx,GoTestInput{ModuleDir:t.TempDir(),ArtifactDir:t.TempDir(),ExecutionID:"audit-cancelled",DeadlineMS:100})
+ if out.ExitSource!=exitSourceCancelled{t.Fatalf("unexpected outcome: %s",out.ExitSource)}
+ if _,e:=os.Stat(marker);e==nil{t.Fatal("already-cancelled execution launched preflight process before checking cancellation")}
+}

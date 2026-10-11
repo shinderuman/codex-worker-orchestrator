@@ -1,0 +1,30 @@
+package controller
+
+import (
+ "os"
+ "os/exec"
+ "path/filepath"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+)
+
+func TestAuditExportDiffDoesNotRunExternalDriver(t *testing.T) {
+ repo := t.TempDir()
+ git := func(args ...string) { t.Helper(); c := exec.Command("git", append([]string{"-C", repo}, args...)...); if b, err := c.CombinedOutput(); err != nil { t.Fatalf("git %v: %v: %s", args, err, b) } }
+ git("init", "-q")
+ git("config", "user.email", "audit@example.invalid")
+ git("config", "user.name", "audit")
+ path := filepath.Join(repo, "sample.txt")
+ if err := os.WriteFile(path, []byte("before\n"), 0600); err != nil { t.Fatal(err) }
+ git("add", "sample.txt")
+ git("commit", "-qm", "base")
+ if err := os.WriteFile(path, []byte("after\n"), 0600); err != nil { t.Fatal(err) }
+ driver := filepath.Join(t.TempDir(), "driver.sh")
+ marker := filepath.Join(repo, "driver-ran")
+ if err := os.WriteFile(driver, []byte("#!/bin/sh\nprintf triggered > \"$AUDIT_MARKER\"\nprintf fake-diff\n"), 0700); err != nil { t.Fatal(err) }
+ t.Setenv("GIT_EXTERNAL_DIFF", driver)
+ t.Setenv("AUDIT_MARKER", marker)
+ collector := &evidenceLiveCollector{store: &Store{config: config.AppConfig{RepoRoot: repo}}, builder: &evidenceExportBuilder{}, workspace: WorkspaceIdentity{Root: repo}}
+ if err := collector.collectGitDiffs(); err != nil { t.Fatal(err) }
+ if _, err := os.Stat(marker); err == nil { t.Fatal("read-only export executed external diff driver; archived diff is driver output") }
+}

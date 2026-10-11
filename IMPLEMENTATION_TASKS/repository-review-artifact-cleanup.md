@@ -17,9 +17,17 @@
 
 ## Amendments
 
-none
+### 2026-10 再監査の対象追加
+
+共通ユーザー原文は `review-evidence/october-2026/request.md` の「Task化と優先順位」。親Codexの具体化指示:
+
+````text
+前回と今回の両方のレビュー由来Taskが完了するまでcleanupしない。Review.mdの既存対応表に加え、「2026-10 再監査」の対応表を対象に含める。review-evidence/october-2026/request.mdは新規Task共通の要求正本なので、参照する全Taskが完了する前に削除しない。
+````
 
 ## Resolved references
+
+- `Review.md` の「2026-10 再監査」の対応表も対象とする。共通要求source・fixture・診断は `review-evidence/october-2026/` にあり、同じdirectory全体cleanupへ含める。
 
 - `Review.md` の「Findingと実装・評価Taskの対応」に今回の総合レビュー由来16 finding・改善2件・評価3件の要求正本が列挙されている。
 - `review-evidence/README.md` は同directoryをレビュー当時の再現証拠と定義し、fixtureは後続refactorへ自動追従するtest suiteではなく、実装開始時に必要な再現を各Taskの正規ownerへ移すとしている。
@@ -35,7 +43,7 @@ status: not-applicable
 
 ## Contract
 
-- `Review.md` の対応表にある今回の総合レビュー由来Taskがすべて完了してから実行する。Web GPT / Codexのどちらが実行するかはこのTaskでは固定しない。
+- `Review.md` の対応表にある前回および2026-10再監査の総合レビュー由来Taskがすべて完了してから実行する。Web GPT / Codexのどちらが実行するかはこのTaskでは固定しない。
 - cleanup開始時にcurrent Plan / Task / code / testから `review-evidence/` と `Review.md` への参照を再検索し、未完了要求の正本・再現入力として必要な参照が残っていないことを確認する。
 - 各findingで恒久的に必要な再現条件・regression coverageは正規production testまたは正規ownerへ移っていることを確認する。レビュー時fixtureを互換目的で残さない。
 - `review-evidence/` をdirectoryごと削除する。
@@ -53,7 +61,7 @@ status: not-applicable
 
 ## Acceptance criteria
 
-- `Review.md`対応の今回レビュー由来Taskがすべて完了している。
+- `Review.md`対応の前回および2026-10再監査のレビュー由来Taskがすべて完了している。
 - current unfinished Plan / Taskに`review-evidence/`または`Review.md`を要求authority・必須再現入力として使うものがない。
 - 必要なregression coverageは正規test / owner側に存在する。
 - current treeから`review-evidence/`と`Review.md`が削除され、不要な代替archiveを追加していない。
@@ -66,5 +74,7 @@ status: not-applicable
 - current schema / current ownerだけを保ち、レビュー時source shapeへの後方互換性を持たせない。
 
 ## Dependencies
+
+- `Review.md` の「2026-10 再監査」の実装・評価Task対応がすべて完了していること。
 
 - `Review.md` の「Findingと実装・評価Taskの対応」に列挙された16 finding・改善2件・評価3件がすべて完了していること。

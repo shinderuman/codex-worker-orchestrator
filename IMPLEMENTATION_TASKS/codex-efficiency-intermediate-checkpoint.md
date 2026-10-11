@@ -133,7 +133,17 @@ Pushは俺がやる
 GLMが作業した場合記載した内容の意味が変わってないかはお前がちゃんと確認しろ
 ````
 
+### 2026-10 再監査の補助review責務・実効範囲
+
+親Codexの追加評価指示（共通ユーザー原文は `review-evidence/october-2026/request.md`）:
+
+````text
+failure-path補助reviewのproductionに固定されたrepository固有path/token policyと、controller移管後の対象coverageを評価する。追加発見、誤検出、親の再調査、model費用を既存cohortから分離し、repository harnessへの責務整理かpilot終了か現状維持かを判断する。対象未観測をfindingなしと扱わない。通常reviewは維持し、106-review-call-reductionのBLOCKEDを解除しない。
+````
+
 ## Resolved references
+
+- 2026-10再監査とそのTask化には `review-evidence/october-2026/request.md` の原要求を適用する。GLM不使用、並行作業を避けた記録、最終段階のPRという指示は、以下の2026-09整備時のGit操作・GLM許可範囲と区別する。今回の監査・文書化でGLMを利用する許可へ読み替えない。
 
 - 2026-09-23の最新指示では、保存済み全Findingの個別Task化と改善候補の採否・評価先を既存Planへ反映する。最新追加指示によるGit操作は親Codexがcommitまで行い、Pushはユーザーが行う。単にReview.mdと再現fileをそのままPushするだけでは満たさない。名称IMPLEMENTATION_PLANSは既存の`IMPLEMENTATION_PLAN.local.md`と`IMPLEMENTATION_TASKS/`を指し、別の計画正本を作らない。production修正・新規レビュー委譲・PR作成は含まない。
 
@@ -159,6 +169,8 @@ status: not-applicable
 
 ## Contract
 
+- `Review.md` の「2026-10 再監査」C2と追加Amendmentに従い、補助failure-path reviewの実効範囲とrepository固有policyのownerを評価する。採否は既存cohortのQuality Deltaと親負担・call費用を根拠とし、汎用設定framework、旧path alias、二重policy、追加callの無条件有効化を先行導入しない。
+
 - 保存済み総合レビューと計画化成果物はLintを通す。最新追加指示により、この整備・検証にはGLM利用を許可するが、Findingの意味・影響・限界・修正責務・後方互換性禁止を保持し、GLM変更の意味保存と最終採否は親Codexが確認する。以前のGLM不使用・Guard非必須は総合レビュー当時の境界であり、整備・検証にはこの追加指示を適用する。
 
 - 親Codexだけが追加AI callなしで実行し、GLM modelへ分析・採否・priority判断を委譲しない
@@ -183,6 +195,8 @@ status: not-applicable
 - post-105最終再評価を完了・削除・前倒ししない
 
 ## Acceptance criteria
+
+- C2について、対象未観測と検出なしを区別し、責務整理・pilot終了・現状維持の採否と限界を示す。削減未立証を削減達成と報告しない。
 
 - 前回以後の評価期間、cohort、Codex usage coverage、Quality Delta proxy、exact source locatorをbounded reportにする
 - 既存task coverageと未Task化候補を全件Go/No-Goし、Plan全体を再優先付けする

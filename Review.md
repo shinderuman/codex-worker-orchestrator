@@ -261,3 +261,118 @@ F9/F10はproductionのprintParentEvidenceから既存review fixtureへ通す一�
 - 既存のquality二重実行解消、F2のfix/review snapshot整合、F5の停止可能なprobeも継続候補。新しい汎用guardや親の手動チェックを増やすより、既存の機械処理が生む手戻りを減らす。
 
 未検証の範囲は実task cohortのReduction/Quality Delta、live provider・scheduler・本番install、全state書込地点のcrash/race、全security経路。今回のレビューはこれらの実証完了を宣言しない。
+
+## 2026-10 再監査
+
+親モデルがGLMを使わず監査した。対象はcommit `4d8bed4fe4f0a784d0604bbb1ab956ed0b39af5f`。2026-10-11にcommit `0e9d76a394098d8c075efdcc364952f85353fbf1`で全限定fixtureを再実行し、安全側assertion 9件FAILとarchive観測1件PASSを確認した。Bundle exporterのfixtureだけcurrent WorkspaceIdentityへ合わせた。別sessionの未commit通常経路修正は監査済みとは扱わない。
+
+共通原要求は `review-evidence/october-2026/request.md`、再現条件と当時のdiagnosticは同directoryの `reproductions.json` を参照する。以下は監査時点のfindingであり、current状態の手動ledgerではない。
+
+### 再監査Findingと実装・評価Taskの対応
+
+| 項目 | 要求を所有するTask |
+|---|---|
+| C1 | `IMPLEMENTATION_TASKS/controller-git-archive-cost-evaluation.md` |
+| A1/A2 | `IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md` |
+| A6 | `IMPLEMENTATION_TASKS/observation-preparation-cancellation.md` |
+| A3 | `IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md` |
+| A4 | `IMPLEMENTATION_TASKS/parent-evidence-serialized-output-budget.md` |
+| A7 | `IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md` |
+| A8 | `IMPLEMENTATION_TASKS/task-admission-harness-scope.md` |
+| A5 | `IMPLEMENTATION_TASKS/task-requirement-reference-closure.md` |
+| C2 | `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`への評価観点追加 |
+
+### A1 / P1: bundle exportが外部diff driverを起動し、任意出力を差分証拠にする
+
+- 確認: 一時repoとproduction `evidenceLiveCollector.collectGitDiffs`で再現。読取export中にfake外部driverがmarkerを作成し、driver出力がdiffへ採用された。
+- 対象: `glm-worker/internal/controller/evidence_export_live.go:559-573（2026-10-11再確認）`、`evidence_git_archive.go:319-330`。`git diff --cached --binary` / `git diff --binary`に`--no-ext-diff`がなく、command.Envも親環境のまま。
+- 発生条件: `GIT_EXTERNAL_DIFF`やrepositoryのexternal diff設定が存在し、対象に変更がある。正規入口は`parentactioncmd/export_bundle.go`→`app/controller_evidence_export.go`→`Store.ExportEvidence`。
+- 影響: exporterが副作用を持つ外部commandを実行し、Git patchではない任意textも監査根拠として保存する。副作用なしのcustom driverでも実差分の改変・欠落となる。実利用者secret漏洩・本番repository破壊は実験していない。
+- 根拠: `review-evidence/october-2026/controller-audit_export_test.go.txt`、`export-diff-test.log`。TestAuditExportDiffDoesNotRunExternalDriverは期待する安全動作に対しFAILした。外部modelなし、元repository変更なし。
+- 修正責務: controllerの監査用Git差分採取。外部diff/textconvを無効化する標準patch取得を1か所へ集約し、正規export入口でもdriverが実行されずpatchに実変更が残ることを固定する。既存driver互換を追加しない。
+- Codex影響: 壊れた差分証拠は誤判断・不要再調査を招く。削減量は未測定。
+
+### A2 / P1: textconvで実変更がsnapshotとtask patchの両方から消える
+
+- 確認: `CaptureWorkspaceSnapshot`と`taskdiff.Capture`を一時repoで直接呼び、tracked fileを変更してもsnapshot全体が同一、task patchがavailable=true/空になることを再現した。
+- 対象: `state/snapshot.go:176-202`、`state/baseline.go:53-60`、`taskdiff/capture.go:23-45`、`controller/identity.go:92-110`。
+- 原因: `git diff --binary --no-ext-diff`はtextconvを禁止しない。.gitattributesでdiff driverを設定し、そのtextconvが変更前後を同じ表示へ変換するとGit diffが空になる。hash対象はraw tracked bytesではなく、この表示用diff。
+- 発生条件: repositoryの正規textconv設定でも生じる。再現では`file.txt diff=audit`と定数を返すdriverを設定し、before→afterへ変更した。悪意あるmodelが設定を操作することを前提としない。
+- 影響: controllerのworkspace bindingとreview/validationで用いるGitSnapshotが実content差を区別できず、task patchも変更を隠す。すべてのguardを通して誤acceptした実験ではなく、基盤の同一性判定とpatch採取の違反を直接確認したもの。
+- 根拠: `review-evidence/october-2026/controller-audit_textconv_test.go.txt`、`textconv-test.log`。2 testが期待安全動作に対してFAIL。
+- 修正責務: snapshot/baseline/taskdiff/retentionの機械用patch取得に`--no-textconv`を適用し、raw contentの差が常に反映される共通契約と境界testを持たせる。textconvへの後方互換は不要。
+- A1との違い: A1はexport独自経路のexternal diff許可、A2は既存のno-ext-diff付き機械証拠全般のtextconv許可。ownerと影響範囲を分けて修正する。
+
+### A3 / P1: parent evidenceの差分digestが変更済み内容を既読扱いにできる
+
+- `parentevidence/projector.go:494-510,525-551,746-775`。digestは要求questionとPath/HeadBlob/IndexBlob/WorktreeSHAだけから作り、表示したpatch自体・file mode・配下の変更を含まない。
+- 一時Git repoでmode-only変更、およびPaths=[directory]の子file変更を独立再現。いずれもdiff bodyは変化するがdigestは同じ。directoryではworktree SHA取得がregular-file制限により空で、HEAD tree/index先頭blobは未staged変更で不変。
+- `degradeDuplicateParts`はこのdigestのdeliveryを根拠にbodyを消し`UnchangedReason`を返すため、同じquestion/pathsで再取得する親へ新しい変更を届けない。低水準同一性違反を再現済みであり、誤accept全経路までは実行していない。
+- 外部fixture: `review-evidence/october-2026/parentevidence-audit_projection_test.go.txt` のTestAuditDiffModeIdentity / TestAuditDiffDirectoryIdentity。`projection-test.log`。
+- 修正: current正規path契約を確定し、patch/bodyと全対象のmode/type/contentを含む意味的同一性でdedupする。directory/pathspecを許可しない方針ならadmissionで明示拒否し、空identityを有効証拠にしない。mode/content/rename/delete/untracked/symlinkとunchanged dedupを回帰検証する。旧digest互換を追加しない。
+
+### A4 / P2: parent evidenceのtotal output budgetがmetadataだけで突破される
+
+- `parentevidence/projector.go:257-281,681-700,778-840`。part数上限なし。budget処理はbodyを順に除くだけで、metadata自体が上限超過した後もそのままstdoutへ出す。
+- 39,517 bytes（64KiB未満）のDecodeManifest成功入力にsource 480件を指定し、production Project/Commitから179,867 bytesを出力した。MaxOutputBytes=98,304を超える。重いsourceもmodelも不要。
+- 外部fixture: 同audit_projection_test.goのTestAuditOutputBudget、projection-test.log。期待する上限assertionにFAIL。
+- 影響: Codexに渡す証拠の上限contractが成立せず、反復part/大きなvalidation metadata等で不要token消費を抑止できない。削減率は未測定。
+- 修正: serialization後の総量をrelease前に確定し、metadataだけでも収まらない入力にはbounded refinement/errorを返す。出さなかった証拠のdelivery/review proofを記録しない。既存result-set search budget Taskとはparent evidenceの最終releaseという別責務。
+
+### A5 / P2: 未完了CLI Taskの共通原要求が削除済みTaskへの未固定参照になっている
+
+- `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md:5,73` は `dogfood-bundle-controller-export.md` のOriginal instructionへ共通原要求/GitHub access/Must not/完了要件を委譲するが、そのfileはcurrent treeにない。
+- 参照先のGit revisionを指定しておらず、Task本文を独立に読むworker/reviewerが要求全文を得られない。今回snapshotと再開時currentで同じ欠落を確認。
+- 他のmissing locatorはhistorical/完了済み参照かを区別し、機械的な全参照復活は行わない。
+- 修正: 実際のGit sourceから必要原文をlosslessに回収し、CLI Taskのimmutable sourceを変えずResolved references/Amendmentsで要求閉包を成立させる。完了Taskを互換fileとして復活させない。retirement時の要求参照と単なるhistorical locatorを分離し、前者を未解決のまま削除しない。
+
+### A6 / P2: observationの取消・deadlineが準備処理へ伝播しない
+
+- `observationexec/gotest_context.go:16-56` はpreflightとmodule copyが終わってからcontextを確認する。`confinement_darwin.go:88-99` はcontextなしのCombinedOutput、`gotest.go:200-287` のcopyもcontextなし。
+- 取消済みcontextを正規RunIsolatedGoTestへ渡してもpreflight subprocessを起動することを、markerだけを書くsandbox-exec fixtureで再現した。実confinement成功や本番target実行を主張するtestではない。
+- `review-evidence/october-2026/observationexec-audit_cancel_test.go.txt`、`cancellation-test.log`。期待する「開始済み取消なら新subprocessを起動しない」assertionにFAIL。
+- timeoutが付く本体go testだけを停止しても準備copy/preflight中は戻れない。file/byte上限はあるがdirectory数は数えず、取消確認の代替にならない。無限hangや大規模disk負荷の実験はしていない。
+- 修正: admission後のcontext確認、preflight process groupとcopy loopへの同じcontext/deadlineの伝播、bounded cleanup。取消済み・準備途中・実行中それぞれをcontrolled fixtureで検証する。sandboxを緩めず、既存test本体のgroup停止を維持する。
+
+### A7 / P2: assume-unchanged tracked fileの変更で検索cacheが失効せずfalse negativeになる
+
+- `reposearch/fingerprint.go:37-78` はindexのmode/blob/pathとgit diffからfingerprintを作り、tracked fileのindex flagを検査しない。`reposearch/reposearch.go:215-247` はこれをcache・同時変更検査へ使用する。
+- 一時repoでdata.txt=oldneedleをcommitし、assume-unchangedを設定してcacheを構築。data.txtをnewneedleへ変更すると、正規Searchのcached結果は0件/cache-hit、cacheなしの同じSearchは1件になることを再現。
+- 根拠: `review-evidence/october-2026/reposearch-audit_index_flags_test.go.txt`、`search-index-flags-test.log`。最初のfixtureはDisableCacheとCacheRoot同時指定で入力errorだったため修正し、最終runで上記false negativeを確認。最初のerrorを実装Findingとして数えていない。
+- controllerのsuspension treeではassume-unchangedを拒否する別guardが存在するが、standalone repo-searchの入口には同じ制約がなく、検索の品質保証を代替しない。
+- 修正: 検索corpusの実contentとcache identityを一致させるか、対応できないindex flagを入口で明示拒否する。skip-worktree/sparse checkoutの正規対応範囲も明示し、静かに古いindexを正にしない。汎用互換fallbackや毎回modelによる再検索は追加しない。
+- 既存result context budgetやsemantic query改善とはcache correctnessという別責務。誤った0件結果は追加探索や見落としにつながるが、実Codex削減率は未測定。
+
+### A8 / P2: inactive harnessにもcommitted Planを要求する通常Task admission
+
+- `app/execution.go:214-244` は通常new taskでharness activationを確認せずcontroller.Open/Activateへ進み、`controller/activation.go:33-38`から`repositoryprojectcommit/project.go:48-51`でcommitted Planを必須にする。
+- 一時Git repo（READMEのみcommit、marker/Planなし）でEvaluate=falseを確認してactivateWorkflowConfigを実行すると、`read committed implementation plan: exit status 128`で拒否された。modelは未呼出し。
+- project規則の「最初からPlanがない他repositoryへ本repository固有guardを一般化しない」と矛盾する。明示controller-activate側のactive要求と、通常入口の利用scopeを整合させる。
+- `review-evidence/october-2026/app-audit_harness_scope_test.go.txt` とreproductions.jsonが根拠。旧worker、dual authority、Plan自動生成、互換fallbackの復活を解決策にしない。
+
+
+### C1 / 改善評価: controller内部Git archiveの全履歴重複
+
+- `controller/evidence_git_archive.go:30-66,191-205` はcommit rootごとに全reachable履歴を列挙しpackを生成、JSONへBase64格納する。baseline、candidate acceptance、accepted seal、terminal metadataで独立呼出しがある。
+- `evidence_store.go:14-32,70-89` のcontent-addressed dedupは完全に同じenvelopeだけが対象。異なるrootの共通objectまでは共有されない。
+- 256KiBのblobをcommit後に削除した2 rootで、old/current object数3/5、共通object3、pack bytes262427/262583、envelope合計700438を実測した。current tracked file数は0。
+- 根拠: `review-evidence/october-2026/controller-audit_archive_test.go.txt`、`archive-test.log`。重複の観測testはPASS。productionのtask wall-clock/Codex tokensに占める割合は未測定。
+- 採否: MEASURE-FIRST。既存ACTIVEのportable Bundle修正に内部durable archive再設計を混ぜない。採取・検証・保持の費用を代表的履歴で測り、cleanup後のoffline復元・seal graph検証・不変性を維持できる最小改善だけ採用する。単純なhistory切捨て、第二store、旧schema migrationを先行追加しない。効果が小さければno-changeを正規完了にする。
+
+### C2 / 改善評価: failure-path補助reviewのrepository固有policyと実効範囲
+
+- failurepathadvisory/trigger.go:48-124はこのrepositoryのrunner/report/workflow/state等のpathとtoken表をproductionに固定する。workflow/failure_path_advisory.go:40-100はconfigとreview status/cohort上限を条件として呼び、config/config.go:140の既定値はtrue。一般的なcall・bounded output・telemetry処理と、repository固有の選定policyが同一機能へ入っている。
+- controllerへ移管されたevidence export等のpathは同表にない。これは補助review対象の移管追従が必要かを再評価する根拠であり、通常reviewが省略されることや検出保証があることの証明ではない。既存cohort制限・fail-openのpilot条件を無視して対象やcall数を増やさない。
+- 採否: 新しい自動化を先行実装せず、既存codex-efficiency-intermediate-checkpointへ評価観点として合流する。対象policyの正規ownerをrepository harness側へ置くべきか、効果がないpilotを終了すべきかを既存cohortの追加発見・誤検出・親の再調査・model費用から判断する。pathの移管漏れによる未観測と「findingなし」を区別する。
+- BLOCKEDの106-review-call-reductionのreviewer省略許可とは別であり、そのBLOCKEDを解除しない。新たな汎用設定framework、旧path alias、二重policy、追加model callの無条件有効化を既定解にしない。
+
+### 確認範囲と限界
+
+入口/要求/authority、親・worker・reviewerの責務、state/schema/snapshot、Git権限・publication/cleanup/recovery、evidence/archive/export/dedup/予算、検索/計測/Eval、installer/設定/CI/lintを横断確認した。二巡目ではowner間境界、反証caller、既存修正との重複を点検した。全file逐語読解・全fault injection・全suite・全platform・本番model/本番A/Bを実施した主張ではない。文書worktreeのfast-forward時には既存post-merge hookがinstallerを実行したが、監査としてのlive install/smoke検証には数えない。
+
+- 限定再現: 安全側assertionが9件FAILしA1/A2/A3/A4/A6/A7/A8を裏付けた。A5はcurrent requirement参照の静的確認。C1の重複観測1件はPASS。
+- 既存test: boundary群15 package PASSとtestなし1、検索は初回30秒timeout後に106 test/subtest PASS。追加controller/state/workflow/runnerの選択testはPASS、appを含む同runに455 PASS event。appの3件はsandbox socket拒否、別のtimeoutはGit管理外監査snapshotのcwd依存で、Git fixtureに変えてPASSしたためFindingにしない。
+- config/parentcontinuation/parentidentity等の追加14 package指定は11 PASS、testなし2、settingsmergeはhost cache lockへのsandbox拒否。123 PASS event、15 FAIL event（親/subtest重複あり）、1 skip。これを品質ゲート全体PASSとしない。
+- head/phase更新順はrecoveryが整合させる。ResolveChainの空入力はcallerが防ぎ、packetのParentValidationEvidence注入はworker validationが拒否する。installed instruction参照もinstaller mappingと一致したためFindingにしない。
+- Bundleのcompleted raw evidence/window/Git payload問題は別sessionのBundle復旧で扱われた。A1の外部driver起動は復旧後commitでも再現した。新たに予約された三Bundle再監査をこのレビューで先行実行したことにはしない。
+- C1/C2を含めCodex tokenの実削減率は未測定。品質維持の証拠なしにreview省略やBLOCKED解除を行わない。
