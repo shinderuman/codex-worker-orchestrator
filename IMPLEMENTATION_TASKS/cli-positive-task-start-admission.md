@@ -67,6 +67,14 @@ glm-worker bundle <task-id>
 のようなnegative admissionへ逃げず、**回帰前のpositive/whitelist Task-start admission contractをGit履歴から特定して復元**してください。
 ````
 
+### 3. 2026-10 再監査で確認した要求参照の欠落
+
+親CodexのTask化指示:
+
+````text
+本Taskが共通原要求を委譲しているdogfood-bundle-controller-export.mdはcurrent treeにない。実装前に実在する一次証拠から必要原文を回収し、Resolved references/Amendmentsへlosslessに固定する。回収できない内容を創作せず、既存の「分かる範囲」の指示と確認限界を親が判断する。一般的なretirementの再発防止はtask-requirement-reference-closureで扱う。
+````
+
 ## Resolved references
 
 - Amendment 1への質問は、#1036 / PR #1072で確認したcontractが「未知の`--...`先頭tokenを拒否し、通常のfree-form Task入力を維持する」ものであり、別のpositive/whitelist contractを導入したIssue/PR/commitが分かるか、というものだった。
@@ -83,6 +91,8 @@ status: not-applicable
 
 
 ## Contract
+
+- Amendment 3の共通要求参照を実装前に解決する。currentにない参照を読めたとみなして実装・reviewを進めない。既存Original instructionは書き換えない。
 
 repository内部のCLI、admission、testsの回帰修正であり、未検証の外部service成立性を前提にしない。
 

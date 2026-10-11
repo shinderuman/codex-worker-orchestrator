@@ -1,0 +1,23 @@
+package app
+
+import (
+ "os"
+ "os/exec"
+ "path/filepath"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+)
+
+func TestAuditInactiveHarnessDoesNotRequireRepositoryPlan(t *testing.T) {
+ repo:=t.TempDir()
+ git:=func(args ...string){c:=exec.Command("git",append([]string{"-C",repo},args...)...);if b,e:=c.CombinedOutput();e!=nil{t.Fatalf("git: %v %s",e,b)}}
+ git("init","-q");git("config","user.name","audit");git("config","user.email","audit@example.invalid")
+ if e:=os.WriteFile(filepath.Join(repo,"README.md"),[]byte("foreign project\n"),0600);e!=nil{t.Fatal(e)}
+ git("add",".");git("commit","-qm","base")
+ decision,e:=repositoryharness.Evaluate(repo);if e!=nil{t.Fatal(e)};if decision.Active{t.Fatal("invalid fixture: active harness")}
+ cfg:=config.AppConfig{RepoRoot:repo,RepoHash:config.RepoHashFor(repo),StateBase:filepath.Join(t.TempDir(),"sessions")}
+ // workflowのcontroller admissionだけを呼び、runner/modelは作成しない。
+ _,e=activateWorkflowConfig(Command{Mode:ModeNewTask},cfg)
+ if e!=nil{t.Fatalf("inactive harness new-task admission requires repository policy: %v",e)}
+}

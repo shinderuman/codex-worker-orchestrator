@@ -1,0 +1,357 @@
+{
+  "baseline_commit": "4d8bed4fe4f0a784d0604bbb1ab956ed0b39af5f",
+  "fixtures": [
+    {
+      "findings": "A1",
+      "file": "controller-audit_export_test.go.txt",
+      "package": "controller",
+      "tests": [
+        "TestAuditExportDiffDoesNotRunExternalDriver"
+      ],
+      "original_log": "export-diff-test.log",
+      "diagnostics": [
+        {
+          "line": 1,
+          "text": "--- FAIL: TestAuditExportDiffDoesNotRunExternalDriver (0.45s)"
+        },
+        {
+          "line": 2,
+          "text": "    audit_export_test.go:29: read-only export executed external diff driver; archived diff is driver output"
+        },
+        {
+          "line": 3,
+          "text": "FAIL"
+        },
+        {
+          "line": 4,
+          "text": "FAIL\tgithub.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller\t0.891s"
+        },
+        {
+          "line": 5,
+          "text": "FAIL"
+        }
+      ]
+    },
+    {
+      "findings": "A2",
+      "file": "controller-audit_textconv_test.go.txt",
+      "package": "controller",
+      "tests": [
+        "TestAuditSnapshotDetectsTextconvHiddenChange",
+        "TestAuditTaskDiffContainsTextconvHiddenChange"
+      ],
+      "original_log": "textconv-test.log",
+      "diagnostics": [
+        {
+          "line": 1,
+          "text": "--- FAIL: TestAuditSnapshotDetectsTextconvHiddenChange (0.75s)"
+        },
+        {
+          "line": 2,
+          "text": "    audit_textconv_test.go:31: tracked bytes changed but controller snapshot unchanged: 136e66e8da7a07f73122b32f1f5e35800fa575cf76b8498ffe67eb61e0452830"
+        },
+        {
+          "line": 3,
+          "text": "--- FAIL: TestAuditTaskDiffContainsTextconvHiddenChange (0.50s)"
+        },
+        {
+          "line": 4,
+          "text": "    audit_textconv_test.go:41: available=true with empty task patch despite tracked content change"
+        },
+        {
+          "line": 5,
+          "text": "FAIL"
+        },
+        {
+          "line": 6,
+          "text": "FAIL\tgithub.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller\t1.703s"
+        },
+        {
+          "line": 7,
+          "text": "FAIL"
+        }
+      ]
+    },
+    {
+      "findings": "A3/A4",
+      "file": "parentevidence-audit_projection_test.go.txt",
+      "package": "parentevidence",
+      "tests": [
+        "TestAuditDiffModeIdentity",
+        "TestAuditDiffDirectoryIdentity",
+        "TestAuditOutputBudget"
+      ],
+      "original_log": "projection-test.log",
+      "diagnostics": [
+        {
+          "line": 1,
+          "text": "--- FAIL: TestAuditDiffModeIdentity (0.28s)"
+        },
+        {
+          "line": 2,
+          "text": "    audit_projection_test.go:33: mode-only change changes diff body but not dedup digest"
+        },
+        {
+          "line": 3,
+          "text": "--- FAIL: TestAuditDiffDirectoryIdentity (0.26s)"
+        },
+        {
+          "line": 4,
+          "text": "    audit_projection_test.go:43: directory child changes diff body but not dedup digest"
+        },
+        {
+          "line": 5,
+          "text": "--- FAIL: TestAuditOutputBudget (0.29s)"
+        },
+        {
+          "line": 6,
+          "text": "    audit_projection_test.go:56: valid manifest 39517 bytes emitted 179867 bytes over limit 98304"
+        },
+        {
+          "line": 7,
+          "text": "FAIL"
+        },
+        {
+          "line": 8,
+          "text": "FAIL\tgithub.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence\t1.249s"
+        },
+        {
+          "line": 9,
+          "text": "FAIL"
+        }
+      ]
+    },
+    {
+      "findings": "A6",
+      "file": "observationexec-audit_cancel_test.go.txt",
+      "package": "observationexec",
+      "tests": [
+        "TestAuditCancelledObservationDoesNotLaunchPreflight"
+      ],
+      "original_log": "cancellation-test.log",
+      "diagnostics": [
+        {
+          "line": 1,
+          "text": "--- FAIL: TestAuditCancelledObservationDoesNotLaunchPreflight (0.32s)"
+        },
+        {
+          "line": 2,
+          "text": "    audit_cancel_test.go:22: already-cancelled execution launched preflight process before checking cancellation"
+        },
+        {
+          "line": 3,
+          "text": "FAIL"
+        },
+        {
+          "line": 4,
+          "text": "FAIL\tgithub.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/observationexec\t0.722s"
+        },
+        {
+          "line": 5,
+          "text": "FAIL"
+        }
+      ]
+    },
+    {
+      "findings": "A7",
+      "file": "reposearch-audit_index_flags_test.go.txt",
+      "package": "reposearch",
+      "tests": [
+        "TestAuditSearchTracksAssumeUnchangedContent"
+      ],
+      "original_log": "search-index-flags-test.log",
+      "diagnostics": [
+        {
+          "line": 1,
+          "text": "--- FAIL: TestAuditSearchTracksAssumeUnchangedContent (0.64s)"
+        },
+        {
+          "line": 2,
+          "text": "    audit_index_flags_test.go:24: cached=0 (hit), fresh=1 for existing tracked text"
+        },
+        {
+          "line": 3,
+          "text": "FAIL"
+        },
+        {
+          "line": 4,
+          "text": "FAIL\tgithub.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch\t1.012s"
+        },
+        {
+          "line": 5,
+          "text": "FAIL"
+        }
+      ]
+    },
+    {
+      "findings": "A8",
+      "file": "app-audit_harness_scope_test.go.txt",
+      "package": "app",
+      "tests": [
+        "TestAuditInactiveHarnessDoesNotRequireRepositoryPlan"
+      ],
+      "original_log": "harness-scope-test.log",
+      "diagnostics": [
+        {
+          "line": 1,
+          "text": "--- FAIL: TestAuditInactiveHarnessDoesNotRequireRepositoryPlan (0.48s)"
+        },
+        {
+          "line": 2,
+          "text": "    audit_harness_scope_test.go:22: inactive harness new-task admission requires repository policy: read committed implementation plan: exit status 128"
+        },
+        {
+          "line": 3,
+          "text": "FAIL"
+        },
+        {
+          "line": 4,
+          "text": "FAIL\tgithub.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app\t0.965s"
+        },
+        {
+          "line": 5,
+          "text": "FAIL"
+        }
+      ]
+    },
+    {
+      "findings": "C1",
+      "file": "controller-audit_archive_test.go.txt",
+      "package": "controller",
+      "tests": [
+        "TestAuditArchiveHistoryOverlap"
+      ],
+      "original_log": "archive-test.log",
+      "diagnostics": [
+        {
+          "line": 2,
+          "text": "    audit_archive_test.go:30: old_objects=3 current_objects=5 overlap=3 old_pack=262427 current_pack=262583 combined_envelopes=700438 current_tracked_files=0"
+        },
+        {
+          "line": 3,
+          "text": "--- PASS: TestAuditArchiveHistoryOverlap (0.41s)"
+        },
+        {
+          "line": 5,
+          "text": "ok  \tgithub.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller\t0.859s"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "外部snapshotに対する限定再現。modelと本番運用は未実行。",
+    "保存診断は当時の結果。source形状の互換要件ではない。",
+    "app Unix socketとsettingsmerge host cacheのsandbox拒否を製品Findingへ含めない。",
+    "Git管理外cwdに起因したquality gate fixture timeoutは、一時Git repo cwdでPASSし棄却。"
+  ],
+  "recheck": {
+    "commit": "0e9d76a394098d8c075efdcc364952f85353fbf1",
+    "date": "2026-10-11",
+    "original_log": "current-reproductions.jsonl",
+    "results": {
+      "TestAuditArchiveHistoryOverlap": {
+        "result": "pass",
+        "line": 14
+      },
+      "TestAuditCancelledObservationDoesNotLaunchPreflight": {
+        "result": "fail",
+        "line": 21
+      },
+      "TestAuditDiffModeIdentity": {
+        "result": "fail",
+        "line": 27
+      },
+      "TestAuditExportDiffDoesNotRunExternalDriver": {
+        "result": "fail",
+        "line": 35
+      },
+      "TestAuditDiffDirectoryIdentity": {
+        "result": "fail",
+        "line": 39
+      },
+      "TestAuditSearchTracksAssumeUnchangedContent": {
+        "result": "fail",
+        "line": 44
+      },
+      "TestAuditInactiveHarnessDoesNotRequireRepositoryPlan": {
+        "result": "fail",
+        "line": 50
+      },
+      "TestAuditOutputBudget": {
+        "result": "fail",
+        "line": 56
+      },
+      "TestAuditSnapshotDetectsTextconvHiddenChange": {
+        "result": "fail",
+        "line": 62
+      },
+      "TestAuditTaskDiffContainsTextconvHiddenChange": {
+        "result": "fail",
+        "line": 67
+      }
+    },
+    "diagnostics": {
+      "TestAuditArchiveHistoryOverlap": [
+        {
+          "line": 12,
+          "text": "october_audit_archive_test.go:30: old_objects=3 current_objects=5 overlap=3 old_pack=262427 current_pack=262583 combined_envelopes=700438 current_tracked_files=0"
+        }
+      ],
+      "TestAuditCancelledObservationDoesNotLaunchPreflight": [
+        {
+          "line": 19,
+          "text": "october_audit_cancel_test.go:22: already-cancelled execution launched preflight process before checking cancellation"
+        }
+      ],
+      "TestAuditDiffModeIdentity": [
+        {
+          "line": 25,
+          "text": "october_audit_projection_test.go:33: mode-only change changes diff body but not dedup digest"
+        }
+      ],
+      "TestAuditExportDiffDoesNotRunExternalDriver": [
+        {
+          "line": 32,
+          "text": "october_audit_export_test.go:29: read-only export executed external diff driver; archived diff is driver output"
+        }
+      ],
+      "TestAuditDiffDirectoryIdentity": [
+        {
+          "line": 33,
+          "text": "october_audit_projection_test.go:43: directory child changes diff body but not dedup digest"
+        }
+      ],
+      "TestAuditSearchTracksAssumeUnchangedContent": [
+        {
+          "line": 42,
+          "text": "october_audit_index_flags_test.go:24: cached=0 (hit), fresh=1 for existing tracked text"
+        }
+      ],
+      "TestAuditInactiveHarnessDoesNotRequireRepositoryPlan": [
+        {
+          "line": 48,
+          "text": "october_audit_harness_scope_test.go:22: inactive harness new-task admission requires repository policy: read committed implementation plan: exit status 128"
+        }
+      ],
+      "TestAuditOutputBudget": [
+        {
+          "line": 54,
+          "text": "october_audit_projection_test.go:56: valid manifest 39517 bytes emitted 179867 bytes over limit 98304"
+        }
+      ],
+      "TestAuditSnapshotDetectsTextconvHiddenChange": [
+        {
+          "line": 60,
+          "text": "october_audit_textconv_test.go:31: tracked bytes changed but controller snapshot unchanged: bcc7913c13b713b1c932c45d26714c8296108f251eafd203e35f590c6b13a588"
+        }
+      ],
+      "TestAuditTaskDiffContainsTextconvHiddenChange": [
+        {
+          "line": 65,
+          "text": "october_audit_textconv_test.go:41: available=true with empty task patch despite tracked content change"
+        }
+      ]
+    },
+    "fixture_adjustment": "A1 collectorにcurrent WorkspaceIdentity{Root: repo}を指定。assertionは変更しない。"
+  }
+}

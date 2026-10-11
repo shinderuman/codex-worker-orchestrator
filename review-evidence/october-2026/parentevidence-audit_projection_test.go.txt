@@ -1,0 +1,57 @@
+package parentevidence
+
+import (
+ "bytes"
+ "encoding/json"
+ "os"
+ "os/exec"
+ "path/filepath"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
+
+func auditProjector(t *testing.T) (*Projector, string) {
+ t.Helper()
+ repo := t.TempDir()
+ git := func(args ...string) { c:=exec.Command("git",append([]string{"-C",repo},args...)...); if b,e:=c.CombinedOutput();e!=nil{t.Fatalf("git: %v %s",e,b)} }
+ git("init","-q"); git("config","user.email","audit@example.invalid"); git("config","user.name","audit"); git("config","core.filemode","true")
+ if e:=os.Mkdir(filepath.Join(repo,"dir"),0700);e!=nil{t.Fatal(e)}
+ if e:=os.WriteFile(filepath.Join(repo,"dir","x"),[]byte("before\n"),0644);e!=nil{t.Fatal(e)}
+ git("add",".");git("commit","-qm","base")
+ st,e:=state.NewStateStore(config.AppConfig{RepoRoot:repo,StateBase:t.TempDir(),RepoHash:"audit"});if e!=nil{t.Fatal(e)}
+ return NewProjector(repo,st,"audit",Providers{}),repo
+}
+
+func TestAuditDiffModeIdentity(t *testing.T) {
+ p,repo:=auditProjector(t)
+ req:=DiffRequest{Question:"review",Paths:[]string{"dir/x"},BudgetBytes:4096}
+ before:=p.projectDiff(req)
+ if e:=os.Chmod(filepath.Join(repo,"dir","x"),0755);e!=nil{t.Fatal(e)}
+ after:=p.projectDiff(req)
+ if before.Status!=PartProjected||after.Status!=PartProjected||after.Diff.Body==before.Diff.Body{t.Fatal("invalid fixture")}
+ if before.Digest==after.Digest{t.Fatal("mode-only change changes diff body but not dedup digest")}
+}
+
+func TestAuditDiffDirectoryIdentity(t *testing.T) {
+ p,repo:=auditProjector(t)
+ req:=DiffRequest{Question:"review directory",Paths:[]string{"dir"},BudgetBytes:4096}
+ before:=p.projectDiff(req)
+ if e:=os.WriteFile(filepath.Join(repo,"dir","x"),[]byte("after\n"),0644);e!=nil{t.Fatal(e)}
+ after:=p.projectDiff(req)
+ if before.Status!=PartProjected||after.Status!=PartProjected||after.Diff.Body==before.Diff.Body{t.Fatal("invalid fixture")}
+ if before.Digest==after.Digest{t.Fatal("directory child changes diff body but not dedup digest")}
+}
+
+func TestAuditOutputBudget(t *testing.T) {
+ p,_:=auditProjector(t)
+ m:=Manifest{Version:1,Reason:"bounded audit"}
+ for i:=0;i<480;i++{m.Source=append(m.Source,SourceRequest{Question:"read",Path:"dir/x",LineStart:1,LineEnd:1,BudgetBytes:128})}
+ raw,e:=json.Marshal(m);if e!=nil{t.Fatal(e)}
+ if len(raw)>ManifestMaxBytes{t.Fatal("manifest too large")}
+ decoded,e:=DecodeManifest(raw);if e!=nil{t.Fatal(e)}
+ p.Project(decoded)
+ var out bytes.Buffer
+ if e:=p.Commit(&out,"audit");e!=nil{t.Fatal(e)}
+ if out.Len()>MaxOutputBytes{t.Fatalf("valid manifest %d bytes emitted %d bytes over limit %d",len(raw),out.Len(),MaxOutputBytes)}
+}
