@@ -23,6 +23,8 @@ type ExecutionOperation struct {
 	Lease           *ExecutionLease            `json:"lease,omitempty"`
 	SealRef         *EvidenceObjectRef         `json:"seal_ref,omitempty"`
 	CleanupSnapshot *WorkspaceSnapshot         `json:"cleanup_snapshot,omitempty"`
+	CleanupTrees    *ExecutionTrees            `json:"cleanup_trees,omitempty"`
+	CleanupArchive  *EvidenceObjectRef         `json:"cleanup_archive,omitempty"`
 	Evidence        EvidencePublicationInput   `json:"evidence"`
 }
 
@@ -81,13 +83,6 @@ func (s *Store) planExecutionSuspension(admission Admission, episodeID string, r
 	target.EpisodeID = episodeID
 	target.EpisodeRevision = revision
 	target.LeaseID = ""
-	refs, err := captureRefs(admission.Workspace.Root)
-	if err != nil {
-		return ExecutionOperation{}, err
-	}
-	refs[suspensionRef(snapshot.SnapshotID)] = snapshot.RetainedCommitOID
-	target.WorkspaceSnapshot.RefDigest = digestRefs(refs)
-	target.WorkspaceSnapshot.ID = workspaceSnapshotID(target.WorkspaceSnapshot)
 	record := buildTransitionRecord(TransitionIntent{Kind: executionSuspend, Source: admission, Target: target}, id)
 	record.Effects = []EffectExpectation{{Surface: MutationSurfaceRef, Resource: suspensionRef(snapshot.SnapshotID), ExpectedNew: snapshot.RetainedCommitOID}}
 	op := ExecutionOperation{Transition: record, Source: admission, Suspension: &snapshot, Episode: &episode}

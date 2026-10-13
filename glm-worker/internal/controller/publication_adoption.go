@@ -13,13 +13,20 @@ func (s *Store) AdoptExternalAdvancement(input ExternalAdvancementInput) (Execut
 		return ExecutionOperationResult{}, err
 	}
 	if head.AcceptedCandidateRef == nil {
+		if retiredMetadataHead(head) {
+			return s.planRetiredMetadataAdvancement(head, input.Policy)
+		}
 		return s.planSuspendedExternalAdvancement(head, input.Policy)
 	}
 	c, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if err := validateObservedAdvancementCandidate(c, input.Policy); err != nil {
+	return s.adoptObservedAdvancement(head, c, input.Policy)
+}
+
+func (s *Store) adoptObservedAdvancement(head RepositoryControllerHead, c AcceptedCandidate, policy PublicationPolicy) (ExecutionOperationResult, error) {
+	if err := validateObservedAdvancementCandidate(c, policy); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	remote, err := s.observeCandidateRemote(head, c)

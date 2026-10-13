@@ -2,6 +2,12 @@ package controller
 
 import "fmt"
 
+const (
+	amendmentRefsAbsent = iota
+	amendmentRefsComplete
+	amendmentRefsPartial
+)
+
 func (s *Store) validatePublicationCandidateBinding(op ExecutionOperation, c AcceptedCandidate) error {
 	seal, err := s.LoadAttemptSeal(c.SealRef)
 	if err != nil {
@@ -29,11 +35,85 @@ func (s *Store) validateCandidateRevisionLineage(op ExecutionOperation, c Accept
 		return err
 	}
 	if op.Transition.Kind == publicationRebind {
+		if op.Publication.RemoteOID == "" || op.Publication.RemoteOID != op.Publication.NewTip || op.Publication.RemoteOID != c.BaseOID {
+			return fmt.Errorf("candidate rebind remote observation differs from adopted base")
+		}
 		if previous.State == candidateObserved || c.EvidenceValid || len(c.Evidence) != 0 {
 			return fmt.Errorf("candidate rebind preserves immutable/stale authority")
 		}
+		if err := s.validateApprovedAmendmentTransition(op); err != nil {
+			return err
+		}
 	} else if previous.CandidateID != c.CandidateID {
 		return fmt.Errorf("candidate identity changed outside typed rebind")
+	}
+	return nil
+}
+
+func (s *Store) validateApprovedAmendmentTransition(op ExecutionOperation) error {
+	refs := amendmentTransitionRefs(op.Transition)
+	if refs == amendmentRefsAbsent {
+		return nil
+	}
+	if refs == amendmentRefsPartial {
+		return fmt.Errorf("approved Task amendment authority is incomplete")
+	}
+	if err := s.validateAmendmentHeadAuthority(op.Transition); err != nil {
+		return err
+	}
+	return s.validateAmendmentProjectAuthority(op)
+}
+
+func amendmentTransitionRefs(record TransitionRecord) int {
+	refs := 0
+	for _, ref := range []SemanticTaskRef{record.SourceRootTaskRef, record.TargetRootTaskRef, record.SourceExecutionTaskRef, record.TargetExecutionTaskRef} {
+		if !ref.Empty() {
+			refs++
+		}
+	}
+	if refs == 0 {
+		return amendmentRefsAbsent
+	}
+	if refs == 4 {
+		return amendmentRefsComplete
+	}
+	return amendmentRefsPartial
+}
+
+func (s *Store) validateAmendmentHeadAuthority(record TransitionRecord) error {
+	head, err := s.LoadHead()
+	if err != nil {
+		return err
+	}
+	if head.RootTaskRef == nil || head.ExecutionTaskRef == nil {
+		return fmt.Errorf("approved Task amendment authority is missing from the controller head")
+	}
+	if !amendmentAuthorityMatches(head, record) {
+		return fmt.Errorf("approved Task amendment authority is stale")
+	}
+	if record.TargetRootTaskRef.TaskPath != record.SourceRootTaskRef.TaskPath ||
+		record.TargetExecutionTaskRef.TaskPath != record.SourceExecutionTaskRef.TaskPath {
+		return fmt.Errorf("approved Task amendment changes Task authority path")
+	}
+	return nil
+}
+
+func amendmentAuthorityMatches(head RepositoryControllerHead, record TransitionRecord) bool {
+	sourceMatch := head.RootTaskRef.Equal(record.SourceRootTaskRef) && head.ExecutionTaskRef.Equal(record.SourceExecutionTaskRef)
+	targetMatch := head.RootTaskRef.Equal(record.TargetRootTaskRef) && head.ExecutionTaskRef.Equal(record.TargetExecutionTaskRef)
+	return sourceMatch || targetMatch
+}
+
+func (s *Store) validateAmendmentProjectAuthority(op ExecutionOperation) error {
+	if op.Publication.Project == nil || !projectHasTask(*op.Publication.Project, op.Transition.TargetExecutionTaskRef) {
+		return fmt.Errorf("approved Task amendment Project lacks the amended execution Task")
+	}
+	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, op.Publication.NewTip)
+	if err != nil {
+		return err
+	}
+	if !authority.Task.Equal(op.Transition.TargetRootTaskRef) || authority.ProjectSnapshotID != op.Publication.Project.SnapshotID {
+		return fmt.Errorf("approved Task amendment differs from the committed advancement")
 	}
 	return nil
 }

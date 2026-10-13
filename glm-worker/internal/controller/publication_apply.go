@@ -91,9 +91,17 @@ func (s *Store) commitPublicationOperation(op ExecutionOperation, c AcceptedCand
 		next.LiveAttemptID = ""
 		next.LiveLeaseID = ""
 		next.IntegrationTip = op.Publication.NewTip
+		if op.Transition.Kind == publicationRebind && !op.Transition.TargetRootTaskRef.Empty() {
+			root := op.Transition.TargetRootTaskRef
+			execution := op.Transition.TargetExecutionTaskRef
+			next.RootTaskRef = &root
+			next.ExecutionTaskRef = &execution
+		}
 		if c.State == candidateObserved {
 			next.ObservedPrefix = c.CommitOID
 			next.ObservedRemoteTip = observedRemote
+		} else if op.Transition.Kind == publicationRebind {
+			next.ObservedRemoteTip = op.Publication.RemoteOID
 		}
 		return s.commitPublicationTarget(next, op, c)
 	})

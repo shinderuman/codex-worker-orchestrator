@@ -26,7 +26,7 @@ func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOpe
 	if err != nil {
 		return ExecutionOperationResult{}, s.preservePublicationConflict(head, nil, err)
 	}
-	project, err := s.publicationProjectAdvancement(head, remote)
+	project, err := s.approvedAmendmentProject(head, c, remote, input.Amendment)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -39,6 +39,17 @@ func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOpe
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
+	applyRebindOperationPlan(&op, head, c, project, remote, local, localNew, input.Amendment)
+	if err := s.rebindPublicationEpisode(&op, head, project); err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if err := s.prepareExecutionOperation(&op, head); err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	return s.recoverExecutionOperationLocked(op)
+}
+
+func applyRebindOperationPlan(op *ExecutionOperation, head RepositoryControllerHead, c AcceptedCandidate, project ProjectSnapshot, remote, local, localNew string, approval *TaskAmendmentApproval) {
 	op.Publication.NewTip = remote
 	op.Publication.RemoteOID = remote
 	op.Publication.Project = &project
@@ -49,13 +60,63 @@ func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOpe
 	if local != localNew {
 		op.Transition.Effects = append(op.Transition.Effects, EffectExpectation{Surface: MutationSurfaceRef, Resource: c.Policy.LocalRef, ExpectedOld: local, ExpectedNew: localNew})
 	}
-	if err := s.rebindPublicationEpisode(&op, head, project); err != nil {
-		return ExecutionOperationResult{}, err
+	recordAmendmentAuthority(op, head, approval)
+}
+
+func recordAmendmentAuthority(op *ExecutionOperation, head RepositoryControllerHead, approval *TaskAmendmentApproval) {
+	if approval == nil {
+		return
 	}
-	if err := s.prepareExecutionOperation(&op, head); err != nil {
-		return ExecutionOperationResult{}, err
+	op.Transition.SourceRootTaskRef = *head.RootTaskRef
+	op.Transition.TargetRootTaskRef = approval.NewRootTaskRef
+	op.Transition.SourceExecutionTaskRef = *head.ExecutionTaskRef
+	op.Transition.TargetExecutionTaskRef = approval.NewExecutionTaskRef
+}
+
+func (s *Store) approvedAmendmentProject(head RepositoryControllerHead, c AcceptedCandidate, remote string, approval *TaskAmendmentApproval) (ProjectSnapshot, error) {
+	if approval == nil {
+		return s.publicationProjectAdvancement(head, remote)
 	}
-	return s.recoverExecutionOperationLocked(op)
+	if err := s.validateApprovedAmendmentClaims(head, c, remote, approval); err != nil {
+		return ProjectSnapshot{}, err
+	}
+	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, remote)
+	if err != nil {
+		return ProjectSnapshot{}, err
+	}
+	if err := validateApprovedAmendmentProject(authority, approval); err != nil {
+		return ProjectSnapshot{}, err
+	}
+	return authority.Snapshot, nil
+}
+
+func (s *Store) validateApprovedAmendmentClaims(head RepositoryControllerHead, c AcceptedCandidate, remote string, approval *TaskAmendmentApproval) error {
+	if remote != approval.RemoteOID {
+		return fmt.Errorf("approved Task amendment remote differs from the observed advancement")
+	}
+	if head.RootTaskRef == nil || head.ExecutionTaskRef == nil {
+		return fmt.Errorf("approved Task amendment requires held root and execution Task authority")
+	}
+	if !approval.OldRootTaskRef.Equal(*head.RootTaskRef) || !approval.OldExecutionTaskRef.Equal(*head.ExecutionTaskRef) {
+		return fmt.Errorf("approved Task amendment old authority differs from the controller head")
+	}
+	if !c.TaskRef.Equal(approval.OldExecutionTaskRef) {
+		return fmt.Errorf("approved Task amendment candidate provenance differs")
+	}
+	if approval.NewRootTaskRef.TaskPath != approval.OldRootTaskRef.TaskPath || approval.NewExecutionTaskRef.TaskPath != approval.OldExecutionTaskRef.TaskPath {
+		return fmt.Errorf("approved Task amendment changes Task authority path")
+	}
+	return validateParentMetadataHistory(s.identity.PrimaryRoot, head.IntegrationTip, remote)
+}
+
+func validateApprovedAmendmentProject(authority CommittedTaskAuthority, approval *TaskAmendmentApproval) error {
+	if !authority.Task.Equal(approval.NewRootTaskRef) {
+		return fmt.Errorf("approved Task amendment new root authority differs from the committed Project")
+	}
+	if !projectHasTask(authority.Snapshot, approval.NewExecutionTaskRef) {
+		return fmt.Errorf("approved Task amendment execution Task is absent from the committed Project")
+	}
+	return nil
 }
 
 func (s *Store) reboundCandidate(old AcceptedCandidate, base string) (AcceptedCandidate, error) {

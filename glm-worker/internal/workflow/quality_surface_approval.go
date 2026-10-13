@@ -25,11 +25,6 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	if err := w.validateCompletedGuardResult(result); err != nil {
 		return true, err
 	}
-	targets, err := w.currentQualitySurfaceReviewTargets()
-	if err != nil {
-		return true, fmt.Errorf("quality-surface approval review targets: %w", err)
-	}
-
 	checkpoint.QualitySurfaceApprovalPending = true
 	checkpoint.QualitySurfaceApprovalActivated = false
 	checkpoint.CompletedResult = &result
@@ -38,6 +33,17 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	}
 	if err := w.state.EnterQualitySurfaceApprovalWait(checkpoint); err != nil {
 		return true, err
+	}
+	targets, outsideGitView, targetsErr := w.qualitySurfaceApprovalReviewTargets()
+	if targetsErr != nil {
+		return true, w.emitResult(qualitySurfaceFailClosedResult(
+			checkpoint.Phase,
+			fmt.Sprintf("%s: quality-surface approval review targets: %v", reason, targetsErr),
+			qualitySurfaceOwnerReviewTargets(),
+		))
+	}
+	if outsideGitView {
+		reason = w.qualitySurfaceDriftOutsideGitReason(reason)
 	}
 	return true, w.emitResult(qualitySurfaceFailClosedResult(checkpoint.Phase, reason, targets))
 }

@@ -25,6 +25,7 @@ type terminalHandoffLoader func() (json.RawMessage, error)
 const (
 	actionAccept             = "accept"
 	actionResume             = "resume"
+	actionResubmitReport     = "resubmit-report"
 	actionObservationExecute = "observation-execute"
 )
 

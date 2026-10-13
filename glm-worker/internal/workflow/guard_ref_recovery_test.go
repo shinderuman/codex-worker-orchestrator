@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -16,14 +17,19 @@ func TestRefMutationGuardStopPersistsEvidenceAndRequiresExactRepair(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	authorityRefBytes, err := exec.Command("git", "-C", repo, "symbolic-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorityRef := strings.TrimSpace(string(authorityRefBytes))
 	refErr := &runner.GitAuthorityGuardError{
 		Stage:           "after-call-mutation",
 		Mutations:       []string{"refs"},
 		RefBeforeDigest: beforeDigest,
 		RefAfterDigest:  "different-after-digest",
 		RefChanges: []runner.GitRefChange{{
-			Name:  "refs/heads/bypass",
-			After: &runner.GitRefState{Name: "refs/heads/bypass", ObjectID: "after-object"},
+			Name:  authorityRef,
+			After: &runner.GitRefState{Name: authorityRef, ObjectID: "after-object"},
 		}},
 	}
 	stopRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done"), runErr: refErr}}}
@@ -41,7 +47,7 @@ func TestRefMutationGuardStopPersistsEvidenceAndRequiresExactRepair(t *testing.T
 		t.Fatal("completed worker result should remain reusable after exact ref repair")
 	}
 
-	runRetentionGit(t, repo, "branch", "bypass")
+	runRetentionGit(t, repo, "branch", "-m", "unrepaired-authority")
 	blockedRunner := &scriptedRunner{}
 	blockedWorkflow := newGitWorkflowT(t, st, blockedRunner, repo)
 	err = blockedWorkflow.ExecuteResume()
@@ -56,7 +62,7 @@ func TestRefMutationGuardStopPersistsEvidenceAndRequiresExactRepair(t *testing.T
 		t.Fatalf("status after rejected resume = %s", st.TaskStatus())
 	}
 
-	runRetentionGit(t, repo, "branch", "-D", "bypass")
+	runRetentionGit(t, repo, "branch", "-m", strings.TrimPrefix(authorityRef, "refs/heads/"))
 	repairedDigest, err := runner.CaptureGitAuthorityRefDigest(repo)
 	if err != nil {
 		t.Fatal(err)

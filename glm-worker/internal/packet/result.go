@@ -78,8 +78,8 @@ type mismatchError struct {
 }
 
 const (
-	MaxPacketBytes     = 6 * 1024
-	MaxFieldBytes      = 1536
+	MaxPacketBytes     = 8 * 1024
+	MaxFieldBytes      = 2048
 	MaxDiagnosticBytes = 6 * 1024
 )
 

@@ -98,6 +98,7 @@ const (
 	ResumeStopInterrupted         ResumeStopKind = "interrupted"
 	ResumeStopGuardRecoverable    ResumeStopKind = "guard-recoverable"
 	ResumeStopQualityGate         ResumeStopKind = "quality-gate-recoverable"
+	ResumeStopResultFormat        ResumeStopKind = "result-format-recoverable"
 )
 
 var ErrNoResumeCheckpoint = errors.New("resumable task is not available")
@@ -109,7 +110,8 @@ func (kind ResumeStopKind) Valid() bool {
 		ResumeStopProviderUnavailable,
 		ResumeStopInterrupted,
 		ResumeStopGuardRecoverable,
-		ResumeStopQualityGate:
+		ResumeStopQualityGate,
+		ResumeStopResultFormat:
 		return true
 	default:
 		return false
@@ -141,6 +143,8 @@ func (kind ResumeStopKind) TaskStatus() TaskStatus {
 		return TaskStatusGuardRecoverable
 	case ResumeStopQualityGate:
 		return TaskStatusQualityGateRecoverable
+	case ResumeStopResultFormat:
+		return TaskStatusResultFormatRecoverable
 	default:
 		return TaskStatusActive
 	}
@@ -158,6 +162,8 @@ func (kind ResumeStopKind) ResumeSource() string {
 		return "guard-recovery"
 	case ResumeStopQualityGate:
 		return "quality-gate-recovery"
+	case ResumeStopResultFormat:
+		return "result-format-recovery"
 	default:
 		return ""
 	}

@@ -130,7 +130,7 @@ func (s *Store) pushAndObserveCandidate(op ExecutionOperation, c AcceptedCandida
 	if remote != op.Publication.RemoteOID {
 		return "", s.abortRacedPublication(op, remote)
 	}
-	_, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", c.Policy.Remote, c.CommitOID+":"+c.Policy.RemoteRef)
+	_, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", c.Policy.Remote, c.Policy.LocalRef+":"+c.Policy.RemoteRef)
 	observed, err := observePublicationRemote(s.identity.PrimaryRoot, c.Policy)
 	if err != nil {
 		return "", fmt.Errorf("publication result is unresolved: %w", err)

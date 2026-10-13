@@ -310,7 +310,7 @@ func TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun(t *testing.T)
 	calls := 0
 	w.captureSnapshot = func(root string) (state.GitSnapshot, error) {
 		calls++
-		if calls == 5 {
+		if calls == 6 {
 			return state.GitSnapshot{}, errors.New("report-only start capture unavailable")
 		}
 		return realCapture(root)

@@ -89,7 +89,7 @@ func (s *Store) ExecutionTaskForWorkspace(root string) (SemanticTaskRef, error) 
 	if err != nil {
 		return SemanticTaskRef{}, err
 	}
-	admission, err := s.AdmitMutation(authority, workspace, snapshot)
+	admission, err := s.AdmitMutationSettlingQualityIntent(authority, workspace, snapshot)
 	if err != nil {
 		return SemanticTaskRef{}, fmt.Errorf("resolve controller execution task: %w", err)
 	}
@@ -121,4 +121,49 @@ func WorkflowExecutionTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) 
 	}
 	task, err := store.ExecutionTaskForWorkspace(cfg.RepoRoot)
 	return task, true, err
+}
+
+func WorkflowAuthorityTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) {
+	task, canonical, executionErr := WorkflowExecutionTask(cfg)
+	if executionErr == nil || !canonical {
+		return task, canonical, executionErr
+	}
+	store, err := Open(cfg)
+	if err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	if !retiredMetadataHead(head) {
+		if task, sealed := sealedAcceptedReadAuthority(store, head); sealed {
+			return task, true, nil
+		}
+		return SemanticTaskRef{}, true, executionErr
+	}
+	if _, err := store.retiredProjectAuthority(head); err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	authority, err := ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	if err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	if authority.Task.TaskPath != head.RootTaskRef.TaskPath {
+		return SemanticTaskRef{}, true, fmt.Errorf("retired metadata advancement changes selected Task authority")
+	}
+	if err := validateParentMetadataHistory(cfg.RepoRoot, head.IntegrationTip, authority.Snapshot.HeadOID); err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	return authority.Task, true, nil
+}
+
+func sealedAcceptedReadAuthority(store *Store, head RepositoryControllerHead) (SemanticTaskRef, bool) {
+	if head.Status != ControllerStatusActive || head.LiveAttemptID != "" || head.ExecutionTaskRef == nil {
+		return SemanticTaskRef{}, false
+	}
+	if _, err := store.QuiescentCandidateAwaitMaterialization(head); err != nil {
+		return SemanticTaskRef{}, false
+	}
+	return *head.ExecutionTaskRef, true
 }

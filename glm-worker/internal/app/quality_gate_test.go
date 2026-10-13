@@ -174,8 +174,8 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 		wantArgv  string
 		wantLines int
 	}{
-		{form: "go-test", wantArgv: "test ./...", wantLines: 5},
-		{form: "go-test-race", wantArgv: "test -race ./...", wantLines: 5},
+		{form: "go-test", wantArgv: "test -timeout=20m ./...", wantLines: 5},
+		{form: "go-test-race", wantArgv: "test -race -timeout=20m ./...", wantLines: 5},
 	}
 	for _, tc := range cases {
 		t.Run(tc.form, func(t *testing.T) {
@@ -285,7 +285,7 @@ func TestQualityGateFailureIsStructuredProcessError(t *testing.T) {
 	if envelope.Error.Kind != "quality_gate_failed" {
 		t.Fatalf("error kindが想定と異なります: %s", envelope.Error.Kind)
 	}
-	if envelope.Error.Detail["exit_code"] != float64(3) || envelope.Error.Detail["command"] != "go test ./..." {
+	if envelope.Error.Detail["exit_code"] != float64(3) || envelope.Error.Detail["command"] != "go test -timeout=20m ./..." {
 		t.Fatalf("error detailが想定と異なります: %+v", envelope.Error.Detail)
 	}
 	if lines := qualityGateInvocationLines(t, invocationLog); len(lines) == 0 {

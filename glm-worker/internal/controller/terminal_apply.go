@@ -227,8 +227,11 @@ func (s *Store) applyTerminalMetadataPublication(op ExecutionOperation) error {
 	if remote != old && remote != next {
 		return fmt.Errorf("terminal metadata remote advanced; exact operation retained without force push")
 	}
+	if err := updatePublicationRef(s.identity.PrimaryRoot, p.Policy.LocalRef, old, next); err != nil {
+		return err
+	}
 	if remote == old {
-		_, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", p.Policy.Remote, next+":"+p.Policy.RemoteRef)
+		_, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", p.Policy.Remote, p.Policy.LocalRef+":"+p.Policy.RemoteRef)
 		remote, err = observePublicationRemote(s.identity.PrimaryRoot, p.Policy)
 		if err != nil {
 			return err
@@ -236,9 +239,6 @@ func (s *Store) applyTerminalMetadataPublication(op ExecutionOperation) error {
 		if remote != next {
 			return fmt.Errorf("terminal metadata publication not proven: %w", pushErr)
 		}
-	}
-	if err := updatePublicationRef(s.identity.PrimaryRoot, p.Policy.LocalRef, old, next); err != nil {
-		return err
 	}
 	return nil
 }

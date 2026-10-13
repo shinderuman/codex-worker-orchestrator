@@ -80,7 +80,7 @@ func TestExecuteFinalizationCheckRoutingSelection(t *testing.T) {
 				evidenceDir = moduleDir
 			}
 			writeFinalizationRoutingWorker(t)
-			t.Setenv("ROUTING_EVIDENCE", finalizationEvidenceJSON(evidenceDir, tc.evidenceForm, tc.snapshotMatch))
+			t.Setenv("ROUTING_EVIDENCE", finalizationEvidenceListJSON(finalizationEvidenceJSON(evidenceDir, tc.evidenceForm, tc.snapshotMatch)))
 			resolvedModuleDir, err := filepath.EvalSymlinks(moduleDir)
 			if err != nil {
 				t.Fatal(err)
@@ -129,7 +129,7 @@ func TestExecuteFinalizationCheckBlocksWhenNoWorkingDirectoryIsAModuleRoot(t *te
 	repo := newFinalizationTestRepo(t)
 	marker := filepath.Join(t.TempDir(), "quality-gate-called")
 	writeFinalizationRoutingWorkerWithGateMarker(t)
-	t.Setenv("ROUTING_EVIDENCE", "[]")
+	t.Setenv("ROUTING_EVIDENCE", finalizationEvidenceListJSON(""))
 	t.Setenv("QUALITY_GATE_MARKER", marker)
 	resolvedRepo, err := filepath.EvalSymlinks(repo)
 	if err != nil {
@@ -172,7 +172,7 @@ func TestExecuteFinalizationCheckBlocksRoutingEvidenceOutsideRepository(t *testi
 	}
 	marker := filepath.Join(t.TempDir(), "quality-gate-called")
 	writeFinalizationRoutingWorkerWithGateMarker(t)
-	t.Setenv("ROUTING_EVIDENCE", finalizationEvidenceJSON(outside, "go-test", "exact"))
+	t.Setenv("ROUTING_EVIDENCE", finalizationEvidenceListJSON(finalizationEvidenceJSON(outside, "go-test", "exact")))
 	t.Setenv("QUALITY_GATE_MARKER", marker)
 	resolvedRepo, err := filepath.EvalSymlinks(repo)
 	if err != nil {
@@ -204,8 +204,148 @@ func TestExecuteFinalizationCheckBlocksRoutingEvidenceOutsideRepository(t *testi
 	}
 }
 
+func TestExecuteFinalizationCheckStopsBeforeGateWhenRoutingHandoffFails(t *testing.T) {
+	for _, mode := range []string{"unavailable", "inconsistent"} {
+		t.Run(mode, func(t *testing.T) {
+			repo := newFinalizationTestRepo(t)
+			marker := filepath.Join(t.TempDir(), "quality-gate-called")
+			workerDir := t.TempDir()
+			worker := filepath.Join(workerDir, "glm-worker")
+			body := `
+case "$1" in
+  --quality-gate)
+    touch "$QUALITY_GATE_MARKER"
+    exit 9
+    ;;
+  --handoff)
+    if [ "$ROUTING_MODE" = "unavailable" ]; then
+      printf '%s\n' '{"error":{"kind":"duplicate_parent_projection"}}' >&2
+      exit 6
+    fi
+    printf '%s\n' '{"consistent":false,"inconsistency":"parent_metadata_active_unresolvable"}'
+    ;;
+  *) exit 9 ;;
+esac
+`
+			if err := os.WriteFile(worker, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("ROUTING_MODE", mode)
+			t.Setenv("QUALITY_GATE_MARKER", marker)
+			resolvedRepo, err := filepath.EvalSymlinks(repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("EXPECTED_REPO_ROOT", resolvedRepo)
+			previous, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chdir(repo); err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = os.Chdir(previous) }()
+
+			var output bytes.Buffer
+			if err := execute(config.AppConfig{RepoRoot: repo}, []string{"finalize-check", "go-test"}, &output, &output); err != nil {
+				t.Fatalf("execute: %v: %s", err, output.String())
+			}
+			var result finalizationCheckOutput
+			if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			wantReason := "routing_handoff_unavailable"
+			if mode == "inconsistent" {
+				wantReason = "routing_handoff_inconsistent"
+			}
+			if result.Status != "blocked" || result.Failure == nil || result.Failure.Stage != "routing" || result.Failure.Reason != wantReason {
+				t.Fatalf("result = %#v", result)
+			}
+			if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+				t.Fatalf("quality gate ran despite routing rejection: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestExecuteFinalizationCheckCallerModuleRootAcquiresSinglePostGateHandoff(t *testing.T) {
+	repo := newFinalizationTestRepo(t)
+	moduleDir := writeFinalizationModuleDir(t, repo)
+	invocations := filepath.Join(t.TempDir(), "worker-invocations.log")
+	workerDir := t.TempDir()
+	worker := filepath.Join(workerDir, "glm-worker")
+	body := `
+case "$1" in
+  --quality-gate)
+    test "$PWD" = "$EXPECTED_GATE_DIR"
+    printf 'gate\n' >>"$INVOCATION_LOG"
+    printf '%s\n' '{"status":"pass","validation_run_id":"fresh-run","form":"go-test","command":"go test ./...","working_dir":"current","duration_ms":1,"log":"gate.log"}'
+    ;;
+  --handoff)
+    test "$PWD" = "$EXPECTED_REPO_ROOT"
+    printf 'handoff\n' >>"$INVOCATION_LOG"
+    printf '%s\n' '{"consistent":true,"validations":[{"validation_run_id":"fresh-run","status":"pass"}],"routing_evidence":[]}'
+    ;;
+  *) exit 9 ;;
+esac
+`
+	if err := os.WriteFile(worker, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("INVOCATION_LOG", invocations)
+	resolvedModuleDir, err := filepath.EvalSymlinks(moduleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EXPECTED_GATE_DIR", resolvedModuleDir)
+	t.Setenv("EXPECTED_REPO_ROOT", resolvedRepo)
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(moduleDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(previous) }()
+
+	var output bytes.Buffer
+	if err := execute(config.AppConfig{RepoRoot: repo}, []string{"finalize-check", "go-test"}, &output, &output); err != nil {
+		t.Fatalf("execute: %v: %s", err, output.String())
+	}
+	var result finalizationCheckOutput
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "ready_for_parent_decision" || result.Failure != nil {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Routing == nil || result.Routing.Basis != finalizationRoutingBasisCaller || result.Routing.SelectedDir != resolvedModuleDir {
+		t.Fatalf("routing = %#v", result.Routing)
+	}
+	logData, err := os.ReadFile(invocations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(logData)); got != "gate\nhandoff" {
+		t.Fatalf("worker invocation order = %q", got)
+	}
+}
+
 func finalizationEvidenceJSON(dir, form, snapshotMatch string) string {
 	return `{"validation_run_id":"route-run","form":"` + form + `","working_dir":"` + dir + `","snapshot_match":"` + snapshotMatch + `"}`
+}
+
+func finalizationEvidenceListJSON(evidence string) string {
+	if evidence == "" {
+		return "[]"
+	}
+	return "[" + evidence + "]"
 }
 
 func writeFinalizationModuleDir(t *testing.T, repo string) string {
@@ -231,7 +371,7 @@ case "$1" in
     ;;
   --handoff)
     test "$PWD" = "$EXPECTED_REPO_ROOT"
-    printf '{"consistent":true,"validations":[{"validation_run_id":"fresh-run","status":"pass"}],"routing_evidence":[%s]}\n' "$ROUTING_EVIDENCE"
+    printf '{"consistent":true,"validations":[{"validation_run_id":"fresh-run","status":"pass"}],"routing_evidence":%s}\n' "$ROUTING_EVIDENCE"
     ;;
   *) exit 9 ;;
 esac
@@ -249,7 +389,7 @@ case "$1" in
     ;;
   --handoff)
     test "$PWD" = "$EXPECTED_REPO_ROOT"
-    printf '{"consistent":true,"validations":[],"routing_evidence":[%s]}\n' "$ROUTING_EVIDENCE"
+    printf '{"consistent":true,"validations":[],"routing_evidence":%s}\n' "$ROUTING_EVIDENCE"
     ;;
   *) exit 9 ;;
 esac

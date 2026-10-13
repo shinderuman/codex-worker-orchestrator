@@ -65,6 +65,8 @@ func commandParentAction(mode CommandMode) (state.ParentAction, bool) {
 		return state.ParentActionAccept, true
 	case ModeResume:
 		return state.ParentActionResume, true
+	case ModeResubmitReport:
+		return state.ParentActionResubmitReport, true
 	default:
 		return state.ParentActionNone, false
 	}
@@ -85,6 +87,8 @@ func parentActionDenied(cmd Command, plan state.ParentActionPlan, st *state.Stat
 		return parentAcceptDenied(plan, st)
 	case ModeResume:
 		return resumeActionDenied(st)
+	case ModeResubmitReport:
+		return &workflow.WorkerError{Message: "report resubmission requires the terminal result-format stop of this task's result correction; the one-shot parent authorization is not available for the current state"}
 	case ModeNewTask:
 		return newTaskActionDenied(plan, st)
 	default:
@@ -108,8 +112,12 @@ func parentAcceptDenied(plan state.ParentActionPlan, st *state.StateStore) error
 }
 
 func resumeActionDenied(st *state.StateStore) error {
-	if _, err := st.LoadResumeCheckpoint(); err != nil {
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil {
 		return err
+	}
+	if checkpoint.StopKind == state.ResumeStopResultFormat {
+		return &workflow.WorkerError{Message: "terminal result correction needs the one-shot report resubmission; use glm-parent-action resubmit-report instead of --resume"}
 	}
 	return &workflow.WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability, user interruption or a recoverable guard failure"}
 }

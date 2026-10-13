@@ -33,31 +33,13 @@ func (s *Store) planExecutionCleanup(input CleanupExecutionInput) (ExecutionOper
 	if err != nil {
 		return ExecutionOperation{}, RepositoryControllerHead{}, err
 	}
-	proof, err := s.ProveCleanupDurability(input.SealRef)
+	seal, err := s.verifyCleanupSealAuthority(input, head)
 	if err != nil {
 		return ExecutionOperation{}, RepositoryControllerHead{}, err
 	}
-	seal, err := s.LoadAttemptSeal(input.SealRef)
+	workspace, root, err := s.resolveExecutionCleanupWorkspace(input, seal)
 	if err != nil {
 		return ExecutionOperation{}, RepositoryControllerHead{}, err
-	}
-	if proof.ControllerGeneration != head.ControllerGeneration || seal.WorkspaceID != input.WorkspaceID {
-		return ExecutionOperation{}, RepositoryControllerHead{}, fmt.Errorf("cleanup seal/workspace authority is stale")
-	}
-	base, err := canonicalPath(s.dir)
-	if err != nil {
-		return ExecutionOperation{}, head, err
-	}
-	root := filepath.Join(base, s.identity.LineageID[:16]+"-lane")
-	workspace, err := ResolveWorkspaceIdentity(root, s.identity)
-	if err != nil {
-		return ExecutionOperation{}, RepositoryControllerHead{}, err
-	}
-	if workspace.ID != input.WorkspaceID {
-		return ExecutionOperation{}, RepositoryControllerHead{}, fmt.Errorf("cleanup workspace identity does not match sealed attempt")
-	}
-	if err := s.verifySealedCleanupContent(workspace, seal); err != nil {
-		return ExecutionOperation{}, head, err
 	}
 	snapshot, err := CaptureWorkspaceSnapshot(root)
 	if err != nil {
@@ -69,7 +51,44 @@ func (s *Store) planExecutionCleanup(input CleanupExecutionInput) (ExecutionOper
 	}
 	record.Effects = []EffectExpectation{{Surface: MutationSurfaceCleanup, Resource: root, ExpectedOld: snapshot.ID}}
 	op := ExecutionOperation{Transition: record, Workspace: &workspace, SealRef: &input.SealRef, CleanupSnapshot: &snapshot}
+	if err := s.archiveCleanupWorkspace(&op, seal); err != nil {
+		return ExecutionOperation{}, head, err
+	}
 	return op, head, nil
+}
+
+func (s *Store) verifyCleanupSealAuthority(input CleanupExecutionInput, head RepositoryControllerHead) (AttemptSeal, error) {
+	proof, err := s.ProveCleanupDurability(input.SealRef)
+	if err != nil {
+		return AttemptSeal{}, err
+	}
+	seal, err := s.LoadAttemptSeal(input.SealRef)
+	if err != nil {
+		return AttemptSeal{}, err
+	}
+	if proof.ControllerGeneration != head.ControllerGeneration || seal.WorkspaceID != input.WorkspaceID {
+		return AttemptSeal{}, fmt.Errorf("cleanup seal/workspace authority is stale")
+	}
+	return seal, nil
+}
+
+func (s *Store) resolveExecutionCleanupWorkspace(input CleanupExecutionInput, seal AttemptSeal) (WorkspaceIdentity, string, error) {
+	base, err := canonicalPath(s.dir)
+	if err != nil {
+		return WorkspaceIdentity{}, "", err
+	}
+	root := filepath.Join(base, s.identity.LineageID[:16]+"-lane")
+	workspace, err := ResolveWorkspaceIdentity(root, s.identity)
+	if err != nil {
+		return WorkspaceIdentity{}, "", err
+	}
+	if workspace.ID != input.WorkspaceID {
+		return WorkspaceIdentity{}, "", fmt.Errorf("cleanup workspace identity does not match sealed attempt")
+	}
+	if err := s.verifySealedCleanupContent(workspace, seal); err != nil {
+		return WorkspaceIdentity{}, "", err
+	}
+	return workspace, root, nil
 }
 
 func (s *Store) applyExecutionCleanup(op ExecutionOperation) error {
@@ -79,11 +98,21 @@ func (s *Store) applyExecutionCleanup(op ExecutionOperation) error {
 	if _, err := s.ProveCleanupDurability(*op.SealRef); err != nil {
 		return err
 	}
+	if err := s.verifyCleanupArchive(op); err != nil {
+		return err
+	}
+	if err := s.removeExecutionCleanupWorkspace(op); err != nil {
+		return err
+	}
+	return s.commitExecutionCleanup(op)
+}
+
+func (s *Store) removeExecutionCleanupWorkspace(op ExecutionOperation) error {
 	root := op.Workspace.Root
 	_, rootErr := os.Lstat(root)
 	_, gitErr := os.Lstat(op.Workspace.GitDir)
 	if os.IsNotExist(rootErr) && os.IsNotExist(gitErr) {
-		return s.commitExecutionCleanup(op)
+		return nil
 	}
 	if rootErr != nil || gitErr != nil {
 		return fmt.Errorf("cleanup has unexpected partial workspace registration")
@@ -94,10 +123,7 @@ func (s *Store) applyExecutionCleanup(op ExecutionOperation) error {
 	if _, err := runGitBinary(s.identity.PrimaryRoot, nil, "worktree", "remove", "--force", root); err != nil {
 		return fmt.Errorf("execution cleanup remains pending: %w", err)
 	}
-	if err := verifyExecutionLaneAbsent(*op.Workspace); err != nil {
-		return err
-	}
-	return s.commitExecutionCleanup(op)
+	return verifyExecutionLaneAbsent(*op.Workspace)
 }
 
 func (s *Store) verifyCleanupWorkspace(op ExecutionOperation) error {
@@ -116,12 +142,21 @@ func (s *Store) verifyCleanupWorkspace(op ExecutionOperation) error {
 	if snapshot != *op.CleanupSnapshot {
 		return fmt.Errorf("cleanup workspace changed after prepare")
 	}
+	if op.CleanupTrees != nil {
+		trees, err := captureCleanupTrees(root)
+		if err != nil {
+			return err
+		}
+		if trees != *op.CleanupTrees {
+			return fmt.Errorf("cleanup data changed after archival")
+		}
+	}
 	return nil
 }
 
 func (s *Store) commitExecutionCleanup(op ExecutionOperation) error {
 	actual := map[string]string{op.Transition.Effects[0].Key(): ""}
-	_, err := s.commitAuthorityTransitionLocked(op.Transition, actual, false, nil)
+	_, _, err := s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, op.Evidence, nil)
 	return err
 }
 

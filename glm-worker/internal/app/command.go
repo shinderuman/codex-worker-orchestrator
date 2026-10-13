@@ -53,6 +53,7 @@ const (
 	ModeApproveSurface
 	ModeAccept
 	ModeResume
+	ModeResubmitReport
 	ModeStop
 	ModeStatus
 	ModeHandoff
@@ -109,6 +110,9 @@ var commandParsers = map[string]commandParser{
 	},
 	"--resume": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeResume, "usage: glm-worker --resume")
+	},
+	"--resubmit-report": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeResubmitReport, "usage: glm-worker --resubmit-report")
 	},
 	"--stop": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeStop, "usage: glm-worker --stop")

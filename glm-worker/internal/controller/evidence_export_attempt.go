@@ -254,7 +254,7 @@ func (b *evidenceExportBuilder) materializeCandidateEvidence(ref EvidenceObjectR
 	if record.Artifact.Digest == "" {
 		return nil
 	}
-	artifactPath := path.Dir(recordPath) + "/" + record.Kind + "-artifact-" + record.Artifact.Digest + ".json"
+	artifactPath := path.Dir(recordPath) + "/" + record.Kind + "-artifact-" + record.Artifact.Digest + jsonRecordFileExt
 	b.addEvidenceObjectFile(record.Artifact, artifactPath, basis)
 	return nil
 }
@@ -459,7 +459,7 @@ func evidenceExportAttemptEntryPath(attemptID, prefix string, ref EvidenceObject
 		if !evidenceExportSegmentSafe(suffix) {
 			return "", false
 		}
-		return prefix + "/candidates/" + suffix + "-" + ref.Digest + ".json", true
+		return prefix + "/candidates/" + suffix + "-" + ref.Digest + jsonRecordFileExt, true
 	}
 	if transcript, ok := evidenceExportTranscriptEntrySuffix(ref.Kind, suffix); ok {
 		suffix = transcript

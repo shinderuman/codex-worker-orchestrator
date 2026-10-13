@@ -94,7 +94,7 @@ func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
-	refs, err := captureRefs(repoRoot)
+	refs, err := captureAuthorityRefs(repoRoot)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
@@ -108,22 +108,18 @@ func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {
 	return result, nil
 }
 
-func captureRefs(repoRoot string) (map[string]string, error) {
-	command := exec.Command("git", "-C", repoRoot, "for-each-ref", "--sort=refname", "--format=%(refname)%00%(objectname)")
-	output, err := command.Output()
+func captureAuthorityRefs(repoRoot string) (map[string]string, error) {
+	gitPath, err := exec.LookPath("git")
 	if err != nil {
-		return nil, fmt.Errorf("capture repository refs: %w", err)
+		return nil, fmt.Errorf("resolve git for authority ref capture: %w", err)
+	}
+	authorityRefs, err := state.CaptureGitAuthorityRefs(gitPath, repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("capture workspace authority refs: %w", err)
 	}
 	refs := map[string]string{}
-	for _, line := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\x00", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return nil, fmt.Errorf("repository ref snapshot is malformed")
-		}
-		refs[parts[0]] = parts[1]
+	for _, ref := range authorityRefs {
+		refs[ref.Name] = ref.ObjectID
 	}
 	return refs, nil
 }

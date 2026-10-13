@@ -7,6 +7,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type controllerExecutionCommand struct {
@@ -20,7 +21,10 @@ type controllerExecutionCommand struct {
 	TransitionID       string                        `json:"transition_id,omitempty"`
 }
 
-const controllerExecutionSurface = "controller-execution"
+const (
+	controllerExecutionSurface   = "controller-execution"
+	controllerPublicationSurface = "controller-publication"
+)
 
 func runControllerOperations(args []string, loadConfig func() (config.AppConfig, error), stdin io.Reader, stdout io.Writer) (bool, error) {
 	if len(args) != 2 || args[0] != controllerAuthorityFlag {
@@ -30,7 +34,7 @@ func runControllerOperations(args []string, loadConfig func() (config.AppConfig,
 	switch args[1] {
 	case controllerExecutionSurface:
 		command = &controllerExecutionCommand{}
-	case "controller-publication":
+	case controllerPublicationSurface:
 		command = &controllerPublicationCommand{}
 	default:
 		return false, nil
@@ -76,11 +80,15 @@ func executeControllerExecution(cfg config.AppConfig, store *controller.Store, c
 	if command.ExpectedGeneration != head.ControllerGeneration {
 		return controller.ExecutionOperationResult{}, fmt.Errorf("execution command generation is stale")
 	}
+	return executeControllerExecutionAction(cfg, store, command)
+}
+
+func executeControllerExecutionAction(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
 	switch command.Action {
 	case "suspend":
 		return executeControllerSuspend(cfg, store, command)
 	case "materialize":
-		return store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: command.ExpectedGeneration, EpisodeID: command.EpisodeID, EpisodeRevision: command.EpisodeRevision, SuspensionID: command.SuspensionID})
+		return executeControllerMaterialize(cfg, store, command)
 	case "cleanup":
 		if command.SealRef == nil || command.WorkspaceID == "" {
 			return controller.ExecutionOperationResult{}, fmt.Errorf("execution cleanup requires sealed workspace identity")
@@ -93,6 +101,17 @@ func executeControllerExecution(cfg config.AppConfig, store *controller.Store, c
 	}
 }
 
+func executeControllerMaterialize(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
+	result, err := store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: command.ExpectedGeneration, EpisodeID: command.EpisodeID, EpisodeRevision: command.EpisodeRevision, SuspensionID: command.SuspensionID})
+	if err != nil {
+		return controller.ExecutionOperationResult{}, err
+	}
+	if err := reenterMaterializedRuntimeCompletion(cfg, result); err != nil {
+		return controller.ExecutionOperationResult{}, err
+	}
+	return result, nil
+}
+
 func executeControllerSuspend(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
 	if command.EpisodeID == "" || command.EpisodeRevision == 0 {
 		return controller.ExecutionOperationResult{}, fmt.Errorf("execution suspension requires episode authority")
@@ -102,6 +121,24 @@ func executeControllerSuspend(cfg config.AppConfig, store *controller.Store, com
 		return controller.ExecutionOperationResult{}, err
 	}
 	return store.SuspendExecution(admission, command.EpisodeID, command.EpisodeRevision)
+}
+
+func reenterMaterializedRuntimeCompletion(cfg config.AppConfig, result controller.ExecutionOperationResult) error {
+	if result.Admission == nil {
+		return nil
+	}
+	runtimeCfg, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("bind canonical runtime for controller reentry: %w", err)
+	}
+	attempt := result.Admission.Attempt
+	_, err = state.AttachStateStore(runtimeCfg).ReenterAcceptedCompletionFromController(state.ControllerReentryAuthority{
+		PredecessorAttemptID: attempt.PredecessorAttemptID,
+		AttemptID:            attempt.AttemptID,
+		TaskPath:             attempt.SemanticTaskRef.TaskPath,
+		TaskContractDigest:   attempt.SemanticTaskRef.ContractDigest,
+	})
+	return err
 }
 
 func decodeControllerCommand(loadConfig func() (config.AppConfig, error), stdin io.Reader, command any) (config.AppConfig, *controller.Store, error) {

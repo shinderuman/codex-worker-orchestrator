@@ -80,6 +80,11 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		Execute:          parentActionExecutionDirectWorker,
 		TerminalEnvelope: true,
 	},
+	actionResubmitReport: {
+		Action:           actionResubmitReport,
+		Execute:          parentActionExecutionDirectWorker,
+		TerminalEnvelope: true,
+	},
 	"evidence": {
 		Action:  "evidence",
 		Execute: parentActionExecutionRead,

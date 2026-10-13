@@ -2,6 +2,7 @@ package packet
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -238,10 +239,11 @@ func TestValidateReviewerResultRejections(t *testing.T) {
 
 func TestValidateResultRejectsOversizeDisplay(t *testing.T) {
 	result := implementedResult()
-	result.Summary = strings.Repeat("x", 1520)
-	result.RequirementCoverage = strings.Repeat("y", 1520)
-	result.Tests = strings.Repeat("z", 1520)
-	result.Unverified = strings.Repeat("w", 1520)
+	perField := MaxFieldBytes - 20
+	result.Summary = strings.Repeat("x", perField)
+	result.RequirementCoverage = strings.Repeat("y", perField)
+	result.Tests = strings.Repeat("z", perField)
+	result.Unverified = strings.Repeat("w", perField)
 	err := ValidateWorkerResult(result)
 	if err == nil || !strings.Contains(err.Error(), "結果全体") {
 		t.Fatalf("err = %v", err)
@@ -336,7 +338,7 @@ func TestValidateSolQuestionFieldConstraints(t *testing.T) {
 	}{
 		{"newline", "line1\nline2", "field sol_questionに改行"},
 		{"carriage return", "line1\rline2", "field sol_questionに改行"},
-		{"oversize", strings.Repeat("q", MaxFieldBytes+1), "field sol_questionは1536 bytes以内"},
+		{"oversize", strings.Repeat("q", MaxFieldBytes+1), fmt.Sprintf("field sol_questionは%d bytes以内", MaxFieldBytes)},
 		{"empty", "", "必須field sol_question"},
 		{"whitespace only", " \t ", "必須field sol_question"},
 	}
@@ -526,7 +528,7 @@ func TestRejectCategory(t *testing.T) {
 		{&constraintError{reason: "reviewer結果のstatusとして許容されません"}, "status"},
 		{&constraintError{reason: "ARTIFACTSのパスが重複しています"}, "artifacts"},
 		{&constraintError{reason: "field summaryに改行を含められません"}, "multiline-field"},
-		{&constraintError{reason: "field summaryは1536 bytes以内にしてください"}, "size"},
+		{&constraintError{reason: fmt.Sprintf("field summaryは%d bytes以内にしてください", MaxFieldBytes)}, "size"},
 		{&constraintError{reason: "other"}, "other"},
 		{nil, ""},
 	}

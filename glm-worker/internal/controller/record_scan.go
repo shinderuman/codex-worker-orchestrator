@@ -5,12 +5,14 @@ import (
 	"strings"
 )
 
+const jsonRecordFileExt = ".json"
+
 func canonicalJSONRecordEntry(entry os.DirEntry) (string, bool, error) {
 	name := entry.Name()
-	if strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".json") {
+	if strings.HasPrefix(name, ".") || !strings.HasSuffix(name, jsonRecordFileExt) {
 		return "", false, nil
 	}
-	identity := strings.TrimSuffix(name, ".json")
+	identity := strings.TrimSuffix(name, jsonRecordFileExt)
 	if identity == "" {
 		return "", false, nil
 	}

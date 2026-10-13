@@ -61,8 +61,12 @@ func (w *Workflow) parentActionDenied(action state.ParentAction) error {
 	case state.ParentActionApproveSurface:
 		return &WorkerError{Message: "quality-surface approval is not pending; --approve-surface requires a stopped quality policy surface change"}
 	case state.ParentActionResume:
-		if _, err := w.state.LoadResumeCheckpoint(); err != nil {
+		checkpoint, err := w.state.LoadResumeCheckpoint()
+		if err != nil {
 			return err
+		}
+		if checkpoint.StopKind == state.ResumeStopResultFormat {
+			return &WorkerError{Message: "terminal result correction needs the one-shot report resubmission; use glm-parent-action resubmit-report instead of --resume"}
 		}
 		return &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability, user interruption or a recoverable guard failure"}
 	default:
@@ -85,18 +89,27 @@ func (w *Workflow) newTaskActionDenied(plan state.ParentActionPlan) error {
 	case state.ParentActionComplete:
 		return &WorkerError{Message: "previous task is awaiting parent completion; finish canonical controller publication and retirement before starting a new task"}
 	case state.ParentActionResume:
-		switch plan.ResumeKind {
-		case "rate-limited":
-			return &WorkerError{Message: "previous task is rate-limited; use --resume"}
-		case "provider-unavailable":
-			return &WorkerError{Message: "previous task is provider-unavailable; use --resume"}
-		case "interrupted":
-			return &WorkerError{Message: "previous task is interrupted; use --resume"}
+		if message := resumeDeniedMessage(plan.ResumeKind); message != "" {
+			return &WorkerError{Message: message}
 		}
 	case state.ParentActionRepairGuardThenResume:
 		return &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume"}
 	case state.ParentActionRepairQualityGateThenResume:
 		return &WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume"}
+	case state.ParentActionResubmitReport:
+		return &WorkerError{Message: "previous task stopped on a terminal result correction; use glm-parent-action resubmit-report before starting a new task"}
 	}
 	return &WorkerError{Message: fmt.Sprintf("previous task requires parent action %s before starting a new task", plan.RequiredAction)}
+}
+
+func resumeDeniedMessage(kind string) string {
+	switch kind {
+	case "rate-limited":
+		return "previous task is rate-limited; use --resume"
+	case "provider-unavailable":
+		return "previous task is provider-unavailable; use --resume"
+	case "interrupted":
+		return "previous task is interrupted; use --resume"
+	}
+	return ""
 }

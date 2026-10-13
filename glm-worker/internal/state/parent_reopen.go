@@ -35,7 +35,7 @@ func (s *StateStore) ReopenAcceptedParentCompletion() error {
 	if err := s.Remove(parentReopenTransactionStateFile); err != nil {
 		return fmt.Errorf("parent reopen transition committed state but could not clear recovery record: %w", err)
 	}
-	s.recordReopenedParentOutcome(taskID, finding.Origin, finding.Cause, *completion)
+	s.recordReopenedParentOutcome(taskID, finding.Origin, finding.Cause, completion.Risk)
 	return nil
 }
 
@@ -98,8 +98,8 @@ func (s *StateStore) applyReopenTransition(completion ParentCompletionOutcome, c
 	return nil
 }
 
-func (s *StateStore) recordReopenedParentOutcome(taskID, origin, cause string, completion ParentCompletionOutcome) {
-	reopened := ParentReviewOpenState{PacketStatus: string(packet.StatusNeedsSolReview), Risk: completion.Risk}
+func (s *StateStore) recordReopenedParentOutcome(taskID, origin, cause string, risk string) {
+	reopened := ParentReviewOpenState{PacketStatus: string(packet.StatusNeedsSolReview), Risk: risk}
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		stats.recordParentOutcome(ParentOutcomeFix, origin, reopened)
 		stats.ParentReviewOpen = &ParentReviewOpenState{PacketStatus: reopened.PacketStatus, Risk: reopened.Risk}

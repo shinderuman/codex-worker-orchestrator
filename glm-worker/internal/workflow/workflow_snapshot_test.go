@@ -142,6 +142,7 @@ func TestSnapshotWorkerEndReviewStartMismatchFailsClosed(t *testing.T) {
 	queue := &queueCapturer{results: []captureResult{
 		{snap: workerEnd},
 		{snap: workerEnd},
+		{snap: workerEnd},
 		{snap: reviewStart},
 	}}
 	w.captureSnapshot = queue.capture

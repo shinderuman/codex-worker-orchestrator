@@ -54,8 +54,8 @@ const (
 )
 
 var qualityGateForms = map[string][]string{
-	"go-test":      {"test", "./..."},
-	"go-test-race": {"test", "-race", "./..."},
+	"go-test":      {"test", "-timeout=20m", "./..."},
+	"go-test-race": {"test", "-race", "-timeout=20m", "./..."},
 }
 
 var launchQualityGateRunner qualityGateRunnerLauncher = launchQualityGateRunnerProcess

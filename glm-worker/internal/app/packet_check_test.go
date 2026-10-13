@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,20 +93,20 @@ func TestPacketCheckCommandParsesArguments(t *testing.T) {
 
 func TestPacketCheckAcceptsValidPacketAtJapaneseByteBoundary(t *testing.T) {
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
-		object["summary"] = strings.Repeat("あ", 512)
+		object["summary"] = "ab" + strings.Repeat("あ", (packet.MaxFieldBytes-2)/3)
 	}))
 	verdict := runPacketCheck(t, Command{Mode: ModePacketCheck, Role: packetCheckRoleWorker, Payload: path})
 	if !verdict.Ok || verdict.Violation != "" {
-		t.Fatalf("1536 bytesちょうどの日本語fieldは受理されるべき: %#v", verdict)
+		t.Fatalf("MaxFieldBytesちょうどの日本語fieldは受理されるべき: %#v", verdict)
 	}
 }
 
 func TestPacketCheckRejectsJapaneseFieldOverByteLimit(t *testing.T) {
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
-		object["summary"] = strings.Repeat("あ", 513)
+		object["summary"] = strings.Repeat("あ", packet.MaxFieldBytes/3+1)
 	}))
 	verdict := runPacketCheck(t, Command{Mode: ModePacketCheck, Role: packetCheckRoleWorker, Payload: path})
-	if verdict.Ok || !strings.Contains(verdict.Violation, "summary") || !strings.Contains(verdict.Violation, "1536 bytes") {
+	if verdict.Ok || !strings.Contains(verdict.Violation, "summary") || !strings.Contains(verdict.Violation, fmt.Sprintf("%d bytes", packet.MaxFieldBytes)) {
 		t.Fatalf("UTF-8 byte超過の違反を報告すべき: %#v", verdict)
 	}
 }
@@ -144,8 +145,9 @@ func TestPacketCheckReportsMultilineField(t *testing.T) {
 }
 
 func TestPacketCheckReportsOversizeTargetElement(t *testing.T) {
+	prefix := "glm-worker/internal/app/packet_check.go:"
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
-		object["targets"] = []string{strings.Repeat("glm-worker/internal/app/packet_check.go:", 40)}
+		object["targets"] = []string{strings.Repeat(prefix, packet.MaxFieldBytes/len(prefix)+1)}
 	}))
 	verdict := runPacketCheck(t, Command{Mode: ModePacketCheck, Role: packetCheckRoleWorker, Payload: path})
 	if verdict.Ok || !strings.Contains(verdict.Violation, "TARGETS/ARTIFACTSの各要素") {

@@ -8,19 +8,23 @@ import (
 )
 
 type controllerPublicationCommand struct {
-	ProjectSnapshotID  string                         `json:"project_snapshot_id,omitempty"`
-	TaskRef            controller.SemanticTaskRef     `json:"task_ref,omitempty"`
-	Action             string                         `json:"action"`
-	ExpectedGeneration uint64                         `json:"expected_generation"`
-	CandidateID        string                         `json:"candidate_id,omitempty"`
-	TransitionID       string                         `json:"transition_id,omitempty"`
-	Policy             controller.PublicationPolicy   `json:"policy"`
-	Message            string                         `json:"message,omitempty"`
-	Evidence           []controller.EvidenceObjectRef `json:"evidence,omitempty"`
-	EvidenceRecord     *controller.CandidateEvidence  `json:"evidence_record,omitempty"`
+	ProjectSnapshotID  string                            `json:"project_snapshot_id,omitempty"`
+	TaskRef            controller.SemanticTaskRef        `json:"task_ref,omitempty"`
+	Action             string                            `json:"action"`
+	ExpectedGeneration uint64                            `json:"expected_generation"`
+	CandidateID        string                            `json:"candidate_id,omitempty"`
+	TransitionID       string                            `json:"transition_id,omitempty"`
+	Policy             controller.PublicationPolicy      `json:"policy"`
+	Message            string                            `json:"message,omitempty"`
+	Evidence           []controller.EvidenceObjectRef    `json:"evidence,omitempty"`
+	EvidenceRecord     *controller.CandidateEvidence     `json:"evidence_record,omitempty"`
+	Amendment          *controller.TaskAmendmentApproval `json:"amendment,omitempty"`
 }
 
 func executeControllerPublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
+	if command.Amendment != nil && command.Action != "rebind" {
+		return nil, fmt.Errorf("task amendment approval is restricted to candidate rebind")
+	}
 	if command.Action == "recover" {
 		return store.RecoverExecutionOperation(command.TransitionID)
 	}
@@ -31,7 +35,11 @@ func executeControllerPublication(cfg config.AppConfig, store *controller.Store,
 	if head.ControllerGeneration != command.ExpectedGeneration {
 		return nil, fmt.Errorf("publication command generation is stale")
 	}
-	input := controller.PublicationInput{ExpectedGeneration: command.ExpectedGeneration, CandidateID: command.CandidateID}
+	input := controller.PublicationInput{ExpectedGeneration: command.ExpectedGeneration, CandidateID: command.CandidateID, Amendment: command.Amendment}
+	return executePublicationAction(cfg, store, command, input)
+}
+
+func executePublicationAction(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand, input controller.PublicationInput) (any, error) {
 	switch command.Action {
 	case "store-evidence":
 		return storePublicationCommandEvidence(store, command.EvidenceRecord)

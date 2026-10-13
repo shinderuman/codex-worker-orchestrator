@@ -3,6 +3,9 @@ package controller
 import "fmt"
 
 func (s *Store) applyAdvancementSuspension(op ExecutionOperation) error {
+	if retiredMetadataAdvancement(op) {
+		return s.validateRetiredMetadataAdvancement(op)
+	}
 	if op.Suspension == nil {
 		return s.preflightSuspendedRebind(op.Publication.NewTip)
 	}
@@ -26,6 +29,11 @@ func (s *Store) applyAdvancementSuspension(op ExecutionOperation) error {
 }
 
 func (s *Store) commitAdvancementExecution(next *RepositoryControllerHead, op ExecutionOperation) error {
+	if retiredMetadataAdvancement(op) {
+		task := op.Transition.TargetRootTaskRef
+		next.RootTaskRef = &task
+		return nil
+	}
 	if op.Publication.Episode != nil {
 		if err := s.writeEpisodeRevision(*op.Publication.Episode); err != nil {
 			return err

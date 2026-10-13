@@ -50,7 +50,7 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		modeRecoverParentAction,
 		modeRecoverQualitySurface:
 		return dispatchLockedMutation, nil
-	case ModeNewTask, ModeDecision, ModeFix, ModeApproveSurface, ModeResume:
+	case ModeNewTask, ModeDecision, ModeFix, ModeApproveSurface, ModeResume, ModeResubmitReport:
 		return dispatchWorkflow, nil
 	default:
 		return 0, fmt.Errorf("unsupported command mode: %d", mode)

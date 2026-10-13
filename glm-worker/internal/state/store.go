@@ -35,6 +35,7 @@ const (
 	TaskStatusProviderUnavailable      TaskStatus = "provider-unavailable"
 	TaskStatusGuardRecoverable         TaskStatus = "guard-recoverable"
 	TaskStatusQualityGateRecoverable   TaskStatus = "quality-gate-recoverable"
+	TaskStatusResultFormatRecoverable  TaskStatus = "result-format-recoverable"
 
 	TaskStatusInterrupted TaskStatus = "interrupted"
 
@@ -58,6 +59,7 @@ func (status TaskStatus) Known() bool {
 		TaskStatusProviderUnavailable,
 		TaskStatusGuardRecoverable,
 		TaskStatusQualityGateRecoverable,
+		TaskStatusResultFormatRecoverable,
 		TaskStatusInterrupted:
 		return true
 	default:

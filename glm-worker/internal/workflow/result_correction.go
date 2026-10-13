@@ -17,6 +17,7 @@ type resultCorrectionRecord struct {
 	SessionID         string                   `json:"session_id,omitempty"`
 	Snapshot          state.SnapshotDigest     `json:"snapshot,omitempty"`
 	Attempts          int                      `json:"attempts,omitempty"`
+	Resubmissions     int                      `json:"resubmissions,omitempty"`
 	SeenViolationKeys []string                 `json:"seen_violation_keys,omitempty"`
 	SeenViolations    []string                 `json:"seen_violations,omitempty"`
 	Terminal          *ResultCorrectionFailure `json:"terminal,omitempty"`
@@ -162,6 +163,10 @@ func (w *Workflow) validateResultCorrectionBoundary(checkpoint state.ResumeCheck
 	if !checkpoint.ResultCorrection {
 		return NewResultCorrectionWorkerError(checkpoint.Phase, resultCorrectionFailureFromRecord(record, "boundary_changed", "active correction state requires a correction checkpoint", nil))
 	}
+	return w.verifyResultCorrectionRecordIdentity(checkpoint, record)
+}
+
+func (w *Workflow) verifyResultCorrectionRecordIdentity(checkpoint state.ResumeCheckpoint, record *resultCorrectionRecord) error {
 	if checkpoint.Role != record.Role {
 		return w.resultCorrectionBoundaryFailure(checkpoint, record, "boundary_changed", fmt.Sprintf("role=%s want=%s", checkpoint.Role, record.Role))
 	}
@@ -177,7 +182,7 @@ func (w *Workflow) validateResultCorrectionBoundary(checkpoint state.ResumeCheck
 	}
 	sessionID, err := w.state.Read(string(checkpoint.Role) + ".id")
 	if err != nil {
-		return w.resultCorrectionBoundaryFailure(checkpoint, record, "boundary_unavailable", "session identity is unavailable")
+		return w.resultCorrectionBoundaryFailure(checkpoint, record, "boundary_unavailable", "session identity is unavailable: "+err.Error())
 	}
 	if sessionID != record.SessionID {
 		return w.resultCorrectionBoundaryFailure(checkpoint, record, "boundary_changed", fmt.Sprintf("session_id=%s want=%s", sessionID, record.SessionID))
@@ -258,15 +263,35 @@ func resultCorrectionFailureFromRecord(record *resultCorrectionRecord, reason, m
 }
 
 func (w *Workflow) persistResultCorrectionTerminal(checkpoint state.ResumeCheckpoint, failure *ResultCorrectionFailure) error {
-	terminal := &resultCorrectionRecord{Version: resultCorrectionVersion, Terminal: failure}
+	terminal := w.terminalResultCorrectionRecord(failure)
 	workerErr := NewResultCorrectionWorkerError(checkpoint.Phase, failure)
 	if err := w.saveResultCorrectionRecord(terminal); err != nil {
 		return fmt.Errorf("%w; persist terminal correction state: %w", workerErr, err)
 	}
-	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		return fmt.Errorf("%w; clear resume checkpoint: %w", workerErr, err)
+	stop := checkpoint
+	stop.SetStopKind(state.ResumeStopResultFormat)
+	if err := w.captureStopRetention(&stop); err != nil {
+		return fmt.Errorf("%w; capture result-format stop retention: %w", workerErr, err)
+	}
+	if err := w.state.EnterStop(stop); err != nil {
+		return fmt.Errorf("%w; enter result-format stop: %w", workerErr, err)
 	}
 	return workerErr
+}
+
+func (w *Workflow) terminalResultCorrectionRecord(failure *ResultCorrectionFailure) *resultCorrectionRecord {
+	record := &resultCorrectionRecord{Version: resultCorrectionVersion, Terminal: failure}
+	if prior, err := w.loadResultCorrectionRecord(); err == nil && prior != nil && prior.Terminal == nil {
+		record.TaskID = prior.TaskID
+		record.Role = prior.Role
+		record.SessionID = prior.SessionID
+		record.Snapshot = prior.Snapshot
+		record.Attempts = prior.Attempts
+		record.Resubmissions = prior.Resubmissions
+		record.SeenViolationKeys = prior.SeenViolationKeys
+		record.SeenViolations = prior.SeenViolations
+	}
+	return record
 }
 
 func (w *Workflow) saveResultCorrectionRecord(record *resultCorrectionRecord) error {

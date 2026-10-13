@@ -326,6 +326,11 @@ func (s *StateStore) closeApprovedQualitySurfaceReview() error {
 	}
 }
 
+func stopKindClearsPendingDecision(kind ResumeStopKind) bool {
+	return kind == ResumeStopGuardRecoverable || kind == ResumeStopQualityGate ||
+		kind == ResumeStopResultFormat
+}
+
 func (s *StateStore) EnterStop(checkpoint ResumeCheckpoint) error {
 	if !checkpoint.IsStopped() {
 		return fmt.Errorf("stop transition requires a resumable stop kind")
@@ -347,7 +352,7 @@ func (s *StateStore) EnterStop(checkpoint ResumeCheckpoint) error {
 	if err := s.SaveResumeCheckpoint(checkpoint); err != nil {
 		return err
 	}
-	if checkpoint.StopKind == ResumeStopGuardRecoverable || checkpoint.StopKind == ResumeStopQualityGate {
+	if stopKindClearsPendingDecision(checkpoint.StopKind) {
 		if err := s.Remove("pending-decision"); err != nil {
 			return s.rollbackLifecycleFiles(err, resume)
 		}
