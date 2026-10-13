@@ -30,26 +30,16 @@ func planRootResumeClosure(op *ExecutionOperation, head RepositoryControllerHead
 }
 
 func (s *Store) nextRootMaterializationAuthority(head RepositoryControllerHead) (RepositoryControllerHead, BlockerEpisodeRevision, SemanticTaskRef, error) {
-	if head.MetadataLineageRef == nil || head.AcceptedCandidateRef != nil {
-		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, fmt.Errorf("ordinary start requires finalized terminal metadata successor authority")
-	}
-	record, err := s.LoadTerminalTaskRecord(*head.MetadataLineageRef)
+	authority, err := s.retiredProjectAuthority(head)
 	if err != nil {
 		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
 	}
-	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+	current, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
 	if err != nil {
 		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
 	}
-	if head.RootTaskRef == nil || record.ResultProject.SnapshotID != project.SnapshotID || project.HeadOID != head.IntegrationTip || !projectHasTask(project, *head.RootTaskRef) {
-		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, fmt.Errorf("ordinary successor project authority is stale")
+	if current.ProjectSnapshotID != authority.ProjectSnapshotID {
+		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, fmt.Errorf("parent metadata advancement must be adopted before ordinary start")
 	}
-	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, head.IntegrationTip)
-	if err != nil {
-		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
-	}
-	if authority.ProjectSnapshotID != project.SnapshotID || !authority.Task.Equal(*head.RootTaskRef) {
-		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, fmt.Errorf("ordinary successor differs from canonical Plan ACTIVE")
-	}
-	return head, BlockerEpisodeRevision{}, *head.RootTaskRef, nil
+	return head, BlockerEpisodeRevision{}, authority.Task, nil
 }

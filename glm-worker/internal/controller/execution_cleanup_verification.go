@@ -15,7 +15,7 @@ func (s *Store) validateCleanupOperation(op ExecutionOperation) error {
 	if op.Transition.Effects[0].Resource != op.Workspace.Root || op.Transition.Effects[0].ExpectedOld != op.CleanupSnapshot.ID {
 		return fmt.Errorf("cleanup intent is inconsistent")
 	}
-	return nil
+	return s.verifyCleanupArchive(op)
 }
 
 func validateSuspensionGCOperation(op ExecutionOperation) error {
@@ -25,9 +25,12 @@ func validateSuspensionGCOperation(op ExecutionOperation) error {
 	return nil
 }
 
-func (*Store) verifyCommittedCleanup(op ExecutionOperation, _ RepositoryControllerHead) error {
+func (s *Store) verifyCommittedCleanup(op ExecutionOperation, _ RepositoryControllerHead) error {
 	if op.Workspace == nil {
 		return fmt.Errorf("cleanup operation is incomplete")
+	}
+	if err := s.verifyCleanupArchive(op); err != nil {
+		return err
 	}
 	for _, path := range []string{op.Workspace.Root, op.Workspace.GitDir} {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {

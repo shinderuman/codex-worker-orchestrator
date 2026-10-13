@@ -149,6 +149,9 @@ func (s *Store) metadataTaskBindingProven(source, result SemanticTaskRef) bool {
 	if source.Equal(result) {
 		return true
 	}
+	if s.amendmentTaskBindingProven(source, result) {
+		return true
+	}
 	head, err := s.LoadHead()
 	if err != nil || head.MetadataLineageRef == nil {
 		return false
@@ -174,6 +177,50 @@ func (s *Store) metadataTaskBindingProven(source, result SemanticTaskRef) bool {
 		}
 		current = *record.Previous
 	}
+}
+
+func (s *Store) amendmentTaskBindingProven(source, result SemanticTaskRef) bool {
+	head, err := s.LoadHead()
+	if err != nil || head.AcceptedCandidateRef == nil {
+		return false
+	}
+	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return false
+	}
+	seen := map[string]bool{}
+	for !seen[candidate.RevisionID] {
+		seen[candidate.RevisionID] = true
+		if s.candidateAmendmentBinds(candidate, source, result) {
+			return true
+		}
+		if candidate.Previous == nil {
+			return false
+		}
+		previous, err := s.LoadAcceptedCandidate(*candidate.Previous)
+		if err != nil {
+			return false
+		}
+		candidate = previous
+	}
+	return false
+}
+
+func (s *Store) candidateAmendmentBinds(candidate AcceptedCandidate, source, result SemanticTaskRef) bool {
+	record, phase, err := s.LoadTransition(candidate.TransitionID)
+	if err != nil {
+		return false
+	}
+	if record.Kind != publicationRebind || phase.Phase != TransitionPhaseFinalized {
+		return false
+	}
+	if record.SourceRootTaskRef.TaskPath != record.TargetRootTaskRef.TaskPath ||
+		record.SourceExecutionTaskRef.TaskPath != record.TargetExecutionTaskRef.TaskPath {
+		return false
+	}
+	execution := record.SourceExecutionTaskRef.Equal(source) && record.TargetExecutionTaskRef.Equal(result)
+	root := record.SourceRootTaskRef.Equal(source) && record.TargetRootTaskRef.Equal(result)
+	return execution || root
 }
 
 func (s *Store) terminalAttemptProven(attempt AttemptRecord) (bool, error) {

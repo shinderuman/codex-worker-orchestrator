@@ -43,10 +43,13 @@ func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, r
 	if result.Status != packet.StatusImplemented || request == nil || result.ParentValidationEvidence != nil {
 		return result, nil
 	}
+	if err := w.state.ContinueAfterWorkerResult(); err != nil {
+		return packet.Result{}, err
+	}
 
-	qualityReport, err := w.qualityGate(w.config.RepoRoot)
+	qualityReport, err := w.runQualityGate()
 	if err != nil {
-		return packet.Result{}, &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed before parent validation: %v", err)}
+		return packet.Result{}, w.saveQualityGateStop(checkpoint.Request, result, checkpoint.ReviewNumber, checkpoint.AutoFixes, checkpoint.Phase, err)
 	}
 	if harnesslint.IsViolation(qualityReport) {
 		return w.fixBeforeParentValidation(checkpoint, qualityGateFixResult(qualityReport), *request)

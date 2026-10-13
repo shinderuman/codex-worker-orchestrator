@@ -203,7 +203,7 @@ func verifySuspensionManifest(repo, root string, snapshot SuspensionSnapshot) er
 }
 
 func (s *Store) suspensionPath(id string) string {
-	return filepath.Join(s.dir, "suspensions", id+".json")
+	return filepath.Join(s.dir, "suspensions", id+jsonRecordFileExt)
 }
 
 func suspensionRef(id string) string { return "refs/glm-worker/suspensions/" + id }

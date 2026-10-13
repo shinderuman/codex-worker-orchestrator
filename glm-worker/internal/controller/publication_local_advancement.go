@@ -29,21 +29,46 @@ func (s *Store) applyAdvancementLocalRef(op ExecutionOperation) error {
 func (s *Store) baseAdvancementEffects(op ExecutionOperation) (map[string]string, error) {
 	actual := make(map[string]string, len(op.Transition.Effects))
 	for _, effect := range op.Transition.Effects {
-		switch {
-		case effect.Surface == MutationSurfaceRef:
-			value, exists, err := readExecutionRef(s.identity.PrimaryRoot, effect.Resource)
-			if err != nil {
-				return nil, err
-			}
-			if !exists || value != effect.ExpectedNew {
-				return nil, fmt.Errorf("base advancement ref postcondition differs")
-			}
-			actual[effect.Key()] = value
-		case effect.Surface == MutationSurfaceState && effect.Resource == "integration-tip" && effect.ExpectedNew == op.Publication.NewTip:
-			actual[effect.Key()] = op.Publication.NewTip
-		default:
-			return nil, fmt.Errorf("invalid base advancement effect")
+		value, err := s.baseAdvancementEffect(op, effect)
+		if err != nil {
+			return nil, err
 		}
+		actual[effect.Key()] = value
 	}
 	return actual, nil
+}
+
+func (s *Store) baseAdvancementEffect(op ExecutionOperation, effect EffectExpectation) (string, error) {
+	switch {
+	case effect.Surface == MutationSurfaceRef:
+		return s.proveAdvancementRefEffect(effect)
+	case effect.Surface == MutationSurfaceState && effect.Resource == "integration-tip" && effect.ExpectedNew == op.Publication.NewTip:
+		return op.Publication.NewTip, nil
+	case effect.Surface == MutationSurfaceHistory && retiredMetadataAdvancement(op):
+		return s.proveRetiredMetadataHistoryEffect(op, effect)
+	default:
+		return "", fmt.Errorf("invalid base advancement effect")
+	}
+}
+
+func (s *Store) proveAdvancementRefEffect(effect EffectExpectation) (string, error) {
+	value, exists, err := readExecutionRef(s.identity.PrimaryRoot, effect.Resource)
+	if err != nil {
+		return "", err
+	}
+	if !exists || value != effect.ExpectedNew {
+		return "", fmt.Errorf("base advancement ref postcondition differs")
+	}
+	return value, nil
+}
+
+func (s *Store) proveRetiredMetadataHistoryEffect(op ExecutionOperation, effect EffectExpectation) (string, error) {
+	remote, err := observePublicationRemote(s.identity.PrimaryRoot, op.Publication.Policy)
+	if err != nil {
+		return "", err
+	}
+	if effect.Resource != op.Publication.Policy.Remote+":"+op.Publication.Policy.RemoteRef || effect.ExpectedNew != remote || remote != op.Publication.NewTip {
+		return "", fmt.Errorf("parent metadata publication postcondition differs")
+	}
+	return remote, nil
 }

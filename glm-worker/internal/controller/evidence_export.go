@@ -616,7 +616,7 @@ func (s *Store) listAttempts() ([]AttemptRecord, error) {
 	}
 	attempts := make([]AttemptRecord, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != jsonRecordFileExt {
 			continue
 		}
 		var attempt AttemptRecord

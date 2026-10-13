@@ -1,6 +1,9 @@
 package controller
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicationInput, EvidenceObjectRef, error) {
 	snapshot := op.Suspension
@@ -14,7 +17,7 @@ func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicat
 		PredecessorAttemptID: op.Source.Attempt.PredecessorAttemptID, EpisodeID: snapshot.EpisodeID, EpisodeRevision: snapshot.EpisodeRevision,
 		ControllerGeneration: op.Transition.CommittedGeneration, SealingTransitionID: op.Transition.TransitionID,
 		RevokedLeaseID: op.Source.Lease.LeaseID, WorkspaceID: snapshot.WorkspaceID, ExecutionPurpose: op.Source.Lease.Purpose,
-		SourceProjectSnapshotID: snapshot.SourceProjectSnapshotID, StartedAt: op.Source.Attempt.CreatedAt, SealedAt: op.Transition.CreatedAt,
+		SourceProjectSnapshotID: snapshot.SourceProjectSnapshotID, StartedAt: op.Source.Attempt.CreatedAt, SealedAt: sealedAttemptTimestamp(op.Source.Attempt.CreatedAt, op.Transition.CreatedAt),
 		Disposition: string(AttemptStateSuspendedForBlocker), ExecutionBaseOID: snapshot.ExecutionBaseOID,
 		BaselineIndexTree: snapshot.Baseline.IndexTree, BaselineWorktreeTree: snapshot.Baseline.WorktreeTree,
 		CurrentIndexTree: snapshot.Current.IndexTree, CurrentWorktreeTree: snapshot.Current.WorktreeTree,
@@ -42,6 +45,13 @@ func (s *Store) buildSuspensionEvidence(op ExecutionOperation) (EvidencePublicat
 	}
 	input, err := s.appendExecutionSealIndexes(op, sealRef)
 	return input, sealRef, err
+}
+
+func sealedAttemptTimestamp(startedAt, observed time.Time) time.Time {
+	if observed.Before(startedAt) {
+		return startedAt
+	}
+	return observed
 }
 
 func (s *Store) appendExecutionSealIndexes(op ExecutionOperation, sealRef EvidenceObjectRef) (EvidencePublicationInput, error) {

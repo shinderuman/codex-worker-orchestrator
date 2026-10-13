@@ -153,3 +153,17 @@ func containsEvidenceRef(refs []EvidenceObjectRef, target EvidenceObjectRef) boo
 	}
 	return false
 }
+
+func TestSealedAttemptTimestampKeepsWindowOrderUnderBackwardClockStep(t *testing.T) {
+	started := time.Unix(6000, 0).UTC()
+	if sealed := sealedAttemptTimestamp(started, started.Add(-time.Second)); !sealed.Equal(started) {
+		t.Fatalf("backward clock step produced an inverted seal window: %v", sealed)
+	}
+	forward := started.Add(time.Second)
+	if sealed := sealedAttemptTimestamp(started, forward); !sealed.Equal(forward) {
+		t.Fatalf("forward seal timestamp was rewritten: %v", sealed)
+	}
+	if sealed := sealedAttemptTimestamp(started, started); !sealed.Equal(started) {
+		t.Fatalf("same-instant seal timestamp was rewritten: %v", sealed)
+	}
+}

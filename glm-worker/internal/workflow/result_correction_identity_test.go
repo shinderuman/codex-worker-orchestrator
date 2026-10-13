@@ -29,7 +29,7 @@ func TestRunModelStopsWhenRepeatedConstraintChangesDisplayValue(t *testing.T) {
 	if len(failure.Violations) != 2 {
 		t.Fatalf("terminal evidence must retain both observed messages: %#v", failure.Violations)
 	}
-	assertNoCorrectionRecoveryAction(t, st)
+	assertResultFormatRecoveryAction(t, st)
 }
 
 func TestPrepareResumeCheckpointKeepsResultCorrectionReadOnly(t *testing.T) {

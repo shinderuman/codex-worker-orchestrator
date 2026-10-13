@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -20,18 +21,23 @@ func dispatchQualityGateMachineOutput(cmd Command, cfg config.AppConfig, stdout,
 	output := newSingleShotOutput(stdout)
 	diagnostics := &streamingStructuredLinesOutput{target: stderr}
 	restoreWarnings := state.RedirectStatsWarnings(diagnostics)
-	st, storeErr := state.NewStateStore(cfg)
+	cfg, configErr := controller.WorkflowConfig(cfg)
+	var st *state.StateStore
+	var storeErr error
+	if configErr == nil {
+		st, storeErr = state.NewStateStore(cfg)
+	}
 	var execErr error
-	if storeErr == nil {
+	if storeErr == nil && configErr == nil {
 		execErr = runQualityGateWithDiagnostics(cmd.Payload, st, output, diagnostics)
 	}
 	restoreWarnings()
 	diagnosticViolation := diagnostics.finish()
 	var stdoutViolation error
-	if storeErr == nil && execErr == nil {
+	if storeErr == nil && configErr == nil && execErr == nil {
 		stdoutViolation = output.violation()
 	}
-	if err := errors.Join(storeErr, execErr, diagnosticViolation, stdoutViolation); err != nil {
+	if err := errors.Join(configErr, storeErr, execErr, diagnosticViolation, stdoutViolation); err != nil {
 		return err
 	}
 	return output.release()

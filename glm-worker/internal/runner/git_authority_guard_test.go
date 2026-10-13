@@ -161,7 +161,8 @@ func TestGitAuthorityGuardDetectsProxyBypassRefMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guarded, _ := newGitAuthorityProductionRunner(t, root, "\"$REAL_GIT\" branch bypass", map[string]string{"REAL_GIT": realGit})
+	currentBranch := strings.TrimSpace(runGitAuthorityOutput(t, root, "symbolic-ref", "--short", "HEAD"))
+	guarded, _ := newGitAuthorityProductionRunner(t, root, "\"$REAL_GIT\" branch -m "+currentBranch+" bypassed", map[string]string{"REAL_GIT": realGit})
 	_, err = guarded.Run(state.ReviewerRole, "reviewer-1", "reviewer-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output"))
 	var guardErr *GitAuthorityGuardError
 	if !errors.As(err, &guardErr) || guardErr.Stage != "after-call-mutation" {

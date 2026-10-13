@@ -60,6 +60,12 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	}
 
 	repoRoot := st.ReadOr("repo-root", "")
+	if repoRoot == "" && st.TaskStatus() == state.TaskStatusNone {
+		_, canonical, err := controller.WorkflowAuthorityTask(cfg)
+		if err == nil && canonical {
+			repoRoot = cfg.RepoRoot
+		}
+	}
 	applyRequest(cfg, repoRoot, st, plan, &projection)
 	applySnapshot(repoRoot, &projection)
 	applySessionRotation(st, &projection)
@@ -400,11 +406,18 @@ func quiescentControllerTask(cfg config.AppConfig, admissionError error) (contro
 	if head.Status != controller.ControllerStatusActive || head.LiveLeaseID != "" {
 		return controller.SemanticTaskRef{}, admissionError
 	}
-	if head.ExecutionTaskRef != nil {
-		return *head.ExecutionTaskRef, nil
-	}
-	if head.RootTaskRef != nil {
+	if head.ExecutionTaskRef == nil {
+		task, canonical, authorityErr := controller.WorkflowAuthorityTask(cfg)
+		if !canonical {
+			return controller.SemanticTaskRef{}, admissionError
+		}
+		if authorityErr == nil {
+			return task, nil
+		}
+		if head.RootTaskRef == nil {
+			return controller.SemanticTaskRef{}, authorityErr
+		}
 		return *head.RootTaskRef, nil
 	}
-	return controller.SemanticTaskRef{}, admissionError
+	return *head.ExecutionTaskRef, nil
 }

@@ -13,9 +13,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
+
+var qualitySurfaceOwnerLocatorPaths = []string{
+	"glm-worker/internal/workflow/quality_gate.go",
+}
 
 func runRepositoryQualityGate(root string) (harnesslint.Report, error) {
 	if root == "" {
@@ -210,6 +215,44 @@ func (w *Workflow) currentQualitySurfaceReviewTargets() ([]string, error) {
 		return nil, fmt.Errorf("quality surface has no changed paths")
 	}
 	return targets, nil
+}
+
+func qualitySurfaceOwnerReviewTargets() []string {
+	targets := make([]string, 0, len(qualitySurfaceOwnerLocatorPaths))
+	for _, path := range qualitySurfaceOwnerLocatorPaths {
+		raw := fmt.Sprintf("%s:%s", path, reviewtarget.WholeFileDiffLocator)
+		if _, err := reviewtarget.ParseTarget(raw); err != nil {
+			continue
+		}
+		targets = append(targets, raw)
+	}
+	return targets
+}
+
+func (w *Workflow) qualitySurfaceApprovalReviewTargets() ([]string, bool, error) {
+	targets, targetsErr := w.currentQualitySurfaceReviewTargets()
+	if targetsErr == nil {
+		return targets, false, nil
+	}
+	if w.collectChangedPaths == nil {
+		return qualitySurfaceOwnerReviewTargets(), false, fmt.Errorf("quality surface changed-path collector is unavailable")
+	}
+	if _, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", "")); err != nil {
+		return qualitySurfaceOwnerReviewTargets(), false, fmt.Errorf("collect quality surface changed paths: %w", err)
+	}
+	return qualitySurfaceOwnerReviewTargets(), true, nil
+}
+
+func (w *Workflow) qualitySurfaceDriftOutsideGitReason(reason string) string {
+	baseline := strings.TrimSpace(w.state.ReadOr(qualitySurfaceBaselineStateKey, ""))
+	current, err := w.captureQualitySurface(w.config.RepoRoot)
+	if err != nil {
+		return fmt.Sprintf("%s: quality surface digestがGit変更経路の外で変化しました(再計測失敗: %v)", reason, err)
+	}
+	return fmt.Sprintf(
+		"%s: quality surface digestがGitのchanged pathの外で変化しました。消えたuntracked surface fileはchanged pathへ現れないため、削除の承認状況は親が保全証拠で判断してください(baseline=%s current=%s)",
+		reason, baseline, current,
+	)
 }
 
 func qualitySurfaceFailClosedResult(phase, reason string, targets []string) packet.Result {

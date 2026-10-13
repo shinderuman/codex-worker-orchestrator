@@ -22,6 +22,10 @@ func (s *Store) MaterializeExecution(input MaterializeExecutionInput) (Execution
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
+	input, err = s.cleanupRetiredLaneBeforeStart(input)
+	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
 	op, head, err := s.planExecutionMaterialization(input)
 	if err != nil {
 		return ExecutionOperationResult{}, err

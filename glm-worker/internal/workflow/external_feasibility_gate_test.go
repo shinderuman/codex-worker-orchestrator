@@ -818,7 +818,7 @@ func TestPoCGoNoGoResultSummarizesUnfittablePassthrough(t *testing.T) {
 		wantAllTargets bool
 	}{
 		{"targets極大でartifacts優先縮約", 4, 1374, []string{"/artifacts/poc/report-a.txt", "/artifacts/poc/report-b.txt"}, false},
-		{"artifactsだけの縮約で収まる", 19, 217, []string{
+		{"artifactsだけの縮約で収まる", 19, 325, []string{
 			"/artifacts/poc/observation-report-" + strings.Repeat("a", 100) + ".txt",
 			"/artifacts/poc/observation-report-" + strings.Repeat("b", 100) + ".txt",
 		}, true},
@@ -876,7 +876,7 @@ func TestExternalFeasibilityPoCOverlongObservationEmitsValidGoNoGoPacket(t *test
 			Risk:                packet.RiskLow,
 			Summary:             "観測した",
 			RequirementCoverage: "covered",
-			Tests:               strings.Repeat("検", 512),
+			Tests:               strings.Repeat("検", packet.MaxFieldBytes/3),
 			Unverified:          "none",
 			Targets:             pocHeavyTargets(t, 12, 250),
 		}},
@@ -924,7 +924,7 @@ func TestExternalFeasibilityPoCUnfittableTargetsEmitsValidGoNoGoPacket(t *testin
 		RequirementCoverage: "covered",
 		Tests:               "検証した",
 		Unverified:          "none",
-		Targets:             pocHeavyTargets(t, 4, 1394),
+		Targets:             pocHeavyTargets(t, 4, 1900),
 	}
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: packetBody(worker)},

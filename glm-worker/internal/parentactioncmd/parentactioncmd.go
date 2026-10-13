@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute|controller-semantic|controller-execution|controller-publication|controller-evidence> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | accept | resume | wait | evidence <manifest.json> | export-bundle [--task-id <glm-worker task id>] | finalize-check <go-test|go-test-race> | continuation-stop-hook | continuation-metadata-guard"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute|controller-semantic|controller-execution|controller-publication|controller-evidence> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | accept | resume | resubmit-report | wait | evidence <manifest.json> | export-bundle [--task-id <glm-worker task id>] | finalize-check <go-test|go-test-race> | continuation-stop-hook | continuation-metadata-guard"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -178,7 +178,7 @@ func executeGitEvidenceAction(cfg config.AppConfig, args []string, stdout io.Wri
 	if err != nil {
 		return fmt.Errorf("resolve finalize-check working directory: %w", err)
 	}
-	return runFinalizationCheck(cfg.RepoRoot, validationDir, args[1], stdout)
+	return runFinalizationCheck(cfg, validationDir, args[1], stdout)
 }
 
 func executeParentReadAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
@@ -220,6 +220,14 @@ func executeDirectWorkerAction(cfg config.AppConfig, action string, args []strin
 		}
 		return withParentWaitLease(cfg, func() error {
 			return executeRepositoryAwareResume(cfg, stdout, stderr, extraEnv)
+		})
+	}
+	if action == actionResubmitReport {
+		if err := persistParentCodexIdentity(cfg); err != nil {
+			return err
+		}
+		return withParentWaitLease(cfg, func() error {
+			return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, extraEnv)
 		})
 	}
 	if action == actionStart {
@@ -372,6 +380,8 @@ func directWorkerArgs(action string) []string {
 		return []string{"--approve-surface", "current-diff"}
 	case actionAccept:
 		return []string{"--accept"}
+	case actionResubmitReport:
+		return []string{"--resubmit-report"}
 	default:
 		return []string{"--resume"}
 	}

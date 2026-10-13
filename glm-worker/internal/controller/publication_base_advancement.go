@@ -74,37 +74,50 @@ func (s *Store) currentEpisodeSuspensions(head RepositoryControllerHead, episode
 }
 
 func (s *Store) validateBaseAdvancement(op ExecutionOperation) error {
-	p := op.Publication
+	if err := validateBaseAdvancementAuthority(op.Publication, op); err != nil {
+		return err
+	}
+	if retiredMetadataAdvancement(op) {
+		if err := s.validateRetiredBaseAdvancement(op); err != nil {
+			return err
+		}
+	}
+	roots, err := s.VerifyGitObjectArchive(*op.Publication.AdvancementRef)
+	if err != nil {
+		return err
+	}
+	if len(roots) != 1 || roots[0].OID != op.Publication.NewTip || roots[0].Type != gitCommitObjectType {
+		return fmt.Errorf("external advancement archive root differs")
+	}
+	return validatePublicationPolicy(s.identity.PrimaryRoot, op.Publication.Policy)
+}
+
+func validateBaseAdvancementAuthority(p *PublicationOperation, op ExecutionOperation) error {
 	if p.AdvancementRef == nil || p.Project == nil || p.OldTip == "" || p.NewTip == "" {
 		return fmt.Errorf("base advancement authority is incomplete")
 	}
 	if p.Project.HeadOID != p.NewTip || p.Project.SnapshotID != op.Transition.ProjectSnapshotNew {
 		return fmt.Errorf("base advancement project identity differs")
 	}
-	roots, err := s.VerifyGitObjectArchive(*p.AdvancementRef)
-	if err != nil {
+	return nil
+}
+
+func (s *Store) validateRetiredBaseAdvancement(op ExecutionOperation) error {
+	if _, err := s.retiredProjectAuthority(op.Source.Head); err != nil {
 		return err
 	}
-	if len(roots) != 1 || roots[0].OID != p.NewTip || roots[0].Type != gitCommitObjectType {
-		return fmt.Errorf("external advancement archive root differs")
-	}
-	return validatePublicationPolicy(s.identity.PrimaryRoot, p.Policy)
+	return s.validateRetiredMetadataAdvancement(op)
 }
 
 func (s *Store) applyBaseAdvancement(op ExecutionOperation) error {
-	remote, err := observePublicationRemote(s.identity.PrimaryRoot, op.Publication.Policy)
+	remote, expectedRemote, err := s.observeAdvancementRemote(op)
 	if err != nil {
 		return err
 	}
-	if remote != op.Publication.RemoteOID {
-		head, err := s.LoadHead()
-		if err != nil {
+	if remote != expectedRemote {
+		if err := s.abortRacedBaseAdvancement(op, remote); err != nil {
 			return err
 		}
-		if err := s.guardRacedLocalEffects(op, head, remote); err != nil {
-			return err
-		}
-		return s.abortRacedPublication(op, remote)
 	}
 	if err := s.applyAdvancementSuspension(op); err != nil {
 		return err
@@ -136,6 +149,33 @@ func (s *Store) applyBaseAdvancement(op ExecutionOperation) error {
 	return err
 }
 
+func (s *Store) observeAdvancementRemote(op ExecutionOperation) (string, string, error) {
+	remote, err := observePublicationRemote(s.identity.PrimaryRoot, op.Publication.Policy)
+	if err != nil {
+		return "", "", err
+	}
+	expectedRemote := op.Publication.RemoteOID
+	if retiredMetadataAdvancement(op) && op.Publication.RemoteOID != op.Publication.NewTip {
+		remote, err = s.applyRetiredMetadataPublication(op, remote)
+		if err != nil {
+			return "", "", err
+		}
+		expectedRemote = op.Publication.NewTip
+	}
+	return remote, expectedRemote, nil
+}
+
+func (s *Store) abortRacedBaseAdvancement(op ExecutionOperation, remote string) error {
+	head, err := s.LoadHead()
+	if err != nil {
+		return err
+	}
+	if err := s.guardRacedLocalEffects(op, head, remote); err != nil {
+		return err
+	}
+	return s.abortRacedPublication(op, remote)
+}
+
 func (s *Store) baseAdvancementEvidence(op ExecutionOperation) (EvidencePublicationInput, error) {
 	head, err := s.LoadHead()
 	if err != nil {
@@ -150,6 +190,17 @@ func (s *Store) baseAdvancementEvidence(op ExecutionOperation) (EvidencePublicat
 	previous, err := s.LoadEvidenceHead(*head.EvidenceHeadRef)
 	if err != nil {
 		return EvidencePublicationInput{}, err
+	}
+	if retiredMetadataAdvancement(op) {
+		record, err := s.LoadTerminalTaskRecord(*op.Source.Head.MetadataLineageRef)
+		if err != nil {
+			return EvidencePublicationInput{}, err
+		}
+		task, ok := evidenceSubjectHead(previous.TaskHeads, taskEvidenceSubjectID(record.TaskRef))
+		if !ok {
+			return EvidencePublicationInput{}, fmt.Errorf("retired Task evidence is missing")
+		}
+		return s.appendAdvancementLineage(op, EvidencePublicationInput{TaskRevisionRefs: []EvidenceObjectRef{task.RevisionRef}})
 	}
 	if head.ActiveEpisodeID == "" {
 		return s.ordinarySuspendedAdvancementEvidence(op, head, previous)

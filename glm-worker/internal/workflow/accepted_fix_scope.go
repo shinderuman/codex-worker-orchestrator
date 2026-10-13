@@ -62,6 +62,17 @@ func (w *Workflow) prepareAcceptedFixScopeForAction(mode string, action state.Pa
 	if invocationID == "" {
 		return fmt.Errorf("accepted fix scope requires an active parent action invocation")
 	}
+	changes, err := w.captureAcceptedChangeSet()
+	if err != nil {
+		return err
+	}
+	if len(changes) == 0 && action != state.ParentActionApproveSurface {
+		return nil
+	}
+	return w.persistAcceptedFixScope(action, invocationID, baselineHead, changes)
+}
+
+func (w *Workflow) persistAcceptedFixScope(action state.ParentAction, invocationID, baselineHead string, changes map[string]int) error {
 	taskID, err := w.state.TaskID()
 	if err != nil {
 		return err
@@ -69,13 +80,6 @@ func (w *Workflow) prepareAcceptedFixScopeForAction(mode string, action state.Pa
 	lease, err := w.state.ParentEvidenceLeaseEpoch()
 	if err != nil {
 		return err
-	}
-	changes, err := w.captureAcceptedChangeSet()
-	if err != nil {
-		return err
-	}
-	if len(changes) == 0 {
-		return nil
 	}
 	data, err := json.Marshal(acceptedFixScope{
 		Version:           acceptedFixScopeVersion,

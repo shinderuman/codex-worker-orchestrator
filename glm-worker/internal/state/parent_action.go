@@ -40,6 +40,7 @@ const (
 	ParentActionObservationExecute          ParentAction = "observation-execute"
 	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
+	ParentActionResubmitReport              ParentAction = "resubmit-report"
 )
 
 const (
@@ -131,6 +132,8 @@ func (kind ResumeStopKind) ParentAction() ParentAction {
 		return ParentActionRepairGuardThenResume
 	case ResumeStopQualityGate:
 		return ParentActionRepairQualityGateThenResume
+	case ResumeStopResultFormat:
+		return ParentActionResubmitReport
 	default:
 		return ParentActionNone
 	}
@@ -261,7 +264,8 @@ func stoppedParentActionPlan(status TaskStatus, pending bool, pendingDecisionRes
 		TaskStatusProviderUnavailable,
 		TaskStatusInterrupted,
 		TaskStatusGuardRecoverable,
-		TaskStatusQualityGateRecoverable:
+		TaskStatusQualityGateRecoverable,
+		TaskStatusResultFormatRecoverable:
 	default:
 		return ParentActionPlan{}, lifecycleInconsistency(status, "unknown task status")
 	}
@@ -316,6 +320,9 @@ func stoppedActionPlan(
 ) (ParentActionPlan, error) {
 	if pending && !pendingDecisionResume || openReview != roundCommentNone {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "stopped task status does not match pending decision, parent review, and resume checkpoint")
+	}
+	if required == ParentActionResubmitReport {
+		return actionPlan(required, string(stopKind), ParentActionResubmitReport), nil
 	}
 	return actionPlan(required, string(stopKind), ParentActionResume), nil
 }

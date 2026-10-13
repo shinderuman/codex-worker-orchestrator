@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -23,7 +24,8 @@ func TestGitAuthorityGuardRetainsConcreteRefMutationEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guarded, _ := newGitAuthorityProductionRunner(t, root, "\"$REAL_GIT\" branch bypass", map[string]string{"REAL_GIT": realGit})
+	currentBranch := strings.TrimSpace(runGitAuthorityOutput(t, root, "symbolic-ref", "--short", "HEAD"))
+	guarded, _ := newGitAuthorityProductionRunner(t, root, "\"$REAL_GIT\" branch -m "+currentBranch+" bypassed", map[string]string{"REAL_GIT": realGit})
 	_, err = guarded.Run(state.ReviewerRole, "reviewer-1", "reviewer-model", true, "high", "prompt", filepath.Join(t.TempDir(), "output"))
 	var guardErr *GitAuthorityGuardError
 	if !errors.As(err, &guardErr) || guardErr.Stage != "after-call-mutation" {
@@ -33,13 +35,13 @@ func TestGitAuthorityGuardRetainsConcreteRefMutationEvidence(t *testing.T) {
 		t.Fatalf("ref digests = before:%q after:%q want before:%q", guardErr.RefBeforeDigest, guardErr.RefAfterDigest, beforeDigest)
 	}
 	if guardErr.RefChangesTruncated {
-		t.Fatal("single ref change must not be truncated")
+		t.Fatal("single authority rename must not be truncated")
 	}
-	if len(guardErr.RefChanges) != 1 {
+	names := map[string]bool{}
+	for _, change := range guardErr.RefChanges {
+		names[change.Name] = true
+	}
+	if len(guardErr.RefChanges) != 2 || !names["refs/heads/"+currentBranch] || !names["refs/heads/bypassed"] {
 		t.Fatalf("ref changes = %#v", guardErr.RefChanges)
-	}
-	change := guardErr.RefChanges[0]
-	if change.Name != "refs/heads/bypass" || change.Before != nil || change.After == nil || change.After.ObjectID == "" {
-		t.Fatalf("unexpected ref change = %#v", change)
 	}
 }

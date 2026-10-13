@@ -22,8 +22,8 @@ type finalizationEvidenceHandoffProbe struct {
 	Validations []finalizationEvidenceValidationProbe `json:"validations"`
 }
 
-func clearManagedFinalizationEvidence(repoRoot string) *finalizationFailure {
-	st, managed, failure := managedFinalizationState(repoRoot)
+func clearManagedFinalizationEvidence(cfg config.AppConfig, repoRoot string) *finalizationFailure {
+	st, managed, failure := managedFinalizationState(cfg, repoRoot)
 	if failure != nil || !managed {
 		return failure
 	}
@@ -33,8 +33,8 @@ func clearManagedFinalizationEvidence(repoRoot string) *finalizationFailure {
 	return nil
 }
 
-func persistManagedFinalizationEvidence(repoRoot string, output finalizationCheckOutput) *finalizationFailure {
-	st, managed, failure := managedFinalizationState(repoRoot)
+func persistManagedFinalizationEvidence(cfg config.AppConfig, repoRoot string, output finalizationCheckOutput) *finalizationFailure {
+	st, managed, failure := managedFinalizationState(cfg, repoRoot)
 	if failure != nil || !managed {
 		return failure
 	}
@@ -73,11 +73,7 @@ func finalizationEvidenceIdentity(output finalizationCheckOutput) (string, strin
 	return "", "", &finalizationFailure{Stage: "finalization_evidence", Reason: "snapshot_identity_unavailable"}
 }
 
-func managedFinalizationState(repoRoot string) (*state.StateStore, bool, *finalizationFailure) {
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, false, &finalizationFailure{Stage: "finalization_evidence", Reason: "state_config_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
-	}
+func managedFinalizationState(cfg config.AppConfig, repoRoot string) (*state.StateStore, bool, *finalizationFailure) {
 	configuredRoot, err := filepath.EvalSymlinks(cfg.RepoRoot)
 	if err != nil {
 		return nil, false, &finalizationFailure{Stage: "finalization_evidence", Reason: "repository_identity_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}

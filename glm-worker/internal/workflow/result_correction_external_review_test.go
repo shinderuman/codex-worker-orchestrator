@@ -20,7 +20,7 @@ func TestRunModelInvalidCorrectionResponseIsTerminal(t *testing.T) {
 		t.Fatalf("invalid correction response terminal failureを期待: err=%v failure=%#v", err, failure)
 	}
 	assertTerminalCorrectionState(t, w, "invalid_response")
-	assertNoCorrectionRecoveryAction(t, st)
+	assertResultFormatRecoveryAction(t, st)
 	if len(r.prompts) != 2 {
 		t.Fatalf("invalid correction response後のmodel calls = %d want 2", len(r.prompts))
 	}

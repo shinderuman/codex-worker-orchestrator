@@ -364,6 +364,8 @@ func executeWorkflowCommand(cmd Command, wf *workflow.Workflow) error {
 		return wf.ExecuteQualitySurfaceApprovalWithExecutionMilestones(cmd.AcceptedScope)
 	case ModeResume:
 		return wf.ExecuteResumeWithExecutionMilestones()
+	case ModeResubmitReport:
+		return wf.ExecuteReportResubmission()
 	default:
 		return fmt.Errorf("unsupported command mode")
 	}

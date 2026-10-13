@@ -42,17 +42,8 @@ func (w *Workflow) executeResume() error {
 	}
 	checkpoint.ClearStop()
 	if reuseCompletedResult && completedResult != nil {
-		if err := w.state.ClearResumeCheckpoint(); err != nil {
+		if err := w.routeStoppedResultReuse(checkpoint, previousCheckpoint, stopKind, decl, completedResult); err != nil {
 			return err
-		}
-		var routeErr error
-		if stopKind == state.ResumeStopQualityGate {
-			routeErr = w.resumeQualityGateResult(checkpoint, *completedResult)
-		} else {
-			routeErr = w.routeResumeResult(checkpoint, decl, *completedResult)
-		}
-		if routeErr != nil {
-			return w.handleResumeRunError(checkpoint, previousCheckpoint, routeErr)
 		}
 		return nil
 	}
@@ -63,6 +54,28 @@ func (w *Workflow) executeResume() error {
 		return w.handleResumeRunError(checkpoint, previousCheckpoint, err)
 	}
 	return w.routeResumeResult(checkpoint, decl, result)
+}
+
+func (w *Workflow) routeStoppedResultReuse(
+	checkpoint state.ResumeCheckpoint,
+	previous state.ResumeCheckpoint,
+	stopKind state.ResumeStopKind,
+	decl externalFeasibility,
+	completedResult *packet.Result,
+) error {
+	if err := w.state.ClearResumeCheckpoint(); err != nil {
+		return err
+	}
+	var routeErr error
+	if stopKind == state.ResumeStopQualityGate && parentValidationConverged(*completedResult) {
+		routeErr = w.resumeQualityGateResult(checkpoint, *completedResult)
+	} else {
+		routeErr = w.routeResumeResult(checkpoint, decl, *completedResult)
+	}
+	if routeErr != nil {
+		return w.handleResumeRunError(checkpoint, previous, routeErr)
+	}
+	return nil
 }
 
 func (w *Workflow) loadResumeCheckpoint() (state.ResumeCheckpoint, externalFeasibility, bool, error) {
@@ -329,6 +342,10 @@ func (w *Workflow) resumeQualityGateResult(checkpoint state.ResumeCheckpoint, re
 		return err
 	}
 	return w.reviewUntilStable(checkpoint.Request, result, checkpoint.ReviewNumber, checkpoint.AutoFixes, checkpoint.Phase)
+}
+
+func parentValidationConverged(result packet.Result) bool {
+	return result.ParentValidationRequest() == nil || result.ParentValidationEvidence != nil
 }
 
 func (w *Workflow) routeWorkerResumeResult(

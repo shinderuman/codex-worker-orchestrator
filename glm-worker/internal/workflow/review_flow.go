@@ -72,7 +72,7 @@ func (w *Workflow) prepareReviewInputSnapshot(
 			err,
 		)
 	}
-	qualityReport, err := w.qualityGate(w.config.RepoRoot)
+	qualityReport, err := w.runQualityGate()
 	if err != nil {
 		return workerEnd, true, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
 	}

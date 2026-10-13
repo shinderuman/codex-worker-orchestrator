@@ -59,8 +59,17 @@ type CandidateAcceptanceInput struct {
 }
 
 type PublicationInput struct {
-	ExpectedGeneration uint64 `json:"expected_generation"`
-	CandidateID        string `json:"candidate_id"`
+	ExpectedGeneration uint64                 `json:"expected_generation"`
+	CandidateID        string                 `json:"candidate_id"`
+	Amendment          *TaskAmendmentApproval `json:"amendment,omitempty"`
+}
+
+type TaskAmendmentApproval struct {
+	RemoteOID           string          `json:"remote_oid"`
+	OldRootTaskRef      SemanticTaskRef `json:"old_root_task_ref"`
+	NewRootTaskRef      SemanticTaskRef `json:"new_root_task_ref"`
+	OldExecutionTaskRef SemanticTaskRef `json:"old_execution_task_ref"`
+	NewExecutionTaskRef SemanticTaskRef `json:"new_execution_task_ref"`
 }
 
 type ExternalAdvancementInput struct {

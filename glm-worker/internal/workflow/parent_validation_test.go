@@ -14,6 +14,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -398,4 +399,78 @@ func TestParentValidationRecordRejectsStatusOnlyPass(t *testing.T) {
 
 func stateCheckpointWithParentValidation(request packet.ParentValidationRequest) state.ResumeCheckpoint {
 	return state.ResumeCheckpoint{ParentValidation: cloneParentValidationRequest(&request)}
+}
+
+func TestDecisionParentValidationAutoFixStopResumesRegularly(t *testing.T) {
+	st := newStateStoreT(t)
+	seedWaitingDecision(t, st)
+	r := &scriptedRunner{steps: []runnerStep{
+		{structured: parentValidationObligatedPacket("decision implementation")},
+		{output: zaiFiveHourLog, runErr: errors.New("exit status 1")},
+	}}
+	w := newWorkflowT(t, st, r)
+	w.temp = t.TempDir()
+	w.qualityGate = func(string) (harnesslint.Report, error) {
+		return harnesslint.Report{Status: "fail", Violations: []harnesslint.Violation{{Path: "glm-worker/internal/workflow/parent_validation.go", Line: 1, Column: 1, Rule: "cyclop", Message: "decision continuation violation"}}}, nil
+	}
+
+	err := w.ExecuteDecision("A案で進める")
+	var limitErr runner.ZaiRateLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("rate limit errorを期待: %v", err)
+	}
+	if st.TaskStatus() != state.TaskStatusRateLimited {
+		t.Fatalf("status = %q", st.TaskStatus())
+	}
+	if st.Exists("pending-decision") {
+		t.Fatal("accepted decision-phase worker result left its pending decision behind the auto-fix stop")
+	}
+	checkpoint, cerr := st.LoadResumeCheckpoint()
+	if cerr != nil || checkpoint.Stage != state.ResumeStageAutoFix || checkpoint.Phase != "worker-auto-fix-1" ||
+		checkpoint.StopKind != state.ResumeStopRateLimited || checkpoint.AutoFixes != 1 || checkpoint.Decision != "A案で進める" {
+		t.Fatalf("auto-fix stop checkpoint = %#v err=%v", checkpoint, cerr)
+	}
+	if checkpoint.ParentValidation == nil || checkpoint.ParentValidation.Form != packet.ParentValidationGoTest {
+		t.Fatalf("auto-fix stop checkpoint lost the parent validation obligation: %#v", checkpoint.ParentValidation)
+	}
+	plan, perr := st.ParentActionPlan()
+	if perr != nil || plan.RequiredAction != state.ParentActionResume || !plan.Allows(state.ParentActionResume) {
+		t.Fatalf("rate-limited auto-fix resume admission = %#v err=%v", plan, perr)
+	}
+
+	previous := parentValidationGateRunner
+	defer func() { parentValidationGateRunner = previous }()
+	parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
+		record := qualitygate.RunRecord{
+			ValidationRunID: "run-pass",
+			Form:            request.Form,
+			Repository:      w.config.RepoRoot,
+			WorkingDir:      filepath.Join(w.config.RepoRoot, "glm-worker"),
+			Head:            fixedSnapshot.Head,
+			IndexDigest:     fixedSnapshot.IndexDigest,
+			WorktreeDigest:  fixedSnapshot.WorktreeDigest,
+		}
+		return parentValidationTerminalPassT(t, record), nil
+	}
+	resumeRunner := &scriptedRunner{steps: []runnerStep{
+		{structured: parentValidationObligatedPacket("fixed")},
+		{structured: needsSolReviewPacket()},
+	}}
+	resumeW := newWorkflowT(t, st, resumeRunner)
+	resumeW.temp = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(resumeW.config.RepoRoot, "glm-worker"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := resumeW.ExecuteResume(); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview || st.Exists("pending-decision") {
+		t.Fatalf("resume後のstate: status=%q pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	if len(resumeRunner.phases) < 2 || resumeRunner.phases[0] != "worker-auto-fix-1" || resumeRunner.phases[1] != "reviewer-2-high-floor" {
+		t.Fatalf("resume phases = %v", resumeRunner.phases)
+	}
+	if !strings.Contains(resumeRunner.prompts[0], "A案で進める") {
+		t.Fatal("resumed auto-fix prompt lost the decision context")
+	}
 }

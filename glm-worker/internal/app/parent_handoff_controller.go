@@ -24,19 +24,40 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		output.RequiredAction = &action
 	}
 	if report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "" {
-		action := canonicalQuiescentAction(report.Head, output.TaskID)
-		output.RequiredAction = &action
-		output.AllowedActions = []string{action, "controller-evidence"}
+		applyCanonicalQuiescentHandoff(cfg, output, report.Head)
 	}
 	if output.ParentRequest != nil && output.RequiredAction != nil {
 		output.ParentRequest.Continuation.RequiredAction = *output.RequiredAction
 	}
 }
 
+func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffOutput, head controller.RepositoryControllerHead) {
+	action := canonicalQuiescentAction(cfg, head, output.TaskID)
+	if action == "start" {
+		authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+		if err != nil {
+			output.Consistent = false
+			message := err.Error()
+			output.Inconsistency = &message
+			output.AllowedActions = nil
+			output.RequiredAction = nil
+			return
+		}
+		if authority.ProjectSnapshotID != head.ProjectSnapshotID {
+			action = controllerPublicationSurface
+		}
+	}
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action, "controller-evidence"}
+	if action == controllerPublicationSurface && output.ParentRequest != nil {
+		output.ParentRequest.TaskAttribution.LegalNextAction = action
+	}
+}
+
 func canonicalParentAction(action string) string {
 	switch state.ParentAction(action) {
 	case state.ParentActionComplete, state.ParentActionInstall, state.ParentActionReopen:
-		return "controller-publication"
+		return controllerPublicationSurface
 	case state.ParentActionPark:
 		return controllerExecutionSurface
 	case state.ParentActionNoGo, state.ParentActionBindDefectTask, state.ParentActionImprovementDisposition:
@@ -57,11 +78,28 @@ func canonicalParentActions(actions []string) []string {
 	return projected
 }
 
-func canonicalQuiescentAction(head controller.RepositoryControllerHead, taskID *string) string {
-	if head.PendingTransitionID == "" && head.ExecutionTaskRef == nil && head.MetadataLineageRef != nil && taskID == nil {
-		return "start"
+func canonicalQuiescentAction(cfg config.AppConfig, head controller.RepositoryControllerHead, taskID *string) string {
+	if head.PendingTransitionID != "" {
+		return controllerExecutionSurface
 	}
-	return controllerExecutionSurface
+	if head.ExecutionTaskRef == nil {
+		if head.MetadataLineageRef != nil && taskID == nil {
+			return "start"
+		}
+		return controllerExecutionSurface
+	}
+	if head.AcceptedCandidateRef == nil {
+		return controllerExecutionSurface
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return controllerExecutionSurface
+	}
+	awaitMaterialization, err := store.QuiescentCandidateAwaitMaterialization(head)
+	if err != nil || awaitMaterialization {
+		return controllerExecutionSurface
+	}
+	return controllerPublicationSurface
 }
 
 func canonicalHandoffStatus(cfg config.AppConfig) (controller.ControllerStatusReport, bool) {

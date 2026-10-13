@@ -120,7 +120,7 @@ func TestRunModelStopsOnRepeatedFirstCorrectionViolation(t *testing.T) {
 	if len(r.prompts) != 2 {
 		t.Fatalf("同一違反へ追加補正を実行しています: calls=%d", len(r.prompts))
 	}
-	assertNoCorrectionRecoveryAction(t, st)
+	assertResultFormatRecoveryAction(t, st)
 	assertTerminalCorrectionState(t, w, "repeated_violation")
 }
 
@@ -158,10 +158,10 @@ func TestRunModelCorrectionBudgetExhaustionIsTerminal(t *testing.T) {
 			if len(r.prompts) != 3 {
 				t.Fatalf("correction budgetを超えてmodel callしています: calls=%d", len(r.prompts))
 			}
-			if st.TaskStatus() != state.TaskStatusActive {
+			if st.TaskStatus() != state.TaskStatusResultFormatRecoverable {
 				t.Fatalf("terminal failure後status = %s", st.TaskStatus())
 			}
-			assertNoCorrectionRecoveryAction(t, st)
+			assertResultFormatRecoveryAction(t, st)
 			assertTerminalCorrectionState(t, w, "budget_exhausted")
 		})
 	}
@@ -194,7 +194,7 @@ func TestRunModelCorrectionFailsClosedOnSnapshotChange(t *testing.T) {
 	if len(r.prompts) != 2 {
 		t.Fatalf("snapshot変更後に追加model callしています: calls=%d", len(r.prompts))
 	}
-	assertNoCorrectionRecoveryAction(t, st)
+	assertResultFormatRecoveryAction(t, st)
 	assertTerminalCorrectionState(t, w, "boundary_changed")
 }
 
@@ -229,18 +229,31 @@ func assertTerminalCorrectionState(t *testing.T, w *Workflow, reason string) {
 	}
 }
 
-func assertNoCorrectionRecoveryAction(t *testing.T, st *state.StateStore) {
+func assertResultFormatRecoveryAction(t *testing.T, st *state.StateStore) state.ResumeCheckpoint {
 	t.Helper()
-	if _, loadErr := st.LoadResumeCheckpoint(); !errors.Is(loadErr, state.ErrNoResumeCheckpoint) {
-		t.Fatalf("terminal correctionがresume checkpointを残しています: %v", loadErr)
+	checkpoint, loadErr := st.LoadResumeCheckpoint()
+	if loadErr != nil {
+		t.Fatalf("terminal correction must retain the result-format stop checkpoint: %v", loadErr)
+	}
+	if checkpoint.StopKind != state.ResumeStopResultFormat || !checkpoint.ResultCorrection {
+		t.Fatalf("terminal correction stop checkpoint = %#v", checkpoint)
+	}
+	if st.TaskStatus() != state.TaskStatusResultFormatRecoverable {
+		t.Fatalf("terminal correction status = %s want result-format-recoverable", st.TaskStatus())
+	}
+	if st.Exists("pending-decision") {
+		t.Fatal("terminal correction stop must close the pending decision residue")
 	}
 	plan, err := st.ParentActionPlan()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.RequiredAction != state.ParentActionNone || plan.Allows(state.ParentActionResume) {
-		t.Fatalf("terminal correctionがparent recovery actionを要求しています: %#v", plan)
+	if plan.RequiredAction != state.ParentActionResubmitReport ||
+		!plan.Allows(state.ParentActionResubmitReport) ||
+		plan.Allows(state.ParentActionResume) {
+		t.Fatalf("terminal correction recovery plan = %#v", plan)
 	}
+	return checkpoint
 }
 
 func constraintViolatingImplementedPacket() string {
@@ -667,8 +680,8 @@ func TestRetryPromptsDelegatePacketGrammar(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"6 KiB",
-		"1536 bytes",
+		"8 KiB",
+		"2048 bytes",
 		"各fieldのvalueは空にできず",
 		"STATUSに応じた必須field",
 		"--packet-check",

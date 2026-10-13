@@ -60,8 +60,6 @@ type gitAuthorityGuard struct {
 const (
 	maxGitAuthorityRefChanges   = 64
 	guardStageAfterCallMutation = "after-call-mutation"
-	gitAuthorityTurnDiffsPrefix = "refs/codex/turn-diffs/"
-	gitAuthoritySnapshotsPrefix = "refs/codex/snapshots/"
 )
 
 func (e *GitAuthorityGuardError) Error() string {
@@ -257,7 +255,10 @@ func captureGitAuthoritySnapshot(realGit, repoRoot string) (gitAuthoritySnapshot
 	if err != nil {
 		return gitAuthoritySnapshot{}, err
 	}
-	parsedRefs = filterGitAuthorityRefs(parsedRefs)
+	authorityRefs, err := state.CaptureGitAuthorityRefs(realGit, repoRoot)
+	if err != nil {
+		return gitAuthoritySnapshot{}, err
+	}
 	index, err := gitAuthorityOutput(realGit, repoRoot, "ls-files", "-s", "-z")
 	if err != nil {
 		return gitAuthoritySnapshot{}, err
@@ -270,7 +271,7 @@ func captureGitAuthoritySnapshot(realGit, repoRoot string) (gitAuthoritySnapshot
 		active:       true,
 		head:         headAuthority.Head,
 		symbolicHead: headAuthority.SymbolicHead,
-		refsDigest:   gitAuthorityRefsDigest(parsedRefs),
+		refsDigest:   state.DigestGitAuthorityRefs(authorityRefs),
 		refs:         parsedRefs,
 		indexDigest:  gitAuthorityDigest(index),
 		configDigest: gitAuthorityDigest(localConfig),
@@ -294,49 +295,16 @@ func parseGitAuthorityRefs(data []byte) ([]GitRefState, error) {
 	return refs, nil
 }
 
-func filterGitAuthorityRefs(refs []GitRefState) []GitRefState {
-	filtered := make([]GitRefState, 0, len(refs))
-	for _, ref := range refs {
-		if IsVolatileCodexDesktopRef(ref.Name) {
-			continue
-		}
-		filtered = append(filtered, ref)
-	}
-	return filtered
-}
-
-func IsVolatileCodexDesktopRef(name string) bool {
-	return strings.HasPrefix(name, gitAuthorityTurnDiffsPrefix) ||
-		strings.HasPrefix(name, gitAuthoritySnapshotsPrefix)
-}
-
-func gitAuthorityRefsDigest(refs []GitRefState) string {
-	var content strings.Builder
-	for _, ref := range refs {
-		content.WriteString(ref.Name)
-		content.WriteByte(0)
-		content.WriteString(ref.ObjectID)
-		content.WriteByte(0)
-		content.WriteString(ref.Symref)
-		content.WriteByte('\n')
-	}
-	return gitAuthorityDigest([]byte(content.String()))
-}
-
 func CaptureGitAuthorityRefDigest(repoRoot string) (string, error) {
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		return "", fmt.Errorf("resolve git for ref capture: %w", err)
 	}
-	refs, err := gitAuthorityOutput(realGit, repoRoot, "for-each-ref", "--sort=refname", "--format=%(refname)%00%(objectname)%00%(symref)")
+	refs, err := state.CaptureGitAuthorityRefs(realGit, repoRoot)
 	if err != nil {
 		return "", err
 	}
-	parsedRefs, err := parseGitAuthorityRefs(refs)
-	if err != nil {
-		return "", err
-	}
-	return gitAuthorityRefsDigest(filterGitAuthorityRefs(parsedRefs)), nil
+	return state.DigestGitAuthorityRefs(refs), nil
 }
 
 func gitAuthorityOutput(realGit, repoRoot string, args ...string) ([]byte, error) {

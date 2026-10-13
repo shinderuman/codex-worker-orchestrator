@@ -61,6 +61,20 @@ func (s *Store) publicationCandidateAuthority(input PublicationInput) (Repositor
 	return head, c, *head.AcceptedCandidateRef, nil
 }
 
+func (s *Store) QuiescentCandidateAwaitMaterialization(head RepositoryControllerHead) (bool, error) {
+	if head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.AcceptedCandidateRef == nil {
+		return false, fmt.Errorf("quiescent candidate authority requires a sealed head with an accepted candidate")
+	}
+	c, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return false, err
+	}
+	if c.State == candidateObserved {
+		return head.PendingTerminalTaskRef == nil, nil
+	}
+	return !c.EvidenceValid, nil
+}
+
 func (s *Store) planCandidateRevision(head RepositoryControllerHead, c AcceptedCandidate, previous EvidenceObjectRef, kind string) (ExecutionOperation, error) {
 	record, err := executionTransition(head, kind)
 	if err != nil {

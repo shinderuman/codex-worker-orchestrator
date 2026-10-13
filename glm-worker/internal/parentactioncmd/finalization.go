@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -104,7 +105,8 @@ const (
 	finalizationRemoteStatePendingDiverg = "remote_sync_pending_diverged"
 )
 
-func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer) error {
+func runFinalizationCheck(cfg config.AppConfig, validationDir, form string, stdout io.Writer) error {
+	repoRoot := cfg.RepoRoot
 	if form != "go-test" && form != "go-test-race" {
 		return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
 	}
@@ -112,7 +114,7 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 	if err != nil {
 		return err
 	}
-	if failure := clearManagedFinalizationEvidence(repoRoot); failure != nil {
+	if failure := clearManagedFinalizationEvidence(cfg, repoRoot); failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form, Failure: failure})
 	}
 	worker, err := resolveGLMWorker()
@@ -132,7 +134,7 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 		return fmt.Errorf("decode finalize-check aggregate: %w", err)
 	}
 	if output.Status == "ready_for_parent_decision" {
-		if failure := persistManagedFinalizationEvidence(repoRoot, output); failure != nil {
+		if failure := persistManagedFinalizationEvidence(cfg, repoRoot, output); failure != nil {
 			output.Status = finalizationStatusBlocked
 			output.Failure = failure
 		}
@@ -141,9 +143,15 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 }
 
 func finalizationRoutingDecision(worker, repoRoot, callerDir, form string) (*finalizationRoutingSummary, *finalizationFailure) {
-	evidence, evidenceFound := finalizationRoutingEvidenceCandidate(worker, repoRoot, form)
-	if evidenceFound {
-		selected, failure := finalizationVerifiedEvidenceDir(repoRoot, evidence)
+	if finalizationDirIsModuleRoot(callerDir) {
+		return &finalizationRoutingSummary{SelectedDir: callerDir, Basis: finalizationRoutingBasisCaller}, nil
+	}
+	evidence, failure := finalizationRoutingEvidenceCandidate(worker, repoRoot, form)
+	if failure != nil {
+		return nil, failure
+	}
+	if evidence != nil {
+		selected, failure := finalizationVerifiedEvidenceDir(repoRoot, *evidence)
 		if failure != nil {
 			return nil, failure
 		}
@@ -156,11 +164,8 @@ func finalizationRoutingDecision(worker, repoRoot, callerDir, form string) (*fin
 			}, nil
 		}
 	}
-	if finalizationDirIsModuleRoot(callerDir) {
-		return &finalizationRoutingSummary{SelectedDir: callerDir, Basis: finalizationRoutingBasisCaller}, nil
-	}
 	detail := "caller working directory has no " + finalizationGoModFile + ": " + callerDir
-	if evidenceFound {
+	if evidence != nil {
 		detail = "routing evidence working directory has no " + finalizationGoModFile + ": " + evidence.WorkingDir + "; " + detail
 	}
 	return nil, &finalizationFailure{
@@ -170,17 +175,27 @@ func finalizationRoutingDecision(worker, repoRoot, callerDir, form string) (*fin
 	}
 }
 
-func finalizationRoutingEvidenceCandidate(worker, repoRoot, form string) (finalizationRoutingEvidenceProbe, bool) {
-	_, handoff, failure := collectFinalizationHandoff(worker, repoRoot)
-	if failure != nil || !handoff.Consistent {
-		return finalizationRoutingEvidenceProbe{}, false
+func finalizationRoutingEvidenceCandidate(worker, repoRoot, form string) (*finalizationRoutingEvidenceProbe, *finalizationFailure) {
+	raw, handoff, failure := collectFinalizationHandoff(worker, repoRoot)
+	if failure != nil {
+		failure.Stage = "routing"
+		failure.Reason = "routing_handoff_unavailable"
+		return nil, failure
+	}
+	if !handoff.Consistent {
+		return nil, &finalizationFailure{
+			Stage:  "routing",
+			Reason: "routing_handoff_inconsistent",
+			Detail: compactFinalizationDiagnostic(string(raw)),
+		}
 	}
 	for _, evidence := range handoff.RoutingEvidence {
 		if evidence.Form == form && evidence.WorkingDir != "" {
-			return evidence, true
+			probe := evidence
+			return &probe, nil
 		}
 	}
-	return finalizationRoutingEvidenceProbe{}, false
+	return nil, nil
 }
 
 func finalizationVerifiedEvidenceDir(repoRoot string, evidence finalizationRoutingEvidenceProbe) (string, *finalizationFailure) {
