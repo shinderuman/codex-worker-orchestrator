@@ -59,6 +59,15 @@ parent maintenanceは記録不要を意味しない。ユーザー要求をcompa
 
 parent-managed metadataを扱うguard、self-protection、production wiring自体の変更は、編集対象がparent-managed surfaceに関係していてもproduction behavior変更であるためparent maintenanceにしない。
 
+## 親MetadataのGitコミット境界
+
+- Metadataの編集とGitコミットを別の操作として扱う。ファイル更新自体をコミット理由にせず、同じTaskに属する変更は可能な限りまとめて編集・検証し、意味のある確定境界で一括コミットする。
+- 調査途中の結果、追加証拠、許可内容、Amendment追記を理由に機械的にコミットを増やさない。複数回の追記が予想される場合は、先に関連する調査と変更内容を整理して集約する。
+- Controller admission、snapshot整合、Publication、Retire等がGitコミットを必要とする場合、その必要性を現在のmachine evidenceで確認し、必要な境界だけでコミットする。念のため、安全、外部記憶への保存という理由だけでコミットしない。
+- 正規Workflowが未コミットMetadataを許容しない場合はその制約を守る。許容される範囲で変更を集約し、コミットが不可避な場合は具体的な制約を説明できるようにする。
+- 実装コミット、Task開始時のMetadata確定、Task終了時のRetire、後続Taskへの引き継ぎ等、責務や正規状態遷移が異なるコミットを無理に統合しない。
+- コミット回数削減を理由にGuardを迂回したり、未確定Metadataを確定済みと偽装したりしない。コミット細分化や履歴整理のための余計な実装・制御機構を追加せず、既に公開されたコミットの履歴を改変しない。
+
 ## 通常taskへの分離
 
 次のいずれかに該当する要求はparent maintenanceにせず、内容を表すsemantic slugの独立task fileへ固定する。

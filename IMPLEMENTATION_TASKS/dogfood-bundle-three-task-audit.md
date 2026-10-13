@@ -71,12 +71,47 @@ Planの既存NEXTの優先順位を不必要に壊さず、この順序を満た
 
 ## Amendments
 
+### 2026-10-13 Plan・Task整理と実行境界（ユーザー原文の本Task該当節）
+
+````text
+既存の実行順序は次のとおり維持する。
+
+ACTIVE:
+
+- `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
+
+NEXT先頭:
+
+- `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
+- `IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`
+
+その他のNEXTは、既存の相対順序を維持する。
+
+旧Task `IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md` は、ユーザー判断によって実装成果を確定し、未達事項をWorktree見直しTaskへ引き継いでいる。
+
+旧TaskはACTIVEへ復帰させず、BLOCKEDに保持する。通常のsemantic acceptance、Publication、Retireが成功したと扱わない。
+
+ACTIVEへのCLI Task登録はスケジュールの確定だけであり、このセッションでのTask activation、GLM dispatch、Runtime再開を意味しない。
+
+Worktree見直しTaskに、旧Taskからの未達事項が引き継がれていることを確認する。
+
+特にgeneration 713で停止したcleanup後のRuntime Snapshot／Handoff／materialize、および未達のPublication・Retireが対象に含まれていることを確認する。
+
+Task本文に残る旧ACTIVE前提の記述、現在のScheduleと矛盾するderived contractは確認する。必要なら正規のAmendment／derived contractの規則に従い整合させる。
+
+ただし、Original instructionや既存Amendmentsの原文を削除・改変しない。
+
+このセッションでは実Taskを開始しない。
+````
+
+今回の明示順序と未達事項移管は、旧Taskの正常完了後にCLIを実施する従来の順序前提を上書きする。旧Taskを成功dependencyへ変換せず、再監査で必要な未達Workflowの検証は既存Worktree Taskの成果を参照する。A/B/Cの監査対象と実在証拠の保全は維持する。
+
 ## Resolved references
 
 - Bundle A: runtime Task UUID `d0d22e0b-6bb6-4efe-97ac-54efd75f0ad4`。固定ZIP `~/.glm-worker/exports/f6189a2ef4b9698296980938dcb3f04542eadb0638397e403f7925130b92cfc4/d0d22e0b-6bb6-4efe-97ac-54efd75f0ad4.zip`、実装commit `8b7556b1b47cdc85fd101b13c83d2c0e60ecc66f`、元要求は同commitの`IMPLEMENTATION_TASKS/dogfood-bundle-audit-restoration.md`。Task関連のcompletion-exception receiptを含め、例外と通常成功を区別する。
-- Bundle B: `IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md`を次の新セッションで完了したTaskのruntime UUIDをcanonical Task evidenceから解決する。現在Taskの例外を正常経路へ持ち越さない。
-- Bundle C: B完了後に実施する通常開発Task。既存優先順位を維持して`IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`を1件の対象にする。B完了前の旧CLI誤起動sessionはCとして採用しない。
-- A→B→C→本再監査の順序を守る。Task定義とPlan登録は実行開始を意味しない。
+- Bundle B: 旧Taskの要求・証拠参照はGit履歴 `c6c47b6e9dd1c6e334c96515c99d95ba5f2813c4:IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md` を正とし、`git show c6c47b6e9dd1c6e334c96515c99d95ba5f2813c4:IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md` で取得する。runtime Task UUIDは保全済み `quiescent-cleanup-handoff-stop-713/stop-summary.json` の `runtime_task_id` にある `24989cdb-8db0-4f9f-8e65-45516dc66380` と照合する。ユーザー判断による実装成果確定と、未達の通常semantic acceptance・Publication・Retireを区別して監査する。引継ぎ先 `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md` の正規Workflow検証は関連証拠として照合し、旧Taskの正常完了へ付け替えない。
+- Bundle C: `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md` を通常開発Taskの対象として維持する。旧CLI誤起動sessionはCとして採用せず、正規実行のcanonical Task evidenceを使う。
+- 既存原文の旧Task参照は上記Git履歴を指す。旧Taskの削除・スケジュール除外を成功済みdependencyと扱わない。実行順序はPlanだけを正とする。旧Taskの成功完了をCLI開始の前提とせず、本再監査に必要なCLIとWorktreeの成果を待つ。Task定義とPlan登録は実行開始を意味しない。
 
 ## Purpose
 
@@ -92,7 +127,7 @@ Planの既存NEXTの優先順位を不必要に壊さず、この順序を満た
 
 ## Must not
 
-- BとCの完了前に本Taskを開始しない。現在のBundle復旧完了直後に再監査を開始しない。
+- CLI Taskと引継ぎ先Worktree Taskの必要成果が揃う前に本Taskを開始しない。旧Taskのユーザー判断による区切りを正常完了として、再監査の前提を満たしたと扱わない。
 - 容量、命名、コード行数、重複だけを根拠に改善を創作しない。重複排除機構、別の履歴/証拠管理、旧CLI alias、後方互換fallbackを追加しない。
 - 復元不能な過去ログを捏造しない。収集境界をAttemptへ縮めない。Task UUID体系/固定atomic ZIPを変更しない。
 - controllerのcanonical evidence、digest検証、path traversal/rebind fail-closed、read-only export境界を弱めない。今回の例外操作を通常運用として採用しない。
@@ -112,5 +147,5 @@ Planの既存NEXTの優先順位を不必要に壊さず、この順序を満た
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md`
+- `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
