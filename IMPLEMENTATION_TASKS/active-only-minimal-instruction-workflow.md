@@ -2,16 +2,15 @@
 
 ## Original instruction
 
-ユーザー原文:
-
 ````text
+```
 TASK
 
 * 現在のACTIVE taskだけを完了させる。
 * ACTIVE task完了後はNEXTを開始せず停止する。
-````
+```
 
-その指示だけで作業が進められるか整備する、というタスクを作ってバグ修正系の後ぐらいに入れろ
+この指示だけで作業が進められるか整備する、というタスクを作ってバグ修正系の後ぐらいに入れろ
 
 さっきのテストの見直しよりは前でいいと思う
 
@@ -22,37 +21,19 @@ TASK
 
 ## Amendments
 
-ユーザーの追加説明（原文、時系列順）:
-
-````text
-違うこの場で検討しろなんて言ってない
-````
-
-````text
-検討するタスクをPRで作れと言ってる
-````
-
-````text
-いま現在その指示だけで作業が行えないことなんてわかってる
-````
-
-````text
-だからその指示だけで作業進められるか整備するタスクを作れと最初から言っている
-````
+none
 
 ## Resolved references
 
-- 「その指示」: 本TaskのOriginal instruction冒頭の3行のTASKブロック。別セッションでこの3行以外の実装手順、Issue番号、Task名、bootstrapコマンド、Resume手順をユーザーが補わずに実行できることが目標。
-- 「現在のACTIVE」: 発話時の特定Taskではなく、その指示を受け取った時点でcanonical Planが指すACTIVE Taskを意味する。
-- 「バグ修正系の後」「テストの見直しより前」: 登録時のPlanではWorktree修正・CLI task-start admissionの後、自己確認型テスト再設計3件より前の位置。後続作業の依存関係とpriorityは実行時current Gitを正とする。
-- 「タスクリストの順序も見直せ」: 現行PlanのACTIVE/NEXT/BLOCKEDと各TaskのDependencies・目的・障害修正/評価の優先関係を調査し、具体的な優先順位変更案と根拠をユーザーへ報告する要求。**検討結果を承認前にPlan/PRへ反映しない。**
-- 現行Rulesの通常完了ではTask metadata同期・NEXTのACTIVE昇格を行う場合があるが、「NEXTを開始せず」は次Taskのbootstrap/activation/dispatch/実装を明示的に禁止する。Planの正常な完了同期との区別を実装時に検証する。
+- 「この指示」: 冒頭の `TASK` ブロックだけ。新規Codexセッションで追加のTask名・Issue番号・bootstrap/再開手順をユーザーが指定しなくても、現在のACTIVEを正規に完了させる状態へ整備することが本Taskの目的。現在の実行可能性を調査して終えるTaskではない。
+- 「現在のACTIVE」: 指示を受け取った時点で、canonical Planに登録されているACTIVE Task。作成時の特定Taskへ固定しない。
+- 「バグ修正系の後」「テストの見直しより前」: 本TaskはWorktree/CLI修正の後、自己確認型テスト見直し3件より前に配置する。
+- Task順序の見直しはTask作成時の会話で実施済み。ユーザーはPR #1342で追加したTaskの順序を変更しない方針を指定した。未承認の並べ替えは本PRへ反映せず、この実装Taskの成果にも含めない。
+- Rulesの通常Task完了に必要なPlan/Task metadata同期と、NEXT Taskの**実行開始**は別の境界として扱う。
 
 ## Purpose
 
-新しいCodexセッションで、ユーザーが上記の短いTASK指示だけを送れば、repositoryのcanonical authorityを自律的に取得し、ACTIVE Taskの必要な調査・実装・GLM独立Review・Validation・install・Publication・Retireと正規終了まで進め、次Taskには着手せず停止できる運用/機械的workflowを成立させる。セッションごとの長文bootstrap指示・ユーザーからの都度手順補完を不要にする。
-
-併せて、現行Planの作業順序について妥当性を評価し、変更案だけをユーザーへ報告する。
+ユーザーが上記の短い `TASK` ブロックだけを指示すれば、Codexが現行repository authorityからACTIVEを特定し、通常の調査・実装・独立Review・Validation・install・Publication・Retireまで完了して、NEXTを開始せず停止できるWorkflowを成立させる。
 
 ## External feasibility
 
@@ -60,37 +41,32 @@ status: not-applicable
 
 ## Contract
 
-- 実行時のcurrent Git、root `AGENTS.md` → `codex/AGENTS.md`、Rules、Plan、ACTIVE Task、Controller/Runtimeのcanonical bootstrap、handoff、task admission、必要なmachine projection、Codex親指示を正として入口から完了・停止まで追跡する。過去sessionの記憶やユーザーによるTask名/Issue番号指定をauthorityへ昇格させない。
-- 入力は原文の3行のTASKブロックだけとし、親がACTIVE Taskを正規に一意解決する。Plan/metadata/Runtimeが不整合なら証拠を確認し正規ownerの復旧経路を選ぶ。未確定やpermission不足は必要最小限の具体的なSTOP理由を報告し、勝手な正規成功やGuard迂回をしない。
-- ACTIVE TaskのOriginal instruction・Amendments・Resolved references・Contract・Must not・Acceptanceを独立reviewに十分な形で受領し、必要なGLM委譲/Review/Sol判断/品質ゲート/installation/source一致/remote Publication/Retire/metadata同期を各既存ownerの正規経路で完了できるようにする。
-- 一つのTaskを完了させる継続操作と、別Taskの新規開始を区別する。現在のACTIVEの完了処理に必要なPlan同期は正規規則を保ちながら、**新たにNEXTだったTaskのbootstrap・activation・GLM dispatch・調査・実装は開始しない**。自動継続、resume、automation発火、次Task選択時にもこの停止境界を尊重する。
-- 現行の対応表面に不足があれば、必要な最小のinstruction/protocol/production ownerを修正し、短い指示を読ませるための第二の指示書・新しいstate正本・別scheduler・専用daemonを増やさない。既存のrepository-scoped bootstrapとController machine actionを再利用する。
-- STOPまでを含む再現可能なEnd-to-End（必要に応じてscripted/mock providerおよび実際の既存command/CI）を検証する。途中失敗からの正規resume、ACTIVE参照ずれ、未完了/blocked、完了後の再入によるNEXT誤起動、不要なユーザーへのコマンド再説明を明示的に扱う。
-- NEXT優先順も現物に即して見直す。全Taskについて目的、依存関係、先行すると復旧/品質/コストに影響する前提、bug-fixと改善/evaluationの区別を確認し、現状→推奨順、移動理由、変更不要箇所、blockerを**ユーザーに先に提示**する。順序の是非を検討しただけでPlanを書き換えない。採用は別途ユーザー判断後とし、優先度とhard dependencyを混同しない。
+- 実行時current Git、`AGENTS.md`、`codex/AGENTS.md`、Rules、Plan、ACTIVE TaskとController/Runtimeのcanonical authorityから、入口・handoff・completion・停止までの欠落を特定して必要な箇所を修正する。会話の記憶や省略された追加手順をauthorityにしない。
+- 正規のTask/Attempt/bootstrap/lease、GLM worker・reviewer、Sol判断、品質ゲート、install、Git/remote Publication、Retire、Plan/Task metadata同期を既存ownerとGuardを維持して実行できるようにする。
+- ACTIVE Taskの正常完了に必要なNEXTへのmetadata上の昇格は既存Rulesに従う一方、**その昇格先のTaskを新規bootstrap・dispatch・調査・実装・resumeしない**。自動継続・automationも同じ停止境界を守る。
+- 不整合、permission不足、provider制限、品質不合格は既存の正規回復/STOPで扱い、未完了を成功扱いしない。必要なproduction修正とE2E検証を実施する。新しい第二state正本・daemon・schedulerや専用復旧バイパスを増やさない。
 
 ## Must not
 
-- 短いTASK指示で実行できるかの現状調査・結果報告だけで完了扱いにしない。目的はその指示だけで実際に完遂できる状態へ整備すること。
-- 現ACTIVEとは別のTaskを先に実装しない。ACTIVE完了後も次Taskの実装・調査開始・GLM呼び出し・正規activationをしない。
-- Plan/Task fileを推測生成しない。既存Guard/permission/safety/one-shotやfail-closedを弱めず、失敗を成功と偽装しない。
-- 原文TASKにない長文テンプレート、Task名、Issue番号、CLI手順のユーザー追加入力を運用上必須にしない。
-- NEXTの見直し提案をユーザー承認前にPlanやPRへ反映しない。レビュー時点の実装とPlan authorityを取り違えない。
-- 旧schema互換、hidden state、第二Controller、modelベースの冗長な単純手順判定、新しい非必要機構を追加しない。
+- 実行可能性の調査・手順書作成だけで完了扱いにしない。
+- 次のNEXT Taskを開始しない。次Taskへ移行するためのModel呼出しや不正な実装先読みを行わない。
+- Guard、source-of-truth、1 Task 1 Commit、独立Review、fail-closed、Publication/Retireの契約を弱めない。
+- ユーザーに長文のbootstrap指示・Task名・Issue番号・コマンドの追加入力を要求する仕組みを前提にしない。
+- 既存Planの優先順を無断で変更しない。旧schema互換や第二の状態管理を導入しない。
 
 ## Acceptance criteria
 
-1. 新規セッションでOriginal instructionのTASKブロックだけを入力し、repoの正規Rules/Plan/ACTIVEを親が解決して正規実行を開始できる。ユーザーにbootstrap/Task名/復旧コマンドの追加説明を要求しない。
-2. scripted/live安全範囲のE2Eで実際のACTIVEのReview、必要Validation、install、Publication、Retire、Plan同期まで成功し、証拠・remote HEAD一致を検証できる。単発のunit testや「手順書が存在する」だけで完了としない。
-3. ACTIVE完了後は新NEXT taskに対するmodel呼出し・activation・mutationが0件のままSTOPする。正規完了のmetadata操作とNEXT実行を混同しない。
-4. 途中resume、stale Controller lease、Planズレ、品質失敗/要判断の各ケースで、fail-closedとSTOP境界を保った動作・報告が確認できる。
-5. 必要なコード/指示修正があれば通常Review・tests・Lint・installを通し、追加の独自復旧/進行機構を増やさない。
-6. 現行NEXTをrepository-wideに見直した順序案と理由をユーザーへ報告し、承認されていない並べ替えをPlan/PRへ加えない。
+- 別の新規セッションで上記 `TASK` ブロックのみを入力し、正規Plan/ACTIVEを特定して通常のTask実行を開始できる。
+- ACTIVEの必要なReview・Validation・install・Publication・RetireとMetadata同期を通したEnd-to-Endの完了証拠を確認できる。
+- 完了後はNEXTへの実行側のbootstrap、dispatch、Model呼出し、mutationが発生せずSTOPする。metadataの正規昇格とは区別する。
+- 失敗/復旧・長時間中断・再入・stale stateの代表ケースでもSTOP境界とfail-closedを保持する。
+- 必要な修正が通常のtest、Lint、関係するinstall/smokeで検証され、追加の独自制御機構を必要としない。
 
 ## Historical invariants
 
-- 正本: current Git、Rules、Plan、ACTIVE Task、既存Controller/Runtimeのcanonical authority。会話とModel内部状態は正本ではない。
-- Task完了と次Task開始は別の権限境界。後続を自動開始しないSTOPは最優先で守る。
-- 1 Task 1 Commit、独立Review、必要なinstall、同一OID/証拠によるPublication/Retire、Codex ReductionとQuality Deltaを維持する。
+- 現行Git / Rules / Plan / ACTIVEとcanonical Controller/Runtimeを正とする。
+- 一つのTaskの完了と次Taskの実行開始を厳密に分離する。
+- Codex ReductionとQuality Deltaを最上位目的とし、既存の安全・証拠・Review境界を維持する。
 
 ## Dependencies
 
