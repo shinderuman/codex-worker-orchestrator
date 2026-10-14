@@ -33,12 +33,11 @@ func (s *Store) planTerminalMetadata(input TerminalTaskInput) (ExecutionOperatio
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	committed, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, head.IntegrationTip)
+	implementation, err := s.completionImplementation(c)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	blocker := !c.TaskRef.Equal(c.RootTaskRef)
-	metadata, err := committed.RetireTerminalMetadata(c.TaskRef.TaskPath, blocker)
+	metadata, err := s.completionMetadata(implementation)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
@@ -50,14 +49,18 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	files, tree, err := s.terminalMetadataTree(head.IntegrationTip, metadata)
+	implementation, err := s.completionImplementation(c)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	commit, err := createAcceptedCandidateCommit(s.identity.PrimaryRoot, tree, head.IntegrationTip, "retire terminal Task metadata: "+c.TaskRef.TaskPath+"\n")
+	files, tree, err := s.terminalMetadataTree(implementation.CommitOID, metadata)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
+	if c.ImplementationRef == nil || tree != c.TreeOID {
+		return ExecutionOperation{}, head, fmt.Errorf("terminal metadata must already belong to the published completion candidate")
+	}
+	commit := head.IntegrationTip
 	result, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, commit)
 	if err != nil {
 		return ExecutionOperation{}, head, err
@@ -124,7 +127,7 @@ func (s *Store) terminalSourceProject(input TerminalTaskInput, head RepositoryCo
 	if err != nil {
 		return ProjectSnapshot{}, err
 	}
-	actual, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, head.IntegrationTip)
+	actual, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, project.HeadOID)
 	if err != nil || actual.ProjectSnapshotID != project.SnapshotID {
 		return ProjectSnapshot{}, fmt.Errorf("terminal source ProjectSnapshot is stale: %w", err)
 	}

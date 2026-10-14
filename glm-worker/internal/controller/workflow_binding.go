@@ -38,9 +38,54 @@ func WorkflowConfig(cfg config.AppConfig) (config.AppConfig, error) {
 	if err != nil {
 		return cfg, err
 	}
+	return WorkflowTaskConfig(cfg, identity, task), nil
+}
+
+func WorkflowTaskConfig(cfg config.AppConfig, identity RepositoryIdentity, task SemanticTaskRef) config.AppConfig {
 	cfg.RepoHash = digestStrings(identity.LineageID, task.TaskPath)
 	cfg.RepoShort = cfg.RepoHash[:12]
-	return cfg, nil
+	return cfg
+}
+
+func ParentContinuationConfig(cfg config.AppConfig) (config.AppConfig, error) {
+	exists, err := Exists(cfg)
+	if err != nil || !exists {
+		return cfg, err
+	}
+	store, err := Open(cfg)
+	if err != nil {
+		return cfg, err
+	}
+	root, err := canonicalPath(cfg.RepoRoot)
+	if err != nil {
+		return cfg, err
+	}
+	if root != store.Identity().PrimaryRoot {
+		return cfg, nil
+	}
+	report, err := store.ProjectStatus()
+	if err != nil {
+		return cfg, err
+	}
+	if report.Head.LiveAttemptID == "" && report.Head.LiveLeaseID == "" {
+		return cfg, nil
+	}
+	return store.liveParentContinuationConfig(cfg, report)
+}
+
+func (s *Store) liveParentContinuationConfig(cfg config.AppConfig, report ControllerStatusReport) (config.AppConfig, error) {
+	if report.Live == nil || report.Live.WorkspaceRoot == "" || report.LiveError != "" {
+		return cfg, fmt.Errorf("parent continuation live workspace is unavailable: %s", report.LiveError)
+	}
+	task, err := s.ExecutionTaskForWorkspace(report.Live.WorkspaceRoot)
+	if err != nil {
+		return cfg, err
+	}
+	if !task.Equal(report.Live.ExecutionTask) {
+		return cfg, fmt.Errorf("parent continuation execution Task authority changed")
+	}
+	cfg.RepoRoot = report.Live.WorkspaceRoot
+	return WorkflowConfig(cfg)
 }
 
 func workflowTaskRef(cfg config.AppConfig, exists bool) (SemanticTaskRef, error) {
@@ -135,6 +180,14 @@ func WorkflowAuthorityTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) 
 	head, err := store.LoadHead()
 	if err != nil {
 		return SemanticTaskRef{}, true, err
+	}
+	return store.quiescentWorkflowAuthority(cfg, head, executionErr)
+}
+
+func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head RepositoryControllerHead, executionErr error) (SemanticTaskRef, bool, error) {
+	if head.UserTerminationRef != nil && head.ExecutionTaskRef == nil {
+		authority, err := store.UserTerminatedSuccessorAuthority(head)
+		return authority.Task, true, err
 	}
 	if !retiredMetadataHead(head) {
 		if task, sealed := sealedAcceptedReadAuthority(store, head); sealed {

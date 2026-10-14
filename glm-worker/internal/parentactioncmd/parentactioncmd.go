@@ -27,19 +27,40 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type workerProcessError struct {
+	cause error
+}
+
 const (
 	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones|observation-execute|controller-semantic|controller-execution|controller-publication|controller-evidence> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | observation-execute <token> | accept | resume | resubmit-report | wait | evidence <manifest.json> | export-bundle [--task-id <glm-worker task id>] | finalize-check <go-test|go-test-race> | continuation-stop-hook | continuation-metadata-guard"
 
-	activeTaskRequest = "現在のACTIVE taskを実行してください。"
-	actionStart       = "start"
-	actionApprove     = "approve-surface"
+	activeTaskRequest   = "現在のACTIVE taskを実行してください。"
+	actionStart         = "start"
+	actionApprove       = "approve-surface"
+	approveSurfaceUsage = "usage: glm-parent-action approve-surface --accepted-scope current-diff"
 )
+
+func (e *workerProcessError) Error() string {
+	return e.cause.Error()
+}
+
+func (e *workerProcessError) Unwrap() error {
+	return e.cause
+}
+
+func (e *workerProcessError) exitCode() int {
+	var exitErr *exec.ExitError
+	if errors.As(e.cause, &exitErr) {
+		return childExitCode(exitErr)
+	}
+	return 1
+}
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if err := run(args, stdout, stderr); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return childExitCode(exitErr)
+		var workerErr *workerProcessError
+		if errors.As(err, &workerErr) {
+			return workerErr.exitCode()
 		}
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
@@ -50,6 +71,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s", usage)
+	}
+	if err := validateInvocationGrammar(args); err != nil {
+		return err
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -63,6 +87,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return prepare(cfg, args, stdout)
 	}
 	return executeWithTerminalEnvelope(cfg, args, stdout, stderr)
+}
+
+func validateInvocationGrammar(args []string) error {
+	if args[0] == "prepare" {
+		return nil
+	}
+	if _, ok := lookupParentActionCommand(args[0]); !ok {
+		return fmt.Errorf("%s", usage)
+	}
+	if args[0] == actionApprove && !parentactiongrammar.ValidateApproveSurfaceArgs(args[1:]) {
+		return fmt.Errorf("%s", approveSurfaceUsage)
+	}
+	return nil
 }
 
 func prepare(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -197,7 +234,7 @@ func executeParentReadAction(cfg config.AppConfig, args []string, stdout, stderr
 
 func executeApproveSurfaceAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	if !parentactiongrammar.ValidateApproveSurfaceArgs(args) {
-		return fmt.Errorf("usage: glm-parent-action approve-surface --accepted-scope current-diff")
+		return fmt.Errorf("%s", approveSurfaceUsage)
 	}
 	if err := persistParentCodexIdentity(cfg); err != nil {
 		return err
@@ -422,7 +459,10 @@ func runResolvedWorker(worker, workingDir string, args []string, stdin io.Reader
 	go forwardSignals(command.Process, signals, done)
 	err := command.Wait()
 	close(done)
-	return err
+	if err != nil {
+		return &workerProcessError{cause: err}
+	}
+	return nil
 }
 
 func forwardSignals(process *os.Process, signals <-chan os.Signal, done <-chan struct{}) {

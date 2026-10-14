@@ -46,7 +46,8 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 - 同型caseを横展開せず、既存testへ統合できるものは統合する。
 - coverage率や全branch消化を目的化しない。重要behaviorの未検証を探すために使う。
 - taskで必須の決定論的validationがworker環境の既知capability制約のため実行不能で、wrapperの親validation formで実行できる場合だけ、同じ失敗を再試行せず`IMPLEMENTED`結果へ`parent_validation=go-test|go-test-race`と`parent_validation_working_dir=repository-relative/module-dir`を必ず同時指定する。working dirは実際にそのvalidationを実行すべきmodule/current directoryの正規化済みrepository相対path（repository rootなら`.`）にする。worker自身が実行可能な通常validation、任意の追加確認、単なる時間短縮目的では指定しない。親validationの成否/evidenceはwrapperが付与するので自分で作らない。
-- 同一taskで一度`parent_validation`と`parent_validation_working_dir`を報告したvalidationは、そのformとworking dirの組をparent-ownedな必須validationとして以後の同一task roundでも保持する。decision後・review fix・rule適用・resumeでsnapshotが変わってもworker環境からそのfull suiteを再実行せず、worker環境で成立するtargeted test/lint/buildだけを実行する。`IMPLEMENTED`では同じtyped pairを再度返し、fresh exact-snapshot validationはwrapperに任せる。親validationのfail evidenceを修正指示として受けた場合も、そのevidenceを使って原因を修正するがparent-owned suite自体はworkerから再試行しない。task要求からvalidation義務自体が明示的に消えた場合を除き、自由文の推測でpairを落としたり別formへ変えたりしない。
+- 同一taskで一度`parent_validation`と`parent_validation_working_dir`を報告したvalidationは、そのformとworking dirの組をparent-ownedな必須validationとして以後の同一task roundでも保持する。decision後・review fix・rule適用・resumeでsnapshotが変わってもworker環境からそのfull suiteを再実行せず、worker環境で成立するtargeted test/lint/buildだけを実行する。`IMPLEMENTED`では同じtyped pairを再度返し、fresh exact-snapshot validationはwrapperに任せる。親validationのfail evidenceを修正指示として受けた場合も、そのevidenceを使って原因を修正するがparent-owned suite自体はworkerから再試行しない。task要求からvalidation義務自体が明示的に消えた場合を除き、自由文の推測でvalidation義務を落としたり別formへ変えたりしない。
+- `NEEDS_SOL_DECISION`では`parent_validation`と`parent_validation_working_dir`の両fieldをJSONから省略する。空文字のfieldや以前の`IMPLEMENTED`のtyped pairを残さない。未実施の親validation義務は`test_obligations`へ記載し、Sol判断後の通常`IMPLEMENTED`報告で同じtyped pairを維持する。Decisionのために実装報告へ変換せず、current schemaに従った`NEEDS_SOL_DECISION`を返す。
 
 ## Risk
 `RISK: HIGH`は、アーキテクチャ、公開API、データモデル、依存方向、current schema/contractの意味変更、原因不明bug、security、不可逆操作、Sol判断後、review fix後など、Solの意味判断が必要な場合。これらがなく局所的・可逆なら`LOW`。
@@ -56,9 +57,6 @@ HIGHではSolが全diffを読み直さず判断できるよう、変更前後の
 - Git mutation/transport authorityは親専有で、workerはcommit等を行わない。protected repositoryでは`control:worker-git-authority-snapshot`がfail closedするため、guardを迂回しない。
 - `git push`は禁止。remote writeは親だけが行う。
 - 既存未commit変更を勝手に整理・破棄・上書きしない。
-
-## 反復コスト観測
-同一または実質同一の高コストtest/build/lint/smokeが反復されwall-clockの主要部を占めることを一次証拠で確認した場合、skipや別cache層を勝手に追加せず、TESTSへ`反復コスト観測:`として対象・回数・時間根拠・改善仮説を圧縮して報告する。同一候補を重複報告しない。
 
 ## 出力
 途中経過、file一覧、grep結果、大量codeを最終出力へ含めず、実行環境指定schemaの結果を1つだけ返す。

@@ -261,6 +261,10 @@ func TestIntegratedLifecyclePublicationRaceAdoptsSafely(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	current, err = harness.store.LoadAcceptedCandidate(*published.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if published.Head.IntegrationTip != current.CommitOID || published.Head.ObservedPrefix != current.CommitOID {
 		t.Fatalf("post-adoption publication is not canonical: %#v", published.Head)
 	}

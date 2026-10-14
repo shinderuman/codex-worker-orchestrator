@@ -83,7 +83,11 @@ func (s *Store) verifyMaterializedExecution(op ExecutionOperation) (WorkspaceIde
 	if workspace != *op.Workspace {
 		return WorkspaceIdentity{}, WorkspaceSnapshot{}, fmt.Errorf("materialized workspace identity mismatch")
 	}
-	trees, err := CaptureExecutionTrees(workspace.Root, op.Rebound.BaseOID)
+	metadataBase, err := s.projectMetadataBase(op.Transition.ProjectSnapshotNew)
+	if err != nil {
+		return WorkspaceIdentity{}, WorkspaceSnapshot{}, err
+	}
+	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase)
 	if err != nil {
 		return WorkspaceIdentity{}, WorkspaceSnapshot{}, err
 	}

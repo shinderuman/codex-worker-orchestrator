@@ -41,6 +41,7 @@ const (
 	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
 	ParentActionResubmitReport              ParentAction = "resubmit-report"
+	ParentActionRepairReentryReview         ParentAction = "repair-reentry-review"
 )
 
 const (
@@ -84,6 +85,9 @@ func (s *StateStore) AdmitParentAction(action ParentAction) (ParentActionPlan, b
 		return ParentActionPlan{}, false, err
 	}
 	admitted := plan.AdmitsCommand(action)
+	if s.TaskStatus() == TaskStatusUserTerminated {
+		admitted = false
+	}
 	if action == ParentActionResume && admitted {
 		if err := s.rejectResumeBeforeRateLimitReset(); err != nil {
 			return ParentActionPlan{}, false, err
@@ -141,6 +145,9 @@ func (kind ResumeStopKind) ParentAction() ParentAction {
 
 func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	status := s.TaskStatus()
+	if status == TaskStatusUserTerminated {
+		return s.userTerminatedActionPlan()
+	}
 	registrations, registrationErr := s.CurrentPendingDefectRegistrations()
 	if registrationErr != nil {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "pending defect registration state is unreadable: "+registrationErr.Error())
@@ -185,6 +192,11 @@ func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, 
 	case TaskStatusActive, TaskStatusNone:
 		return inactiveParentActionPlan(status, pending, openReview, stopKind)
 	default:
+		if repairable, err := s.ReenteredReviewStopRepairable(); err != nil {
+			return ParentActionPlan{}, err
+		} else if repairable {
+			return actionPlan(ParentActionRepairReentryReview, "", ParentActionRepairReentryReview), nil
+		}
 		return stoppedParentActionPlan(status, pending, pendingDecisionResume, openReview, stopKind)
 	}
 }

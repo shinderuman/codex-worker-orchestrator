@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -44,6 +45,10 @@ func executeContinuationGate(cfg config.AppConfig, args []string, stdout io.Writ
 }
 
 func loadContinuationGateHandoff(cfg config.AppConfig) (continuationGateHandoff, error) {
+	cfg, err := controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		return continuationGateHandoff{}, err
+	}
 	return parentcontinuation.Build(cfg, state.AttachStateStore(cfg)), nil
 }
 

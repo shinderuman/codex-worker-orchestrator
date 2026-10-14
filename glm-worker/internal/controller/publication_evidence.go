@@ -16,7 +16,7 @@ func (s *Store) publicationEvidence(op ExecutionOperation, c AcceptedCandidate, 
 		return EvidencePublicationInput{}, err
 	}
 	task.AttemptSeals = canonicalEvidenceRefs(append(task.AttemptSeals, c.SealRef))
-	refs, err := s.candidatePublicationRefs(c, lineage, observation)
+	refs, err := s.operationPublicationRefs(op, c, lineage, observation)
 	if err != nil {
 		return EvidencePublicationInput{}, err
 	}

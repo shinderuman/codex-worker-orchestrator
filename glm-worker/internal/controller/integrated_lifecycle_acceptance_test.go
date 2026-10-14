@@ -264,6 +264,10 @@ func (h *lifecycleHarness) publishLifecycleTask(t *testing.T, admission Admissio
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidate, err = h.store.LoadAcceptedCandidate(*published.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if published.Head.IntegrationTip != candidate.CommitOID || published.Head.ObservedPrefix != candidate.CommitOID {
 		t.Fatalf("publication did not establish canonical integration: head=%#v candidate=%s", published.Head, candidate.CommitOID)
 	}

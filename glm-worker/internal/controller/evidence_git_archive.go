@@ -24,6 +24,7 @@ type gitObjectArchiveEnvelope struct {
 }
 
 const gitCommitObjectType = "commit"
+const gitTreeObjectType = "tree"
 
 const gitObjectArchiveMediaType = "application/vnd.codex.git-object-archive+json"
 
@@ -198,7 +199,7 @@ func collectGitRootClosure(repoPath string, root GitObjectArchiveRoot, objectSet
 		}
 		addGitObjectLines(objectSet, output)
 		return nil
-	case "tree":
+	case gitTreeObjectType:
 		return collectGitTreeClosure(repoPath, root.OID, objectSet)
 	case "blob":
 		return nil

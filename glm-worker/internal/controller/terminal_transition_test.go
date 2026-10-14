@@ -28,6 +28,10 @@ func publishTerminalTestSource(t *testing.T, fixture findingAcceptanceFixture, p
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidate, err = fixture.store.LoadAcceptedCandidate(*published.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return published, candidate
 }
 
@@ -61,8 +65,18 @@ func TestTerminalRootRetirementAdvancesPlanAndKeepsPublishedEvidence(t *testing.
 	if err != nil || active != fixture.child.TaskPath {
 		t.Fatal("Plan successor mismatch")
 	}
-	if retired.Head.ObservedPrefix != candidate.CommitOID || retired.Head.IntegrationTip == candidate.CommitOID {
-		t.Fatal("metadata retirement rewrote publication prefix")
+	if retired.Head.ObservedPrefix != candidate.CommitOID || retired.Head.IntegrationTip != candidate.CommitOID {
+		t.Fatal("metadata retirement changed the published completion commit")
+	}
+	if got := controllerGitOutput(t, fixture.store.identity.PrimaryRoot, "rev-list", "--count", candidate.BaseOID+".."+retired.Head.IntegrationTip); got != "1" {
+		t.Fatal("one Task published more than one commit")
+	}
+	implementation, err := fixture.store.completionImplementation(candidate)
+	if err != nil || implementation.CommitOID == candidate.CommitOID {
+		t.Fatal("original implementation candidate was not preserved")
+	}
+	if _, err := fixture.store.LoadAcceptedCandidate(*candidate.ImplementationRef); err != nil {
+		t.Fatal("implementation proof is unavailable after retirement")
 	}
 	if _, err := fixture.store.RecoverExecutionOperation(retired.TransitionID); err != nil {
 		t.Fatal(err)
@@ -245,7 +259,7 @@ func TestTerminalRetirementRejectsArbitraryTaskStaleProjectAndDirtyMetadata(t *t
 	published, candidate := publishTerminalTestSource(t, fixture, policy, source)
 	input := TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef}
 	invalid := []TerminalTaskInput{input, input, input}
-	invalid[0].ProjectSnapshotID = source.Head.ProjectSnapshotID
+	invalid[0].ProjectSnapshotID = "different-project"
 	invalid[1].TaskRef = fixture.child
 	invalid[2].ExpectedGeneration--
 	for _, denied := range invalid {

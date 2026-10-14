@@ -59,8 +59,6 @@ const (
 	PlanVersion    = 1
 	StatusPending  = "pending"
 	StatusComplete = "complete"
-
-	activeTaskStateKey = "active-task"
 )
 
 func NewPlan(
@@ -252,7 +250,10 @@ func currentAuthority(cfg config.AppConfig, st *state.StateStore) (revisionAutho
 	if err != nil {
 		return revisionAuthority{}, err
 	}
-	activeTaskPath := st.ReadOr(activeTaskStateKey, "")
+	activeTaskPath, err := st.CurrentWorkflowTaskPath()
+	if err != nil {
+		return revisionAuthority{}, err
+	}
 	digest, err := TaskContractDigest(cfg.RepoRoot, activeTaskPath)
 	if err != nil {
 		return revisionAuthority{}, err

@@ -14,11 +14,23 @@ func (s *Store) PreviewCandidateTree(admission Admission, policy PublicationPoli
 	if _, err := s.AdmitMutation(admission.MutationAuthority(), admission.Workspace, admission.Snapshot); err != nil {
 		return "", err
 	}
-	trees, err := CaptureExecutionTrees(admission.Workspace.Root, admission.Attempt.ExecutionBaseOID)
+	metadataBase, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
+	if err != nil {
+		return "", err
+	}
+	trees, err := CaptureExecutionTrees(admission.Workspace.Root, metadataBase)
 	if err != nil {
 		return "", err
 	}
 	base, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", admission.Head.IntegrationTip+"^{tree}")
+	if err != nil {
+		return "", err
+	}
+	index, err := newSuspensionIndex(s.identity.PrimaryRoot, base)
+	if err != nil {
+		return "", err
+	}
+	base, err = normalizeCandidateTree(s.identity.PrimaryRoot, index, metadataBase)
 	if err != nil {
 		return "", err
 	}

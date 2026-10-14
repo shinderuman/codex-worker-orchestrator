@@ -70,6 +70,10 @@ func (s *Store) validateAcceptedCandidate(candidate AcceptedCandidate) error {
 }
 
 func (s *Store) validateCandidateProofs(candidate AcceptedCandidate) error {
+	implementation, err := s.completionImplementation(candidate)
+	if err != nil {
+		return err
+	}
 	if len(candidate.DescendantEvidence) != 0 {
 		tree, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", candidate.DescendantTip+"^{tree}")
 		if err != nil {
@@ -80,7 +84,7 @@ func (s *Store) validateCandidateProofs(candidate AcceptedCandidate) error {
 		}
 	}
 	if candidate.EvidenceValid {
-		return s.validateCandidateEvidence(candidate, candidate.Evidence)
+		return s.validateCandidateEvidence(implementation, candidate.Evidence)
 	}
 	return nil
 }

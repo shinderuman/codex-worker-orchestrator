@@ -12,7 +12,7 @@ func (s *Store) validateMaterializationOperation(op ExecutionOperation) error {
 	if op.Transition.Effects[0].ExpectedNew != laneMaterializationIdentity(*op.Workspace, *op.Rebound) || op.Transition.TargetWorkspaceID != op.Workspace.ID || op.Transition.TargetAttemptID != op.Attempt.AttemptID || op.Transition.TargetLeaseID != op.Lease.LeaseID {
 		return fmt.Errorf("materialization plan differs from journal authority")
 	}
-	return nil
+	return s.validateMaterializationParentSource(op)
 }
 
 func (s *Store) verifyCommittedMaterialization(op ExecutionOperation, head RepositoryControllerHead) error {

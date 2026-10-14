@@ -7,7 +7,7 @@ import (
 )
 
 func terminalMetadataEffects(p TerminalMetadataOperation) []EffectExpectation {
-	old, next := p.Record.SourceProject.HeadOID, p.Record.ResultProject.HeadOID
+	old, next := p.Record.ResultProject.HeadOID, p.Record.ResultProject.HeadOID
 	result := []EffectExpectation{{Surface: MutationSurfaceHistory, Resource: p.Policy.Remote + ":" + p.Policy.RemoteRef, ExpectedOld: old, ExpectedNew: next}, {Surface: MutationSurfaceRef, Resource: p.Policy.LocalRef, ExpectedOld: old, ExpectedNew: next}}
 	for _, file := range p.Files {
 		result = append(result, EffectExpectation{Surface: MutationSurfaceIndex, Resource: file.Path, ExpectedOld: file.OldOID, ExpectedNew: file.NewOID}, EffectExpectation{Surface: MutationSurfaceSource, Resource: file.Path, ExpectedOld: terminalFileIdentity(file.Mode, file.OldBytes, true), ExpectedNew: terminalFileIdentity(file.Mode, file.NewBytes, file.NewOID != "")})
@@ -223,7 +223,7 @@ func (s *Store) applyTerminalMetadataPublication(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	old, next := p.Record.SourceProject.HeadOID, p.Record.ResultProject.HeadOID
+	old, next := p.Record.ResultProject.HeadOID, p.Record.ResultProject.HeadOID
 	if remote != old && remote != next {
 		return fmt.Errorf("terminal metadata remote advanced; exact operation retained without force push")
 	}

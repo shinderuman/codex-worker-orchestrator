@@ -1,12 +1,57 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"reflect"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func TestParentHandoffResultFormatStopIncludesResubmitReport(t *testing.T) {
+	for _, projection := range []string{"", "recovery"} {
+		t.Run(projection, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			st := startParentHandoffTask(t, cfg)
+			if err := st.EnterStop(state.ResumeCheckpoint{
+				Stage: state.ResumeStageWorker, Phase: "worker-new-result-correct",
+				Role: state.WorkerRole, Model: "worker", ReadOnly: true,
+				StopKind: state.ResumeStopResultFormat, ResultCorrection: true,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			if err := Execute(Command{Mode: ModeHandoff, Payload: projection}, cfg, nil, &stdout, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			var output struct {
+				Consistent     bool                               `json:"consistent"`
+				RequiredAction string                             `json:"required_action"`
+				AllowedActions []string                           `json:"allowed_actions"`
+				ActionSpecs    map[string]parentHandoffActionSpec `json:"action_specs"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+				t.Fatal(err)
+			}
+			action := string(state.ParentActionResubmitReport)
+			if !output.Consistent || output.RequiredAction != action || !reflect.DeepEqual(output.AllowedActions, []string{action}) {
+				t.Fatalf("handoff = %#v", output)
+			}
+			spec := output.ActionSpecs[action]
+			if spec.Kind != "direct" || !reflect.DeepEqual(spec.Command, []string{"glm-parent-action", action}) {
+				t.Fatalf("resubmit spec = %#v", spec)
+			}
+			if _, admitted, err := st.AdmitParentAction(state.ParentActionResubmitReport); err != nil || !admitted {
+				t.Fatalf("resubmit admission = %v, err = %v", admitted, err)
+			}
+			if _, admitted, err := st.AdmitParentAction(state.ParentActionResume); err != nil || admitted {
+				t.Fatalf("resume admission = %v, err = %v", admitted, err)
+			}
+		})
+	}
+}
 
 func TestParentHandoffActionSpecs(t *testing.T) {
 	specs := parentActionSpecs([]string{

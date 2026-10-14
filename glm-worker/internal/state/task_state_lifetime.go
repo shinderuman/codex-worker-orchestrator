@@ -17,6 +17,7 @@ const (
 	RepositoryHarnessActivationStateFile = "repository-harness"
 	InstructionSurfaceBaselineStateFile  = "instruction-surface-baseline-v1"
 	ExecutionUnitDispositionStateFile    = "execution-unit-disposition.json"
+	AcceptedResultRuleRecoveryStateFile  = "accepted-result-rule-recovery.json"
 )
 
 var taskBoundStatePolicies = []taskBoundStatePolicy{
@@ -41,6 +42,7 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: ExecutionMilestonesStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: ExecutionUnitDispositionStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: ResultCorrectionStateFile, lifetime: taskBoundStateFreshTaskClear},
+	{name: AcceptedResultRuleRecoveryStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: stopWorktreePatchFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: stopIndexPatchFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: resumeStateFile, lifetime: taskBoundStateFreshTaskClear},

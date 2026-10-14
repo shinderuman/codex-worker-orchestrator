@@ -193,6 +193,10 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	}
 	promoted := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "promote", ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
 	published := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "publish", ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	candidate, err = store.LoadAcceptedCandidate(*published.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	retired := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "retire", ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
 	cleaned := canonicalCLIExecution(t, binary, blockerCfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: retired.Head.ControllerGeneration, WorkspaceID: blockedSource.Workspace.ID, SealRef: &candidate.SealRef})
 	assertCanonicalTransitionHandoff(t, cfg, rootState)

@@ -35,6 +35,9 @@ func (s *Store) applyLocalPublicationEffects(op ExecutionOperation, candidate Ac
 			return err
 		}
 	case publicationRebind:
+		if err := s.verifyParentSourceBeforeApply(op); err != nil {
+			return err
+		}
 		if err := s.retainAcceptedCandidate(candidate); err != nil {
 			return err
 		}
@@ -147,4 +150,18 @@ func (s *Store) applyAcceptedCandidateRetention(op ExecutionOperation, c Accepte
 		return err
 	}
 	return s.retainAcceptedCandidate(c)
+}
+
+func (s *Store) verifyParentSourceBeforeApply(op ExecutionOperation) error {
+	if op.Publication.ParentSource == nil {
+		return nil
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(s.identity.PrimaryRoot)
+	if err != nil {
+		return err
+	}
+	if snapshot != op.Publication.ParentSource.Snapshot {
+		return fmt.Errorf("parent source changed after prepare")
+	}
+	return nil
 }

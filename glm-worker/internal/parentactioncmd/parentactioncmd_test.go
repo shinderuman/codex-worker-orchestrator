@@ -100,6 +100,47 @@ func TestApproveSurfaceUsageRequiresExactScope(t *testing.T) {
 	}
 }
 
+func TestValidateInvocationGrammarAdmitsPrepareStagedActions(t *testing.T) {
+	if err := validateInvocationGrammar([]string{"prepare", "decision"}); err != nil {
+		t.Fatalf("prepare staged actionがgrammar gateで拒否されました: %v", err)
+	}
+	if err := validateInvocationGrammar([]string{"made-up-action"}); err == nil {
+		t.Fatal("未知actionが受理されました")
+	}
+	if err := validateInvocationGrammar([]string{"approve-surface"}); err == nil {
+		t.Fatal("scope省略が受理されました")
+	}
+}
+
+func TestRunPrepareStagedActionIsNotUsageRejected(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	Run([]string{"prepare", "decision"}, &stdout, &stderr)
+	if strings.Contains(stderr.String(), "usage:") {
+		t.Fatalf("正規のprepare staged actionがusage errorで拒否されました: %q", stderr.String())
+	}
+}
+
+func TestRunReportsInfrastructureGitFailureReason(t *testing.T) {
+	binDir := t.TempDir()
+	fakeGit := "#!/bin/sh\nexit 97\n"
+	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"resume"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("基盤git失敗がchild exit扱いされました: %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("失敗時にstdoutへ出力がありました: %q", stdout.String())
+	}
+	if stderr.Len() == 0 {
+		t.Fatal("基盤git失敗の理由がstderrへ出力されていません")
+	}
+}
+
 func TestApproveSurfaceValidInvocationPassesUsageValidation(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var stdout, stderr bytes.Buffer

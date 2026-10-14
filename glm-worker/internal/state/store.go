@@ -31,6 +31,7 @@ const (
 	TaskStatusWaitingSolReview         TaskStatus = "waiting-sol-review"
 	TaskStatusAwaitingParentCompletion TaskStatus = "awaiting-parent-completion"
 	TaskStatusComplete                 TaskStatus = "complete"
+	TaskStatusUserTerminated           TaskStatus = "user-terminated"
 	TaskStatusRateLimited              TaskStatus = "rate-limited"
 	TaskStatusProviderUnavailable      TaskStatus = "provider-unavailable"
 	TaskStatusGuardRecoverable         TaskStatus = "guard-recoverable"
@@ -55,6 +56,7 @@ func (status TaskStatus) Known() bool {
 		TaskStatusWaitingSolReview,
 		TaskStatusAwaitingParentCompletion,
 		TaskStatusComplete,
+		TaskStatusUserTerminated,
 		TaskStatusRateLimited,
 		TaskStatusProviderUnavailable,
 		TaskStatusGuardRecoverable,

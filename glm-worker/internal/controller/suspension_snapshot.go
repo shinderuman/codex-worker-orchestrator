@@ -47,7 +47,11 @@ func (s *Store) captureSuspensionLocked(admission Admission) (SuspensionSnapshot
 	if err := s.restoreExecutionBaseline(current.Workspace.Root, current.Attempt); err != nil {
 		return SuspensionSnapshot{}, err
 	}
-	trees, err := CaptureExecutionTrees(current.Workspace.Root, current.Attempt.ExecutionBaseOID)
+	metadataBase, err := s.projectMetadataBase(current.Head.ProjectSnapshotID)
+	if err != nil {
+		return SuspensionSnapshot{}, err
+	}
+	trees, err := CaptureExecutionTrees(current.Workspace.Root, metadataBase)
 	if err != nil {
 		return SuspensionSnapshot{}, err
 	}

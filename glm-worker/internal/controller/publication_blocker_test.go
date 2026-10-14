@@ -37,6 +37,10 @@ func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	c, err = fixture.store.LoadAcceptedCandidate(*published.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	published, err = fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: c.CandidateID, TaskRef: c.TaskRef})
 	if err != nil {
 		t.Fatal(err)
@@ -93,9 +97,24 @@ func TestPublishedCandidateDescendantRequiresAdoptionAndFreshEvidence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	c, err = fixture.store.LoadAcceptedCandidate(*promoted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := fixture.store.planCandidatePublication(promoted.Head, c, *promoted.CandidateRef, c.BaseOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err = fixture.store.LoadAcceptedCandidate(*op.Publication.After)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.prepareExecutionOperation(&op, promoted.Head); err != nil {
+		t.Fatal(err)
+	}
 	runControllerGit(t, fixture.store.identity.PrimaryRoot, "push", "origin", c.CommitOID+":"+policy.RemoteRef)
 	remote := advancePublicationTestRemote(t, fixture, policy, "descendant.txt", "external descendant\n")
-	published, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: c.CandidateID})
+	published, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID)
 	if err != nil {
 		t.Fatal(err)
 	}

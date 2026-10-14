@@ -110,14 +110,14 @@ func TestPublicationRaceAbortRecoveryNeverReportsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.State = candidateObserved
-	op, err := fixture.store.planCandidateRevision(promoted.Head, c, *promoted.CandidateRef, publicationPublish)
+	op, err := fixture.store.planCandidatePublication(promoted.Head, c, *promoted.CandidateRef, c.BaseOID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	op.Publication.RemoteOID = c.BaseOID
-	op.Publication.NewTip = c.CommitOID
-	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceHistory, Resource: policy.Remote + ":" + policy.RemoteRef, ExpectedOld: c.BaseOID, ExpectedNew: c.CommitOID}}
+	c, err = fixture.store.LoadAcceptedCandidate(*op.Publication.After)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.store.prepareExecutionOperation(&op, promoted.Head); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,11 @@ func TestPublicationRaceAbortRecoveryNeverReportsSuccess(t *testing.T) {
 	if head.PendingTransitionID != "" || head.IntegrationTip != c.BaseOID || head.ObservedPrefix != "" {
 		t.Fatal("lost race marked unpublished candidate integrated")
 	}
-	if _, err := fixture.store.RebindUnpublishedCandidate(PublicationInput{ExpectedGeneration: head.ControllerGeneration, CandidateID: c.CandidateID}); err != nil {
+	original, err := fixture.store.LoadAcceptedCandidate(*promoted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.RebindUnpublishedCandidate(PublicationInput{ExpectedGeneration: head.ControllerGeneration, CandidateID: original.CandidateID}); err != nil {
 		t.Fatal(err)
 	}
 }

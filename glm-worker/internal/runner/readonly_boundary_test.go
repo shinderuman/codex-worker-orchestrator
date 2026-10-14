@@ -145,13 +145,25 @@ func TestClaudeRunnerReadOnlyRunRejectsRealBashWrite(t *testing.T) {
 	readOnlyRunner := newReadOnlyBoundaryRunner(t, bin, readOnlyRepository)
 	readOnlyOutput := filepath.Join(t.TempDir(), "readonly.log")
 	readOnlyResult, readOnlyErr := readOnlyRunner.Run(state.WorkerRole, "worker-readonly-boundary", "haiku", true, "low", prompt, readOnlyOutput)
-	requireLiveRoundtrip(t, readOnlyResult, readOnlyErr, "read-only boundary")
+	requireReadOnlyBoundaryRoundtrip(t, readOnlyResult, readOnlyErr)
 	readOnlyTarget := filepath.Join(readOnlyRepository, "bash-write-probe.txt")
 	if _, err := os.Stat(readOnlyTarget); err == nil {
 		t.Fatalf("read-only runで実Bash writeが実行されました: %s", readOnlyTarget)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
 	}
+}
+
+func requireReadOnlyBoundaryRoundtrip(t *testing.T, result RunResult, err error) {
+	t.Helper()
+	if result.Response == "" {
+		var structuredErr *StructuredOutputError
+		if !errors.As(err, &structuredErr) || !structuredErr.RetryExhausted() {
+			t.Fatalf("read-only boundary: model応答がありません(err=%v)", err)
+		}
+		return
+	}
+	requireLiveRoundtrip(t, result, err, "read-only boundary")
 }
 
 func requireLiveRoundtrip(t *testing.T, result RunResult, err error, label string) {

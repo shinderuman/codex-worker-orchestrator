@@ -34,20 +34,32 @@ func (s *Store) validateCandidateRevisionLineage(op ExecutionOperation, c Accept
 	if err != nil {
 		return err
 	}
-	if op.Transition.Kind == publicationRebind {
-		if op.Publication.RemoteOID == "" || op.Publication.RemoteOID != op.Publication.NewTip || op.Publication.RemoteOID != c.BaseOID {
-			return fmt.Errorf("candidate rebind remote observation differs from adopted base")
-		}
-		if previous.State == candidateObserved || c.EvidenceValid || len(c.Evidence) != 0 {
-			return fmt.Errorf("candidate rebind preserves immutable/stale authority")
-		}
-		if err := s.validateApprovedAmendmentTransition(op); err != nil {
+	switch op.Transition.Kind {
+	case publicationRebind:
+		if err := s.validateParentSourceRevision(op, c); err != nil {
 			return err
 		}
-	} else if previous.CandidateID != c.CandidateID {
-		return fmt.Errorf("candidate identity changed outside typed rebind")
+		return s.validateReboundCandidateLineage(op, previous, c)
+	case publicationPublish:
+		if c.ImplementationRef == nil || !evidenceRefsEqual(*c.ImplementationRef, *op.Publication.Before) || previous.State != candidatePromoted || c.State != candidateObserved {
+			return fmt.Errorf("publication lacks exact completion amendment authority")
+		}
+	default:
+		if previous.CandidateID != c.CandidateID {
+			return fmt.Errorf("candidate identity changed outside typed rebind")
+		}
 	}
 	return nil
+}
+
+func (s *Store) validateReboundCandidateLineage(op ExecutionOperation, previous, c AcceptedCandidate) error {
+	if op.Publication.RemoteOID == "" || op.Publication.RemoteOID != op.Publication.NewTip || op.Publication.RemoteOID != c.BaseOID {
+		return fmt.Errorf("candidate rebind remote observation differs from adopted base")
+	}
+	if previous.State == candidateObserved || c.EvidenceValid || len(c.Evidence) != 0 {
+		return fmt.Errorf("candidate rebind preserves immutable/stale authority")
+	}
+	return s.validateApprovedAmendmentTransition(op)
 }
 
 func (s *Store) validateApprovedAmendmentTransition(op ExecutionOperation) error {
@@ -108,7 +120,7 @@ func (s *Store) validateAmendmentProjectAuthority(op ExecutionOperation) error {
 	if op.Publication.Project == nil || !projectHasTask(*op.Publication.Project, op.Transition.TargetExecutionTaskRef) {
 		return fmt.Errorf("approved Task amendment Project lacks the amended execution Task")
 	}
-	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, op.Publication.NewTip)
+	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, op.Publication.Project.HeadOID)
 	if err != nil {
 		return err
 	}
@@ -133,7 +145,11 @@ func (s *Store) verifyAcceptanceSource(op ExecutionOperation) error {
 	if head != op.Source.Attempt.ExecutionBaseOID {
 		return fmt.Errorf("candidate execution base changed after prepare")
 	}
-	trees, err := CaptureExecutionTrees(workspace.Root, op.Source.Attempt.ExecutionBaseOID)
+	metadataBase, err := s.projectMetadataBase(op.Source.Head.ProjectSnapshotID)
+	if err != nil {
+		return err
+	}
+	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase)
 	if err != nil {
 		return err
 	}

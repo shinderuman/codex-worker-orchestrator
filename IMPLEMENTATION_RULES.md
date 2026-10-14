@@ -61,11 +61,10 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 
 ## 親MetadataのGitコミット境界
 
-- Metadataの編集とGitコミットを別の操作として扱う。ファイル更新自体をコミット理由にせず、同じTaskに属する変更は可能な限りまとめて編集・検証し、意味のある確定境界で一括コミットする。
+- 通常Taskは1 Task 1 Commitとする。実装完了のコミットを作り、Task終了・完了Task削除・次Task昇格等のMetadataをその未公開コミットへAmendしてから最終Publicationを行う。Taskの実装と終了Metadataを別の公開コミットに分けない。
+- Metadataの編集とGitコミットを別の操作として扱う。ファイル更新自体をコミット理由にせず、同じTaskに属するMetadataは終了時のAmendへまとめる。
 - 調査途中の結果、追加証拠、許可内容、Amendment追記を理由に機械的にコミットを増やさない。複数回の追記が予想される場合は、先に関連する調査と変更内容を整理して集約する。
-- Controller admission、snapshot整合、Publication、Retire等がGitコミットを必要とする場合、その必要性を現在のmachine evidenceで確認し、必要な境界だけでコミットする。念のため、安全、外部記憶への保存という理由だけでコミットしない。
-- 正規Workflowが未コミットMetadataを許容しない場合はその制約を守る。許容される範囲で変更を集約し、コミットが不可避な場合は具体的な制約を説明できるようにする。
-- 実装コミット、Task開始時のMetadata確定、Task終了時のRetire、後続Taskへの引き継ぎ等、責務や正規状態遷移が異なるコミットを無理に統合しない。
+- Controller admission、snapshot整合、Publication、Retireの責務は維持し、各証拠と最終OIDを整合させる。既存ownerがMetadata先行コミットや別の終了コミットを要求する場合は、Guardを迂回せず1 Task 1 Commitを成立させるownerの接続を修正する。未成立の操作を成功扱いしない。
 - コミット回数削減を理由にGuardを迂回したり、未確定Metadataを確定済みと偽装したりしない。コミット細分化や履歴整理のための余計な実装・制御機構を追加せず、既に公開されたコミットの履歴を改変しない。
 
 ## 通常taskへの分離

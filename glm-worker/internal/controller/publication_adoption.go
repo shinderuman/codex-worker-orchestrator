@@ -1,6 +1,11 @@
 package controller
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
 
 func (s *Store) AdoptExternalAdvancement(input ExternalAdvancementInput) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
@@ -33,7 +38,7 @@ func (s *Store) adoptObservedAdvancement(head RepositoryControllerHead, c Accept
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	project, err := s.publicationProjectAdvancement(head, remote)
+	project, err := s.observedCandidateProject(head, c, remote)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -58,6 +63,22 @@ func (s *Store) adoptObservedAdvancement(head RepositoryControllerHead, c Accept
 		return ExecutionOperationResult{}, err
 	}
 	return s.recoverExecutionOperationLocked(op)
+}
+
+func (s *Store) observedCandidateProject(head RepositoryControllerHead, c AcceptedCandidate, remote string) (ProjectSnapshot, error) {
+	if c.ImplementationRef == nil {
+		return s.publicationProjectAdvancement(head, remote)
+	}
+	paths, err := runGitBinary(s.identity.PrimaryRoot, nil, "diff", "--name-only", "-z", c.CommitOID, remote)
+	if err != nil {
+		return ProjectSnapshot{}, err
+	}
+	for _, path := range strings.Split(string(paths), "\x00") {
+		if state.IsParentManagedPath(path) {
+			return ProjectSnapshot{}, fmt.Errorf("unretired completion descendant changes parent metadata: %s", path)
+		}
+	}
+	return s.LoadProjectSnapshot(head.ProjectSnapshotID)
 }
 
 func canonicalDescendantEvidenceView(c AcceptedCandidate, tree string) AcceptedCandidate {

@@ -13,10 +13,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func terminalResultFormatStopFixture(t *testing.T, secondPacket string) (*state.StateStore, string) {
+func terminalResultFormatStopFixture(t *testing.T, secondPacket string, prepare ...func(string)) (*state.StateStore, string) {
 	t.Helper()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
+	for _, setup := range prepare {
+		setup(repo)
+	}
 	if err := st.WaitForDecision(); err != nil {
 		t.Fatal(err)
 	}
@@ -40,6 +43,37 @@ func terminalResultFormatStopFixture(t *testing.T, secondPacket string) (*state.
 		t.Fatal(err)
 	}
 	return st, repo
+}
+
+func TestReportResubmissionRuleActivationUsesNormalWorkerContract(t *testing.T) {
+	st, repo := terminalResultFormatStopFixture(t, constraintViolatingImplementedPacket(), func(repo string) {
+		writeGitTestFile(t, repo, "worker_change.go", "package sample\n")
+	})
+	r := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("accepted report")},
+		{structured: implementedPacket("rules applied")},
+		{structured: needsSolReviewPacket()},
+	}}
+	w := newGitWorkflowT(t, st, r, repo)
+	w.config.CodexConfigDir = t.TempDir()
+	writeRuleFile(t, w.config.CodexConfigDir, "go.md", "GO CONTRACT")
+	r.onRun = func() {
+		if strings.Contains(r.phases[len(r.phases)-1], "rule-activation") && st.Exists(state.ResultCorrectionStateFile) {
+			t.Fatal("normal rule activation retained result-correction state")
+		}
+	}
+	if err := w.ExecuteReportResubmission(); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.phases) != 3 || r.phases[0] != "worker-new-result-correct" || r.phases[1] != "worker-new-result-correct-rule-activation-1" || !strings.HasPrefix(r.phases[2], "reviewer-") {
+		t.Fatalf("phases = %v", r.phases)
+	}
+	if !r.readOnlyCalls[0] || r.readOnlyCalls[1] || !r.readOnlyCalls[2] {
+		t.Fatalf("phase permissions = %v", r.readOnlyCalls)
+	}
+	if !strings.Contains(r.prompts[1], "GO CONTRACT") || st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("rule context or review completion missing: status=%s", st.TaskStatus())
+	}
 }
 
 func TestTerminalResultCorrectionLeavesResubmittableStop(t *testing.T) {

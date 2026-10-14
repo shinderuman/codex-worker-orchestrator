@@ -129,6 +129,9 @@ func executeHandoffInspection(cmd Command, cfg config.AppConfig, st *state.State
 	if cmd.Payload == "recovery" {
 		return printParentHandoffRecoveryLeasedWithConfig(cfg, st, stdout)
 	}
+	if cmd.Payload == "routing" {
+		return printParentHandoffRoutingWithConfig(cfg, st, stdout)
+	}
 	return printParentHandoffLeasedWithConfig(cfg, st, stdout)
 }
 

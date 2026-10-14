@@ -35,10 +35,139 @@ func newControllerReentryStore(t *testing.T, completionRisk packet.Risk) *StateS
 
 func controllerReentryAuthority() ControllerReentryAuthority {
 	return ControllerReentryAuthority{
-		PredecessorAttemptID: "accepted-attempt",
-		AttemptID:            "reentered-attempt",
-		TaskPath:             "IMPLEMENTATION_TASKS/active.md",
-		TaskContractDigest:   "contract-digest",
+		PredecessorAttemptID:          "accepted-attempt",
+		AttemptID:                     "reentered-attempt",
+		TaskPath:                      "IMPLEMENTATION_TASKS/active.md",
+		TaskContractDigest:            "contract-digest",
+		PredecessorTaskContractDigest: "contract-digest",
+	}
+}
+
+func TestReenteredReviewerCheckpointClosesSyntheticReviewBeforeResume(t *testing.T) {
+	st := newControllerReentryStore(t, packet.RiskHigh)
+	if _, err := st.ReenterAcceptedCompletionFromController(controllerReentryAuthority()); err != nil {
+		t.Fatal(err)
+	}
+	cp := ResumeCheckpoint{Stage: ResumeStageReview, Role: ReviewerRole, Model: "sonnet", Phase: "reviewer-1-high-floor", ReadOnly: true, StopKind: ResumeStopInterrupted}
+	if err := st.EnterReenteredReviewStop(cp); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil || plan.RequiredAction != ParentActionResume {
+		t.Fatalf("review resume plan = %#v err=%v", plan, err)
+	}
+	open, err := st.CurrentParentReview()
+	if err != nil || open != nil {
+		t.Fatalf("synthetic review remains open: %#v err=%v", open, err)
+	}
+	completion, err := st.CurrentParentCompletionOutcome()
+	if err != nil || completion != nil {
+		t.Fatal("review queue became semantic acceptance")
+	}
+}
+
+func brokenReenteredReviewStore(t *testing.T) (*StateStore, ResumeCheckpoint) {
+	t.Helper()
+	st := newControllerReentryStore(t, packet.RiskHigh)
+	if _, err := st.ReenterAcceptedCompletionFromController(controllerReentryAuthority()); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "source"}
+	cp := ResumeCheckpoint{Stage: ResumeStageReview, Role: ReviewerRole, Model: "sonnet", Phase: "reviewer-1-high-floor", ReadOnly: true, StopKind: ResumeStopInterrupted, WorkerResult: &packet.Result{Status: packet.StatusImplemented}, StopGitSnapshot: &snapshot}
+	if err := st.SaveWorkerEndSnapshot(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveReviewStartSnapshot(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnterStop(cp); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st, saved
+}
+
+func TestReenteredReviewRepairKeepsReadOnlyContractAndRequiresRetainedCheckpoint(t *testing.T) {
+	st, source := brokenReenteredReviewStore(t)
+	plan, err := st.ParentActionPlan()
+	if err != nil || plan.RequiredAction != ParentActionRepairReentryReview {
+		t.Fatalf("repair plan = %#v %v", plan, err)
+	}
+	target := source
+	next := *source.StopGitSnapshot
+	next.WorktreeDigest = "reviewed-parent-source"
+	target.StopGitSnapshot = &next
+	foreign := source
+	foreign.Phase = "foreign"
+	if err := st.ReplaceReenteredReviewStop(foreign, target); err == nil {
+		t.Fatal("foreign checkpoint admitted")
+	}
+	writable := target
+	writable.ReadOnly = false
+	if err := st.ReplaceReenteredReviewStop(source, writable); err == nil {
+		t.Fatal("writable Reviewer admitted")
+	}
+	if err := st.ReplaceReenteredReviewStop(source, target); err != nil {
+		t.Fatal(err)
+	}
+	plan, err = st.ParentActionPlan()
+	if err != nil || plan.RequiredAction != ParentActionResume {
+		t.Fatalf("resume plan = %#v %v", plan, err)
+	}
+	cp, err := st.LoadResumeCheckpoint()
+	if err != nil || !cp.ReadOnly || cp.ResultCorrection || cp.Phase != source.Phase || cp.Model != source.Model {
+		t.Fatal("repair changed phase authority")
+	}
+	if err := st.ReplaceReenteredReviewStop(source, target); err == nil {
+		t.Fatal("resolved synthetic review admitted again")
+	}
+}
+
+func TestReenteredReviewRepairRejectsActualReviewProducer(t *testing.T) {
+	st, source := brokenReenteredReviewStore(t)
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "reviewer", Model: "sonnet"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReplaceReenteredReviewStop(source, source); err == nil {
+		t.Fatal("actual model review replaced")
+	}
+}
+
+func TestParentSourceRevisionReopensActualReviewWithoutAcceptingIt(t *testing.T) {
+	st, cp := brokenReenteredReviewStore(t)
+	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "reviewer", Model: "sonnet"}); err != nil {
+		t.Fatal(err)
+	}
+	open, err := st.CurrentParentReview()
+	if err != nil || open == nil {
+		t.Fatal(err)
+	}
+	foreign := *open
+	foreign.ModelAlias = "foreign"
+	if err := st.ReviseParentSourceReviewCheckpoint(foreign, cp); err == nil {
+		t.Fatal("different Review producer admitted")
+	}
+	writable := cp
+	writable.ReadOnly = false
+	if err := st.ReviseParentSourceReviewCheckpoint(*open, writable); err == nil {
+		t.Fatal("write authority expanded")
+	}
+	if err := st.ReviseParentSourceReviewCheckpoint(*open, cp); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil || plan.RequiredAction != ParentActionResume {
+		t.Fatalf("review continuation = %#v %v", plan, err)
+	}
+	completion, err := st.CurrentParentCompletionOutcome()
+	if err != nil || completion != nil {
+		t.Fatal("source revision became semantic acceptance")
 	}
 }
 
@@ -138,7 +267,7 @@ func TestReenterAcceptedCompletionFromControllerFailsClosed(t *testing.T) {
 			name: "task contract mismatch",
 			authority: func() ControllerReentryAuthority {
 				authority := controllerReentryAuthority()
-				authority.TaskContractDigest = "stale-digest"
+				authority.PredecessorTaskContractDigest = "stale-digest"
 				return authority
 			},
 			expected: "workflow binding",

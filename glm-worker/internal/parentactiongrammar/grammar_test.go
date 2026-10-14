@@ -78,6 +78,11 @@ func TestProjectPreservesCurrentActionSpecs(t *testing.T) {
 			action: string(state.ParentActionResume),
 			want:   Spec{Kind: "direct", Command: []string{Binary, "resume"}},
 		},
+		{
+			name:   "resubmit report",
+			action: string(state.ParentActionResubmitReport),
+			want:   Spec{Kind: "direct", Command: []string{Binary, "resubmit-report"}},
+		},
 	}
 
 	for _, tc := range cases {

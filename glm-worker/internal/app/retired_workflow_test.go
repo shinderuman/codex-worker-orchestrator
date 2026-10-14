@@ -140,6 +140,10 @@ func retiredWorkflowFixture(t *testing.T) (config.AppConfig, *controller.Store, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidate, err = store.LoadAcceptedCandidate(*published.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	retired, err := store.RetireTerminalTask(controller.TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
 	if err != nil {
 		t.Fatal(err)

@@ -27,6 +27,7 @@ type AcceptedCandidate struct {
 	RevisionID           string              `json:"revision_id"`
 	CandidateID          string              `json:"candidate_id"`
 	Previous             *EvidenceObjectRef  `json:"previous,omitempty"`
+	ImplementationRef    *EvidenceObjectRef  `json:"implementation_ref,omitempty"`
 	AttemptID            string              `json:"attempt_id"`
 	TaskRef              SemanticTaskRef     `json:"task_ref"`
 	RootTaskRef          SemanticTaskRef     `json:"root_task_ref"`
@@ -78,6 +79,7 @@ type ExternalAdvancementInput struct {
 }
 
 type PublicationOperation struct {
+	ParentSource   *ParentSourceRevision   `json:"parent_source,omitempty"`
 	AdvancementRef *EvidenceObjectRef      `json:"advancement_ref,omitempty"`
 	Before         *EvidenceObjectRef      `json:"before,omitempty"`
 	After          *EvidenceObjectRef      `json:"after,omitempty"`

@@ -21,12 +21,13 @@ type controllerEvidenceCommand struct {
 }
 
 type controllerEvidenceOutput struct {
-	Action       controllerEvidenceAction             `json:"action"`
-	CleanupProof *controller.CleanupDurabilityProof   `json:"cleanup_proof,omitempty"`
-	Bundle       *controller.EvidenceBundleProjection `json:"bundle,omitempty"`
-	ArchiveRef   *controller.EvidenceObjectRef        `json:"archive_ref,omitempty"`
-	ArchiveRoots []controller.GitObjectArchiveRoot    `json:"archive_roots,omitempty"`
-	Export       *controllerEvidenceExportOutput      `json:"export,omitempty"`
+	CommittedAuthority *controller.CommittedTaskAuthority   `json:"committed_authority,omitempty"`
+	Action             controllerEvidenceAction             `json:"action"`
+	CleanupProof       *controller.CleanupDurabilityProof   `json:"cleanup_proof,omitempty"`
+	Bundle             *controller.EvidenceBundleProjection `json:"bundle,omitempty"`
+	ArchiveRef         *controller.EvidenceObjectRef        `json:"archive_ref,omitempty"`
+	ArchiveRoots       []controller.GitObjectArchiveRoot    `json:"archive_roots,omitempty"`
+	Export             *controllerEvidenceExportOutput      `json:"export,omitempty"`
 }
 
 const (
@@ -99,7 +100,21 @@ func requireControllerEvidenceEOF(decoder *json.Decoder) error {
 	return nil
 }
 
-func executeControllerEvidence(
+func executeControllerEvidence(cfg config.AppConfig, store *controller.Store, command controllerEvidenceCommand) (controllerEvidenceOutput, error) {
+	if command.Action == "committed-task-authority" {
+		if command.TaskID != "" || command.Ref != nil || command.LogicalIdentity != "" || len(command.RootOIDs) != 0 {
+			return controllerEvidenceOutput{}, fmt.Errorf("committed Task authority does not accept evidence target fields")
+		}
+		authority, err := controller.ResolveCommittedTaskAuthority(store.Identity().PrimaryRoot)
+		if err != nil {
+			return controllerEvidenceOutput{}, err
+		}
+		return controllerEvidenceOutput{Action: command.Action, CommittedAuthority: &authority}, nil
+	}
+	return executeControllerEvidenceBundle(cfg, store, command)
+}
+
+func executeControllerEvidenceBundle(
 	cfg config.AppConfig,
 	store *controller.Store,
 	command controllerEvidenceCommand,

@@ -32,7 +32,7 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 ## 判定
 `FIX_REQUIRED`: Solの新設計判断なしに直せるbug、要求漏れ、test不足/過剰test、lint/build/test failure、規約違反、範囲外変更、既存Sol判断との不一致。コードは正しくpacketの意味情報だけ不足する場合は`TARGETS:["PACKET"]`としてreport-only fixへ戻す。
 
-`NEEDS_SOL_REVIEW`: アーキテクチャ、責務、公開API、データモデル、依存方向、current schema/contractの意味変更、原因不明bug、security/data破損/不可逆性、実装前Sol判断、高リスク残余など、コードを見ないとSolが採否できない意味判断が残る場合。永続fileへ触れただけでは上げない。`TARGETS`にはSolが読むべき具体的な最小file:symbol/行範囲を示す。
+`NEEDS_SOL_REVIEW`: アーキテクチャ、責務、公開API、データモデル、依存方向、current schema/contractの意味変更、原因不明bug、security/data破損/不可逆性、実装前Sol判断、高リスク残余など、コードを見ないとSolが採否できない意味判断が残る場合。永続fileへ触れただけでは上げない。`TARGETS`にはSolが読むべき具体的な最小file:symbol/行範囲を示す。Goメソッドは`file.go:Type.Member`でreceiverの型を含め、トップレベル宣言だけを`file.go:Symbol`とする。現物で一意に解決できる宣言か正確な数値行範囲を使い、メソッド名だけのlocatorを返さない。
 
 `PASS`: 要求を満たし明確な不具合・漏れがなく、必要十分なtestがあり、新しい高レバレッジ判断がない`RISK: LOW`変更だけ。高リスクなら`NEEDS_SOL_REVIEW`。
 

@@ -53,3 +53,9 @@ func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.
 		return parentevidence.WriteMeasuredJSON(stdout, projected)
 	})
 }
+
+func printParentHandoffRoutingWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	value := buildParentHandoffWithConfig(cfg, st)
+	_, err := parentevidence.WriteMeasuredJSON(stdout, value)
+	return err
+}

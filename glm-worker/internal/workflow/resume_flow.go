@@ -322,6 +322,7 @@ func (w *Workflow) routeResumeResult(
 	decl externalFeasibility,
 	result packet.Result,
 ) error {
+	checkpoint = acceptedResultContinuationCheckpoint(checkpoint, decl)
 	switch checkpoint.Stage {
 	case state.ResumeStageWorker:
 		return w.routeWorkerResumeResult(checkpoint, decl, result)
@@ -332,6 +333,20 @@ func (w *Workflow) routeResumeResult(
 	default:
 		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
 	}
+}
+
+func acceptedResultContinuationCheckpoint(checkpoint state.ResumeCheckpoint, decl externalFeasibility) state.ResumeCheckpoint {
+	if !checkpoint.ResultCorrection {
+		return checkpoint
+	}
+	checkpoint.ResultCorrection = false
+	switch checkpoint.Stage {
+	case state.ResumeStageWorker:
+		checkpoint.ReadOnly = checkpoint.ReportOnly || resumeWorkerReadOnly(checkpoint, decl)
+	case state.ResumeStageAutoFix:
+		checkpoint.ReadOnly = checkpoint.ReportOnly || decl.pocStage()
+	}
+	return checkpoint
 }
 
 func (w *Workflow) resumeQualityGateResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {

@@ -31,6 +31,9 @@ func planRootResumeClosure(op *ExecutionOperation, head RepositoryControllerHead
 
 func (s *Store) nextRootMaterializationAuthority(head RepositoryControllerHead) (RepositoryControllerHead, BlockerEpisodeRevision, SemanticTaskRef, error) {
 	authority, err := s.retiredProjectAuthority(head)
+	if head.UserTerminationRef != nil && head.MetadataLineageRef == nil {
+		authority, err = s.UserTerminatedSuccessorAuthority(head)
+	}
 	if err != nil {
 		return head, BlockerEpisodeRevision{}, SemanticTaskRef{}, err
 	}

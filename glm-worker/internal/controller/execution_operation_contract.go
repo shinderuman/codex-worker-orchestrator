@@ -25,6 +25,12 @@ const (
 )
 
 var executionOperationContractTable = map[string]executionOperationContractFactory{
+	executionParentSourceImport: func(s *Store) executionOperationContract {
+		return executionOperationContract{effects: executionOperationEffectsSingle, validate: s.validateParentSourceImport, apply: s.applyParentSourceImport, verifyCommitted: s.verifyCommittedParentSourceImport, projectResult: s.projectExecutionAdmissionResult}
+	},
+	userTaskTransition: func(s *Store) executionOperationContract {
+		return executionOperationContract{effects: executionOperationEffectsSingle, validate: s.validateUserTaskTransitionOperation, apply: s.applyUserTaskTransition, verifyCommitted: s.verifyCommittedUserTaskTransition}
+	},
 	executionModelCall: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsNone,

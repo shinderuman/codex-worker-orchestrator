@@ -25,23 +25,8 @@ func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if err := s.validateCandidatePublicationRemote(c, remote); err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	project, err := s.publicationProjectAdvancement(head, c.CommitOID)
+	op, err := s.planCandidatePublication(head, c, ref, remote)
 	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	c.ProjectSnapshotID = project.SnapshotID
-	c.State = candidateObserved
-	c.ObservedRemoteOID = c.CommitOID
-	op, err := s.planCandidateRevision(head, c, ref, publicationPublish)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	op.Publication.RemoteOID = remote
-	op.Publication.NewTip = c.CommitOID
-	op.Publication.Project = &project
-	op.Transition.ProjectSnapshotNew = project.SnapshotID
-	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceHistory, Resource: c.Policy.Remote + ":" + c.Policy.RemoteRef, ExpectedOld: c.BaseOID, ExpectedNew: c.CommitOID}}
-	if err := s.planPublishedEpisode(&op, head, c); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	if err := s.prepareExecutionOperation(&op, head); err != nil {
@@ -50,16 +35,45 @@ func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	return s.recoverExecutionOperationLocked(op)
 }
 
-func (s *Store) applyCandidatePublication(op ExecutionOperation, c AcceptedCandidate) error {
-	if err := s.validateCandidatePublicationLocal(c); err != nil {
-		return err
+func (s *Store) planCandidatePublication(head RepositoryControllerHead, c AcceptedCandidate, ref EvidenceObjectRef, remote string) (ExecutionOperation, error) {
+	if remote != c.BaseOID {
+		return ExecutionOperation{}, fmt.Errorf("completion amendment requires an unpublished implementation and exact remote base")
 	}
+	implementationOID := c.CommitOID
+	c, err := s.amendCandidateCompletion(c, ref)
+	if err != nil {
+		return ExecutionOperation{}, err
+	}
+	c.State = candidateObserved
+	c.ObservedRemoteOID = c.CommitOID
+	op, err := s.planCandidateRevision(head, c, ref, publicationPublish)
+	if err != nil {
+		return ExecutionOperation{}, err
+	}
+	op.Publication.RemoteOID = remote
+	op.Publication.NewTip = c.CommitOID
+	op.Publication.LocalOld = implementationOID
+	op.Publication.LocalNew = c.CommitOID
+	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceHistory, Resource: c.Policy.Remote + ":" + c.Policy.RemoteRef, ExpectedOld: c.BaseOID, ExpectedNew: c.CommitOID}, {Surface: MutationSurfaceRef, Resource: c.Policy.LocalRef, ExpectedOld: implementationOID, ExpectedNew: c.CommitOID}}
+	return op, nil
+}
+
+func (s *Store) applyCandidatePublication(op ExecutionOperation, c AcceptedCandidate) error {
 	remote, err := observePublicationRemote(s.identity.PrimaryRoot, c.Policy)
 	if err != nil {
 		return err
 	}
 	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, c.CommitOID, remote)
 	if err != nil {
+		return err
+	}
+	if !contains && remote != op.Publication.RemoteOID {
+		return s.abortRacedPublication(op, remote)
+	}
+	if err := s.applyPlannedLocalRef(op, c); err != nil {
+		return err
+	}
+	if err := s.validateCandidatePublicationLocal(c); err != nil {
 		return err
 	}
 	if !contains {
@@ -71,27 +85,6 @@ func (s *Store) applyCandidatePublication(op ExecutionOperation, c AcceptedCandi
 	return s.commitPublicationOperation(op, c, remote)
 }
 
-func (s *Store) planPublishedEpisode(op *ExecutionOperation, head RepositoryControllerHead, c AcceptedCandidate) error {
-	if c.EpisodeID == "" {
-		return nil
-	}
-	previous, err := s.LoadEpisodeRevision(head.ActiveEpisodeID, head.ActiveEpisodeRevision)
-	if err != nil {
-		return err
-	}
-	if op.Publication.Project == nil {
-		return fmt.Errorf("publication result project authority is missing")
-	}
-	project := *op.Publication.Project
-	next, err := progressedEpisodeRevision(previous, head, project, EpisodeSatisfactionInput{})
-	if err != nil {
-		return err
-	}
-	op.Publication.Episode = &next
-	op.Transition.TargetEpisodeRevision = next.Revision
-	return nil
-}
-
 func (s *Store) abortRacedPublication(op ExecutionOperation, remote string) error {
 	head, err := s.LoadHead()
 	if err != nil {
@@ -99,6 +92,11 @@ func (s *Store) abortRacedPublication(op ExecutionOperation, remote string) erro
 	}
 	if err := s.ensurePublicationPrefix(head, remote); err != nil {
 		return err
+	}
+	if op.Transition.Kind == publicationPublish {
+		if err := s.guardRacedLocalEffects(op, head, remote); err != nil {
+			return err
+		}
 	}
 	if remote == op.Publication.RemoteOID {
 		return fmt.Errorf("publication did not apply; retained for retry")

@@ -21,6 +21,10 @@ func TestRemoteRewritePreservesObservedPublicationAndFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidate, err = fixture.store.LoadAcceptedCandidate(*published.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	remote := controllerGitOutput(t, fixture.source.Workspace.Root, "remote", "get-url", policy.Remote)
 	runControllerGit(t, remote, "update-ref", policy.RemoteRef, candidate.BaseOID, candidate.CommitOID)
 	_, err = fixture.store.AdoptExternalAdvancement(ExternalAdvancementInput{ExpectedGeneration: published.Head.ControllerGeneration, Policy: policy})

@@ -345,7 +345,7 @@ func (s *Store) terminalMetadataLineageRefs(root EvidenceObjectRef) ([]EvidenceO
 
 func validateTerminalRecoverySource(op ExecutionOperation, head RepositoryControllerHead) error {
 	p := op.Terminal
-	if head.ProjectSnapshotID != op.Transition.ProjectSnapshotOld || head.IntegrationTip != p.Record.SourceProject.HeadOID || head.AcceptedCandidateRef == nil || head.PendingTerminalTaskRef == nil || head.LiveLeaseID != "" {
+	if head.ProjectSnapshotID != op.Transition.ProjectSnapshotOld || head.IntegrationTip != p.Record.ResultProject.HeadOID || head.AcceptedCandidateRef == nil || head.PendingTerminalTaskRef == nil || head.LiveLeaseID != "" {
 		return fmt.Errorf("terminal recovery source authority changed")
 	}
 	if !evidenceRefsEqual(*head.AcceptedCandidateRef, p.Record.CandidateRef) || !head.PendingTerminalTaskRef.Equal(p.Record.TaskRef) {

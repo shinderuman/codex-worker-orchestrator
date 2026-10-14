@@ -71,6 +71,10 @@ func (s *Store) planExecutionMaterialization(input MaterializeExecutionInput) (E
 	record.TargetRootTaskRef = *head.RootTaskRef
 	record.Effects = []EffectExpectation{{Surface: MutationSurfaceSource, Resource: workspace.Root, ExpectedNew: laneMaterializationIdentity(workspace, rebound)}}
 	op := ExecutionOperation{Transition: record, Suspension: suspended, SealRef: seal, Episode: &episode, Rebound: &rebound, Workspace: &workspace, Attempt: &attempt, Lease: &lease}
+	op.ParentSource, err = s.materializationParentSource(head)
+	if err != nil {
+		return ExecutionOperation{}, head, err
+	}
 	if err := planRootResumeClosure(&op, head, task); err != nil {
 		return ExecutionOperation{}, head, err
 	}
@@ -155,6 +159,9 @@ func (s *Store) materializationTrees(head RepositoryControllerHead, task Semanti
 	result, err := RebindSuspensionTrees(s.identity.PrimaryRoot, snapshot, head.IntegrationTip)
 	if err != nil {
 		return result, &snapshot, &seal, s.preservePublicationConflict(head, &snapshot, err)
+	}
+	if err := s.applyMaterializationCandidateSource(head, seal, &result); err != nil {
+		return result, &snapshot, &seal, err
 	}
 	return result, &snapshot, &seal, nil
 }

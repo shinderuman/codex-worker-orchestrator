@@ -23,28 +23,36 @@ func captureCleanupTrees(repo string) (ExecutionTrees, error) {
 	if err != nil {
 		return ExecutionTrees{}, err
 	}
-	worktree, err := captureSuspensionWorktree(repo, indexed)
+	worktree, err := captureCleanupWorktree(repo, indexed)
 	if err != nil {
 		return ExecutionTrees{}, err
-	}
-	parents, err := cleanupParentEntries(repo, indexed)
-	if err != nil {
-		return ExecutionTrees{}, err
-	}
-	for _, entry := range parents {
-		captured, exists, err := captureSuspensionEntry(repo, entry)
-		if err != nil {
-			return ExecutionTrees{}, err
-		}
-		if exists {
-			worktree = append(worktree, captured)
-		}
 	}
 	if err := verifyLaneMaterializationPaths(repo, worktree); err != nil {
 		return ExecutionTrees{}, fmt.Errorf("cleanup has unarchived filesystem data: %w", err)
 	}
 	worktreeTree, err := cleanupEntryTree(repo, worktree)
 	return ExecutionTrees{IndexTree: indexTree, WorktreeTree: worktreeTree}, err
+}
+
+func captureCleanupWorktree(repo string, indexed []workspaceTreeEntry) ([]workspaceTreeEntry, error) {
+	worktree, err := captureSuspensionWorktree(repo, indexed)
+	if err != nil {
+		return nil, err
+	}
+	parents, err := cleanupParentEntries(repo, indexed)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range parents {
+		captured, exists, err := captureSuspensionEntry(repo, entry)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			worktree = append(worktree, captured)
+		}
+	}
+	return captureCleanupParentActions(repo, worktree)
 }
 
 func cleanupParentEntries(repo string, indexed []workspaceTreeEntry) (map[string]workspaceTreeEntry, error) {

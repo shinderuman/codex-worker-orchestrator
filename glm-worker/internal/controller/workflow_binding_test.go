@@ -1,9 +1,51 @@
 package controller
 
 import (
+	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
+
+func TestParentContinuationReadsAdmittedLiveLaneWithoutGrantingPrimaryMutation(t *testing.T) {
+	harness := newLifecycleHarness(t)
+	cfg := controllerTestConfig(harness.repo, filepath.Join(filepath.Dir(filepath.Dir(harness.store.dir)), "sessions"))
+	root := harness.edit(t, harness.source, "root-binding.txt", "preserved root\n")
+	episode := harness.planBlockingEpisode(t, root, harness.blocker, "parent-continuation")
+	suspended, err := harness.store.SuspendExecution(root, episode.EpisodeID, episode.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lane, err := harness.store.MaterializeExecution(MaterializeExecutionInput{ExpectedGeneration: suspended.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: episode.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := harness.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	routed, err := ParentContinuationConfig(parent)
+	if err != nil || routed.RepoRoot != lane.Admission.Workspace.Root || routed.RepoHash != parent.RepoHash {
+		t.Fatalf("parent continuation did not bind the canonical lane: %#v %v", routed, err)
+	}
+	if _, _, err := WorkflowExecutionTask(parent); err == nil {
+		t.Fatal("parent primary workspace acquired execution mutation authority")
+	}
+	if err := os.RemoveAll(lane.Admission.Workspace.Root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParentContinuationConfig(parent); err == nil {
+		t.Fatal("missing live execution lane was accepted")
+	}
+	after, err := harness.store.LoadHead()
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("parent continuation read changed controller authority: %#v %v", after, err)
+	}
+}
 
 func TestWorkflowBindingFollowsExecutionTaskAcrossOneLane(t *testing.T) {
 	harness := newLifecycleHarness(t)

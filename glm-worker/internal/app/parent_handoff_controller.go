@@ -58,7 +58,7 @@ func canonicalParentAction(action string) string {
 	switch state.ParentAction(action) {
 	case state.ParentActionComplete, state.ParentActionInstall, state.ParentActionReopen:
 		return controllerPublicationSurface
-	case state.ParentActionPark:
+	case state.ParentActionPark, state.ParentActionRepairReentryReview:
 		return controllerExecutionSurface
 	case state.ParentActionNoGo, state.ParentActionBindDefectTask, state.ParentActionImprovementDisposition:
 		return "controller-semantic"
@@ -83,7 +83,7 @@ func canonicalQuiescentAction(cfg config.AppConfig, head controller.RepositoryCo
 		return controllerExecutionSurface
 	}
 	if head.ExecutionTaskRef == nil {
-		if head.MetadataLineageRef != nil && taskID == nil {
+		if (head.MetadataLineageRef != nil || head.UserTerminationRef != nil) && taskID == nil {
 			return "start"
 		}
 		return controllerExecutionSurface

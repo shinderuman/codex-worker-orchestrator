@@ -48,7 +48,8 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	case state.ParentActionApproveSurface:
 		return projectApproveSurface(requiredParameters)
 	case state.ParentActionAccept,
-		state.ParentActionResume:
+		state.ParentActionResume,
+		state.ParentActionResubmitReport:
 		return direct(action), true
 	default:
 		return Spec{}, false

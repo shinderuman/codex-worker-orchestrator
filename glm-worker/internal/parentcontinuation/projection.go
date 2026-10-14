@@ -60,6 +60,7 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	}
 
 	repoRoot := st.ReadOr("repo-root", "")
+	repoRoot = quiescentSnapshotRoot(cfg, repoRoot)
 	if repoRoot == "" && st.TaskStatus() == state.TaskStatusNone {
 		_, canonical, err := controller.WorkflowAuthorityTask(cfg)
 		if err == nil && canonical {
@@ -71,6 +72,19 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
 	return projection
+}
+
+func quiescentSnapshotRoot(cfg config.AppConfig, repoRoot string) string {
+	if exists, err := controller.Exists(cfg); err == nil && exists {
+		store, err := controller.Open(cfg)
+		if err == nil {
+			head, err := store.LoadHead()
+			if err == nil && head.Status == controller.ControllerStatusActive && head.LiveLeaseID == "" && head.LiveAttemptID == "" {
+				repoRoot = store.Identity().PrimaryRoot
+			}
+		}
+	}
+	return repoRoot
 }
 
 func BuildPostCompletionRequest(repoRoot, completedTask string) (Request, error) {
@@ -402,6 +416,9 @@ func quiescentControllerTask(cfg config.AppConfig, admissionError error) (contro
 	head, err := store.LoadHead()
 	if err != nil {
 		return controller.SemanticTaskRef{}, err
+	}
+	if head.PendingTransitionID != "" {
+		return store.PendingExecutionRecoveryTask(head)
 	}
 	if head.Status != controller.ControllerStatusActive || head.LiveLeaseID != "" {
 		return controller.SemanticTaskRef{}, admissionError

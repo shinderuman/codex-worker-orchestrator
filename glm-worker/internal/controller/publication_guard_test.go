@@ -108,14 +108,14 @@ func TestPublicationGuardAuthorizesOnlyExactPendingRemotePublication(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate.State = candidateObserved
-	op, err := fixture.store.planCandidateRevision(promoted.Head, candidate, *promoted.CandidateRef, publicationPublish)
+	op, err := fixture.store.planCandidatePublication(promoted.Head, candidate, *promoted.CandidateRef, candidate.BaseOID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	op.Publication.RemoteOID = candidate.BaseOID
-	op.Publication.NewTip = candidate.CommitOID
-	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceHistory, Resource: policy.Remote + ":" + policy.RemoteRef, ExpectedOld: candidate.BaseOID, ExpectedNew: candidate.CommitOID}}
+	candidate, err = fixture.store.LoadAcceptedCandidate(*op.Publication.After)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.store.prepareExecutionOperation(&op, promoted.Head); err != nil {
 		t.Fatal(err)
 	}

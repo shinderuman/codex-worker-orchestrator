@@ -219,6 +219,9 @@ func (w *Workflow) ruleActivationCorrectionCheckpoint(
 	rules []workerRule,
 	round int,
 ) (state.ResumeCheckpoint, error) {
+	if parent.ResultCorrection {
+		return state.ResumeCheckpoint{}, fmt.Errorf("result correction checkpoint cannot enter worker rule activation")
+	}
 	block, err := workerRuleContextBlock(w.config.CodexConfigDir, rules)
 	if err != nil {
 		return state.ResumeCheckpoint{}, err

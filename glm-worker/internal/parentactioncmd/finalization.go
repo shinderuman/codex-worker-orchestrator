@@ -331,7 +331,7 @@ func collectFinalizationValidation(worker, validationDir, form string) (json.Raw
 }
 
 func collectFinalizationHandoff(worker, repoRoot string) (json.RawMessage, finalizationHandoffProbe, *finalizationFailure) {
-	handoff, failure := runFinalizationWorkerStep(worker, repoRoot, []string{"--handoff"}, "handoff")
+	handoff, failure := runFinalizationWorkerStep(worker, repoRoot, []string{"--handoff", "routing"}, "handoff")
 	if failure != nil {
 		return nil, finalizationHandoffProbe{}, failure
 	}

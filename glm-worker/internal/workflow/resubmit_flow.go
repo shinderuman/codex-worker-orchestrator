@@ -36,6 +36,12 @@ func (w *Workflow) executeReportResubmission() error {
 }
 
 func (w *Workflow) authorizeResultReportResubmission(checkpoint state.ResumeCheckpoint) error {
+	if w.state.Exists(state.AcceptedResultRuleRecoveryStateFile) {
+		if _, err := w.loadAcceptedResultRuleRecovery(); err != nil {
+			return err
+		}
+		return &WorkerError{Phase: checkpoint.Phase, Message: "report resubmission was already authorized once for this task; accepted-result recovery retains the consumed authorization"}
+	}
 	if checkpoint.StopKind != state.ResumeStopResultFormat || !checkpoint.ResultCorrection {
 		return &WorkerError{
 			Phase:   checkpoint.Phase,

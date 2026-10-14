@@ -32,12 +32,16 @@ func TestCandidateAcceptancePromotionPublicationAndPortableEvidence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidate, err = fixture.store.LoadAcceptedCandidate(*observed.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if observed.Head.IntegrationTip != candidate.CommitOID || observed.Head.ObservedPrefix != candidate.CommitOID || observed.Head.PendingTransitionID != "" {
 		t.Fatal("publication did not establish immutable canonical prefix")
 	}
 	project, err := fixture.store.LoadProjectSnapshot(observed.Head.ProjectSnapshotID)
-	if err != nil || project.HeadOID != candidate.CommitOID {
-		t.Fatal("publication project snapshot is not bound to integrated commit")
+	if err != nil || project.HeadOID != candidate.BaseOID {
+		t.Fatal("publication lost the source Task contract before retirement")
 	}
 	if _, err := fixture.store.BuildAttemptEvidenceBundle(candidate.SealRef); err != nil {
 		t.Fatal(err)
@@ -208,6 +212,10 @@ func TestUnpublishedCandidateRebindInvalidatesEvidenceAndPreservesSupersededLine
 				t.Fatal(err)
 			}
 			published, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: current.CandidateID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err = fixture.store.LoadAcceptedCandidate(*published.CandidateRef)
 			if err != nil {
 				t.Fatal(err)
 			}

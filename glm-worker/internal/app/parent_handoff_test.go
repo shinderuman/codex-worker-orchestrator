@@ -31,6 +31,13 @@ func TestParseCommandParentHandoff(t *testing.T) {
 	if recovery.Mode != ModeHandoff || recovery.Payload != "recovery" {
 		t.Fatalf("recovery handoff command = %#v", recovery)
 	}
+	routing, err := ParseCommand([]string{"--handoff", "routing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if routing.Mode != ModeHandoff || routing.Payload != "routing" {
+		t.Fatalf("routing handoff command = %#v", routing)
+	}
 	if _, err := ParseCommand([]string{"--handoff", "extra"}); err == nil {
 		t.Fatal("--handoff accepted an unknown projection")
 	}

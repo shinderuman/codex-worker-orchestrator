@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
+- `IMPLEMENTATION_TASKS/parent-rollout-counter-continuation.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
 - `IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`
 - `IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`
@@ -29,7 +30,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`
 - `IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`
 - `IMPLEMENTATION_TASKS/repository-review-artifact-cleanup.md`
-- `IMPLEMENTATION_TASKS/normal-lifecycle-commit-aggregation.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 

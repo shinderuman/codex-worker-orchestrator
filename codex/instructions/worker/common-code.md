@@ -16,3 +16,4 @@
 - 後方互換性を持たせない。retired parser / command / state / schema / actionを専用のlegacy / retired / unsupported errorへ送るためだけに現行production graphへ残すことも禁止する。具体的なcurrent contractが明示的認識を要求しない限り旧surface自体を削除し、unknown inputはcurrent generic fail-closed経路へ落とす。旧surfaceがruntimeで旧handlerへ到達不能なだけではclean cutoverとみなさない。
 - 不必要な抽象化、interface、wrapper、layerを追加しない。
 - 既存の責務分割・依存方向を不用意に崩さない。
+- 同一または実質同一の高コストtest/build/lint/smokeが反復されwall-clockの主要部を占めることを一次証拠で確認した場合、skipや別cache層を勝手に追加せず、TESTSへ`反復コスト観測:`として対象・回数・時間根拠・改善仮説を圧縮して報告する。同一候補を重複報告しない。
