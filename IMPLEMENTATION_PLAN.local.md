@@ -15,6 +15,9 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
 - `IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`
+- `IMPLEMENTATION_TASKS/self-referential-test-redesign.md`
+- `IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md`
+- `IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md`
 - `IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`
 - `IMPLEMENTATION_TASKS/task-admission-harness-scope.md`
