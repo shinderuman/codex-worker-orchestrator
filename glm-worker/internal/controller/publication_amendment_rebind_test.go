@@ -134,11 +134,7 @@ func TestApprovedTaskAmendmentRebindCompletesLifecycle(t *testing.T) {
 	f.source = *live.Admission
 	final := publicationTestEdit(t, f, "result.txt", "amended task result\n")
 	f.source = final
-	published, candidate := publishTerminalTestSource(t, f, p, final)
-	retired, err := f.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
-	if err != nil {
-		t.Fatal(err)
-	}
+	retired, _ := publishTerminalTestSource(t, f, p, final)
 	if retired.Head.ExecutionTaskRef != nil || retired.Head.RootTaskRef == nil || retired.Head.RootTaskRef.TaskPath != "IMPLEMENTATION_TASKS/finding-child.md" {
 		t.Fatalf("terminal retirement did not advance to the successor: %#v", retired.Head)
 	}

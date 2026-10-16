@@ -2,6 +2,14 @@ package controller
 
 import "fmt"
 
+type evidencePublicationPlan struct {
+	previousHeadRef   *EvidenceObjectRef
+	previousLedgerRef *EvidenceObjectRef
+	previousLedger    EvidenceLedgerRecord
+	taskHeads         []EvidenceSubjectHead
+	episodeHeads      []EvidenceSubjectHead
+}
+
 func (s *Store) commitAuthorityTransitionWithEvidenceLocked(
 	record TransitionRecord,
 	actual map[string]string,
@@ -110,27 +118,13 @@ func (s *Store) prepareEvidencePublication(
 	record TransitionRecord,
 	input EvidencePublicationInput,
 ) (EvidencePublicationResult, error) {
-	if err := s.validatePublicationIndexAuthority(record, input); err != nil {
-		return EvidencePublicationResult{}, err
-	}
-	previousHeadRef, previousLedgerRef, previousHead, previousLedger, err := s.loadPublishedEvidenceAuthority(controllerHead)
+	plan, err := s.planEvidencePublication(controllerHead, record, input)
 	if err != nil {
 		return EvidencePublicationResult{}, err
 	}
-	taskHeads, err := s.nextTaskEvidenceHeads(previousHead.TaskHeads, record, input.TaskRevisionRefs)
-	if err != nil {
-		return EvidencePublicationResult{}, err
-	}
-	if err := s.validateEpisodeTaskHeadPublication(taskHeads, input.EpisodeRevisionRefs); err != nil {
-		return EvidencePublicationResult{}, err
-	}
-	episodeHeads, err := s.nextEpisodeEvidenceHeads(previousHead.EpisodeHeads, record, input.EpisodeRevisionRefs)
-	if err != nil {
-		return EvidencePublicationResult{}, err
-	}
-	if err := s.validatePublicationRefs(record, input); err != nil {
-		return EvidencePublicationResult{}, err
-	}
+	previousHeadRef, previousLedgerRef := plan.previousHeadRef, plan.previousLedgerRef
+	previousLedger := plan.previousLedger
+	taskHeads, episodeHeads := plan.taskHeads, plan.episodeHeads
 	headRef, storedHead, err := s.storeNextEvidenceHead(previousHeadRef, taskHeads, episodeHeads, record)
 	if err != nil {
 		return EvidencePublicationResult{}, err
@@ -353,4 +347,29 @@ func (s *Store) validatePublicationFinalizations(record TransitionRecord, refs [
 		}
 	}
 	return nil
+}
+
+func (s *Store) planEvidencePublication(controllerHead RepositoryControllerHead, record TransitionRecord, input EvidencePublicationInput) (evidencePublicationPlan, error) {
+	if err := s.validatePublicationIndexAuthority(record, input); err != nil {
+		return evidencePublicationPlan{}, err
+	}
+	previousHeadRef, previousLedgerRef, previousHead, previousLedger, err := s.loadPublishedEvidenceAuthority(controllerHead)
+	if err != nil {
+		return evidencePublicationPlan{}, err
+	}
+	taskHeads, err := s.nextTaskEvidenceHeads(previousHead.TaskHeads, record, input.TaskRevisionRefs)
+	if err != nil {
+		return evidencePublicationPlan{}, err
+	}
+	if err := s.validateEpisodeTaskHeadPublication(taskHeads, input.EpisodeRevisionRefs); err != nil {
+		return evidencePublicationPlan{}, err
+	}
+	episodeHeads, err := s.nextEpisodeEvidenceHeads(previousHead.EpisodeHeads, record, input.EpisodeRevisionRefs)
+	if err != nil {
+		return evidencePublicationPlan{}, err
+	}
+	if err := s.validatePublicationRefs(record, input); err != nil {
+		return evidencePublicationPlan{}, err
+	}
+	return evidencePublicationPlan{previousHeadRef: previousHeadRef, previousLedgerRef: previousLedgerRef, previousLedger: previousLedger, taskHeads: taskHeads, episodeHeads: episodeHeads}, nil
 }

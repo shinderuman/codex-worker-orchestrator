@@ -202,6 +202,10 @@ func readSnapshot(root string) (snapshot, error) {
 		return snapshot{}, err
 	}
 	cfg := config.AppConfig{RepoRoot: root, StateBase: filepath.Join(stateHome, "sessions")}
+	cfg, err = controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		return snapshot{}, err
+	}
 	executionTask, canonical, err := controller.WorkflowAuthorityTask(cfg)
 	if err != nil {
 		return snapshot{}, err

@@ -1,6 +1,10 @@
 package controller
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
@@ -8,24 +12,11 @@ func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOpera
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	head, c, ref, err := s.publicationCandidateAuthority(input)
+	head, c, _, err := s.publicationCandidateAuthority(input)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if !c.EvidenceValid || c.State != candidatePromoted {
-		return ExecutionOperationResult{}, fmt.Errorf("publication requires promoted candidate with current evidence")
-	}
-	if err := s.validateCandidatePublicationLocal(c); err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	remote, err := s.observeCandidateRemote(head, c)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	if err := s.validateCandidatePublicationRemote(c, remote); err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	op, err := s.planCandidatePublication(head, c, ref, remote)
+	op, head, err := s.planTerminalMetadata(TerminalTaskInput{ExpectedGeneration: input.ExpectedGeneration, ProjectSnapshotID: head.ProjectSnapshotID, CandidateID: c.CandidateID, TaskRef: c.TaskRef})
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -35,56 +26,6 @@ func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	return s.recoverExecutionOperationLocked(op)
 }
 
-func (s *Store) planCandidatePublication(head RepositoryControllerHead, c AcceptedCandidate, ref EvidenceObjectRef, remote string) (ExecutionOperation, error) {
-	if remote != c.BaseOID {
-		return ExecutionOperation{}, fmt.Errorf("completion amendment requires an unpublished implementation and exact remote base")
-	}
-	implementationOID := c.CommitOID
-	c, err := s.amendCandidateCompletion(c, ref)
-	if err != nil {
-		return ExecutionOperation{}, err
-	}
-	c.State = candidateObserved
-	c.ObservedRemoteOID = c.CommitOID
-	op, err := s.planCandidateRevision(head, c, ref, publicationPublish)
-	if err != nil {
-		return ExecutionOperation{}, err
-	}
-	op.Publication.RemoteOID = remote
-	op.Publication.NewTip = c.CommitOID
-	op.Publication.LocalOld = implementationOID
-	op.Publication.LocalNew = c.CommitOID
-	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceHistory, Resource: c.Policy.Remote + ":" + c.Policy.RemoteRef, ExpectedOld: c.BaseOID, ExpectedNew: c.CommitOID}, {Surface: MutationSurfaceRef, Resource: c.Policy.LocalRef, ExpectedOld: implementationOID, ExpectedNew: c.CommitOID}}
-	return op, nil
-}
-
-func (s *Store) applyCandidatePublication(op ExecutionOperation, c AcceptedCandidate) error {
-	remote, err := observePublicationRemote(s.identity.PrimaryRoot, c.Policy)
-	if err != nil {
-		return err
-	}
-	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, c.CommitOID, remote)
-	if err != nil {
-		return err
-	}
-	if !contains && remote != op.Publication.RemoteOID {
-		return s.abortRacedPublication(op, remote)
-	}
-	if err := s.applyPlannedLocalRef(op, c); err != nil {
-		return err
-	}
-	if err := s.validateCandidatePublicationLocal(c); err != nil {
-		return err
-	}
-	if !contains {
-		remote, err = s.pushAndObserveCandidate(op, c, remote)
-		if err != nil {
-			return err
-		}
-	}
-	return s.commitPublicationOperation(op, c, remote)
-}
-
 func (s *Store) abortRacedPublication(op ExecutionOperation, remote string) error {
 	head, err := s.LoadHead()
 	if err != nil {
@@ -92,11 +33,6 @@ func (s *Store) abortRacedPublication(op ExecutionOperation, remote string) erro
 	}
 	if err := s.ensurePublicationPrefix(head, remote); err != nil {
 		return err
-	}
-	if op.Transition.Kind == publicationPublish {
-		if err := s.guardRacedLocalEffects(op, head, remote); err != nil {
-			return err
-		}
 	}
 	if remote == op.Publication.RemoteOID {
 		return fmt.Errorf("publication did not apply; retained for retry")
@@ -125,10 +61,13 @@ func (s *Store) abortRacedPublication(op ExecutionOperation, remote string) erro
 }
 
 func (s *Store) pushAndObserveCandidate(op ExecutionOperation, c AcceptedCandidate, remote string) (string, error) {
-	if remote != op.Publication.RemoteOID {
-		return "", s.abortRacedPublication(op, remote)
+	if remote != c.BaseOID {
+		return "", fmt.Errorf("completion remote changed; journal retained")
 	}
-	_, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", c.Policy.Remote, c.Policy.LocalRef+":"+c.Policy.RemoteRef)
+	if err := s.guardCompletionPush(op, PublicationPushGuardInput{RemoteName: c.Policy.Remote, LocalRef: c.Policy.LocalRef, LocalOID: c.CommitOID, RemoteRef: c.Policy.RemoteRef, RemoteOID: remote}); err != nil {
+		return "", err
+	}
+	output, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", c.Policy.Remote, c.Policy.LocalRef+":"+c.Policy.RemoteRef)
 	observed, err := observePublicationRemote(s.identity.PrimaryRoot, c.Policy)
 	if err != nil {
 		return "", fmt.Errorf("publication result is unresolved: %w", err)
@@ -138,10 +77,17 @@ func (s *Store) pushAndObserveCandidate(op ExecutionOperation, c AcceptedCandida
 		return "", err
 	}
 	if !contains {
-		if observed == remote && pushErr != nil {
-			return "", fmt.Errorf("publication did not apply; retained for retry: %w", pushErr)
+		if pushErr != nil && publicationPushRejected(string(output), c.Policy) {
+			phase, err := s.loadTransitionState(op.Transition.TransitionID)
+			if err != nil {
+				return "", err
+			}
+			if err := s.saveCompletionFailure(op, &phase, "push-rejected", string(output), pushErr.Error(), observed); err != nil {
+				return "", err
+			}
+			return "", s.abortCompletionPrepare(op, phase, observed)
 		}
-		return "", s.abortRacedPublication(op, observed)
+		return "", errors.Join(fmt.Errorf("completion publication outcome is unresolved; journal retained"), pushErr)
 	}
 	return observed, nil
 }
@@ -160,13 +106,12 @@ func (s *Store) validateCandidatePublicationLocal(c AcceptedCandidate) error {
 	return nil
 }
 
-func (s *Store) validateCandidatePublicationRemote(c AcceptedCandidate, remote string) error {
-	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, c.CommitOID, remote)
-	if err != nil {
-		return err
+func publicationPushRejected(output string, policy PublicationPolicy) bool {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) == 3 && fields[0] == "!" && fields[1] == policy.LocalRef+":"+policy.RemoteRef && (strings.HasPrefix(fields[2], "[rejected] ") || strings.HasPrefix(fields[2], "[remote rejected] ")) {
+			return true
+		}
 	}
-	if remote != c.BaseOID && !contains {
-		return fmt.Errorf("unpublished candidate requires external advancement rebind")
-	}
-	return nil
+	return false
 }

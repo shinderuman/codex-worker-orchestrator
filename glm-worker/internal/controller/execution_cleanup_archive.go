@@ -43,16 +43,15 @@ func captureCleanupWorktree(repo string, indexed []workspaceTreeEntry) ([]worksp
 	if err != nil {
 		return nil, err
 	}
+	entries := make([]workspaceTreeEntry, 0, len(parents))
 	for _, entry := range parents {
-		captured, exists, err := captureSuspensionEntry(repo, entry)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			worktree = append(worktree, captured)
-		}
+		entries = append(entries, entry)
 	}
-	return captureCleanupParentActions(repo, worktree)
+	captured, err := captureSuspensionEntries(repo, entries)
+	if err != nil {
+		return nil, err
+	}
+	return captureCleanupParentActions(repo, append(worktree, captured...))
 }
 
 func cleanupParentEntries(repo string, indexed []workspaceTreeEntry) (map[string]workspaceTreeEntry, error) {

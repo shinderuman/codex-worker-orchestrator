@@ -40,10 +40,6 @@ func (s *Store) validateCandidateRevisionLineage(op ExecutionOperation, c Accept
 			return err
 		}
 		return s.validateReboundCandidateLineage(op, previous, c)
-	case publicationPublish:
-		if c.ImplementationRef == nil || !evidenceRefsEqual(*c.ImplementationRef, *op.Publication.Before) || previous.State != candidatePromoted || c.State != candidateObserved {
-			return fmt.Errorf("publication lacks exact completion amendment authority")
-		}
 	default:
 		if previous.CandidateID != c.CandidateID {
 			return fmt.Errorf("candidate identity changed outside typed rebind")

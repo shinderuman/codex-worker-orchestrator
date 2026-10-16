@@ -23,6 +23,8 @@ type controllerExecutionCommand struct {
 	SealRef                *controller.EvidenceObjectRef             `json:"seal_ref,omitempty"`
 	TransitionID           string                                    `json:"transition_id,omitempty"`
 	UserTermination        *controller.UserTaskTransitionInput       `json:"user_termination,omitempty"`
+	ExecutionTermination   *controller.UserExecutionTransitionInput  `json:"execution_termination,omitempty"`
+	RevisedTask            *controller.SemanticTaskRef               `json:"revised_task,omitempty"`
 	AcceptedResultRecovery *workflow.AcceptedResultRuleRecoveryInput `json:"accepted_result_recovery,omitempty"`
 }
 
@@ -86,25 +88,21 @@ func executeControllerExecution(cfg config.AppConfig, store *controller.Store, c
 		return controller.ExecutionOperationResult{}, fmt.Errorf("execution command generation is stale")
 	}
 	if command.Action == "repair-reentry-review" || command.Action == "update-reentry-review" {
-		return executeControllerReentryReviewRepair(cfg, store, command.SourceSnapshotID)
+		return executeControllerReentryReviewRepair(cfg, store, command.SourceSnapshotID, command.RevisedTask)
 	}
 	return executeControllerExecutionAction(cfg, store, command)
 }
 
 func executeControllerExecutionAction(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
 	switch command.Action {
-	case "preview-parent-source":
-		return executeControllerParentSourcePreview(store)
-	case "rebind-parent-source":
-		return store.RebindParentSourceCandidate(controller.PublicationInput{ExpectedGeneration: command.ExpectedGeneration, CandidateID: command.CandidateID}, command.SourceSnapshotID)
-	case "prepare-reentry-review":
-		return executeControllerReentryReview(cfg, store)
 	case "recover-runtime-start":
 		return executeControllerRuntimeStartRecovery(cfg, store)
 	case "recover-accepted-result-rule-activation":
 		return executeControllerAcceptedResultRecovery(cfg, store, command.AcceptedResultRecovery)
 	case "user-terminate-task":
 		return executeControllerUserTermination(store, command)
+	case "user-terminate-execution":
+		return executeControllerUserExecutionTermination(store, command)
 	case "suspend":
 		return executeControllerSuspend(cfg, store, command)
 	case "materialize":
@@ -114,8 +112,28 @@ func executeControllerExecutionAction(cfg config.AppConfig, store *controller.St
 	case "gc-suspension":
 		return store.GarbageCollectSuspension(command.ExpectedGeneration, command.SuspensionID)
 	default:
+		return executeControllerParentSourceAction(cfg, store, command)
+	}
+}
+
+func executeControllerParentSourceAction(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
+	switch command.Action {
+	case "preview-parent-source":
+		return executeControllerParentSourcePreview(store)
+	case "rebind-parent-source":
+		return store.RebindParentSourceCandidate(controller.PublicationInput{ExpectedGeneration: command.ExpectedGeneration, CandidateID: command.CandidateID}, command.SourceSnapshotID)
+	case "prepare-reentry-review":
+		return executeControllerReentryReview(cfg, store)
+	default:
 		return controller.ExecutionOperationResult{}, fmt.Errorf("unsupported controller execution action %q", command.Action)
 	}
+}
+
+func executeControllerUserExecutionTermination(store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
+	if command.ExecutionTermination == nil || command.ExecutionTermination.ExpectedGeneration != command.ExpectedGeneration {
+		return controller.ExecutionOperationResult{}, fmt.Errorf("execution termination requires exact transition authority")
+	}
+	return store.TerminateExecutionAndSelectSuccessor(*command.ExecutionTermination)
 }
 
 func executeControllerParentSourcePreview(store *controller.Store) (controller.ExecutionOperationResult, error) {
@@ -135,7 +153,7 @@ func executeControllerUserTermination(store *controller.Store, command controlle
 }
 
 func executeControllerReentryReview(cfg config.AppConfig, store *controller.Store) (controller.ExecutionOperationResult, error) {
-	runtimeCfg, err := controller.WorkflowConfig(cfg)
+	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}

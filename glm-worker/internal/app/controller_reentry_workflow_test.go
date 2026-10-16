@@ -20,7 +20,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("sealed unpublished candidate handoff: %#v", handoff)
 	}
-	if !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, "controller-evidence") {
+	if !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) || !containsParentAction(handoff.AllowedActions, "controller-evidence") {
 		t.Fatalf("sealed candidate hid publication or reenter operations: %v", handoff.AllowedActions)
 	}
 
@@ -31,6 +31,9 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	handoff = buildParentHandoffWithConfig(cfg, runtime)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("reentered candidate handoff must direct materialization: %#v", handoff)
+	}
+	if !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) {
+		t.Fatal("quiescent candidate hid the existing publication owner")
 	}
 
 	materialized, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
@@ -89,7 +92,7 @@ func TestControllerReenterRejectsStaleAndForeignAuthority(t *testing.T) {
 
 func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.ExecutionOperationResult, controller.AcceptedCandidate, *state.StateStore) {
 	t.Helper()
-	cfg, admission, store, policy := retiredWorkflowCorpus(t)
+	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
 	evidence := canonicalWorkflowEvidence(t, store, admission, policy)
 	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "reentry corpus result", Policy: policy, Evidence: evidence})
 	if err != nil {
@@ -133,7 +136,7 @@ func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.
 	return cfg, store, accepted, candidate, runtime
 }
 
-func retiredWorkflowCorpus(t *testing.T) (config.AppConfig, controller.Admission, *controller.Store, controller.PublicationPolicy) {
+func retiredWorkflowCorpus(t *testing.T, completionQuality bool) (config.AppConfig, controller.Admission, *controller.Store, controller.PublicationPolicy) {
 	t.Helper()
 	cfg := newCanonicalAppConfig(t)
 	cfg.StateBase = filepath.Join(t.TempDir(), "sessions")
@@ -142,6 +145,9 @@ func retiredWorkflowCorpus(t *testing.T) (config.AppConfig, controller.Admission
 	writeAppTestFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/successor.md`\n")
 	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/successor.md", "# successor\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
+	if completionQuality {
+		prepareCompletionQualityCorpus(t, repo)
+	}
 	runControllerActivationGit(t, repo, "config", "user.name", "retired workflow test")
 	runControllerActivationGit(t, repo, "config", "user.email", "retired@example.invalid")
 	runControllerActivationGit(t, repo, "add", ".")

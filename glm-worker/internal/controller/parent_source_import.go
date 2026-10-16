@@ -7,13 +7,13 @@ import (
 
 const executionParentSourceImport = "IMPORT_PARENT_SOURCE"
 
-func (s *Store) ImportParentSource(admission Admission, sourceSnapshotID string, runtimeRef EvidenceObjectRef) (ExecutionOperationResult, error) {
+func (s *Store) ImportParentSource(admission Admission, sourceSnapshotID string, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	op, err := s.planParentSourceImport(admission, sourceSnapshotID, runtimeRef)
+	op, err := s.planParentSourceImport(admission, sourceSnapshotID, runtimeRef, task)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -23,7 +23,7 @@ func (s *Store) ImportParentSource(admission Admission, sourceSnapshotID string,
 	return s.recoverExecutionOperationLocked(op)
 }
 
-func (s *Store) planParentSourceImport(admission Admission, sourceSnapshotID string, runtimeRef EvidenceObjectRef) (ExecutionOperation, error) {
+func (s *Store) planParentSourceImport(admission Admission, sourceSnapshotID string, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperation, error) {
 	if err := s.validateTransitionSource(TransitionIntent{Source: admission, ExpectedGeneration: admission.Head.ControllerGeneration}); err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -34,7 +34,7 @@ func (s *Store) planParentSourceImport(admission Admission, sourceSnapshotID str
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
-	if !authority.Task.Equal(admission.Attempt.SemanticTaskRef) {
+	if !authority.Task.Equal(task) || task.TaskPath != admission.Attempt.SemanticTaskRef.TaskPath {
 		return ExecutionOperation{}, fmt.Errorf("live parent source import changes Task authority")
 	}
 	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
@@ -60,14 +60,18 @@ func (s *Store) planParentSourceImport(admission Admission, sourceSnapshotID str
 	if err := s.writeProjectSnapshot(authority.Snapshot); err != nil {
 		return ExecutionOperation{}, err
 	}
-	return s.buildParentSourceImport(admission, source, rebound, runtimeRef)
+	return s.buildParentSourceImport(admission, source, rebound, runtimeRef, task)
 }
 
-func (s *Store) buildParentSourceImport(admission Admission, source ParentSourceRevision, rebound ReboundSuspension, runtimeRef EvidenceObjectRef) (ExecutionOperation, error) {
+func (s *Store) buildParentSourceImport(admission Admission, source ParentSourceRevision, rebound ReboundSuspension, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperation, error) {
 	if _, err := s.LoadEvidenceObject(runtimeRef); err != nil {
 		return ExecutionOperation{}, err
 	}
 	lease := admission.Lease
+	lease.SemanticTaskRef = task
+	attempt := admission.Attempt
+	attempt.SemanticTaskRef = task
+	attempt.RootTaskRef = task
 	var err error
 	lease.LeaseID, err = state.NewUUID()
 	if err != nil {
@@ -77,6 +81,8 @@ func (s *Store) buildParentSourceImport(admission Admission, source ParentSource
 	lease.ExpectedWorkspaceSnapshotID = ""
 	lease.InFlightCallID = ""
 	target := authorityFromAdmission(admission, WorkspaceSnapshot{})
+	target.RootTaskRef = task
+	target.ExecutionTaskRef = task
 	target.LeaseID = lease.LeaseID
 	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, source.AuthorityOID)
 	if err != nil {
@@ -89,7 +95,10 @@ func (s *Store) buildParentSourceImport(admission Admission, source ParentSource
 	}
 	record := buildTransitionRecord(TransitionIntent{Kind: executionParentSourceImport, Source: admission, Target: target}, id)
 	record.Effects = []EffectExpectation{{Surface: MutationSurfaceSource, Resource: admission.Workspace.Root, ExpectedOld: admission.Snapshot.ID, ExpectedNew: rebound.Current.WorktreeTree}}
-	op := ExecutionOperation{Transition: record, Source: admission, ParentSource: &source, RuntimeBeforeRef: &runtimeRef, Workspace: &admission.Workspace, Attempt: &admission.Attempt, Lease: &lease, Rebound: &rebound}
+	op := ExecutionOperation{Transition: record, Source: admission, ParentSource: &source, RuntimeBeforeRef: &runtimeRef, Workspace: &admission.Workspace, Attempt: &attempt, Lease: &lease, Rebound: &rebound}
+	if !task.Equal(admission.Attempt.SemanticTaskRef) {
+		op.TaskAmendment = &TaskAmendmentApproval{OldRootTaskRef: admission.Attempt.RootTaskRef, OldExecutionTaskRef: admission.Attempt.SemanticTaskRef, NewRootTaskRef: task, NewExecutionTaskRef: task}
+	}
 	op.Evidence, err = s.parentSourceImportEvidence(op)
 	return op, err
 }
@@ -104,10 +113,22 @@ func (s *Store) validateParentSourceImport(op ExecutionOperation) error {
 	if err := s.validateParentSourceImportProject(op); err != nil {
 		return err
 	}
-	if _, err := s.LoadEvidenceObject(*op.RuntimeBeforeRef); err != nil {
+	if err := s.validateParentSourceImportRetention(op); err != nil {
 		return err
 	}
 	return s.validateParentSourceArchive(*op.ParentSource, op.Source.Head.IntegrationTip, op.Rebound.Current.WorktreeTree)
+}
+
+func (s *Store) validateParentSourceImportRetention(op ExecutionOperation) error {
+	if _, err := s.LoadEvidenceObject(*op.RuntimeBeforeRef); err != nil {
+		return err
+	}
+	if op.TaskAmendment != nil {
+		if !parentSourceRuntimeIdentity(op, "reentry-review-repair") {
+			return fmt.Errorf("parent source import runtime producer identity differs")
+		}
+	}
+	return nil
 }
 
 func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
@@ -140,10 +161,17 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	if err := s.writeLease(lease); err != nil {
 		return err
 	}
+	if err := s.writeAttempt(*op.Attempt); err != nil {
+		return err
+	}
 	actual := map[string]string{op.Transition.Effects[0].Key(): trees.WorktreeTree}
 	_, _, err = s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, op.Evidence, func(head *RepositoryControllerHead) error {
 		head.LiveLeaseID = lease.LeaseID
 		head.ProjectSnapshotID = op.Transition.ProjectSnapshotNew
+		if op.TaskAmendment != nil {
+			head.RootTaskRef = &op.TaskAmendment.NewRootTaskRef
+			head.ExecutionTaskRef = &op.TaskAmendment.NewExecutionTaskRef
+		}
 		return nil
 	})
 	return err
@@ -154,8 +182,11 @@ func (s *Store) validateParentSourceImportProject(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	if !authority.Task.Equal(op.Source.Attempt.SemanticTaskRef) || authority.ProjectSnapshotID != op.Transition.ProjectSnapshotNew {
+	if authority.ProjectSnapshotID != op.Transition.ProjectSnapshotNew {
 		return fmt.Errorf("parent source import changes active Task authority")
+	}
+	if err := validateParentSourceTaskBinding(op, authority.Task); err != nil {
+		return err
 	}
 	rebound := ReboundSuspension{Current: op.Source.Attempt.BaselineTrees}
 	if err := normalizeReboundTrees(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, &rebound); err != nil {
@@ -187,8 +218,22 @@ func (s *Store) verifyParentSourceImportProtected(op ExecutionOperation) error {
 }
 
 func (s *Store) verifyCommittedParentSourceImport(op ExecutionOperation, head RepositoryControllerHead) error {
-	if head.LiveAttemptID != op.Source.Attempt.AttemptID || head.LiveLeaseID != op.Lease.LeaseID {
+	if head.LiveAttemptID != op.Source.Attempt.AttemptID || head.LiveLeaseID != op.Lease.LeaseID || head.ProjectSnapshotID != op.Transition.ProjectSnapshotNew || head.RootTaskRef == nil || head.ExecutionTaskRef == nil || !head.RootTaskRef.Equal(op.Attempt.RootTaskRef) || !head.ExecutionTaskRef.Equal(op.Attempt.SemanticTaskRef) {
 		return fmt.Errorf("parent source import committed a different execution")
 	}
 	return s.verifyCommittedMaterialization(op, head)
+}
+
+func validateParentSourceTaskBinding(op ExecutionOperation, task SemanticTaskRef) error {
+	if op.TaskAmendment == nil {
+		if !task.Equal(op.Source.Attempt.SemanticTaskRef) {
+			return fmt.Errorf("parent source import changes active Task authority")
+		}
+		return nil
+	}
+	a := op.TaskAmendment
+	if !a.OldRootTaskRef.Equal(op.Source.Attempt.RootTaskRef) || !a.OldExecutionTaskRef.Equal(op.Source.Attempt.SemanticTaskRef) || !a.NewRootTaskRef.Equal(task) || !a.NewExecutionTaskRef.Equal(task) || task.TaskPath != op.Source.Attempt.SemanticTaskRef.TaskPath || !op.Attempt.SemanticTaskRef.Equal(task) || !op.Attempt.RootTaskRef.Equal(task) || !op.Lease.SemanticTaskRef.Equal(task) {
+		return fmt.Errorf("parent source Task amendment differs")
+	}
+	return nil
 }

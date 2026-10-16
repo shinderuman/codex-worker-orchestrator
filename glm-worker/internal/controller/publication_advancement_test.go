@@ -106,25 +106,16 @@ func TestPublicationRaceAbortRecoveryNeverReportsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err = fixture.store.LoadAcceptedCandidate(*promoted.CandidateRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	op, err := fixture.store.planCandidatePublication(promoted.Head, c, *promoted.CandidateRef, c.BaseOID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err = fixture.store.LoadAcceptedCandidate(*op.Publication.After)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.prepareExecutionOperation(&op, promoted.Head); err != nil {
+	retired, candidate := prepareCompletionTestCandidate(t, fixture.store, promoted, c)
+	c = candidate
+	var op ExecutionOperation
+	if err := readJSON(fixture.store.executionOperationPath(retired.TransitionID), &op); err != nil {
 		t.Fatal(err)
 	}
 	remote := advancePublicationTestRemote(t, fixture, policy, "raced.txt", "race\n")
 	_, err = fixture.store.RecoverExecutionOperation(op.Transition.TransitionID)
 	var advancement *PublicationAdvancementRequired
-	if !errors.As(err, &advancement) || advancement.RemoteOID != remote {
+	if !errors.As(err, &advancement) || advancement.RemoteOID != remote || advancement.Action != "rebind-unpublished-candidate" {
 		t.Fatalf("race classification = %v", err)
 	}
 	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); !errors.As(err, &advancement) {
@@ -134,14 +125,20 @@ func TestPublicationRaceAbortRecoveryNeverReportsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head.PendingTransitionID != "" || head.IntegrationTip != c.BaseOID || head.ObservedPrefix != "" {
+	if head.PendingTransitionID != "" || head.MetadataLineageRef != nil || head.AcceptedCandidateRef == nil || head.IntegrationTip != c.BaseOID || head.ObservedPrefix == c.CommitOID || head.ObservedRemoteTip != c.BaseOID {
 		t.Fatal("lost race marked unpublished candidate integrated")
 	}
-	original, err := fixture.store.LoadAcceptedCandidate(*promoted.CandidateRef)
+	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: head.ControllerGeneration, CandidateID: c.CandidateID}); err == nil {
+		t.Fatal("raced remote was published as the finalized Task base")
+	}
+	implementation, err := fixture.store.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.store.RebindUnpublishedCandidate(PublicationInput{ExpectedGeneration: head.ControllerGeneration, CandidateID: original.CandidateID}); err != nil {
+	if _, err := fixture.store.RebindUnpublishedCandidate(PublicationInput{ExpectedGeneration: head.ControllerGeneration, CandidateID: implementation.CandidateID}); err != nil {
+		t.Fatalf("unpublished implementation could not rebind after prepare abort: %v", err)
+	}
+	if _, err := fixture.store.BuildAttemptEvidenceBundle(c.SealRef); err != nil {
 		t.Fatal(err)
 	}
 }

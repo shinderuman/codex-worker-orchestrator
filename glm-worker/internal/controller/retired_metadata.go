@@ -11,7 +11,7 @@ import (
 func retiredMetadataHead(head RepositoryControllerHead) bool {
 	return head.Status == ControllerStatusActive && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
 		head.ExecutionTaskRef == nil && head.LiveAttemptID == "" && head.LiveLeaseID == "" &&
-		head.AcceptedCandidateRef == nil && head.PendingTerminalTaskRef == nil && head.PendingTransitionID == "" && head.ActiveEpisodeID == ""
+		head.AcceptedCandidateRef == nil && head.PendingTransitionID == "" && head.ActiveEpisodeID == ""
 }
 
 func (s *Store) retiredProjectAuthority(head RepositoryControllerHead) (CommittedTaskAuthority, error) {
@@ -31,6 +31,9 @@ func (s *Store) retiredProjectAuthority(head RepositoryControllerHead) (Committe
 	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, head.IntegrationTip)
 	if err != nil {
 		return CommittedTaskAuthority{}, err
+	}
+	if err := validateCompletionSuccessorAuthority(head, authority); err != nil {
+		return authority, err
 	}
 	if !reflect.DeepEqual(authority.Snapshot, project) || !authority.Task.Equal(*head.RootTaskRef) {
 		return CommittedTaskAuthority{}, fmt.Errorf("ordinary successor project authority is stale")
@@ -240,6 +243,9 @@ func (s *Store) planRetiredMetadataAdvancement(head RepositoryControllerHead, po
 	}
 	remote, err := observePublicationRemote(s.identity.PrimaryRoot, policy)
 	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if err := s.ensurePublicationPrefix(head, remote); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	tip, err := s.retiredAdvancementTip(head, policy, remote)

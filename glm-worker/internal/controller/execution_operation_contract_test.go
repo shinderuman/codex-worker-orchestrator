@@ -3,13 +3,13 @@ package controller
 import "testing"
 
 func TestExecutionOperationContractsCoverCurrentKinds(t *testing.T) {
+	t.Parallel()
 	store := &Store{}
 	cases := []struct {
 		kind    string
 		effects executionOperationEffectPolicy
 	}{
 		{executionModelCall, executionOperationEffectsNone},
-		{terminalRetire, executionOperationEffectsOneOrMore},
 		{executionSuspend, executionOperationEffectsSingle},
 		{executionMaterialize, executionOperationEffectsSingle},
 		{executionCleanup, executionOperationEffectsSingle},
@@ -39,6 +39,7 @@ func TestExecutionOperationContractsCoverCurrentKinds(t *testing.T) {
 }
 
 func TestExecutionOperationContractRejectsUnknownKind(t *testing.T) {
+	t.Parallel()
 	store := &Store{}
 	if _, err := store.executionOperationContract("fixture-unknown"); err == nil {
 		t.Fatal("unknown execution operation was admitted")
@@ -46,6 +47,7 @@ func TestExecutionOperationContractRejectsUnknownKind(t *testing.T) {
 }
 
 func TestExecutionOperationContractRequiresCommittedVerification(t *testing.T) {
+	t.Parallel()
 	contract := executionOperationContract{
 		validate: func(ExecutionOperation) error { return nil },
 		apply:    func(ExecutionOperation) error { return nil },
@@ -56,6 +58,7 @@ func TestExecutionOperationContractRequiresCommittedVerification(t *testing.T) {
 }
 
 func TestFixtureExecutionOperationUsesOneContractBoundary(t *testing.T) {
+	t.Parallel()
 	calls := []string{}
 	contract := executionOperationContract{
 		effects: executionOperationEffectsSingle,

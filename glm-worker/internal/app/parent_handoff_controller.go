@@ -1,10 +1,13 @@
 package app
 
 import (
+	"encoding/json"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+const canonicalStartAction = "start"
 
 func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoffOutput) {
 	report, ok := canonicalHandoffStatus(cfg)
@@ -12,7 +15,11 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		return
 	}
 	output.Controller = &report
+	if applyPendingCompletionRecoveryHandoff(cfg, output, report) {
+		return
+	}
 	if !output.Consistent {
+		applyExecutionTerminationHandoff(cfg, output)
 		return
 	}
 	output.AllowedActions = canonicalParentActions(output.AllowedActions)
@@ -31,9 +38,67 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 	}
 }
 
+func applyPendingCompletionRecoveryHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
+	if report.Head.PendingTransitionID == "" {
+		return false
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false
+	}
+	pending, err := store.PendingCompletionRecovery(report.Head)
+	if !pending {
+		return false
+	}
+	*output = parentHandoffOutput{Version: parentHandoffVersion, Controller: &report, Consistent: false, AllowedActions: []string{}, Validations: []parentHandoffValidation{}, RoutingEvidence: []parentHandoffRoutingEvidence{}}
+	if err != nil {
+		message := err.Error()
+		output.Inconsistency = &message
+		return true
+	}
+	command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+	if err != nil {
+		return true
+	}
+	applyControllerExecutionCompletionHandoff(output, string(command))
+	return true
+}
+
+func applyControllerExecutionCompletionHandoff(output *parentHandoffOutput, command string) {
+	action := controllerExecutionSurface
+	output.Consistent = true
+	output.Inconsistency = nil
+	output.ParentRequest = nil
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action}
+	output.RequiredActionParameters = map[string]string{"controller_command_json": command}
+}
+
+func applyExecutionTerminationHandoff(cfg config.AppConfig, output *parentHandoffOutput) {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return
+	}
+	input, err := store.PreviewExecutionTermination()
+	if err != nil {
+		return
+	}
+	data, err := json.Marshal(controllerExecutionCommand{Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input})
+	if err != nil {
+		return
+	}
+	action := controllerExecutionSurface
+	output.Consistent = true
+	output.Inconsistency = nil
+	output.ParentRequest = nil
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action}
+	output.RequiredActionParameters = map[string]string{"controller_command_json": string(data), "semantic_slot": "execution_termination.reason"}
+}
+
 func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffOutput, head controller.RepositoryControllerHead) {
 	action := canonicalQuiescentAction(cfg, head, output.TaskID)
-	if action == "start" {
+	if action == canonicalStartAction {
 		authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
 		if err != nil {
 			output.Consistent = false
@@ -49,6 +114,14 @@ func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffO
 	}
 	output.RequiredAction = &action
 	output.AllowedActions = []string{action, "controller-evidence"}
+	if head.PendingTransitionID == "" && head.AcceptedCandidateRef != nil {
+		if action != controllerExecutionSurface {
+			output.AllowedActions = append(output.AllowedActions, controllerExecutionSurface)
+		}
+		if action != controllerPublicationSurface {
+			output.AllowedActions = append(output.AllowedActions, controllerPublicationSurface)
+		}
+	}
 	if action == controllerPublicationSurface && output.ParentRequest != nil {
 		output.ParentRequest.TaskAttribution.LegalNextAction = action
 	}
@@ -83,10 +156,7 @@ func canonicalQuiescentAction(cfg config.AppConfig, head controller.RepositoryCo
 		return controllerExecutionSurface
 	}
 	if head.ExecutionTaskRef == nil {
-		if (head.MetadataLineageRef != nil || head.UserTerminationRef != nil) && taskID == nil {
-			return "start"
-		}
-		return controllerExecutionSurface
+		return quiescentSuccessorAction(cfg, head, taskID)
 	}
 	if head.AcceptedCandidateRef == nil {
 		return controllerExecutionSurface
@@ -100,6 +170,23 @@ func canonicalQuiescentAction(cfg config.AppConfig, head controller.RepositoryCo
 		return controllerExecutionSurface
 	}
 	return controllerPublicationSurface
+}
+
+func quiescentSuccessorAction(cfg config.AppConfig, head controller.RepositoryControllerHead, _ *string) string {
+	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
+		return controllerPublicationSurface
+	}
+	if head.ActiveEpisodeID != "" || (head.MetadataLineageRef == nil && head.UserTerminationRef == nil) {
+		return controllerExecutionSurface
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return controllerExecutionSurface
+	}
+	if _, err := store.QuiescentRuntimeAdmission(head); err == nil {
+		return canonicalStartAction
+	}
+	return controllerExecutionSurface
 }
 
 func canonicalHandoffStatus(cfg config.AppConfig) (controller.ControllerStatusReport, bool) {

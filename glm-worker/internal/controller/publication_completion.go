@@ -45,7 +45,7 @@ func (s *Store) completionImplementation(c AcceptedCandidate) (AcceptedCandidate
 	if err != nil {
 		return implementation, err
 	}
-	if c.State != candidateObserved || implementation.ImplementationRef != nil || implementation.State != candidatePromoted || !implementation.EvidenceValid || !sameCompletionSubject(c, implementation) {
+	if (c.State != candidatePromoted && c.State != candidateObserved) || implementation.ImplementationRef != nil || implementation.State != candidatePromoted || !implementation.EvidenceValid || !sameCompletionSubject(c, implementation) {
 		return implementation, fmt.Errorf("completion implementation authority differs")
 	}
 	return implementation, s.validateCompletionTree(c, implementation)

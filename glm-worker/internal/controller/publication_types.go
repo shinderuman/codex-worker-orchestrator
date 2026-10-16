@@ -79,6 +79,7 @@ type ExternalAdvancementInput struct {
 }
 
 type PublicationOperation struct {
+	PrimaryArchive *EvidenceObjectRef      `json:"primary_archive,omitempty"`
 	ParentSource   *ParentSourceRevision   `json:"parent_source,omitempty"`
 	AdvancementRef *EvidenceObjectRef      `json:"advancement_ref,omitempty"`
 	Before         *EvidenceObjectRef      `json:"before,omitempty"`

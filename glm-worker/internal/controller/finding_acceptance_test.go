@@ -13,6 +13,7 @@ type findingAcceptanceFixture struct {
 }
 
 func TestFindingUnverifiedCannotBecomeSameTaskAuthority(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	before, err := fixture.store.LoadHead()
 	if err != nil {
@@ -35,6 +36,7 @@ func TestFindingUnverifiedCannotBecomeSameTaskAuthority(t *testing.T) {
 }
 
 func TestFindingIndependentNonBlockingPreservesExecutionAuthority(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	before, err := fixture.store.LoadHead()
 	if err != nil {
@@ -63,6 +65,7 @@ func TestFindingIndependentNonBlockingPreservesExecutionAuthority(t *testing.T) 
 }
 
 func TestFindingDuplicateConvergesOnCanonicalObservation(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	first := observeAcceptanceFinding(t, fixture, "duplicate-problem", "reviewer-a")
 	second := observeAcceptanceFinding(t, fixture, "duplicate-problem", "reviewer-b")
@@ -85,6 +88,7 @@ func TestFindingDuplicateConvergesOnCanonicalObservation(t *testing.T) {
 }
 
 func TestFindingBlockingPlansEpisodeWithoutSwitchingExecutionAuthority(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	before, err := fixture.store.LoadHead()
 	if err != nil {
@@ -247,12 +251,8 @@ func completeAcceptanceSource(t *testing.T, fixture findingAcceptanceFixture) Re
 	t.Helper()
 	fixture, policy := configurePublicationTestFixture(t, fixture)
 	source := publicationTestEdit(t, fixture, "completed.txt", "completed result\n")
-	result, candidate := publishTerminalTestSource(t, fixture, policy, source)
-	retired, err := fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: result.Head.ControllerGeneration, ProjectSnapshotID: result.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return retired.Head
+	result, _ := publishTerminalTestSource(t, fixture, policy, source)
+	return result.Head
 
 }
 

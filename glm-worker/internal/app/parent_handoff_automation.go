@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -18,6 +19,10 @@ type projectContinuationAutomation struct {
 }
 
 func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
+	if bound, err := controller.ParentContinuationConfig(cfg); err == nil && bound.RepoRoot != cfg.RepoRoot {
+		cfg = bound
+		st = state.AttachStateStore(cfg)
+	}
 	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
 	applyCanonicalControllerHandoff(cfg, &output)
 	return output

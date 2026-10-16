@@ -8,6 +8,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const taskStatusTerminal = "terminal"
+
 func (s *Store) LoadTerminalTaskRecord(ref EvidenceObjectRef) (TerminalTaskRecord, error) {
 	if err := validateTypedEvidenceRef(ref, "terminal-task"); err != nil {
 		return TerminalTaskRecord{}, err
@@ -38,8 +40,8 @@ func (s *Store) verifyTerminalTaskRecord(ref EvidenceObjectRef) error {
 	if err != nil {
 		return err
 	}
-	if c.State != candidateObserved || !c.TaskRef.Equal(record.TaskRef) || c.AttemptID != record.AttemptID || c.CommitOID != record.CandidateOID || c.ProjectSnapshotID != record.SourceProject.SnapshotID {
-		return fmt.Errorf("terminal Task record lacks exact integrated candidate proof")
+	if !terminalCandidateMatches(record, c) {
+		return fmt.Errorf("terminal Task record lacks exact completion candidate proof")
 	}
 	roots, err := s.VerifyGitObjectArchive(record.GitArchive)
 	if err != nil {
@@ -51,9 +53,13 @@ func (s *Store) verifyTerminalTaskRecord(ref EvidenceObjectRef) error {
 	return nil
 }
 
+func terminalCandidateMatches(record TerminalTaskRecord, c AcceptedCandidate) bool {
+	return c.State == candidateObserved && c.ImplementationRef != nil && c.TaskRef.Equal(record.TaskRef) && c.AttemptID == record.AttemptID && c.CommitOID == record.CandidateOID && c.ProjectSnapshotID == record.SourceProject.SnapshotID
+}
+
 func (s *Store) validateTerminalMetadataOperation(op ExecutionOperation) error {
 	p := op.Terminal
-	if p == nil || op.Publication != nil || op.SealRef == nil || p.RootTaskRef == nil || len(p.Files) < 2 {
+	if !completeTerminalMetadataPayload(op) {
 		return fmt.Errorf("terminal metadata operation is incomplete")
 	}
 	if err := s.verifyTerminalTaskRecord(p.RecordRef); err != nil {
@@ -63,7 +69,21 @@ func (s *Store) validateTerminalMetadataOperation(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	if err := validateTerminalMetadataJournal(op, record); err != nil {
+	candidate, err := s.LoadAcceptedCandidate(record.CandidateRef)
+	if err != nil {
+		return err
+	}
+	implementation, err := s.completionImplementation(candidate)
+	if err != nil {
+		return err
+	}
+	if p.Policy != candidate.Policy {
+		return fmt.Errorf("terminal publication policy differs from candidate")
+	}
+	if err := validateCompletionSourceBinding(op, record, candidate, implementation); err != nil {
+		return err
+	}
+	if err := validateTerminalMetadataJournal(op, record, implementation.CommitOID); err != nil {
 		return err
 	}
 	for _, file := range p.Files {
@@ -71,7 +91,14 @@ func (s *Store) validateTerminalMetadataOperation(op ExecutionOperation) error {
 			return err
 		}
 	}
-	return nil
+	if err := validateCompletionEvidenceShape(op, op.Evidence); err != nil {
+		return err
+	}
+	return s.validateCompletionEpisode(op)
+}
+
+func completeTerminalMetadataPayload(op ExecutionOperation) bool {
+	return op.Transition.Kind == publicationPublish && op.Terminal != nil && op.Publication == nil && op.SealRef != nil && op.Terminal.RootTaskRef != nil && len(op.Terminal.Files) >= 2
 }
 
 func bindingContainsPath(bindings []MetadataTaskBinding, path string) bool {
@@ -105,7 +132,7 @@ func (s *Store) terminalMetadataEvidence(op ExecutionOperation) (EvidencePublica
 		return EvidencePublicationInput{}, err
 	}
 	task.TerminalRecord = &op.Terminal.RecordRef
-	task.SemanticStatus = "terminal"
+	task.SemanticStatus = taskStatusTerminal
 	task.PublicationLineageRecords = append(task.PublicationLineageRecords, refs...)
 	task.ControllerGeneration = op.Transition.CommittedGeneration
 	task.TransitionID = op.Transition.TransitionID
@@ -125,8 +152,17 @@ func (s *Store) terminalMetadataEvidence(op ExecutionOperation) (EvidencePublica
 }
 
 func (s *Store) ensureTerminalMetadataFinalized(head RepositoryControllerHead) error {
-	if head.PendingTerminalTaskRef != nil || head.PendingTransitionID != "" {
+	if head.PendingTransitionID != "" {
 		return fmt.Errorf("integrated Task awaits metadata retirement/finalization")
+	}
+	if head.AcceptedCandidateRef != nil {
+		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+		if err != nil {
+			return err
+		}
+		if candidate.EvidenceValid {
+			return fmt.Errorf("accepted Task awaits local retirement and publication")
+		}
 	}
 	if head.MetadataLineageRef == nil {
 		return nil
@@ -224,26 +260,11 @@ func (s *Store) candidateAmendmentBinds(candidate AcceptedCandidate, source, res
 }
 
 func (s *Store) terminalAttemptProven(attempt AttemptRecord) (bool, error) {
-	head, err := s.LoadHead()
-	if err != nil {
+	task, err := s.terminalAttemptTaskIndex(attempt)
+	if err != nil || task == nil {
 		return false, err
 	}
-	if head.EvidenceHeadRef == nil {
-		return false, nil
-	}
-	evidence, err := s.LoadEvidenceHead(*head.EvidenceHeadRef)
-	if err != nil {
-		return false, err
-	}
-	subject, ok := evidenceSubjectHead(evidence.TaskHeads, taskEvidenceSubjectID(attempt.SemanticTaskRef))
-	if !ok {
-		return false, nil
-	}
-	task, err := s.LoadTaskIndexRevision(subject.RevisionRef)
-	if err != nil {
-		return false, err
-	}
-	if task.TerminalRecord == nil {
+	if task.TerminalRecord == nil || task.SemanticStatus != "terminal" {
 		return false, nil
 	}
 	record, err := s.LoadTerminalTaskRecord(*task.TerminalRecord)
@@ -257,7 +278,93 @@ func (s *Store) terminalAttemptProven(attempt AttemptRecord) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return record.AttemptID == attempt.AttemptID && record.TaskRef.Equal(attempt.SemanticTaskRef) && phase.Phase == TransitionPhaseFinalized, nil
+	if record.AttemptID != attempt.AttemptID || !record.TaskRef.Equal(attempt.SemanticTaskRef) || phase.Phase != TransitionPhaseFinalized {
+		return false, nil
+	}
+	return s.terminalTaskPublicationProven(*task, record)
+}
+
+func (s *Store) terminalAttemptTaskIndex(attempt AttemptRecord) (*TaskIndexRevision, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return nil, err
+	}
+	if head.EvidenceHeadRef == nil {
+		return nil, nil
+	}
+	evidence, err := s.LoadEvidenceHead(*head.EvidenceHeadRef)
+	if err != nil {
+		return nil, err
+	}
+	subject, ok := evidenceSubjectHead(evidence.TaskHeads, taskEvidenceSubjectID(attempt.SemanticTaskRef))
+	if !ok {
+		return nil, nil
+	}
+	task, err := s.LoadTaskIndexRevision(subject.RevisionRef)
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func (s *Store) terminalTaskPublicationProven(task TaskIndexRevision, terminal TerminalTaskRecord) (bool, error) {
+	seen := map[string]bool{}
+	for {
+		record, phase, err := s.LoadTransition(task.TransitionID)
+		if err != nil {
+			return false, err
+		}
+		if record.Kind == publicationPublish {
+			return s.verifyTerminalPublicationOperation(record, phase, terminal)
+		}
+		previous, err := s.previousTerminalTaskIndex(task, seen)
+		if err != nil || previous == nil {
+			return false, err
+		}
+		task = *previous
+	}
+}
+
+func (s *Store) previousTerminalTaskIndex(task TaskIndexRevision, seen map[string]bool) (*TaskIndexRevision, error) {
+	if task.PreviousRevision == nil {
+		return nil, nil
+	}
+	ref := *task.PreviousRevision
+	if seen[ref.Digest] {
+		return nil, fmt.Errorf("terminal Task index lineage is cyclic")
+	}
+	seen[ref.Digest] = true
+	previous, err := s.LoadTaskIndexRevision(ref)
+	if err != nil {
+		return nil, err
+	}
+	if !previous.TaskRef.Equal(task.TaskRef) || previous.TerminalRecord == nil || task.TerminalRecord == nil || !evidenceRefsEqual(*previous.TerminalRecord, *task.TerminalRecord) {
+		return nil, fmt.Errorf("terminal Task publication lineage changes Task or terminal record")
+	}
+	return &previous, nil
+}
+
+func (s *Store) verifyTerminalPublicationOperation(record TransitionRecord, phase TransitionState, terminal TerminalTaskRecord) (bool, error) {
+	if record.Kind != publicationPublish || phase.Phase != TransitionPhaseFinalized {
+		return false, nil
+	}
+	var op ExecutionOperation
+	if err := readJSON(s.executionOperationPath(record.TransitionID), &op); err != nil {
+		return false, err
+	}
+	if !reflect.DeepEqual(record, op.Transition) {
+		return false, fmt.Errorf("terminal publication journal differs")
+	}
+	if _, err := s.validateExecutionOperation(op); err != nil {
+		return false, err
+	}
+	if op.Terminal == nil || !evidenceRefsEqual(op.Terminal.Record.CandidateRef, terminal.CandidateRef) || !reflect.DeepEqual(op.Terminal.Record, terminal) {
+		return false, fmt.Errorf("terminal publication candidate differs")
+	}
+	if _, err := s.completionObservation(op, phase); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Store) validateTerminalMetadataFile(record TerminalTaskRecord, file TerminalMetadataFile) error {
@@ -297,9 +404,11 @@ func (s *Store) metadataTaskBindingStep(current EvidenceObjectRef, wanted Semant
 	return record, wanted, nil
 }
 
-func validateTerminalMetadataJournal(op ExecutionOperation, record TerminalTaskRecord) error {
+func validateTerminalMetadataJournal(op ExecutionOperation, record TerminalTaskRecord, implementation string) error {
 	p := op.Terminal
-	if !reflect.DeepEqual(record, p.Record) || record.TransitionID != op.Transition.TransitionID || record.ControllerGeneration != op.Transition.CommittedGeneration || record.SourceProject.SnapshotID != op.Transition.ProjectSnapshotOld || record.ResultProject.SnapshotID != op.Transition.ProjectSnapshotNew || !reflect.DeepEqual(terminalMetadataEffects(*p), op.Transition.Effects) {
+	effects := terminalMetadataEffects(*p, implementation)
+	effects = append(effects, EffectExpectation{Surface: MutationSurfaceHistory, Resource: p.Policy.Remote + ":" + p.Policy.RemoteRef, ExpectedOld: op.Source.Head.IntegrationTip, ExpectedNew: record.CandidateOID})
+	if !reflect.DeepEqual(record, p.Record) || record.TransitionID != op.Transition.TransitionID || record.ControllerGeneration != op.Transition.CommittedGeneration || record.SourceProject.SnapshotID != op.Transition.ProjectSnapshotOld || record.ResultProject.SnapshotID != op.Transition.ProjectSnapshotNew || !reflect.DeepEqual(effects, op.Transition.Effects) {
 		return fmt.Errorf("terminal metadata journal authority differs")
 	}
 	if !projectHasTask(record.SourceProject, record.TaskRef) || projectHasTask(record.ResultProject, record.TaskRef) || !projectHasTask(record.ResultProject, *p.RootTaskRef) {
@@ -343,12 +452,16 @@ func (s *Store) terminalMetadataLineageRefs(root EvidenceObjectRef) ([]EvidenceO
 	}
 }
 
-func validateTerminalRecoverySource(op ExecutionOperation, head RepositoryControllerHead) error {
+func (s *Store) validateTerminalRecoverySource(op ExecutionOperation, head RepositoryControllerHead) error {
 	p := op.Terminal
-	if head.ProjectSnapshotID != op.Transition.ProjectSnapshotOld || head.IntegrationTip != p.Record.ResultProject.HeadOID || head.AcceptedCandidateRef == nil || head.PendingTerminalTaskRef == nil || head.LiveLeaseID != "" {
+	if head.ProjectSnapshotID != op.Transition.ProjectSnapshotOld || head.AcceptedCandidateRef == nil || head.LiveLeaseID != "" {
 		return fmt.Errorf("terminal recovery source authority changed")
 	}
-	if !evidenceRefsEqual(*head.AcceptedCandidateRef, p.Record.CandidateRef) || !head.PendingTerminalTaskRef.Equal(p.Record.TaskRef) {
+	candidate, err := s.LoadAcceptedCandidate(p.Record.CandidateRef)
+	if err != nil {
+		return err
+	}
+	if candidate.ImplementationRef == nil || !evidenceRefsEqual(*head.AcceptedCandidateRef, *candidate.ImplementationRef) || head.IntegrationTip != candidate.BaseOID {
 		return fmt.Errorf("terminal recovery source Task/candidate changed")
 	}
 	return nil
@@ -388,6 +501,30 @@ func validateTerminalProjectBindings(record TerminalTaskRecord) error {
 			return fmt.Errorf("terminal metadata binding is outside source/result project")
 		}
 		seen[binding.Source.TaskPath] = true
+	}
+	return nil
+}
+
+func validateCompletionSourceBinding(op ExecutionOperation, record TerminalTaskRecord, candidate, implementation AcceptedCandidate) error {
+	if op.Source.Head.ControllerGeneration != op.Transition.SourceGeneration || op.Source.Head.ProjectSnapshotID != record.SourceProject.SnapshotID || op.Source.Head.AcceptedCandidateRef == nil || candidate.ImplementationRef == nil || !evidenceRefsEqual(*op.Source.Head.AcceptedCandidateRef, *candidate.ImplementationRef) || implementation.BaseOID != op.Source.Head.IntegrationTip || op.Source.Head.LiveLeaseID != "" {
+		return fmt.Errorf("completion source authority differs from the sealed implementation")
+	}
+	return nil
+}
+
+func (s *Store) validateCompletionEpisode(op ExecutionOperation) error {
+	expected := *op.Terminal
+	expected.Episode = nil
+	record := op.Transition
+	if err := s.planTerminalMetadataEpisode(op.Source.Head, &expected, &record, op.Terminal.Record.TaskRef); err != nil {
+		return err
+	}
+	if expected.Episode != nil && op.Terminal.Episode != nil {
+		expected.Episode.CreatedAt = op.Terminal.Episode.CreatedAt
+		expected.Episode.RevisionID = blockerEpisodeRevisionID(*expected.Episode)
+	}
+	if !reflect.DeepEqual(expected.Episode, op.Terminal.Episode) || record.TargetEpisodeRevision != op.Transition.TargetEpisodeRevision {
+		return fmt.Errorf("completion episode target differs from the planned progression")
 	}
 	return nil
 }

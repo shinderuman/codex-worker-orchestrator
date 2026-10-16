@@ -113,7 +113,7 @@ func TestUserTaskTransitionPreservesFailureEvidenceAndStartsSuccessor(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Head.UserTerminationRef == nil || result.Head.PendingTerminalTaskRef != nil || result.Head.MetadataLineageRef != nil || result.Head.AcceptedCandidateRef != nil || result.Head.ExecutionTaskRef != nil {
+	if result.Head.UserTerminationRef == nil || result.Head.MetadataLineageRef != nil || result.Head.AcceptedCandidateRef != nil || result.Head.ExecutionTaskRef != nil {
 		t.Fatalf("termination pretended to retire or accept: %#v", result.Head)
 	}
 	record, err := store.LoadUserTaskTermination(*result.Head.UserTerminationRef)

@@ -6,9 +6,8 @@ import (
 	"path/filepath"
 )
 
-func terminalMetadataEffects(p TerminalMetadataOperation) []EffectExpectation {
-	old, next := p.Record.ResultProject.HeadOID, p.Record.ResultProject.HeadOID
-	result := []EffectExpectation{{Surface: MutationSurfaceHistory, Resource: p.Policy.Remote + ":" + p.Policy.RemoteRef, ExpectedOld: old, ExpectedNew: next}, {Surface: MutationSurfaceRef, Resource: p.Policy.LocalRef, ExpectedOld: old, ExpectedNew: next}}
+func terminalMetadataEffects(p TerminalMetadataOperation, implementation string) []EffectExpectation {
+	result := []EffectExpectation{{Surface: MutationSurfaceRef, Resource: p.Policy.LocalRef, ExpectedOld: implementation, ExpectedNew: p.Record.ResultProject.HeadOID}}
 	for _, file := range p.Files {
 		result = append(result, EffectExpectation{Surface: MutationSurfaceIndex, Resource: file.Path, ExpectedOld: file.OldOID, ExpectedNew: file.NewOID}, EffectExpectation{Surface: MutationSurfaceSource, Resource: file.Path, ExpectedOld: terminalFileIdentity(file.Mode, file.OldBytes, true), ExpectedNew: terminalFileIdentity(file.Mode, file.NewBytes, file.NewOID != "")})
 	}
@@ -30,7 +29,7 @@ func (s *Store) verifyTerminalMetadataSource(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	for _, effect := range op.Transition.Effects[2:] {
+	for _, effect := range op.Transition.Effects[1:] {
 		if actual[effect.Key()] != effect.ExpectedOld {
 			return fmt.Errorf("terminal metadata source is dirty or stale: %s", effect.Resource)
 		}
@@ -63,47 +62,38 @@ func (s *Store) observeTerminalFileEffects(op ExecutionOperation) (map[string]st
 	return actual, nil
 }
 
-func (s *Store) applyTerminalMetadata(op ExecutionOperation) error {
+func (s *Store) applyTerminalMetadataFiles(op ExecutionOperation) (map[string]string, error) {
+	if err := s.validateTerminalPrimarySource(op); err != nil {
+		return nil, err
+	}
 	actual, err := s.observeTerminalFileEffects(op)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, effect := range op.Transition.Effects[2:] {
+	for _, effect := range terminalMetadataEffects(*op.Terminal, "")[1:] {
 		if actual[effect.Key()] != effect.ExpectedOld && actual[effect.Key()] != effect.ExpectedNew {
-			return fmt.Errorf("terminal metadata unexpected partial state: %s", effect.Resource)
+			return nil, fmt.Errorf("terminal metadata unexpected partial state: %s", effect.Resource)
 		}
 	}
 	p := op.Terminal
-	if err := s.applyTerminalMetadataPublication(op); err != nil {
-		return err
+	if err := s.applyTerminalMetadataLocalRef(op); err != nil {
+		return nil, err
 	}
 	for index, file := range p.Files {
-		if err := s.applyTerminalMetadataFile(file, op.Transition.Effects[2+index*2:4+index*2]); err != nil {
-			return err
+		if err := s.applyTerminalMetadataFile(file, op.Transition.Effects[1+index*2:3+index*2]); err != nil {
+			return nil, err
 		}
 	}
 	actual, err = s.observeTerminalFileEffects(op)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	local, _, err := readExecutionRef(s.identity.PrimaryRoot, p.Policy.LocalRef)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	remote, err := observePublicationRemote(s.identity.PrimaryRoot, p.Policy)
-	if err != nil {
-		return err
-	}
-	actual[op.Transition.Effects[0].Key()] = remote
-	actual[op.Transition.Effects[1].Key()] = local
-	evidence, err := s.terminalMetadataEvidence(op)
-	if err != nil {
-		return err
-	}
-	_, _, err = s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, evidence, func(head *RepositoryControllerHead) error {
-		return s.commitTerminalMetadataTarget(head, *p)
-	})
-	return err
+	actual[op.Transition.Effects[0].Key()] = local
+	return actual, nil
 }
 
 func (s *Store) applyTerminalMetadataFile(file TerminalMetadataFile, effects []EffectExpectation) error {
@@ -172,14 +162,14 @@ func (s *Store) verifyCommittedTerminalMetadata(op ExecutionOperation, head Repo
 	}
 
 	p := op.Terminal
-	if head.ProjectSnapshotID != p.Record.ResultProject.SnapshotID || head.IntegrationTip != p.Record.ResultProject.HeadOID || head.MetadataLineageRef == nil || !evidenceRefsEqual(*head.MetadataLineageRef, p.RecordRef) || head.PendingTerminalTaskRef != nil {
-		return fmt.Errorf("committed terminal metadata authority differs")
+	if err := validateCommittedTerminalHead(*p, head); err != nil {
+		return err
 	}
 	actual, err := s.observeTerminalFileEffects(op)
 	if err != nil {
 		return err
 	}
-	for _, effect := range op.Transition.Effects[2:] {
+	for _, effect := range terminalMetadataEffects(*p, "")[1:] {
 		if actual[effect.Key()] != effect.ExpectedNew {
 			return fmt.Errorf("committed terminal metadata changed: %s", effect.Resource)
 		}
@@ -188,7 +178,50 @@ func (s *Store) verifyCommittedTerminalMetadata(op ExecutionOperation, head Repo
 	if err != nil || local != p.Record.ResultProject.HeadOID {
 		return fmt.Errorf("committed terminal local tip changed")
 	}
-	return s.verifyTerminalTaskRecord(p.RecordRef)
+	if err := s.verifyTerminalTaskRecord(p.RecordRef); err != nil {
+		return err
+	}
+	candidate, err := s.LoadAcceptedCandidate(p.Record.CandidateRef)
+	if err != nil {
+		return err
+	}
+	return s.verifyPrimaryPublicationTree(candidate)
+}
+
+func validateCommittedTerminalHead(p TerminalMetadataOperation, head RepositoryControllerHead) error {
+	if head.ProjectSnapshotID != p.Record.ResultProject.SnapshotID || head.IntegrationTip != p.Record.ResultProject.HeadOID || head.MetadataLineageRef == nil || !evidenceRefsEqual(*head.MetadataLineageRef, p.RecordRef) {
+		return fmt.Errorf("committed terminal metadata authority differs")
+	}
+	return nil
+}
+
+func (s *Store) validateTerminalPrimarySource(op ExecutionOperation) error {
+	candidate, err := s.LoadAcceptedCandidate(op.Terminal.Record.CandidateRef)
+	if err != nil || !candidate.TaskRef.Equal(candidate.RootTaskRef) {
+		return err
+	}
+	implementation, err := s.completionImplementation(candidate)
+	if err != nil {
+		return err
+	}
+	before, err := sourceImportTreeEntries(s.identity.PrimaryRoot, implementation.TreeOID)
+	if err != nil {
+		return err
+	}
+	after, err := sourceImportTreeEntries(s.identity.PrimaryRoot, candidate.TreeOID)
+	if err != nil {
+		return err
+	}
+	actual, err := s.capturePrimaryPromotionTrees(candidate.Policy)
+	if err != nil {
+		return err
+	}
+	for _, tree := range []string{actual.IndexTree, actual.WorktreeTree} {
+		if err := s.validatePrimaryPromotionEntries(tree, before, after); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) terminalWorktreeFileIdentity(relative string) (string, error) {
@@ -213,34 +246,12 @@ func (s *Store) terminalWorktreeFileIdentity(relative string) (string, error) {
 	return terminalFileIdentity(mode, data, true), nil
 }
 
-func (s *Store) applyTerminalMetadataPublication(op ExecutionOperation) error {
+func (s *Store) applyTerminalMetadataLocalRef(op ExecutionOperation) error {
 	if err := s.verifyTerminalWorkspace(op); err != nil {
 		return err
 	}
-	p := *op.Terminal
-
-	remote, err := observePublicationRemote(s.identity.PrimaryRoot, p.Policy)
-	if err != nil {
-		return err
-	}
-	old, next := p.Record.ResultProject.HeadOID, p.Record.ResultProject.HeadOID
-	if remote != old && remote != next {
-		return fmt.Errorf("terminal metadata remote advanced; exact operation retained without force push")
-	}
-	if err := updatePublicationRef(s.identity.PrimaryRoot, p.Policy.LocalRef, old, next); err != nil {
-		return err
-	}
-	if remote == old {
-		_, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", p.Policy.Remote, p.Policy.LocalRef+":"+p.Policy.RemoteRef)
-		remote, err = observePublicationRemote(s.identity.PrimaryRoot, p.Policy)
-		if err != nil {
-			return err
-		}
-		if remote != next {
-			return fmt.Errorf("terminal metadata publication not proven: %w", pushErr)
-		}
-	}
-	return nil
+	effect := op.Transition.Effects[0]
+	return updatePublicationRef(s.identity.PrimaryRoot, op.Terminal.Policy.LocalRef, effect.ExpectedOld, effect.ExpectedNew)
 }
 
 func (s *Store) commitTerminalMetadataTarget(head *RepositoryControllerHead, p TerminalMetadataOperation) error {
@@ -251,16 +262,8 @@ func (s *Store) commitTerminalMetadataTarget(head *RepositoryControllerHead, p T
 		if err := s.writeEpisodeRevision(*p.Episode); err != nil {
 			return err
 		}
-		head.ActiveEpisodeRevision = p.Episode.Revision
 	}
-	head.ProjectSnapshotID = p.Record.ResultProject.SnapshotID
-	head.RootTaskRef = p.RootTaskRef
-	head.ExecutionTaskRef = nil
-	head.IntegrationTip = p.Record.ResultProject.HeadOID
-	head.ObservedRemoteTip = p.Record.ResultProject.HeadOID
-	head.MetadataLineageRef = &p.RecordRef
-	head.AcceptedCandidateRef = nil
-	head.PendingTerminalTaskRef = nil
+	applyCompletionTargetAuthority(head, p)
 	return nil
 }
 
@@ -271,7 +274,7 @@ func (s *Store) applyTerminalMetadataIndex(file TerminalMetadataFile, effect Eff
 				return err
 			}
 		} else {
-			if _, err := runGitBinary(s.identity.PrimaryRoot, nil, "update-index", "--cacheinfo", file.Mode+","+file.NewOID+","+file.Path); err != nil {
+			if _, err := runGitBinary(s.identity.PrimaryRoot, nil, "update-index", "--add", "--cacheinfo", file.Mode+","+file.NewOID+","+file.Path); err != nil {
 				return err
 			}
 		}
@@ -308,4 +311,18 @@ func (s *Store) verifyTerminalWorkspace(op ExecutionOperation) error {
 		return fmt.Errorf("terminal metadata primary workspace is not the publication branch")
 	}
 	return nil
+}
+
+func applyCompletionTargetAuthority(head *RepositoryControllerHead, p TerminalMetadataOperation) {
+	head.ProjectSnapshotID = p.Record.ResultProject.SnapshotID
+	head.RootTaskRef = p.RootTaskRef
+	head.ExecutionTaskRef = nil
+	head.IntegrationTip = p.Record.ResultProject.HeadOID
+	head.MetadataLineageRef = &p.RecordRef
+	head.AcceptedCandidateRef = nil
+	head.LiveAttemptID = ""
+	head.LiveLeaseID = ""
+	if p.Episode != nil {
+		head.ActiveEpisodeRevision = p.Episode.Revision
+	}
 }

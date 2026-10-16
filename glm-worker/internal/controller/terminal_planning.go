@@ -8,22 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"
 )
 
-func (s *Store) RetireTerminalTask(input TerminalTaskInput) (ExecutionOperationResult, error) {
-	lock, err := s.acquireMutationLock()
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	defer func() { _ = lock.Close() }()
-	op, head, err := s.planTerminalMetadata(input)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	if err := s.prepareExecutionOperation(&op, head); err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	return s.recoverExecutionOperationLocked(op)
-}
-
 func (s *Store) planTerminalMetadata(input TerminalTaskInput) (ExecutionOperation, RepositoryControllerHead, error) {
 	head, c, candidateRef, err := s.publicationCandidateAuthority(PublicationInput{ExpectedGeneration: input.ExpectedGeneration, CandidateID: input.CandidateID})
 	if err != nil {
@@ -45,11 +29,8 @@ func (s *Store) planTerminalMetadata(input TerminalTaskInput) (ExecutionOperatio
 }
 
 func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot, metadata repositoryprojectcommit.TerminalMetadata) (ExecutionOperation, RepositoryControllerHead, error) {
-	record, err := executionTransition(head, terminalRetire)
-	if err != nil {
-		return ExecutionOperation{}, head, err
-	}
-	implementation, err := s.completionImplementation(c)
+	implementation := c
+	record, c, candidateRef, err := s.planTerminalCompletionCandidate(head, c, candidateRef)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
@@ -58,9 +39,9 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 		return ExecutionOperation{}, head, err
 	}
 	if c.ImplementationRef == nil || tree != c.TreeOID {
-		return ExecutionOperation{}, head, fmt.Errorf("terminal metadata must already belong to the published completion candidate")
+		return ExecutionOperation{}, head, fmt.Errorf("terminal metadata must belong to the exact completion candidate")
 	}
-	commit := head.IntegrationTip
+	commit := c.CommitOID
 	result, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, commit)
 	if err != nil {
 		return ExecutionOperation{}, head, err
@@ -76,11 +57,7 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 	}
 	payload := &TerminalMetadataOperation{Record: terminal, RecordRef: ref, Policy: c.Policy, Files: files, RootTaskRef: &result.Task}
 	record.ProjectSnapshotNew = result.ProjectSnapshotID
-	record.SourceRootTaskRef = c.RootTaskRef
-	record.TargetRootTaskRef = result.Task
-	record.SourceExecutionTaskRef = c.TaskRef
-	record.TargetExecutionTaskRef = result.Task
-	record.SourceAttemptID = c.AttemptID
+	bindCompletionTransition(&record, c, result.Task)
 	if err := s.planTerminalMetadataEpisode(head, payload, &record, c.TaskRef); err != nil {
 		return ExecutionOperation{}, head, err
 	}
@@ -89,12 +66,36 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 		return ExecutionOperation{}, head, err
 	}
 	record.SourceWorkspaceID = workspace.ID
-	record.Effects = terminalMetadataEffects(*payload)
-	op := ExecutionOperation{Transition: record, Terminal: payload, SealRef: &c.SealRef, Workspace: &workspace}
+	record.Effects = terminalMetadataEffects(*payload, implementation.CommitOID)
+	op := ExecutionOperation{Transition: record, Source: Admission{Head: head}, Terminal: payload, SealRef: &c.SealRef, Workspace: &workspace}
 	if err := s.verifyTerminalMetadataSource(op); err != nil {
 		return ExecutionOperation{}, head, err
 	}
+	op.Transition.Effects = append(op.Transition.Effects, EffectExpectation{Surface: MutationSurfaceHistory, Resource: c.Policy.Remote + ":" + c.Policy.RemoteRef, ExpectedOld: c.BaseOID, ExpectedNew: c.CommitOID})
+	op.Evidence, err = s.terminalMetadataEvidence(op)
+	if err != nil {
+		return op, head, err
+	}
 	return op, head, nil
+}
+
+func (s *Store) planTerminalCompletionCandidate(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef) (TransitionRecord, AcceptedCandidate, EvidenceObjectRef, error) {
+	record, err := executionTransition(head, publicationPublish)
+	if err != nil {
+		return record, c, candidateRef, err
+	}
+	c, err = s.amendCandidateCompletion(c, candidateRef)
+	if err != nil {
+		return record, c, candidateRef, err
+	}
+	c.Previous = &candidateRef
+	c.State = candidateObserved
+	c.ObservedRemoteOID = c.CommitOID
+	c.ControllerGeneration = record.CommittedGeneration
+	c.TransitionID = record.TransitionID
+	c.CreatedAt = record.CreatedAt
+	ref, err := s.storeAcceptedCandidate(c)
+	return record, c, ref, err
 }
 
 func (s *Store) terminalMetadataTree(base string, metadata repositoryprojectcommit.TerminalMetadata) ([]TerminalMetadataFile, string, error) {
@@ -136,8 +137,11 @@ func (s *Store) terminalSourceProject(input TerminalTaskInput, head RepositoryCo
 		return ProjectSnapshot{}, err
 	}
 	local, _, err := readExecutionRef(s.identity.PrimaryRoot, c.Policy.LocalRef)
-	if err != nil || local != head.IntegrationTip || remote != head.IntegrationTip {
+	if err != nil || local != c.CommitOID || remote != c.BaseOID || head.IntegrationTip != c.BaseOID {
 		return ProjectSnapshot{}, fmt.Errorf("terminal source local/remote tip is stale")
+	}
+	if err := s.verifyPrimaryPublicationTree(c); err != nil {
+		return ProjectSnapshot{}, err
 	}
 
 	return project, nil
@@ -183,14 +187,14 @@ func (s *Store) planTerminalMetadataFile(base, path, index string, newBytes []by
 }
 
 func validateTerminalTaskInput(input TerminalTaskInput, head RepositoryControllerHead, c AcceptedCandidate) error {
-	if input.ProjectSnapshotID != head.ProjectSnapshotID || !input.TaskRef.Equal(c.TaskRef) || c.State != candidateObserved || head.PendingTerminalTaskRef == nil || !head.PendingTerminalTaskRef.Equal(c.TaskRef) {
-		return fmt.Errorf("terminal retirement requires exact integrated Task/candidate/project authority")
+	if input.ProjectSnapshotID != head.ProjectSnapshotID || !input.TaskRef.Equal(c.TaskRef) || c.State != candidatePromoted || c.ImplementationRef != nil {
+		return fmt.Errorf("terminal retirement requires exact unpublished Task/candidate/project authority")
 	}
 	if head.LiveLeaseID != "" || head.IntegrationTip != head.ObservedRemoteTip {
 		return fmt.Errorf("terminal retirement requires quiescent adopted integration authority")
 	}
-	if !c.EvidenceValid || (head.IntegrationTip != c.CommitOID && (c.DescendantTip != head.IntegrationTip || len(c.DescendantEvidence) == 0)) {
-		return fmt.Errorf("terminal descendant lacks current validation evidence")
+	if !c.EvidenceValid || head.IntegrationTip != c.BaseOID {
+		return fmt.Errorf("terminal implementation lacks current validation evidence")
 	}
 	return nil
 }
@@ -209,4 +213,12 @@ func (s *Store) planTerminalMetadataEpisode(head RepositoryControllerHead, paylo
 		record.TargetEpisodeRevision = next.Revision
 	}
 	return nil
+}
+
+func bindCompletionTransition(record *TransitionRecord, c AcceptedCandidate, task SemanticTaskRef) {
+	record.SourceRootTaskRef = c.RootTaskRef
+	record.TargetRootTaskRef = task
+	record.SourceExecutionTaskRef = c.TaskRef
+	record.TargetExecutionTaskRef = task
+	record.SourceAttemptID = c.AttemptID
 }

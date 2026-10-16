@@ -390,6 +390,7 @@ func newParentEvidenceFixture(t *testing.T) *parentEvidenceFixture {
 	write("IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/next.md`\n")
 	write("IMPLEMENTATION_TASKS/current.md", "active task body\n")
 	write("docs/guide.md", "alpha park lifecycle owner\nbeta\n")
+	write("review.go", "package evidence\n\nvar Reviewed = true\n")
 	write("tracked.md", "park lifecycle owner note\n")
 	run("add", ".")
 	run("commit", "-q", "-m", "initial")

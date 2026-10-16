@@ -158,10 +158,10 @@ func TestIntegratedLifecycleRestoreConflictPreserved(t *testing.T) {
 	}
 	harness.source = *live.Admission
 	blocker := harness.edit(t, harness.source, "conflicted.txt", "blocker-owned conflict\n")
-	published, candidate := harness.publishLifecycleTask(t, blocker, "conflicting blocker result\n")
-	retired := harness.retireLifecycleTask(t, published, candidate)
+	locallyRetired, candidate := harness.retireLifecycleTask(t, blocker, "conflicting blocker result\n")
+	published := harness.publishRetiredLifecycleTask(t, locallyRetired, candidate)
 	cleaned, err := harness.store.CleanupExecution(CleanupExecutionInput{
-		ExpectedGeneration: retired.Head.ControllerGeneration,
+		ExpectedGeneration: published.Head.ControllerGeneration,
 		WorkspaceID:        blocker.Workspace.ID,
 		SealRef:            candidate.SealRef,
 	})
@@ -173,7 +173,7 @@ func TestIntegratedLifecycleRestoreConflictPreserved(t *testing.T) {
 	if _, err := harness.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: cleaned.Head.ControllerGeneration,
 		EpisodeID:          episode.EpisodeID,
-		EpisodeRevision:    retired.Head.ActiveEpisodeRevision,
+		EpisodeRevision:    published.Head.ActiveEpisodeRevision,
 		SuspensionID:       suspended.Suspension.SnapshotID,
 	}); err == nil {
 		t.Fatal("conflicting rebind was silently normalized")
@@ -257,17 +257,9 @@ func TestIntegratedLifecyclePublicationRaceAdoptsSafely(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	published, err := harness.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: current.CandidateID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, err = harness.store.LoadAcceptedCandidate(*published.CandidateRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if published.Head.IntegrationTip != current.CommitOID || published.Head.ObservedPrefix != current.CommitOID {
-		t.Fatalf("post-adoption publication is not canonical: %#v", published.Head)
-	}
+	retired, completion := prepareCompletionTestCandidate(t, harness.store, promoted, current)
+	current = completion
+	harness.publishRetiredLifecycleTask(t, retired, current)
 	harness.assertInvariant(t, "post-race publication")
 	if _, err := runGitBinary(harness.repo, nil, "merge-base", "--is-ancestor", external, current.CommitOID); err != nil {
 		t.Fatalf("external advancement was dropped from the integrated base: %v", err)
@@ -293,10 +285,10 @@ func TestIntegratedLifecycleEvidenceSurvivesGCAndPathReuse(t *testing.T) {
 	}
 	harness.source = *live.Admission
 	blocker := harness.edit(t, harness.source, "blocker-result.txt", "blocker deliverable\n")
-	published, candidate := harness.publishLifecycleTask(t, blocker, "blocker result\n")
-	retired := harness.retireLifecycleTask(t, published, candidate)
+	locallyRetired, candidate := harness.retireLifecycleTask(t, blocker, "blocker result\n")
+	published := harness.publishRetiredLifecycleTask(t, locallyRetired, candidate)
 	cleaned, err := harness.store.CleanupExecution(CleanupExecutionInput{
-		ExpectedGeneration: retired.Head.ControllerGeneration,
+		ExpectedGeneration: published.Head.ControllerGeneration,
 		WorkspaceID:        blocker.Workspace.ID,
 		SealRef:            candidate.SealRef,
 	})
@@ -320,7 +312,7 @@ func TestIntegratedLifecycleEvidenceSurvivesGCAndPathReuse(t *testing.T) {
 	fresh, err := harness.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: cleaned.Head.ControllerGeneration,
 		EpisodeID:          episode.EpisodeID,
-		EpisodeRevision:    retired.Head.ActiveEpisodeRevision,
+		EpisodeRevision:    published.Head.ActiveEpisodeRevision,
 		SuspensionID:       suspended.Suspension.SnapshotID,
 	})
 	if err != nil {
@@ -369,16 +361,7 @@ func TestIntegratedLifecycleOrdinarySuccessorRootExecution(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "root result\n")
-	published, candidate := publishTerminalTestSource(t, fixture, policy, source)
-	retired, err := fixture.store.RetireTerminalTask(TerminalTaskInput{
-		ExpectedGeneration: published.Head.ControllerGeneration,
-		ProjectSnapshotID:  published.Head.ProjectSnapshotID,
-		CandidateID:        candidate.CandidateID,
-		TaskRef:            candidate.TaskRef,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	retired, candidate := publishTerminalTestSource(t, fixture, policy, source)
 	if retired.Head.RootTaskRef == nil || retired.Head.RootTaskRef.Equal(source.Attempt.SemanticTaskRef) {
 		t.Fatalf("terminal retirement did not establish successor root authority: %#v", retired.Head.RootTaskRef)
 	}

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -28,7 +29,8 @@ func TestCandidateAcceptancePromotionPublicationAndPortableEvidence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	observed, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	retired, candidate := prepareCompletionTestCandidate(t, fixture.store, promoted, candidate)
+	observed, err := fixture.store.RecoverExecutionOperation(retired.TransitionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,8 +42,12 @@ func TestCandidateAcceptancePromotionPublicationAndPortableEvidence(t *testing.T
 		t.Fatal("publication did not establish immutable canonical prefix")
 	}
 	project, err := fixture.store.LoadProjectSnapshot(observed.Head.ProjectSnapshotID)
-	if err != nil || project.HeadOID != candidate.BaseOID {
-		t.Fatal("publication lost the source Task contract before retirement")
+	if err != nil || project.HeadOID != candidate.CommitOID || projectHasTask(project, candidate.TaskRef) {
+		t.Fatal("publication lost the finalized successor Project")
+	}
+	sourceProject, err := fixture.store.LoadProjectSnapshot(candidate.ProjectSnapshotID)
+	if err != nil || !projectHasTask(sourceProject, candidate.TaskRef) {
+		t.Fatal("publication lost the archived source Task contract")
 	}
 	if _, err := fixture.store.BuildAttemptEvidenceBundle(candidate.SealRef); err != nil {
 		t.Fatal(err)
@@ -98,9 +104,8 @@ func TestCandidatePromotionWhenLocalRefAlreadyMatchesTarget(t *testing.T) {
 	if promoted.Head.PendingTransitionID != "" || promoted.Head.LiveLeaseID != "" {
 		t.Fatal("promotion retained pending or mutating authority")
 	}
-	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{
-		ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
-	}); err != nil {
+	retired, _ := prepareCompletionTestCandidate(t, fixture.store, promoted, candidate)
+	if _, err := fixture.store.RecoverExecutionOperation(retired.TransitionID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -207,11 +212,32 @@ func TestUnpublishedCandidateRebindInvalidatesEvidenceAndPreservesSupersededLine
 			if err != nil {
 				t.Fatal(err)
 			}
+			primary := fixture.store.identity.PrimaryRoot
+			writeSuspensionTestFile(t, primary, "unattributed.txt", "must remain owned by the caller\n")
+			localBefore := controllerGitOutput(t, primary, "rev-parse", policy.LocalRef)
+			if _, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: checked.Head.ControllerGeneration, CandidateID: current.CandidateID}); err == nil {
+				t.Fatal("rebound promotion accepted unattributed primary source")
+			}
+			head, err := fixture.store.LoadHead()
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertFindingHeadUnchanged(t, checked.Head, head)
+			if controllerGitOutput(t, primary, "rev-parse", policy.LocalRef) != localBefore {
+				t.Fatal("rejected rebound promotion changed the local ref")
+			}
+			if err := os.Remove(filepath.Join(primary, "unattributed.txt")); err != nil {
+				t.Fatal(err)
+			}
 			promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: checked.Head.ControllerGeneration, CandidateID: current.CandidateID})
 			if err != nil {
 				t.Fatal(err)
 			}
-			published, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: current.CandidateID})
+			if err := fixture.store.verifyPrimaryPublicationTree(current); err != nil {
+				t.Fatal(err)
+			}
+			retired, current := prepareCompletionTestCandidate(t, fixture.store, promoted, current)
+			published, err := fixture.store.RecoverExecutionOperation(retired.TransitionID)
 			if err != nil {
 				t.Fatal(err)
 			}

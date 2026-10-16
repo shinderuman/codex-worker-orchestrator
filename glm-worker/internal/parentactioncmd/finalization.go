@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -106,10 +107,14 @@ const (
 )
 
 func runFinalizationCheck(cfg config.AppConfig, validationDir, form string, stdout io.Writer) error {
-	repoRoot := cfg.RepoRoot
 	if form != "go-test" && form != "go-test-race" {
 		return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
 	}
+	cfg, validationDir, err := finalizationExecutionContext(cfg, validationDir)
+	if err != nil {
+		return err
+	}
+	repoRoot := cfg.RepoRoot
 	validatedDir, err := finalizationValidationDir(repoRoot, validationDir)
 	if err != nil {
 		return err
@@ -140,6 +145,26 @@ func runFinalizationCheck(cfg config.AppConfig, validationDir, form string, stdo
 		}
 	}
 	return writeFinalizationOutput(stdout, output)
+}
+
+func finalizationExecutionContext(cfg config.AppConfig, validationDir string) (config.AppConfig, string, error) {
+	bound, err := controller.ParentContinuationConfig(cfg)
+	if err != nil || bound.RepoRoot == cfg.RepoRoot {
+		return bound, validationDir, err
+	}
+	caller, err := finalizationValidationDir(cfg.RepoRoot, validationDir)
+	if err != nil {
+		return cfg, "", err
+	}
+	root, err := filepath.EvalSymlinks(cfg.RepoRoot)
+	if err != nil {
+		return cfg, "", err
+	}
+	relative, err := filepath.Rel(root, caller)
+	if err != nil {
+		return cfg, "", err
+	}
+	return bound, filepath.Join(bound.RepoRoot, relative), nil
 }
 
 func finalizationRoutingDecision(worker, repoRoot, callerDir, form string) (*finalizationRoutingSummary, *finalizationFailure) {

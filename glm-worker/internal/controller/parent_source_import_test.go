@@ -21,6 +21,7 @@ func reenteredParentSourceFixture(t *testing.T) (findingAcceptanceFixture, Admis
 }
 
 func TestParentSourceImportPreservesAttemptAndEvidenceAcrossRecovery(t *testing.T) {
+	t.Parallel()
 	f, source := reenteredParentSourceFixture(t)
 	repo := f.store.Identity().PrimaryRoot
 	writeSuspensionTestFile(t, repo, "result.txt", "revised task result\n")
@@ -29,19 +30,19 @@ func TestParentSourceImportPreservesAttemptAndEvidenceAcrossRecovery(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := f.store.PutEvidenceObject("runtime-artifact", "application/json", "before-review", true, []byte("{\"retained\":true}"))
+	before, err := f.store.PutEvidenceObject("runtime-artifact", "application/json", source.Attempt.AttemptID+":reentry-review-repair:"+snapshot.ID, true, []byte("{\"retained\":true}"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.ImportParentSource(source, "wrong-snapshot", before); err == nil {
+	if _, err := f.store.ImportParentSource(source, "wrong-snapshot", before, source.Attempt.SemanticTaskRef); err == nil {
 		t.Fatal("stale source snapshot admitted")
 	}
 	stale := source
 	stale.Head.ControllerGeneration--
-	if _, err := f.store.ImportParentSource(stale, snapshot.ID, before); err == nil {
+	if _, err := f.store.ImportParentSource(stale, snapshot.ID, before, stale.Attempt.SemanticTaskRef); err == nil {
 		t.Fatal("stale generation admitted")
 	}
-	result, err := f.store.ImportParentSource(source, snapshot.ID, before)
+	result, err := f.store.ImportParentSource(source, snapshot.ID, before, source.Attempt.SemanticTaskRef)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +80,7 @@ func TestParentSourceImportPreservesAttemptAndEvidenceAcrossRecovery(t *testing.
 }
 
 func TestParentSourceImportRejectsTaskMetadataChanges(t *testing.T) {
+	t.Parallel()
 	f, source := reenteredParentSourceFixture(t)
 	repo := f.store.Identity().PrimaryRoot
 	path := filepath.Join(repo, source.Attempt.SemanticTaskRef.TaskPath)
@@ -97,7 +99,7 @@ func TestParentSourceImportRejectsTaskMetadataChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.ImportParentSource(source, snapshot.ID, before); err == nil {
+	if _, err := f.store.ImportParentSource(source, snapshot.ID, before, source.Attempt.SemanticTaskRef); err == nil {
 		t.Fatal("changed Task contract admitted")
 	}
 	after, err := f.store.LoadHead()
@@ -108,6 +110,7 @@ func TestParentSourceImportRejectsTaskMetadataChanges(t *testing.T) {
 }
 
 func TestParentSourceImportBindsNonActiveMetadataWithoutChangingTaskOrIndex(t *testing.T) {
+	t.Parallel()
 	f, source := reenteredParentSourceFixture(t)
 	repo := f.store.Identity().PrimaryRoot
 	writeSuspensionTestFile(t, repo, "IMPLEMENTATION_RULES.md", "parent-managed metadata revision\n")
@@ -119,7 +122,7 @@ func TestParentSourceImportBindsNonActiveMetadataWithoutChangingTaskOrIndex(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := f.store.ImportParentSource(source, snapshot.ID, before)
+	result, err := f.store.ImportParentSource(source, snapshot.ID, before, source.Attempt.SemanticTaskRef)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +136,7 @@ func TestParentSourceImportBindsNonActiveMetadataWithoutChangingTaskOrIndex(t *t
 }
 
 func TestParentSourceImportRecoversOnlyArchivedBeforeOrTargetBytes(t *testing.T) {
+	t.Parallel()
 	f, source := reenteredParentSourceFixture(t)
 	repo := f.store.Identity().PrimaryRoot
 	writeSuspensionTestFile(t, repo, "result.txt", "updated result\n")
@@ -145,7 +149,7 @@ func TestParentSourceImportRecoversOnlyArchivedBeforeOrTargetBytes(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := f.store.planParentSourceImport(source, snapshot.ID, before)
+	op, err := f.store.planParentSourceImport(source, snapshot.ID, before, source.Attempt.SemanticTaskRef)
 	if err != nil {
 		t.Fatal(err)
 	}

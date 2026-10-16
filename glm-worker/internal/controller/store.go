@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -353,8 +355,21 @@ func readJSON(path string, target any) error {
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(data, target); err != nil {
+	return decodeControllerJSON(data, target)
+}
+
+func decodeControllerJSON(data []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
 		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return fmt.Errorf("controller JSON contains trailing data: %w", err)
+		}
+		return fmt.Errorf("controller JSON contains trailing data")
 	}
 	return nil
 }

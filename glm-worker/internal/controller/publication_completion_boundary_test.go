@@ -6,6 +6,7 @@ import (
 )
 
 func TestCompletionPublicationRefusesPublishedImplementationWithoutRewritingRefs(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "implementation\n")
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "implementation", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
@@ -21,6 +22,9 @@ func TestCompletionPublicationRefusesPublishedImplementationWithoutRewritingRefs
 		t.Fatal(err)
 	}
 	runControllerGit(t, fixture.store.identity.PrimaryRoot, "push", policy.Remote, candidate.CommitOID+":"+policy.RemoteRef)
+	if _, err := prepareCompletionFixture(fixture.store, TerminalTaskInput{ExpectedGeneration: promoted.Head.ControllerGeneration, ProjectSnapshotID: promoted.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef}); err == nil {
+		t.Fatal("published implementation was amended during local retirement")
+	}
 	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err == nil {
 		t.Fatal("published implementation was amended")
 	}
@@ -38,49 +42,28 @@ func TestCompletionPublicationRefusesPublishedImplementationWithoutRewritingRefs
 	}
 }
 
-func TestCompletionPublicationRaceAfterLocalAmendmentRetainsJournalAndFailsClosed(t *testing.T) {
+func TestCompletionPublicationRejectsSourceMutationAfterLocalRetirement(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "implementation\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "implementation", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidate, err := fixture.store.LoadAcceptedCandidate(*accepted.CandidateRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidate, err = fixture.store.LoadAcceptedCandidate(*promoted.CandidateRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	op, err := fixture.store.planCandidatePublication(promoted.Head, candidate, *promoted.CandidateRef, candidate.BaseOID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.prepareExecutionOperation(&op, promoted.Head); err != nil {
-		t.Fatal(err)
-	}
-	final, err := fixture.store.LoadAcceptedCandidate(*op.Publication.After)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.applyPlannedLocalRef(op, final); err != nil {
-		t.Fatal(err)
-	}
-	remote := advancePublicationTestRemote(t, fixture, policy, "race.txt", "external\n")
-	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); err == nil {
-		t.Fatal("partial amendment race became successful publication")
+	retired, candidate := prepareTerminalTestSource(t, fixture, policy, source)
+	writeSuspensionTestFile(t, fixture.store.identity.PrimaryRoot, "result.txt", "unreviewed source\n")
+	if _, err := fixture.store.RecoverExecutionOperation(retired.TransitionID); err == nil {
+		t.Fatal("source mutation after local retirement was ignored")
 	}
 	head, err := fixture.store.LoadHead()
-	if err != nil || head.Status != ControllerStatusFailClosed || head.PendingTransitionID != op.Transition.TransitionID || head.IntegrationTip != candidate.BaseOID || head.ObservedPrefix != "" {
-		t.Fatal("partial amendment race discarded its journal or fabricated publication")
+	if err != nil || !reflect.DeepEqual(head, retired.Head) {
+		t.Fatal("rejected publication changed local retirement authority")
 	}
-	actual, err := observePublicationRemote(fixture.store.identity.PrimaryRoot, policy)
-	if err != nil || actual != remote {
-		t.Fatal("partial amendment race overwrote remote advancement")
+	remote, err := observePublicationRemote(fixture.store.identity.PrimaryRoot, policy)
+	if err != nil || remote != candidate.BaseOID {
+		t.Fatal("rejected publication changed remote history")
+	}
+	local, _, err := readExecutionRef(fixture.store.identity.PrimaryRoot, policy.LocalRef)
+	if err != nil || local != candidate.CommitOID {
+		t.Fatal("rejected publication changed the finalized commit")
+	}
+	if _, err := fixture.store.LoadEvidenceObject(*retired.CandidateRef); err != nil {
+		t.Fatal("rejected publication lost local retirement evidence")
 	}
 }

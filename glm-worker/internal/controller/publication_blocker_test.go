@@ -3,6 +3,7 @@ package controller
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -33,15 +34,9 @@ func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	published, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: c.CandidateID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err = fixture.store.LoadAcceptedCandidate(*published.CandidateRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	published, err = fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: c.CandidateID, TaskRef: c.TaskRef})
+	retired, candidate := prepareCompletionTestCandidate(t, fixture.store, promoted, c)
+	c = candidate
+	published, err := fixture.store.RecoverExecutionOperation(retired.TransitionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +76,7 @@ func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	}
 }
 
-func TestPublishedCandidateDescendantRequiresAdoptionAndFreshEvidence(t *testing.T) {
+func TestPublishedCompletionPreservesContainingRaceAndRejectsUnvalidatedSourceAdoption(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "root.txt", "root result\n")
@@ -97,19 +92,17 @@ func TestPublishedCandidateDescendantRequiresAdoptionAndFreshEvidence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err = fixture.store.LoadAcceptedCandidate(*promoted.CandidateRef)
+	retired, candidate := prepareCompletionTestCandidate(t, fixture.store, promoted, c)
+	c = candidate
+	var op ExecutionOperation
+	if err := readJSON(fixture.store.executionOperationPath(retired.TransitionID), &op); err != nil {
+		t.Fatal(err)
+	}
+	phase, err := fixture.store.loadTransitionState(retired.TransitionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := fixture.store.planCandidatePublication(promoted.Head, c, *promoted.CandidateRef, c.BaseOID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err = fixture.store.LoadAcceptedCandidate(*op.Publication.After)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.prepareExecutionOperation(&op, promoted.Head); err != nil {
+	if err := fixture.store.beginCandidateCompletionWrite(op, &phase); err != nil {
 		t.Fatal(err)
 	}
 	runControllerGit(t, fixture.store.identity.PrimaryRoot, "push", "origin", c.CommitOID+":"+policy.RemoteRef)
@@ -121,24 +114,21 @@ func TestPublishedCandidateDescendantRequiresAdoptionAndFreshEvidence(t *testing
 	if published.Head.ObservedRemoteTip != remote || published.Head.IntegrationTip != c.CommitOID {
 		t.Fatal("containing race was not recorded exactly")
 	}
-	adopted, err := fixture.store.AdoptExternalAdvancement(ExternalAdvancementInput{ExpectedGeneration: published.Head.ControllerGeneration, Policy: policy})
-	if err != nil {
-		t.Fatal(err)
+	if published.Head.AcceptedCandidateRef != nil || published.Head.LiveLeaseID != "" {
+		t.Fatal("publication retained old execution authority")
 	}
-	current, err := fixture.store.LoadAcceptedCandidate(*adopted.CandidateRef)
-	if err != nil {
-		t.Fatal(err)
+	if _, err := fixture.store.AdoptExternalAdvancement(ExternalAdvancementInput{ExpectedGeneration: published.Head.ControllerGeneration, Policy: policy}); err == nil {
+		t.Fatal("retired metadata adoption admitted unvalidated external source")
 	}
-	if current.CandidateID != c.CandidateID || current.DescendantTip != remote || len(current.DescendantEvidence) != 0 {
-		t.Fatal("immutable candidate was rewritten or stale descendant proof reused")
+	after, err := fixture.store.LoadHead()
+	if err != nil || !reflect.DeepEqual(after, published.Head) {
+		t.Fatal("rejected external source adoption changed completion authority")
 	}
-	tree := controllerGitOutput(t, fixture.store.identity.PrimaryRoot, "rev-parse", remote+"^{tree}")
-	validated, err := fixture.store.RevalidateAcceptedCandidate(PublicationInput{ExpectedGeneration: adopted.Head.ControllerGeneration, CandidateID: c.CandidateID}, storePublicationTestEvidence(t, fixture.store, canonicalDescendantEvidenceView(current, tree)))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := fixture.store.MaterializeExecution(MaterializeExecutionInput{ExpectedGeneration: after.ControllerGeneration}); err == nil {
+		t.Fatal("new execution ignored observed external advancement")
 	}
-	if validated.Head.ObservedRemoteTip != remote {
-		t.Fatal("revalidation lost observed descendant")
+	if got := observeTestRemote(t, fixture.store.identity.PrimaryRoot, policy); got != remote {
+		t.Fatal("external descendant was overwritten")
 	}
 	if _, err := fixture.store.BuildAttemptEvidenceBundle(c.SealRef); err != nil {
 		t.Fatal(err)

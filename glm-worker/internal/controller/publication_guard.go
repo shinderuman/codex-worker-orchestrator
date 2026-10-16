@@ -42,6 +42,9 @@ func (s *Store) GuardPublicationRefUpdate(input PublicationRefGuardInput) error 
 		return nil
 	}
 	if effect.ExpectedOld != input.OldOID || effect.ExpectedNew != input.NewOID {
+		if s.completionAbortRefUpdate(op, effect, input) {
+			return nil
+		}
 		return fmt.Errorf("publication ref update rejected: update does not match pending controller transition")
 	}
 	return nil
@@ -63,6 +66,32 @@ func (s *Store) GuardPublicationPush(input PublicationPushGuardInput) error {
 		return fmt.Errorf("publication push rejected: pending controller transition is not a publication operation")
 	}
 	if err := validatePublicationPushTarget(policy, input); err != nil {
+		return err
+	}
+	if retiredMetadataAdvancement(op) {
+		if err := s.validateRetiredMetadataAdvancement(op); err != nil {
+			return err
+		}
+		return validatePublicationPushEffect(op.Transition.Effects, input)
+	}
+	return s.guardCompletionPush(op, input)
+}
+
+func (s *Store) guardCompletionPush(op ExecutionOperation, input PublicationPushGuardInput) error {
+	if op.Transition.Kind != publicationPublish || op.Terminal == nil {
+		return fmt.Errorf("publication push requires prepared Task completion")
+	}
+	if err := validatePublicationPushTarget(op.Terminal.Policy, input); err != nil {
+		return err
+	}
+	phase, err := s.loadTransitionState(op.Transition.TransitionID)
+	if err != nil {
+		return err
+	}
+	if phase.Completion == nil || !phase.Completion.WriteIntent || phase.Completion.ObservationRef != nil || phase.Completion.FailureRef != nil || phase.Completion.AbortRemoteOID != "" {
+		return fmt.Errorf("publication push requires unresolved completion write intent")
+	}
+	if _, err := s.validateCompletionReadiness(op, phase); err != nil {
 		return err
 	}
 	return validatePublicationPushEffect(op.Transition.Effects, input)
@@ -164,4 +193,12 @@ func validPublicationGuardOID(value string) bool {
 		}
 	}
 	return true
+}
+
+func (s *Store) completionAbortRefUpdate(op ExecutionOperation, effect EffectExpectation, input PublicationRefGuardInput) bool {
+	phase, err := s.loadTransitionState(op.Transition.TransitionID)
+	if err != nil || op.Terminal == nil || phase.Completion == nil || phase.Completion.AbortRemoteOID == "" {
+		return false
+	}
+	return effect.ExpectedNew == input.OldOID && effect.ExpectedOld == input.NewOID
 }

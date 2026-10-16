@@ -211,20 +211,21 @@ type bundleAnalysisEvidenceRef struct {
 }
 
 type bundleRolloutScan struct {
-	totalBytes     int64
-	windowStart    int64
-	windowEnd      int64
-	hasWindow      bool
-	windowRecords  []time.Time
-	fileCount      int
-	turns          []analysisRolloutTurn
-	turnIndex      map[string]int
-	tokens         []analysisRolloutTokenAnchor
-	waits          []analysisRolloutWaitRequest
-	waitReturns    []analysisRolloutWaitReturn
-	toolEvents     []analysisRolloutToolEvent
-	compactions    []analysisRolloutCompaction
-	resumeCommands []analysisRolloutResumeCommand
+	totalBytes           int64
+	windowStart          int64
+	windowEnd            int64
+	hasWindow            bool
+	windowRecords        []time.Time
+	fileCount            int
+	counterContinuations []bool
+	turns                []analysisRolloutTurn
+	turnIndex            map[string]int
+	tokens               []analysisRolloutTokenAnchor
+	waits                []analysisRolloutWaitRequest
+	waitReturns          []analysisRolloutWaitReturn
+	toolEvents           []analysisRolloutToolEvent
+	compactions          []analysisRolloutCompaction
+	resumeCommands       []analysisRolloutResumeCommand
 }
 
 type analysisRolloutResumeCommand struct {
@@ -430,6 +431,7 @@ func scanCodexRolloutChainMember(scan *bundleRolloutScan, member codexRollout, s
 
 	fileIndex := scan.fileCount
 	scan.fileCount++
+	scan.counterContinuations = append(scan.counterContinuations, member.CounterContinuation)
 	reader := bufio.NewReaderSize(file, 64*1024)
 	lineNumber := 0
 	for {

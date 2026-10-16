@@ -36,6 +36,7 @@ const (
 
 	activeTaskRequest   = "現在のACTIVE taskを実行してください。"
 	actionStart         = "start"
+	actionPrepare       = "prepare"
 	actionApprove       = "approve-surface"
 	approveSurfaceUsage = "usage: glm-parent-action approve-surface --accepted-scope current-diff"
 )
@@ -83,14 +84,33 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if args[0] == "prepare" {
+	if usesLiveParentContinuation(args) {
+		cfg, err = controller.ParentContinuationConfig(cfg)
+		if err != nil {
+			return err
+		}
+	}
+	if args[0] == actionPrepare {
 		return prepare(cfg, args, stdout)
 	}
 	return executeWithTerminalEnvelope(cfg, args, stdout, stderr)
 }
 
+func usesLiveParentContinuation(args []string) bool {
+	action := args[0]
+	if action == actionPrepare && len(args) > 1 {
+		action = args[1]
+	}
+	switch action {
+	case string(parentaction.ActionDecision), string(parentaction.ActionFix), actionAccept, actionResume, actionResubmitReport, actionApprove:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateInvocationGrammar(args []string) error {
-	if args[0] == "prepare" {
+	if args[0] == actionPrepare {
 		return nil
 	}
 	if _, ok := lookupParentActionCommand(args[0]); !ok {

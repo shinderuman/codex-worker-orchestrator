@@ -59,7 +59,12 @@ func (s *Store) commitAuthorityTransitionCoreLocked(
 	if err := s.writeHeadCAS(head.ControllerGeneration, next); err != nil {
 		return RepositoryControllerHead{}, err
 	}
-	transitionState := TransitionState{
+	transitionState, err := s.loadTransitionState(record.TransitionID)
+	if err != nil {
+		return RepositoryControllerHead{}, err
+	}
+	transitionState = TransitionState{
+		Completion:      transitionState.Completion,
 		SchemaVersion:   controllerSchemaVersion,
 		TransitionID:    record.TransitionID,
 		Phase:           phase,

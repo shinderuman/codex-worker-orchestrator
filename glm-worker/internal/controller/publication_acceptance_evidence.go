@@ -2,7 +2,7 @@ package controller
 
 func (s *Store) buildAcceptedCandidateSeal(op ExecutionOperation, c AcceptedCandidate) (EvidenceObjectRef, error) {
 	x := op.Suspension
-	archive, roots, err := s.CaptureGitObjectArchive(op.Source.Workspace.Root, "accepted:"+x.AttemptID, []string{x.ExecutionBaseOID, x.Baseline.IndexTree, x.Baseline.WorktreeTree, x.Current.IndexTree, x.Current.WorktreeTree, c.CommitOID})
+	archive, roots, err := s.CaptureGitObjectArchive(op.Source.Workspace.Root, "accepted:"+x.AttemptID, []string{x.ExecutionBaseOID, x.Baseline.IndexTree, x.Baseline.WorktreeTree, x.Current.IndexTree, x.Current.WorktreeTree, c.CommitOID, c.BaseOID, c.TreeOID})
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}

@@ -11,6 +11,7 @@ import (
 )
 
 type ExecutionOperation struct {
+	TaskAmendment    *TaskAmendmentApproval       `json:"task_amendment,omitempty"`
 	RuntimeBeforeRef *EvidenceObjectRef           `json:"runtime_before_ref,omitempty"`
 	ParentSource     *ParentSourceRevision        `json:"parent_source,omitempty"`
 	UserTermination  *UserTaskTransitionOperation `json:"user_termination,omitempty"`
@@ -287,7 +288,7 @@ func (s *Store) loadExecutionRecoveryAuthority(op ExecutionOperation) (Repositor
 		return head, TransitionState{}, fmt.Errorf("execution recovery controller failed closed")
 	}
 	if op.Terminal != nil && head.ControllerGeneration == op.Transition.PreparedGeneration {
-		if err := validateTerminalRecoverySource(op, head); err != nil {
+		if err := s.validateTerminalRecoverySource(op, head); err != nil {
 			return head, TransitionState{}, err
 		}
 	}

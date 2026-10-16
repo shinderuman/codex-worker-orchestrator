@@ -66,18 +66,22 @@ func (s *Store) applyParentSourceFiles(op ExecutionOperation) error {
 	if err := verifyLaneMaterializationPaths(op.Workspace.Root, entries); err != nil {
 		return err
 	}
+	return applySourceTreeEntries(op.Workspace.Root, before, after)
+}
+
+func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) error {
 	previous := make(map[string]workspaceTreeEntry, len(before))
 	for _, entry := range before {
 		previous[entry.path] = entry
 	}
 	for _, entry := range after {
-		if err := applyParentSourceEntry(op.Workspace.Root, previous[entry.path], entry); err != nil {
+		if err := applyParentSourceEntry(repo, previous[entry.path], entry); err != nil {
 			return err
 		}
 		delete(previous, entry.path)
 	}
 	for _, entry := range previous {
-		if err := applyParentSourceEntry(op.Workspace.Root, entry, workspaceTreeEntry{}); err != nil {
+		if err := applyParentSourceEntry(repo, entry, workspaceTreeEntry{}); err != nil {
 			return err
 		}
 	}

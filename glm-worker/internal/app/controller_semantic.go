@@ -150,6 +150,11 @@ func executeControllerSemanticObserveLive(
 }
 
 func currentControllerSemanticAdmission(cfg config.AppConfig, store *controller.Store) (controller.Admission, error) {
+	bound, err := controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		return controller.Admission{}, err
+	}
+	cfg = bound
 	head, err := store.LoadHead()
 	if err != nil {
 		return controller.Admission{}, err

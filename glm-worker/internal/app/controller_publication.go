@@ -8,8 +8,6 @@ import (
 )
 
 type controllerPublicationCommand struct {
-	ProjectSnapshotID  string                            `json:"project_snapshot_id,omitempty"`
-	TaskRef            controller.SemanticTaskRef        `json:"task_ref,omitempty"`
 	Action             string                            `json:"action"`
 	ExpectedGeneration uint64                            `json:"expected_generation"`
 	CandidateID        string                            `json:"candidate_id,omitempty"`
@@ -41,6 +39,8 @@ func executeControllerPublication(cfg config.AppConfig, store *controller.Store,
 
 func executePublicationAction(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand, input controller.PublicationInput) (any, error) {
 	switch command.Action {
+	case "reopen-unsealed":
+		return executeUnsealedCompletionReentry(cfg, store, command)
 	case "store-evidence":
 		return storePublicationCommandEvidence(store, command.EvidenceRecord)
 	case "promote":
@@ -61,9 +61,6 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 }
 
 func executeMutablePublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
-	if command.Action == "retire" {
-		return store.RetireTerminalTask(controller.TerminalTaskInput{ExpectedGeneration: command.ExpectedGeneration, ProjectSnapshotID: command.ProjectSnapshotID, CandidateID: command.CandidateID, TaskRef: command.TaskRef})
-	}
 
 	if command.Action != "preview" && command.Action != "accept" && command.Action != "adopt-mutable" {
 		return nil, fmt.Errorf("unsupported controller publication action %q", command.Action)

@@ -12,11 +12,8 @@ func (s *Store) PromoteAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if !c.EvidenceValid {
-		return ExecutionOperationResult{}, fmt.Errorf("candidate evidence requires re-entry")
-	}
-	if c.State == candidateObserved {
-		return ExecutionOperationResult{}, fmt.Errorf("observed candidate cannot be locally rewritten")
+	if err := validateCandidatePromotion(c); err != nil {
+		return ExecutionOperationResult{}, err
 	}
 	remote, err := s.observeCandidateRemote(head, c)
 	if err != nil {
@@ -26,7 +23,11 @@ func (s *Store) PromoteAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if c.State == candidatePromoted && local == c.CommitOID {
+	complete, err := s.candidatePromotionComplete(c, local)
+	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if complete {
 		return ExecutionOperationResult{Head: head, CandidateRef: &ref}, nil
 	}
 	c.State = candidatePromoted
@@ -37,10 +38,33 @@ func (s *Store) PromoteAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	op.Publication.LocalOld = local
 	op.Publication.RemoteOID = remote
 	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceRef, Resource: c.Policy.LocalRef, ExpectedOld: local, ExpectedNew: c.CommitOID}}
+	if err := s.planPrimaryPromotion(&op, c); err != nil {
+		return ExecutionOperationResult{}, err
+	}
 	if err := s.prepareExecutionOperation(&op, head); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	return s.recoverExecutionOperationLocked(op)
+}
+
+func (s *Store) candidatePromotionComplete(c AcceptedCandidate, local string) (bool, error) {
+	if c.State != candidatePromoted || local != c.CommitOID {
+		return false, nil
+	}
+	return s.primaryPublicationTreeMatches(c)
+}
+
+func validateCandidatePromotion(c AcceptedCandidate) error {
+	if !c.EvidenceValid {
+		return fmt.Errorf("candidate evidence requires re-entry")
+	}
+	if c.ImplementationRef != nil {
+		return fmt.Errorf("completion candidate cannot be promoted again")
+	}
+	if c.State == candidateObserved {
+		return fmt.Errorf("observed candidate cannot be locally rewritten")
+	}
+	return nil
 }
 
 func (s *Store) publicationCandidateAuthority(input PublicationInput) (RepositoryControllerHead, AcceptedCandidate, EvidenceObjectRef, error) {
@@ -70,7 +94,7 @@ func (s *Store) QuiescentCandidateAwaitMaterialization(head RepositoryController
 		return false, err
 	}
 	if c.State == candidateObserved {
-		return head.PendingTerminalTaskRef == nil, nil
+		return true, nil
 	}
 	return !c.EvidenceValid, nil
 }
@@ -101,6 +125,9 @@ func (s *Store) RevalidateAcceptedCandidate(input PublicationInput, evidence []E
 	head, c, ref, err := s.publicationCandidateAuthority(input)
 	if err != nil {
 		return ExecutionOperationResult{}, err
+	}
+	if c.ImplementationRef != nil {
+		return ExecutionOperationResult{}, fmt.Errorf("completion candidate evidence cannot be replaced")
 	}
 	if c.State == candidateObserved {
 		if c.DescendantTip == "" || c.DescendantTip != head.IntegrationTip {

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 )
 
 type ParentReviewBinding struct {
@@ -108,7 +107,7 @@ func validateParentReviewEvidenceProof(binding *ParentReviewBinding) error {
 }
 
 func (s *StateStore) openBoundParentReviewState(value packet.Result, producer ParentReviewProducer, snapshot SnapshotDigest) error {
-	if err := validateCanonicalReviewTargets(value.Targets); err != nil {
+	if err := s.validateCanonicalReviewTargets(value.Targets); err != nil {
 		return err
 	}
 	binding, err := newParentReviewBinding(value, snapshot)
@@ -130,11 +129,9 @@ func (s *StateStore) openBoundParentReviewState(value packet.Result, producer Pa
 	return s.writeParentReviewState(state)
 }
 
-func validateCanonicalReviewTargets(targets []string) error {
-	for _, raw := range targets {
-		if _, err := reviewtarget.ParseTarget(raw); err != nil {
-			return fmt.Errorf("review target admission rejected before binding: %w", err)
-		}
+func (s *StateStore) validateCanonicalReviewTargets(targets []string) error {
+	if err := packet.ValidateReviewTargetProof(s.ReadOr("repo-root", ""), targets); err != nil {
+		return fmt.Errorf("review target admission rejected before binding: %w", err)
 	}
 	return nil
 }

@@ -15,7 +15,7 @@ func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOpe
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if c.State == candidateObserved {
+	if c.State == candidateObserved || c.ImplementationRef != nil {
 		return ExecutionOperationResult{}, fmt.Errorf("remote-observed candidate is immutable")
 	}
 	remote, err := s.unpublishedRebindRemote(head, c)

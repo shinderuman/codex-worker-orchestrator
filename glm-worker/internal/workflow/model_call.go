@@ -52,15 +52,22 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	if err := packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID)); err != nil {
 		return w.handleInvalidModelResult(checkpoint, outputPath, execution, err)
 	}
-	if checkpoint.ResultCorrection {
-		if err := w.clearResultCorrectionRecord(); err != nil {
-			w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
-			return packet.Result{}, err
-		}
+	if err := w.clearAcceptedModelCheckpoint(checkpoint); err != nil {
+		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		return packet.Result{}, err
 	}
 	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
 	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
 	return result, nil
+}
+
+func (w *Workflow) clearAcceptedModelCheckpoint(checkpoint state.ResumeCheckpoint) error {
+	if checkpoint.ResultCorrection {
+		if err := w.clearResultCorrectionRecord(); err != nil {
+			return err
+		}
+	}
+	return w.state.ClearResumeCheckpoint()
 }
 
 func (w *Workflow) prepareModelCall(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, string, parentFileGuard, error) {
@@ -316,10 +323,6 @@ func (w *Workflow) finalizeModelCallState(
 		}
 		return failure
 	}
-	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
-		return err
-	}
 	return nil
 }
 
@@ -330,6 +333,9 @@ func (w *Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runRe
 	}
 	if checkpoint.Role == state.ReviewerRole {
 		err = packet.ValidateReviewerResult(result)
+		if err == nil && result.Status == packet.StatusNeedsSolReview {
+			err = packet.ValidateReviewTargetProof(w.config.RepoRoot, result.Targets)
+		}
 		if err == nil && result.Status == packet.StatusNeedsSolDecision {
 			err = w.validateReviewerDecisionBoundary()
 		}

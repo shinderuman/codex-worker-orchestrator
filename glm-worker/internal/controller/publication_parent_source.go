@@ -153,15 +153,9 @@ func captureParentWorktreeEntries(repo string) ([]workspaceTreeEntry, error) {
 			continue
 		}
 		seen[path] = true
-		entry, exists, err := captureSuspensionEntry(repo, workspaceTreeEntry{path: path})
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			entries = append(entries, entry)
-		}
+		entries = append(entries, workspaceTreeEntry{path: path})
 	}
-	return entries, nil
+	return captureSuspensionEntries(repo, entries)
 }
 
 func (s *Store) validateParentSourceRevision(op ExecutionOperation, candidate AcceptedCandidate) error {
@@ -207,9 +201,12 @@ func (s *Store) operationPublicationRefs(op ExecutionOperation, candidate Accept
 	if err != nil {
 		return nil, err
 	}
+	if op.Publication.PrimaryArchive != nil {
+		refs = append(refs, *op.Publication.PrimaryArchive)
+	}
 	source := op.Publication.ParentSource
 	if source == nil {
-		return refs, nil
+		return canonicalEvidenceRefs(refs), nil
 	}
 	ref, err := s.putEvidenceJSON("parent-source-revision", source.Snapshot.ID, source)
 	if err != nil {
