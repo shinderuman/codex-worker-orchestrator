@@ -18,6 +18,8 @@ func reviewProofWorkflow(t *testing.T, r *scriptedRunner) (*Workflow, *state.Sta
 	t.Helper()
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, r)
+	gitIn(t, w.config.RepoRoot, "config", "user.name", "Review Proof Test")
+	gitIn(t, w.config.RepoRoot, "config", "user.email", "review-proof@example.invalid")
 	writeGitTestFile(t, w.config.RepoRoot, "review_target.go", "package sample\ntype Store struct{}\nfunc (s *Store) ImportParentSource() {}\n")
 	gitIn(t, w.config.RepoRoot, "add", "review_target.go")
 	gitIn(t, w.config.RepoRoot, "commit", "-qm", "review source")
