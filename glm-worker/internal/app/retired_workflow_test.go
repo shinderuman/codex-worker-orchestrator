@@ -35,7 +35,6 @@ func prepareCompletionQualityCorpus(t *testing.T, root string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Completion CLI subprocesses isolate HOME, but must retain the installed Go toolchains.
 	t.Setenv("GOMODCACHE", strings.TrimSpace(string(moduleCache)))
 	repository := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", ".."))
 	paths, err := exec.Command("git", "-C", repository, "ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
