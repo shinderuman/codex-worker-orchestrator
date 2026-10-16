@@ -175,6 +175,7 @@ func TestAutoFixNonConvergence(t *testing.T) {
 		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/task_lifecycle_test.go", "package workflow\n")
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"glm-worker/internal/workflow/task_lifecycle_test.go"}, nil
 	}

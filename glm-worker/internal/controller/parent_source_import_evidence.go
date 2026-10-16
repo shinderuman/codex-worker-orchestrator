@@ -1,6 +1,8 @@
 package controller
 
-import "fmt"
+import (
+	"fmt"
+)
 
 func (s *Store) parentSourceImportEvidence(op ExecutionOperation) (EvidencePublicationInput, error) {
 	previous, err := s.loadAttempt(op.Source.Attempt.PredecessorAttemptID)
@@ -61,7 +63,7 @@ func (s *Store) ReentryReviewRepairEvidence(transitionID string) ([]byte, error)
 	if err := readJSON(s.executionOperationPath(transitionID), &op); err != nil {
 		return nil, err
 	}
-	if op.Transition.Kind != executionParentSourceImport {
+	if op.Transition.Kind != executionParentSourceImport || !parentSourceRuntimeIdentity(op, "reentry-review-repair") {
 		return nil, nil
 	}
 	head, err := s.LoadHead()
@@ -78,4 +80,8 @@ func (s *Store) ReentryReviewRepairEvidence(transitionID string) ([]byte, error)
 		return nil, err
 	}
 	return s.LoadEvidenceObject(*op.RuntimeBeforeRef)
+}
+
+func parentSourceRuntimeIdentity(op ExecutionOperation, producer string) bool {
+	return op.ParentSource != nil && op.RuntimeBeforeRef != nil && op.RuntimeBeforeRef.LogicalIdentity == op.Source.Attempt.AttemptID+":"+producer+":"+op.ParentSource.Snapshot.ID
 }

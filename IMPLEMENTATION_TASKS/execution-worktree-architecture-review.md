@@ -612,6 +612,27 @@ GLM独立Reviewを正規に再開し、最新sourceへのReview帰属、Validati
 
 親rollout証拠関連付けの独立修復Taskを先にACTIVEとする。本Taskは未達の通常Lifecycle検証を保持して再開対象に残す。正規経路の復旧後は保存成果を継承し、実装・第1milestone・報告再提出をやり直さず残るAcceptanceを満たす。この例外は今後のGuard回避・検証省略・公開済みcommitのAmendを許可しない。
 
+### 2026-10-14: 旧実行の未完了終了と将来の新Attempt（ユーザー原文のsemantic delta）
+
+````text
+ユーザー判断として、旧Worktree Taskの実行を未完了のまま完全に終了し、新ACTIVEへ移行する。
+
+旧Attempt／leaseは今後再開しない。
+
+ただし、Worktree Task自体は未達要求を持つNEXT Taskとして維持する。将来着手するときは、保存済み成果を前提に新しい実行を開始する。
+
+- 旧Taskのsemantic acceptance、Publication、Retireを成功扱いしない。
+- 既存の実装成果、Git履歴、immutable evidence、失敗履歴を保持する。
+- Worktree TaskをNEXT先頭に残す。
+- 将来のWorktree Task実行は新しいAttemptとして開始する。
+
+復旧のためにWorktree Taskの残実装や残Reviewを再実行することは禁止する。
+
+旧Worktree Taskの実行は完全に打ち切る。Taskの要求はNEXTに保持し、将来は新しいAttemptで取り組む。
+````
+
+このAmendmentは旧Attemptの継続・再開を求める以前の指示をoverrideする。Taskの未達要求と保存成果・証拠は維持し、将来の着手時は新しいAttemptとする。今回の実行切替はACTIVEの親rollout修復Taskで扱い、本Taskの残実装・Reviewを実行しない。
+
 ## Resolved references
 
 - 旧Taskの原要求・Amendments・証拠参照の履歴locatorは `c6c47b6e9dd1c6e334c96515c99d95ba5f2813c4:IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md`。`git show c6c47b6e9dd1c6e334c96515c99d95ba5f2813c4:IMPLEMENTATION_TASKS/normal-workflow-snapshot-stop-regression.md` で取得する。上記の登録・引継ぎ時の旧Task参照はこの履歴へ解決し、旧Taskを再開・正常完了の前提や成功済みdependencyとしない。
@@ -628,6 +649,8 @@ GLM独立Reviewを正規に再開し、最新sourceへのReview帰属、Validati
 status: not-applicable
 
 ## Contract
+
+- 最新Amendmentに従い旧Worktree実行は未完了として終了する。旧Attempt／leaseは再開・再利用せず、将来の実行は保存済み成果と未達Acceptanceを前提に新しいAttemptとして開始する。旧実行の終了をsemantic acceptance、Publication、Retire成功と扱わない。
 
 - 2026-10-14の区切り指示に従い、今回の単一Gitコミット・Pushは例外的な成果保存として扱う。通常Publication・Retireの実経路Acceptanceは維持し、その成功と区別する。既に公開した保存コミットはAmendせず、再開時のGit基準と公開証拠の扱いを正規ownerで確定する。
 

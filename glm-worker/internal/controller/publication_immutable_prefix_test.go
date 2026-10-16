@@ -3,6 +3,7 @@ package controller
 import "testing"
 
 func TestRemoteRewritePreservesObservedPublicationAndFailsClosed(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "published.txt", "published result\n")
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "published result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
@@ -17,7 +18,8 @@ func TestRemoteRewritePreservesObservedPublicationAndFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	published, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	retired, candidate := prepareCompletionTestCandidate(t, fixture.store, promoted, candidate)
+	published, err := fixture.store.RecoverExecutionOperation(retired.TransitionID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -32,6 +32,13 @@ func TestParentContinuationReadsAdmittedLiveLaneWithoutGrantingPrimaryMutation(t
 	if err != nil || routed.RepoRoot != lane.Admission.Workspace.Root || routed.RepoHash != parent.RepoHash {
 		t.Fatalf("parent continuation did not bind the canonical lane: %#v %v", routed, err)
 	}
+	laneInput := cfg
+	laneInput.RepoRoot = lane.Admission.Workspace.Root
+	laneInput.RepoHash = "path-local-key"
+	laneConfig, err := ParentContinuationConfig(laneInput)
+	if err != nil || laneConfig.RepoHash != routed.RepoHash || laneConfig.RepositoryLockPath != routed.RepositoryLockPath {
+		t.Fatalf("lane continuation retained a path-local Runtime identity: %#v %v", laneConfig, err)
+	}
 	if _, _, err := WorkflowExecutionTask(parent); err == nil {
 		t.Fatal("parent primary workspace acquired execution mutation authority")
 	}

@@ -427,6 +427,7 @@ func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
 	}

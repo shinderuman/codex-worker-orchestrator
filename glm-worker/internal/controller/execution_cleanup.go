@@ -277,7 +277,11 @@ func (s *Store) verifySealedCleanupContent(workspace WorkspaceIdentity, seal Att
 	if !sealedExecutionAttemptState(attempt.AttemptState) {
 		return fmt.Errorf("cleanup attempt is not suspended or accepted")
 	}
-	trees, err := CaptureExecutionTrees(root, seal.ExecutionBaseOID)
+	metadataBase, err := s.projectMetadataBase(seal.SourceProjectSnapshotID)
+	if err != nil {
+		return err
+	}
+	trees, err := CaptureExecutionTrees(root, metadataBase)
 	if err != nil {
 		return err
 	}

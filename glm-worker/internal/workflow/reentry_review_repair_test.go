@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -87,25 +88,29 @@ func TestParentSourceReviewReportsUnprovableMethodTargetWithoutRewritingPacket(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"review_target.go:ImportParentSource", "review_target.go:Store.ImportParentSource"} {
-		result := packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh, Targets: []string{target}, SolQuestion: "target proof"}
-		if err := w.state.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: "reviewer", Model: "sonnet"}, state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}); err != nil {
-			t.Fatal(err)
-		}
-		corrections, err := w.parentSourceReviewTargetCorrections()
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := 0
-		if target == "review_target.go:ImportParentSource" {
-			want = 1
-		}
-		if len(corrections) != want {
-			t.Fatalf("target %s corrections=%v", target, corrections)
-		}
-		binding, err := w.state.CurrentParentReviewBinding()
-		if err != nil || binding.Targets[0] != target {
-			t.Fatal("source proof check rewrote the model packet")
-		}
+	digest := state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
+	bare := packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh, Targets: []string{"review_target.go:ImportParentSource"}, SolQuestion: "target proof"}
+	if err := w.state.RecordSolResultWithReviewSnapshot(bare, state.ParentReviewProducer{Role: "reviewer", Model: "sonnet"}, digest); err == nil || !strings.Contains(err.Error(), "review target admission rejected before binding") || !strings.Contains(err.Error(), "[symbol-not-declared]") {
+		t.Fatalf("unaddressable method target admitted: %v", err)
+	}
+	if binding, err := w.state.CurrentParentReviewBinding(); err != nil || binding != nil {
+		t.Fatalf("rejected report persisted a review binding: %#v %v", binding, err)
+	}
+	result := packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh, Targets: []string{"review_target.go:Store.ImportParentSource"}, SolQuestion: "target proof"}
+	if err := w.state.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: "reviewer", Model: "sonnet"}, digest); err != nil {
+		t.Fatal(err)
+	}
+	corrections, err := w.parentSourceReviewTargetCorrections()
+	if err != nil || len(corrections) != 0 {
+		t.Fatalf("addressable Type.Member produced corrections: %v %v", corrections, err)
+	}
+	writeGitTestFile(t, w.config.RepoRoot, "review_target.go", "package sample\ntype Store struct{}\n")
+	corrections, err = w.parentSourceReviewTargetCorrections()
+	if err != nil || len(corrections) != 1 {
+		t.Fatalf("drifted source did not surface a correction: %v %v", corrections, err)
+	}
+	binding, err := w.state.CurrentParentReviewBinding()
+	if err != nil || binding.Targets[0] != "review_target.go:Store.ImportParentSource" {
+		t.Fatal("source proof check rewrote the model packet")
 	}
 }

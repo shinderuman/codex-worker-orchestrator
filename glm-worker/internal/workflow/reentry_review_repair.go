@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"reflect"
@@ -57,7 +58,10 @@ func (w *Workflow) CompleteReentryReviewRepair(data []byte) error {
 	if err != nil {
 		return err
 	}
-	target := source.Checkpoint
+	target, err := w.refreshReentryReviewPrompt(source.Checkpoint)
+	if err != nil {
+		return err
+	}
 	if err := w.attachStopRepositoryBoundary(&target); err != nil {
 		return err
 	}
@@ -80,6 +84,19 @@ func (w *Workflow) CompleteReentryReviewRepair(data []byte) error {
 		return err
 	}
 	return w.state.ClearFinalizationEvidence()
+}
+
+func (w *Workflow) refreshReentryReviewPrompt(target state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
+	if target.WorkerResult == nil {
+		return target, fmt.Errorf("reentry review checkpoint lacks its retained Worker report")
+	}
+	current, _, _, err := w.buildReviewCheckpoint(target.Request, *target.WorkerResult, target.ReviewNumber, target.AutoFixes)
+	if err != nil {
+		return target, err
+	}
+	target.Prompt = current.Prompt
+	target.OriginalPrompt = current.OriginalPrompt
+	return target, nil
 }
 
 func reviewedSourceWithoutCheckpoint(status state.TaskStatus, source ReentryReviewRepairEvidence, err error) bool {
@@ -200,8 +217,46 @@ func (w *Workflow) validateReentryReviewRepairIdentity(data []byte) (ReentryRevi
 	if err != nil {
 		return source, err
 	}
-	if source.TaskID != taskID || source.Binding != binding {
+	if source.TaskID != taskID {
+		return source, fmt.Errorf("reentry review repair changed Task or Attempt binding")
+	}
+	present, err := controller.Exists(w.config)
+	if err != nil {
+		return source, err
+	}
+	if present {
+		if err := w.bindReentryReviewRepairRuntime(source.Binding); err != nil {
+			return source, err
+		}
+	} else if source.Binding != binding {
 		return source, fmt.Errorf("reentry review repair changed Task or Attempt binding")
 	}
 	return source, nil
+}
+
+func (w *Workflow) bindReentryReviewRepairRuntime(source state.ControllerRuntimeBinding) error {
+	store, err := controller.Open(w.config)
+	if err != nil {
+		return err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	task, err := store.ExecutionTaskForWorkspace(w.config.RepoRoot)
+	if err != nil {
+		return err
+	}
+	if head.LiveAttemptID != source.AttemptID || task.TaskPath != source.TaskPath {
+		return fmt.Errorf("reentry review repair changed runtime Task or attempt")
+	}
+	target := state.ControllerRuntimeBinding{AttemptID: source.AttemptID, TaskPath: task.TaskPath, TaskContractDigest: task.ContractDigest}
+	current, err := w.state.LoadControllerRuntimeBinding()
+	if err != nil {
+		return err
+	}
+	if current != source && current != target {
+		return fmt.Errorf("reentry review repair runtime binding changed")
+	}
+	return w.state.SaveControllerRuntimeBinding(target)
 }

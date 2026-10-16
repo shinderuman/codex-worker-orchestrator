@@ -34,7 +34,6 @@ type ProjectSnapshot struct {
 
 type RepositoryControllerHead struct {
 	UserTerminationRef     *EvidenceObjectRef `json:"user_termination_ref,omitempty"`
-	PendingTerminalTaskRef *SemanticTaskRef   `json:"pending_terminal_task_ref,omitempty"`
 	MetadataLineageRef     *EvidenceObjectRef `json:"metadata_lineage_ref,omitempty"`
 	SchemaVersion          int                `json:"schema_version"`
 	RepositoryIdentity     string             `json:"repository_identity"`
@@ -155,12 +154,22 @@ type TransitionRecord struct {
 }
 
 type TransitionState struct {
+	Completion      *CompletionProgress             `json:"completion,omitempty"`
 	SchemaVersion   int                             `json:"schema_version"`
 	TransitionID    string                          `json:"transition_id"`
 	Phase           TransitionPhase                 `json:"phase"`
 	Observed        map[string]string               `json:"observed,omitempty"`
 	Classifications map[string]EffectClassification `json:"classifications,omitempty"`
 	UpdatedAt       time.Time                       `json:"updated_at"`
+}
+
+type CompletionProgress struct {
+	AcknowledgementRef *EvidenceObjectRef `json:"acknowledgement_ref,omitempty"`
+	FailureRef         *EvidenceObjectRef `json:"failure_ref,omitempty"`
+	AbortRemoteOID     string             `json:"abort_remote_oid,omitempty"`
+	ReadinessRef       *EvidenceObjectRef `json:"readiness_ref,omitempty"`
+	WriteIntent        bool               `json:"write_intent"`
+	ObservationRef     *EvidenceObjectRef `json:"observation_ref,omitempty"`
 }
 
 type MutationRecord struct {
@@ -211,6 +220,7 @@ const (
 	AttemptStateSuspendedForAdvancement AttemptState = "suspended-for-advancement"
 	AttemptStateAccepted                AttemptState = "accepted"
 	AttemptStateFailedClosed            AttemptState = "failed-closed"
+	AttemptStateUserTerminated          AttemptState = "user-terminated"
 
 	TransitionPhasePrepared   TransitionPhase = "prepared"
 	TransitionPhaseApplied    TransitionPhase = "applied"

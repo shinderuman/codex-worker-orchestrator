@@ -3,7 +3,7 @@ package controller
 import "fmt"
 
 func (s *Store) validatePublicationOperation(op ExecutionOperation) error {
-	if op.Publication != nil && op.Publication.After == nil && op.Transition.Kind == publicationAdopt {
+	if isBaseAdvancementOperation(op) {
 		return s.validateBaseAdvancement(op)
 	}
 	if op.Publication == nil || op.Publication.After == nil {
@@ -16,6 +16,9 @@ func (s *Store) validatePublicationOperation(op ExecutionOperation) error {
 	if candidate.ControllerGeneration != op.Transition.CommittedGeneration || candidate.TransitionID != op.Transition.TransitionID || candidate.Policy != op.Publication.Policy {
 		return fmt.Errorf("candidate and publication transition differ")
 	}
+	if err := s.validatePublicationPrimaryArchive(op, candidate); err != nil {
+		return err
+	}
 	if op.Publication.Before != nil {
 		if _, err := s.LoadAcceptedCandidate(*op.Publication.Before); err != nil {
 			return err
@@ -24,12 +27,26 @@ func (s *Store) validatePublicationOperation(op ExecutionOperation) error {
 	return s.validatePublicationCandidateBinding(op, candidate)
 }
 
+func isBaseAdvancementOperation(op ExecutionOperation) bool {
+	return op.Publication != nil && op.Publication.After == nil && op.Transition.Kind == publicationAdopt
+}
+
+func (s *Store) validatePublicationPrimaryArchive(op ExecutionOperation, candidate AcceptedCandidate) error {
+	if op.Transition.Kind == publicationPromote {
+		return s.validatePrimaryPromotion(op, candidate)
+	}
+	if op.Publication.PrimaryArchive != nil {
+		return fmt.Errorf("primary promotion archive is outside promotion authority")
+	}
+	return nil
+}
+
 func (s *Store) verifyCommittedPublication(op ExecutionOperation, head RepositoryControllerHead) error {
 	if op.Publication.After == nil {
 		return verifyCommittedBaseAdvancement(op, head)
 	}
-	if head.AcceptedCandidateRef == nil || !evidenceRefsEqual(*head.AcceptedCandidateRef, *op.Publication.After) || head.IntegrationTip != op.Publication.NewTip || head.LiveLeaseID != "" {
-		return fmt.Errorf("committed publication authority differs from planned target")
+	if err := validateCommittedPublicationHead(op, head); err != nil {
+		return err
 	}
 	candidate, err := s.LoadAcceptedCandidate(*op.Publication.After)
 	if err != nil {
@@ -38,6 +55,20 @@ func (s *Store) verifyCommittedPublication(op ExecutionOperation, head Repositor
 	if _, err := s.provePublicationEffects(op, candidate); err != nil {
 		return err
 	}
+	return s.verifyPublicationRemoteContainment(candidate)
+}
+
+func validateCommittedPublicationHead(op ExecutionOperation, head RepositoryControllerHead) error {
+	if head.IntegrationTip != op.Publication.NewTip || head.LiveLeaseID != "" {
+		return fmt.Errorf("committed publication authority differs from planned target")
+	}
+	if head.AcceptedCandidateRef == nil || !evidenceRefsEqual(*head.AcceptedCandidateRef, *op.Publication.After) {
+		return fmt.Errorf("committed publication candidate differs from planned target")
+	}
+	return nil
+}
+
+func (s *Store) verifyPublicationRemoteContainment(candidate AcceptedCandidate) error {
 	if candidate.State == candidateObserved {
 		remote, err := observePublicationRemote(s.identity.PrimaryRoot, candidate.Policy)
 		if err != nil {
@@ -88,7 +119,19 @@ func (s *Store) provePublicationEffect(op ExecutionOperation, c AcceptedCandidat
 			return "", fmt.Errorf("candidate state effect authority is inconsistent")
 		}
 		return op.Publication.After.Digest, nil
+	case MutationSurfaceSource, MutationSurfaceIndex:
+		return s.provePrimaryPromotionEffect(op, effect)
 	default:
 		return "", fmt.Errorf("unsupported publication effect surface")
 	}
+}
+
+func (s *Store) provePrimaryPromotionEffect(op ExecutionOperation, effect EffectExpectation) (string, error) {
+	if op.Transition.Kind != publicationPromote || effect.Resource != s.identity.PrimaryRoot {
+		return "", fmt.Errorf("publication source/index effect is outside promotion authority")
+	}
+	if effect.Surface == MutationSurfaceSource {
+		return captureParentSourceTree(s.identity.PrimaryRoot)
+	}
+	return gitTrimmed(s.identity.PrimaryRoot, "write-tree")
 }

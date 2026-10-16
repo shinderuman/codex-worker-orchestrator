@@ -236,7 +236,7 @@ func newBoundParentReviewTestStore(t *testing.T) (*StateStore, string, SnapshotD
 	t.Helper()
 	repoRoot := t.TempDir()
 	gitReviewTestCommand(t, repoRoot, "init", "-q")
-	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte("package review\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte("package review\n\ntype Store struct{}\n\nfunc target() {}\n\nfunc (s *Store) quiescentWorkflowAuthority() {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	gitReviewTestCommand(t, repoRoot, "add", "review.go")

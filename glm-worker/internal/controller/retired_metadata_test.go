@@ -12,11 +12,7 @@ func retiredMetadataFixture(t *testing.T) (findingAcceptanceFixture, Publication
 	t.Helper()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "retired result\n")
-	published, candidate := publishTerminalTestSource(t, fixture, policy, source)
-	retired, err := fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
-	if err != nil {
-		t.Fatal(err)
-	}
+	retired, _ := publishTerminalTestSource(t, fixture, policy, source)
 	runControllerGit(t, fixture.store.identity.PrimaryRoot, "add", "--all")
 	return fixture, policy, retired
 }
@@ -66,6 +62,9 @@ func TestRetiredMetadataAdvancementPreservesTerminalEvidenceAndStartsSuccessor(t
 		if err != nil || project.Snapshot.HeadOID != controllerGitOutput(t, repo, "rev-parse", "HEAD") {
 			t.Fatalf("adopted project authority: %v", err)
 		}
+		if proven, err := fixture.store.terminalAttemptProven(fixture.source.Attempt); err != nil || !proven {
+			t.Fatalf("metadata advancement lost completed Task publication proof: proven=%v err=%v", proven, err)
+		}
 	}
 	terminalAfter, err := fixture.store.LoadEvidenceObject(*current.Head.MetadataLineageRef)
 	if err != nil || !reflect.DeepEqual(terminalBefore, terminalAfter) {
@@ -80,6 +79,38 @@ func TestRetiredMetadataAdvancementPreservesTerminalEvidenceAndStartsSuccessor(t
 	}
 	if materialized.Admission == nil || !materialized.Admission.Attempt.SemanticTaskRef.Equal(*current.Head.RootTaskRef) {
 		t.Fatal("successor execution was not bound to amended authority")
+	}
+}
+
+func TestRetiredAuthorityPreservesHistoricalUserTermination(t *testing.T) {
+	t.Parallel()
+	fixture, _, retired := retiredMetadataFixture(t)
+	project, err := fixture.store.LoadProjectSnapshot(fixture.source.Head.ProjectSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := UserTaskTermination{SchemaVersion: controllerSchemaVersion, RepositoryIdentity: fixture.store.identity.LineageID, TransitionID: "historical-termination", SourceHead: fixture.source.Head, SuccessorProject: project, SuccessorTask: fixture.source.Attempt.SemanticTaskRef, Reason: "historical incomplete execution"}
+	ref, err := fixture.store.putEvidenceJSON("user-task-termination", "historical-termination", record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := fixture.store.LoadEvidenceObject(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := retired.Head
+	head.UserTerminationRef = &ref
+	task, canonical, err := fixture.store.quiescentWorkflowAuthority(fixture.store.config, head, nil)
+	if err != nil || !canonical || !task.Equal(*retired.Head.RootTaskRef) {
+		t.Fatalf("retired successor with historical termination: %v %v %v", task, canonical, err)
+	}
+	after, err := fixture.store.LoadEvidenceObject(ref)
+	if err != nil || !reflect.DeepEqual(before, after) || !evidenceRefsEqual(*head.UserTerminationRef, ref) {
+		t.Fatal("historical incomplete execution evidence changed")
+	}
+	head.ProjectSnapshotID = project.SnapshotID
+	if _, _, err := fixture.store.quiescentWorkflowAuthority(fixture.store.config, head, nil); err == nil {
+		t.Fatal("historical termination admitted stale retired project authority")
 	}
 }
 

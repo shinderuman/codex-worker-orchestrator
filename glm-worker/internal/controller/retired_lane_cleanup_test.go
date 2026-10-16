@@ -12,11 +12,7 @@ func retiredLaneFixture(t *testing.T) (findingAcceptanceFixture, ExecutionOperat
 	t.Helper()
 	fixture, policy := configurePublicationTestFixture(t, newFindingAcceptanceFixture(t, "IMPLEMENTATION_TASKS/third.md"))
 	source := publicationTestEdit(t, fixture, "first.txt", "first result\n")
-	published, candidate := publishTerminalTestSource(t, fixture, policy, source)
-	retired, err := fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
-	if err != nil {
-		t.Fatal(err)
-	}
+	retired, _ := publishTerminalTestSource(t, fixture, policy, source)
 	runControllerGit(t, fixture.store.identity.PrimaryRoot, "add", "--all")
 	lane, err := fixture.store.MaterializeExecution(MaterializeExecutionInput{ExpectedGeneration: retired.Head.ControllerGeneration})
 	if err != nil {
@@ -26,16 +22,13 @@ func retiredLaneFixture(t *testing.T) (findingAcceptanceFixture, ExecutionOperat
 	writeSuspensionTestFile(t, fixture.source.Workspace.Root, "staged.txt", "staged data\n")
 	runControllerGit(t, fixture.source.Workspace.Root, "add", "staged.txt")
 	source = publicationTestEdit(t, fixture, "staged.txt", "unstaged data\n")
-	published, candidate = publishTerminalTestSource(t, fixture, policy, source)
-	retired, err = fixture.store.RetireTerminalTask(TerminalTaskInput{ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
-	if err != nil {
-		t.Fatal(err)
-	}
+	retired, candidate := publishTerminalTestSource(t, fixture, policy, source)
 	runControllerGit(t, fixture.store.identity.PrimaryRoot, "add", "--all")
 	return fixture, retired, candidate
 }
 
 func TestRetiredLaneNormalStartRetainsDataAndReusesExactPath(t *testing.T) {
+	t.Parallel()
 	fixture, retired, candidate := retiredLaneFixture(t)
 	old := fixture.source.Workspace
 	parent := retired.Head.RootTaskRef.TaskPath
@@ -72,6 +65,7 @@ func TestRetiredLaneNormalStartRetainsDataAndReusesExactPath(t *testing.T) {
 }
 
 func TestRetiredLaneRejectsSourceDriftAndUnarchivedIgnoredData(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"source", "ignored", "foreign-nonce"} {
 		t.Run(mode, func(t *testing.T) {
 			fixture, retired, _ := retiredLaneFixture(t)
@@ -104,6 +98,7 @@ func TestRetiredLaneRejectsSourceDriftAndUnarchivedIgnoredData(t *testing.T) {
 }
 
 func TestCleanupRetentionRestoresStagesAndStopsOnParentDataRace(t *testing.T) {
+	t.Parallel()
 	fixture, retired, candidate := retiredLaneFixture(t)
 	root := fixture.source.Workspace.Root
 	parent := fixture.source.Attempt.SemanticTaskRef.TaskPath

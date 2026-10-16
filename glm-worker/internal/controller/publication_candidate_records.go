@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	candidateEvidencePass           = "pass"
 	candidateEvidenceKindReview     = "review"
 	candidateEvidenceKindValidation = "validation"
 	candidateEvidenceKindInstall    = "install"
@@ -16,7 +17,7 @@ const (
 )
 
 func (s *Store) StoreCandidateEvidence(record CandidateEvidence) (EvidenceObjectRef, error) {
-	if record.SchemaVersion != controllerSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.AttemptID == "" || record.SnapshotID == "" || record.BaseOID == "" || record.TreeOID == "" || record.Result != "pass" {
+	if record.SchemaVersion != controllerSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.AttemptID == "" || record.SnapshotID == "" || record.BaseOID == "" || record.TreeOID == "" || record.Result != candidateEvidencePass {
 		return EvidenceObjectRef{}, fmt.Errorf("candidate evidence identity/result is incomplete")
 	}
 	if record.Kind != candidateEvidenceKindReview && record.Kind != candidateEvidenceKindValidation && record.Kind != candidateEvidenceKindInstall {

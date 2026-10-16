@@ -128,23 +128,18 @@ func (s *Store) materializationWithEpisode(head RepositoryControllerHead, input 
 
 func (s *Store) materializationTrees(head RepositoryControllerHead, task SemanticTaskRef, id string) (ReboundSuspension, *SuspensionSnapshot, *EvidenceObjectRef, error) {
 	if id == "" {
-		tree, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", head.IntegrationTip+"^{tree}")
-		if err != nil {
-			return ReboundSuspension{}, nil, nil, err
-		}
-		trees := ExecutionTrees{IndexTree: tree, WorktreeTree: tree}
-		result := ReboundSuspension{BaseOID: head.IntegrationTip, Baseline: trees, Current: trees}
-		if err := normalizeReboundTrees(s.identity.PrimaryRoot, head.IntegrationTip, &result); err != nil {
-			return ReboundSuspension{}, nil, nil, err
-		}
-		if s.hasSuspendedExecution(task) {
-			return ReboundSuspension{}, nil, nil, fmt.Errorf("resumed Task requires its exact suspension identity")
-		}
-		return result, nil, nil, nil
+		return s.freshMaterializationTrees(head, task)
 	}
 	snapshot, err := s.LoadSuspension(s.identity.PrimaryRoot, id)
 	if err != nil {
 		return ReboundSuspension{}, nil, nil, err
+	}
+	terminated, err := s.suspensionExecutionTerminated(head, snapshot)
+	if err != nil {
+		return ReboundSuspension{}, nil, nil, err
+	}
+	if terminated {
+		return ReboundSuspension{}, nil, nil, fmt.Errorf("suspension belongs to a user-terminated execution; a new attempt is required")
 	}
 	if !s.metadataTaskBindingProven(snapshot.SemanticTaskRef, task) || !s.metadataTaskBindingProven(snapshot.RootTaskRef, *head.RootTaskRef) {
 		return ReboundSuspension{}, nil, nil, fmt.Errorf("suspension does not belong to scheduled execution")
@@ -166,21 +161,47 @@ func (s *Store) materializationTrees(head RepositoryControllerHead, task Semanti
 	return result, &snapshot, &seal, nil
 }
 
-func (s *Store) hasSuspendedExecution(task SemanticTaskRef) bool {
+func (s *Store) freshMaterializationTrees(head RepositoryControllerHead, task SemanticTaskRef) (ReboundSuspension, *SuspensionSnapshot, *EvidenceObjectRef, error) {
+	tree, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", head.IntegrationTip+"^{tree}")
+	if err != nil {
+		return ReboundSuspension{}, nil, nil, err
+	}
+	trees := ExecutionTrees{IndexTree: tree, WorktreeTree: tree}
+	result := ReboundSuspension{BaseOID: head.IntegrationTip, Baseline: trees, Current: trees}
+	if err := normalizeReboundTrees(s.identity.PrimaryRoot, head.IntegrationTip, &result); err != nil {
+		return ReboundSuspension{}, nil, nil, err
+	}
+	hasSuspended, err := s.hasSuspendedExecution(head, task)
+	if err != nil {
+		return ReboundSuspension{}, nil, nil, err
+	}
+	if hasSuspended {
+		return ReboundSuspension{}, nil, nil, fmt.Errorf("resumed Task requires its exact suspension identity")
+	}
+	return result, nil, nil, nil
+}
+
+func (s *Store) hasSuspendedExecution(head RepositoryControllerHead, task SemanticTaskRef) (bool, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dir, "suspensions"))
 	if err != nil {
-		return !os.IsNotExist(err)
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
 	}
 	for _, entry := range entries {
 		var snapshot SuspensionSnapshot
 		if err := readJSON(filepath.Join(s.dir, "suspensions", entry.Name()), &snapshot); err != nil {
-			return true
+			return false, err
 		}
 		if snapshot.SemanticTaskRef.TaskPath == task.TaskPath {
-			return true
+			terminated, err := s.suspensionExecutionTerminated(head, snapshot)
+			if err != nil || !terminated {
+				return !terminated, err
+			}
 		}
 	}
-	return false
+	return false, nil
 }
 
 func executionLaneName(identity RepositoryIdentity) string {
@@ -236,7 +257,7 @@ func laneMaterializationIdentity(workspace WorkspaceIdentity, rebound ReboundSus
 }
 
 func validateMaterializationHead(head RepositoryControllerHead, input MaterializeExecutionInput) error {
-	if head.Status != ControllerStatusActive || head.ControllerGeneration != input.ExpectedGeneration || head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.PendingTerminalTaskRef != nil || head.RootTaskRef == nil || head.IntegrationTip == "" {
+	if head.Status != ControllerStatusActive || head.ControllerGeneration != input.ExpectedGeneration || head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.RootTaskRef == nil || head.IntegrationTip == "" {
 		return fmt.Errorf("materialization requires exact quiescent controller authority")
 	}
 	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {

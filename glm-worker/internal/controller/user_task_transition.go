@@ -23,6 +23,7 @@ type UserTaskTransitionInput struct {
 }
 
 type UserTaskTermination struct {
+	Execution           *UserExecutionTermination        `json:"execution,omitempty"`
 	SchemaVersion       int                              `json:"schema_version"`
 	RepositoryIdentity  string                           `json:"repository_identity"`
 	TransitionID        string                           `json:"transition_id"`
@@ -116,7 +117,7 @@ func (s *Store) validateUserTaskTermination(record UserTaskTermination) error {
 	if record.SchemaVersion != controllerSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.TransitionID == "" || strings.TrimSpace(record.Reason) == "" {
 		return fmt.Errorf("user termination identity/reason is incomplete")
 	}
-	if !s.userTaskTerminationSourceAvailable(head) {
+	if record.Execution == nil && !s.userTaskTerminationSourceAvailable(head) {
 		return fmt.Errorf("user termination requires exact quiescent unretired root authority")
 	}
 	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
@@ -129,14 +130,20 @@ func (s *Store) validateUserTaskTermination(record UserTaskTermination) error {
 	if err := s.verifyUserTaskSuccessor(record); err != nil {
 		return err
 	}
+	if record.Execution != nil {
+		return s.verifyUserExecutionTermination(record)
+	}
 	return s.verifyUserTaskCleanup(record)
 }
 
 func (s *Store) userTaskTerminationSourceAvailable(head RepositoryControllerHead) bool {
-	return head.Status == ControllerStatusActive && head.RepositoryIdentity == s.identity.LineageID && head.LiveLeaseID == "" && head.LiveAttemptID == "" && head.PendingTransitionID == "" && head.ActiveEpisodeID == "" && head.PendingTerminalTaskRef == nil && head.RootTaskRef != nil && head.ExecutionTaskRef != nil && head.RootTaskRef.Equal(*head.ExecutionTaskRef) && head.AcceptedCandidateRef != nil
+	return head.Status == ControllerStatusActive && head.RepositoryIdentity == s.identity.LineageID && head.LiveLeaseID == "" && head.LiveAttemptID == "" && head.PendingTransitionID == "" && head.ActiveEpisodeID == "" && head.RootTaskRef != nil && head.ExecutionTaskRef != nil && head.RootTaskRef.Equal(*head.ExecutionTaskRef) && head.AcceptedCandidateRef != nil
 }
 
 func (s *Store) planUserRuntimeTermination(record *UserTaskTermination) error {
+	if record.Execution != nil {
+		return s.planUserExecutionRuntimeTermination(record)
+	}
 	cfg := WorkflowTaskConfig(s.config, s.identity, *record.SourceHead.ExecutionTaskRef)
 	st := state.AttachStateStore(cfg)
 	if st.TaskStatus() == state.TaskStatusNone {
@@ -174,7 +181,7 @@ func (s *Store) verifyUserTaskSuccessor(record UserTaskTermination) error {
 	if !reflect.DeepEqual(authority.Snapshot, project) || !authority.Task.Equal(record.SuccessorTask) || record.SuccessorTask.TaskPath == head.ExecutionTaskRef.TaskPath {
 		return fmt.Errorf("user termination successor is not exact committed ACTIVE")
 	}
-	if err := s.verifyTerminatedTaskAbsent(record); err != nil {
+	if err := s.verifyTerminatedTaskDisposition(record); err != nil {
 		return err
 	}
 	return s.verifyUserTaskSuccessorArchive(record)
@@ -289,14 +296,24 @@ func (s *Store) validateUserTaskTransitionOperation(op ExecutionOperation) error
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(record, p.Record) || record.TransitionID != op.Transition.TransitionID || record.SourceHead.ControllerGeneration != op.Transition.SourceGeneration || record.SourceHead.ProjectSnapshotID != op.Transition.ProjectSnapshotOld || record.SuccessorProject.SnapshotID != op.Transition.ProjectSnapshotNew || !record.SuccessorTask.Equal(op.Transition.TargetRootTaskRef) {
-		return fmt.Errorf("user termination journal authority differs")
+	if op.Transition.Kind != userTerminationKind(record) {
+		return fmt.Errorf("user termination kind differs from disposition")
+	}
+	if err := validateUserTaskTransitionJournal(op, record); err != nil {
+		return err
 	}
 	expected := []EffectExpectation{{Surface: MutationSurfaceState, Resource: "user-task-termination", ExpectedNew: p.RecordRef.Digest}}
 	if !reflect.DeepEqual(expected, op.Transition.Effects) {
 		return fmt.Errorf("user termination effects differ")
 	}
 	return s.validateUserTaskTermination(record)
+}
+
+func validateUserTaskTransitionJournal(op ExecutionOperation, record UserTaskTermination) error {
+	if !reflect.DeepEqual(record, op.UserTermination.Record) || record.TransitionID != op.Transition.TransitionID || record.SourceHead.ControllerGeneration != op.Transition.SourceGeneration || record.SourceHead.ProjectSnapshotID != op.Transition.ProjectSnapshotOld || record.SuccessorProject.SnapshotID != op.Transition.ProjectSnapshotNew || !record.SuccessorTask.Equal(op.Transition.TargetRootTaskRef) {
+		return fmt.Errorf("user termination journal authority differs")
+	}
+	return nil
 }
 
 func (s *Store) LoadUserTaskTermination(ref EvidenceObjectRef) (UserTaskTermination, error) {
@@ -340,12 +357,17 @@ func (s *Store) applyUserTaskTransition(op ExecutionOperation) error {
 			return err
 		}
 	}
+	if err := s.applyUserExecutionTermination(op.UserTermination.Record); err != nil {
+		return err
+	}
 	actual := map[string]string{op.Transition.Effects[0].Key(): op.UserTermination.RecordRef.Digest}
 	_, err = s.commitAuthorityTransitionCoreLocked(op.Transition, actual, false, func(next *RepositoryControllerHead) error {
 		next.UserTerminationRef = &op.UserTermination.RecordRef
 		next.RootTaskRef = &op.UserTermination.Record.SuccessorTask
 		next.ExecutionTaskRef = nil
 		next.AcceptedCandidateRef = nil
+		next.LiveAttemptID = ""
+		next.LiveLeaseID = ""
 		next.MetadataLineageRef = nil
 		next.ProjectSnapshotID = op.UserTermination.Record.SuccessorProject.SnapshotID
 		next.IntegrationTip = op.UserTermination.Record.SuccessorProject.HeadOID
@@ -391,8 +413,15 @@ func (s *Store) verifyUserTaskTransitionPrimary(record UserTaskTermination) erro
 
 func (*Store) verifyCommittedUserTaskTransition(op ExecutionOperation, head RepositoryControllerHead) error {
 	p := op.UserTermination
-	if p == nil || head.UserTerminationRef == nil || !evidenceRefsEqual(*head.UserTerminationRef, p.RecordRef) || head.RootTaskRef == nil || !head.RootTaskRef.Equal(p.Record.SuccessorTask) || head.ExecutionTaskRef != nil || head.AcceptedCandidateRef != nil || head.PendingTerminalTaskRef != nil || head.ProjectSnapshotID != p.Record.SuccessorProject.SnapshotID || head.IntegrationTip != p.Record.SuccessorProject.HeadOID {
+	if p == nil || head.UserTerminationRef == nil || !evidenceRefsEqual(*head.UserTerminationRef, p.RecordRef) || head.RootTaskRef == nil || !head.RootTaskRef.Equal(p.Record.SuccessorTask) || head.ProjectSnapshotID != p.Record.SuccessorProject.SnapshotID || head.IntegrationTip != p.Record.SuccessorProject.HeadOID {
 		return fmt.Errorf("committed user termination authority differs")
+	}
+	return verifyUserTerminationClearedExecution(head)
+}
+
+func verifyUserTerminationClearedExecution(head RepositoryControllerHead) error {
+	if head.ExecutionTaskRef != nil || head.LiveAttemptID != "" || head.LiveLeaseID != "" || head.AcceptedCandidateRef != nil {
+		return fmt.Errorf("committed user termination retains live execution authority")
 	}
 	return nil
 }
@@ -420,7 +449,7 @@ func (s *Store) verifyFinalizedUserTaskTransition(record UserTaskTermination, he
 	if err != nil {
 		return err
 	}
-	if transition.Kind != userTaskTransition || phase.Phase != TransitionPhaseFinalized || transition.TargetGeneration != head.ControllerGeneration {
+	if transition.Kind != userTerminationKind(record) || phase.Phase != TransitionPhaseFinalized || transition.TargetGeneration != head.ControllerGeneration {
 		return fmt.Errorf("user termination successor lacks finalized transition")
 	}
 	var op ExecutionOperation

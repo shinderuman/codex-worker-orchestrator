@@ -1,15 +1,16 @@
 package app
 
 import (
+	"io"
+
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
-	"io"
 )
 
-func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controller.Store, sourceSnapshotID string) (controller.ExecutionOperationResult, error) {
-	runtimeCfg, err := controller.WorkflowConfig(cfg)
+func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controller.Store, sourceSnapshotID string, task *controller.SemanticTaskRef) (controller.ExecutionOperationResult, error) {
+	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
@@ -26,7 +27,11 @@ func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controlle
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	result, err := store.ImportParentSource(admission, sourceSnapshotID, ref)
+	target := admission.Attempt.SemanticTaskRef
+	if task != nil {
+		target = *task
+	}
+	result, err := store.ImportParentSource(admission, sourceSnapshotID, ref, target)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
@@ -45,7 +50,7 @@ func executeControllerExecutionRecovery(cfg config.AppConfig, store *controller.
 	if err != nil || before == nil {
 		return result, err
 	}
-	runtimeCfg, err := controller.WorkflowConfig(cfg)
+	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
 	if err != nil {
 		return result, err
 	}

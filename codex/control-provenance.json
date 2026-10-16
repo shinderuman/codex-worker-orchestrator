@@ -692,12 +692,12 @@
       ],
       "postconditions": [
         {
-          "path": "glm-worker/internal/controller/publication_publish.go",
-          "symbol": "Store.validateCandidatePublicationRemote"
+          "path": "glm-worker/internal/controller/publication_completion_readiness.go",
+          "symbol": "Store.validateCompletionReadiness"
         },
         {
-          "path": "glm-worker/internal/controller/publication_apply.go",
-          "symbol": "Store.commitPublicationOperation"
+          "path": "glm-worker/internal/controller/publication_completion_apply.go",
+          "symbol": "Store.acknowledgeCandidateCompletion"
         }
       ],
       "projection_guards": [

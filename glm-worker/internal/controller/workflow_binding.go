@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func WorkflowConfig(cfg config.AppConfig) (config.AppConfig, error) {
@@ -48,6 +49,10 @@ func WorkflowTaskConfig(cfg config.AppConfig, identity RepositoryIdentity, task 
 }
 
 func ParentContinuationConfig(cfg config.AppConfig) (config.AppConfig, error) {
+	present, err := RepositoryPresent(cfg.RepoRoot)
+	if err != nil || !present {
+		return cfg, err
+	}
 	exists, err := Exists(cfg)
 	if err != nil || !exists {
 		return cfg, err
@@ -61,7 +66,7 @@ func ParentContinuationConfig(cfg config.AppConfig) (config.AppConfig, error) {
 		return cfg, err
 	}
 	if root != store.Identity().PrimaryRoot {
-		return cfg, nil
+		return WorkflowConfig(cfg)
 	}
 	report, err := store.ProjectStatus()
 	if err != nil {
@@ -185,7 +190,10 @@ func WorkflowAuthorityTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) 
 }
 
 func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head RepositoryControllerHead, executionErr error) (SemanticTaskRef, bool, error) {
-	if head.UserTerminationRef != nil && head.ExecutionTaskRef == nil {
+	if task, pending, err := store.PreparedCompletionAuthority(head); pending || err != nil {
+		return task, true, err
+	}
+	if head.UserTerminationRef != nil && head.MetadataLineageRef == nil && head.ExecutionTaskRef == nil {
 		authority, err := store.UserTerminatedSuccessorAuthority(head)
 		return authority.Task, true, err
 	}
@@ -195,6 +203,10 @@ func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head Reposi
 		}
 		return SemanticTaskRef{}, true, executionErr
 	}
+	return store.retiredWorkflowAuthority(cfg, head)
+}
+
+func (store *Store) retiredWorkflowAuthority(cfg config.AppConfig, head RepositoryControllerHead) (SemanticTaskRef, bool, error) {
 	if _, err := store.retiredProjectAuthority(head); err != nil {
 		return SemanticTaskRef{}, true, err
 	}
@@ -219,4 +231,24 @@ func sealedAcceptedReadAuthority(store *Store, head RepositoryControllerHead) (S
 		return SemanticTaskRef{}, false
 	}
 	return *head.ExecutionTaskRef, true
+}
+
+func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string, error) {
+	if head.RootTaskRef == nil {
+		return "", fmt.Errorf("quiescent Runtime requires selected Task authority")
+	}
+	cfg := WorkflowTaskConfig(s.config, s.identity, *head.RootTaskRef)
+	cfg.RepoRoot = s.identity.PrimaryRoot
+	runtime := state.AttachStateStore(cfg)
+	_, admitted, err := runtime.AdmitNewTask()
+	if err != nil {
+		return "", err
+	}
+	if head.ActiveEpisodeID == "" && !admitted {
+		return "", fmt.Errorf("successor Runtime has unfinished parent actions")
+	}
+	if !runtime.Exists("task.id") {
+		return "", nil
+	}
+	return runtime.TaskID()
 }

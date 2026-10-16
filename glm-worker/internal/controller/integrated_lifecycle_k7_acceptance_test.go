@@ -35,13 +35,13 @@ func TestIntegratedLifecycle606F11Replay(t *testing.T) {
 	harness.assertNoSecondMutatingAuthority(t, "F11 live")
 
 	f11 := harness.edit(t, harness.source, "f11-result.txt", "F11 blocker result\n")
-	publishedF11, candidateF11 := harness.publishLifecycleTask(t, f11, "F11 blocker result\n")
+	locallyRetiredF11, candidateF11 := harness.retireLifecycleTask(t, f11, "F11 blocker result\n")
+	publishedF11 := harness.publishRetiredLifecycleTask(t, locallyRetiredF11, candidateF11)
 	if publishedF11.Head.IntegrationTip != candidateF11.CommitOID || publishedF11.Head.ObservedPrefix != candidateF11.CommitOID {
 		t.Fatalf("F11 was not canonically published before 606 resume: head=%#v candidate=%s", publishedF11.Head, candidateF11.CommitOID)
 	}
-	retiredF11 := harness.retireLifecycleTask(t, publishedF11, candidateF11)
 	cleanedF11, err := harness.store.CleanupExecution(CleanupExecutionInput{
-		ExpectedGeneration: retiredF11.Head.ControllerGeneration,
+		ExpectedGeneration: publishedF11.Head.ControllerGeneration,
 		WorkspaceID:        f11.Workspace.ID,
 		SealRef:            candidateF11.SealRef,
 	})
@@ -55,13 +55,13 @@ func TestIntegratedLifecycle606F11Replay(t *testing.T) {
 	resumed606, err := harness.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: cleanedF11.Head.ControllerGeneration,
 		EpisodeID:          episode.EpisodeID,
-		EpisodeRevision:    retiredF11.Head.ActiveEpisodeRevision,
+		EpisodeRevision:    publishedF11.Head.ActiveEpisodeRevision,
 		SuspensionID:       suspended606.Suspension.SnapshotID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resumed606.Admission == nil || retiredF11.Head.RootTaskRef == nil || !resumed606.Admission.Attempt.SemanticTaskRef.Equal(*retiredF11.Head.RootTaskRef) {
+	if resumed606.Admission == nil || publishedF11.Head.RootTaskRef == nil || !resumed606.Admission.Attempt.SemanticTaskRef.Equal(*publishedF11.Head.RootTaskRef) {
 		t.Fatalf("606 resume authority mismatch: %#v", resumed606.Admission)
 	}
 	if resumed606.Admission.Attempt.PredecessorAttemptID != task606.Attempt.AttemptID ||
@@ -113,10 +113,10 @@ func TestIntegratedLifecycleAllBundleKindsSurviveLaneDeletionGCAndPathReuse(t *t
 	}
 	harness.source = *blockerLane.Admission
 	blocker := harness.edit(t, harness.source, "blocker-result.txt", "blocker result\n")
-	published, candidate := harness.publishLifecycleTask(t, blocker, "blocker result\n")
-	retired := harness.retireLifecycleTask(t, published, candidate)
+	locallyRetired, candidate := harness.retireLifecycleTask(t, blocker, "blocker result\n")
+	published := harness.publishRetiredLifecycleTask(t, locallyRetired, candidate)
 	cleaned, err := harness.store.CleanupExecution(CleanupExecutionInput{
-		ExpectedGeneration: retired.Head.ControllerGeneration,
+		ExpectedGeneration: published.Head.ControllerGeneration,
 		WorkspaceID:        blocker.Workspace.ID,
 		SealRef:            candidate.SealRef,
 	})
@@ -130,7 +130,7 @@ func TestIntegratedLifecycleAllBundleKindsSurviveLaneDeletionGCAndPathReuse(t *t
 	resumed, err := harness.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: cleaned.Head.ControllerGeneration,
 		EpisodeID:          episode.EpisodeID,
-		EpisodeRevision:    retired.Head.ActiveEpisodeRevision,
+		EpisodeRevision:    published.Head.ActiveEpisodeRevision,
 		SuspensionID:       suspended.Suspension.SnapshotID,
 	})
 	if err != nil {

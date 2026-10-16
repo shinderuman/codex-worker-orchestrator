@@ -36,23 +36,23 @@ func TestWorkflowAuthorityTaskReadsSealedAcceptedController(t *testing.T) {
 	}
 }
 
-func TestWorkflowAuthorityTaskReadsPublishedTerminalPendingController(t *testing.T) {
+func TestWorkflowAuthorityTaskReadsPreparedCompletionController(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "published terminal result\n")
-	published, _ := publishTerminalTestSource(t, fixture, policy, source)
+	published, _ := prepareTerminalTestSource(t, fixture, policy, source)
 	head, err := fixture.store.LoadHead()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head.LiveLeaseID != "" || head.LiveAttemptID != "" || head.AcceptedCandidateRef == nil || head.PendingTerminalTaskRef == nil || head.ExecutionTaskRef == nil {
-		t.Fatal("publication did not leave a sealed terminal-pending controller")
+	if head.LiveLeaseID != "" || head.LiveAttemptID != "" || head.AcceptedCandidateRef == nil || head.PendingTransitionID == "" || head.ExecutionTaskRef == nil {
+		t.Fatal("completion preparation did not retain original Task authority")
 	}
 	if head.ControllerGeneration != published.Head.ControllerGeneration {
 		t.Fatal("unexpected controller movement after publication")
 	}
 	task, canonical, err := WorkflowAuthorityTask(fixture.store.config)
-	if err != nil || !canonical || !task.Equal(*head.ExecutionTaskRef) {
+	if err != nil || !canonical || !task.Equal(fixture.child) {
 		t.Fatalf("terminal-pending bootstrap read authority: %v %v %v", task, canonical, err)
 	}
 }

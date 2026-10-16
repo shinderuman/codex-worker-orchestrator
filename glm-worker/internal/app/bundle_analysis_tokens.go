@@ -15,15 +15,23 @@ func analysisTokenSegments(scan bundleRolloutScan, baseline, end analysisRollout
 			continue
 		}
 		if file == end.File {
-			segments = append(segments, analysisTokenSegment{file: file, baseline: nil, end: &end})
+			segments = append(segments, analysisTokenSegment{file: file, baseline: analysisContinuationBaseline(scan, file), end: &end})
 			continue
 		}
 		if last == nil {
 			continue
 		}
-		segments = append(segments, analysisTokenSegment{file: file, baseline: nil, end: last})
+		segments = append(segments, analysisTokenSegment{file: file, baseline: analysisContinuationBaseline(scan, file), end: last})
 	}
 	return segments
+}
+
+func analysisContinuationBaseline(scan bundleRolloutScan, file int) *analysisRolloutTokenAnchor {
+	if file <= 0 || file >= len(scan.counterContinuations) || !scan.counterContinuations[file] {
+		return nil
+	}
+	first, _ := analysisFileTokenAnchorBounds(scan, file)
+	return first
 }
 
 func analysisFileTokenAnchorBounds(scan bundleRolloutScan, file int) (*analysisRolloutTokenAnchor, *analysisRolloutTokenAnchor) {

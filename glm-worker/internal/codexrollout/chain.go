@@ -14,6 +14,10 @@ import (
 
 type rolloutCounterSignal struct {
 	HasAnchor bool
+	Input     *int64
+	Cached    *int64
+	Output    *int64
+	Reasoning *int64
 	Total     *int64
 	LastTotal *int64
 }
@@ -36,12 +40,19 @@ type rolloutTokenPayload struct {
 }
 
 type rolloutTokenUsage struct {
-	TotalTokens *int64 `json:"total_tokens"`
+	InputTokens          *int64 `json:"input_tokens"`
+	CachedInputTokens    *int64 `json:"cached_input_tokens"`
+	OutputTokens         *int64 `json:"output_tokens"`
+	ReasoningOutputToken *int64 `json:"reasoning_output_tokens"`
+	TotalTokens          *int64 `json:"total_tokens"`
 }
 
 const rolloutTokenCountType = "token_count"
 
 func ResolveChain(matches []Rollout) ([]Rollout, string) {
+	if len(matches) == 0 {
+		return nil, "rollout chain has no candidates"
+	}
 	ordered := append([]Rollout(nil), matches...)
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].FirstTimestamp.Equal(ordered[j].FirstTimestamp) {
@@ -139,11 +150,15 @@ func fileDigest(path string) ([sha256.Size]byte, error) {
 
 func identityMismatch(ordered []Rollout) string {
 	for _, member := range ordered[1:] {
-		if member.Cwd == ordered[0].Cwd && member.Originator == ordered[0].Originator && member.SourceRaw == ordered[0].SourceRaw {
+		if member.ID == ordered[0].ID && member.ParentThreadID == ordered[0].ParentThreadID && member.Cwd == ordered[0].Cwd && member.Originator == ordered[0].Originator && member.SourceRaw == ordered[0].SourceRaw {
 			continue
 		}
 		field := "cwd, source, or originator"
 		switch {
+		case member.ID != ordered[0].ID:
+			field = "session id"
+		case member.ParentThreadID != ordered[0].ParentThreadID:
+			field = "parent thread id"
 		case member.Cwd != ordered[0].Cwd:
 			field = "cwd"
 		case member.SourceRaw != ordered[0].SourceRaw:
@@ -176,46 +191,61 @@ func counterBoundaries(ordered []Rollout) string {
 	if reason := requireCounterAnchors(ordered); reason != "" {
 		return reason
 	}
+	if len(ordered) != 0 {
+		ordered[0].CounterContinuation = false
+	}
 	for i := 1; i < len(ordered); i++ {
-		if reason := counterBoundaryReason(ordered[i-1], ordered[i]); reason != "" {
+		continuation, reason := counterBoundary(ordered[i-1], ordered[i])
+		if reason != "" {
 			return reason
 		}
+		ordered[i].CounterContinuation = continuation
 	}
 	return ""
 }
 
 func requireCounterAnchors(ordered []Rollout) string {
 	for _, member := range ordered {
-		lastTotal, err := lastCounterTotal(member.AbsolutePath)
+		last, err := lastCounterSignal(member.AbsolutePath)
 		if err != nil {
 			return "rollout chain candidate cannot be read: " + member.HomeRelative + ": " + err.Error()
 		}
-		if lastTotal == nil {
+		if last.Total == nil {
 			return "rollout chain candidate has no usable token counter anchor: " + member.HomeRelative
 		}
 	}
 	return ""
 }
 
-func counterBoundaryReason(previous, current Rollout) string {
+func counterBoundary(previous, current Rollout) (bool, string) {
 	signal, err := firstCounterSignal(current.AbsolutePath)
 	if err != nil {
-		return "rollout chain candidate cannot be read: " + current.HomeRelative + ": " + err.Error()
+		return false, "rollout chain candidate cannot be read: " + current.HomeRelative + ": " + err.Error()
 	}
 	if !signal.HasAnchor {
-		return "rollout chain candidate has no usable token counter anchor: " + current.HomeRelative
+		return false, "rollout chain candidate has no usable token counter anchor: " + current.HomeRelative
 	}
-	if counterRestarted(signal, nil) {
-		return ""
-	}
-	previousTotal, err := lastCounterTotal(previous.AbsolutePath)
+	previousSignal, err := lastCounterSignal(previous.AbsolutePath)
 	if err != nil {
-		return "rollout chain candidate cannot be read: " + previous.HomeRelative + ": " + err.Error()
+		return false, "rollout chain candidate cannot be read: " + previous.HomeRelative + ": " + err.Error()
 	}
-	if !counterRestarted(signal, previousTotal) {
-		return "rollout chain boundary does not restart a self-contained token counter: " + current.HomeRelative
+	if counterContinued(signal, previousSignal) {
+		return true, ""
 	}
-	return ""
+	if signal.Total != nil && previousSignal.Total != nil && *signal.Total == *previousSignal.Total {
+		return false, counterDiscontinuityReason(signal, previousSignal, current)
+	}
+	if counterRestarted(signal, previousSignal.Total) {
+		return false, ""
+	}
+	return false, counterDiscontinuityReason(signal, previousSignal, current)
+}
+
+func counterDiscontinuityReason(signal, previousSignal rolloutCounterSignal, current Rollout) string {
+	if signal.Total != nil && previousSignal.Total != nil && *signal.Total > *previousSignal.Total {
+		return "rollout chain boundary advances beyond the previous segment token counter: " + current.HomeRelative
+	}
+	return "rollout chain boundary neither restarts nor exactly continues the token counter: " + current.HomeRelative
 }
 
 func counterRestarted(signal rolloutCounterSignal, previousTotal *int64) bool {
@@ -226,6 +256,22 @@ func counterRestarted(signal rolloutCounterSignal, previousTotal *int64) bool {
 		return true
 	}
 	return false
+}
+
+func counterContinued(signal, previousSignal rolloutCounterSignal) bool {
+	carried := [][2]*int64{
+		{previousSignal.Input, signal.Input},
+		{previousSignal.Cached, signal.Cached},
+		{previousSignal.Output, signal.Output},
+		{previousSignal.Reasoning, signal.Reasoning},
+		{previousSignal.Total, signal.Total},
+	}
+	for _, field := range carried {
+		if field[0] == nil || field[1] == nil || *field[0] < 0 || *field[0] != *field[1] {
+			return false
+		}
+	}
+	return true
 }
 
 func firstCounterSignal(path string) (rolloutCounterSignal, error) {
@@ -240,19 +286,16 @@ func firstCounterSignal(path string) (rolloutCounterSignal, error) {
 	return first, nil
 }
 
-func lastCounterTotal(path string) (*int64, error) {
-	var lastTotal *int64
+func lastCounterSignal(path string) (rolloutCounterSignal, error) {
+	var last rolloutCounterSignal
 	err := scanCounterSignals(path, func(signal rolloutCounterSignal) bool {
-		if signal.Total != nil {
-			total := *signal.Total
-			lastTotal = &total
-		}
+		last = signal
 		return false
 	})
 	if err != nil {
-		return nil, err
+		return rolloutCounterSignal{}, err
 	}
-	return lastTotal, nil
+	return last, nil
 }
 
 func scanCounterSignals(path string, observe func(rolloutCounterSignal) bool) error {
@@ -317,6 +360,10 @@ func lineCounterSignal(line []byte) (rolloutCounterSignal, bool, error) {
 	}
 	signal := rolloutCounterSignal{HasAnchor: true}
 	if payload.Info.TotalTokenUsage != nil {
+		signal.Input = payload.Info.TotalTokenUsage.InputTokens
+		signal.Cached = payload.Info.TotalTokenUsage.CachedInputTokens
+		signal.Output = payload.Info.TotalTokenUsage.OutputTokens
+		signal.Reasoning = payload.Info.TotalTokenUsage.ReasoningOutputToken
 		signal.Total = payload.Info.TotalTokenUsage.TotalTokens
 	}
 	if payload.Info.LastTokenUsage != nil {

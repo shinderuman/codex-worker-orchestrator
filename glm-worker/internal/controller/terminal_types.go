@@ -45,5 +45,3 @@ type TerminalMetadataOperation struct {
 	RootTaskRef *SemanticTaskRef        `json:"root_task_ref,omitempty"`
 	Episode     *BlockerEpisodeRevision `json:"episode,omitempty"`
 }
-
-const terminalRetire = "RETIRE_TERMINAL_TASK_METADATA"

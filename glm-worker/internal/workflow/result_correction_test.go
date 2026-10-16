@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -993,7 +994,7 @@ func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) 
 		t.Fatalf("status = %q want waiting-sol-review", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, `"targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"]`) || strings.Contains(review, "none") {
+	if !strings.Contains(review, `"targets":["`+repositoryharness.MarkerPath+`:1"]`) || strings.Contains(review, "none") {
 		t.Fatalf("Sol境界のreview packetへ正規targetsだけが伝わっていません: %s", review)
 	}
 	taskID, _ := st.TaskID()

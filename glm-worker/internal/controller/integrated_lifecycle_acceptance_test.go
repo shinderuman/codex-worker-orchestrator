@@ -245,7 +245,7 @@ func (h *lifecycleHarness) planBlockingEpisode(t *testing.T, admission Admission
 	return *result.Episode
 }
 
-func (h *lifecycleHarness) publishLifecycleTask(t *testing.T, admission Admission, message string) (ExecutionOperationResult, AcceptedCandidate) {
+func (h *lifecycleHarness) retireLifecycleTask(t *testing.T, admission Admission, message string) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
 	evidence := publicationTestEvidence(t, h.store, admission, h.policy)
 	accepted, err := h.store.AcceptExecutionCandidate(admission, CandidateAcceptanceInput{Message: message, Policy: h.policy, Evidence: evidence})
@@ -260,32 +260,19 @@ func (h *lifecycleHarness) publishLifecycleTask(t *testing.T, admission Admissio
 	if err != nil {
 		t.Fatal(err)
 	}
-	published, err := h.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidate, err = h.store.LoadAcceptedCandidate(*published.CandidateRef)
+	return prepareCompletionTestCandidate(t, h.store, promoted, candidate)
+}
+
+func (h *lifecycleHarness) publishRetiredLifecycleTask(t *testing.T, retired ExecutionOperationResult, candidate AcceptedCandidate) ExecutionOperationResult {
+	t.Helper()
+	published, err := h.store.RecoverExecutionOperation(retired.TransitionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if published.Head.IntegrationTip != candidate.CommitOID || published.Head.ObservedPrefix != candidate.CommitOID {
 		t.Fatalf("publication did not establish canonical integration: head=%#v candidate=%s", published.Head, candidate.CommitOID)
 	}
-	return published, candidate
-}
-
-func (h *lifecycleHarness) retireLifecycleTask(t *testing.T, published ExecutionOperationResult, candidate AcceptedCandidate) ExecutionOperationResult {
-	t.Helper()
-	retired, err := h.store.RetireTerminalTask(TerminalTaskInput{
-		ExpectedGeneration: published.Head.ControllerGeneration,
-		ProjectSnapshotID:  published.Head.ProjectSnapshotID,
-		CandidateID:        candidate.CandidateID,
-		TaskRef:            candidate.TaskRef,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return retired
+	return published
 }
 
 func (h *lifecycleHarness) readTaskDependencies(t *testing.T, taskPath string) taskcontract.TaskDependencyState {
@@ -391,21 +378,23 @@ func TestIntegratedLifecycleNormalBlocker(t *testing.T) {
 	harness.assertNoSecondMutatingAuthority(t, "blocker live")
 
 	blocker := harness.edit(t, harness.source, "blocker-result.txt", "blocker deliverable\n")
-	published, candidate := harness.publishLifecycleTask(t, blocker, "blocker result\n")
-	harness.assertInvariant(t, "blocker published")
+	locallyRetired, candidate := harness.retireLifecycleTask(t, blocker, "blocker result\n")
+	if locallyRetired.Head.PendingTransitionID != locallyRetired.TransitionID || harness.remoteTip(t) == candidate.CommitOID {
+		t.Fatal("blocker prepare did not retain an unpublished pending completion")
+	}
 	if _, err := harness.store.AdmitMutation(blocker.MutationAuthority(), blocker.Workspace, blocker.Snapshot); err == nil {
 		t.Fatal("published blocker lease regained admission")
 	}
 
-	retired := harness.retireLifecycleTask(t, published, candidate)
-	harness.assertInvariant(t, "blocker terminal metadata retired")
+	published := harness.publishRetiredLifecycleTask(t, locallyRetired, candidate)
+	harness.assertInvariant(t, "blocker published and terminal metadata retired")
 	rootDeps := harness.readTaskDependencies(t, harness.root.TaskPath)
 	if len(rootDeps.Outstanding) != 0 || len(rootDeps.Fulfilled) != 1 || rootDeps.Fulfilled[0] != harness.blocker.TaskPath {
 		t.Fatalf("root dependency retirement mismatch: %#v", rootDeps)
 	}
 
 	cleaned, err := harness.store.CleanupExecution(CleanupExecutionInput{
-		ExpectedGeneration: retired.Head.ControllerGeneration,
+		ExpectedGeneration: published.Head.ControllerGeneration,
 		WorkspaceID:        blocker.Workspace.ID,
 		SealRef:            candidate.SealRef,
 	})
@@ -420,26 +409,24 @@ func TestIntegratedLifecycleNormalBlocker(t *testing.T) {
 	resumed, err := harness.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: cleaned.Head.ControllerGeneration,
 		EpisodeID:          episode.EpisodeID,
-		EpisodeRevision:    retired.Head.ActiveEpisodeRevision,
+		EpisodeRevision:    published.Head.ActiveEpisodeRevision,
 		SuspensionID:       suspended.Suspension.SnapshotID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resumed.Admission == nil || !resumed.Admission.Attempt.SemanticTaskRef.Equal(*retired.Head.RootTaskRef) {
+	if resumed.Admission == nil || !resumed.Admission.Attempt.SemanticTaskRef.Equal(*published.Head.RootTaskRef) {
 		t.Fatalf("root resume authority mismatch: %#v", resumed.Admission)
 	}
 	if resumed.Admission.Attempt.PredecessorAttemptID != rootSuspended.Attempt.AttemptID ||
 		resumed.Admission.Attempt.ResumedFromSealID != suspended.SealRef.LogicalIdentity {
 		t.Fatalf("root resume lost exact suspension binding: %#v", resumed.Admission.Attempt)
 	}
-	data, err := os.ReadFile(filepath.Join(resumed.Admission.Workspace.Root, "root-owned.txt"))
-	if err != nil || string(data) != "unfinished root production work\n" {
-		t.Fatalf("root-owned production work was not preserved losslessly: %q %v", data, err)
-	}
-	integrated, err := os.ReadFile(filepath.Join(resumed.Admission.Workspace.Root, "blocker-result.txt"))
-	if err != nil || string(integrated) != "blocker deliverable\n" {
-		t.Fatalf("blocker integration delta missing from rebound base: %q %v", integrated, err)
+	for path, want := range map[string]string{"root-owned.txt": "unfinished root production work\n", "blocker-result.txt": "blocker deliverable\n"} {
+		data, err := os.ReadFile(filepath.Join(resumed.Admission.Workspace.Root, path))
+		if err != nil || string(data) != want {
+			t.Fatalf("resumed root source %s differs: %q %v", path, data, err)
+		}
 	}
 	harness.source = *resumed.Admission
 	harness.assertInvariant(t, "root resumed")
@@ -543,10 +530,10 @@ func runIntegratedLifecycleBlockerOfBlockerSerialReplan(t *testing.T) {
 	harness.assertNoSecondMutatingAuthority(t, "deeper blocker live")
 
 	deeper := harness.edit(t, harness.source, "deeper-result.txt", "deeper deliverable\n")
-	deeperPublished, deeperCandidate := harness.publishLifecycleTask(t, deeper, "deeper result\n")
-	deeperRetired := harness.retireLifecycleTask(t, deeperPublished, deeperCandidate)
+	deeperLocallyRetired, deeperCandidate := harness.retireLifecycleTask(t, deeper, "deeper result\n")
+	deeperPublished := harness.publishRetiredLifecycleTask(t, deeperLocallyRetired, deeperCandidate)
 	harness.assertInvariant(t, "deeper blocker terminal")
-	episodeAfterC, err := harness.store.LoadEpisodeRevision(replanned.EpisodeID, deeperRetired.Head.ActiveEpisodeRevision)
+	episodeAfterC, err := harness.store.LoadEpisodeRevision(replanned.EpisodeID, deeperPublished.Head.ActiveEpisodeRevision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +545,7 @@ func runIntegratedLifecycleBlockerOfBlockerSerialReplan(t *testing.T) {
 	}
 
 	deeperCleaned, err := harness.store.CleanupExecution(CleanupExecutionInput{
-		ExpectedGeneration: deeperRetired.Head.ControllerGeneration,
+		ExpectedGeneration: deeperPublished.Head.ControllerGeneration,
 		WorkspaceID:        deeper.Workspace.ID,
 		SealRef:            deeperCandidate.SealRef,
 	})
@@ -570,7 +557,7 @@ func runIntegratedLifecycleBlockerOfBlockerSerialReplan(t *testing.T) {
 	blockerResumed, err := harness.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: deeperCleaned.Head.ControllerGeneration,
 		EpisodeID:          replanned.EpisodeID,
-		EpisodeRevision:    deeperRetired.Head.ActiveEpisodeRevision,
+		EpisodeRevision:    deeperPublished.Head.ActiveEpisodeRevision,
 		SuspensionID:       blockerSealed.Suspension.SnapshotID,
 	})
 	if err != nil {
@@ -590,12 +577,12 @@ func runIntegratedLifecycleBlockerOfBlockerSerialReplan(t *testing.T) {
 	harness.assertInvariant(t, "blocker resumed")
 
 	blockerFinal := harness.edit(t, harness.source, "blocker-result.txt", "blocker deliverable\n")
-	blockerPublished, blockerCandidate := harness.publishLifecycleTask(t, blockerFinal, "blocker result\n")
-	blockerRetired := harness.retireLifecycleTask(t, blockerPublished, blockerCandidate)
+	blockerLocallyRetired, blockerCandidate := harness.retireLifecycleTask(t, blockerFinal, "blocker result\n")
+	blockerPublished := harness.publishRetiredLifecycleTask(t, blockerLocallyRetired, blockerCandidate)
 	harness.assertInvariant(t, "blocker terminal")
 
 	blockerLaneCleaned, err := harness.store.CleanupExecution(CleanupExecutionInput{
-		ExpectedGeneration: blockerRetired.Head.ControllerGeneration,
+		ExpectedGeneration: blockerPublished.Head.ControllerGeneration,
 		WorkspaceID:        blockerFinal.Workspace.ID,
 		SealRef:            blockerCandidate.SealRef,
 	})
@@ -607,7 +594,7 @@ func runIntegratedLifecycleBlockerOfBlockerSerialReplan(t *testing.T) {
 	rootResumed, err := harness.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: blockerLaneCleaned.Head.ControllerGeneration,
 		EpisodeID:          episode.EpisodeID,
-		EpisodeRevision:    blockerRetired.Head.ActiveEpisodeRevision,
+		EpisodeRevision:    blockerPublished.Head.ActiveEpisodeRevision,
 		SuspensionID:       rootSealed.Suspension.SnapshotID,
 	})
 	if err != nil {

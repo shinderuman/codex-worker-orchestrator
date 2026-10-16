@@ -148,6 +148,8 @@ func newCanonicalAppConfig(t *testing.T) config.AppConfig {
 	}
 	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
 	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\napp workflow task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+	writeAppTestFile(t, repo, "glm-worker/internal/app/parent_review_test.go", "package app\n\nfunc reviewFixPacketApp() {}\n")
+	writeAppTestFile(t, repo, "glm-worker/internal/app/stdin_payload_test.go", "package app\n\nfunc needsSolReviewPacketApp() {}\n")
 	runCanonicalGuardGit(t, repo, "add", ".")
 	runCanonicalGuardGit(t, repo, "-c", "user.name=app test", "-c", "user.email=app-test@example.invalid", "commit", "-q", "-m", "canonical task")
 	cfg, err := controller.WorkflowConfig(cfg)

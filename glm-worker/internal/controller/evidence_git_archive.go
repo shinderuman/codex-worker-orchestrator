@@ -326,7 +326,7 @@ func runGitCommand(stdin []byte, args ...string) ([]byte, error) {
 	command.Stderr = &stderr
 	output, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()))
+		return output, fmt.Errorf("git %v: %w: %s", args, err, strings.TrimSpace(stderr.String()))
 	}
 	return output, nil
 }

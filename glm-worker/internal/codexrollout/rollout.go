@@ -12,16 +12,17 @@ import (
 )
 
 type Rollout struct {
-	AbsolutePath   string
-	HomeRelative   string
-	ID             string
-	ParentThreadID string
-	GuardianSource bool
-	FirstTimestamp time.Time
-	LastTimestamp  time.Time
-	Cwd            string
-	Originator     string
-	SourceRaw      string
+	AbsolutePath        string
+	HomeRelative        string
+	ID                  string
+	ParentThreadID      string
+	GuardianSource      bool
+	FirstTimestamp      time.Time
+	LastTimestamp       time.Time
+	Cwd                 string
+	Originator          string
+	SourceRaw           string
+	CounterContinuation bool
 }
 
 type sessionMeta struct {

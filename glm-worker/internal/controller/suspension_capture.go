@@ -23,9 +23,32 @@ func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]wor
 			paths[path] = workspaceTreeEntry{path: path}
 		}
 	}
-	var result []workspaceTreeEntry
+	var entries []workspaceTreeEntry
 	for path, entry := range paths {
-		if state.IsParentManagedPath(path) {
+		if !state.IsParentManagedPath(path) {
+			entries = append(entries, entry)
+		}
+	}
+	return captureSuspensionEntries(repo, entries)
+}
+
+func captureSuspensionEntries(repo string, entries []workspaceTreeEntry) ([]workspaceTreeEntry, error) {
+	var result, regular []workspaceTreeEntry
+	for _, entry := range entries {
+		path, err := suspensionWorktreePath(repo, entry.path)
+		if err != nil {
+			return nil, err
+		}
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode().IsRegular() && entry.mode != "160000" {
+			entry.mode = suspensionRegularMode(info.Mode())
+			regular = append(regular, entry)
 			continue
 		}
 		captured, exists, err := captureSuspensionEntry(repo, entry)
@@ -36,7 +59,30 @@ func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]wor
 			result = append(result, captured)
 		}
 	}
-	return result, nil
+	regular, err := hashSuspensionFiles(repo, regular)
+	return append(result, regular...), err
+}
+
+func hashSuspensionFiles(repo string, entries []workspaceTreeEntry) ([]workspaceTreeEntry, error) {
+	for start := 0; start < len(entries); start += 128 {
+		end := min(start+128, len(entries))
+		args := []string{"hash-object", "--no-filters", "-w", "--"}
+		for _, entry := range entries[start:end] {
+			args = append(args, entry.path)
+		}
+		data, err := runGitBinary(repo, nil, args...)
+		if err != nil {
+			return nil, err
+		}
+		objects := strings.Fields(string(data))
+		if len(objects) != end-start {
+			return nil, fmt.Errorf("suspension blob batch returned unexpected object count")
+		}
+		for index, oid := range objects {
+			entries[start+index].oid = oid
+		}
+	}
+	return entries, nil
 }
 
 func captureSuspensionEntry(repo string, indexed workspaceTreeEntry) (workspaceTreeEntry, bool, error) {
@@ -76,12 +122,15 @@ func suspensionFileBytes(path string, info os.FileInfo) ([]byte, string, error) 
 	if !info.Mode().IsRegular() {
 		return nil, "", fmt.Errorf("unsupported suspension filesystem object %q", path)
 	}
-	mode := "100644"
-	if info.Mode().Perm()&0o111 != 0 {
-		mode = "100755"
-	}
 	data, err := os.ReadFile(path)
-	return data, mode, err
+	return data, suspensionRegularMode(info.Mode()), err
+}
+
+func suspensionRegularMode(mode os.FileMode) string {
+	if mode.Perm()&0o111 != 0 {
+		return "100755"
+	}
+	return "100644"
 }
 
 func captureSuspensionGitlink(path string, entry workspaceTreeEntry) (workspaceTreeEntry, bool, error) {

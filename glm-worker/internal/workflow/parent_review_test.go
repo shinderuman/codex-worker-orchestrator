@@ -67,6 +67,7 @@ func TestAutoFixRoundsDoNotRecordParentOutcome(t *testing.T) {
 		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/parent_review_test.go", "package workflow\n")
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"glm-worker/internal/workflow/parent_review_test.go"}, nil
 	}
@@ -96,6 +97,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, setup)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/parent_review_test.go", "package workflow\n")
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"glm-worker/internal/workflow/parent_review_test.go"}, nil
 	}

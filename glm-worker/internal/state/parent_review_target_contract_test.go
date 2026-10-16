@@ -76,6 +76,17 @@ func TestParentReviewBindingAdmitsCanonicalTargets(t *testing.T) {
 	}
 }
 
+func TestParentReviewBindingRejectsUnaddressableMethodTargetBeforePersistence(t *testing.T) {
+	st, _, snapshot := newBoundParentReviewTestStore(t)
+	err := recordBoundReviewForContract(st, snapshot, "review.go:quiescentWorkflowAuthority")
+	assertReviewTargetAdmissionRejected(t, st, err, "[symbol-not-declared]")
+	if err := st.Remove("repo-root"); err != nil {
+		t.Fatal(err)
+	}
+	err = recordBoundReviewForContract(st, snapshot, "review.go:Store.quiescentWorkflowAuthority")
+	assertReviewTargetAdmissionRejected(t, st, err, "repository root is unavailable")
+}
+
 func assertProofAddressabilityRejected(t *testing.T, repoRoot, raw, want string) {
 	t.Helper()
 	target, err := reviewtarget.ParseTarget(raw)

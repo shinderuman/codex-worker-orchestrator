@@ -23,7 +23,7 @@ func (s *Store) publicationEvidence(op ExecutionOperation, c AcceptedCandidate, 
 	task.PublicationLineageRecords = append(task.PublicationLineageRecords, refs...)
 	task.SemanticStatus = "awaiting-publication"
 	if c.State == candidateObserved {
-		task.SemanticStatus = "published"
+		task.SemanticStatus = "terminal"
 	}
 	task.ControllerGeneration = op.Transition.CommittedGeneration
 	task.TransitionID = op.Transition.TransitionID

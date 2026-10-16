@@ -31,6 +31,9 @@ var executionOperationContractTable = map[string]executionOperationContractFacto
 	userTaskTransition: func(s *Store) executionOperationContract {
 		return executionOperationContract{effects: executionOperationEffectsSingle, validate: s.validateUserTaskTransitionOperation, apply: s.applyUserTaskTransition, verifyCommitted: s.verifyCommittedUserTaskTransition}
 	},
+	userExecutionTransition: func(s *Store) executionOperationContract {
+		return executionOperationContract{effects: executionOperationEffectsSingle, validate: s.validateUserTaskTransitionOperation, apply: s.applyUserTaskTransition, verifyCommitted: s.verifyCommittedUserExecutionTransition}
+	},
 	executionModelCall: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsNone,
@@ -38,14 +41,6 @@ var executionOperationContractTable = map[string]executionOperationContractFacto
 			apply:           s.applyModelCallAdmission,
 			verifyCommitted: s.verifyCommittedModelCallAdmission,
 			projectResult:   s.projectExecutionAdmissionResult,
-		}
-	},
-	terminalRetire: func(s *Store) executionOperationContract {
-		return executionOperationContract{
-			effects:         executionOperationEffectsOneOrMore,
-			validate:        s.validateTerminalMetadataOperation,
-			apply:           s.applyTerminalMetadata,
-			verifyCommitted: s.verifyCommittedTerminalMetadata,
 		}
 	},
 	executionSuspend: func(s *Store) executionOperationContract {
@@ -81,9 +76,11 @@ var executionOperationContractTable = map[string]executionOperationContractFacto
 			verifyCommitted: s.verifyCommittedSuspensionGC,
 		}
 	},
-	publicationAccept:     publicationExecutionOperationContract,
-	publicationPromote:    publicationExecutionOperationContract,
-	publicationPublish:    publicationExecutionOperationContract,
+	publicationAccept:  publicationExecutionOperationContract,
+	publicationPromote: publicationExecutionOperationContract,
+	publicationPublish: func(s *Store) executionOperationContract {
+		return executionOperationContract{effects: executionOperationEffectsOneOrMore, validate: s.validateTerminalMetadataOperation, apply: s.applyCandidateCompletion, verifyCommitted: s.verifyCommittedCompletion, projectResult: projectTerminalExecutionResult}
+	},
 	publicationRebind:     publicationExecutionOperationContract,
 	publicationAdopt:      publicationExecutionOperationContract,
 	publicationRevalidate: publicationExecutionOperationContract,
@@ -116,6 +113,13 @@ func validateExecutionOperationContract(contract executionOperationContract) err
 }
 
 func validateExecutionOperationEffects(op ExecutionOperation, policy executionOperationEffectPolicy) error {
+	seen := map[string]bool{}
+	for _, effect := range op.Transition.Effects {
+		if seen[effect.Key()] {
+			return fmt.Errorf("execution operation repeats effect authority")
+		}
+		seen[effect.Key()] = true
+	}
 	switch policy {
 	case executionOperationEffectsNone:
 		if len(op.Transition.Effects) != 0 {
@@ -163,5 +167,10 @@ func projectPublicationExecutionResult(op ExecutionOperation, _ RepositoryContro
 	if op.Publication != nil {
 		result.CandidateRef = op.Publication.After
 	}
+	return nil
+}
+
+func projectTerminalExecutionResult(op ExecutionOperation, _ RepositoryControllerHead, result *ExecutionOperationResult) error {
+	result.CandidateRef = &op.Terminal.Record.CandidateRef
 	return nil
 }

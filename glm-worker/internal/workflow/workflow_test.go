@@ -12,6 +12,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -191,7 +192,7 @@ func needsSolReviewPacket() string {
 		TestEvidence:        "ev",
 		Issues:              "i",
 		ResidualRisk:        "r",
-		Targets:             []string{"glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"},
+		Targets:             []string{repositoryharness.MarkerPath + ":1"},
 		SolQuestion:         "q",
 	})
 }
@@ -273,11 +274,19 @@ func newWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner) *Workfl
 	return newWorkflowTWithOutput(t, st, r, io.Discard)
 }
 
+func writeReviewTargetFixture(t *testing.T, st *state.StateStore, repoRoot string) {
+	t.Helper()
+	if err := st.Write("repo-root", repoRoot); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunner, output io.Writer) *Workflow {
 	t.Helper()
 	repoRoot := t.TempDir()
 	gitIn(t, repoRoot, "init", "-q")
 	trackRepositoryHarnessMarker(t, repoRoot)
+	writeReviewTargetFixture(t, st, repoRoot)
 	if st.TaskStatus() != state.TaskStatusActive {
 		pinRepositoryHarnessActiveT(t, st)
 	}

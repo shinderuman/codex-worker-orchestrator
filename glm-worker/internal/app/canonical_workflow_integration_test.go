@@ -15,6 +15,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -22,6 +24,7 @@ import (
 )
 
 type canonicalWorkflowRunner struct {
+	complete   bool
 	t          *testing.T
 	cfg        config.AppConfig
 	task       string
@@ -36,14 +39,14 @@ func (*canonicalWorkflowRunner) Probe(string) (runner.ProbeResult, error) {
 
 func (r *canonicalWorkflowRunner) Run(role state.SessionRole, phase, _ string, readOnly bool, _ string, prompt, _ string) (runner.RunResult, error) {
 	r.prompts = append(r.prompts, prompt)
-	if role != state.WorkerRole || readOnly {
+	if (!r.complete && role != state.WorkerRole) || (role == state.WorkerRole && readOnly) || (role == state.ReviewerRole && !readOnly) {
 		r.t.Fatalf("unexpected model route: %s read-only=%v", role, readOnly)
 	}
 	authority, err := authoritybootstrapcmd.BuildFromRoot(r.cfg.RepoRoot, "active", "")
 	if err != nil || authority.ActiveTask != r.task {
 		r.t.Fatalf("model received wrong execution authority: %#v %v", authority, err)
 	}
-	if r.path != "" {
+	if r.path != "" && role == state.WorkerRole {
 		writeAppTestFile(r.t, r.cfg.RepoRoot, r.path, "preserved "+r.task+"\n")
 	}
 	sessionID, err := state.NewUUID()
@@ -55,6 +58,13 @@ func (r *canonicalWorkflowRunner) Run(role state.SessionRole, phase, _ string, r
 		r.t.Fatal(err)
 	}
 	writeAppTestFile(r.t, r.cfg.ClaudeConfigDir, filepath.Join("projects", "canonical", sessionID+".jsonl"), string(r.transcript))
+	if r.complete {
+		body := implementedPacketApp("completed integration source")
+		if role == state.ReviewerRole {
+			body = appPacketBody(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh, Summary: "reviewed", RequirementCoverage: "covered", Invariants: "preserved", TestEvidence: "fixture source evidence", Issues: "none", ResidualRisk: "none", Targets: []string{r.path + ":1"}, SolQuestion: "accept the independently reviewed fixture source"})
+		}
+		return runner.RunResult{SessionID: sessionID, StructuredOutput: json.RawMessage(body), Response: body}, nil
+	}
 	return runner.RunResult{SessionID: sessionID}, &runner.InterruptedCallError{Phase: phase}
 }
 
@@ -139,6 +149,7 @@ func newCanonicalWorkflowCorpus(t *testing.T) (config.AppConfig, string, string,
 	writeAppTestFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `"+rootTask+"`\n\n## NEXT\n\n- `"+blockerTask+"`\n")
 	writeAppTestFile(t, cfg.RepoRoot, rootTask, "# root\n\n## Contract\n\n606 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\n- `"+blockerTask+"`\n")
 	writeAppTestFile(t, cfg.RepoRoot, blockerTask, "# blocker\n\n## Contract\n\nF11 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+	prepareCompletionQualityCorpus(t, cfg.RepoRoot)
 	runControllerActivationGit(t, cfg.RepoRoot, "config", "user.name", "Canonical Workflow Test")
 	runControllerActivationGit(t, cfg.RepoRoot, "config", "user.email", "canonical@example.invalid")
 	runControllerActivationGit(t, cfg.RepoRoot, "add", ".")
@@ -185,6 +196,7 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	if !handoff.Consistent || handoff.ParentRequest == nil || !handoff.ParentRequest.TaskAttribution.Matches || handoff.ParentRequest.TaskAttribution.ActiveTask != blockerTask {
 		t.Fatalf("blocker handoff followed Plan focus: %#v", handoff)
 	}
+	completeCanonicalWorkflowReview(t, blockerRunner, blockerCfg, blockerState)
 	blockedSource := canonicalWorkflowAdmission(t, blockerCfg, store)
 	accepted := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: blockedSource.Head.ControllerGeneration, Message: "F11 result", Policy: policy, Evidence: canonicalWorkflowEvidence(t, store, blockedSource, policy)})
 	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
@@ -193,14 +205,17 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	}
 	promoted := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "promote", ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
 	published := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "publish", ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if blockerState.TaskStatus() != state.TaskStatusComplete {
+		t.Fatal("regular Publication did not complete the accepted Runtime")
+	}
 	candidate, err = store.LoadAcceptedCandidate(*published.CandidateRef)
 	if err != nil {
 		t.Fatal(err)
 	}
-	retired := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "retire", ExpectedGeneration: published.Head.ControllerGeneration, ProjectSnapshotID: published.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
-	cleaned := canonicalCLIExecution(t, binary, blockerCfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: retired.Head.ControllerGeneration, WorkspaceID: blockedSource.Workspace.ID, SealRef: &candidate.SealRef})
+
+	cleaned := canonicalCLIExecution(t, binary, blockerCfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: published.Head.ControllerGeneration, WorkspaceID: blockedSource.Workspace.ID, SealRef: &candidate.SealRef})
 	assertCanonicalTransitionHandoff(t, cfg, rootState)
-	resumed := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: cleaned.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: retired.Head.ActiveEpisodeRevision, SuspensionID: suspended.Suspension.SnapshotID})
+	resumed := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: cleaned.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: published.Head.ActiveEpisodeRevision, SuspensionID: suspended.Suspension.SnapshotID})
 	rootCfg := cfg
 	rootCfg.RepoRoot = resumed.Admission.Workspace.Root
 	resumedRunner := runCanonicalWorkflow(t, rootCfg, ModeResume, "", rootTask, "")
@@ -314,5 +329,30 @@ func assertCanonicalTransitionHandoff(t *testing.T, cfg config.AppConfig, st *st
 	}
 	if containsParentAction(handoff.AllowedActions, "resume") || containsParentAction(handoff.AllowedActions, "unpark") {
 		t.Fatalf("noncanonical resume offered: %#v", handoff.AllowedActions)
+	}
+}
+
+func completeCanonicalWorkflowReview(t *testing.T, blockerRunner *canonicalWorkflowRunner, blockerCfg config.AppConfig, blockerState *state.StateStore) {
+	t.Helper()
+	blockerRunner.complete = true
+	factory := func(actual config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
+		blockerRunner.cfg = actual
+		return blockerRunner
+	}
+	var resumed bytes.Buffer
+	if err := Execute(Command{Mode: ModeResume}, blockerCfg, factory, &resumed, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	manifest := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{Version: parentevidence.ManifestVersion, Reason: "inspect the scripted independent review target", Source: []parentevidence.SourceRequest{{Question: "verify current blocker source", Path: blockerRunner.path, LineStart: 1, LineEnd: 1, BudgetBytes: 4096}}})
+	var delivered bytes.Buffer
+	if err := printParentEvidence(Command{EvidenceManifest: manifest}, blockerCfg, blockerState, &delivered); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := blockerState.CurrentParentReviewBinding()
+	if err != nil || binding == nil || binding.Proof == nil {
+		t.Fatalf("scripted review target lacks delivered source proof: %v binding=%#v evidence=%s result=%s", err, binding, delivered.String(), resumed.String())
+	}
+	if err := Execute(Command{Mode: ModeAccept}, blockerCfg, nil, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
 	}
 }

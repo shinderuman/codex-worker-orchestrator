@@ -8,9 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/parent-rollout-counter-continuation.md`
+- `IMPLEMENTATION_TASKS/go-suite-execution-time-reduction.md`
 
 ## NEXT（優先順）
+
 
 - `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`

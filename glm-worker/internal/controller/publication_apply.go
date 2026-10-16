@@ -13,9 +13,6 @@ func (s *Store) applyPublicationOperation(op ExecutionOperation) error {
 	if err := s.guardPublicationRemote(op, candidate); err != nil {
 		return err
 	}
-	if op.Transition.Kind == publicationPublish {
-		return s.applyCandidatePublication(op, candidate)
-	}
 	if err := s.applyLocalPublicationEffects(op, candidate); err != nil {
 		return err
 	}
@@ -31,6 +28,9 @@ func (s *Store) applyLocalPublicationEffects(op ExecutionOperation, candidate Ac
 	case publicationAccept:
 		return s.applyAcceptedCandidateRetention(op, candidate)
 	case publicationPromote:
+		if err := s.applyPrimaryPromotion(op, candidate); err != nil {
+			return err
+		}
 		if err := updatePublicationRef(s.identity.PrimaryRoot, candidate.Policy.LocalRef, op.Publication.LocalOld, candidate.CommitOID); err != nil {
 			return err
 		}
@@ -83,32 +83,33 @@ func (s *Store) commitPublicationOperation(op ExecutionOperation, c AcceptedCand
 		return err
 	}
 	_, _, err = s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, evidence, func(next *RepositoryControllerHead) error {
-		next.AcceptedCandidateRef = op.Publication.After
-		if op.Transition.Kind == publicationPublish {
-			next.PendingTerminalTaskRef = &c.TaskRef
-		}
-		if op.Transition.Kind == publicationReenter {
-			next.PendingTerminalTaskRef = nil
-		}
-		next.PublicationPolicy = &op.Publication.Policy
-		next.LiveAttemptID = ""
-		next.LiveLeaseID = ""
-		next.IntegrationTip = op.Publication.NewTip
-		if op.Transition.Kind == publicationRebind && !op.Transition.TargetRootTaskRef.Empty() {
-			root := op.Transition.TargetRootTaskRef
-			execution := op.Transition.TargetExecutionTaskRef
-			next.RootTaskRef = &root
-			next.ExecutionTaskRef = &execution
-		}
-		if c.State == candidateObserved {
-			next.ObservedPrefix = c.CommitOID
-			next.ObservedRemoteTip = observedRemote
-		} else if op.Transition.Kind == publicationRebind {
-			next.ObservedRemoteTip = op.Publication.RemoteOID
-		}
-		return s.commitPublicationTarget(next, op, c)
+		return s.commitPublicationHead(next, op, c, observedRemote)
 	})
 	return err
+}
+
+func (s *Store) commitPublicationHead(next *RepositoryControllerHead, op ExecutionOperation, c AcceptedCandidate, observedRemote string) error {
+	next.AcceptedCandidateRef = op.Publication.After
+	next.PublicationPolicy = &op.Publication.Policy
+	next.LiveAttemptID = ""
+	next.LiveLeaseID = ""
+	next.IntegrationTip = op.Publication.NewTip
+	if op.Transition.Kind == publicationRebind && !op.Transition.TargetRootTaskRef.Empty() {
+		root := op.Transition.TargetRootTaskRef
+		execution := op.Transition.TargetExecutionTaskRef
+		next.RootTaskRef = &root
+		next.ExecutionTaskRef = &execution
+	}
+	if c.State == candidateObserved {
+		next.ObservedPrefix = c.CommitOID
+		next.ObservedRemoteTip = observedRemote
+	} else if op.Transition.Kind == publicationRebind || op.Transition.Kind == publicationPromote {
+		next.ObservedRemoteTip = op.Publication.RemoteOID
+		if op.Transition.Kind == publicationPromote && next.ObservedPrefix == "" {
+			next.ObservedPrefix = c.BaseOID
+		}
+	}
+	return s.commitPublicationTarget(next, op, c)
 }
 
 func (s *Store) commitPublicationTarget(next *RepositoryControllerHead, op ExecutionOperation, c AcceptedCandidate) error {

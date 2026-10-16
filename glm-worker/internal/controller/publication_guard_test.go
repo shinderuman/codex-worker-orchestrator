@@ -6,6 +6,7 @@ import (
 )
 
 func TestPublicationGuardAllowsOrdinaryLocalFastForwardWithoutPendingPublication(t *testing.T) {
+	t.Parallel()
 	fixture, _ := newPublicationTestFixture(t)
 	input := PublicationRefGuardInput{
 		OldOID: strings.Repeat("1", 40),
@@ -18,6 +19,7 @@ func TestPublicationGuardAllowsOrdinaryLocalFastForwardWithoutPendingPublication
 }
 
 func TestPublicationGuardRejectsRemotePushWithoutPendingPublication(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	input := PublicationPushGuardInput{
 		RemoteName: policy.Remote,
@@ -32,6 +34,7 @@ func TestPublicationGuardRejectsRemotePushWithoutPendingPublication(t *testing.T
 }
 
 func TestPublicationGuardAuthorizesOnlyExactPendingPromotionRefUpdate(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "candidate.txt", "candidate\n")
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
@@ -62,6 +65,9 @@ func TestPublicationGuardAuthorizesOnlyExactPendingPromotionRefUpdate(t *testing
 	op.Publication.LocalOld = local
 	op.Publication.RemoteOID = remote
 	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceRef, Resource: policy.LocalRef, ExpectedOld: local, ExpectedNew: candidate.CommitOID}}
+	if err := fixture.store.planPrimaryPromotion(&op, candidate); err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.store.prepareExecutionOperation(&op, accepted.Head); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +92,7 @@ func TestPublicationGuardAuthorizesOnlyExactPendingPromotionRefUpdate(t *testing
 }
 
 func TestPublicationGuardAuthorizesOnlyExactPendingRemotePublication(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "candidate.txt", "candidate\n")
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
@@ -108,15 +115,16 @@ func TestPublicationGuardAuthorizesOnlyExactPendingRemotePublication(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	op, err := fixture.store.planCandidatePublication(promoted.Head, candidate, *promoted.CandidateRef, candidate.BaseOID)
+	retired, candidate := prepareCompletionTestCandidate(t, fixture.store, promoted, candidate)
+	var op ExecutionOperation
+	if err := readJSON(fixture.store.executionOperationPath(retired.TransitionID), &op); err != nil {
+		t.Fatal(err)
+	}
+	phase, err := fixture.store.loadTransitionState(retired.TransitionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate, err = fixture.store.LoadAcceptedCandidate(*op.Publication.After)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.prepareExecutionOperation(&op, promoted.Head); err != nil {
+	if err := fixture.store.beginCandidateCompletionWrite(op, &phase); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,10 +153,11 @@ func TestPublicationGuardAuthorizesOnlyExactPendingRemotePublication(t *testing.
 	}
 }
 
-func TestPublicationGuardAuthorizesTerminalMetadataPublicationEffects(t *testing.T) {
+func TestPublicationGuardRejectsPushDuringLocalRetirement(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "terminal.txt", "terminal result\n")
-	published, candidate := publishTerminalTestSource(t, fixture, policy, source)
+	published, candidate := promoteTerminalTestSource(t, fixture, policy, source)
 	op, head, err := fixture.store.planTerminalMetadata(TerminalTaskInput{
 		ExpectedGeneration: published.Head.ControllerGeneration,
 		ProjectSnapshotID:  published.Head.ProjectSnapshotID,
@@ -164,16 +173,15 @@ func TestPublicationGuardAuthorizesTerminalMetadataPublicationEffects(t *testing
 	if len(op.Transition.Effects) < 2 {
 		t.Fatalf("terminal publication effects = %#v", op.Transition.Effects)
 	}
-	history := op.Transition.Effects[0]
-	ref := op.Transition.Effects[1]
+	ref := op.Transition.Effects[0]
 	if err := fixture.store.GuardPublicationPush(PublicationPushGuardInput{
 		RemoteName: policy.Remote,
 		LocalRef:   policy.LocalRef,
-		LocalOID:   history.ExpectedNew,
+		LocalOID:   ref.ExpectedNew,
 		RemoteRef:  policy.RemoteRef,
-		RemoteOID:  history.ExpectedOld,
-	}); err != nil {
-		t.Fatalf("terminal remote publication rejected: %v", err)
+		RemoteOID:  candidate.BaseOID,
+	}); err == nil {
+		t.Fatal("local retirement authorized a remote push")
 	}
 	if err := fixture.store.GuardPublicationRefUpdate(PublicationRefGuardInput{
 		OldOID: ref.ExpectedOld,
