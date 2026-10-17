@@ -44,6 +44,7 @@ func recordCoverageTaskCall(st *state.StateStore, taskID string) {
 }
 
 func TestPrintStatsKeepsHistoricalPacketCompactions(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -77,6 +78,7 @@ func TestPrintStatsKeepsHistoricalPacketCompactions(t *testing.T) {
 }
 
 func TestPrintStatsTelemetryCoverageHistoricalGapAndCurrentTask(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -115,6 +117,7 @@ func TestPrintStatsTelemetryCoverageHistoricalGapAndCurrentTask(t *testing.T) {
 }
 
 func TestPrintStatsTelemetryCoverageComplete(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -141,6 +144,7 @@ func TestPrintStatsTelemetryCoverageComplete(t *testing.T) {
 }
 
 func TestPrintStatsTelemetryCoverageCurrentTaskShortageAndUnreadable(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -190,6 +194,7 @@ func TestPrintStatsTelemetryCoverageCurrentTaskShortageAndUnreadable(t *testing.
 }
 
 func TestPrintStatsTelemetryCoverageOrphanOnlyIsIncomplete(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -222,6 +227,7 @@ func TestPrintStatsTelemetryCoverageOrphanOnlyIsIncomplete(t *testing.T) {
 }
 
 func TestPrintStatsTelemetryCoverageExcessOnlyTaskLineHasUsageUnknown(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 )
 
 func TestClassifyTransientFailureHTTPErrors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		text string
@@ -29,6 +30,7 @@ func TestClassifyTransientFailureHTTPErrors(t *testing.T) {
 }
 
 func TestClassifyTransientFailureDoesNotMatchPortLikeSubstrings(t *testing.T) {
+	t.Parallel()
 	class, transient := ClassifyTransientFailure("connecting to localhost:5034 failed")
 	if transient {
 		t.Fatalf("port-like 5034 must not match: (%q, %v)", class, transient)
@@ -36,6 +38,7 @@ func TestClassifyTransientFailureDoesNotMatchPortLikeSubstrings(t *testing.T) {
 }
 
 func TestClassifyTransientFailureNetworkSignals(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{
 		"dial tcp: lookup api.z.ai: no such host",
 		"connection refused",
@@ -50,6 +53,7 @@ func TestClassifyTransientFailureNetworkSignals(t *testing.T) {
 }
 
 func TestClassifyTransientFailureRejectsNonTransient(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{
 		"401 Unauthorized",
 		"403 Forbidden",
@@ -68,12 +72,14 @@ func TestClassifyTransientFailureRejectsNonTransient(t *testing.T) {
 }
 
 func TestReadTransientSignalMissingFile(t *testing.T) {
+	t.Parallel()
 	if got := ReadTransientSignal("/nonexistent/transient-signal-xyz"); got != "" {
 		t.Fatalf("欠損fileは空文字を期待: %q", got)
 	}
 }
 
 func TestClassifyProviderFailureTextByZaiBusinessCode(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		text       string
@@ -110,6 +116,7 @@ func TestClassifyProviderFailureTextByZaiBusinessCode(t *testing.T) {
 }
 
 func TestClassifyPlainStdoutFailurePreservesTerminalZaiClassification(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{
 		`[1308][quota][2026-07-22 14:06:34]`,
 		`[1310][long quota]`,
@@ -125,6 +132,7 @@ func TestClassifyPlainStdoutFailurePreservesTerminalZaiClassification(t *testing
 }
 
 func TestClassifyProviderFailureTextFallbackSignals(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		text       string
@@ -154,6 +162,7 @@ func TestClassifyProviderFailureTextFallbackSignals(t *testing.T) {
 }
 
 func TestProviderUnavailableErrorMessage(t *testing.T) {
+	t.Parallel()
 	err := &ProviderUnavailableError{
 		Phase:          "worker-new",
 		Classification: "http-503",
@@ -174,6 +183,7 @@ func TestProviderUnavailableErrorMessage(t *testing.T) {
 }
 
 func TestDetectProbeFatalSignal(t *testing.T) {
+	t.Parallel()
 	fatal := []string{
 		"401 Unauthorized",
 		"403 Forbidden",
@@ -223,6 +233,7 @@ func TestDetectProbeFatalSignal(t *testing.T) {
 }
 
 func TestProbeFatalSignalsEnumerationMatchesContract(t *testing.T) {
+	t.Parallel()
 	bareWords := map[string]bool{
 		"unauthorized":   true,
 		"forbidden":      true,

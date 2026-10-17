@@ -13,6 +13,7 @@ import (
 )
 
 func TestParentUsageRejectsEveryChainMemberWithoutUsableCounterAnchor(t *testing.T) {
+	t.Parallel()
 	for _, position := range []string{"first", "last"} {
 		for _, shape := range []string{"no-token-event", "missing-total"} {
 			t.Run(position+"/"+shape, func(t *testing.T) {

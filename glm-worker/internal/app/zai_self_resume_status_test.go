@@ -8,6 +8,7 @@ import (
 )
 
 func TestStatusRateLimitResumeMode(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	replaceZaiSelfResumeNow(t, func() time.Time { return now })
 

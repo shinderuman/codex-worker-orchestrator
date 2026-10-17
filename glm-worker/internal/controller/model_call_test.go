@@ -7,6 +7,7 @@ import (
 )
 
 func TestModelCallLeaseUsesJournalAndClearsInFlightBinding(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
 	if err != nil {
@@ -73,6 +74,7 @@ func TestModelCallLeaseUsesJournalAndClearsInFlightBinding(t *testing.T) {
 }
 
 func TestModelCallAdmissionRecoversThroughControllerOperation(t *testing.T) {
+	t.Parallel()
 	for _, boundary := range []string{"prepared", "applied", "committed-head", "committed", "finalized-head"} {
 		t.Run(boundary, func(t *testing.T) {
 			fixture := newFindingAcceptanceFixture(t)
@@ -124,6 +126,7 @@ func TestModelCallAdmissionRecoversThroughControllerOperation(t *testing.T) {
 }
 
 func TestModelCallAdmissionRecoveryPreservesUnexpectedWorkspace(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	op, err := fixture.store.planModelCallAdmission(fixture.source)
 	if err != nil {
@@ -154,6 +157,7 @@ func TestModelCallAdmissionRecoveryPreservesUnexpectedWorkspace(t *testing.T) {
 }
 
 func TestModelCallAdmissionRejectsAlreadyInFlightCall(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	bound, err := fixture.store.BindModelCall(fixture.source)
 	if err != nil {

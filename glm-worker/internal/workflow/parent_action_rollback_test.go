@@ -13,6 +13,7 @@ import (
 )
 
 func TestDecisionPreCallGuardRollsBackToWaitingDecision(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingDecisionState(t, st)
@@ -62,6 +63,7 @@ func TestDecisionPreCallGuardRollsBackToWaitingDecision(t *testing.T) {
 }
 
 func TestFixPreCallGuardRollsBackToWaitingSolReview(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -111,6 +113,7 @@ func TestFixPreCallGuardRollsBackToWaitingSolReview(t *testing.T) {
 }
 
 func TestDecisionPreCallGuardRollbackFailureFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingDecisionState(t, st)
@@ -137,6 +140,7 @@ func TestDecisionPreCallGuardRollbackFailureFailsClosed(t *testing.T) {
 }
 
 func TestDecisionSecondCallPreCallGuardDoesNotRollBackConsumedDecision(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingDecisionState(t, st)

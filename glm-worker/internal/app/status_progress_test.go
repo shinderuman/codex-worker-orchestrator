@@ -10,6 +10,7 @@ import (
 )
 
 func TestExecuteStatusProjectsMilestoneProgressWithoutModelCall(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -63,6 +64,7 @@ func TestExecuteStatusProjectsMilestoneProgressWithoutModelCall(t *testing.T) {
 }
 
 func TestExecuteStatusKeepsMachineJSONWhenMilestoneStateIsUnreadable(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

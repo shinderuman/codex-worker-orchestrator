@@ -46,6 +46,7 @@ func terminalResultFormatStopFixture(t *testing.T, secondPacket string, prepare 
 }
 
 func TestReportResubmissionRuleActivationUsesNormalWorkerContract(t *testing.T) {
+	t.Parallel()
 	st, repo := terminalResultFormatStopFixture(t, constraintViolatingImplementedPacket(), func(repo string) {
 		writeGitTestFile(t, repo, "worker_change.go", "package sample\n")
 	})
@@ -77,6 +78,7 @@ func TestReportResubmissionRuleActivationUsesNormalWorkerContract(t *testing.T) 
 }
 
 func TestTerminalResultCorrectionLeavesResubmittableStop(t *testing.T) {
+	t.Parallel()
 	st, repo := terminalResultFormatStopFixture(t, constraintViolatingImplementedPacket())
 
 	stop := assertResultFormatRecoveryAction(t, st)
@@ -102,6 +104,7 @@ func TestTerminalResultCorrectionLeavesResubmittableStop(t *testing.T) {
 }
 
 func TestReportResubmissionRunsFreshModelCallThroughCurrentValidator(t *testing.T) {
+	t.Parallel()
 	st, repo := terminalResultFormatStopFixture(t, constraintViolatingImplementedPacket())
 
 	r := &scriptedRunner{steps: []runnerStep{
@@ -139,6 +142,7 @@ func TestReportResubmissionRunsFreshModelCallThroughCurrentValidator(t *testing.
 }
 
 func TestReportResubmissionIsOneShotPerTask(t *testing.T) {
+	t.Parallel()
 	st, repo := terminalResultFormatStopFixture(t, constraintViolatingImplementedPacket())
 
 	r := &scriptedRunner{steps: []runnerStep{
@@ -261,6 +265,7 @@ func TestParentValidationPreGateStopSavesResultAndResumesThroughConvergence(t *t
 }
 
 func TestReportResubmissionInterruptedResumeIsNotANewAuthorization(t *testing.T) {
+	t.Parallel()
 	st, repo := terminalResultFormatStopFixture(t, constraintViolatingImplementedPacket())
 
 	interrupted := &scriptedRunner{steps: []runnerStep{
@@ -299,6 +304,7 @@ func TestReportResubmissionInterruptedResumeIsNotANewAuthorization(t *testing.T)
 }
 
 func TestReportResubmissionRejectsSnapshotMismatch(t *testing.T) {
+	t.Parallel()
 	st, repo := terminalResultFormatStopFixture(t, constraintViolatingImplementedPacket())
 
 	stray := filepath.Join(repo, "stray-change.txt")

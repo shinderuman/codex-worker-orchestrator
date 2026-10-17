@@ -9,6 +9,7 @@ import (
 )
 
 func TestOwnerLostActiveTaskRejectsNewTask(t *testing.T) {
+	t.Parallel()
 	env := newMultiRepoEnv(t)
 	env.setStubMode(t, env.stubA, "hold")
 

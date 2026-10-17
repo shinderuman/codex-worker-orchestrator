@@ -8,6 +8,7 @@ import (
 )
 
 func TestMarkdownRuntimeReadGraphBudget(t *testing.T) {
+	t.Parallel()
 	root := scenarioRepoRoot(t)
 
 	budgets := []struct {

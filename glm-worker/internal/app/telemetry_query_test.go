@@ -15,6 +15,7 @@ import (
 )
 
 func TestParseCommandTelemetryQueryArgs(t *testing.T) {
+	t.Parallel()
 	taskID := "22222222-2222-4222-8222-222222222222"
 	since := "2026-09-01T00:00:00Z"
 	until := "2026-09-02T00:00:00Z"
@@ -91,6 +92,7 @@ func TestParseCommandTelemetryQueryArgs(t *testing.T) {
 }
 
 func TestParseCommandRejectsInvalidTelemetryQuery(t *testing.T) {
+	t.Parallel()
 	taskID := "22222222-2222-4222-8222-222222222222"
 	since := "2026-09-01T00:00:00Z"
 	for _, args := range [][]string{
@@ -116,6 +118,7 @@ func TestParseCommandRejectsInvalidTelemetryQuery(t *testing.T) {
 }
 
 func TestStatsExplicitCurrentScopeMatchesDefaultOutput(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -167,6 +170,7 @@ func writeStatsHistoryArchive(t *testing.T, st *state.StateStore, taskID string,
 }
 
 func TestStatsCurrentScopeTaskAndPeriodFilter(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	base := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
@@ -250,6 +254,7 @@ func TestStatsCurrentScopeTaskAndPeriodFilter(t *testing.T) {
 }
 
 func TestStatsCurrentScopeUndatedArchiveAndNanoBounds(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	base := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
@@ -342,6 +347,7 @@ func TestStatsCurrentScopeUndatedArchiveAndNanoBounds(t *testing.T) {
 }
 
 func TestStatsHistoryScopeUsesCurrentSchemaOnly(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
@@ -398,6 +404,7 @@ func TestStatsHistoryScopeUsesCurrentSchemaOnly(t *testing.T) {
 }
 
 func TestCallOutliersHistoryUsesCurrentSchemaPopulation(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
@@ -463,6 +470,7 @@ func TestCallOutliersHistoryUsesCurrentSchemaPopulation(t *testing.T) {
 }
 
 func TestCallOutliersCurrentScopePeriodFilter(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -512,6 +520,7 @@ func TestCallOutliersCurrentScopePeriodFilter(t *testing.T) {
 }
 
 func TestCallOutliersUndatedRecordPeriodFilter(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {

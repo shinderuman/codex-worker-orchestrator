@@ -8,6 +8,7 @@ import (
 )
 
 func TestRuntimeArtifactContextCarriesOnlyDynamicProjection(t *testing.T) {
+	t.Parallel()
 	worker := withArtifactContext("implementation instruction", "/tmp/artifacts")
 	wantWorker := "implementation instruction\n\nREPORT_ARTIFACT_DIR: /tmp/artifacts\n" + priorArtifactReferenceMarker + "\n"
 	if worker != wantWorker {
@@ -25,6 +26,7 @@ func TestRuntimeArtifactContextCarriesOnlyDynamicProjection(t *testing.T) {
 }
 
 func TestProductionPromptsOwnStableArtifactProcedure(t *testing.T) {
+	t.Parallel()
 	root := scenarioRepoRoot(t)
 	worker, err := os.ReadFile(filepath.Join(root, "codex", "glm-worker", "prompts", "WORKER.md"))
 	if err != nil {

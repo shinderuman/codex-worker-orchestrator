@@ -12,6 +12,7 @@ import (
 )
 
 func TestRecoverableGuardFailurePersistsTaskCheckpoint(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	r := guardFailureRunner("done")
@@ -35,6 +36,7 @@ func TestRecoverableGuardFailurePersistsTaskCheckpoint(t *testing.T) {
 }
 
 func TestGuardRecoveryReusesCompletedWorkerAfterRepairCommit(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := guardFailureRunner("done")
@@ -65,6 +67,7 @@ func TestGuardRecoveryReusesCompletedWorkerAfterRepairCommit(t *testing.T) {
 }
 
 func TestGuardRecoveryDirtyDriftFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopWorkflow := newGitWorkflowT(t, st, guardFailureRunner("done"), repo)
@@ -113,6 +116,7 @@ func restoredInstructionMutationErr() *runner.InstructionSurfaceGuardError {
 }
 
 func TestRestoredInstructionMutationConvergesDecisionContinuationToGuardRecovery(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	if err := st.Write("last-request", "req"); err != nil {
@@ -196,6 +200,7 @@ func assertGuardRecoveryRejected(t *testing.T, gateRunner *scriptedRunner, label
 }
 
 func TestRestoredInstructionMutationWithoutResultRerunsWorkerOnResume(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	w := newGitWorkflowT(t, st, &scriptedRunner{steps: []runnerStep{
@@ -233,6 +238,7 @@ func TestRestoredInstructionMutationWithoutResultRerunsWorkerOnResume(t *testing
 }
 
 func TestReviewerPhaseRestoredInstructionMutationStopsAndResumesToTerminal(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{
@@ -281,6 +287,7 @@ func TestReviewerPhaseRestoredInstructionMutationStopsAndResumesToTerminal(t *te
 }
 
 func TestTransientRetryRestoredInstructionMutationStopsGuardRecoverable(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -305,6 +312,7 @@ func TestTransientRetryRestoredInstructionMutationStopsGuardRecoverable(t *testi
 }
 
 func TestUnrestoredInstructionMutationFailsClosedWithoutGuardRecovery(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	r := &scriptedRunner{steps: []runnerStep{{

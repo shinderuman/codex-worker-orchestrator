@@ -32,6 +32,7 @@ func appendRepoSearchRouteEvent(t *testing.T, st *state.StateStore, taskID strin
 }
 
 func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -113,6 +114,7 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 }
 
 func TestExecuteRepoSearchEvalFallsBackToArchivedProjectionAfterEventRemoval(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -151,6 +153,7 @@ func TestExecuteRepoSearchEvalFallsBackToArchivedProjectionAfterEventRemoval(t *
 }
 
 func TestExecuteRepoSearchEvalEmptyStateStaysReadOnly(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "reposearchhash", RepoRoot: "/repo"}
 	cmd, err := ParseCommand([]string{"--repo-search-eval"})

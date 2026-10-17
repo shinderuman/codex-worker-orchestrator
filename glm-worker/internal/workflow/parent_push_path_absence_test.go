@@ -11,6 +11,7 @@ import (
 var parentPushExecPathPattern = regexp.MustCompile("exec\\.Command\\(\\s*\"git\"[^)]*\"push\"")
 
 func TestProductionGoCodeHasNoGitPushExecutionPath(t *testing.T) {
+	t.Parallel()
 	root := scenarioRepoRoot(t)
 	err := filepath.WalkDir(filepath.Join(root, "glm-worker", "internal"), func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -38,6 +39,7 @@ func TestProductionGoCodeHasNoGitPushExecutionPath(t *testing.T) {
 }
 
 func TestWorkerPromptsKeepRemoteWriteProhibition(t *testing.T) {
+	t.Parallel()
 	root := scenarioRepoRoot(t)
 	workerPath := filepath.Join(root, "codex", "glm-worker", "prompts", "WORKER.md")
 	workerData, err := os.ReadFile(workerPath)

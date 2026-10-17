@@ -9,6 +9,7 @@ import (
 )
 
 func TestGenericRuleContextCarriesConflictBoundary(t *testing.T) {
+	t.Parallel()
 	root, baseline := newRuleActivationRepo(t)
 	writeGitTestFile(t, root, "internal/app/options.go", "package app\n")
 	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
@@ -31,6 +32,7 @@ func TestGenericRuleContextCarriesConflictBoundary(t *testing.T) {
 }
 
 func TestRuleActivationCorrectionPreservesPinnedPrimaryAuthority(t *testing.T) {
+	t.Parallel()
 	root, baseline := newRuleActivationRepo(t)
 	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
 	writeRuleFile(t, cfg.CodexConfigDir, "cli.md", "CLI CONTRACT")
@@ -66,6 +68,7 @@ func TestRuleActivationCorrectionPreservesPinnedPrimaryAuthority(t *testing.T) {
 }
 
 func TestRuleActivationCorrectionPreservesUnboundRequestAuthority(t *testing.T) {
+	t.Parallel()
 	root, baseline := newRuleActivationRepo(t)
 	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
 	writeRuleFile(t, cfg.CodexConfigDir, "cli.md", "CLI CONTRACT")

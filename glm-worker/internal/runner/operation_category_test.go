@@ -7,6 +7,7 @@ import (
 )
 
 func TestOperationCategoryForToolCoversAllowlist(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		tool    string
 		command string
@@ -37,6 +38,7 @@ func TestOperationCategoryForToolCoversAllowlist(t *testing.T) {
 }
 
 func TestShellOperationCategoryKeepsObservedFormsNarrow(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		command string
 		want    string

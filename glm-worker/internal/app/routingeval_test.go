@@ -47,6 +47,7 @@ func recordModelRoutingFixture(t *testing.T, st *state.StateStore, taskID string
 }
 
 func TestExecuteModelRoutingAggregatesSavedTelemetry(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -130,6 +131,7 @@ func TestExecuteModelRoutingAggregatesSavedTelemetry(t *testing.T) {
 }
 
 func TestExecuteModelRoutingEmptyState(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "modelroutinghash", RepoRoot: "/repo"}
 	cmd, err := ParseCommand([]string{"--model-routing"})
@@ -172,6 +174,7 @@ func TestExecuteModelRoutingEmptyState(t *testing.T) {
 }
 
 func TestTelemetryScanDirReadErrorIsProcessError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		mode  CommandMode
@@ -223,6 +226,7 @@ func TestTelemetryScanDirReadErrorIsProcessError(t *testing.T) {
 }
 
 func TestModelRoutingJoinsConvergenceDeltaFromRoundRecords(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -278,6 +282,7 @@ func TestModelRoutingJoinsConvergenceDeltaFromRoundRecords(t *testing.T) {
 }
 
 func TestModelRoutingPartialOnUnreadableRoundLog(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -317,6 +322,7 @@ func TestModelRoutingPartialOnUnreadableRoundLog(t *testing.T) {
 }
 
 func TestModelRoutingPartialOnUnreadableTelemetry(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -353,6 +359,7 @@ func TestModelRoutingPartialOnUnreadableTelemetry(t *testing.T) {
 }
 
 func TestParseCommandModelRouting(t *testing.T) {
+	t.Parallel()
 	cmd, err := ParseCommand([]string{"--model-routing"})
 	if err != nil {
 		t.Fatal(err)
@@ -366,6 +373,7 @@ func TestParseCommandModelRouting(t *testing.T) {
 }
 
 func TestConvergenceQualityOutcomesRequiresUniqueWorkerAndTerminalIndependentReview(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
 	records := []state.RoundRecord{
 		{Seq: 1, WorkerPhase: state.RoundWorkerPhaseBaseline, CapturedAt: base, Snapshot: state.SnapshotDigest{Head: "h", IndexDigest: "i", WorktreeDigest: "w"}},

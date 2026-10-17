@@ -115,10 +115,17 @@ func passPacketApp() string {
 	})
 }
 
+func init() {
+	if err := os.Setenv(state.ParentActionCodexThreadIDEnv, ""); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv(state.ParentActionCodexSessionIDEnv, ""); err != nil {
+		panic(err)
+	}
+}
+
 func newAppConfig(t *testing.T) config.AppConfig {
 	t.Helper()
-	t.Setenv(state.ParentActionCodexThreadIDEnv, "")
-	t.Setenv(state.ParentActionCodexSessionIDEnv, "")
 	repo := initGitRepo(t)
 	cfg := config.AppConfig{
 		StateBase:             t.TempDir(),
@@ -177,6 +184,7 @@ func initGitRepo(t *testing.T) string {
 }
 
 func TestExecuteStatusReportsEmptyState(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	var out bytes.Buffer
 
@@ -193,6 +201,7 @@ func TestExecuteStatusReportsEmptyState(t *testing.T) {
 }
 
 func TestExecuteStatsReportsEmptyState(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	var out bytes.Buffer
 
@@ -218,6 +227,7 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 }
 
 func TestPrintStatsAggregatesAndSortsModelAliases(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -277,6 +287,7 @@ func TestPrintStatsAggregatesAndSortsModelAliases(t *testing.T) {
 }
 
 func TestExecuteResumeRejectsNonRateLimited(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{}
 
@@ -287,6 +298,7 @@ func TestExecuteResumeRejectsNonRateLimited(t *testing.T) {
 }
 
 func TestExecuteNewTaskReachesPass(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
@@ -346,6 +358,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 }
 
 func TestExecutePropagatesWorkerFailure(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{{runErr: errors.New("boom")}}}
 
@@ -360,6 +373,7 @@ func TestExecutePropagatesWorkerFailure(t *testing.T) {
 }
 
 func TestRunUsesInjectedDependencies(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
@@ -384,6 +398,7 @@ func TestRunUsesInjectedDependencies(t *testing.T) {
 }
 
 func TestRunStopsWhenConfigLoadFails(t *testing.T) {
+	t.Parallel()
 	want := errors.New("config failure")
 	err := run(
 		[]string{"request"},
@@ -527,6 +542,7 @@ func writeAutomationSchedulerRow(t *testing.T, cfg config.AppConfig, key string,
 }
 
 func TestInstructionMutationGuardRecoveryCLIAcceptance(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	seedGitCommit(t, cfg.RepoRoot)
 	decisionWait := &fakeRunner{steps: []fakeStep{

@@ -136,6 +136,7 @@ func assertNoPresentationSentinel(t *testing.T, decoded map[string]any, keys ...
 }
 
 func TestStatusRawJSONContract(t *testing.T) {
+	t.Parallel()
 	statusFields := []string{"task_status", "task_liveness", "repository_lock", "lock_pid"}
 
 	t.Run("task不在", func(t *testing.T) {
@@ -216,6 +217,7 @@ func statsCurrentTaskJSON(t *testing.T, cfg config.AppConfig, st *state.StateSto
 }
 
 func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
+	t.Parallel()
 	for _, known := range knownTaskStatuses {
 		t.Run(known, func(t *testing.T) {
 			cfg := newAppConfig(t)
@@ -297,6 +299,7 @@ func assertStatsMapFieldsAreObjects(t *testing.T, decoded map[string]any) {
 }
 
 func TestStatsRawJSONContract(t *testing.T) {
+	t.Parallel()
 	t.Run("task 0件", func(t *testing.T) {
 		cfg := newAppConfig(t)
 		st, err := state.NewStateStore(cfg)

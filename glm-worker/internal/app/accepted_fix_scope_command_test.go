@@ -3,6 +3,7 @@ package app
 import "testing"
 
 func TestFixStdinAcceptsExplicitCurrentDiffScope(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{
 		"--fix-stdin", "12",
 		"--origin", "glm-reviewer",
@@ -17,6 +18,7 @@ func TestFixStdinAcceptsExplicitCurrentDiffScope(t *testing.T) {
 }
 
 func TestFixStdinParsesCauseWithOrigin(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{
 		"--fix-stdin", "12",
 		"--origin", "codex-review",
@@ -31,6 +33,7 @@ func TestFixStdinParsesCauseWithOrigin(t *testing.T) {
 }
 
 func TestApproveSurfaceRequiresExactCurrentDiffScope(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--approve-surface", "current-diff"})
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +44,7 @@ func TestApproveSurfaceRequiresExactCurrentDiffScope(t *testing.T) {
 }
 
 func TestAcceptedScopeIsFixOnlyAndClosedValue(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--decision-stdin", "12", "--accepted-scope", "current-diff"},
 		{"--fix-stdin", "12", "--accepted-scope", "anything-else"},
@@ -58,6 +62,7 @@ func TestAcceptedScopeIsFixOnlyAndClosedValue(t *testing.T) {
 }
 
 func TestApproveSurfaceRejectsOtherScopesAndOptions(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--approve-surface"},
 		{"--approve-surface", "other-scope"},

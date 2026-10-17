@@ -43,6 +43,7 @@ func rebindObservationLane(t *testing.T) (findingAcceptanceFixture, PublicationP
 }
 
 func TestRebindObservationReenterCleanupMaterialize(t *testing.T) {
+	t.Parallel()
 	for _, legacyStop := range []bool{false, true} {
 		name := "advancement"
 		if legacyStop {
@@ -131,6 +132,7 @@ func TestRebindObservationReenterCleanupMaterialize(t *testing.T) {
 }
 
 func TestRebindObservationRejectsInconsistentRemoteBinding(t *testing.T) {
+	t.Parallel()
 	f, p, accepted, old := rebindObservationLane(t)
 	remote := advancePublicationTestRemote(t, f, p, "binding-external.txt", "external\n")
 	observed, err := f.store.unpublishedRebindRemote(accepted.Head, old)
@@ -172,6 +174,7 @@ func TestRebindObservationRejectsInconsistentRemoteBinding(t *testing.T) {
 }
 
 func TestRebindObservationRemoteRaceRejectsStaleObservation(t *testing.T) {
+	t.Parallel()
 	f, p, accepted, old := rebindObservationLane(t)
 	remote := advancePublicationTestRemote(t, f, p, "first-external.txt", "first\n")
 	observed, err := f.store.unpublishedRebindRemote(accepted.Head, old)

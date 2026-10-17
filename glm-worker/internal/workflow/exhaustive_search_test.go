@@ -15,6 +15,7 @@ import (
 )
 
 func TestExhaustiveRequirementUsesExplicitPrimaryTaskMarkerOnly(t *testing.T) {
+	t.Parallel()
 	content := "# task\n\n## Contract\n\n- " + exhaustiveSearchRequiredMarker + "\n- exhaustive needle inspection\n\n## Must not\n\n- unrelated prose\n"
 	if !hasExhaustiveRequirement(taskExhaustiveRequirementText(content)) {
 		t.Fatal("Contractのexplicit exhaustive markerを検出できません")
@@ -26,6 +27,7 @@ func TestExhaustiveRequirementUsesExplicitPrimaryTaskMarkerOnly(t *testing.T) {
 }
 
 func TestExhaustiveSearchContractStripsRequestMarkerAndPrefersActiveTaskAuthority(t *testing.T) {
+	t.Parallel()
 	required, query, err := exhaustiveSearchContract(t.TempDir(), exhaustiveSearchRequiredMarker+"\nneedle target", "")
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +54,7 @@ func TestExhaustiveSearchContractStripsRequestMarkerAndPrefersActiveTaskAuthorit
 }
 
 func TestExecuteNewTaskInjectsWorkerAndIndependentReviewerExhaustiveManifest(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	taskContent := taskWithExhaustiveRequirement(activeTaskGuardSeed)
@@ -129,6 +132,7 @@ func TestExecuteNewTaskInjectsWorkerAndIndependentReviewerExhaustiveManifest(t *
 }
 
 func TestExecuteNewTaskDoesNotActivateFromExhaustiveProse(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	taskContent := strings.Replace(activeTaskGuardSeed, "## Contract\n", "## Contract\n\n- keep exhaustive search proof enabled; do not disable full-corpus proof\n", 1)
@@ -151,6 +155,7 @@ func TestExecuteNewTaskDoesNotActivateFromExhaustiveProse(t *testing.T) {
 }
 
 func TestExhaustiveSearchFailureStopsBeforeModelUse(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	w := &Workflow{config: configForExhaustiveFailure(root), state: newStateStoreT(t), now: testNow}
 	_, err := w.exhaustiveSearchContext(exhaustiveSearchRequiredMarker+"\nneedle", "", state.WorkerRole, 1)
@@ -160,6 +165,7 @@ func TestExhaustiveSearchFailureStopsBeforeModelUse(t *testing.T) {
 }
 
 func TestExhaustiveSearchMarkerWithoutQueryFailsClosed(t *testing.T) {
+	t.Parallel()
 	w := &Workflow{config: configForExhaustiveFailure(t.TempDir()), state: newStateStoreT(t), now: testNow}
 	_, err := w.exhaustiveSearchContext(exhaustiveSearchRequiredMarker, "", state.WorkerRole, 1)
 	if err == nil || !strings.Contains(err.Error(), "requires a non-marker query") {
@@ -176,6 +182,7 @@ func testNow() time.Time {
 }
 
 func TestExhaustiveProofPersistsIntoAutoFixPrompt(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	if err := os.WriteFile(filepath.Join(repoRoot, activeTaskGuardPath), []byte(taskWithExhaustiveRequirement(activeTaskGuardSeed)), 0o644); err != nil {
@@ -205,6 +212,7 @@ func TestExhaustiveProofPersistsIntoAutoFixPrompt(t *testing.T) {
 }
 
 func TestRenderExhaustiveProofStaysBoundedForLargeMatchSet(t *testing.T) {
+	t.Parallel()
 	report := reposearch.ExhaustiveReport{
 		Predicate:       "any-normalized-query-token-in-path-or-text",
 		EnumeratedFiles: 512,

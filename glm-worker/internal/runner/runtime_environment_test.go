@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunRecordsRuntimeEnvironmentPerCall(t *testing.T) {
+	t.Parallel()
 	promptDir := t.TempDir()
 	for _, name := range []string{"WORKER.md", "REVIEWER.md"} {
 		if err := os.WriteFile(filepath.Join(promptDir, name), []byte("system"), 0o600); err != nil {
@@ -319,6 +320,7 @@ func newRuntimeEnvironmentFixture(t *testing.T, settingsJSON string) (string, *s
 }
 
 func TestRunRecordsRuntimeEnvironmentWithoutSettings(t *testing.T) {
+	t.Parallel()
 	promptDir := t.TempDir()
 	for _, name := range []string{"WORKER.md", "REVIEWER.md"} {
 		if err := os.WriteFile(filepath.Join(promptDir, name), []byte("system"), 0o600); err != nil {
@@ -451,6 +453,7 @@ func containsString(values []string, want string) bool {
 }
 
 func TestIsolationSettingsBlocksAllScopesAndCustomizations(t *testing.T) {
+	t.Parallel()
 	claudeConfigDir := filepath.Join(t.TempDir(), "claude-home")
 
 	encoded, err := isolationSettings(claudeConfigDir, nil)
@@ -507,6 +510,7 @@ func TestIsolationSettingsFallsBackToHomeForRules(t *testing.T) {
 }
 
 func TestLoadSettingEnvExtractsOnlyAllowlistedKeys(t *testing.T) {
+	t.Parallel()
 	claudeConfigDir := t.TempDir()
 	settings := map[string]any{
 		"env": map[string]any{
@@ -546,6 +550,7 @@ func TestLoadSettingEnvExtractsOnlyAllowlistedKeys(t *testing.T) {
 }
 
 func TestLoadSettingEnvToleratesMissingFile(t *testing.T) {
+	t.Parallel()
 	result, _, err := loadSettingEnv(t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("settings.json不在時は空mapが期待: %v", err)

@@ -79,6 +79,7 @@ func acceptedResultRecoveryFixture(t *testing.T) (*Workflow, AcceptedResultRuleR
 }
 
 func TestAcceptedResultRecoveryPreservesEvidenceAndContinuesOnlyRuleActivation(t *testing.T) {
+	t.Parallel()
 	w, input := acceptedResultRecoveryFixture(t)
 	source, err := w.state.LoadResumeCheckpoint()
 	if err != nil {
@@ -114,6 +115,7 @@ func TestAcceptedResultRecoveryPreservesEvidenceAndContinuesOnlyRuleActivation(t
 }
 
 func TestAcceptedResultRecoveryRejectsUnprovenSourcesWithoutChangingStop(t *testing.T) {
+	t.Parallel()
 	for _, mutation := range []string{"task", "call", "session", "snapshot", "packet", "transcript"} {
 		t.Run(mutation, func(t *testing.T) {
 			w, input := acceptedResultRecoveryFixture(t)
@@ -155,6 +157,7 @@ func TestAcceptedResultRecoveryRejectsUnprovenSourcesWithoutChangingStop(t *test
 }
 
 func TestAcceptedResultRecoveryRequiresExactIdleCanonicalAttempt(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"different attempt", "in-flight call"} {
 		t.Run(scenario, func(t *testing.T) {
 			w, input := acceptedResultRecoveryFixture(t)
@@ -178,6 +181,7 @@ func TestAcceptedResultRecoveryRequiresExactIdleCanonicalAttempt(t *testing.T) {
 }
 
 func TestAcceptedResultContinuationKeepsPhaseReadOnlyContracts(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		stage      state.ResumeStage
 		reportOnly bool

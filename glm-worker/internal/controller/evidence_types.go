@@ -74,6 +74,7 @@ type TaskIndexRevision struct {
 	PreviousRevision          *EvidenceObjectRef  `json:"previous_revision,omitempty"`
 	AttemptSeals              []EvidenceObjectRef `json:"attempt_seals"`
 	Finalizations             []EvidenceObjectRef `json:"finalizations,omitempty"`
+	SourceRevisions           []EvidenceObjectRef `json:"source_revisions,omitempty"`
 	FindingRecords            []EvidenceObjectRef `json:"finding_records,omitempty"`
 	DependencyEdgeRecords     []EvidenceObjectRef `json:"dependency_edge_records,omitempty"`
 	PublicationLineageRecords []EvidenceObjectRef `json:"publication_lineage_records,omitempty"`

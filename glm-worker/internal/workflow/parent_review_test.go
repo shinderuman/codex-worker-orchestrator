@@ -18,6 +18,7 @@ func parentOutcomeTotal(stats state.TaskStats) int {
 }
 
 func TestWorkerDecisionOpportunityCarriesProducer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: needsSolDecisionPacket()},
@@ -41,6 +42,7 @@ func TestWorkerDecisionOpportunityCarriesProducer(t *testing.T) {
 }
 
 func TestReviewerOpportunityCarriesProducer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -59,6 +61,7 @@ func TestReviewerOpportunityCarriesProducer(t *testing.T) {
 }
 
 func TestAutoFixRoundsDoNotRecordParentOutcome(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -89,6 +92,7 @@ func TestAutoFixRoundsDoNotRecordParentOutcome(t *testing.T) {
 }
 
 func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	setup := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -135,6 +139,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 }
 
 func TestRateLimitStopAndResumeDoNotRecordParentOutcome(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	stopped := &scriptedRunner{steps: []runnerStep{{
 		output: zaiFiveHourLog,

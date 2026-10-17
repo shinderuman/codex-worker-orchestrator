@@ -7,6 +7,7 @@ import (
 )
 
 func TestGitAuthorityGuardIgnoresRefsOutsideWorkspaceAuthority(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		refPrefix string
@@ -65,6 +66,7 @@ func TestGitAuthorityGuardIgnoresRefsOutsideWorkspaceAuthority(t *testing.T) {
 }
 
 func TestGitAuthorityGuardDetectsHeadSymbolicTargetMutation(t *testing.T) {
+	t.Parallel()
 	root := newGitAuthorityRepo(t)
 	currentBranch := strings.TrimSpace(runGitAuthorityOutput(t, root, "symbolic-ref", "--short", "HEAD"))
 	guard, err := prepareGitAuthorityGuard(root)

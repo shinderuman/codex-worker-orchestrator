@@ -3,6 +3,7 @@ package runner
 import "testing"
 
 func TestRotateInstructionSurfaceBaselineKeepsTaskWorkAndInvalidatesSessions(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeInstructionGuardFile(t, root, "AGENTS.local.md", "before")
 	writeInstructionGuardFile(t, root, "ordinary.go", "package before")
@@ -45,6 +46,7 @@ func TestRotateInstructionSurfaceBaselineKeepsTaskWorkAndInvalidatesSessions(t *
 }
 
 func TestRotateInstructionSurfaceBaselineRejectsNoChange(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeInstructionGuardFile(t, root, "AGENTS.md", "same")
 	r := newInstructionGuardRunner(t, root, "task-one")

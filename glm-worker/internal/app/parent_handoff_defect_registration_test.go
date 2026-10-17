@@ -10,6 +10,7 @@ import (
 )
 
 func TestParentHandoffMapsDefectBindingToControllerSemanticAction(t *testing.T) {
+	t.Parallel()
 	action := canonicalParentAction(string(state.ParentActionBindDefectTask))
 	if action != "controller-semantic" {
 		t.Fatalf("canonical defect action = %q", action)
@@ -21,6 +22,7 @@ func TestParentHandoffMapsDefectBindingToControllerSemanticAction(t *testing.T) 
 }
 
 func TestPendingDefectRegistrationBlocksParentRequestStopBeforeTaskPlanBinding(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	target := "IMPLEMENTATION_TASKS/follow-up.md"
@@ -48,6 +50,7 @@ func TestPendingDefectRegistrationBlocksParentRequestStopBeforeTaskPlanBinding(t
 }
 
 func TestPendingDefectBindingSuppressesMilestoneSideAction(t *testing.T) {
+	t.Parallel()
 	status := string(state.TaskStatusWaitingSolReview)
 	required := string(state.ParentActionBindDefectTask)
 	actions := []string{string(state.ParentActionBindDefectTask)}

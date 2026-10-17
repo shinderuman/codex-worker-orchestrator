@@ -3,6 +3,7 @@ package workflow
 import "testing"
 
 func TestPinRepositoryHarnessActivationRecordsTaskEvidence(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		activate   bool

@@ -27,6 +27,7 @@ const machineContractProbeArg = "--machine-contract-probe"
 const machineContractCommandTimeout = 60 * time.Second
 
 func TestDispatchCommandMachineOutputContract(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("go commandがないため実binary testをskipします: %v", err)
 	}

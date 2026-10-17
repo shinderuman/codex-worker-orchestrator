@@ -8,6 +8,7 @@ import (
 )
 
 func TestFixStdinUsesCanonicalSemanticOptionsAlongsideTransport(t *testing.T) {
+	t.Parallel()
 	digest := strings.Repeat("a", 64)
 	command, err := ParseCommand([]string{
 		"--fix-stdin", "12",
@@ -27,6 +28,7 @@ func TestFixStdinUsesCanonicalSemanticOptionsAlongsideTransport(t *testing.T) {
 }
 
 func TestFixStdinRejectsInvalidCanonicalSemanticOptionsDuringParsing(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--fix-stdin", "12", "--accepted-scope", "other"},
 		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only"},

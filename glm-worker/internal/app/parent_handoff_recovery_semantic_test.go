@@ -12,6 +12,7 @@ import (
 )
 
 func TestParentHandoffRecoveryIncludesReviewerSemanticResult(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
@@ -67,6 +68,7 @@ func TestParentHandoffRecoveryIncludesReviewerSemanticResult(t *testing.T) {
 }
 
 func TestParentHandoffRecoveryMarksMissingReviewerSemanticResultUnavailable(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
@@ -99,6 +101,7 @@ func TestParentHandoffRecoveryMarksMissingReviewerSemanticResultUnavailable(t *t
 }
 
 func TestParentHandoffRecoveryDoesNotAttachStaleReviewToWorkerDecision(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {

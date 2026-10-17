@@ -148,19 +148,7 @@ func retiredWorkflowCorpus(t *testing.T, completionQuality bool) (config.AppConf
 	if completionQuality {
 		prepareCompletionQualityCorpus(t, repo)
 	}
-	runControllerActivationGit(t, repo, "config", "user.name", "retired workflow test")
-	runControllerActivationGit(t, repo, "config", "user.email", "retired@example.invalid")
-	runControllerActivationGit(t, repo, "add", ".")
-	runControllerActivationGit(t, repo, "commit", "-qm", "successor authority")
-	remote := filepath.Join(t.TempDir(), "remote.git")
-	runControllerActivationGit(t, repo, "init", "--bare", remote)
-	runControllerActivationGit(t, repo, "remote", "add", "origin", remote)
-	runControllerActivationGit(t, repo, "push", "origin", "HEAD:refs/heads/main")
-	ref, err := exec.Command("git", "-C", repo, "symbolic-ref", "HEAD").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	policy := controller.PublicationPolicy{Remote: "origin", LocalRef: strings.TrimSpace(string(ref)), RemoteRef: "refs/heads/main"}
+	policy := commitCorpusWithPublicationRemote(t, repo, "retired workflow test", "retired@example.invalid", "successor authority")
 	admission, err := controller.Activate(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -170,4 +158,21 @@ func retiredWorkflowCorpus(t *testing.T, completionQuality bool) (config.AppConf
 		t.Fatal(err)
 	}
 	return cfg, admission, store, policy
+}
+
+func commitCorpusWithPublicationRemote(t *testing.T, repo, userName, userEmail, commitMessage string) controller.PublicationPolicy {
+	t.Helper()
+	runControllerActivationGit(t, repo, "config", "user.name", userName)
+	runControllerActivationGit(t, repo, "config", "user.email", userEmail)
+	runControllerActivationGit(t, repo, "add", ".")
+	runControllerActivationGit(t, repo, "commit", "-qm", commitMessage)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	runControllerActivationGit(t, repo, "init", "--bare", remote)
+	runControllerActivationGit(t, repo, "remote", "add", "origin", remote)
+	runControllerActivationGit(t, repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+	ref, err := exec.Command("git", "-C", repo, "symbolic-ref", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return controller.PublicationPolicy{Remote: "origin", LocalRef: strings.TrimSpace(string(ref)), RemoteRef: "refs/heads/main"}
 }

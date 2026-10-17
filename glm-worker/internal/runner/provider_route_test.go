@@ -24,6 +24,7 @@ func managedProviderConfig(t *testing.T, env map[string]any) config.AppConfig {
 }
 
 func TestManagedProviderRouteAllowsExplicitCompatibleRoutes(t *testing.T) {
+	t.Parallel()
 	for _, baseURL := range []string{
 		"https://api.z.ai/api/anthropic",
 		"https://compatible.example/anthropic",
@@ -42,6 +43,7 @@ func TestManagedProviderRouteAllowsExplicitCompatibleRoutes(t *testing.T) {
 }
 
 func TestManagedProviderRouteRejectsDefaultAnthropicExposure(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		env  map[string]any
@@ -92,6 +94,7 @@ func TestManagedProviderRouteAllowsExplicitParentRouteWhenAllowlisted(t *testing
 }
 
 func TestManagedProviderRouteGuardCoversRunDecideAndProbe(t *testing.T) {
+	t.Parallel()
 	promptDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(promptDir, "WORKER.md"), []byte("system"), 0o600); err != nil {
 		t.Fatal(err)

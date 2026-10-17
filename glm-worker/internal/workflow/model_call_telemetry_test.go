@@ -9,6 +9,7 @@ import (
 )
 
 func TestRunModelRecordsPromptResponseAndUsage(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{
 		structured: implementedPacket("done"),
@@ -75,6 +76,7 @@ func TestRunModelRecordsPromptResponseAndUsage(t *testing.T) {
 }
 
 func TestRunModelCanOmitTelemetryContent(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
 	w := newWorkflowT(t, st, r)

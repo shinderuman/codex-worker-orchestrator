@@ -8,6 +8,7 @@ import (
 )
 
 func TestDecodeControllerEvidenceCommand(t *testing.T) {
+	t.Parallel()
 	command, err := decodeControllerEvidenceCommand(strings.NewReader(`{"action":"capture-git-archive","logical_identity":"attempt:a1","root_oids":["abc"]}`))
 	if err != nil {
 		t.Fatalf("decode controller evidence command: %v", err)
@@ -21,6 +22,7 @@ func TestDecodeControllerEvidenceCommand(t *testing.T) {
 }
 
 func TestDecodeControllerEvidenceCommandRejectsUnknownAndTrailingInput(t *testing.T) {
+	t.Parallel()
 	for name, input := range map[string]string{
 		"unknown":  `{"action":"build-attempt-bundle","unexpected":true}`,
 		"trailing": `{"action":"build-attempt-bundle"}{"action":"build-task-bundle"}`,
@@ -35,6 +37,7 @@ func TestDecodeControllerEvidenceCommandRejectsUnknownAndTrailingInput(t *testin
 }
 
 func TestRequiredControllerEvidenceRef(t *testing.T) {
+	t.Parallel()
 	if _, err := requiredControllerEvidenceRef(controllerEvidenceCommand{Action: controllerEvidenceCleanup}); err == nil {
 		t.Fatal("missing evidence ref was accepted")
 	}

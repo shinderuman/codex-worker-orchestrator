@@ -6,6 +6,7 @@ import (
 )
 
 func TestWorkspaceSnapshotTracksOnlyHeadSymbolicTarget(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		refPrefix string
@@ -54,6 +55,7 @@ func TestWorkspaceSnapshotTracksOnlyHeadSymbolicTarget(t *testing.T) {
 }
 
 func TestWorkspaceSnapshotTracksHeadSymbolicTargetIdentity(t *testing.T) {
+	t.Parallel()
 	root := newVolatileRefFixtureRepo(t)
 	before, err := CaptureWorkspaceSnapshot(root)
 	if err != nil {
@@ -73,6 +75,7 @@ func TestWorkspaceSnapshotTracksHeadSymbolicTargetIdentity(t *testing.T) {
 }
 
 func TestDetachedWorkspaceSnapshotIgnoresSharedRepositoryRefActivity(t *testing.T) {
+	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	objectID := controllerGitOutput(t, repo, "rev-parse", "HEAD")
 	before, err := CaptureWorkspaceSnapshot(linked)
@@ -92,6 +95,7 @@ func TestDetachedWorkspaceSnapshotIgnoresSharedRepositoryRefActivity(t *testing.
 }
 
 func TestLiveLeaseAdmitsUnrelatedRepositoryRefTurnoverAndNormalStopResume(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	root := fixture.source.Workspace.Root
 	authority := fixture.source.MutationAuthority()
@@ -148,6 +152,7 @@ func TestLiveLeaseAdmitsUnrelatedRepositoryRefTurnoverAndNormalStopResume(t *tes
 }
 
 func TestLiveLeaseStillStopsOnIllegalWorkspaceChanges(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		mutate  func(t *testing.T, root string)

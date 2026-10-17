@@ -3,6 +3,7 @@ package workflow
 import "testing"
 
 func TestActiveTaskWorkerContractPinsSemanticsWithoutProse(t *testing.T) {
+	t.Parallel()
 	contract := newActiveTaskPromptContract("IMPLEMENTATION_TASKS/task.md", activeTaskAudienceWorker)
 	if !contract.valid() {
 		t.Fatal("worker contract must be valid")
@@ -16,6 +17,7 @@ func TestActiveTaskWorkerContractPinsSemanticsWithoutProse(t *testing.T) {
 }
 
 func TestActiveTaskReviewerContractAddsIndependentContractCheck(t *testing.T) {
+	t.Parallel()
 	contract := newActiveTaskPromptContract("IMPLEMENTATION_TASKS/task.md", activeTaskAudienceReviewer)
 	if !contract.valid() {
 		t.Fatal("reviewer contract must be valid")
@@ -29,6 +31,7 @@ func TestActiveTaskReviewerContractAddsIndependentContractCheck(t *testing.T) {
 }
 
 func TestActiveTaskContractRejectsSemanticWeakening(t *testing.T) {
+	t.Parallel()
 	contract := newActiveTaskPromptContract("IMPLEMENTATION_TASKS/task.md", activeTaskAudienceWorker)
 	contract.requirements &^= activeTaskAcceptanceCriteria
 	if contract.valid() {
@@ -49,6 +52,7 @@ func TestActiveTaskContractRejectsSemanticWeakening(t *testing.T) {
 }
 
 func TestActiveTaskContractRendersStructuredContext(t *testing.T) {
+	t.Parallel()
 	contract := newActiveTaskPromptContract("IMPLEMENTATION_TASKS/task.md", activeTaskAudienceWorker)
 	want := "ACTIVE_TASK_FILE: IMPLEMENTATION_TASKS/task.md\n" +
 		"ACTIVE_TASK_CONTEXT:\n" +

@@ -8,6 +8,7 @@ import (
 )
 
 func TestCanonicalBlockingResolutionPreservesNoRunnableEpisode(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	childPath := "IMPLEMENTATION_TASKS/blocked-child.md"
 	if err := os.WriteFile(filepath.Join(repo, childPath), []byte("# blocked child\n\n## Contract\n\nblocked child\n\n## Dependencies\n\nnone\n"), 0o644); err != nil {
@@ -86,6 +87,7 @@ func TestCanonicalBlockingResolutionPreservesNoRunnableEpisode(t *testing.T) {
 }
 
 func TestDuplicateBlockerTargetReusesEpisodeEdge(t *testing.T) {
+	t.Parallel()
 	root := testSemanticRef("IMPLEMENTATION_TASKS/root.md", "root")
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")

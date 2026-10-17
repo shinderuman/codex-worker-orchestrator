@@ -199,6 +199,15 @@ func executeControllerSemanticResolve(
 	if command.FindingID == "" || command.Decision == nil {
 		return controllerSemanticOutput{}, fmt.Errorf("finding resolution requires finding identity and decision")
 	}
+	if command.ExpectedControllerGeneration != 0 {
+		head, err := store.LoadHead()
+		if err != nil {
+			return controllerSemanticOutput{}, err
+		}
+		if head.ControllerGeneration != command.ExpectedControllerGeneration {
+			return controllerSemanticOutput{}, fmt.Errorf("finding resolution expected controller generation %d but current authority is %d", command.ExpectedControllerGeneration, head.ControllerGeneration)
+		}
+	}
 	result, err := store.ResolveFindingWithProjectAuthority(command.FindingID, *command.Decision)
 	if err != nil {
 		return controllerSemanticOutput{}, err

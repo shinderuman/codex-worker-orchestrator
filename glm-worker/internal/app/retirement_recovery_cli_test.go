@@ -3,13 +3,15 @@ package app
 import (
 	"bytes"
 	"encoding/json"
-	"io"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactioncmd"
 )
 
@@ -36,9 +38,91 @@ func TestRetirementRecoveryCLIProcess(_ *testing.T) {
 	os.Exit(2)
 }
 
+func TestParentActionCLIProcess(_ *testing.T) {
+	if os.Getenv("GLM_PARENT_ACTION_TEST_PROCESS") != "1" {
+		return
+	}
+	for index, arg := range os.Args {
+		if arg == "--" {
+			os.Exit(parentactioncmd.Run(os.Args[index+1:], os.Stdout, os.Stderr))
+		}
+	}
+	os.Exit(2)
+}
+
+func writeRetirementCLIShimDir(t *testing.T) string {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	script := "#!/bin/sh\nGLM_RETIREMENT_RECOVERY_TEST_PROCESS=1 exec '" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' -test.run '^TestRetirementRecoveryCLIProcess$' -- \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "glm-worker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func parentActionChildEnv(t *testing.T, cfg config.AppConfig, shimDir string) []string {
+	t.Helper()
+	home := filepath.Dir(cfg.StateBase)
+	return append(append(os.Environ(),
+		"GLM_PARENT_ACTION_TEST_PROCESS=1",
+		"GLM_WORKER_HOME="+home,
+		"HOME="+home,
+		"CODEX_CONFIG_DIR="+filepath.Join(home, "codex"),
+		"CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude"),
+		"PATH="+shimDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	), qualityToolsBinDirEnv(t)...)
+}
+
+func childExitCode(runErr error) int {
+	if runErr == nil {
+		return 0
+	}
+	exitErr := &exec.ExitError{}
+	if errors.As(runErr, &exitErr) {
+		if code := exitErr.ExitCode(); code >= 0 {
+			return code
+		}
+	}
+	return 1
+}
+
+func runParentActionCLI(t *testing.T, cfg config.AppConfig, args ...string) (int, string, string) {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(executable, append([]string{"-test.run", "^TestParentActionCLIProcess$", "--"}, args...)...)
+	command.Dir = cfg.RepoRoot
+	command.Env = parentActionChildEnv(t, cfg, writeRetirementCLIShimDir(t))
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	exit := childExitCode(command.Run())
+	return exit, stdout.String(), stderr.String()
+}
+
+func runAuthorityBootstrapChild(t *testing.T, cfg config.AppConfig) (int, string) {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(executable, "-test.run", "^TestRetirementRecoveryCLIProcess$", "--", "--authority", "bootstrap")
+	command.Dir = cfg.RepoRoot
+	command.Env = append(parentActionChildEnv(t, cfg, writeRetirementCLIShimDir(t)), "GLM_RETIREMENT_RECOVERY_TEST_PROCESS=1")
+	var output bytes.Buffer
+	command.Stdout = &output
+	command.Stderr = &output
+	return childExitCode(command.Run()), output.String()
+}
+
 func TestPartialCompletionProcessDeathRecoversThroughCanonicalParentCLI(t *testing.T) {
 	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
-	t.Setenv("GLM_WORKER_HOME", filepath.Dir(cfg.StateBase))
 	hooks := t.TempDir()
 	pidFile := filepath.Join(t.TempDir(), "controller-pid")
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
@@ -68,60 +152,34 @@ func TestPartialCompletionProcessDeathRecoversThroughCanonicalParentCLI(t *testi
 	if before == candidate.CommitOID {
 		t.Fatal("injected death occurred before the local ref effect")
 	}
-	original, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(cfg.RepoRoot); err != nil {
-		t.Fatal(err)
-	}
-	var bootstrap bytes.Buffer
-	_, bootstrapErr := runAuthorityBootstrap([]string{"--authority", "bootstrap"}, &bootstrap)
-	if err := os.Chdir(original); err != nil {
-		t.Fatal(err)
-	}
-	if bootstrapErr == nil {
-		t.Fatal("partial local preparation was reported as successful bootstrap")
+	if exit, output := runAuthorityBootstrapChild(t, cfg); exit == 0 {
+		t.Fatalf("partial local preparation was reported as successful bootstrap: exit=%d %s", exit, output)
 	}
 	recoverCompletionThroughParentCLI(t, cfg)
 	recovered, err := store.LoadHead()
 	if err != nil || recovered.PendingTransitionID != "" || recovered.ExecutionTaskRef != nil || recovered.IntegrationTip != before {
 		t.Fatalf("CLI did not complete the exact saved journal: %v", err)
 	}
-	assertRetiredBootstrap(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/successor.md")
+	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
 	actual := appTestGitOutput(t, cfg.RepoRoot, "ls-remote", policy.Remote, policy.RemoteRef)
 	if !strings.HasPrefix(string(actual), before+"\t") {
 		t.Fatal("recovery did not publish the planned final commit")
 	}
 }
 
-func installRetirementCLIProcess(t *testing.T) {
+func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command string) {
 	t.Helper()
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	script := "#!/bin/sh\nGLM_RETIREMENT_RECOVERY_TEST_PROCESS=1 exec '" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' -test.run '^TestRetirementRecoveryCLIProcess$' -- \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "glm-worker"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
-func runStagedRetirementRecovery(t *testing.T, command string) {
-	t.Helper()
-	var out, diagnostics bytes.Buffer
-	if code := parentactioncmd.Run([]string{"prepare", controllerExecutionSurface}, &out, &diagnostics); code != 0 {
-		t.Fatalf("prepare recovery: exit=%d %s", code, diagnostics.String())
+	exit, out, diagnostics := runParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+	if exit != 0 {
+		t.Fatalf("prepare recovery: exit=%d %s", exit, diagnostics)
 	}
 	var prepared struct {
 		Path        string                               `json:"path"`
 		Slots       []struct{ Name, Placeholder string } `json:"slots"`
 		NextCommand []string                             `json:"next_command"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &prepared); err != nil || len(prepared.Slots) != 1 || prepared.Slots[0].Name != "controller_command_json" || len(prepared.NextCommand) < 2 {
-		t.Fatalf("recovery preparation contract: %v", err)
+	if err := json.Unmarshal([]byte(out), &prepared); err != nil || len(prepared.Slots) != 1 || prepared.Slots[0].Name != "controller_command_json" || len(prepared.NextCommand) < 2 {
+		t.Fatalf("recovery preparation contract: %v %s", err, out)
 	}
 	data, err := os.ReadFile(prepared.Path)
 	if err != nil {
@@ -133,8 +191,8 @@ func runStagedRetirementRecovery(t *testing.T, command string) {
 	if err := os.WriteFile(prepared.Path, []byte(strings.Replace(string(data), prepared.Slots[0].Placeholder, command, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	diagnostics.Reset()
-	if code := parentactioncmd.Run(prepared.NextCommand[1:], io.Discard, &diagnostics); code != 0 {
-		t.Fatalf("canonical CLI recovery: exit=%d %s", code, diagnostics.String())
+	exit, _, diagnostics = runParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
+	if exit != 0 {
+		t.Fatalf("canonical CLI recovery: exit=%d %s", exit, diagnostics)
 	}
 }

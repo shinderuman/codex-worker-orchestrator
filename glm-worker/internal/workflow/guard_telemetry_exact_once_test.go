@@ -141,6 +141,7 @@ func runExactOnceCases(t *testing.T, cases []exactOnceCase) {
 }
 
 func TestGuardMissingMetadataDoesNotCreatePhantomTelemetry(t *testing.T) {
+	t.Parallel()
 	runExactOnceCases(t, []exactOnceCase{
 		{
 			name: "plan tracked missing stops before call without phantom telemetry",
@@ -174,6 +175,7 @@ func TestGuardMissingMetadataDoesNotCreatePhantomTelemetry(t *testing.T) {
 }
 
 func TestGuardMetadataMutationRecordsExecutedCallOnce(t *testing.T) {
+	t.Parallel()
 	runExactOnceCases(t, []exactOnceCase{
 		{
 			name:              "plan mismatch on initial call records executed call once",
@@ -223,6 +225,7 @@ func TestGuardMetadataMutationRecordsExecutedCallOnce(t *testing.T) {
 }
 
 func TestGuardOrdinaryAndRecoveryCallsAreRecordedExactlyOnce(t *testing.T) {
+	t.Parallel()
 	transientFirstStep := runnerStep{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}
 	runExactOnceCases(t, []exactOnceCase{
 		{
@@ -280,6 +283,7 @@ func TestGuardOrdinaryAndRecoveryCallsAreRecordedExactlyOnce(t *testing.T) {
 }
 
 func TestGuardRateLimitStateFailuresRecordExecutedCallOnce(t *testing.T) {
+	t.Parallel()
 	runExactOnceCases(t, []exactOnceCase{
 		{
 			name: "rate limit ready-state failure records executed call once",

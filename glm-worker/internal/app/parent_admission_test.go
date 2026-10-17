@@ -13,6 +13,7 @@ import (
 )
 
 func TestResumeCommandAdmissionBindsRateLimitResetWindow(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		resetAt    time.Time
@@ -58,6 +59,7 @@ func TestResumeCommandAdmissionBindsRateLimitResetWindow(t *testing.T) {
 }
 
 func TestResumeCommandAdmissionFailsClosedWithoutResetEvidence(t *testing.T) {
+	t.Parallel()
 	st := newParentAdmissionStore(t)
 	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker", Role: state.WorkerRole, Model: "opus"}
 	checkpoint.SetStopKind(state.ResumeStopRateLimited)
@@ -76,6 +78,7 @@ func TestResumeCommandAdmissionFailsClosedWithoutResetEvidence(t *testing.T) {
 }
 
 func TestResumeCommandAdmissionFailsClosedForUnreadableResetEvidence(t *testing.T) {
+	t.Parallel()
 	st := newParentAdmissionStore(t)
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
@@ -96,6 +99,7 @@ func TestResumeCommandAdmissionFailsClosedForUnreadableResetEvidence(t *testing.
 }
 
 func TestParentCommandAdmissionMatchesWaitingActions(t *testing.T) {
+	t.Parallel()
 	t.Run("decision", func(t *testing.T) {
 		st := newParentAdmissionStore(t)
 		if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
@@ -139,6 +143,7 @@ func TestParentCommandAdmissionMatchesWaitingActions(t *testing.T) {
 }
 
 func TestParentCommandAdmissionPreservesPassAcceptance(t *testing.T) {
+	t.Parallel()
 	st := newParentAdmissionStore(t)
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
@@ -171,6 +176,7 @@ func TestParentCommandAdmissionPreservesPassAcceptance(t *testing.T) {
 }
 
 func TestParentCommandAdmissionPreservesAcceptNoOp(t *testing.T) {
+	t.Parallel()
 	st := newParentAdmissionStore(t)
 	if err := admitParentCommand(Command{Mode: ModeAccept}, st); err != nil {
 		t.Fatalf("idempotent accept no-op was rejected: %v", err)
@@ -178,6 +184,7 @@ func TestParentCommandAdmissionPreservesAcceptNoOp(t *testing.T) {
 }
 
 func TestParentCommandAdmissionStoppedTaskRequiresResume(t *testing.T) {
+	t.Parallel()
 	st := newParentAdmissionStore(t)
 	checkpoint := state.ResumeCheckpoint{
 		Stage:          state.ResumeStageWorker,

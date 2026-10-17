@@ -7,6 +7,7 @@ import (
 )
 
 func TestExecutionProgressBandUsesCoarseMilestonePosition(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		currentIndex int

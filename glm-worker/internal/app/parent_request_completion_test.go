@@ -11,6 +11,7 @@ import (
 const completedNonGoalTask = "IMPLEMENTATION_TASKS/active.md"
 
 func TestParentRequestCompletionProjectionRequiresImmediateNextTask(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	next := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{next}, nil, nil))
@@ -30,6 +31,7 @@ func TestParentRequestCompletionProjectionRequiresImmediateNextTask(t *testing.T
 }
 
 func TestParentRequestCompletionProjectionAllowsBlockedStopWithoutCompletion(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	blocked := "IMPLEMENTATION_TASKS/blocked.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", nil, nil, []string{blocked}))
@@ -48,6 +50,7 @@ func TestParentRequestCompletionProjectionAllowsBlockedStopWithoutCompletion(t *
 }
 
 func TestParentRequestCompletionProjectionAdmitsCompletedGoalOnly(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
 
@@ -63,6 +66,7 @@ func TestParentRequestCompletionProjectionAdmitsCompletedGoalOnly(t *testing.T) 
 }
 
 func TestParentRequestCompletionProjectionRejectsNonGoalPromotedActiveStop(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
@@ -82,6 +86,7 @@ func TestParentRequestCompletionProjectionRejectsNonGoalPromotedActiveStop(t *te
 }
 
 func TestParentRequestCompletionProjectionAdmitsNonGoalBlockedOnlyCompletion(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	blocked := "IMPLEMENTATION_TASKS/blocked.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan(nil, nil, []string{blocked}))
@@ -101,6 +106,7 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalBlockedOnlyCompletion(t *
 }
 
 func TestParentRequestCompletionProjectionAdmitsNonGoalExhaustedSchedule(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan(nil, nil, nil))
 
@@ -116,6 +122,7 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalExhaustedSchedule(t *test
 }
 
 func TestParentRequestCompletionProjectionDeniesNonGoalPreSyncSchedule(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		active  []string
@@ -165,6 +172,7 @@ func TestParentRequestCompletionProjectionDeniesNonGoalPreSyncSchedule(t *testin
 }
 
 func TestParentRequestCompletionProjectionRejectsNonGoalPromotionGap(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	next := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan(nil, []string{next}, nil))
@@ -177,6 +185,7 @@ func TestParentRequestCompletionProjectionRejectsNonGoalPromotionGap(t *testing.
 }
 
 func TestParentRequestCompletionProjectionRejectsCompletedGoalWithRemainingSchedule(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/active.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", []string{active}, nil, nil))

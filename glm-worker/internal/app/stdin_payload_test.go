@@ -173,6 +173,7 @@ func assertFailClosedStateUnchanged(t *testing.T, cfg config.AppConfig, before m
 }
 
 func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
@@ -204,6 +205,7 @@ func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
 }
 
 func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
@@ -224,6 +226,7 @@ func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
 }
 
 func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
@@ -240,6 +243,7 @@ func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
 }
 
 func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingSolReviewState(t, cfg)
 	payload := stdinTestPayload()
@@ -264,6 +268,7 @@ func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
 }
 
 func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingSolReviewState(t, cfg)
 	payload := stdinTestPayload()
@@ -283,6 +288,7 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 }
 
 func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
+	t.Parallel()
 	payload := stdinTestPayload()
 	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
 
@@ -325,6 +331,7 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 }
 
 func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := "NUL先頭\x00中間\x00末尾\n2行目 `backtick` $HOME \"double\" 'single' 日本語\x00"
@@ -355,6 +362,7 @@ func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
 }
 
 func TestReadStdinPayloadReturnsWithoutEOF(t *testing.T) {
+	t.Parallel()
 	payload := stdinTestPayload()
 	reader, writer := io.Pipe()
 	go func() {
@@ -371,6 +379,7 @@ func TestReadStdinPayloadReturnsWithoutEOF(t *testing.T) {
 }
 
 func TestReadStdinPayloadAcceptsUppercaseSHA(t *testing.T) {
+	t.Parallel()
 	payload := stdinTestPayload()
 	upper := strings.ToUpper(stdinPayloadSHA(payload))
 
@@ -384,6 +393,7 @@ func TestReadStdinPayloadAcceptsUppercaseSHA(t *testing.T) {
 }
 
 func TestReadStdinPayloadRejectsInsufficientBytes(t *testing.T) {
+	t.Parallel()
 	payload := stdinTestPayload()
 
 	_, err := readStdinPayload(strings.NewReader(payload[:10]), int64(len(payload)), "")

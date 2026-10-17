@@ -7,6 +7,7 @@ import (
 )
 
 func TestEvidencePublicationLedgerCapturesFindingAddition(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	record := fixture.record
@@ -64,6 +65,7 @@ func TestEvidencePublicationLedgerCapturesFindingAddition(t *testing.T) {
 }
 
 func TestEvidencePublicationRejectsFinalizationWrongControllerGeneration(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	record := fixture.record

@@ -9,6 +9,7 @@ import (
 )
 
 func TestRateLimitDetailDerivesCSTFromCanonicalResetTime(t *testing.T) {
+	t.Parallel()
 	detail := rateLimitDetail(runner.ZaiRateLimitError{
 		Phase: "worker",
 		Limit: runner.ZaiFiveHourLimit{
@@ -27,6 +28,7 @@ func TestRateLimitDetailDerivesCSTFromCanonicalResetTime(t *testing.T) {
 }
 
 func TestStatusRateLimitDerivesCSTFromCanonicalResetTime(t *testing.T) {
+	t.Parallel()
 	st, err := state.NewStateStore(config.AppConfig{
 		StateBase: t.TempDir(),
 		RepoHash:  "rate-limit-reset-authority",

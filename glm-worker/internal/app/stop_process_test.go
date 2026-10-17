@@ -14,6 +14,7 @@ import (
 )
 
 func TestStopCommandProcessSeries(t *testing.T) {
+	t.Parallel()
 	env := newMultiRepoEnv(t)
 
 	stopWorkerCallWithToolChild(t, env)

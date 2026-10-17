@@ -19,6 +19,7 @@ func readRoundLogT(t *testing.T, st *state.StateStore) []state.RoundRecord {
 }
 
 func TestConvergenceRecordsBaselineAndReviewRounds(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -50,6 +51,7 @@ func TestConvergenceRecordsBaselineAndReviewRounds(t *testing.T) {
 }
 
 func TestConvergenceRecordsAutoFixRounds(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -75,6 +77,7 @@ func TestConvergenceRecordsAutoFixRounds(t *testing.T) {
 }
 
 func TestConvergenceRecordsDecisionRound(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	pinRepositoryHarnessActiveT(t, st)
 	if err := st.Write("last-request", "request"); err != nil {
@@ -105,6 +108,7 @@ func TestConvergenceRecordsDecisionRound(t *testing.T) {
 }
 
 func TestConvergenceCaptureErrorRecordedNotFatal(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -135,6 +139,7 @@ func TestConvergenceCaptureErrorRecordedNotFatal(t *testing.T) {
 }
 
 func TestConvergenceRecordAppendFailureDoesNotAffectTask(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	taskID := st.ReadOr("task.id", "")
 	if err := os.MkdirAll(st.RoundLogPath(taskID), 0o700); err != nil {
@@ -155,6 +160,7 @@ func TestConvergenceRecordAppendFailureDoesNotAffectTask(t *testing.T) {
 }
 
 func TestConvergencePathObservationUsesWorktree(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 )
 
 func TestResolveFailurePathAdvisoryMarksOnlyPacketVisibleVerifiedFindings(t *testing.T) {
+	t.Parallel()
 	findings := make([]failurepathadvisory.Finding, 0, 11)
 	findings = append(findings, failurepathadvisory.Finding{Status: failurepathadvisory.FindingStatusIndeterminate, Target: "indeterminate", Class: "resource-lifecycle"})
 	for index := 0; index < 10; index++ {

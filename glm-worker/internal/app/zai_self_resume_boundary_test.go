@@ -10,6 +10,7 @@ import (
 )
 
 func TestExecuteZaiSelfResumeLoopDoesNotRetryUnrelatedFailure(t *testing.T) {
+	t.Parallel()
 	st, _ := prepareZaiSelfResumeStop(t)
 	controller := runner.NewStopController()
 	unrelated := errors.New("generic provider failure")
@@ -33,6 +34,7 @@ func TestExecuteZaiSelfResumeLoopDoesNotRetryUnrelatedFailure(t *testing.T) {
 }
 
 func TestExecuteZaiSelfResumeLoopHonorsStopDuringPostResetRetryWait(t *testing.T) {
+	t.Parallel()
 	st, limitErr := prepareZaiSelfResumeStop(t)
 	controller := runner.NewStopController()
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)

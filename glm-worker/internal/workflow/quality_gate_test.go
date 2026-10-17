@@ -15,6 +15,7 @@ import (
 )
 
 func TestQualityGateFixResultUsesCanonicalViolationTargets(t *testing.T) {
+	t.Parallel()
 	result := qualityGateFixResult(harnesslint.Report{Status: "fail", Violations: []harnesslint.Violation{
 		{Rule: "funlen", Path: "b.go", Line: 9, Column: 1, Message: "too long"},
 		{Rule: "revive", Path: "a.go", Line: 3, Column: 2, Message: "bad name"},
@@ -27,6 +28,7 @@ func TestQualityGateFixResultUsesCanonicalViolationTargets(t *testing.T) {
 }
 
 func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 	var out bytes.Buffer
@@ -60,6 +62,7 @@ func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 }
 
 func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Remove(qualitySurfaceBaselineStateKey); err != nil {
 		t.Fatal(err)
@@ -92,6 +95,7 @@ func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testin
 }
 
 func TestMissingQualitySurfaceBaselineIsNoOpWhenSurfaceDoesNotApply(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Remove(qualitySurfaceBaselineStateKey); err != nil {
 		t.Fatal(err)
@@ -112,6 +116,7 @@ func TestMissingQualitySurfaceBaselineIsNoOpWhenSurfaceDoesNotApply(t *testing.T
 }
 
 func TestCaptureQualitySurfaceDigestTracksPolicyContent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runQualityGateGit(t, root, "init")
 	writeQualityGateFile(t, root, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")

@@ -6,6 +6,7 @@ import (
 )
 
 func TestEpisodeSchedulerRejectsBlockedAndMissingScheduleMembers(t *testing.T) {
+	t.Parallel()
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	revision := BlockerEpisodeRevision{
 		ProjectSnapshotID: "project",
@@ -33,6 +34,7 @@ func TestEpisodeSchedulerRejectsBlockedAndMissingScheduleMembers(t *testing.T) {
 }
 
 func TestEpisodeSchedulerUsesCanonicalNextOrderWithoutGlobalEscape(t *testing.T) {
+	t.Parallel()
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")
 	x := testSemanticRef("IMPLEMENTATION_TASKS/x.md", "x")
@@ -62,6 +64,7 @@ func TestEpisodeSchedulerUsesCanonicalNextOrderWithoutGlobalEscape(t *testing.T)
 }
 
 func TestEpisodeSchedulerPrioritizesReadySuspendedTask(t *testing.T) {
+	t.Parallel()
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")
 	revision := BlockerEpisodeRevision{
@@ -90,6 +93,7 @@ func TestEpisodeSchedulerPrioritizesReadySuspendedTask(t *testing.T) {
 }
 
 func TestEpisodeSchedulerRequiresCanonicalOutstandingDependenciesFulfilled(t *testing.T) {
+	t.Parallel()
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")
 	revision := BlockerEpisodeRevision{

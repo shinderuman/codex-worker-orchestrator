@@ -10,6 +10,7 @@ import (
 )
 
 func TestQualityGateBlocksReviewerAndRoutesWorkerFix(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("initial")},

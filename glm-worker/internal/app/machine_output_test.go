@@ -21,6 +21,7 @@ type releasableMachineOutput interface {
 }
 
 func TestSingleShotOutputReleasesExactlyOneJSONObject(t *testing.T) {
+	t.Parallel()
 	var target bytes.Buffer
 	output := newSingleShotOutput(&target)
 
@@ -39,6 +40,7 @@ func TestSingleShotOutputReleasesExactlyOneJSONObject(t *testing.T) {
 }
 
 func TestSingleShotOutputReleaseRejectsContractViolations(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"空":                  "",
 		"textだけ":             "install smoke: PASS\n",
@@ -60,12 +62,14 @@ func TestSingleShotOutputReleaseRejectsContractViolations(t *testing.T) {
 }
 
 func TestSingleShotOutputRejectsSubprocessWiredToMachineStdout(t *testing.T) {
+	t.Parallel()
 	assertSubprocessOutputRejected(t, func(target *bytes.Buffer) releasableMachineOutput {
 		return newSingleShotOutput(target)
 	})
 }
 
 func TestEarlyCommandTrailingTextFailsBeforeRealStdoutRelease(t *testing.T) {
+	t.Parallel()
 	var target bytes.Buffer
 	output := newSingleShotOutput(&target)
 	if handled, err := runHelp([]string{"--help"}, output); !handled || err != nil {
@@ -83,6 +87,7 @@ func TestEarlyCommandTrailingTextFailsBeforeRealStdoutRelease(t *testing.T) {
 }
 
 func TestSingleShotOutputRejectsSubprocessTextAfterSerializedJSON(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)
 	}
@@ -106,6 +111,7 @@ func TestSingleShotOutputRejectsSubprocessTextAfterSerializedJSON(t *testing.T) 
 }
 
 func TestMachineOutputViolationErrorMapsToProcessErrorKind(t *testing.T) {
+	t.Parallel()
 	err := buildProcessError(&MachineOutputViolationError{HeldBytes: 12, Cause: errors.New("boom")})
 	if err.Kind != errorKindMachineOutputViolation {
 		t.Fatalf("kind = %q want %q", err.Kind, errorKindMachineOutputViolation)
@@ -120,6 +126,7 @@ func TestMachineOutputViolationErrorMapsToProcessErrorKind(t *testing.T) {
 }
 
 func TestStructuredLinesOutputReleasesTypedWarningLines(t *testing.T) {
+	t.Parallel()
 	var target bytes.Buffer
 	diagnostics := newStructuredLinesOutput(&target)
 	warning := "{\"type\":\"warning\",\"scope\":\"task_stats\",\"message\":\"観測用mirrorのため続行します\"}\n"
@@ -138,6 +145,7 @@ func TestStructuredLinesOutputReleasesTypedWarningLines(t *testing.T) {
 }
 
 func TestStructuredLinesOutputReleaseAllowsEmptyHeldOutput(t *testing.T) {
+	t.Parallel()
 	var target bytes.Buffer
 	diagnostics := newStructuredLinesOutput(&target)
 	if err := diagnostics.release(); err != nil {
@@ -149,6 +157,7 @@ func TestStructuredLinesOutputReleaseAllowsEmptyHeldOutput(t *testing.T) {
 }
 
 func TestStructuredLinesOutputReleaseRejectsContractViolations(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"text行だけ":             "install smoke: FAIL\n",
 		"JSON null行":          "null\n",
@@ -186,6 +195,7 @@ func assertMachineOutputRejected(t *testing.T, rendered string, newOutput func(*
 }
 
 func TestStructuredLinesOutputRejectsSubprocessWiredToMachineStderrOnSuccessExit(t *testing.T) {
+	t.Parallel()
 	assertSubprocessOutputRejected(t, func(target *bytes.Buffer) releasableMachineOutput {
 		return newStructuredLinesOutput(target)
 	})
@@ -222,6 +232,7 @@ func assertSubprocessOutputRejected(t *testing.T, newOutput func(*bytes.Buffer) 
 }
 
 func TestStructuredLinesOutputRejectsSubprocessStderrOnFailureExit(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)
 	}
@@ -304,6 +315,7 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 }
 
 func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeSuccess(t *testing.T) {
+	t.Parallel()
 	cfg, _, _, countPath := newInstallSmokeEnv(t)
 
 	var stdout, stderr bytes.Buffer
@@ -330,6 +342,7 @@ func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeSuccess(t *testing.T
 }
 
 func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeFailure(t *testing.T) {
+	t.Parallel()
 	cfg, _, failFlagPath, countPath := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -363,6 +376,7 @@ func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeFailure(t *testing.T
 }
 
 func TestStdinReadyControlEventStaysTypedJSONLine(t *testing.T) {
+	t.Parallel()
 	var stderr bytes.Buffer
 	if err := emitStdinReadyControlEvent(&stderr); err != nil {
 		t.Fatal(err)

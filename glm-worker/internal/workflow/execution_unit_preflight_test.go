@@ -9,6 +9,7 @@ import (
 )
 
 func TestValidateDecisionExecutionUnitPayloadUsesCurrentMilestoneState(t *testing.T) {
+	t.Parallel()
 	w, st, _, _ := newExecutionMilestoneWorkflow(t, []runnerStep{{structured: needsSolDecisionPacket()}})
 	if err := w.ExecuteNewTask("implement the ACTIVE task"); err != nil {
 		t.Fatal(err)

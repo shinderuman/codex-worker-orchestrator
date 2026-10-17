@@ -9,6 +9,7 @@ import (
 )
 
 func TestCanonicalReentryPreservesPendingDecisionAndRefreshesStoppedReview(t *testing.T) {
+	t.Parallel()
 	for _, pending := range []bool{false, true} {
 		t.Run(map[bool]string{false: "stopped review", true: "pending decision"}[pending], func(t *testing.T) {
 			cfg, st := newWorkflowGuardFixture(t, t.TempDir())
@@ -76,6 +77,7 @@ func TestCanonicalReentryPreservesPendingDecisionAndRefreshesStoppedReview(t *te
 }
 
 func TestCanonicalReentryRejectsUnrelatedWorkflowSession(t *testing.T) {
+	t.Parallel()
 	cfg, st := newWorkflowGuardFixture(t, t.TempDir())
 	admission, err := controller.Activate(cfg)
 	if err != nil {
@@ -97,6 +99,7 @@ func TestCanonicalReentryRejectsUnrelatedWorkflowSession(t *testing.T) {
 }
 
 func TestCanonicalReentryRejectsMismatchedCurrentTaskBinding(t *testing.T) {
+	t.Parallel()
 	for _, mismatch := range []string{"path", "digest"} {
 		t.Run(mismatch, func(t *testing.T) {
 			cfg, st := newWorkflowGuardFixture(t, t.TempDir())

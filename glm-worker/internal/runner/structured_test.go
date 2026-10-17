@@ -108,6 +108,7 @@ func assertStatusEnum(t *testing.T, schema map[string]any, want []string) {
 }
 
 func TestClaudeRunnerStructuredRetryExhaustionFailsClosed(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -126,6 +127,7 @@ func TestClaudeRunnerStructuredRetryExhaustionFailsClosed(t *testing.T) {
 }
 
 func TestClaudeRunnerSuccessWithoutStructuredOutputFailsClosed(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}

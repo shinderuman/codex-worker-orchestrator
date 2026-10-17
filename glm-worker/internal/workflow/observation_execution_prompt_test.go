@@ -11,6 +11,7 @@ import (
 )
 
 func TestObservationWorkerPromptIncludesMachineExecutionRoute(t *testing.T) {
+	t.Parallel()
 	for name, decl := range map[string]string{"poc": feasibilityPoCDecl, "observation": feasibilityObservationDecl} {
 		t.Run(name, func(t *testing.T) {
 			repoRoot := initMutationRepo(t)
@@ -40,6 +41,7 @@ func TestObservationWorkerPromptIncludesMachineExecutionRoute(t *testing.T) {
 }
 
 func TestObservationDecisionInjectsMachineExecutionResults(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityObservationDecl)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{

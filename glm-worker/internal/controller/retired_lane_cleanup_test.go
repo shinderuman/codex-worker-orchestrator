@@ -68,6 +68,7 @@ func TestRetiredLaneRejectsSourceDriftAndUnarchivedIgnoredData(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"source", "ignored", "foreign-nonce"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			fixture, retired, _ := retiredLaneFixture(t)
 			root := fixture.source.Workspace.Root
 			switch mode {

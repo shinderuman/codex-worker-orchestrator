@@ -41,6 +41,7 @@ func recordCallOutliersFixture(t *testing.T, st *state.StateStore, taskID string
 }
 
 func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -132,6 +133,7 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 }
 
 func TestCallOutliersEmptyTelemetryDirIsNone(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
@@ -147,6 +149,7 @@ func TestCallOutliersEmptyTelemetryDirIsNone(t *testing.T) {
 }
 
 func TestExecuteCallOutliersEmptyState(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "calloutliershash", RepoRoot: "/repo"}
 	for _, args := range [][]string{{"--call-outliers"}, {"--call-outliers", "history"}} {
@@ -204,6 +207,7 @@ func TestExecuteCallOutliersEmptyState(t *testing.T) {
 }
 
 func TestCallOutliersPartialOnUnreadableTelemetry(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -248,6 +252,7 @@ func TestCallOutliersPartialOnUnreadableTelemetry(t *testing.T) {
 }
 
 func TestCallOutliersIgnoresNonTaskTelemetryFiles(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -291,6 +296,7 @@ func TestCallOutliersIgnoresNonTaskTelemetryFiles(t *testing.T) {
 }
 
 func TestParseCommandCallOutliers(t *testing.T) {
+	t.Parallel()
 	cmd, err := ParseCommand([]string{"--call-outliers"})
 	if err != nil {
 		t.Fatal(err)

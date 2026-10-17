@@ -6,6 +6,7 @@ import (
 )
 
 func TestTransitionCommitWithoutEvidenceUsesCorePath(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	record := fixture.record
@@ -35,6 +36,7 @@ func TestTransitionCommitWithoutEvidenceUsesCorePath(t *testing.T) {
 }
 
 func TestEvidencePublicationAdvancesWithTransitionCommitCAS(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	record := fixture.record
@@ -114,6 +116,7 @@ func TestEvidencePublicationAdvancesWithTransitionCommitCAS(t *testing.T) {
 }
 
 func TestEvidencePublicationRejectsUnpublishedIndexPredecessor(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	record := fixture.record

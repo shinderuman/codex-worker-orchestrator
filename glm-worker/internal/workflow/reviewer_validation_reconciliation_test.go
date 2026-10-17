@@ -10,6 +10,7 @@ import (
 )
 
 func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
+	t.Parallel()
 	const originalUnverified = "full go test was not run after the fix; unrelated manual compatibility check remains"
 	result := packet.Result{
 		Status:                     packet.StatusImplemented,
@@ -57,6 +58,7 @@ func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
 }
 
 func TestReviewerPromptDoesNotReconcileMissingFailedMismatchedOrIncompleteEvidence(t *testing.T) {
+	t.Parallel()
 	const originalUnverified = "parent validation still unverified"
 	complete := qualitygate.RunRecord{
 		ValidationRunID: "run",
@@ -111,6 +113,7 @@ func TestReviewerPromptDoesNotReconcileMissingFailedMismatchedOrIncompleteEviden
 }
 
 func TestCheckpointMutationClearsPriorValidationBeforeReviewerReconciliation(t *testing.T) {
+	t.Parallel()
 	checkpoint := state.ResumeCheckpoint{ParentValidation: &packet.ParentValidationRequest{
 		Form:       packet.ParentValidationGoTest,
 		WorkingDir: "glm-worker",

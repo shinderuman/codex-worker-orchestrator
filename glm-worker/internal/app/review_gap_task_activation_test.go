@@ -9,6 +9,7 @@ import (
 )
 
 func TestReviewGapHistoricalCategoryUsesTaskActivationNotCurrentPin(t *testing.T) {
+	t.Parallel()
 	active := true
 	fix := reviewGapActivationFixture(t, &active, repositoryharness.ActivationInactiveValue)
 	if fix.CategoryStatus != reviewGapKnown || len(fix.Categories) != 1 || fix.Categories[0] != state.FixCategoryMetadata {
@@ -17,6 +18,7 @@ func TestReviewGapHistoricalCategoryUsesTaskActivationNotCurrentPin(t *testing.T
 }
 
 func TestReviewGapMissingTaskActivationDoesNotBorrowCurrentPin(t *testing.T) {
+	t.Parallel()
 	fix := reviewGapActivationFixture(t, nil, repositoryharness.ActivationActiveValue)
 	if fix.CategoryStatus != reviewGapUnknown || fix.CategoryReason != reviewGapReasonRepositoryHarnessActivationMissing || len(fix.Categories) != 0 {
 		t.Fatalf("missing task activation category = %#v", fix)
@@ -24,6 +26,7 @@ func TestReviewGapMissingTaskActivationDoesNotBorrowCurrentPin(t *testing.T) {
 }
 
 func TestReviewGapHistoricalInactiveTaskStaysGenericWhenCurrentPinIsActive(t *testing.T) {
+	t.Parallel()
 	inactive := false
 	fix := reviewGapActivationFixture(t, &inactive, repositoryharness.ActivationActiveValue)
 	if fix.CategoryStatus != reviewGapKnown || len(fix.Categories) != 1 || fix.Categories[0] != state.FixCategoryDocumentation {

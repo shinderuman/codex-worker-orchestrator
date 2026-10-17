@@ -13,6 +13,7 @@ import (
 )
 
 func TestInstructionSurfaceSnapshotTracksLocalAndNestedAgents(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeInstructionGuardFile(t, root, "AGENTS.local.md", "local-one")
 	writeInstructionGuardFile(t, root, "nested/AGENTS.md", "nested-one")
@@ -42,6 +43,7 @@ func TestInstructionSurfaceSnapshotTracksLocalAndNestedAgents(t *testing.T) {
 }
 
 func TestInstructionSurfaceGuardRejectsBetweenCallMutation(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeInstructionGuardFile(t, root, "AGENTS.local.md", "accepted")
 	r := newInstructionGuardRunner(t, root, "task-one")
@@ -58,6 +60,7 @@ func TestInstructionSurfaceGuardRejectsBetweenCallMutation(t *testing.T) {
 }
 
 func TestInstructionSurfaceGuardRestoresCallTimeMutation(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeInstructionGuardFile(t, root, "AGENTS.local.md", "accepted")
 	r := newInstructionGuardRunner(t, root, "task-one")
@@ -83,6 +86,7 @@ func TestInstructionSurfaceGuardRestoresCallTimeMutation(t *testing.T) {
 }
 
 func TestInstructionSurfaceGuardAllowsParentChangeForNewTask(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeInstructionGuardFile(t, root, "AGENTS.local.md", "task-one")
 	r := newInstructionGuardRunner(t, root, "task-one")
@@ -107,6 +111,7 @@ func TestInstructionSurfaceGuardAllowsParentChangeForNewTask(t *testing.T) {
 }
 
 func TestInstructionSurfaceGuardRejectsInstructionSymlink(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink fixture is Unix-oriented")
 	}
@@ -165,6 +170,7 @@ func TestInstructionSurfaceGuardRunnerRestoresMutationAndDropsSession(t *testing
 }
 
 func TestInstructionSurfaceGuardRunnerMismatchSkipsModelCall(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}

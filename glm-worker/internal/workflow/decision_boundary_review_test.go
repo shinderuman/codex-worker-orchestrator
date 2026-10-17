@@ -2,17 +2,22 @@ package workflow
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestDecisionBoundaryReviewContextOnlyForUnresolvedAxes(t *testing.T) {
+	t.Parallel()
 	authority := semanticDecisionAuthority{fixed: map[semanticDecisionAxis]string{
 		decisionAxisResponsibility:      "existing telemetry responsibility",
 		decisionAxisDependencyDirection: "workflow to telemetry",
@@ -33,6 +38,7 @@ func TestDecisionBoundaryReviewContextOnlyForUnresolvedAxes(t *testing.T) {
 }
 
 func TestReviewerDecisionBoundaryRejectsAllFixedAuthority(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{}
 	w := newWorkflowT(t, st, r)
@@ -54,6 +60,7 @@ func TestReviewerDecisionBoundaryRejectsAllFixedAuthority(t *testing.T) {
 }
 
 func TestTask011PublicSurfaceChoiceRoutesReviewerDecisionWithoutExtraCall(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitRun(t, repo, "init", "-q")
 	gitRun(t, repo, "config", "user.email", "test@example.com")
@@ -134,6 +141,110 @@ func TestTask011PublicSurfaceChoiceRoutesReviewerDecisionWithoutExtraCall(t *tes
 	}
 	if !strings.Contains(output.String(), `"status":"NEEDS_SOL_DECISION"`) {
 		t.Fatalf("output = %s", output.String())
+	}
+}
+
+func TestReviewerDecisionBoundaryUsesControllerTaskWhenLegacyStateEmpty(t *testing.T) {
+	t.Parallel()
+	cfg, st := newWorkflowGuardFixture(t, t.TempDir())
+	root := filepath.Join(cfg.RepoRoot, "IMPLEMENTATION_TASKS", "root.md")
+	authority := "# root\n\n## Contract\n\nroot\n\n## Dependencies\n\nnone\n\n## Sol decision authority\n" +
+		"- responsibility: existing telemetry responsibility\n" +
+		"- dependency-direction: workflow to telemetry\n" +
+		"- compatibility: preserve compatibility\n" +
+		"- validation-error-semantics: existing validation semantics\n"
+	if err := os.WriteFile(root, []byte(authority), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, cfg.RepoRoot, "add", ".")
+	gitRun(t, cfg.RepoRoot, "commit", "-qm", "decision authority")
+	admission, err := controller.Activate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
+		AttemptID:          admission.Attempt.AttemptID,
+		TaskPath:           admission.Attempt.SemanticTaskRef.TaskPath,
+		TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	w := NewWorkflow(cfg, st, nil, io.Discard)
+	if err := w.validateReviewerDecisionBoundary(); err != nil {
+		t.Fatalf("controller task decision boundary must survive empty legacy active-task state: %v", err)
+	}
+}
+
+func TestReviewerDecisionBoundaryRejectionSavesResumableStop(t *testing.T) {
+	t.Parallel()
+	cfg, st := newWorkflowGuardFixture(t, t.TempDir())
+	w := NewWorkflow(cfg, st, nil, io.Discard)
+	task := writeDecisionBoundaryTask(t, cfg.RepoRoot, true)
+	if err := st.Write(activeTaskStateKey, task); err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirtyPath := filepath.Join(cfg.RepoRoot, "worker-notes.md")
+	if err := os.WriteFile(dirtyPath, []byte("uncommitted worker output\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(t.TempDir(), "review-output")
+	if err := os.WriteFile(outputPath, []byte("structured output\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := state.ResumeCheckpoint{
+		Stage:   state.ResumeStageReview,
+		Phase:   "reviewer-1",
+		Role:    state.ReviewerRole,
+		Model:   "reviewer",
+		Prompt:  "review",
+		Request: "request",
+	}
+
+	boundaryErr := w.validateReviewerDecisionBoundary()
+	if boundaryErr == nil {
+		t.Fatal("all-fixed authority must reject the reviewer decision")
+	}
+	_, callErr := w.handleInvalidModelResult(checkpoint, outputPath, modelCallExecution{}, boundaryErr)
+	var interrupted *runner.InterruptedCallError
+	if !errors.As(callErr, &interrupted) {
+		t.Fatalf("decision-boundary rejection must surface the interrupted-call error: %v", callErr)
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusInterrupted {
+		t.Fatalf("rejection left runtime status %q without a durable stop", got)
+	}
+	saved, err := st.LoadResumeCheckpoint()
+	if err != nil || saved.StopKind != state.ResumeStopInterrupted || saved.Phase != "reviewer-1" || saved.Role != state.ReviewerRole || saved.Request != "request" {
+		t.Fatalf("durable reviewer stop checkpoint = %#v %v", saved, err)
+	}
+	if saved.StopGitSnapshot == nil || saved.StopGitSnapshot.Head == "" {
+		t.Fatalf("reviewer stop lost the repository boundary: %#v", saved.StopGitSnapshot)
+	}
+	if len(saved.StopDirtyFiles) == 0 {
+		t.Fatal("reviewer stop lost the dirty-file retention for uncommitted work")
+	}
+	foundDirty := false
+	for _, file := range saved.StopDirtyFiles {
+		if file.Path == "worker-notes.md" && file.WorktreeSHA != "" {
+			foundDirty = true
+		}
+	}
+	if !foundDirty {
+		t.Fatalf("dirty retention missed the uncommitted worktree file: %#v", saved.StopDirtyFiles)
+	}
+
+	if err := st.BeginResume(saved); err != nil {
+		t.Fatalf("canonical resume rejected the durable reviewer stop: %v", err)
+	}
+	if got, err := st.TaskID(); err != nil || got != taskID || st.TaskStatus() != state.TaskStatusActive {
+		t.Fatalf("resume admission changed the task identity or status: task=%s status=%s err=%v", got, st.TaskStatus(), err)
 	}
 }
 

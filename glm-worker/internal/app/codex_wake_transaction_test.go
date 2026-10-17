@@ -31,6 +31,7 @@ func (w codexWakeErrorWriter) Write([]byte) (int, error) {
 }
 
 func TestParseCodexWakeCommands(t *testing.T) {
+	t.Parallel()
 	plan, err := ParseCommand([]string{"--codex-wake-plan", testAppCodexWakeThread})
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +60,7 @@ func TestParseCodexWakeCommands(t *testing.T) {
 }
 
 func TestParseCodexWakeCommandsRejectsInvalidInputs(t *testing.T) {
+	t.Parallel()
 	cases := [][]string{
 		{"--codex-wake-plan"},
 		{"--codex-wake-plan", "not-a-thread"},
@@ -76,6 +78,7 @@ func TestParseCodexWakeCommandsRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestCodexWakeResponseRequiresTrustedTokenState(t *testing.T) {
+	t.Parallel()
 	cmd := Command{
 		Mode:      ModeCodexWakeResponse,
 		Payload:   `{}`,
@@ -156,6 +159,7 @@ func TestCodexWakeRegistrationResponseDoesNotBindParentThread(t *testing.T) {
 }
 
 func TestCodexWakeResponseRejectsForgedTokenWithRecomputedChecksum(t *testing.T) {
+	t.Parallel()
 	plan := testAppCodexWakePlan(t)
 	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
 	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
@@ -169,6 +173,7 @@ func TestCodexWakeResponseRejectsForgedTokenWithRecomputedChecksum(t *testing.T)
 }
 
 func TestCodexWakeResponseConsumesTokenOnce(t *testing.T) {
+	t.Parallel()
 	plan := testAppCodexWakePlan(t)
 	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
 	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
@@ -185,6 +190,7 @@ func TestCodexWakeResponseConsumesTokenOnce(t *testing.T) {
 }
 
 func TestCodexWakeResponseOutputFailureKeepsInputTokenRetryable(t *testing.T) {
+	t.Parallel()
 	plan := testAppCodexWakePlan(t)
 	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
 	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
@@ -222,6 +228,7 @@ func TestCodexWakeResponseOutputFailureKeepsInputTokenRetryable(t *testing.T) {
 }
 
 func TestCodexWakeResponseRecoversInterruptedTokenClaim(t *testing.T) {
+	t.Parallel()
 	plan := testAppCodexWakePlan(t)
 	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
 	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {

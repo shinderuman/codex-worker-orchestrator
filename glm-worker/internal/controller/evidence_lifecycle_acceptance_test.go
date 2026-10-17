@@ -19,6 +19,7 @@ type evidenceLifecycleFixture struct {
 }
 
 func TestAttemptSealCoverageStatesRemainEvidenceCoverage(t *testing.T) {
+	t.Parallel()
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	cases := []struct {
 		name       string
@@ -58,6 +59,7 @@ func TestAttemptSealCoverageStatesRemainEvidenceCoverage(t *testing.T) {
 }
 
 func TestCompleteSuspendedSealDoesNotImplyTaskTerminality(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceLifecycleFixture(t)
 	if fixture.suspended.Coverage != "complete" || fixture.suspended.Disposition != "suspended-for-blocker" {
 		t.Fatalf("suspended seal lifecycle/coverage changed: %#v", fixture.suspended)
@@ -68,6 +70,7 @@ func TestCompleteSuspendedSealDoesNotImplyTaskTerminality(t *testing.T) {
 }
 
 func TestAcceptedAttemptRemainsDistinctFromLaterFinalization(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceLifecycleFixture(t)
 	if fixture.accepted.Disposition != "accepted" || fixture.awaiting.SemanticStatus != "awaiting-publication" {
 		t.Fatalf("accepted attempt was conflated with Task lifecycle: seal=%#v task=%#v", fixture.accepted, fixture.awaiting)
@@ -81,6 +84,7 @@ func TestAcceptedAttemptRemainsDistinctFromLaterFinalization(t *testing.T) {
 }
 
 func TestClosedEpisodeAndLaterFactsDoNotRewriteSuspendedSeal(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceLifecycleFixture(t)
 	if fixture.closedEpisode.State != "closed" || fixture.closedEpisode.CloseRecord == nil {
 		t.Fatalf("closed Episode evidence is incomplete: %#v", fixture.closedEpisode)

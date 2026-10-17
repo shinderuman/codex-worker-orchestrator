@@ -278,6 +278,7 @@ func TestStatsOutputIncludesPreflightAggregate(t *testing.T) {
 }
 
 func TestStatsOutputPreflightStatusUnknownOnMalformedAggregate(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -297,6 +298,7 @@ func TestStatsOutputPreflightStatusUnknownOnMalformedAggregate(t *testing.T) {
 }
 
 func TestStatsOutputPreflightStatusNoneWithoutAttempts(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -310,6 +312,7 @@ func TestStatsOutputPreflightStatusNoneWithoutAttempts(t *testing.T) {
 }
 
 func TestWriteProcessErrorQualityPreflightMismatchDetail(t *testing.T) {
+	t.Parallel()
 	err := &QualityPreflightError{
 		Tool:           "golangci-lint",
 		Observed:       "2.13.1",
@@ -343,6 +346,7 @@ func TestWriteProcessErrorQualityPreflightMismatchDetail(t *testing.T) {
 }
 
 func TestWriteProcessErrorQualityPreflightCauseOnlyDetail(t *testing.T) {
+	t.Parallel()
 	err := &QualityPreflightError{
 		Classification: harnesslint.QualityToolInternalFailure,
 		Cause:          &harnesslint.QualityToolContractError{Cause: errors.New("read quality tool contract: missing")},
@@ -372,6 +376,7 @@ func TestWriteProcessErrorQualityPreflightCauseOnlyDetail(t *testing.T) {
 }
 
 func TestNewQualityPreflightErrorClassifiesTypedFailures(t *testing.T) {
+	t.Parallel()
 	mismatchErr := newQualityPreflightError(
 		&harnesslint.QualityToolVersionMismatch{Tool: "shfmt", Observed: "3.8.0", Required: "3.13.1"},
 		3*time.Millisecond,

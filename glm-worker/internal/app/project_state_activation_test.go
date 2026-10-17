@@ -14,6 +14,7 @@ import (
 )
 
 func TestProjectStateIngressIgnoresMarkerlessForeignPlan(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, state.ParentPlanFile), []byte("not this repository plan protocol\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -42,6 +43,7 @@ func TestProjectStateIngressIgnoresMarkerlessForeignPlan(t *testing.T) {
 }
 
 func TestProjectStateIngressPreservesActivatedRepositoryProjection(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	marker := filepath.Join(cfg.RepoRoot, repositoryharness.MarkerPath)
 	if err := os.WriteFile(marker, []byte(repositoryharness.MarkerContent), 0o644); err != nil {
@@ -67,6 +69,7 @@ func TestProjectStateIngressPreservesActivatedRepositoryProjection(t *testing.T)
 }
 
 func TestProjectStateIngressFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/current.md"); err != nil {

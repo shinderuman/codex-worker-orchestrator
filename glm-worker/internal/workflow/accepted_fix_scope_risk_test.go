@@ -10,6 +10,7 @@ import (
 )
 
 func TestAcceptedFixScopeSkipsRedundantRiskFloorCall(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "scope@example.invalid")

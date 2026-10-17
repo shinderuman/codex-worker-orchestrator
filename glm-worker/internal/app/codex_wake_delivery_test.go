@@ -18,6 +18,7 @@ func (w codexWakeFullErrorWriter) Write(p []byte) (int, error) {
 }
 
 func TestCodexWakeResponseCompleteWriteDoesNotRestoreInputToken(t *testing.T) {
+	t.Parallel()
 	plan := testAppCodexWakePlan(t)
 	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
 	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
@@ -63,6 +64,7 @@ func TestCodexWakeResponseCommitFailureCannotReplayDeliveredToken(t *testing.T) 
 }
 
 func TestCodexWakeResponseDoesNotRecoverInterruptedDeliveryPhase(t *testing.T) {
+	t.Parallel()
 	plan := testAppCodexWakePlan(t)
 	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
 	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {

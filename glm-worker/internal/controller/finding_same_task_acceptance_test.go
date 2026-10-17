@@ -8,6 +8,7 @@ import (
 )
 
 func TestFindingAttemptMutationProofAllowsSameTaskCorrection(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	if err := os.WriteFile(
 		filepath.Join(fixture.source.Workspace.Root, "source.txt"),

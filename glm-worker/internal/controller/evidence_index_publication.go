@@ -4,22 +4,81 @@ import "fmt"
 
 func (s *Store) validatePublicationIndexAuthority(record TransitionRecord, input EvidencePublicationInput) error {
 	for _, ref := range input.TaskRevisionRefs {
-		revision, err := s.LoadTaskIndexRevision(ref)
-		if err != nil {
+		if err := s.validateTaskRevisionPublicationAuthority(record, ref, input); err != nil {
 			return err
-		}
-		if revision.ControllerGeneration != record.CommittedGeneration || revision.TransitionID != record.TransitionID {
-			return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "task index revision is bound to different transition authority"}
 		}
 	}
 	for _, ref := range input.EpisodeRevisionRefs {
-		revision, err := s.LoadEpisodeIndexRevision(ref)
+		if err := s.validateEpisodeRevisionPublicationAuthority(record, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) validateTaskRevisionPublicationAuthority(record TransitionRecord, ref EvidenceObjectRef, input EvidencePublicationInput) error {
+	revision, err := s.LoadTaskIndexRevision(ref)
+	if err != nil {
+		return err
+	}
+	if revision.ControllerGeneration != record.CommittedGeneration || revision.TransitionID != record.TransitionID {
+		return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "task index revision is bound to different transition authority"}
+	}
+	published, err := s.publishedTaskSourceRevisionRefs(revision.TaskRef)
+	if err != nil {
+		return err
+	}
+	for _, sourceRef := range revision.SourceRevisions {
+		if evidenceRefSliceContains(published, sourceRef) || evidenceRefSliceContains(input.SourceRevisionRefs, sourceRef) {
+			continue
+		}
+		return &EvidenceIntegrityError{Digest: sourceRef.Digest, Reason: "task index revision carries an undeclared task source revision"}
+	}
+	return nil
+}
+
+func (s *Store) validatePublicationSourceRevisions(record TransitionRecord, input EvidencePublicationInput) error {
+	for _, ref := range input.SourceRevisionRefs {
+		sourceRevision, err := s.LoadTaskSourceRevision(ref)
 		if err != nil {
 			return err
 		}
-		if revision.ControllerGeneration != record.CommittedGeneration || revision.TransitionID != record.TransitionID {
-			return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "episode index revision is bound to different transition authority"}
+		if sourceRevision.TransitionID != record.TransitionID || sourceRevision.ControllerGeneration != record.CommittedGeneration {
+			return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "task source revision is bound to different transition authority"}
 		}
+		if sourceRevision.AttemptID != record.TargetAttemptID {
+			return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "task source revision is bound to a different attempt"}
+		}
+		if sourceRevision.PreviousProjectSnapshotID != record.ProjectSnapshotOld || sourceRevision.RevisedProjectSnapshotID != record.ProjectSnapshotNew {
+			return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "task source revision project authority differs"}
+		}
+		if err := s.validateSourceRevisionTaskSubject(ref, sourceRevision, input.TaskRevisionRefs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) validateSourceRevisionTaskSubject(ref EvidenceObjectRef, sourceRevision TaskSourceRevisionRecord, taskRevisionRefs []EvidenceObjectRef) error {
+	for _, taskRef := range taskRevisionRefs {
+		revision, err := s.LoadTaskIndexRevision(taskRef)
+		if err != nil {
+			return err
+		}
+		if revision.TaskRef.Equal(sourceRevision.RevisedTaskRef) && evidenceRefSliceContains(revision.SourceRevisions, ref) {
+			return nil
+		}
+	}
+	return &EvidenceIntegrityError{Reason: "task source revision is not referenced by the published Task index"}
+}
+
+func (s *Store) validateEpisodeRevisionPublicationAuthority(record TransitionRecord, ref EvidenceObjectRef) error {
+	revision, err := s.LoadEpisodeIndexRevision(ref)
+	if err != nil {
+		return err
+	}
+	if revision.ControllerGeneration != record.CommittedGeneration || revision.TransitionID != record.TransitionID {
+		return &EvidenceIntegrityError{Digest: ref.Digest, Reason: "episode index revision is bound to different transition authority"}
 	}
 	return nil
 }

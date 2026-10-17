@@ -6,6 +6,7 @@ import (
 )
 
 func TestEvidencePublicationRejectsTaskIndexBoundToDifferentTransition(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	record := fixture.record
 	revision := testTaskIndexRevision(
@@ -22,6 +23,7 @@ func TestEvidencePublicationRejectsTaskIndexBoundToDifferentTransition(t *testin
 }
 
 func TestEvidencePublicationRejectsEpisodeIndexBoundToDifferentTransition(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	record := fixture.record
 	task := fixture.source.Attempt.SemanticTaskRef
@@ -47,6 +49,7 @@ func TestEvidencePublicationRejectsEpisodeIndexBoundToDifferentTransition(t *tes
 }
 
 func TestEvidencePublicationRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	record := fixture.record
 	task := fixture.source.Attempt.SemanticTaskRef
@@ -70,6 +73,7 @@ func TestEvidencePublicationRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(
 }
 
 func TestEvidencePublicationAcceptsEpisodeTaskHeadPublishedInSameTransition(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	record := fixture.record
 	task := fixture.source.Attempt.SemanticTaskRef
@@ -102,6 +106,7 @@ func TestEvidencePublicationAcceptsEpisodeTaskHeadPublishedInSameTransition(t *t
 }
 
 func TestEpisodeTaskHeadPublicationAcceptsHistoricalPublishedTaskRevision(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"}
 	first := testTaskIndexRevision(task, 1, "transition-1", time.Unix(8300, 0).UTC())

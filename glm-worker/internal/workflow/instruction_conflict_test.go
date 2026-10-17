@@ -3,6 +3,7 @@ package workflow
 import "testing"
 
 func TestInstructionConflictBoundaryPinsGenericRuleLimits(t *testing.T) {
+	t.Parallel()
 	boundary := defaultInstructionConflictBoundary()
 	if !boundary.valid() {
 		t.Fatal("default instruction conflict boundary must be valid")
@@ -10,6 +11,7 @@ func TestInstructionConflictBoundaryPinsGenericRuleLimits(t *testing.T) {
 }
 
 func TestInstructionConflictBoundaryRejectsModelChoiceReintroduction(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		mutate func(*instructionConflictBoundary)
@@ -57,6 +59,7 @@ func TestInstructionConflictBoundaryRejectsModelChoiceReintroduction(t *testing.
 }
 
 func TestInstructionConflictBoundaryRendersMachineContract(t *testing.T) {
+	t.Parallel()
 	want := "INSTRUCTION_CONFLICT_BOUNDARY:\n" +
 		"GENERIC_RULE_PRECEDENCE: subordinate-to-primary-authority\n" +
 		"SCOPE_EXPANSION: forbidden\n" +

@@ -10,6 +10,7 @@ import (
 )
 
 func TestStatsArchiveScanCoverageDoesNotChangeAggregates(t *testing.T) {
+	t.Parallel()
 	fixture := newTelemetryCompactFixture(t)
 
 	baselineNormal := executeStatsArchiveScanCommand(t, fixture, []string{"--stats", "current"})

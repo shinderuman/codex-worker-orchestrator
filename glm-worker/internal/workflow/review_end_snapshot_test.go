@@ -166,6 +166,7 @@ func mismatchEvent(t *testing.T, st *state.StateStore) state.ModelCallLog {
 }
 
 func TestReviewEndWorktreeMutationRejectsPass(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -193,6 +194,7 @@ func TestReviewEndWorktreeMutationRejectsPass(t *testing.T) {
 }
 
 func TestReviewEndUntrackedMutationRejectsPass(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -215,6 +217,7 @@ func TestReviewEndUntrackedMutationRejectsPass(t *testing.T) {
 }
 
 func TestReviewEndIndexMutationRejectsPass(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -242,6 +245,7 @@ func TestReviewEndIndexMutationRejectsPass(t *testing.T) {
 }
 
 func TestReviewEndHeadMutationRejectsPass(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -269,6 +273,7 @@ func TestReviewEndHeadMutationRejectsPass(t *testing.T) {
 }
 
 func TestReviewEndMutationRejectsFixRequired(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -289,6 +294,7 @@ func TestReviewEndMutationRejectsFixRequired(t *testing.T) {
 }
 
 func TestReviewEndMutationRejectsNeedsSolReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -308,6 +314,7 @@ func TestReviewEndMutationRejectsNeedsSolReview(t *testing.T) {
 }
 
 func TestReviewEndMatchProceedsToPass(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, _, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -335,6 +342,7 @@ func TestReviewEndMatchProceedsToPass(t *testing.T) {
 }
 
 func TestReviewEndMatchOnAutoFixLoop(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, _, out := newMutationWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -362,6 +370,7 @@ func TestReviewEndMatchOnAutoFixLoop(t *testing.T) {
 }
 
 func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	reviewStart, err := state.CaptureGitSnapshot(repoRoot)
@@ -419,6 +428,7 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 }
 
 func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	reviewerCalls := 0
 	r := &mutatingRunner{
@@ -461,6 +471,7 @@ func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
 }
 
 func TestReviewEndCaptureFailureFailsClosedNotMismatch(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},

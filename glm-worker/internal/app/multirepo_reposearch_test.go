@@ -26,6 +26,7 @@ type multiRepoSearchReport struct {
 }
 
 func TestMultiRepositorySearchCacheProcessIsolation(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("GLM_WORKER_REPOSEARCH_HELPER") == "1" {
 		multiRepoSearchHelper()
 		return

@@ -165,6 +165,7 @@ func gitStatusSnapshot(t *testing.T, repo string) string {
 }
 
 func TestControllerEvidenceExportWritesArchiveWithoutMutatingAuthorities(t *testing.T) {
+	t.Parallel()
 	fixture := newControllerEvidenceExportFixture(t)
 	controllerDir := filepath.Join(filepath.Dir(fixture.cfg.StateBase), "controllers")
 	controllerBefore := directoryTreeDigest(t, controllerDir)
@@ -476,6 +477,7 @@ func newControllerEvidenceExportSealedFixture(t *testing.T) *controllerEvidenceE
 }
 
 func TestControllerEvidenceExportSealedAttemptArchiveIntegrity(t *testing.T) {
+	t.Parallel()
 	fixture := newControllerEvidenceExportSealedFixture(t)
 	var stdout bytes.Buffer
 	if err := runExportAction(t, fixture, `{"action":"export-task-bundle"}`, &stdout); err != nil {
@@ -503,6 +505,7 @@ func TestControllerEvidenceExportSealedAttemptArchiveIntegrity(t *testing.T) {
 }
 
 func TestControllerEvidenceExportSucceedsWhileWorkflowLockHeldAndWriterActive(t *testing.T) {
+	t.Parallel()
 	fixture := newControllerEvidenceExportFixture(t)
 	lockPath, err := controller.WorkflowLockPath(fixture.cfg)
 	if err != nil {
@@ -551,6 +554,7 @@ func TestControllerEvidenceExportSucceedsWhileWorkflowLockHeldAndWriterActive(t 
 }
 
 func TestControllerEvidenceExportFailsClosedOnUnreadableAttemptInventory(t *testing.T) {
+	t.Parallel()
 	fixture := newControllerEvidenceExportFixture(t)
 	var stdout bytes.Buffer
 	if err := runExportAction(t, fixture, `{"action":"export-task-bundle"}`, &stdout); err != nil {
@@ -582,6 +586,7 @@ func TestControllerEvidenceExportFailsClosedOnUnreadableAttemptInventory(t *test
 }
 
 func TestControllerEvidenceExportRejectsInvalidCommands(t *testing.T) {
+	t.Parallel()
 	fixture := newControllerEvidenceExportFixture(t)
 	if err := runExportAction(t, fixture, `{"action":"export-task-bundle","task_path":"a.md","attempt_id":"b"}`, io.Discard); err == nil {
 		t.Fatal("export accepted retired selector fields")

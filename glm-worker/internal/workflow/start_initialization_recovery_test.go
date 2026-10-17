@@ -59,6 +59,7 @@ func recoveryWorkflow(cfg config.AppConfig, st *state.StateStore) *Workflow {
 }
 
 func TestRecoverUnstartedMilestoneRebindsCrashedStartupIntoLegalStop(t *testing.T) {
+	t.Parallel()
 	cfg, _, st, plan := crashUnstartedMilestoneStartup(t)
 	if err := recoveryWorkflow(cfg, st).RecoverUnstartedMilestone(); err != nil {
 		t.Fatal(err)
@@ -83,6 +84,7 @@ func TestRecoverUnstartedMilestoneRebindsCrashedStartupIntoLegalStop(t *testing.
 }
 
 func TestRecoverUnstartedMilestoneRejectsNonMilestoneRuntime(t *testing.T) {
+	t.Parallel()
 	_, cfg, _, st, _, _ := newQualityMutationFixture(t)
 	cfg.RepoSearch = true
 	if _, err := controller.Activate(cfg); err != nil {
@@ -116,6 +118,7 @@ func TestRecoverUnstartedMilestoneRejectsNonMilestoneRuntime(t *testing.T) {
 }
 
 func TestRecoverUnstartedMilestoneRejectsExistingModelExecution(t *testing.T) {
+	t.Parallel()
 	cfg, store, st, _ := crashUnstartedMilestoneStartup(t)
 	taskID, err := st.TaskID()
 	if err != nil {

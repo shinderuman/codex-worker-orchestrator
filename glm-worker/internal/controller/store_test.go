@@ -12,6 +12,7 @@ import (
 )
 
 func TestControllerExistenceProbeDoesNotActivateStore(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
 	cfg := controllerTestConfig(repo, stateRoot)
@@ -43,6 +44,7 @@ func TestControllerExistenceProbeDoesNotActivateStore(t *testing.T) {
 }
 
 func TestLinkedWorktreesShareControllerDomain(t *testing.T) {
+	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
 	primaryCfg := controllerTestConfig(repo, stateRoot)
@@ -67,6 +69,7 @@ func TestLinkedWorktreesShareControllerDomain(t *testing.T) {
 }
 
 func TestSeparateClonesUseSeparateControllerDomains(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	clone := filepath.Join(t.TempDir(), "clone")
 	runControllerGit(t, "", "clone", "-q", repo, clone)
@@ -89,6 +92,7 @@ func TestSeparateClonesUseSeparateControllerDomains(t *testing.T) {
 }
 
 func TestExecutionLeaseRejectsLinkedWorkspaceAndStaleSnapshot(t *testing.T) {
+	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
 	store, err := Open(controllerTestConfig(repo, stateRoot))
@@ -144,6 +148,7 @@ func TestExecutionLeaseRejectsLinkedWorkspaceAndStaleSnapshot(t *testing.T) {
 }
 
 func TestOnlyPrimaryWorktreeCanBootstrapMutationAuthority(t *testing.T) {
+	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
 	store, err := Open(controllerTestConfig(linked, stateRoot))
@@ -177,6 +182,7 @@ func TestOnlyPrimaryWorktreeCanBootstrapMutationAuthority(t *testing.T) {
 }
 
 func TestMutablePlanCannotMintExecutionAuthority(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
 	store, err := Open(controllerTestConfig(repo, stateRoot))

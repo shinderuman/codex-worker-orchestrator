@@ -10,6 +10,7 @@ import (
 )
 
 func TestExecutionMilestoneExplicitFixCompletesCurrentUnitBeforeFinalReview(t *testing.T) {
+	t.Parallel()
 	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: implementedPacket("fixed first milestone")},
 		{structured: implementedPacket("second milestone")},

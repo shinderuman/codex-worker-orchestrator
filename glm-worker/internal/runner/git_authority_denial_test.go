@@ -14,6 +14,7 @@ const mutationDenialJSON = `{"error":{"kind":"containment_denial","owner":"git-a
 const transportDenialJSON = `{"error":{"kind":"containment_denial","owner":"git-authority-guard","reason":"git_transport_blocked","next_action":"do_not_retry_transport_parent_owns_git_transport"}}`
 
 func TestGitAuthorityProxyReturnsActionableMutationDenial(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}
@@ -47,6 +48,7 @@ func TestGitAuthorityProxyReturnsActionableMutationDenial(t *testing.T) {
 }
 
 func TestGitAuthorityProxyKeepsDenialWhenAttemptLogCannotBeWritten(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}
@@ -70,6 +72,7 @@ func TestGitAuthorityProxyKeepsDenialWhenAttemptLogCannotBeWritten(t *testing.T)
 }
 
 func TestGitAuthorityTransportDenialIsActionableWithoutAttemptLog(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}

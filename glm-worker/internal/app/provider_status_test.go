@@ -27,6 +27,7 @@ func executeStatsOutput(t *testing.T, cfg config.AppConfig, st *state.StateStore
 }
 
 func TestExecuteStatusShowsProviderUnavailable(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -76,6 +77,7 @@ func TestExecuteStatusShowsProviderUnavailable(t *testing.T) {
 }
 
 func TestExecuteStatusDoesNotExposeMalformedProviderUnavailableAsResumable(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -102,6 +104,7 @@ func TestExecuteStatusDoesNotExposeMalformedProviderUnavailableAsResumable(t *te
 }
 
 func TestExecuteStatusReportsProviderUnavailableNoWhenClean(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	output := executeStatusOutput(t, cfg)
 	if output.ProviderUnavailable.Unavailable {
@@ -113,6 +116,7 @@ func TestExecuteStatusReportsProviderUnavailableNoWhenClean(t *testing.T) {
 }
 
 func TestPrintStatsAggregatesProviderUnavailable(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -135,6 +139,7 @@ func TestPrintStatsAggregatesProviderUnavailable(t *testing.T) {
 }
 
 func TestPrintStatsReportsDiagnosticAggregates(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -181,6 +186,7 @@ func TestPrintStatsReportsDiagnosticAggregates(t *testing.T) {
 }
 
 func TestPrintStatsReportsDiagnosticAggregatesEmpty(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 )
 
 func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T) {
+	t.Parallel()
 	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: needsSolDecisionPacket()},
 		{structured: implementedPacketWithRisk("first bounded unit complete", "HIGH")},
@@ -65,6 +66,7 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 }
 
 func TestExecutionUnitDecisionSingleKeepsLowOverheadPath(t *testing.T) {
+	t.Parallel()
 	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: needsSolDecisionPacket()},
 		{structured: implementedPacketWithRisk("resolved", "HIGH")},
@@ -87,6 +89,7 @@ func TestExecutionUnitDecisionSingleKeepsLowOverheadPath(t *testing.T) {
 }
 
 func TestExecutionUnitDecisionSingleCanReconsiderIntoMilestones(t *testing.T) {
+	t.Parallel()
 	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: needsSolDecisionPacket()},
 		{structured: implementedPacketWithRisk("single unit expanded materially", "HIGH")},
@@ -175,6 +178,7 @@ func TestExecutionUnitDecisionSingleCanReconsiderIntoMilestones(t *testing.T) {
 }
 
 func TestParseExecutionUnitDecisionFailsClosed(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		payload string

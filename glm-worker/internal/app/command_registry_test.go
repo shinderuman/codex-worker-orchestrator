@@ -8,6 +8,7 @@ import (
 )
 
 func TestNoArgUsageDelegatesCommandInventoryToHelp(t *testing.T) {
+	t.Parallel()
 	_, err := ParseCommand(nil)
 	if err == nil {
 		t.Fatal("ParseCommand(nil) succeeded")
@@ -22,6 +23,7 @@ func TestNoArgUsageDelegatesCommandInventoryToHelp(t *testing.T) {
 }
 
 func TestHelpCommandInventoryCoversParserRegistry(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	handled, err := runHelp([]string{"--help"}, &out)
 	if err != nil || !handled {

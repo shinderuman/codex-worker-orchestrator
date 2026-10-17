@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunModelSurfacesZaiFiveHourLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{
 		output: zaiFiveHourLog,
@@ -67,6 +68,7 @@ func TestRunModelSurfacesZaiFiveHourLimit(t *testing.T) {
 }
 
 func TestRunModelSurfacesPlainStdoutFiveHourLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{
 		runErr: errors.New("exit status 1"),
@@ -99,6 +101,7 @@ func TestRunModelSurfacesPlainStdoutFiveHourLimit(t *testing.T) {
 }
 
 func TestMergePlainFailureClassPriority(t *testing.T) {
+	t.Parallel()
 	fiveHour := runner.ProviderFailureClass{Kind: runner.ProviderFailureZaiFiveHour}
 	transientFile := runner.ProviderFailureClass{Kind: runner.ProviderFailureTransient, Detail: "network:dial tcp"}
 	transientPlain := runner.ProviderFailureClass{Kind: runner.ProviderFailureTransient, Detail: "http-503"}
@@ -126,6 +129,7 @@ func TestMergePlainFailureClassPriority(t *testing.T) {
 }
 
 func TestRateLimitStateSurvivesArtifactProtectionError(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	artifactDir, err := st.PrepareArtifactDir()
 	if err != nil {
@@ -168,6 +172,7 @@ func TestRateLimitStateSurvivesArtifactProtectionError(t *testing.T) {
 }
 
 func TestExecuteResumeContinuesAfterRateLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)
@@ -206,6 +211,7 @@ func TestExecuteResumeContinuesAfterRateLimit(t *testing.T) {
 }
 
 func TestExecuteResumeRestoresRateLimitedStatusAfterRunnerError(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	original := state.ResumeCheckpoint{
 		Stage:          state.ResumeStageWorker,
@@ -302,6 +308,7 @@ func resumeStoppedDecisionResolvingPending(t *testing.T, st *state.StateStore, n
 }
 
 func TestExecuteDecisionRateLimitResumeKeepsDecisionCheckpoint(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedWaitingDecision(t, st)
 	if err := st.Write("worker.id", "decision-session"); err != nil {
@@ -329,6 +336,7 @@ func TestExecuteDecisionRateLimitResumeKeepsDecisionCheckpoint(t *testing.T) {
 }
 
 func TestExecuteDecisionProviderUnavailableResumeKeepsDecisionCheckpoint(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedWaitingDecision(t, st)
 	r := &scriptedRunner{
@@ -347,6 +355,7 @@ func TestExecuteDecisionProviderUnavailableResumeKeepsDecisionCheckpoint(t *test
 }
 
 func TestExecuteDecisionInterruptResumeKeepsDecisionCheckpoint(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingDecision(t, st)
@@ -377,6 +386,7 @@ func TestExecuteDecisionInterruptResumeKeepsDecisionCheckpoint(t *testing.T) {
 }
 
 func TestExecuteResumeContinuesReviewerStage(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedReviewStartSnapshot(t, st)
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
@@ -413,6 +423,7 @@ func TestExecuteResumeContinuesReviewerStage(t *testing.T) {
 }
 
 func TestExecuteResumeContinuesAutoFixStage(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
 		Stage:          state.ResumeStageAutoFix,
@@ -447,6 +458,7 @@ func TestExecuteResumeContinuesAutoFixStage(t *testing.T) {
 }
 
 func TestExecuteResumeRejectsUnknownStage(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
 		Stage:          state.ResumeStage("unknown"),
@@ -482,6 +494,7 @@ func TestExecuteResumeRejectsUnknownStage(t *testing.T) {
 }
 
 func TestExecuteNewTaskRejectsPendingAndRateLimitedTasks(t *testing.T) {
+	t.Parallel()
 	t.Run("pending decision", func(t *testing.T) {
 		st := newStateStoreT(t)
 		if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {

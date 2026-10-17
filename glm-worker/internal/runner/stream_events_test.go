@@ -84,6 +84,7 @@ func readTaskEventLines(t *testing.T, st *state.StateStore, taskID string) []sta
 }
 
 func TestClaudeRunnerStreamEventsAppendSanitizedMetadata(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -189,6 +190,7 @@ func TestClaudeRunnerStreamEventsAppendSanitizedMetadata(t *testing.T) {
 }
 
 func TestClaudeRunnerStreamNonResultContentNeverReachesDisk(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -224,6 +226,7 @@ func TestClaudeRunnerStreamNonResultContentNeverReachesDisk(t *testing.T) {
 }
 
 func TestClaudeRunnerStreamNoResultKeepsFailureBoundary(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -317,6 +320,7 @@ func assertPlainSignalNotPersisted(t *testing.T, outputPath string, runErr error
 }
 
 func TestClaudeRunnerPlainStdoutFailureClassification(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -379,6 +383,7 @@ func TestClaudeRunnerPlainStdoutFailureClassification(t *testing.T) {
 }
 
 func TestClaudeRunnerStreamNumbersAndJSONContentNotClassified(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -419,6 +424,7 @@ func TestClaudeRunnerStreamNumbersAndJSONContentNotClassified(t *testing.T) {
 }
 
 func TestClaudeRunnerStreamEventsSurviveCorruptTailAndAppend(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -472,6 +478,7 @@ func TestClaudeRunnerStreamEventsSurviveCorruptTailAndAppend(t *testing.T) {
 }
 
 func TestClaudeRunnerStreamEventsBestEffortOnUnwritableLog(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -507,6 +514,7 @@ func TestClaudeRunnerStreamEventsBestEffortOnUnwritableLog(t *testing.T) {
 }
 
 func TestReduceStreamEventUnknownLine(t *testing.T) {
+	t.Parallel()
 	base := state.TaskEventRecord{TaskID: "t", CallID: "c", Role: "worker", Phase: "worker-new"}
 	observedAt := time.Date(2026, 8, 16, 10, 0, 0, 0, time.UTC)
 
@@ -533,6 +541,7 @@ func newFakeClockIngester(t *testing.T, st *state.StateStore, advance time.Durat
 }
 
 func TestStreamEventIngesterSuppressesProgressEvents(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, time.Second)
 
@@ -556,6 +565,7 @@ func TestStreamEventIngesterSuppressesProgressEvents(t *testing.T) {
 }
 
 func TestStreamEventIngesterPairsToolTimingByID(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 2*time.Second)
 
@@ -603,6 +613,7 @@ func TestStreamEventIngesterPairsToolTimingByID(t *testing.T) {
 }
 
 func TestStreamEventIngesterRecordsOperationCategoryWithoutCommandText(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, time.Second)
 
@@ -654,6 +665,7 @@ func TestStreamEventIngesterRecordsOperationCategoryWithoutCommandText(t *testin
 }
 
 func TestStreamEventIngesterCapKeepsResultCapture(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 0)
 	ingester.seq = maxStreamEventRecordsPerCall - 1

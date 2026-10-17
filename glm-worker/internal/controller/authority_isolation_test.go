@@ -9,6 +9,7 @@ import (
 )
 
 func TestStateStoreRewriteCannotMintExecutionAuthority(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
 	cfg := controllerTestConfig(repo, stateRoot)

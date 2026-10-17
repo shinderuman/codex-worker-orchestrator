@@ -58,6 +58,7 @@ func TestPrintRepoSearchReturnsMachineReadableCandidates(t *testing.T) {
 }
 
 func TestPrintRepoSearchDisabledReportsDisabledWithoutSearch(t *testing.T) {
+	t.Parallel()
 	cfg := config.AppConfig{RepoRoot: filepath.Join(t.TempDir(), "missing"), RepoSearch: false}
 	var stdout bytes.Buffer
 	request := repoSearchRequest{Question: "anything", Scopes: []string{"cmd"}, BudgetBytes: 512}
@@ -74,6 +75,7 @@ func TestPrintRepoSearchDisabledReportsDisabledWithoutSearch(t *testing.T) {
 }
 
 func TestPrintRepoSearchRequiresBudgetAndScopesAtParseLevel(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		args []string

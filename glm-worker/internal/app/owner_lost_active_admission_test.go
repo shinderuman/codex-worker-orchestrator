@@ -6,6 +6,7 @@ import (
 )
 
 func TestNewTaskAdmissionPreservesOwnerLostActiveTask(t *testing.T) {
+	t.Parallel()
 	st := newParentAdmissionStore(t)
 	taskID, err := st.TaskID()
 	if err != nil {

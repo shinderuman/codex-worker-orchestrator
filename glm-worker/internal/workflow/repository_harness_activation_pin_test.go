@@ -10,6 +10,7 @@ import (
 )
 
 func TestRepositoryHarnessActivationPinRejectsInconsistentState(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name          string
 		activation    *string
@@ -49,6 +50,7 @@ func TestRepositoryHarnessActivationPinRejectsInconsistentState(t *testing.T) {
 }
 
 func TestRepositoryHarnessActivationPinRejectsUnreadableState(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("state file permission injection is Unix-oriented")
 	}
@@ -76,6 +78,7 @@ func TestRepositoryHarnessActivationPinRejectsUnreadableState(t *testing.T) {
 }
 
 func TestRepositoryHarnessActivationPinAcceptsValidActiveState(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
 	if err := st.Write(activeTaskStateKey, activeTaskGuardPath); err != nil {
@@ -92,6 +95,7 @@ func TestRepositoryHarnessActivationPinAcceptsValidActiveState(t *testing.T) {
 }
 
 func TestRepositoryHarnessInactivePinKeepsForeignRepositoryGeneric(t *testing.T) {
+	t.Parallel()
 	repoRoot := initForeignRepository(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
@@ -110,6 +114,7 @@ func TestRepositoryHarnessInactivePinKeepsForeignRepositoryGeneric(t *testing.T)
 }
 
 func TestRepositoryHarnessMissingActivationDoesNotReevaluatePinnedGenericTask(t *testing.T) {
+	t.Parallel()
 	repoRoot := initForeignRepository(t)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
 	if err := st.Write(activeTaskStateKey, ""); err != nil {

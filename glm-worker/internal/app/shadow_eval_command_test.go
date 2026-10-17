@@ -18,6 +18,7 @@ import (
 )
 
 func TestParseCommandShadowEval(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--shadow-eval", "task-1"})
 	if err != nil || command.Mode != ModeShadowEval || command.Payload != "task-1" || command.ReferencePath != "" {
 		t.Fatalf("command = %#v err = %v", command, err)
@@ -130,6 +131,7 @@ func shadowDecisionJSON(callID string, noise float64, risk float64, disposition 
 }
 
 func TestExecuteShadowEvalProducesComparisonArtifactsWithoutTouchingTelemetry(t *testing.T) {
+	t.Parallel()
 	st, taskID, telemetryBefore := newShadowEvalState(t)
 	fakeShadowDecision(t, shadowDecisionRaw(t), nil)
 
@@ -194,6 +196,7 @@ func TestExecuteShadowEvalProducesComparisonArtifactsWithoutTouchingTelemetry(t 
 }
 
 func TestExecuteShadowEvalComparesAgainstReference(t *testing.T) {
+	t.Parallel()
 	st, taskID, _ := newShadowEvalState(t)
 	fakeShadowDecision(t, shadowDecisionRaw(t), nil)
 	referencePath := filepath.Join(t.TempDir(), "reference.json")
@@ -216,6 +219,7 @@ func TestExecuteShadowEvalComparesAgainstReference(t *testing.T) {
 }
 
 func TestExecuteShadowEvalObservesProviderFailureAsShadowFailure(t *testing.T) {
+	t.Parallel()
 	st, taskID, telemetryBefore := newShadowEvalState(t)
 	fakeShadowDecision(t, nil, &runner.DecisionCallError{Model: "opus", Reason: "exit-status"})
 
@@ -247,6 +251,7 @@ func TestExecuteShadowEvalObservesProviderFailureAsShadowFailure(t *testing.T) {
 }
 
 func TestExecuteShadowEvalObservesSchemaViolationAsShadowFailure(t *testing.T) {
+	t.Parallel()
 	st, taskID, _ := newShadowEvalState(t)
 	decision := shadowDecisionJSON("11111111-1111-4111-8111-111111111111", 0.05, 0.1, "accept", "worker")
 	decision["free_text"] = "schema外"
@@ -271,6 +276,7 @@ func TestExecuteShadowEvalObservesSchemaViolationAsShadowFailure(t *testing.T) {
 }
 
 func TestExecuteShadowEvalFailsClosedOnBadInput(t *testing.T) {
+	t.Parallel()
 	st, taskID, _ := newShadowEvalState(t)
 	fakeShadowDecision(t, shadowDecisionRaw(t), nil)
 

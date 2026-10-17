@@ -7,6 +7,7 @@ import (
 )
 
 func TestExecutionBaselineSurvivesGitPruningBeforeSuspension(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	writeSuspensionTestFile(t, repo, "baseline-only.txt", "valuable baseline\n")
 	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
@@ -46,6 +47,7 @@ func TestExecutionBaselineSurvivesGitPruningBeforeSuspension(t *testing.T) {
 }
 
 func TestExecutionRecoveryRejectsOperationPayloadReplacement(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	episode := planSuspensionTestEpisode(t, fixture)
 	suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)

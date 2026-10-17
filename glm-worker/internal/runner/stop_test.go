@@ -14,6 +14,7 @@ import (
 )
 
 func TestStopControllerRequestIsIdempotent(t *testing.T) {
+	t.Parallel()
 	controller := NewStopController()
 	if controller.StopRequested() {
 		t.Fatal("初期状態で停止要求を観測しています")
@@ -31,6 +32,7 @@ func TestStopControllerRequestIsIdempotent(t *testing.T) {
 }
 
 func TestStopControllerOutcomeFirstNotifyWins(t *testing.T) {
+	t.Parallel()
 	controller := NewStopController()
 	controller.NotifyInterrupted("task-1", "")
 	controller.NotifyFinished()
@@ -44,6 +46,7 @@ func TestStopControllerOutcomeFirstNotifyWins(t *testing.T) {
 }
 
 func TestStopControllerConcurrentWaitersShareOutcome(t *testing.T) {
+	t.Parallel()
 	controller := NewStopController()
 	const waiters = 3
 	results := make(chan StopOutcome, waiters)
@@ -128,6 +131,7 @@ func waitStopStubFile(t *testing.T, path string) {
 }
 
 func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
+	t.Parallel()
 	stub := stopTestStub(t)
 	pidFile := filepath.Join(t.TempDir(), "parent.pid")
 	grandchildFile := filepath.Join(t.TempDir(), "grandchild.pid")
@@ -178,6 +182,7 @@ func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 }
 
 func TestRunCommandPrefersCompletedNaturalExit(t *testing.T) {
+	t.Parallel()
 	stub := filepath.Join(t.TempDir(), "quick-exit")
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)

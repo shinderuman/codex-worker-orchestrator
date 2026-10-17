@@ -12,6 +12,7 @@ import (
 )
 
 func TestValidationCommandResultAttribution(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		command string
@@ -39,6 +40,7 @@ func TestValidationCommandResultAttribution(t *testing.T) {
 }
 
 func TestValidationToolResultUsesOnlyTruthfulExitAttribution(t *testing.T) {
+	t.Parallel()
 	forms := []state.TaskValidationObservation{{Form: "go-test"}}
 	if got := validationObservationsWithToolResult(forms, true, false); len(got) != 1 || got[0].Result != state.ValidationResultPass {
 		t.Fatalf("simple pass = %#v", got)
@@ -52,6 +54,7 @@ func TestValidationToolResultUsesOnlyTruthfulExitAttribution(t *testing.T) {
 }
 
 func TestFailingGoTestPipedToTailDoesNotBecomeValidationPass(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell pipeline fixture is Unix-oriented")
 	}

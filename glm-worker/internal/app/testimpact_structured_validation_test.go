@@ -8,6 +8,7 @@ import (
 )
 
 func TestTestImpactUsesStructuredValidationWhenOperationCategoryIsOther(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 )
 
 func TestRequiredWorkerRulesAreDerivedFromGenericPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(
 		filepath.Join(root, "package.json"),
@@ -35,6 +36,7 @@ func TestRequiredWorkerRulesAreDerivedFromGenericPaths(t *testing.T) {
 }
 
 func TestRequiredWorkerRulesCoverPersistentAndCLIAliases(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		path string
@@ -62,6 +64,7 @@ func TestRequiredWorkerRulesCoverPersistentAndCLIAliases(t *testing.T) {
 }
 
 func TestRequiredWorkerRulesDoNotRouteStateFromTestPackageName(t *testing.T) {
+	t.Parallel()
 	got := requiredWorkerRules(t.TempDir(), []string{"internal/state/store_test.go"})
 	want := []workerRule{ruleTesting, ruleGo}
 	if !slices.Equal(got, want) {
@@ -70,6 +73,7 @@ func TestRequiredWorkerRulesDoNotRouteStateFromTestPackageName(t *testing.T) {
 }
 
 func TestWorkerRuleContextBlockPreservesCanonicalRendering(t *testing.T) {
+	t.Parallel()
 	codexDir := t.TempDir()
 	writeRulePolicyFile(t, codexDir, "cli.md", "CLI CONTRACT")
 	writeRulePolicyFile(t, codexDir, "go.md", "GO CONTRACT")

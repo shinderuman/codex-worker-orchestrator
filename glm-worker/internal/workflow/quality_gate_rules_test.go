@@ -57,6 +57,7 @@ func execPolicyCombinedAllow(codexBin string, entries []string, argv []string) (
 }
 
 func TestManagedRulesAllowOnlyQualityGateEntrypoint(t *testing.T) {
+	t.Parallel()
 	codexBin, err := exec.LookPath("codex")
 	if err != nil {
 		t.Skip("codex CLIがないためexecpolicy検証を省略します")
@@ -83,6 +84,7 @@ func TestManagedRulesAllowOnlyQualityGateEntrypoint(t *testing.T) {
 }
 
 func TestManagedRulesAllowInstalledGLMRuntimeCommands(t *testing.T) {
+	t.Parallel()
 	codexBin, err := exec.LookPath("codex")
 	if err != nil {
 		t.Skip("codex CLIがないためexecpolicy検証を省略します")
@@ -130,6 +132,7 @@ func TestManagedRulesAllowInstalledGLMRuntimeCommands(t *testing.T) {
 }
 
 func TestManagedRulesLeaveGitCommitToUserPolicy(t *testing.T) {
+	t.Parallel()
 	codexBin, err := exec.LookPath("codex")
 	if err != nil {
 		t.Skip("codex CLIがないためexecpolicy検証を省略します")
@@ -151,6 +154,7 @@ func TestManagedRulesLeaveGitCommitToUserPolicy(t *testing.T) {
 }
 
 func TestExecPolicyCombinedCheckFailsClosed(t *testing.T) {
+	t.Parallel()
 	codexBin, err := exec.LookPath("codex")
 	if err != nil {
 		t.Skip("codex CLIがないためexecpolicy検証を省略します")
@@ -188,6 +192,7 @@ func TestExecPolicyCombinedCheckFailsClosed(t *testing.T) {
 }
 
 func TestManagedRulesDirectoryHasNoDirectGoTestRule(t *testing.T) {
+	t.Parallel()
 	for _, rulesFile := range managedRulesFiles(t) {
 		data, err := os.ReadFile(rulesFile)
 		if err != nil {

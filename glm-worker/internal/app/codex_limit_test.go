@@ -55,6 +55,7 @@ func executeCodexLimit(t *testing.T, bin string) (string, error) {
 }
 
 func TestExecuteCodexLimitMachineJSONContract(t *testing.T) {
+	t.Parallel()
 	t.Run("primary位置の5h window", func(t *testing.T) {
 		rendered, err := executeCodexLimit(t, writeCodexLimitFake(t, codexLimitFiveHourPrimaryScript))
 		if err != nil {
@@ -128,6 +129,7 @@ func TestExecuteCodexLimitMachineJSONContract(t *testing.T) {
 }
 
 func TestExecuteCodexLimitFailClosedAsProcessError(t *testing.T) {
+	t.Parallel()
 	_, err := executeCodexLimit(t, writeCodexLimitFake(t, codexLimitNoFiveHourScript))
 	if err == nil {
 		t.Fatal("errorなし")
@@ -159,6 +161,7 @@ func TestExecuteCodexLimitFailClosedAsProcessError(t *testing.T) {
 }
 
 func TestExecuteCodexLimitBinaryLookupFailure(t *testing.T) {
+	t.Parallel()
 	_, err := executeCodexLimit(t, filepath.Join(t.TempDir(), "codex-absent"))
 	if err == nil {
 		t.Fatal("errorなし")
@@ -169,6 +172,7 @@ func TestExecuteCodexLimitBinaryLookupFailure(t *testing.T) {
 }
 
 func TestCodexLimitPhaseMapping(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		err  error
 		want string
@@ -191,6 +195,7 @@ func TestCodexLimitPhaseMapping(t *testing.T) {
 }
 
 func TestParseCommandCodexLimit(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--codex-limit"})
 	if err != nil {
 		t.Fatal(err)

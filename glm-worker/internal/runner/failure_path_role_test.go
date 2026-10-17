@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunWithDeadlineRequiresNonZeroDeadline(t *testing.T) {
+	t.Parallel()
 	r := newDeadlineOnlyFixture(t)
 	if _, err := r.RunWithDeadline(
 		state.FailurePathReviewerRole, "failure-path-reviewer-1", "sonnet", true, "high",
@@ -22,6 +23,7 @@ func TestRunWithDeadlineRequiresNonZeroDeadline(t *testing.T) {
 }
 
 func TestFailurePathReviewerPromptFileAndSchema(t *testing.T) {
+	t.Parallel()
 	if got := promptFileName(state.FailurePathReviewerRole); got != "FAILURE_PATH_REVIEWER.md" {
 		t.Fatalf("prompt file = %q", got)
 	}

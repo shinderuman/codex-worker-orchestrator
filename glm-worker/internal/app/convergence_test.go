@@ -47,6 +47,7 @@ func convergenceSummaryOf(t *testing.T, output report.ConvergenceOutput, class s
 }
 
 func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -147,6 +148,7 @@ func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 }
 
 func TestConvergenceRendersDocChangeRound(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -199,6 +201,7 @@ func TestConvergenceRendersDocChangeRound(t *testing.T) {
 }
 
 func TestConvergenceMutatingToolUseStaysSameSnapshot(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -235,6 +238,7 @@ func TestConvergenceMutatingToolUseStaysSameSnapshot(t *testing.T) {
 }
 
 func TestReviewerCallsInBucketRecognizesCurrentReviewerPhaseGrammar(t *testing.T) {
+	t.Parallel()
 	entries := []state.ModelCallLog{
 		{Role: state.ReviewerRole, Phase: "reviewer-2"},
 		{Role: state.ReviewerRole, Phase: "reviewer-2-result-correct"},
@@ -257,6 +261,7 @@ func TestReviewerCallsInBucketRecognizesCurrentReviewerPhaseGrammar(t *testing.T
 }
 
 func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -329,6 +334,7 @@ func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
 }
 
 func TestConvergenceUnresolvedAndHighCounters(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -379,6 +385,7 @@ func TestConvergenceUnresolvedAndHighCounters(t *testing.T) {
 }
 
 func TestConvergenceSkipsCorruptRoundLines(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -419,6 +426,7 @@ func TestConvergenceSkipsCorruptRoundLines(t *testing.T) {
 }
 
 func TestConvergenceCurrentTaskWithoutRecords(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -438,6 +446,7 @@ func TestConvergenceCurrentTaskWithoutRecords(t *testing.T) {
 }
 
 func TestConvergenceExplicitTaskMissingRoundLog(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -454,6 +463,7 @@ func TestConvergenceExplicitTaskMissingRoundLog(t *testing.T) {
 }
 
 func TestConvergenceRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -473,6 +483,7 @@ func TestConvergenceRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
 }
 
 func TestParseCommandConvergence(t *testing.T) {
+	t.Parallel()
 	cmd, err := ParseCommand([]string{"--convergence", "task-1"})
 	if err != nil {
 		t.Fatal(err)
@@ -493,6 +504,7 @@ func TestParseCommandConvergence(t *testing.T) {
 }
 
 func TestExecuteConvergenceDoesNotCreateState(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "convergencehash", RepoRoot: "/repo"}
 	cmd, err := ParseCommand([]string{"--convergence"})

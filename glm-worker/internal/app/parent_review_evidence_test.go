@@ -18,6 +18,7 @@ import (
 )
 
 func TestExecuteAcceptRequiresProjectedReviewEvidence(t *testing.T) {
+	t.Parallel()
 	cfg, st, snapshot := newParentEvidenceReviewStore(t, true)
 	openParentEvidenceReview(t, st, snapshot, "review.go:2")
 
@@ -53,6 +54,7 @@ func TestExecuteAcceptRequiresProjectedReviewEvidence(t *testing.T) {
 }
 
 func TestParentEvidenceMatchingSourceEnablesReviewAccept(t *testing.T) {
+	t.Parallel()
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:2")
 
@@ -88,6 +90,7 @@ func TestParentEvidenceMatchingSourceEnablesReviewAccept(t *testing.T) {
 }
 
 func TestParentEvidenceUnrelatedSourceDoesNotProveReview(t *testing.T) {
+	t.Parallel()
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:2")
 
@@ -118,6 +121,7 @@ func TestParentEvidenceUnrelatedSourceDoesNotProveReview(t *testing.T) {
 }
 
 func TestParentEvidenceSourceMustCoverTargetRange(t *testing.T) {
+	t.Parallel()
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:3")
 
@@ -145,6 +149,7 @@ func TestParentEvidenceSourceMustCoverTargetRange(t *testing.T) {
 }
 
 func TestParentEvidenceSnapshotChangeCannotCreateProof(t *testing.T) {
+	t.Parallel()
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:2")
 	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "review.go"), []byte("package review\nvar target = 2\nvar changed = true\n"), 0o600); err != nil {
@@ -175,6 +180,7 @@ func TestParentEvidenceSnapshotChangeCannotCreateProof(t *testing.T) {
 }
 
 func TestParentReviewDiffClaimCoverage(t *testing.T) {
+	t.Parallel()
 	diff := parentevidence.DiffBody{
 		Paths: []string{"symbol.go"},
 		Body:  "diff --git a/symbol.go b/symbol.go\n--- a/symbol.go\n+++ b/symbol.go\n@@ -8,6 +8,6 @@ func TargetSymbol() {\n context\n-old\n+new\n context\n",

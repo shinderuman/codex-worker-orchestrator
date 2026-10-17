@@ -3,7 +3,9 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 )
 
 func TestRunEntryControllerSemanticUsesExplicitLiveAuthority(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runControllerActivationGit(t, root, "init", "-q")
 	runControllerActivationGit(t, root, "config", "user.email", "controller-semantic@example.invalid")
@@ -133,4 +136,80 @@ func runControllerSemanticTestCommand(
 		t.Fatal(err)
 	}
 	return output
+}
+
+func TestControllerSemanticResolveBindsExpectedGeneration(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runControllerActivationGit(t, root, "init", "-q")
+	runControllerActivationGit(t, root, "config", "user.email", "controller-semantic-gen@example.invalid")
+	runControllerActivationGit(t, root, "config", "user.name", "Controller Semantic Generation Test")
+	writeAppTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
+	writeAppTestFile(t, root, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\ncontroller semantic generation task\n\n## Dependencies\n\nnone\n")
+	runControllerActivationGit(t, root, "add", ".")
+	runControllerActivationGit(t, root, "commit", "-q", "-m", "base")
+
+	stateBase := filepath.Join(t.TempDir(), "state", "sessions")
+	hash := config.RepoHashFor(root)
+	cfg := config.AppConfig{RepoRoot: root, RepoHash: hash, RepoShort: hash[:12], StateBase: stateBase}
+	loadConfig := func() (config.AppConfig, error) { return cfg, nil }
+
+	var activation bytes.Buffer
+	if err := runEntry([]string{"--authority", "controller-activate"}, loadConfig, nil, bytes.NewReader(nil), &activation, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	observe := controllerSemanticCommand{
+		Action: controllerSemanticObserveLive,
+		Observation: &controller.FindingObservationInput{
+			Producer:   "controller-semantic-generation-test",
+			ProofClass: controller.FindingProofUnverified,
+			ProblemKey: "controller-semantic-generation-problem",
+		},
+	}
+	observed := runControllerSemanticTestCommand(t, loadConfig, observe)
+	if observed.Finding == nil || observed.Finding.FindingID == "" {
+		t.Fatalf("semantic observation output is incomplete: %#v", observed)
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := controllerSemanticCommand{
+		Action:                       controllerSemanticResolve,
+		FindingID:                    observed.Finding.FindingID,
+		Decision:                     &controller.FindingDecision{Kind: controller.FindingDecisionAmbiguous},
+		ExpectedControllerGeneration: head.ControllerGeneration + 3,
+	}
+	payload, err := json.Marshal(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := runEntry([]string{"--authority", "controller-semantic"}, loadConfig, nil, bytes.NewReader(payload), &stdout, io.Discard); err == nil {
+		t.Fatal("stale expected generation admitted a resolution")
+	}
+	if _, err := store.LoadFindingDisposition(observed.Finding.FindingID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale resolution committed a disposition: %v", err)
+	}
+
+	exact := stale
+	exact.ExpectedControllerGeneration = head.ControllerGeneration
+	payload, err = json.Marshal(exact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := runEntry([]string{"--authority", "controller-semantic"}, loadConfig, nil, bytes.NewReader(payload), &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var resolved controllerSemanticOutput
+	if err := json.Unmarshal(stdout.Bytes(), &resolved); err != nil || resolved.Result == nil {
+		t.Fatalf("exact expected generation resolution output: %v %s", err, stdout.String())
+	}
 }

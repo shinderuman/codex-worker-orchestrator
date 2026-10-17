@@ -9,6 +9,7 @@ import (
 )
 
 func TestRejectedRetainedWorkflowDoesNotActivateController(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	if _, err := state.NewStateStore(cfg); err != nil {
 		t.Fatal(err)

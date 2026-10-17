@@ -45,6 +45,7 @@ func phasesOf(logs []state.ModelCallLog) []string {
 }
 
 func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -90,6 +91,7 @@ func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 }
 
 func TestDiagnosticNoRiskFloorOnLowRiskPass(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -117,6 +119,7 @@ func TestDiagnosticNoRiskFloorOnLowRiskPass(t *testing.T) {
 }
 
 func TestDiagnosticRecordsSnapshotMismatch(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -172,6 +175,7 @@ func TestDiagnosticRecordsSnapshotMismatch(t *testing.T) {
 }
 
 func TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -209,6 +213,7 @@ func TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch(t *testing.T) {
 }
 
 func TestDiagnosticRecordsPacketReject(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: packetBody(packet.Result{Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: strings.Repeat("x", 5000), RequirementCoverage: "covered", Tests: "pass", Unverified: "none"})},
@@ -234,6 +239,7 @@ func TestDiagnosticRecordsPacketReject(t *testing.T) {
 }
 
 func TestDiagnosticRecordsProviderClassificationAndElapsed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -274,6 +280,7 @@ func TestDiagnosticRecordsProviderClassificationAndElapsed(t *testing.T) {
 }
 
 func TestDiagnosticRecordsProbeAttempt(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -301,6 +308,7 @@ func TestDiagnosticRecordsProbeAttempt(t *testing.T) {
 }
 
 func TestDiagnosticRecordsResumeSourceRateLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)
@@ -336,6 +344,7 @@ func TestDiagnosticRecordsResumeSourceRateLimit(t *testing.T) {
 }
 
 func TestDiagnosticRecordsResumeSourceProviderUnavailable(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)
@@ -368,6 +377,7 @@ func TestDiagnosticRecordsResumeSourceProviderUnavailable(t *testing.T) {
 }
 
 func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedReviewStartSnapshot(t, st)
 	if err := st.Write("last-request", "req"); err != nil {
@@ -420,6 +430,7 @@ func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 }
 
 func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("risky", "HIGH")},
@@ -457,6 +468,7 @@ func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 }
 
 func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("secret work", "HIGH")},
@@ -494,6 +506,7 @@ func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
 }
 
 func TestDiagnosticSnapshotSaveFailureNotMismatch(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.SaveWorkerEndSnapshot(state.GitSnapshot{Head: "a", IndexDigest: "a", WorktreeDigest: "a"}); err != nil {
 		t.Fatal(err)

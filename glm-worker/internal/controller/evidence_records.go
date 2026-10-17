@@ -204,6 +204,11 @@ func validateTaskIndexRevision(record TaskIndexRevision) error {
 			return err
 		}
 	}
+	for _, ref := range record.SourceRevisions {
+		if err := validateTypedEvidenceRef(ref, "task-source-revision"); err != nil {
+			return err
+		}
+	}
 	return validateIndexEvidenceRefs(record.AttemptSeals, record.Finalizations)
 }
 
