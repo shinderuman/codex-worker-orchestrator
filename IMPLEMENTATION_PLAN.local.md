@@ -12,7 +12,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-
 - `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
 - `IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md`
