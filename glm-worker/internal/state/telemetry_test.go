@@ -97,43 +97,32 @@ func TestRecordModelCallLogFailureDoesNotBlockStats(t *testing.T) {
 	}
 }
 
-func TestReadModelCallLogsSkipsVersion1(t *testing.T) {
-	st := &StateStore{dir: t.TempDir()}
-	taskID, err := st.StartNewTask()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.appendModelCallLog(ModelCallLog{Version: 1, TaskID: taskID, CallID: "legacy"}); err != nil {
-		t.Fatal(err)
-	}
-	st.RecordModelCallLog(ModelCallLog{TaskID: taskID, CallID: "current"})
+func TestReadModelCallLogsSkipsNonCurrentVersions(t *testing.T) {
+	for _, legacy := range []struct {
+		version  int
+		callID   string
+		callType string
+	}{
+		{version: 1, callID: "legacy"},
+		{version: 2, callID: "v2", callType: CallTypeProbe},
+	} {
+		st := &StateStore{dir: t.TempDir()}
+		taskID, err := st.StartNewTask()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.appendModelCallLog(ModelCallLog{Version: legacy.version, TaskID: taskID, CallID: legacy.callID, CallType: legacy.callType}); err != nil {
+			t.Fatal(err)
+		}
+		st.RecordModelCallLog(ModelCallLog{TaskID: taskID, CallID: "current", CallType: CallTypeTask})
 
-	logs, err := st.ReadModelCallLogs(taskID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(logs) != 1 || logs[0].Version != ModelCallLogVersion || logs[0].CallID != "current" {
-		t.Fatalf("version 1を除外したtelemetry = %#v", logs)
-	}
-}
-
-func TestReadModelCallLogsSkipsVersion2(t *testing.T) {
-	st := &StateStore{dir: t.TempDir()}
-	taskID, err := st.StartNewTask()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.appendModelCallLog(ModelCallLog{Version: 2, TaskID: taskID, CallID: "v2", CallType: CallTypeProbe}); err != nil {
-		t.Fatal(err)
-	}
-	st.RecordModelCallLog(ModelCallLog{TaskID: taskID, CallID: "v3", CallType: CallTypeTask})
-
-	logs, err := st.ReadModelCallLogs(taskID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(logs) != 1 || logs[0].Version != 3 || logs[0].CallID != "v3" {
-		t.Fatalf("version 2を除外したtelemetry = %#v", logs)
+		logs, err := st.ReadModelCallLogs(taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(logs) != 1 || logs[0].Version != ModelCallLogVersion || logs[0].CallID != "current" {
+			t.Fatalf("version %dを除外したtelemetry = %#v", legacy.version, logs)
+		}
 	}
 }
 

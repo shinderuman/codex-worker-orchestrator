@@ -55,10 +55,9 @@ func newPlanFileWorkflow(
 		mutateSkipCalls: mutateSkipCalls,
 	}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	return w, r, out, st
 }
@@ -348,10 +347,9 @@ func planFileDecisionWorkflow(t *testing.T, st *state.StateStore, repoRoot strin
 		mutatePhase: mutatePhase,
 	}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	return w, r, out
 }

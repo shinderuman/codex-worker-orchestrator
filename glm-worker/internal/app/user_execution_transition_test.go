@@ -68,8 +68,43 @@ func userExecutionTerminationFixture(t *testing.T) (config.AppConfig, *controlle
 	return cfg, store, input, runtime, source.Workspace.Root
 }
 
-func TestUserExecutionTerminationEndsUnfinishedAttemptAndKeepsRequirementsQueued(t *testing.T) {
+func TestUserExecutionTerminationValidatesAuthorityAndKeepsRequirementsQueued(t *testing.T) {
 	cfg, store, input, runtime, workspaceRoot := userExecutionTerminationFixture(t)
+	before, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+		Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration,
+	}); err == nil || !strings.Contains(err.Error(), "execution termination requires exact transition authority") {
+		t.Fatalf("action without transition input = %v", err)
+	}
+	for _, change := range []struct {
+		name   string
+		mutate func(*controller.UserExecutionTransitionInput)
+	}{
+		{"stale-generation", func(in *controller.UserExecutionTransitionInput) { in.ExpectedGeneration-- }},
+		{"foreign-source-project", func(in *controller.UserExecutionTransitionInput) { in.SourceProjectID = "foreign" }},
+		{"foreign-attempt", func(in *controller.UserExecutionTransitionInput) { in.SourceAttemptID = "foreign" }},
+		{"foreign-lease", func(in *controller.UserExecutionTransitionInput) { in.SourceLeaseID = "foreign" }},
+		{"foreign-successor-task", func(in *controller.UserExecutionTransitionInput) { in.SuccessorTask.ContractDigest = "foreign" }},
+		{"foreign-successor-project", func(in *controller.UserExecutionTransitionInput) { in.SuccessorProjectID = "foreign" }},
+		{"missing-reason", func(in *controller.UserExecutionTransitionInput) { in.Reason = "" }},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			denied := input
+			change.mutate(&denied)
+			if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+				Action: "user-terminate-execution", ExpectedGeneration: denied.ExpectedGeneration, ExecutionTermination: &denied,
+			}); err == nil {
+				t.Fatal("invalid execution termination admitted")
+			}
+			after, err := store.LoadHead()
+			if err != nil || !executionTerminationAuthorityEqual(before, after) || runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+				t.Fatal("rejected execution termination mutated authority")
+			}
+		})
+	}
 	result, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
 		Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input,
 	})
@@ -115,45 +150,6 @@ func TestUserExecutionTerminationEndsUnfinishedAttemptAndKeepsRequirementsQueued
 		Action: "user-terminate-execution", ExpectedGeneration: head.ControllerGeneration, ExecutionTermination: &input,
 	}); err == nil {
 		t.Fatal("terminated execution was terminated again")
-	}
-}
-
-func TestUserExecutionTerminationRejectsInvalidAuthority(t *testing.T) {
-	cfg, store, input, runtime, _ := userExecutionTerminationFixture(t)
-	before, err := store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
-		Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration,
-	}); err == nil || !strings.Contains(err.Error(), "execution termination requires exact transition authority") {
-		t.Fatalf("action without transition input = %v", err)
-	}
-	for _, change := range []struct {
-		name   string
-		mutate func(*controller.UserExecutionTransitionInput)
-	}{
-		{"stale-generation", func(in *controller.UserExecutionTransitionInput) { in.ExpectedGeneration-- }},
-		{"foreign-source-project", func(in *controller.UserExecutionTransitionInput) { in.SourceProjectID = "foreign" }},
-		{"foreign-attempt", func(in *controller.UserExecutionTransitionInput) { in.SourceAttemptID = "foreign" }},
-		{"foreign-lease", func(in *controller.UserExecutionTransitionInput) { in.SourceLeaseID = "foreign" }},
-		{"foreign-successor-task", func(in *controller.UserExecutionTransitionInput) { in.SuccessorTask.ContractDigest = "foreign" }},
-		{"foreign-successor-project", func(in *controller.UserExecutionTransitionInput) { in.SuccessorProjectID = "foreign" }},
-		{"missing-reason", func(in *controller.UserExecutionTransitionInput) { in.Reason = "" }},
-	} {
-		t.Run(change.name, func(t *testing.T) {
-			denied := input
-			change.mutate(&denied)
-			if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
-				Action: "user-terminate-execution", ExpectedGeneration: denied.ExpectedGeneration, ExecutionTermination: &denied,
-			}); err == nil {
-				t.Fatal("invalid execution termination admitted")
-			}
-			after, err := store.LoadHead()
-			if err != nil || !executionTerminationAuthorityEqual(before, after) || runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
-				t.Fatal("rejected execution termination mutated authority")
-			}
-		})
 	}
 }
 

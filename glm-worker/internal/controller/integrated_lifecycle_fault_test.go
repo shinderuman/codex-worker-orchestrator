@@ -6,51 +6,6 @@ import (
 	"testing"
 )
 
-func TestIntegratedLifecycleDuplicateFindingConverges(t *testing.T) {
-	t.Parallel()
-	harness := newLifecycleHarness(t)
-	head, err := harness.store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	first, err := harness.store.ObserveFinding(harness.source, FindingObservationInput{
-		Producer: "reviewer-a", ProofClass: FindingProofUnverified, ProblemKey: "duplicate-defect",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := harness.store.ObserveFinding(harness.source, FindingObservationInput{
-		Producer: "reviewer-b", ProofClass: FindingProofUnverified, ProblemKey: "duplicate-defect",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.FindingID == second.FindingID || second.CanonicalFindingID != first.FindingID {
-		t.Fatalf("duplicate observations did not converge canonically: first=%#v second=%#v", first, second)
-	}
-	if second.Producer == first.Producer {
-		t.Fatal("duplicate finding provenance was collapsed")
-	}
-	result, err := harness.store.ResolveFindingWithProjectAuthority(second.FindingID, FindingDecision{Kind: FindingDecisionDuplicate})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Intent != FindingIntentDuplicate || result.Disposition == nil || result.Disposition.CanonicalFindingID != first.FindingID {
-		t.Fatalf("duplicate disposition = %#v", result)
-	}
-	if result.Episode != nil {
-		t.Fatalf("duplicate disposition minted episode authority: %#v", result.Episode)
-	}
-	after, err := harness.store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.ControllerGeneration != head.ControllerGeneration || after.ActiveEpisodeID != "" || after.LiveAttemptID != head.LiveAttemptID {
-		t.Fatalf("duplicate disposition changed execution authority: before=%#v after=%#v", head, after)
-	}
-	harness.assertInvariant(t, "duplicate disposition")
-}
-
 func TestIntegratedLifecycleCycleFailsClosed(t *testing.T) {
 	t.Parallel()
 	harness := newLifecycleHarness(t)

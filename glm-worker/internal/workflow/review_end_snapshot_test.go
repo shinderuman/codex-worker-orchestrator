@@ -114,18 +114,17 @@ func newMutationWorkflow(t *testing.T, repoRoot string, steps []runnerStep, muta
 	st := newStateStoreT(t)
 	r := &mutatingRunner{repoRoot: repoRoot, steps: steps, mutate: mutate}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	return w, r, out
 }
 
-func newMutationWorkflowShell(t *testing.T, st *state.StateStore) *Workflow {
+func newMutationWorkflowShell(t *testing.T, st *state.StateStore, repoRoot string) *Workflow {
 	t.Helper()
 	pinRepositoryHarnessActiveT(t, st)
-	return newWorkflowT(t, st, &scriptedRunner{})
+	return newWorkflowTInRepo(t, st, &scriptedRunner{}, repoRoot)
 }
 
 func setCurrentTaskChangedPath(w *Workflow, path string) {
@@ -406,10 +405,9 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	}}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	setCurrentTaskChangedPath(w, "tracked.txt")
 
@@ -448,10 +446,9 @@ func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
 	}
 	st := newStateStoreT(t)
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	setCurrentTaskChangedPath(w, "tracked.txt")
 

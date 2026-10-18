@@ -15,6 +15,12 @@ import (
 
 func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
+	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID}); err == nil {
+		t.Fatal("stale generation reentered the candidate")
+	}
+	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"}); err == nil {
+		t.Fatal("foreign candidate reentered the sealed authority")
+	}
 
 	handoff := buildParentHandoffWithConfig(cfg, runtime)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
@@ -77,16 +83,6 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 			inconsistency = *handoff.Inconsistency
 		}
 		t.Fatalf("reentered live attempt handoff: %#v inconsistency=%s", handoff, inconsistency)
-	}
-}
-
-func TestControllerReenterRejectsStaleAndForeignAuthority(t *testing.T) {
-	_, store, accepted, candidate, _ := sealedCandidateReentryFixture(t)
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID}); err == nil {
-		t.Fatal("stale generation reentered the candidate")
-	}
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"}); err == nil {
-		t.Fatal("foreign candidate reentered the sealed authority")
 	}
 }
 

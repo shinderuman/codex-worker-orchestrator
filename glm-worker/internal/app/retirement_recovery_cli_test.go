@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactioncmd"
 )
 
@@ -121,8 +122,8 @@ func runAuthorityBootstrapChild(t *testing.T, cfg config.AppConfig) (int, string
 	return childExitCode(command.Run()), output.String()
 }
 
-func TestPartialCompletionProcessDeathRecoversThroughCanonicalParentCLI(t *testing.T) {
-	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
+func interruptCompletionBeforeMetadata(t *testing.T, cfg config.AppConfig, store *controller.Store, promoted controller.ExecutionOperationResult, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate) string {
+	t.Helper()
 	hooks := t.TempDir()
 	pidFile := filepath.Join(t.TempDir(), "controller-pid")
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
@@ -155,19 +156,10 @@ func TestPartialCompletionProcessDeathRecoversThroughCanonicalParentCLI(t *testi
 	if exit, output := runAuthorityBootstrapChild(t, cfg); exit == 0 {
 		t.Fatalf("partial local preparation was reported as successful bootstrap: exit=%d %s", exit, output)
 	}
-	recoverCompletionThroughParentCLI(t, cfg)
-	recovered, err := store.LoadHead()
-	if err != nil || recovered.PendingTransitionID != "" || recovered.ExecutionTaskRef != nil || recovered.IntegrationTip != before {
-		t.Fatalf("CLI did not complete the exact saved journal: %v", err)
-	}
-	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
-	actual := appTestGitOutput(t, cfg.RepoRoot, "ls-remote", policy.Remote, policy.RemoteRef)
-	if !strings.HasPrefix(string(actual), before+"\t") {
-		t.Fatal("recovery did not publish the planned final commit")
-	}
+	return before
 }
 
-func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command string) {
+func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command string) (int, string) {
 	t.Helper()
 	exit, out, diagnostics := runParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
 	if exit != 0 {
@@ -192,7 +184,5 @@ func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command str
 		t.Fatal(err)
 	}
 	exit, _, diagnostics = runParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
-	if exit != 0 {
-		t.Fatalf("canonical CLI recovery: exit=%d %s", exit, diagnostics)
-	}
+	return exit, diagnostics
 }

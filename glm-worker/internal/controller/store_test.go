@@ -230,9 +230,16 @@ func TestMutablePlanCannotMintExecutionAuthority(t *testing.T) {
 
 func newControllerLinkedWorktree(t *testing.T) (string, string) {
 	t.Helper()
+	repo := newControllerRepo(t)
+	linked := filepath.Join(filepath.Dir(repo), "linked")
+	runControllerGit(t, repo, "worktree", "add", "-q", "--detach", linked, "HEAD")
+	return repo, linked
+}
+
+func newControllerRepo(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
-	linked := filepath.Join(root, "linked")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -254,8 +261,7 @@ func newControllerLinkedWorktree(t *testing.T) (string, string) {
 	}
 	runControllerGit(t, repo, "add", ".")
 	runControllerGit(t, repo, "commit", "-q", "-m", "base")
-	runControllerGit(t, repo, "worktree", "add", "-q", "--detach", linked, "HEAD")
-	return repo, linked
+	return repo
 }
 
 func controllerTestTask(t *testing.T, repo string) SemanticTaskRef {

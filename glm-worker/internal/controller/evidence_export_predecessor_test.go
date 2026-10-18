@@ -150,15 +150,15 @@ func TestExportEvidenceTaskContinuationVerifiesRuntimeTaskEqually(t *testing.T) 
 		f.withSealedRuntime = true
 		f.sealedAssociationRuntimeTask = aligned
 	}
+	liveFixture := newEvidenceExportFixture(t, liveOptions)
+	liveFixture.continueLiveAttemptFromSeal(t)
 	t.Run("live task-id export", func(t *testing.T) {
-		fixture := newEvidenceExportFixture(t, liveOptions)
-		fixture.continueLiveAttemptFromSeal(t)
+		fixture := liveFixture
 		export, _ := fixture.exportContinuation(t, EvidenceExportRequest{TaskID: fixture.runtimeTask})
 		requireCollectedPredecessor(t, export, evidenceExportSealedAttemptID, aligned, fixture.sealRef.Digest)
 	})
 	t.Run("live no-arg export", func(t *testing.T) {
-		fixture := newEvidenceExportFixture(t, liveOptions)
-		fixture.continueLiveAttemptFromSeal(t)
+		fixture := liveFixture
 		export, _ := fixture.exportContinuation(t, EvidenceExportRequest{})
 		requireCollectedPredecessor(t, export, evidenceExportSealedAttemptID, aligned, fixture.sealRef.Digest)
 	})

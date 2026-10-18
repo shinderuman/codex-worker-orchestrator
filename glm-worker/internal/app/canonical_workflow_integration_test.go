@@ -138,6 +138,8 @@ func newCanonicalWorkflowCorpus(t *testing.T) (config.AppConfig, string, string,
 	cfg.WorktreeBase = filepath.Join(stateHome, "worktrees")
 	cfg.ClaudeConfigDir = filepath.Join(stateHome, "claude")
 	cfg.CodexConfigDir = filepath.Join(stateHome, "codex")
+	writeAppTestFile(t, cfg.CodexConfigDir, "instructions/worker/testing.md", "TEST CONTRACT\n")
+	writeAppTestFile(t, cfg.CodexConfigDir, "instructions/worker/go.md", "GO CONTRACT\n")
 	cfg.EscalatedEffort = "high"
 	t.Setenv("GLM_WORKER_HOME", stateHome)
 	rootTask := "IMPLEMENTATION_TASKS/root.md"

@@ -142,8 +142,28 @@ func stopLiveControllerDecisionAtAutoFix(t *testing.T, shape liveControllerStopS
 	return liveControllerStopScenario{repo: repo, cfg: cfg, store: store, st: st, activated: activated, taskID: taskID}
 }
 
-func TestDecisionAutoFixStopsKeepConvergenceAndControllerAuthority(t *testing.T) {
-	t.Parallel()
+func useLiveControllerParentValidationPass(t *testing.T) {
+	t.Helper()
+	previous := parentValidationGateRunner
+	t.Cleanup(func() { parentValidationGateRunner = previous })
+	parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
+		snapshot, err := state.CaptureGitSnapshot(w.config.RepoRoot)
+		if err != nil {
+			return qualitygate.RunRecord{}, err
+		}
+		return parentValidationTerminalPassT(t, qualitygate.RunRecord{
+			ValidationRunID: "run-pass",
+			Form:            request.Form,
+			Repository:      w.config.RepoRoot,
+			WorkingDir:      filepath.Join(w.config.RepoRoot, "glm-worker"),
+			Head:            snapshot.Head,
+			IndexDigest:     snapshot.IndexDigest,
+			WorktreeDigest:  snapshot.WorktreeDigest,
+		}), nil
+	}
+}
+
+func TestDecisionAutoFixStopPreservesAuthorityAndResumesThroughLiveControllerLease(t *testing.T) {
 	for _, shape := range liveControllerStopShapes {
 		t.Run(shape.name, func(t *testing.T) {
 			scenario := stopLiveControllerDecisionAtAutoFix(t, shape)
@@ -180,36 +200,7 @@ func TestDecisionAutoFixStopsKeepConvergenceAndControllerAuthority(t *testing.T)
 			if afterTask, terr := scenario.st.TaskID(); terr != nil || afterTask != scenario.taskID {
 				t.Fatalf("auto-fix stop changed the workflow task identity: %s want %s err=%v", afterTask, scenario.taskID, terr)
 			}
-		})
-	}
-}
-
-func TestDecisionAutoFixStopResumesThroughLiveControllerLease(t *testing.T) {
-	for _, shape := range liveControllerStopShapes {
-		t.Run(shape.name, func(t *testing.T) {
-			scenario := stopLiveControllerDecisionAtAutoFix(t, shape)
-			stoppedHead, err := scenario.store.LoadHead()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			previous := parentValidationGateRunner
-			defer func() { parentValidationGateRunner = previous }()
-			parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
-				snapshot, serr := state.CaptureGitSnapshot(w.config.RepoRoot)
-				if serr != nil {
-					return qualitygate.RunRecord{}, serr
-				}
-				return parentValidationTerminalPassT(t, qualitygate.RunRecord{
-					ValidationRunID: "run-pass",
-					Form:            request.Form,
-					Repository:      w.config.RepoRoot,
-					WorkingDir:      filepath.Join(w.config.RepoRoot, "glm-worker"),
-					Head:            snapshot.Head,
-					IndexDigest:     snapshot.IndexDigest,
-					WorktreeDigest:  snapshot.WorktreeDigest,
-				}), nil
-			}
+			useLiveControllerParentValidationPass(t)
 			resumeRunner := &scriptedRunner{steps: []runnerStep{
 				{structured: parentValidationObligatedPacket("fixed")},
 				{structured: needsSolReviewPacket()},
@@ -248,7 +239,7 @@ func TestDecisionAutoFixStopResumesThroughLiveControllerLease(t *testing.T) {
 			if resumedHead.LiveLeaseID == "" || resumedHead.LiveAttemptID != scenario.activated.Attempt.AttemptID {
 				t.Fatalf("resume lost the live controller execution: %#v", resumedHead)
 			}
-			if resumedHead.ControllerGeneration <= stoppedHead.ControllerGeneration {
+			if resumedHead.ControllerGeneration <= head.ControllerGeneration {
 				t.Fatalf("resumed auto-fix did not re-admit through the live lease: %#v", resumedHead)
 			}
 			if afterTask, terr := scenario.st.TaskID(); terr != nil || afterTask != scenario.taskID {
