@@ -8,12 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/canonical-reviewer-rejection-recovery.md`
+- `IMPLEMENTATION_TASKS/go-suite-test-structure-consolidation.md`
 
 ## NEXT（優先順）
 
 
-- `IMPLEMENTATION_TASKS/go-suite-test-structure-consolidation.md`
 - `IMPLEMENTATION_TASKS/workflow-validation-cadence-and-source-binding.md`
 - `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`

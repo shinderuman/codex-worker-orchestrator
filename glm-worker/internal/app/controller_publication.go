@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -16,10 +17,14 @@ type controllerPublicationCommand struct {
 	Message            string                            `json:"message,omitempty"`
 	Evidence           []controller.EvidenceObjectRef    `json:"evidence,omitempty"`
 	EvidenceRecord     *controller.CandidateEvidence     `json:"evidence_record,omitempty"`
+	ArtifactJSON       json.RawMessage                   `json:"artifact_json,omitempty"`
 	Amendment          *controller.TaskAmendmentApproval `json:"amendment,omitempty"`
 }
 
 func executeControllerPublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
+	if len(command.ArtifactJSON) != 0 && command.Action != "store-evidence" {
+		return nil, fmt.Errorf("candidate evidence artifact is restricted to store-evidence")
+	}
 	if command.Amendment != nil && command.Action != "rebind" {
 		return nil, fmt.Errorf("task amendment approval is restricted to candidate rebind")
 	}
@@ -42,7 +47,7 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 	case "reopen-unsealed":
 		return executeUnsealedCompletionReentry(cfg, store, command)
 	case "store-evidence":
-		return storePublicationCommandEvidence(store, command.EvidenceRecord)
+		return storePublicationCommandEvidence(store, command.EvidenceRecord, command.ArtifactJSON)
 	case "promote":
 		return store.PromoteAcceptedCandidate(input)
 	case "publish":
@@ -80,9 +85,12 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 	}
 }
 
-func storePublicationCommandEvidence(store *controller.Store, record *controller.CandidateEvidence) (any, error) {
+func storePublicationCommandEvidence(store *controller.Store, record *controller.CandidateEvidence, artifact json.RawMessage) (any, error) {
 	if record == nil {
 		return nil, fmt.Errorf("candidate evidence record is missing")
+	}
+	if len(artifact) != 0 {
+		return store.StoreCandidateEvidenceJSON(*record, artifact)
 	}
 	return store.StoreCandidateEvidence(*record)
 }

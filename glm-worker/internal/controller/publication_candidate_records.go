@@ -16,12 +16,38 @@ const (
 	evidenceKindCandidateEvidence = "candidate-evidence"
 )
 
-func (s *Store) StoreCandidateEvidence(record CandidateEvidence) (EvidenceObjectRef, error) {
-	if record.SchemaVersion != controllerSchemaVersion || record.RepositoryIdentity != s.identity.LineageID || record.AttemptID == "" || record.SnapshotID == "" || record.BaseOID == "" || record.TreeOID == "" || record.Result != candidateEvidencePass {
-		return EvidenceObjectRef{}, fmt.Errorf("candidate evidence identity/result is incomplete")
+func validateCandidateEvidenceMetadata(record CandidateEvidence, repository string) error {
+	if record.SchemaVersion != controllerSchemaVersion || record.RepositoryIdentity != repository || record.AttemptID == "" || record.SnapshotID == "" || record.BaseOID == "" || record.TreeOID == "" || record.Result != candidateEvidencePass {
+		return fmt.Errorf("candidate evidence identity/result is incomplete")
 	}
 	if record.Kind != candidateEvidenceKindReview && record.Kind != candidateEvidenceKindValidation && record.Kind != candidateEvidenceKindInstall {
-		return EvidenceObjectRef{}, fmt.Errorf("unsupported candidate evidence kind")
+		return fmt.Errorf("unsupported candidate evidence kind")
+	}
+	return nil
+}
+
+func (s *Store) StoreCandidateEvidenceJSON(record CandidateEvidence, artifact json.RawMessage) (EvidenceObjectRef, error) {
+	if err := validateCandidateEvidenceMetadata(record, s.identity.LineageID); err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	if record.Artifact != (EvidenceObjectRef{}) {
+		return EvidenceObjectRef{}, fmt.Errorf("candidate evidence requires either artifact reference or JSON, not both")
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(artifact, &object); err != nil || object == nil {
+		return EvidenceObjectRef{}, fmt.Errorf("candidate evidence artifact must be a JSON object")
+	}
+	ref, err := s.PutEvidenceObject(record.Kind+"-artifact", "application/json", record.AttemptID+":"+record.Kind+":"+record.SnapshotID, true, artifact)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	record.Artifact = ref
+	return s.StoreCandidateEvidence(record)
+}
+
+func (s *Store) StoreCandidateEvidence(record CandidateEvidence) (EvidenceObjectRef, error) {
+	if err := validateCandidateEvidenceMetadata(record, s.identity.LineageID); err != nil {
+		return EvidenceObjectRef{}, err
 	}
 	if _, err := s.LoadEvidenceObject(record.Artifact); err != nil {
 		return EvidenceObjectRef{}, err

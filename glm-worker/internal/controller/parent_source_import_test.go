@@ -419,6 +419,77 @@ func TestParentSourceImportTaskSealsAfterRevision(t *testing.T) {
 	}
 }
 
+func TestParentSourceImportSuccessorFreshMaterializationCarriesRevisedProjectMetadata(t *testing.T) {
+	t.Parallel()
+	blockerPath := "IMPLEMENTATION_TASKS/revision-blocker.md"
+	fixture, policy := configurePublicationTestFixture(t, newFindingAcceptanceFixture(t, blockerPath))
+	edited := publicationTestEdit(t, fixture, "result.txt", "root result\n")
+	retiredRoot, _ := publishTerminalTestSource(t, fixture, policy, edited)
+	mat, err := fixture.store.MaterializeExecution(MaterializeExecutionInput{ExpectedGeneration: retiredRoot.Head.ControllerGeneration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := *mat.Admission
+	successorTask := *retiredRoot.Head.RootTaskRef
+	imported, revised := importRevisedRootSource(t, fixture.store, source, successorTask, "\n## Amendment\n\nfresh materialization tree source\n")
+
+	writeSuspensionTestFile(t, imported.Admission.Workspace.Root, "result.txt", "revised task implementation\n")
+	laneSnapshot, err := CaptureWorkspaceSnapshot(imported.Admission.Workspace.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := fixture.store.RecordAdmittedMutation(*imported.Admission, "lane edit before suspension", "success", laneSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := fixture.store.LoadProjectSnapshot(sealed.Head.ProjectSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocker := findProjectTask(project, blockerPath)
+	if blocker.Empty() {
+		t.Fatal("blocking target task missing from the revised project")
+	}
+	finding, err := fixture.store.ObserveFinding(sealed, FindingObservationInput{Producer: "lifecycle-reviewer", ProofClass: FindingProofUnverified, ProblemKey: "fresh-materialization-blocker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := fixture.store.ResolveFindingWithProjectAuthority(finding.FindingID, FindingDecision{
+		Kind:             FindingDecisionIndependentBlocking,
+		TargetTaskRef:    &blocker,
+		BlockingBoundary: revised.TaskPath + " is blocked until " + blocker.TaskPath + " is satisfied",
+	})
+	if err != nil || resolved.Episode == nil {
+		t.Fatalf("blocking finding did not plan an episode: %#v %v", resolved.Episode, err)
+	}
+	suspended, err := fixture.store.SuspendExecution(sealed, resolved.Episode.EpisodeID, resolved.Episode.Revision)
+	if err != nil {
+		t.Fatalf("suspension rejected the source-revised Task: %v", err)
+	}
+	cleaned, err := fixture.store.CleanupExecution(CleanupExecutionInput{ExpectedGeneration: suspended.Head.ControllerGeneration, WorkspaceID: imported.Admission.Workspace.ID, SealRef: *suspended.SealRef})
+	if err != nil {
+		t.Fatalf("cleanup rejected the suspended source-revised lane: %v", err)
+	}
+
+	fresh, err := fixture.store.MaterializeExecution(MaterializeExecutionInput{ExpectedGeneration: cleaned.Head.ControllerGeneration, EpisodeID: resolved.Episode.EpisodeID, EpisodeRevision: resolved.Episode.Revision})
+	if err != nil {
+		t.Fatalf("successor fresh materialization after source revision failed: %v", err)
+	}
+	if fresh.Admission == nil || fresh.Admission.Workspace.Root != imported.Admission.Workspace.Root {
+		t.Fatalf("fresh materialization lost the lane admission: %#v", fresh.Admission)
+	}
+	revisedInLane, err := os.ReadFile(filepath.Join(fresh.Admission.Workspace.Root, filepath.FromSlash(revised.TaskPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(revisedInLane), "fresh materialization tree source") {
+		t.Fatalf("fresh lane did not carry the revised project metadata: %s", revised.TaskPath)
+	}
+	if !fresh.Admission.Attempt.SemanticTaskRef.Equal(blocker) {
+		t.Fatalf("fresh materialization did not execute the scheduled blocker: %#v", fresh.Admission.Attempt.SemanticTaskRef)
+	}
+}
+
 func TestParentSourceImportRejectsUndeclaredSourceRevisionInjection(t *testing.T) {
 	t.Parallel()
 	fixture, _, source, successorTask := rootLaneExecutionFixture(t)

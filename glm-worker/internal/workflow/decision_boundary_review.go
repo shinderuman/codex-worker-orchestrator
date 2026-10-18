@@ -7,15 +7,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
-type reviewerDecisionBoundaryError struct {
-	reason string
-}
-
 const solDecisionBoundaryReviewMarker = "SOL_DECISION_BOUNDARY_REVIEW:"
-
-func (e *reviewerDecisionBoundaryError) Error() string {
-	return e.reason
-}
 
 func decisionBoundaryReviewContextBlock(activeTaskPath string, authority semanticDecisionAuthority) string {
 	unresolved := authority.unresolved()
@@ -58,18 +50,14 @@ func (w *Workflow) validateReviewerDecisionBoundary() error {
 		return err
 	}
 	if activeTaskPath == "" {
-		return &reviewerDecisionBoundaryError{
-			reason: "reviewer returned NEEDS_SOL_DECISION without an active task decision boundary",
-		}
+		return fmt.Errorf("reviewer returned NEEDS_SOL_DECISION without an active task decision boundary")
 	}
 	authority, err := loadSemanticDecisionAuthority(w.config.RepoRoot, activeTaskPath)
 	if err != nil {
 		return err
 	}
 	if len(authority.unresolved()) == 0 {
-		return &reviewerDecisionBoundaryError{
-			reason: "reviewer returned NEEDS_SOL_DECISION but all Sol decision axes are fixed",
-		}
+		return fmt.Errorf("reviewer returned NEEDS_SOL_DECISION but all Sol decision axes are fixed")
 	}
 	return nil
 }

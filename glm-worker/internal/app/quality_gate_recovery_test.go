@@ -242,14 +242,14 @@ func TestQualityGateConcurrentSameSnapshotAttachesAndStreamsRunID(t *testing.T) 
 func TestQualityGateReconcileMarksInterruptedAtRunnerLivenessBoundaries(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name      string
-		runnerPID int
-		startedAt time.Time
-		want      string
+		name       string
+		runnerPID  int
+		startedAgo time.Duration
+		want       string
 	}{
-		{name: "dead-runner-pid", runnerPID: 2147483647, startedAt: time.Now().Add(-time.Second).UTC(), want: qualitygate.StatusInterrupted},
-		{name: "fresh-runner-without-pid", startedAt: time.Now().UTC(), want: qualitygate.StatusRunning},
-		{name: "runner-without-pid-after-startup-grace", startedAt: time.Now().Add(-qualityGateRunnerStartupGrace - time.Second).UTC(), want: qualitygate.StatusInterrupted},
+		{name: "dead-runner-pid", runnerPID: 2147483647, startedAgo: time.Second, want: qualitygate.StatusInterrupted},
+		{name: "fresh-runner-without-pid", want: qualitygate.StatusRunning},
+		{name: "runner-without-pid-after-startup-grace", startedAgo: qualityGateRunnerStartupGrace + time.Second, want: qualitygate.StatusInterrupted},
 	}
 	for index, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -260,7 +260,7 @@ func TestQualityGateReconcileMarksInterruptedAtRunnerLivenessBoundaries(t *testi
 				ValidationRunID: runID,
 				Form:            "go-test",
 				Repository:      "/repo",
-				StartedAt:       tc.startedAt,
+				StartedAt:       time.Now().Add(-tc.startedAgo).UTC(),
 				Status:          qualitygate.StatusRunning,
 				RunnerPID:       tc.runnerPID,
 			}

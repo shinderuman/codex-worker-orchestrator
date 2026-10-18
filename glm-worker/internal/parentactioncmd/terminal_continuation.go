@@ -22,29 +22,6 @@ type parentActionTerminalContinuation struct {
 	SHA256  string `json:"sha256"`
 }
 
-func writeProjectedTerminalEnvelopeWithContinuation(cfg config.AppConfig, stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
-	envelope, err := projectParentActionTerminalEnvelope(terminalJSON, handoffJSON)
-	if err == nil {
-		return json.NewEncoder(stdout).Encode(envelope)
-	}
-	var projectionErr *parentActionTerminalProjectionError
-	if !errors.As(err, &projectionErr) {
-		return err
-	}
-	failure, failureErr := writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON, projectionErr)
-	if failureErr != nil {
-		return fmt.Errorf("%w; encode projection overflow payload: %w", err, failureErr)
-	}
-	continuation, continuationErr := persistParentActionTerminalContinuation(cfg, terminalJSON)
-	if continuationErr != nil {
-		if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
-			return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr), fmt.Errorf("encode projection overflow envelope: %w", encodeErr))
-		}
-		return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr))
-	}
-	return writeTerminalProjectionContinuation(stdout, failure, continuation, err)
-}
-
 func writeTerminalProjectionContinuation(stdout io.Writer, failure parentActionTerminalEnvelopePayload, continuation parentActionTerminalContinuation, projectionErr error) error {
 	plainFailure := cloneTerminalProjectionFailure(failure)
 	failure.Continuation = &continuation

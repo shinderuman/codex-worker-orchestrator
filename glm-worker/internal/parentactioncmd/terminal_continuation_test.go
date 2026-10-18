@@ -79,7 +79,7 @@ func TestTerminalOverflowPersistsExactBoundedContinuation(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	projectionErr := writeProjectedTerminalEnvelopeWithContinuation(cfg, &stdout, terminal, handoff)
+	projectionErr := writeProjectedTerminalEnvelopeMode(cfg, &stdout, terminal, handoff, false)
 	if projectionErr == nil {
 		t.Fatal("overflow must remain fail-closed")
 	}
@@ -162,7 +162,7 @@ func TestTerminalOverflowRemainsStructuredWhenContinuationPersistenceFails(t *te
 	}
 
 	var stdout bytes.Buffer
-	projectionErr := writeProjectedTerminalEnvelopeWithContinuation(cfg, &stdout, terminal, handoff)
+	projectionErr := writeProjectedTerminalEnvelopeMode(cfg, &stdout, terminal, handoff, false)
 	if projectionErr == nil {
 		t.Fatal("overflow with unavailable continuation must remain fail-closed")
 	}
@@ -183,6 +183,6 @@ func TestTerminalOverflowRemainsStructuredWhenContinuationPersistenceFails(t *te
 	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
 }
 
-func writeProjectedTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
-	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, false)
+func writeProjectedTerminalEnvelope(cfg config.AppConfig, stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
+	return writeProjectedTerminalEnvelopeMode(cfg, stdout, terminalJSON, handoffJSON, false)
 }
