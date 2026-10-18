@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
@@ -26,7 +28,7 @@ func TestTerminalProjectionPreservesNoArtifactDecisionBeyondLegacyBudget(t *test
 	handoff := representativeHandoff(t, strings.Repeat("baseline-", 180), strings.Repeat("validation-", 180))
 
 	var stdout bytes.Buffer
-	if err := writeProjectedTerminalEnvelope(&stdout, terminal, handoff); err != nil {
+	if err := writeProjectedTerminalEnvelope(config.AppConfig{}, &stdout, terminal, handoff); err != nil {
 		t.Fatalf("write projected terminal envelope: %v", err)
 	}
 	if stdout.Len() > parentActionTerminalBudgetBytes {

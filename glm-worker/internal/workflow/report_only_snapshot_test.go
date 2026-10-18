@@ -68,6 +68,7 @@ func requireReportOnlyFailClosed(t *testing.T, w *Workflow, out *bytes.Buffer, w
 }
 
 func TestReportOnlyDispatchCapabilityAndBaselineOrdering(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -119,6 +120,7 @@ func TestReportOnlyDispatchCapabilityAndBaselineOrdering(t *testing.T) {
 }
 
 func TestImplementationAutoFixKeepsWriteCapabilityAndBaselineFlow(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -147,6 +149,7 @@ func TestImplementationAutoFixKeepsWriteCapabilityAndBaselineFlow(t *testing.T) 
 }
 
 func TestReportOnlyWorktreeMutationFailsClosedBeforeReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -195,6 +198,7 @@ func TestReportOnlyWorktreeMutationFailsClosedBeforeReview(t *testing.T) {
 }
 
 func TestReportOnlyIndexMutationFailsClosedBeforeReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -222,6 +226,7 @@ func TestReportOnlyIndexMutationFailsClosedBeforeReview(t *testing.T) {
 }
 
 func TestReportOnlyHeadMutationFailsClosedBeforeReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, _, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -247,6 +252,7 @@ func TestReportOnlyHeadMutationFailsClosedBeforeReview(t *testing.T) {
 }
 
 func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -296,6 +302,7 @@ func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 }
 
 func TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -331,6 +338,7 @@ func TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun(t *testing.T)
 }
 
 func TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	blockerDir := st.Path("snapshot-report-only-start.json")
@@ -367,6 +375,7 @@ func TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun(t *testing.T) {
 }
 
 func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	blockerDir := st.Path("snapshot-comparison.json")
@@ -412,6 +421,7 @@ func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
 }
 
 func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
@@ -469,6 +479,7 @@ func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T)
 }
 
 func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, _, _ := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -536,6 +547,7 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 }
 
 func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, _, _ := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -582,6 +594,7 @@ func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 }
 
 func TestReportOnlyTransientRecoveryStillEnforcesInvariant(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -606,6 +619,7 @@ func TestReportOnlyTransientRecoveryStillEnforcesInvariant(t *testing.T) {
 }
 
 func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	baseline, err := state.CaptureGitSnapshot(repoRoot)
@@ -676,6 +690,7 @@ func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *test
 }
 
 func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {
@@ -759,6 +774,7 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 }
 
 func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
+	t.Parallel()
 	for _, phase := range []string{"worker-report-only-1", "worker-report-only-1-packet-compact", "worker-auto-fix-1"} {
 		t.Run(phase, func(t *testing.T) {
 			repoRoot := initMutationRepo(t)
@@ -796,6 +812,7 @@ func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
 }
 
 func TestReportOnlyV5RejectedBeforeRouting(t *testing.T) {
+	t.Parallel()
 	for _, phase := range []string{"worker-report-only-1", "worker-auto-fix-1"} {
 		t.Run(phase, func(t *testing.T) {
 			repoRoot := initMutationRepo(t)
@@ -836,6 +853,7 @@ func TestReportOnlyV5RejectedBeforeRouting(t *testing.T) {
 }
 
 func TestAutoFixResumeWithoutReportOnlyPhaseKeepsLegacyFlow(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {

@@ -9,6 +9,7 @@ import (
 )
 
 func TestRotateInstructionBaselineRequiresWaitingDecision(t *testing.T) {
+	t.Parallel()
 	cfg := config.AppConfig{RepoRoot: t.TempDir(), StateBase: t.TempDir(), RepoHash: "repo"}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -24,6 +25,7 @@ func TestRotateInstructionBaselineRequiresWaitingDecision(t *testing.T) {
 }
 
 func TestParseRotateInstructionBaselineCommand(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--rotate-instruction-baseline"})
 	if err != nil {
 		t.Fatal(err)

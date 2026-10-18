@@ -105,6 +105,7 @@ func (f *qualityIntentFixture) qualityMutationRecordCount(t *testing.T) int {
 }
 
 func TestQualityMutationIntentSettlesCrashBeforeRecord(t *testing.T) {
+	t.Parallel()
 	f := newQualityIntentFixture(t)
 	f.stageQualityIntent(t)
 	output := f.applyQualityOutput(t)
@@ -139,6 +140,7 @@ func TestQualityMutationIntentSettlesCrashBeforeRecord(t *testing.T) {
 }
 
 func TestQualityMutationIntentCompletesPartiallyAppliedRecord(t *testing.T) {
+	t.Parallel()
 	f := newQualityIntentFixture(t)
 	f.stageQualityIntent(t)
 	output := f.applyQualityOutput(t)
@@ -194,6 +196,7 @@ func TestQualityMutationIntentCompletesPartiallyAppliedRecord(t *testing.T) {
 }
 
 func TestQualityMutationIntentRejectsMissingProvenance(t *testing.T) {
+	t.Parallel()
 	f := newQualityIntentFixture(t)
 	f.stageQualityIntent(t)
 	output := f.applyQualityOutput(t)
@@ -212,6 +215,7 @@ func TestQualityMutationIntentRejectsMissingProvenance(t *testing.T) {
 }
 
 func TestQualityMutationIntentRejectsSnapshotOutsideProvenBoundaries(t *testing.T) {
+	t.Parallel()
 	f := newQualityIntentFixture(t)
 	f.stageQualityIntent(t)
 	output := f.applyQualityOutput(t)
@@ -231,6 +235,7 @@ func TestQualityMutationIntentRejectsSnapshotOutsideProvenBoundaries(t *testing.
 }
 
 func TestQualityMutationIntentKeepsLeaseWhenPostimageNotApplied(t *testing.T) {
+	t.Parallel()
 	f := newQualityIntentFixture(t)
 	f.stageQualityIntent(t)
 
@@ -250,6 +255,7 @@ func TestQualityMutationIntentKeepsLeaseWhenPostimageNotApplied(t *testing.T) {
 }
 
 func TestQualityMutationIntentRejectsDifferentWorkspaceIdentity(t *testing.T) {
+	t.Parallel()
 	f := newQualityIntentFixture(t)
 	f.stageQualityIntent(t)
 	output := f.applyQualityOutput(t)
@@ -269,6 +275,7 @@ func TestQualityMutationIntentRejectsDifferentWorkspaceIdentity(t *testing.T) {
 }
 
 func TestQualityMutationSettlementRejectsInvalidCallerClaim(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		mutate func(*MutationAuthority)
@@ -318,6 +325,7 @@ func TestQualityMutationSettlementRejectsInvalidCallerClaim(t *testing.T) {
 }
 
 func TestStageQualityMutationDropsSettledLeftoverIntent(t *testing.T) {
+	t.Parallel()
 	f := newQualityIntentFixture(t)
 	f.stageQualityIntent(t)
 	output := f.applyQualityOutput(t)

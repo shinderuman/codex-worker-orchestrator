@@ -17,6 +17,10 @@ func (s *Store) applyMaterializationCandidateSource(head RepositoryControllerHea
 		}
 		rebound.Current.WorktreeTree = candidate.TreeOID
 	}
+	return s.normalizeMaterializationMetadataBase(head, rebound)
+}
+
+func (s *Store) normalizeMaterializationMetadataBase(head RepositoryControllerHead, rebound *ReboundSuspension) error {
 	metadataBase, err := s.projectMetadataBase(head.ProjectSnapshotID)
 	if err != nil {
 		return err

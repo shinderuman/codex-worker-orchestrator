@@ -7,6 +7,7 @@ import (
 )
 
 func TestRunRepositoryQualityGateSkipsInactiveHarness(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		marker string

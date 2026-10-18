@@ -9,6 +9,7 @@ import (
 )
 
 func TestTaskCorpusScheduleStateConformance(t *testing.T) {
+	t.Parallel()
 	root := scenarioRepoRoot(t)
 	planBytes, err := os.ReadFile(filepath.Join(root, implementationPlanFile))
 	if err != nil {

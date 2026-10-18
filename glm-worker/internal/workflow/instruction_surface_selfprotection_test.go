@@ -3,6 +3,7 @@ package workflow
 import "testing"
 
 func TestRepositoryInstructionSurfaceIsCritical(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path     string
 		wantHigh bool

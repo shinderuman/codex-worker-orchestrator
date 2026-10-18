@@ -9,6 +9,7 @@ import (
 )
 
 func TestClaudeRunnerSharesCallIDWithTaskEvents(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}

@@ -24,6 +24,7 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 }
 
 func TestReviewerNavigationContextRejectsMalformedActivationBeforeExhaustiveSearch(t *testing.T) {
+	t.Parallel()
 	w, st, taskID := newReviewerSearchWorkflow(t, []string{state.ParentPlanFile})
 	if err := st.Write(repositoryharness.ActivationStateKey, "malformed"); err != nil {
 		t.Fatal(err)
@@ -46,6 +47,7 @@ func TestReviewerNavigationContextRejectsMalformedActivationBeforeExhaustiveSear
 }
 
 func TestReviewerNavigationContextRejectsInactivePinForActiveTask(t *testing.T) {
+	t.Parallel()
 	w, st, _ := newReviewerSearchWorkflow(t, []string{state.ParentPlanFile})
 	if err := st.Write(activeTaskStateKey, activeTaskRepoPath); err != nil {
 		t.Fatal(err)

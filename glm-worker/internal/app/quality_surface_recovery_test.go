@@ -61,6 +61,7 @@ func seedStaleApprovedQualitySurfaceReview(t *testing.T, st *state.StateStore) {
 }
 
 func TestRecoverQualitySurfaceCommandRepairsDecisionWaitLeftover(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -114,6 +115,7 @@ func TestRecoverQualitySurfaceCommandRepairsDecisionWaitLeftover(t *testing.T) {
 }
 
 func TestRecoverQualitySurfaceCommandClosesStaleApprovedReview(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -158,6 +160,7 @@ func TestRecoverQualitySurfaceCommandClosesStaleApprovedReview(t *testing.T) {
 }
 
 func TestRecoverQualitySurfaceCommandRejectsTaskIDMismatch(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -184,6 +187,7 @@ func TestRecoverQualitySurfaceCommandRejectsTaskIDMismatch(t *testing.T) {
 }
 
 func TestRecoverQualitySurfaceCommandRejectsUncoveredStates(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 const qualityGateVersionMismatchFailure = "quality tool version mismatch: golangci-lint=2.6.0, required=2.7.0"
 
 func TestQualityGateFailureAfterWorkerResultStopsRecoverable(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("implemented")}}}
@@ -73,6 +74,7 @@ func TestQualityGateFailureAfterWorkerResultStopsRecoverable(t *testing.T) {
 }
 
 func TestQualityGateViolationAfterWorkerResultRoutesWorkerFixNotStop(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -119,6 +121,7 @@ func stopQualityGateWithVersionMismatch(t *testing.T, st *state.StateStore, repo
 }
 
 func TestQualityGateRecoveryResumeReviewsSavedResultWithoutWorkerRecall(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopQualityGateWithVersionMismatch(t, st, repo)
@@ -144,6 +147,7 @@ func TestQualityGateRecoveryResumeReviewsSavedResultWithoutWorkerRecall(t *testi
 }
 
 func TestQualityGateRecoveryResumeViolationFixesInSameWorkerSession(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopQualityGateWithVersionMismatch(t, st, repo)
@@ -177,6 +181,7 @@ func TestQualityGateRecoveryResumeViolationFixesInSameWorkerSession(t *testing.T
 }
 
 func TestQualityGateRecoveryResumeStillFailingReStopsWithoutModelCalls(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopQualityGateWithVersionMismatch(t, st, repo)
@@ -208,6 +213,7 @@ func TestQualityGateRecoveryResumeStillFailingReStopsWithoutModelCalls(t *testin
 }
 
 func TestQualityGateRecoveryDecisionContinuationPreservesDecisionAndResumes(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	if err := st.Write("last-request", "req"); err != nil {
@@ -275,6 +281,7 @@ func TestQualityGateRecoveryDecisionContinuationPreservesDecisionAndResumes(t *t
 }
 
 func TestQualityGateRecoveryDirtyDriftFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("implemented")}}}

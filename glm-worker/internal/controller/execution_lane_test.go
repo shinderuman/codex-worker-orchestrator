@@ -7,6 +7,7 @@ import (
 )
 
 func TestExecutionLaneSuspendsPreservedWorkAndMaterializesOnlyScheduledBlocker(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	writeSuspensionTestFile(t, fixture.source.Workspace.Root, "source.txt", "valuable unfinished Task\n")
 	after, err := CaptureWorkspaceSnapshot(fixture.source.Workspace.Root)
@@ -68,6 +69,7 @@ func TestExecutionLaneSuspendsPreservedWorkAndMaterializesOnlyScheduledBlocker(t
 }
 
 func TestSuspensionUnsupportedStateKeepsOriginalLease(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	runControllerGit(t, fixture.source.Workspace.Root, "update-index", "--assume-unchanged", "source.txt")
 	after, err := CaptureWorkspaceSnapshot(fixture.source.Workspace.Root)

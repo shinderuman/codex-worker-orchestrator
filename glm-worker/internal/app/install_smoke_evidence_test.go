@@ -20,6 +20,7 @@ import (
 const installSmokeAssertionMarker = "assertion failed: install smoke fixture"
 
 func TestInstallSmokeFailureSharesEvidenceLocatorBetweenRecordAndError(t *testing.T) {
+	t.Parallel()
 	cfg, st, failFlagPath, countPath := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -83,6 +84,7 @@ func TestInstallSmokeFailureSharesEvidenceLocatorBetweenRecordAndError(t *testin
 }
 
 func TestInstallSmokeFailureEvidenceIdentifiesAssertionWithoutRerun(t *testing.T) {
+	t.Parallel()
 	cfg, _, failFlagPath, countPath := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -130,6 +132,7 @@ func TestInstallSmokeFailureEvidenceIdentifiesAssertionWithoutRerun(t *testing.T
 }
 
 func TestInstallSmokeEvidenceBoundsAndSanitizesUnsafeOutput(t *testing.T) {
+	t.Parallel()
 	script := "#!/bin/sh\nset -eu\n" +
 		"i=0\n" +
 		"while [ \"$i\" -lt 900 ]; do\n" +
@@ -173,6 +176,7 @@ func TestInstallSmokeEvidenceBoundsAndSanitizesUnsafeOutput(t *testing.T) {
 }
 
 func TestInstallSmokeEvidenceDropsSecretStraddlingCaptureBoundary(t *testing.T) {
+	t.Parallel()
 	_, st := newInstallSmokeScriptEnv(t, "#!/bin/sh\nexit 1\n")
 	secret := "ghp_" + strings.Repeat("Boundary9", 4)
 	fragment := secret[len(secret)-24:]
@@ -231,6 +235,7 @@ func TestInstallSmokeEvidenceDropsSecretStraddlingCaptureBoundary(t *testing.T) 
 }
 
 func TestInstallSmokeFailureWithoutEvidenceSaveStaysFailed(t *testing.T) {
+	t.Parallel()
 	cfg, st, failFlagPath, _ := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -267,6 +272,7 @@ func TestInstallSmokeFailureWithoutEvidenceSaveStaysFailed(t *testing.T) {
 }
 
 func TestInstallSmokeLaunchFailureRecordsWrapperEvidence(t *testing.T) {
+	t.Parallel()
 	repoRoot := filepath.Join(t.TempDir(), "sk-proj-AbC12345xY-repo")
 	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
 		t.Fatal(err)
@@ -306,6 +312,7 @@ func TestInstallSmokeLaunchFailureRecordsWrapperEvidence(t *testing.T) {
 }
 
 func TestInstallSmokeSuccessWritesEvidenceAndRunMetadata(t *testing.T) {
+	t.Parallel()
 	cfg, st := newInstallSmokeScriptEnv(t, "#!/bin/sh\nset -eu\nprintf '%s\\n' 'install smoke success fixture'\n")
 	taskID, err := st.StartNewTask()
 	if err != nil {
@@ -362,6 +369,7 @@ func TestInstallSmokeSuccessWritesEvidenceAndRunMetadata(t *testing.T) {
 }
 
 func TestInstallSmokeSuccessDisclosesEvidenceSaveFailure(t *testing.T) {
+	t.Parallel()
 	cfg, st := newInstallSmokeScriptEnv(t, "#!/bin/sh\nset -eu\nprintf '%s\\n' 'install smoke success fixture'\n")
 	taskID, err := st.StartNewTask()
 	if err != nil {
@@ -394,6 +402,7 @@ func TestInstallSmokeSuccessDisclosesEvidenceSaveFailure(t *testing.T) {
 }
 
 func TestInstallSmokeRunRecordWriteFailureWarns(t *testing.T) {
+	t.Parallel()
 	cfg, st := newInstallSmokeScriptEnv(t, "#!/bin/sh\nexit 0\n")
 	runID := "0123456789abcdef0123456789abcdef"
 	runDir := st.Path(filepath.Join(installSmokeRunDirectory, runID))
@@ -419,6 +428,7 @@ func TestInstallSmokeRunRecordWriteFailureWarns(t *testing.T) {
 }
 
 func TestInstallSmokeEvidenceRedactsAuthorizationValues(t *testing.T) {
+	t.Parallel()
 	input := "Authorization: Basic dXNlcjpwYXNz\nAuthorization=Bearer secret-token-value\nkept ordinary output\n"
 	got := sanitizeInstallSmokeEvidence([]byte(input))
 	if strings.Contains(got, "dXNlcjpwYXNz") || strings.Contains(got, "secret-token-value") {
@@ -433,6 +443,7 @@ func TestInstallSmokeEvidenceRedactsAuthorizationValues(t *testing.T) {
 }
 
 func TestInstallSmokeEvidenceRetentionKeepsRecentRuns(t *testing.T) {
+	t.Parallel()
 	cfg, st, failFlagPath, _ := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 )
 
 func TestEpisodeClosureSchedulerStaysInsideAdmittedScope(t *testing.T) {
+	t.Parallel()
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")
 	x := testSemanticRef("IMPLEMENTATION_TASKS/unrelated.md", "x")
@@ -43,6 +44,7 @@ func TestEpisodeClosureSchedulerStaysInsideAdmittedScope(t *testing.T) {
 }
 
 func TestEpisodeSchedulerResumesPreviouslyExecutedBlocker(t *testing.T) {
+	t.Parallel()
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")
 	revision := BlockerEpisodeRevision{
@@ -59,6 +61,7 @@ func TestEpisodeSchedulerResumesPreviouslyExecutedBlocker(t *testing.T) {
 }
 
 func TestEpisodeCycleIsRejected(t *testing.T) {
+	t.Parallel()
 	a := testSemanticRef("IMPLEMENTATION_TASKS/a.md", "a")
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	edges := []EpisodeDependencyEdge{
@@ -71,6 +74,7 @@ func TestEpisodeCycleIsRejected(t *testing.T) {
 }
 
 func TestEpisodeSatisfiedScopeRequestsRootResume(t *testing.T) {
+	t.Parallel()
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	revision := BlockerEpisodeRevision{
 		ScopeRootTaskRef:  b,
@@ -85,6 +89,7 @@ func TestEpisodeSatisfiedScopeRequestsRootResume(t *testing.T) {
 }
 
 func TestEpisodeNoRunnableDoesNotFallThroughOutsideClosure(t *testing.T) {
+	t.Parallel()
 	a := testSemanticRef("IMPLEMENTATION_TASKS/a.md", "a")
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	revision := BlockerEpisodeRevision{
@@ -102,6 +107,7 @@ func TestEpisodeNoRunnableDoesNotFallThroughOutsideClosure(t *testing.T) {
 }
 
 func TestEpisodeReplanKeepsSingleEpisodeIdentityAndScope(t *testing.T) {
+	t.Parallel()
 	root := testSemanticRef("IMPLEMENTATION_TASKS/root.md", "root")
 	b := testSemanticRef("IMPLEMENTATION_TASKS/b.md", "b")
 	c := testSemanticRef("IMPLEMENTATION_TASKS/c.md", "c")

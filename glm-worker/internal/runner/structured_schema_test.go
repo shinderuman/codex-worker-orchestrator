@@ -8,6 +8,7 @@ import (
 )
 
 func TestStructuredSchemaUsesRiskFloorContractOnlyForRiskFloorPhase(t *testing.T) {
+	t.Parallel()
 	regular, err := structuredSchema(state.ReviewerRole, "reviewer-1")
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +58,7 @@ func schemaRequiredForTest(t *testing.T, encoded string) map[string]bool {
 }
 
 func TestStructuredSchemaHighFloorExcludesPass(t *testing.T) {
+	t.Parallel()
 	for _, phase := range []string{"reviewer-1-high-floor", "reviewer-1-high-floor-result-correct"} {
 		encoded, err := structuredSchema(state.ReviewerRole, phase)
 		if err != nil {

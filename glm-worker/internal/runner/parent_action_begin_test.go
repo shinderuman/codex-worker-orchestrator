@@ -12,6 +12,7 @@ import (
 )
 
 func TestParentActionBeginRecoverySurvivesPreCallGuardRejection(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}
@@ -72,6 +73,7 @@ func TestParentActionBeginRecoverySurvivesPreCallGuardRejection(t *testing.T) {
 }
 
 func TestParentActionBeginRecoverySurvivesRunnerSetupFailure(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}

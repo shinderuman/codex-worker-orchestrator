@@ -45,7 +45,10 @@ func (w *Workflow) reviewerDecisionBoundaryContext(activeTaskPath string) (strin
 }
 
 func (w *Workflow) validateReviewerDecisionBoundary() error {
-	activeTaskPath := w.readActiveTaskState()
+	activeTaskPath, err := w.reviewerDecisionBoundaryTaskPath()
+	if err != nil {
+		return err
+	}
 	if activeTaskPath == "" {
 		return fmt.Errorf("reviewer returned NEEDS_SOL_DECISION without an active task decision boundary")
 	}
@@ -57,6 +60,17 @@ func (w *Workflow) validateReviewerDecisionBoundary() error {
 		return fmt.Errorf("reviewer returned NEEDS_SOL_DECISION but all Sol decision axes are fixed")
 	}
 	return nil
+}
+
+func (w *Workflow) reviewerDecisionBoundaryTaskPath() (string, error) {
+	path, wired, err := w.resolveControllerExecutionTask()
+	if err != nil {
+		return "", err
+	}
+	if wired {
+		return path, nil
+	}
+	return w.readActiveTaskState(), nil
 }
 
 func (w *Workflow) finishReviewerDecision(result packet.Result) error {

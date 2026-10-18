@@ -14,6 +14,7 @@ import (
 )
 
 func TestWorkflowEntriesRejectForeignWorkspaceBeforeStateMutation(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"single", "milestones", "resume"} {
 		t.Run(mode, func(t *testing.T) {
 			repo := t.TempDir()

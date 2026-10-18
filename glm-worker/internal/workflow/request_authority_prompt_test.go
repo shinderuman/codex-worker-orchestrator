@@ -8,6 +8,7 @@ import (
 )
 
 func TestResolvedActiveTaskPromptsOmitFallbackRequestAuthority(t *testing.T) {
+	t.Parallel()
 	request := "fixed-parent-request-sentinel"
 	activeTaskPath := "IMPLEMENTATION_TASKS/task.md"
 
@@ -41,6 +42,7 @@ func TestResolvedActiveTaskPromptsOmitFallbackRequestAuthority(t *testing.T) {
 }
 
 func TestUnboundPromptsPreserveRequestAuthority(t *testing.T) {
+	t.Parallel()
 	request := "semantic-unbound-request"
 	prompts := map[string]string{
 		"new task":      newTaskPrompt(request, ""),
@@ -64,6 +66,7 @@ func TestUnboundPromptsPreserveRequestAuthority(t *testing.T) {
 }
 
 func TestManagedResumeKeepsActiveTaskAuthorityWithoutFallbackRequest(t *testing.T) {
+	t.Parallel()
 	request := "fixed-parent-request-sentinel"
 	activeTaskPath := "IMPLEMENTATION_TASKS/task.md"
 	original := decisionPrompt(request, "decision-delta", activeTaskPath)

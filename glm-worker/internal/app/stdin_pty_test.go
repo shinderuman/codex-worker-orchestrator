@@ -30,10 +30,12 @@ func stdinReadyMarker() string {
 }
 
 func TestStdinPayloadSelfContainedPTY(t *testing.T) {
+	t.Parallel()
 	ptyTransportCase(t, "")
 }
 
 func TestStdinPayloadPTYSHAMismatchRestoresTerminal(t *testing.T) {
+	t.Parallel()
 	ptyTransportCase(t, "mismatch")
 }
 
@@ -267,6 +269,7 @@ func termiosDebug(t syscall.Termios) string {
 }
 
 func TestEnterStdinRawModeSkipsTermiosForNonTerminal(t *testing.T) {
+	t.Parallel()
 	pipeReader, _, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -317,6 +320,7 @@ func TestEnterStdinRawModeSkipsTermiosForNonTerminal(t *testing.T) {
 }
 
 func TestEnterStdinRawModeFailsClosedOnProbeError(t *testing.T) {
+	t.Parallel()
 	closed, err := os.Create(filepath.Join(t.TempDir(), "closed"))
 	if err != nil {
 		t.Fatal(err)

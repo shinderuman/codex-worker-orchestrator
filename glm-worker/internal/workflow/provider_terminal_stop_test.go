@@ -11,6 +11,7 @@ import (
 )
 
 func TestTerminalZaiProviderFailurePersistsResumableStop(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		class runner.ProviderFailureClass
@@ -93,6 +94,7 @@ func TestTerminalZaiProviderFailurePersistsResumableStop(t *testing.T) {
 }
 
 func TestTerminalZaiProviderClassesDoNotUseTransientRetry(t *testing.T) {
+	t.Parallel()
 	for _, class := range []runner.ProviderFailureClass{
 		{Kind: runner.ProviderFailureZaiLongQuota, BusinessCode: "1317"},
 		{Kind: runner.ProviderFailureZaiActionRequired, BusinessCode: "1309"},

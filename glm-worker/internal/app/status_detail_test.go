@@ -48,6 +48,7 @@ func statusNullString(t *testing.T, name string, value *string) {
 }
 
 func TestExecuteStatusShowsDetailFromEventLogAndTelemetry(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -151,6 +152,7 @@ func TestExecuteStatusShowsDetailFromEventLogAndTelemetry(t *testing.T) {
 }
 
 func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		seed   func(st *state.StateStore)
@@ -257,6 +259,7 @@ func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 }
 
 func TestExecuteStatusEmptyTaskDetailIsExplicitUnknown(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	output := executeStatusOutput(t, cfg)
 	if output.TaskStartedAt != nil || output.TaskElapsedMS != nil {

@@ -3,6 +3,7 @@ package app
 import "testing"
 
 func TestQualityGateFailureDetailIncludesRunIdentity(t *testing.T) {
+	t.Parallel()
 	runID := "0123456789abcdef0123456789abcdef"
 	body := buildProcessError(&QualityGateError{
 		ValidationRunID: runID,

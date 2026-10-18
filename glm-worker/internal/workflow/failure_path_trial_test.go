@@ -107,6 +107,7 @@ func loadAdvisoryRegistryT(t *testing.T, st *state.StateStore) failurepathadviso
 }
 
 func TestFailurePathAdvisoryPromptBoundsLargeRequest(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 
@@ -133,6 +134,7 @@ func TestFailurePathAdvisoryPromptBoundsLargeRequest(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryPromptBoundsTriggerAndReviewInputs(t *testing.T) {
+	t.Parallel()
 	paths := make([]string, 0, 256)
 	for index := 0; index < 256; index++ {
 		paths = append(paths, fmt.Sprintf("glm-worker/internal/runner/probe_extra_%03d.go", index))
@@ -160,6 +162,7 @@ func TestFailurePathAdvisoryPromptBoundsTriggerAndReviewInputs(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryPromptIncludesTriggerPathDiffOnly(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, _, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	unrelated := filepath.Join(w.config.RepoRoot, "glm-worker/internal/config/note_extra.md")
@@ -188,6 +191,7 @@ func TestFailurePathAdvisoryPromptIncludesTriggerPathDiffOnly(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryDiffFailureFailOpens(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	w.fetchAdvisoryDiff = func(string, string, []string) (string, error) {
@@ -219,6 +223,7 @@ func TestFailurePathAdvisoryDiffFailureFailOpens(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryOversizeChangeFailsOpenBeforeCall(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	bigPath := filepath.Join(w.config.RepoRoot, "glm-worker/internal/runner/probe_extra.go")
@@ -252,6 +257,7 @@ func TestFailurePathAdvisoryOversizeChangeFailsOpenBeforeCall(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryBoundedChangeKeepsPromptBounded(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	bigPath := filepath.Join(w.config.RepoRoot, "glm-worker/internal/runner/probe_extra.go")
@@ -286,6 +292,7 @@ func TestFailurePathAdvisoryBoundedChangeKeepsPromptBounded(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryShownOnSolVisibleReviewPacket(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 
@@ -370,6 +377,7 @@ func TestFailurePathAdvisoryShownOnSolVisibleReviewPacket(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryAttachedToPassResultKeepsStatus(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 
@@ -390,6 +398,7 @@ func TestFailurePathAdvisoryAttachedToPassResultKeepsStatus(t *testing.T) {
 }
 
 func TestFailurePathAdvisorySkipsFixRequiredResult(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, _, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 
@@ -404,6 +413,7 @@ func TestFailurePathAdvisorySkipsFixRequiredResult(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryRunsOnlyOnSolVisibleReviewResult(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	advisory.steps = []runnerStep{
 		{structured: implementedPacket("done")},
@@ -429,6 +439,7 @@ func TestFailurePathAdvisoryRunsOnlyOnSolVisibleReviewResult(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryDisabledByKillSwitch(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	w.config.FailurePathAdvisory = false
@@ -445,6 +456,7 @@ func TestFailurePathAdvisoryDisabledByKillSwitch(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryDeadlineFailureFailOpens(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryErr: runner.ErrProbeDeadlineExceeded}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 
@@ -467,6 +479,7 @@ func TestFailurePathAdvisoryDeadlineFailureFailOpens(t *testing.T) {
 }
 
 func TestFailurePathAdvisorySchemaInvalidOutputFailOpens(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: `{"findings":[],"summary":"s","extra":true}`}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 
@@ -486,6 +499,7 @@ func TestFailurePathAdvisorySchemaInvalidOutputFailOpens(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryIndeterminateOnlyOmitsAdvisory(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: `{"findings":[
 	{"target":"glm-worker/internal/state/stats.go:9","class":"metric-reduction-accounting","issue":"会計位置を確認できず","status":"indeterminate"}
 ],"summary":"s"}`}
@@ -508,6 +522,7 @@ func TestFailurePathAdvisoryIndeterminateOnlyOmitsAdvisory(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryAmbiguousPathOnlyChangeRecordsWithoutRun(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/workflow/labels.go")
 
@@ -527,6 +542,7 @@ func TestFailurePathAdvisoryAmbiguousPathOnlyChangeRecordsWithoutRun(t *testing.
 }
 
 func TestFailurePathAdvisoryCohortCapStopsNewRuns(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	registry := failurepathadvisory.Registry{}
@@ -559,6 +575,7 @@ func TestFailurePathAdvisoryCohortCapStopsNewRuns(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryClassificationFailureRecordsMissing(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -581,6 +598,7 @@ func TestFailurePathAdvisoryClassificationFailureRecordsMissing(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryWithoutDeadlineRunnerRecordsMissing(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -621,6 +639,7 @@ func advisoryMeasurementFailures(t *testing.T, st *state.StateStore) []state.Mod
 }
 
 func TestFailurePathAdvisoryCorruptRegistryFailOpens(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	registryPath := st.Path(failurepathadvisory.RegistryFile)
@@ -655,6 +674,7 @@ func TestFailurePathAdvisoryCorruptRegistryFailOpens(t *testing.T) {
 }
 
 func TestFailurePathAdvisorySaveFailureDropsAdvisory(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	registryPath := st.Path(failurepathadvisory.RegistryFile)
@@ -693,6 +713,7 @@ func TestFailurePathAdvisorySaveFailureDropsAdvisory(t *testing.T) {
 }
 
 func TestFailurePathAdvisoryLockHeldDuringAppendContinuesCanonical(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, output := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	registryPath := st.Path(failurepathadvisory.RegistryFile)
@@ -733,6 +754,7 @@ func TestFailurePathAdvisoryLockHeldDuringAppendContinuesCanonical(t *testing.T)
 }
 
 func TestFailurePathAdvisoryCapRaceRecordNotCounted(t *testing.T) {
+	t.Parallel()
 	advisory := &advisoryScriptedRunner{advisoryOutput: advisoryFindingsJSON}
 	w, st, _ := newFailurePathAdvisoryWorkflow(t, advisory, "glm-worker/internal/runner/probe_extra.go")
 	registryPath := st.Path(failurepathadvisory.RegistryFile)

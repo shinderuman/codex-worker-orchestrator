@@ -13,6 +13,7 @@ import (
 )
 
 func TestNewWorkerTaskPromptSearchesLauncherFromActiveTaskSeed(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	activeTaskPath := filepath.ToSlash(filepath.Join(state.ParentTasksDir, "commentlint-launcher.md"))
 	if err := os.MkdirAll(filepath.Join(root, state.ParentTasksDir), 0o700); err != nil {
@@ -76,6 +77,7 @@ func TestNewWorkerTaskPromptSearchesLauncherFromActiveTaskSeed(t *testing.T) {
 }
 
 func TestNewWorkerTaskPromptSearchesFromActiveTaskAuthority(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	activeTaskPath := filepath.ToSlash(filepath.Join(state.ParentTasksDir, "worker-search-routing.md"))
 	if err := os.MkdirAll(filepath.Join(root, state.ParentTasksDir), 0o700); err != nil {

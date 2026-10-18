@@ -6,6 +6,7 @@ import (
 )
 
 func TestResolveAndPinActiveTaskRejectsStalePinnedTask(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
@@ -20,6 +21,7 @@ func TestResolveAndPinActiveTaskRejectsStalePinnedTask(t *testing.T) {
 }
 
 func TestResolveAndPinActiveTaskKeepsMatchingPinnedTask(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)

@@ -165,6 +165,7 @@ func executeEvalABReport(t *testing.T, cfg config.AppConfig, dir string) abeval.
 }
 
 func TestExecuteEvalABPrintsComparisonFromRunDir(t *testing.T) {
+	t.Parallel()
 	cfg := evalABTestConfig(t)
 	spec := evalABSpec()
 	dir := writeEvalABRunDir(t, spec, evalABDirectRecord(spec), evalABOrchestratedRecord(spec))
@@ -194,6 +195,7 @@ func TestExecuteEvalABPrintsComparisonFromRunDir(t *testing.T) {
 }
 
 func TestExecuteEvalABResolvesGLMUsageFromTaskStats(t *testing.T) {
+	t.Parallel()
 	cfg := evalABTestConfig(t)
 	spec := evalABSpec()
 	orchestrated := evalABOrchestratedRecord(spec)
@@ -226,6 +228,7 @@ func TestExecuteEvalABResolvesGLMUsageFromTaskStats(t *testing.T) {
 }
 
 func TestExecuteEvalABFailsClosedOnMissingTaskStats(t *testing.T) {
+	t.Parallel()
 	spec := evalABSpec()
 	orchestrated := evalABOrchestratedRecord(spec)
 	orchestrated.GLMUsage = abeval.GLMUsage{Source: abeval.GLMUsageSourceTaskStats, TaskID: "missing-task"}
@@ -242,6 +245,7 @@ func TestExecuteEvalABFailsClosedOnMissingTaskStats(t *testing.T) {
 }
 
 func TestExecuteEvalABRejectsInvalidPairWithoutOutput(t *testing.T) {
+	t.Parallel()
 	cfg := evalABTestConfig(t)
 	spec := evalABSpec()
 	direct := evalABDirectRecord(spec)
@@ -261,6 +265,7 @@ func TestExecuteEvalABRejectsInvalidPairWithoutOutput(t *testing.T) {
 }
 
 func TestExecuteEvalABRejectsMissingRunDir(t *testing.T) {
+	t.Parallel()
 	var stdout bytes.Buffer
 	err := Execute(Command{Mode: ModeEvalAB, Payload: filepath.Join(t.TempDir(), "absent")}, evalABTestConfig(t), nil, &stdout, &bytes.Buffer{})
 	if err == nil {
@@ -269,6 +274,7 @@ func TestExecuteEvalABRejectsMissingRunDir(t *testing.T) {
 }
 
 func TestExecuteEvalABRejectsRunDirWithUnknownField(t *testing.T) {
+	t.Parallel()
 	cfg := evalABTestConfig(t)
 	spec := evalABSpec()
 	dir := writeEvalABRunDir(t, spec, evalABDirectRecord(spec), evalABOrchestratedRecord(spec))
@@ -302,6 +308,7 @@ func unusedRunnerFactory(calls *int) RunnerFactory {
 }
 
 func TestExecuteEvalABDoesNotCreateStateDirectory(t *testing.T) {
+	t.Parallel()
 	cfg := evalABTestConfig(t)
 	spec := evalABSpec()
 	dir := writeEvalABRunDir(t, spec, evalABDirectRecord(spec), evalABOrchestratedRecord(spec))
@@ -358,6 +365,7 @@ func listStateFiles(t *testing.T, root string) []string {
 }
 
 func TestExecuteEvalABKeepsExistingStateUnchanged(t *testing.T) {
+	t.Parallel()
 	cfg := evalABTestConfig(t)
 	spec := evalABSpec()
 	dir := writeEvalABRunDir(t, spec, evalABDirectRecord(spec), evalABOrchestratedRecord(spec))

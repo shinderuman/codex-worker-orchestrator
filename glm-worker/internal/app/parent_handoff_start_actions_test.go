@@ -10,6 +10,7 @@ import (
 )
 
 func TestNewTaskHandoffProjectsSingleAndMilestoneStartActions(t *testing.T) {
+	t.Parallel()
 	request := &ParentRequestCompletionProjection{
 		TaskAttribution: repositoryproject.TaskAttribution{LegalNextAction: repositoryproject.ActionStart},
 	}
@@ -31,6 +32,7 @@ func TestNewTaskHandoffProjectsSingleAndMilestoneStartActions(t *testing.T) {
 }
 
 func TestNewTaskExecutionUnitActionsAreNotProjectedWithoutStartAdmission(t *testing.T) {
+	t.Parallel()
 	request := &ParentRequestCompletionProjection{
 		TaskAttribution: repositoryproject.TaskAttribution{LegalNextAction: "resume"},
 	}

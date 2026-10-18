@@ -8,6 +8,7 @@ import (
 )
 
 func TestBuildProcessErrorExposesTerminalResultCorrectionEvidence(t *testing.T) {
+	t.Parallel()
 	failure := &workflow.ResultCorrectionFailure{
 		Reason:    "budget_exhausted",
 		Attempts:  2,

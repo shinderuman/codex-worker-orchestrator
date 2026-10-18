@@ -3,6 +3,7 @@ package app
 import "testing"
 
 func TestExecutionMilestoneTaskCommandUsesNormalNewTaskAdmission(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--execution-milestones-stdin", "128", "--sha256", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"})
 	if err != nil {
 		t.Fatal(err)
@@ -13,6 +14,7 @@ func TestExecutionMilestoneTaskCommandUsesNormalNewTaskAdmission(t *testing.T) {
 }
 
 func TestExecutionMilestoneRevisionCommandIsLockedMetadataAction(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--execution-milestones-revise-stdin", "64"})
 	if err != nil {
 		t.Fatal(err)

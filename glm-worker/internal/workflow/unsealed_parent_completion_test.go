@@ -56,6 +56,7 @@ func unsealedReentryArtifacts(t *testing.T, st *state.StateStore) []string {
 }
 
 func TestReopenUnsealedParentCompletionRetainsSourceAndReentersFix(t *testing.T) {
+	t.Parallel()
 	w, cfg, st, admission := newUnsealedReentryWorkflow(t)
 	const reason = "candidate accept failed: attempt seal archive roots omitted the advanced base"
 	ref, err := w.ReopenUnsealedParentCompletion(admission.Head.ControllerGeneration, reason)
@@ -104,6 +105,7 @@ func TestReopenUnsealedParentCompletionRetainsSourceAndReentersFix(t *testing.T)
 }
 
 func TestReopenUnsealedParentCompletionRejectsUnsafeAdmissionWithoutChangingSource(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		message string

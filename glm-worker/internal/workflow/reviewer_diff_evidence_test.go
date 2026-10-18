@@ -43,6 +43,7 @@ func newReviewerDiffWorkflow(t *testing.T, preexisting string) (*Workflow, strin
 }
 
 func TestReviewerTaskDiffCapturesCleanBaselineChange(t *testing.T) {
+	t.Parallel()
 	w, root := newReviewerDiffWorkflow(t, "")
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("line=task\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -61,6 +62,7 @@ func TestReviewerTaskDiffCapturesCleanBaselineChange(t *testing.T) {
 }
 
 func TestReviewerTaskDiffSubtractsPreexistingWorktreeChange(t *testing.T) {
+	t.Parallel()
 	w, root := newReviewerDiffWorkflow(t, "line=preexisting\n")
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("line=preexisting\nline=task\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -82,6 +84,7 @@ func TestReviewerTaskDiffSubtractsPreexistingWorktreeChange(t *testing.T) {
 }
 
 func TestReviewerTaskDiffIncludesOnlyTaskCreatedUntrackedFiles(t *testing.T) {
+	t.Parallel()
 	w, root := newReviewerDiffWorkflow(t, "")
 	if err := os.WriteFile(filepath.Join(root, "existing.txt"), []byte("before task\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -109,6 +112,7 @@ func TestReviewerTaskDiffIncludesOnlyTaskCreatedUntrackedFiles(t *testing.T) {
 }
 
 func TestReviewerTaskDiffUnavailableWithoutGitBaseline(t *testing.T) {
+	t.Parallel()
 	cfg := config.AppConfig{RepoRoot: t.TempDir(), RepoHash: "review-diff-none", StateBase: t.TempDir()}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

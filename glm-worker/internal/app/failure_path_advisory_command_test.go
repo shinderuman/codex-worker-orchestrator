@@ -12,6 +12,7 @@ import (
 )
 
 func TestParseCommandFailurePathAdvisory(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--failure-path-advisory"})
 	if err != nil || command.Mode != ModeFailurePathAdvisory || command.ReferencePath != "" {
 		t.Fatalf("command = %#v err = %v", command, err)
@@ -59,6 +60,7 @@ func newFailurePathAdvisoryRegistryState(t *testing.T) (*state.StateStore, failu
 }
 
 func TestExecuteFailurePathAdvisoryPrintsSummary(t *testing.T) {
+	t.Parallel()
 	st, _ := newFailurePathAdvisoryRegistryState(t)
 	var output bytes.Buffer
 	if err := executeFailurePathAdvisory(Command{Mode: ModeFailurePathAdvisory}, st, &output); err != nil {
@@ -77,6 +79,7 @@ func TestExecuteFailurePathAdvisoryPrintsSummary(t *testing.T) {
 }
 
 func TestExecuteFailurePathAdvisoryAppliesLabels(t *testing.T) {
+	t.Parallel()
 	st, record := newFailurePathAdvisoryRegistryState(t)
 	labelsPath := filepath.Join(t.TempDir(), "labels.json")
 	zero, two := 0, 2
@@ -131,6 +134,7 @@ func TestExecuteFailurePathAdvisoryAppliesLabels(t *testing.T) {
 }
 
 func TestExecuteFailurePathAdvisoryRejectsLabelsForUnknownTask(t *testing.T) {
+	t.Parallel()
 	st, _ := newFailurePathAdvisoryRegistryState(t)
 	labelsPath := filepath.Join(t.TempDir(), "labels.json")
 	labels := failurepathadvisory.LabelInput{Schema: failurepathadvisory.LabelsSchema, TaskID: "missing-task", ReviewNumber: 1}
@@ -147,6 +151,7 @@ func TestExecuteFailurePathAdvisoryRejectsLabelsForUnknownTask(t *testing.T) {
 }
 
 func TestExecuteFailurePathAdvisoryEmptyRegistry(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -166,6 +171,7 @@ func TestExecuteFailurePathAdvisoryEmptyRegistry(t *testing.T) {
 }
 
 func TestExecuteFailurePathAdvisoryRejectsCorruptRegistry(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

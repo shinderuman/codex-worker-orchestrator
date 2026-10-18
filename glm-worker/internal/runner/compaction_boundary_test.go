@@ -23,6 +23,7 @@ const compactBoundaryFixtureLines = `{"type":"system","subtype":"init","session_
 `
 
 func TestClaudeRunnerRecordsCompactBoundaryAndPostBoundaryInstructionRead(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -61,6 +62,7 @@ func TestClaudeRunnerRecordsCompactBoundaryAndPostBoundaryInstructionRead(t *tes
 }
 
 func TestClaudeRunnerCompactBoundaryDoesNotBypassStructuredOutputEnforcement(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}

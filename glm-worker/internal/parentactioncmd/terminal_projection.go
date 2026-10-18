@@ -33,6 +33,8 @@ const (
 	parentActionTerminalAuthorityBudgetBytes = 2 * 1024
 	parentActionTerminalBudgetBytes          = packet.MaxPacketBytes + parentActionTerminalAuthorityBudgetBytes
 	parentActionTerminalJSONLineBytes        = 1
+	terminalIdentityMessageMaxRunes          = 160
+	terminalIdentityListMaxBytes             = 2 * 1024
 )
 
 func (e *parentActionTerminalProjectionError) Error() string {
@@ -143,7 +145,7 @@ func applyRecoverableEvidenceProjection(candidate *parentActionTerminalEnvelopeP
 }
 
 func writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON json.RawMessage, projectionErr *parentActionTerminalProjectionError) (parentActionTerminalEnvelopePayload, error) {
-	terminalIdentity, err := projectTerminalIdentity(terminalJSON)
+	terminalIdentity, identityOmitted, err := projectTerminalIdentity(terminalJSON)
 	if err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
 	}
@@ -155,6 +157,7 @@ func writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON json.RawMes
 	stats.Overflow = true
 	stats.TerminalMode = "identity-only"
 	stats.HandoffMode = "overflow-minimal"
+	stats.OmittedFields = sortedUniqueStrings(append(stats.OmittedFields, identityOmitted...))
 	stats.OmittedFields = sortedUniqueStrings(append(stats.OmittedFields, prefixedFields("handoff", omitted)...))
 	payload := parentActionTerminalEnvelopePayload{
 		Status:          "parent_action_terminal_projection_overflow",
@@ -269,23 +272,135 @@ func projectRecoverableTerminalEvidence(raw json.RawMessage) (json.RawMessage, [
 	return projected, projectedFields, true, nil
 }
 
-func projectTerminalIdentity(raw json.RawMessage) (json.RawMessage, error) {
+func projectTerminalIdentity(raw json.RawMessage) (json.RawMessage, []string, error) {
 	object, err := decodeJSONObject(raw, "parent action terminal")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if errorJSON, ok := object["error"]; ok {
 		errorObject, err := decodeJSONObject(errorJSON, "parent action terminal error")
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		errorIdentity, err := projectObjectFieldsNoOmitted(errorObject, []string{"kind", "message"})
+		bound, omitted, err := boundIdentityObject(errorObject, []string{"kind", "message"})
+		if err != nil {
+			return nil, nil, err
+		}
+		errorIdentity, err := json.Marshal(bound)
+		if err != nil {
+			return nil, nil, err
+		}
+		identity, err := json.Marshal(map[string]json.RawMessage{"error": errorIdentity})
+		if err != nil {
+			return nil, nil, err
+		}
+		return identity, prefixedFields("terminal.error", omitted), nil
+	}
+	bound, omitted, err := boundIdentityObject(object, []string{"status", "risk", "targets", "artifacts"})
+	if err != nil {
+		return nil, nil, err
+	}
+	identity, err := json.Marshal(bound)
+	if err != nil {
+		return nil, nil, err
+	}
+	return identity, prefixedFields("terminal", omitted), nil
+}
+
+func boundIdentityObject(object map[string]json.RawMessage, keep []string) (map[string]json.RawMessage, []string, error) {
+	projected, omitted := keepIdentityFields(object, keep)
+	messageOmitted, err := boundIdentityMessage(projected)
+	if err != nil {
+		return nil, nil, err
+	}
+	listOmitted, err := boundIdentityLists(projected)
+	if err != nil {
+		return nil, nil, err
+	}
+	return projected, append(append(omitted, messageOmitted...), listOmitted...), nil
+}
+
+func keepIdentityFields(object map[string]json.RawMessage, keep []string) (map[string]json.RawMessage, []string) {
+	keepSet := make(map[string]struct{}, len(keep))
+	projected := make(map[string]json.RawMessage, len(keep))
+	for _, key := range keep {
+		keepSet[key] = struct{}{}
+		if value, ok := object[key]; ok {
+			projected[key] = value
+		}
+	}
+	omitted := make([]string, 0, len(object))
+	for key := range object {
+		if _, ok := keepSet[key]; !ok {
+			omitted = append(omitted, key)
+		}
+	}
+	sort.Strings(omitted)
+	return projected, omitted
+}
+
+func boundIdentityMessage(projected map[string]json.RawMessage) ([]string, error) {
+	message, ok := rawJSONString(projected["message"])
+	if !ok || len([]rune(message)) <= terminalIdentityMessageMaxRunes {
+		return nil, nil
+	}
+	bounded, err := json.Marshal(boundTerminalDiagnostic(message, terminalIdentityMessageMaxRunes))
+	if err != nil {
+		return nil, err
+	}
+	projected["message"] = bounded
+	return []string{"message"}, nil
+}
+
+func boundIdentityLists(projected map[string]json.RawMessage) ([]string, error) {
+	var omitted []string
+	for _, field := range []string{"targets", "artifacts"} {
+		value, ok := projected[field]
+		if !ok {
+			continue
+		}
+		bounded, dropped, err := boundIdentityList(value)
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(map[string]json.RawMessage{"error": errorIdentity})
+		if dropped {
+			projected[field] = bounded
+			omitted = append(omitted, field)
+		}
 	}
-	return projectObjectFieldsNoOmitted(object, []string{"status", "risk", "targets", "artifacts"})
+	return omitted, nil
+}
+
+func boundIdentityList(raw json.RawMessage) (json.RawMessage, bool, error) {
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, false, fmt.Errorf("decode terminal identity list: %w", err)
+	}
+	kept := make([]string, 0, len(values))
+	budget := terminalIdentityListMaxBytes - 2
+	for _, value := range values {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, false, err
+		}
+		size := len(encoded)
+		if len(kept) > 0 {
+			size++
+		}
+		if size > budget {
+			break
+		}
+		budget -= size
+		kept = append(kept, value)
+	}
+	if len(kept) == len(values) {
+		return raw, false, nil
+	}
+	bounded, err := json.Marshal(kept)
+	if err != nil {
+		return nil, false, err
+	}
+	return bounded, true, nil
 }
 
 func projectTerminalHandoff(raw json.RawMessage, overflow bool) (json.RawMessage, []string, error) {
@@ -298,6 +413,13 @@ func projectTerminalHandoff(raw json.RawMessage, overflow bool) (json.RawMessage
 		keep = []string{"version", "consistent", "inconsistency", "task_id", "task_status", "required_action", "action_specs"}
 		if err := reduceHandoffToRequiredActionSpec(object); err != nil {
 			return nil, nil, err
+		}
+		if inconsistency, ok := rawJSONString(object["inconsistency"]); ok && len([]rune(inconsistency)) > terminalIdentityMessageMaxRunes {
+			bounded, err := json.Marshal(boundTerminalDiagnostic(inconsistency, terminalIdentityMessageMaxRunes))
+			if err != nil {
+				return nil, nil, err
+			}
+			object["inconsistency"] = bounded
 		}
 	}
 	return projectObjectFields(object, keep)
@@ -382,11 +504,6 @@ func projectObjectFields(object map[string]json.RawMessage, keep []string) (json
 		return nil, nil, err
 	}
 	return raw, omitted, nil
-}
-
-func projectObjectFieldsNoOmitted(object map[string]json.RawMessage, keep []string) (json.RawMessage, error) {
-	raw, _, err := projectObjectFields(object, keep)
-	return raw, err
 }
 
 func rawJSONString(raw json.RawMessage) (string, bool) {

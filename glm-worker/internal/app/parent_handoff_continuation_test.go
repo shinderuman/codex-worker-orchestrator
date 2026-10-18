@@ -14,6 +14,7 @@ import (
 )
 
 func TestParentHandoffIgnoresMarkerlessForeignProjectProtocol(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, state.ParentPlanFile), []byte("foreign plan\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -27,6 +28,7 @@ func TestParentHandoffIgnoresMarkerlessForeignProjectProtocol(t *testing.T) {
 }
 
 func TestParentHandoffFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/current.md"); err != nil {
@@ -40,6 +42,7 @@ func TestParentHandoffFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
 }
 
 func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	next := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{next}, nil, nil))
@@ -75,6 +78,7 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 }
 
 func TestParentHandoffRejectsNonGoalPostCompletionStopWithoutStart(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
@@ -102,6 +106,7 @@ func TestParentHandoffRejectsNonGoalPostCompletionStopWithoutStart(t *testing.T)
 }
 
 func TestParentHandoffDeniesNonGoalPreSyncCompletionStop(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	next := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{completedNonGoalTask}, []string{next}, nil))
@@ -129,6 +134,7 @@ func TestParentHandoffDeniesNonGoalPreSyncCompletionStop(t *testing.T) {
 }
 
 func TestParentHandoffCarriesBlockedOnlyStop(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	blocked := "IMPLEMENTATION_TASKS/blocked.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", nil, nil, []string{blocked}))
@@ -146,6 +152,7 @@ func TestParentHandoffCarriesBlockedOnlyStop(t *testing.T) {
 }
 
 func TestParentHandoffCarriesRateLimitStopFromCanonicalLifecycle(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/active.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
@@ -172,6 +179,7 @@ func TestParentHandoffCarriesRateLimitStopFromCanonicalLifecycle(t *testing.T) {
 }
 
 func TestParentHandoffFailsClosedOnInvalidProjectTerminal(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/active.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", []string{active}, nil, nil))

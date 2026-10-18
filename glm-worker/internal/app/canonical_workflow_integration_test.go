@@ -150,19 +150,7 @@ func newCanonicalWorkflowCorpus(t *testing.T) (config.AppConfig, string, string,
 	writeAppTestFile(t, cfg.RepoRoot, rootTask, "# root\n\n## Contract\n\n606 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\n- `"+blockerTask+"`\n")
 	writeAppTestFile(t, cfg.RepoRoot, blockerTask, "# blocker\n\n## Contract\n\nF11 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
 	prepareCompletionQualityCorpus(t, cfg.RepoRoot)
-	runControllerActivationGit(t, cfg.RepoRoot, "config", "user.name", "Canonical Workflow Test")
-	runControllerActivationGit(t, cfg.RepoRoot, "config", "user.email", "canonical@example.invalid")
-	runControllerActivationGit(t, cfg.RepoRoot, "add", ".")
-	runControllerActivationGit(t, cfg.RepoRoot, "commit", "-q", "-m", "canonical workflow corpus")
-	remote := filepath.Join(t.TempDir(), "remote.git")
-	runControllerActivationGit(t, cfg.RepoRoot, "init", "--bare", remote)
-	runControllerActivationGit(t, cfg.RepoRoot, "remote", "add", "origin", remote)
-	runControllerActivationGit(t, cfg.RepoRoot, "push", "-q", "origin", "HEAD:refs/heads/main")
-	localRef, err := exec.Command("git", "-C", cfg.RepoRoot, "symbolic-ref", "HEAD").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	policy := controller.PublicationPolicy{Remote: "origin", RemoteRef: "refs/heads/main", LocalRef: strings.TrimSpace(string(localRef))}
+	policy := commitCorpusWithPublicationRemote(t, cfg.RepoRoot, "Canonical Workflow Test", "canonical@example.invalid", "canonical workflow corpus")
 	return cfg, rootTask, blockerTask, policy
 }
 
@@ -306,7 +294,7 @@ func canonicalCLIOperation(t *testing.T, binary string, cfg config.AppConfig, su
 	command := exec.Command(binary, "--authority", surface)
 	command.Dir = cfg.RepoRoot
 	home := filepath.Dir(cfg.StateBase)
-	command.Env = append(os.Environ(), "GLM_WORKER_HOME="+home, "HOME="+home, "CODEX_CONFIG_DIR="+filepath.Join(home, "codex"), "CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude"))
+	command.Env = append(append(os.Environ(), "GLM_WORKER_HOME="+home, "HOME="+home, "CODEX_CONFIG_DIR="+filepath.Join(home, "codex"), "CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude")), qualityToolsBinDirEnv(t)...)
 	command.Stdin = bytes.NewReader(raw)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout

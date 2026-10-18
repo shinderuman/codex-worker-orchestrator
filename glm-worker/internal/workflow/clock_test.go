@@ -12,6 +12,7 @@ import (
 )
 
 func TestWorkflowProductionCodeHasNoDirectWallClock(t *testing.T) {
+	t.Parallel()
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +44,7 @@ func TestWorkflowProductionCodeHasNoDirectWallClock(t *testing.T) {
 }
 
 func TestRunModelTelemetryTimestampsFollowInjectedClock(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
 	w, clock := newRecoveryWorkflowT(t, st, r)
@@ -71,6 +73,7 @@ func TestRunModelTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 }
 
 func TestRecoveryTelemetryTimestampsFollowInjectedClock(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -150,6 +153,7 @@ func TestRecoveryTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 }
 
 func TestResumeTelemetryTimestampsFollowInjectedClock(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	pinRepositoryHarnessActiveResumeT(t, st)

@@ -129,6 +129,7 @@ var multiRepoWorkerBuild struct {
 }
 
 func TestMultiRepositoryProcessIsolation(t *testing.T) {
+	t.Parallel()
 	env := newMultiRepoEnv(t)
 	env.setStubMode(t, env.stubA, "hold")
 	env.setStubMode(t, env.stubB, "success")

@@ -11,6 +11,7 @@ import (
 )
 
 func TestProbeRepoLockFreeWhenFileMissing(t *testing.T) {
+	t.Parallel()
 	probe := ProbeRepoLock(filepath.Join(t.TempDir(), "lock"))
 	if probe.State != LockFree {
 		t.Fatalf("State = %q want free", probe.State)
@@ -21,6 +22,7 @@ func TestProbeRepoLockFreeWhenFileMissing(t *testing.T) {
 }
 
 func TestProbeRepoLockFreeWhenHeldElsewhereAndUnlocked(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "lock")
 
 	lock, err := AcquireRepoLock(path)
@@ -41,6 +43,7 @@ func TestProbeRepoLockFreeWhenHeldElsewhereAndUnlocked(t *testing.T) {
 }
 
 func TestProbeRepoLockHeldWhileOtherProcessHolds(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "lock")
 
 	lock, err := AcquireRepoLock(path)
@@ -56,6 +59,7 @@ func TestProbeRepoLockHeldWhileOtherProcessHolds(t *testing.T) {
 }
 
 func TestProbeRepoLockIndependentPerPath(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	otherPath := filepath.Join(dir, "other-lock")
 
@@ -72,6 +76,7 @@ func TestProbeRepoLockIndependentPerPath(t *testing.T) {
 }
 
 func TestProbeRepoLockNonDestructive(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "lock")
 	if err := os.WriteFile(path, []byte("99999\n"), 0o600); err != nil {
@@ -95,6 +100,7 @@ func TestProbeRepoLockNonDestructive(t *testing.T) {
 }
 
 func TestProbeRepoLockStalePIDIsNotRunning(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "lock")
 	if err := os.WriteFile(path, []byte("61243\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -110,6 +116,7 @@ func TestProbeRepoLockStalePIDIsNotRunning(t *testing.T) {
 }
 
 func TestProbeRepoLockEmptyFile(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "lock")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)

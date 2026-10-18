@@ -16,6 +16,7 @@ import (
 )
 
 func TestRouteWorkerRepoSearchSkipsKnownTarget(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "internal", "workflow", "workflow.go")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -36,6 +37,7 @@ func TestRouteWorkerRepoSearchSkipsKnownTarget(t *testing.T) {
 }
 
 func TestRouteWorkerRepoSearchDoesNotTreatBareDirectoryWordAsKnownTarget(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "internal"), 0o700); err != nil {
 		t.Fatal(err)
@@ -52,6 +54,7 @@ func TestRouteWorkerRepoSearchDoesNotTreatBareDirectoryWordAsKnownTarget(t *test
 }
 
 func TestRouteWorkerRepoSearchInjectsUnknownTargetCandidates(t *testing.T) {
+	t.Parallel()
 	search := func(_ context.Context, root string, query string, opts reposearch.Options) (reposearch.Report, error) {
 		if root != "/repo" || query != "find worker dispatch" || opts.MaxResults != RepoSearchMaxResults {
 			t.Fatalf("root=%q query=%q opts=%#v", root, query, opts)
@@ -78,6 +81,7 @@ func TestRouteWorkerRepoSearchInjectsUnknownTargetCandidates(t *testing.T) {
 }
 
 func TestRouteWorkerRepoSearchFallsBackOnEmptyOrError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		report  reposearch.Report
@@ -101,6 +105,7 @@ func TestRouteWorkerRepoSearchFallsBackOnEmptyOrError(t *testing.T) {
 }
 
 func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-routing", StateBase: t.TempDir(), RepoSearch: true}
 	st, err := state.NewStateStore(cfg)
@@ -152,6 +157,7 @@ func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
 }
 
 func TestNewWorkerTaskPromptDisabledSkipsRepoSearchEntirely(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-disabled", StateBase: t.TempDir()}
 	st, err := state.NewStateStore(cfg)
@@ -177,6 +183,7 @@ func TestNewWorkerTaskPromptDisabledSkipsRepoSearchEntirely(t *testing.T) {
 }
 
 func TestNewWorkerTaskPromptKeepsRepoSearchRoutesOutOfLiveStats(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-stats", StateBase: t.TempDir(), RepoSearch: true}
 	st, err := state.NewStateStore(cfg)
@@ -221,6 +228,7 @@ func TestNewWorkerTaskPromptKeepsRepoSearchRoutesOutOfLiveStats(t *testing.T) {
 }
 
 func TestNewWorkerTaskPromptKnownSkipRecordsZeroResultRoute(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "internal", "worker.go")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

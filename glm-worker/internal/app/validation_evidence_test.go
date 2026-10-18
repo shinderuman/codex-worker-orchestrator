@@ -37,6 +37,7 @@ func TestQualityGateRecordsTaskValidationEvidence(t *testing.T) {
 }
 
 func TestInstallSmokeRecordsTaskValidationEvidence(t *testing.T) {
+	t.Parallel()
 	cfg, st, _, _ := newInstallSmokeEnv(t)
 	taskID, err := st.StartNewTask()
 	if err != nil {

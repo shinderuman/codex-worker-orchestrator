@@ -12,6 +12,7 @@ import (
 )
 
 func TestInternalReviewProducersDoNotEmitWithoutActualTaskTargets(t *testing.T) {
+	t.Parallel()
 	failure := packet.Result{Status: packet.StatusFixRequired, Risk: packet.RiskHigh, Summary: "failure", RequirementCoverage: "covered", Invariants: "preserved", TestEvidence: "evidence", Issues: "issue", ResidualRisk: "risk"}
 	producers := []struct {
 		name string
@@ -57,6 +58,7 @@ func TestInternalReviewProducersDoNotEmitWithoutActualTaskTargets(t *testing.T) 
 }
 
 func TestQualitySurfaceTargetsRemainQualitySurfaceScoped(t *testing.T) {
+	t.Parallel()
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"glm-worker/internal/workflow/workflow.go", "commentlint", "IMPLEMENTATION_RULES.md"}, nil
@@ -76,6 +78,7 @@ func TestQualitySurfaceTargetsRemainQualitySurfaceScoped(t *testing.T) {
 }
 
 func TestQualitySurfaceBaselineFailureUsesCurrentDiffTargets(t *testing.T) {
+	t.Parallel()
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"pkg/ordinary.go"}, nil
@@ -91,6 +94,7 @@ func TestQualitySurfaceBaselineFailureUsesCurrentDiffTargets(t *testing.T) {
 }
 
 func TestNonConvergenceAndParentValidationPreserveCanonicalTargets(t *testing.T) {
+	t.Parallel()
 	input := packet.Result{Targets: []string{"pkg/reviewer.go:12-20"}}
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -115,6 +119,7 @@ func TestNonConvergenceAndParentValidationPreserveCanonicalTargets(t *testing.T)
 }
 
 func TestNonConvergenceAndParentValidationFallbackToActualTaskDiff(t *testing.T) {
+	t.Parallel()
 	input := packet.Result{}
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) {

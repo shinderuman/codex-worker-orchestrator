@@ -30,6 +30,7 @@ func writeSettings(t *testing.T, claudeConfigDir string, env map[string]any) {
 }
 
 func TestParseClaudeEnvOverrideEmptyPath(t *testing.T) {
+	t.Parallel()
 	ov, err := parseClaudeEnvOverride("")
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +41,7 @@ func TestParseClaudeEnvOverrideEmptyPath(t *testing.T) {
 }
 
 func TestParseClaudeEnvOverrideAbsentFile(t *testing.T) {
+	t.Parallel()
 	ov, err := parseClaudeEnvOverride(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +52,7 @@ func TestParseClaudeEnvOverrideAbsentFile(t *testing.T) {
 }
 
 func TestParseClaudeEnvOverrideSetAndDelete(t *testing.T) {
+	t.Parallel()
 	path := writeOverrideFile(t, `{"env":{"SET_KEY":"value","EMPTY":"","DEL_KEY":null}}`)
 	ov, err := parseClaudeEnvOverride(path)
 	if err != nil {
@@ -100,6 +103,7 @@ func TestParseClaudeEnvOverrideFailClosed(t *testing.T) {
 }
 
 func TestLoadSettingEnvAppliesOverrideSet(t *testing.T) {
+	t.Parallel()
 	claudeConfigDir := t.TempDir()
 	writeSettings(t, claudeConfigDir, map[string]any{
 		"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
@@ -119,6 +123,7 @@ func TestLoadSettingEnvAppliesOverrideSet(t *testing.T) {
 }
 
 func TestLoadSettingEnvOverrideDeleteSuppressesSettingsKey(t *testing.T) {
+	t.Parallel()
 	claudeConfigDir := t.TempDir()
 	writeSettings(t, claudeConfigDir, map[string]any{
 		"ANTHROPIC_BASE_URL":           "https://api.z.ai/api/anthropic",
@@ -146,6 +151,7 @@ func TestLoadSettingEnvOverrideDeleteSuppressesSettingsKey(t *testing.T) {
 }
 
 func TestLoadSettingEnvOverrideAbsentEqualsNoOverride(t *testing.T) {
+	t.Parallel()
 	claudeConfigDir := t.TempDir()
 	writeSettings(t, claudeConfigDir, map[string]any{
 		"ANTHROPIC_BASE_URL":                       "https://api.z.ai/api/anthropic",
@@ -175,6 +181,7 @@ func TestLoadSettingEnvOverrideAbsentEqualsNoOverride(t *testing.T) {
 }
 
 func TestLoadSettingEnvOverrideEmptyStringIsSet(t *testing.T) {
+	t.Parallel()
 	claudeConfigDir := t.TempDir()
 	writeSettings(t, claudeConfigDir, map[string]any{"API_TIMEOUT_MS": "3000000"})
 
@@ -189,6 +196,7 @@ func TestLoadSettingEnvOverrideEmptyStringIsSet(t *testing.T) {
 }
 
 func TestLoadSettingEnvOverrideMalformedFails(t *testing.T) {
+	t.Parallel()
 	claudeConfigDir := t.TempDir()
 	writeSettings(t, claudeConfigDir, map[string]any{"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"})
 

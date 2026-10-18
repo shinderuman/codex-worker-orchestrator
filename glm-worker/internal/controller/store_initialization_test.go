@@ -8,6 +8,7 @@ import (
 )
 
 func TestInitializeControllerStoreDoesNotReplaceAmbiguousExistingTarget(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	store := &Store{
 		dir:      filepath.Join(parent, "controller"),
@@ -34,6 +35,7 @@ func TestInitializeControllerStoreDoesNotReplaceAmbiguousExistingTarget(t *testi
 }
 
 func TestInitializeControllerStoreAdoptsCompleteWinner(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	store := &Store{
 		dir:      filepath.Join(parent, "controller"),

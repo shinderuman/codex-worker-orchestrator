@@ -12,6 +12,7 @@ import (
 )
 
 func TestPristineControllerStoreDoesNotMintWorkflowAuthority(t *testing.T) {
+	t.Parallel()
 	repo := newControllerGuardRepo(t)
 	cfg := controllerGuardConfig(repo, filepath.Join(t.TempDir(), "state", "sessions"))
 	store, err := controller.Open(cfg)
@@ -44,6 +45,7 @@ func TestPristineControllerStoreDoesNotMintWorkflowAuthority(t *testing.T) {
 }
 
 func TestLiveControllerGuardDoesNotFallbackWhenHarnessMarkerIsAbsent(t *testing.T) {
+	t.Parallel()
 	repo := newControllerGuardRepo(t)
 	cfg := controllerGuardConfig(repo, filepath.Join(t.TempDir(), "state", "sessions"))
 	activated, err := controller.Activate(cfg)

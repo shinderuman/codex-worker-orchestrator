@@ -16,6 +16,7 @@ import (
 )
 
 func TestQualityFixerMutationKeepsSubsequentModelCallAdmitted(t *testing.T) {
+	t.Parallel()
 	repo, cfg, store, st, path, formatted := newQualityMutationFixture(t)
 	activated, err := controller.Activate(cfg)
 	if err != nil {
@@ -97,6 +98,7 @@ func TestQualityFixerMutationKeepsSubsequentModelCallAdmitted(t *testing.T) {
 }
 
 func TestQualityFixerProvenanceMismatchFailsClosedWithoutMutation(t *testing.T) {
+	t.Parallel()
 	repo, cfg, store, st, path, formatted := newQualityMutationFixture(t)
 	if _, err := controller.Activate(cfg); err != nil {
 		t.Fatal(err)
@@ -143,6 +145,7 @@ func TestQualityFixerProvenanceMismatchFailsClosedWithoutMutation(t *testing.T) 
 }
 
 func TestQualityGateWithoutFixRecordsNoMutationEvidence(t *testing.T) {
+	t.Parallel()
 	repo, cfg, store, st, _, _ := newQualityMutationFixture(t)
 	if _, err := controller.Activate(cfg); err != nil {
 		t.Fatal(err)
@@ -174,6 +177,7 @@ func TestQualityGateWithoutFixRecordsNoMutationEvidence(t *testing.T) {
 }
 
 func TestQualityGateNoFixUnclaimedChangeFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo, cfg, store, st, path, formatted := newQualityMutationFixture(t)
 	if _, err := controller.Activate(cfg); err != nil {
 		t.Fatal(err)
@@ -210,6 +214,7 @@ func TestQualityGateNoFixUnclaimedChangeFailsClosed(t *testing.T) {
 }
 
 func TestQualityGateErrorAfterWorkspaceDriftFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo, cfg, store, st, path, formatted := newQualityMutationFixture(t)
 	if _, err := controller.Activate(cfg); err != nil {
 		t.Fatal(err)
@@ -243,6 +248,7 @@ func TestQualityGateErrorAfterWorkspaceDriftFailsClosed(t *testing.T) {
 }
 
 func TestRealHarnesslintIsolatedFixerFeedsLiveLeaseMutation(t *testing.T) {
+	t.Parallel()
 	repo, cfg, store, st, path, formatted := newQualityMutationFixture(t)
 	activated, err := controller.Activate(cfg)
 	if err != nil {
@@ -297,6 +303,7 @@ func TestRealHarnesslintIsolatedFixerFeedsLiveLeaseMutation(t *testing.T) {
 }
 
 func TestQualityMutationPartialFailureSettlesThroughTypedOwner(t *testing.T) {
+	t.Parallel()
 	repo, cfg, store, st, path, formatted := newQualityMutationFixture(t)
 	activated, err := controller.Activate(cfg)
 	if err != nil {

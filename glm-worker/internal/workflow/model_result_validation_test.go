@@ -9,6 +9,7 @@ import (
 )
 
 func TestRunModelSurfacesWorkerError(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{runErr: errors.New("boom")}}}
 	w := newWorkflowT(t, st, r)
@@ -33,6 +34,7 @@ func TestRunModelSurfacesWorkerError(t *testing.T) {
 }
 
 func TestRunModelRejectsMissingModelBeforeRunnerCall(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{}
 	w := newWorkflowT(t, st, r)
@@ -53,6 +55,7 @@ func TestRunModelRejectsMissingModelBeforeRunnerCall(t *testing.T) {
 }
 
 func TestReviewerFormatError(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -70,6 +73,7 @@ func TestReviewerFormatError(t *testing.T) {
 }
 
 func TestReviewerUnknownStatusFailsClosedWithoutCorrection(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},

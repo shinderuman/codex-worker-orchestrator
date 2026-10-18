@@ -12,6 +12,7 @@ import (
 )
 
 func TestReviewerGetsCurrentArtifactContext(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
@@ -49,6 +50,7 @@ func TestReviewerGetsCurrentArtifactContext(t *testing.T) {
 }
 
 func TestReviewerArtifactViolationCorrectionGetsCurrentRoot(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if _, err := st.PrepareArtifactDir(); err != nil {
 		t.Fatal(err)

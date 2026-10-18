@@ -3,6 +3,7 @@ package runner
 import "testing"
 
 func TestContextWindowForManagedGLMModels(t *testing.T) {
+	t.Parallel()
 	env := map[string]string{
 		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "glm-5.3",
 		"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3",
@@ -28,6 +29,7 @@ func TestContextWindowForManagedGLMModels(t *testing.T) {
 }
 
 func TestContextWindowForUnknownModelDoesNotInventCapacity(t *testing.T) {
+	t.Parallel()
 	got := contextWindowForModel("custom-model", nil)
 	if got.resolvedModelID != "custom-model" || got.knownModelContextWindowTokens != 0 ||
 		got.declaredMaxContextTokens != 0 || got.source != "" {

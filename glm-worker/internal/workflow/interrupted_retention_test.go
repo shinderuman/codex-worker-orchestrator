@@ -123,6 +123,7 @@ func retentionCheckpoint(t *testing.T, st *state.StateStore) state.ResumeCheckpo
 }
 
 func TestInterruptedStopCapturesRetention(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -160,6 +161,7 @@ func TestInterruptedStopCapturesRetention(t *testing.T) {
 }
 
 func TestResumeInterruptedUntouchedPasses(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
@@ -184,6 +186,7 @@ func TestResumeInterruptedUntouchedPasses(t *testing.T) {
 }
 
 func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	writeRetentionFile(t, filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
 	makeRetentionDir(t, filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755)
@@ -209,6 +212,7 @@ func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 }
 
 func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
@@ -253,6 +257,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 }
 
 func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -284,6 +289,7 @@ func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 }
 
 func TestResumeInterruptedForeignDirtyFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
@@ -307,6 +313,7 @@ func TestResumeInterruptedForeignDirtyFailsClosed(t *testing.T) {
 }
 
 func TestResumeInterruptedParentOnlyHeadAdvancePasses(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	writeRetentionFile(t, filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
 	runRetentionGit(t, repo, "add", "IMPLEMENTATION_PLAN.local.md")
@@ -334,6 +341,7 @@ func TestResumeInterruptedParentOnlyHeadAdvancePasses(t *testing.T) {
 }
 
 func TestResumeInterruptedHeadAdvanceOutsideParentPathsFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
@@ -363,6 +371,7 @@ func TestResumeInterruptedHeadAdvanceOutsideParentPathsFailsClosed(t *testing.T)
 }
 
 func TestResumeInterruptedNonAncestorHeadFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
@@ -384,6 +393,7 @@ func TestResumeInterruptedNonAncestorHeadFailsClosed(t *testing.T) {
 }
 
 func TestResumeInterruptedLegacyCheckpointFailsClosed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedInterruptedCheckpoint(t, st, "sess-legacy", "")

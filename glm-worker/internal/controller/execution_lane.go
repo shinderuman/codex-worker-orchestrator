@@ -168,7 +168,7 @@ func (s *Store) freshMaterializationTrees(head RepositoryControllerHead, task Se
 	}
 	trees := ExecutionTrees{IndexTree: tree, WorktreeTree: tree}
 	result := ReboundSuspension{BaseOID: head.IntegrationTip, Baseline: trees, Current: trees}
-	if err := normalizeReboundTrees(s.identity.PrimaryRoot, head.IntegrationTip, &result); err != nil {
+	if err := s.normalizeMaterializationMetadataBase(head, &result); err != nil {
 		return ReboundSuspension{}, nil, nil, err
 	}
 	hasSuspended, err := s.hasSuspendedExecution(head, task)

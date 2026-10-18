@@ -17,6 +17,7 @@ import (
 )
 
 func TestQualityGateProcessOutcomeClassifiesExitSource(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		runErr     error
@@ -50,6 +51,7 @@ func targetExitError(t *testing.T, _ int) error {
 }
 
 func TestQualityGateLogWriteFailureKeepsTargetExitSource(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		runErr       error
@@ -153,6 +155,7 @@ func TestQualityGateValidationEventCarriesTargetExitSource(t *testing.T) {
 }
 
 func TestQualityGateInterruptedReconcileMarksExitSourceUnknown(t *testing.T) {
+	t.Parallel()
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("5", 32)
 	record := qualitygate.RunRecord{

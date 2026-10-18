@@ -8,14 +8,16 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/go-suite-execution-time-reduction.md`
+- `IMPLEMENTATION_TASKS/go-suite-test-structure-consolidation.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/workflow-validation-cadence-and-source-binding.md`
 - `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
 - `IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md`
 - `IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`
+- `IMPLEMENTATION_TASKS/communication-transport-unification.md`
 - `IMPLEMENTATION_TASKS/self-referential-test-redesign.md`
 - `IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md`
 - `IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md`

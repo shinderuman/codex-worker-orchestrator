@@ -55,6 +55,7 @@ func workerCandidate(mutate func(map[string]any)) string {
 }
 
 func TestPacketCheckCommandParsesArguments(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		args    []string
@@ -92,6 +93,7 @@ func TestPacketCheckCommandParsesArguments(t *testing.T) {
 }
 
 func TestPacketCheckAcceptsValidPacketAtJapaneseByteBoundary(t *testing.T) {
+	t.Parallel()
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
 		object["summary"] = "ab" + strings.Repeat("あ", (packet.MaxFieldBytes-2)/3)
 	}))
@@ -102,6 +104,7 @@ func TestPacketCheckAcceptsValidPacketAtJapaneseByteBoundary(t *testing.T) {
 }
 
 func TestPacketCheckRejectsJapaneseFieldOverByteLimit(t *testing.T) {
+	t.Parallel()
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
 		object["summary"] = strings.Repeat("あ", packet.MaxFieldBytes/3+1)
 	}))
@@ -112,6 +115,7 @@ func TestPacketCheckRejectsJapaneseFieldOverByteLimit(t *testing.T) {
 }
 
 func TestPacketCheckRejectsPacketOverTotalByteLimit(t *testing.T) {
+	t.Parallel()
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
 		object["summary"] = strings.Repeat("x", packet.MaxFieldBytes)
 		object["requirement_coverage"] = strings.Repeat("x", packet.MaxFieldBytes)
@@ -125,6 +129,7 @@ func TestPacketCheckRejectsPacketOverTotalByteLimit(t *testing.T) {
 }
 
 func TestPacketCheckReportsMissingRequiredField(t *testing.T) {
+	t.Parallel()
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
 		delete(object, "tests")
 	}))
@@ -135,6 +140,7 @@ func TestPacketCheckReportsMissingRequiredField(t *testing.T) {
 }
 
 func TestPacketCheckReportsMultilineField(t *testing.T) {
+	t.Parallel()
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
 		object["summary"] = "line1\nline2"
 	}))
@@ -145,6 +151,7 @@ func TestPacketCheckReportsMultilineField(t *testing.T) {
 }
 
 func TestPacketCheckReportsOversizeTargetElement(t *testing.T) {
+	t.Parallel()
 	prefix := "glm-worker/internal/app/packet_check.go:"
 	path := writePacketCheckCandidate(t, workerCandidate(func(object map[string]any) {
 		object["targets"] = []string{strings.Repeat(prefix, packet.MaxFieldBytes/len(prefix)+1)}
@@ -156,6 +163,7 @@ func TestPacketCheckReportsOversizeTargetElement(t *testing.T) {
 }
 
 func TestPacketCheckValidatesArtifactsAgainstRoot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	inside := filepath.Join(root, "report.txt")
 	if err := os.WriteFile(inside, []byte("report"), 0o600); err != nil {
@@ -184,6 +192,7 @@ func TestPacketCheckValidatesArtifactsAgainstRoot(t *testing.T) {
 }
 
 func TestPacketCheckRoleSelectsValidatorContract(t *testing.T) {
+	t.Parallel()
 	reviewer := `{"status":"PASS","risk":"LOW","summary":"ok","requirement_coverage":"covered","invariants":"kept","test_evidence":"pass","issues":"none","residual_risk":"none","targets":["glm-worker/internal/app/packet_check.go"]}`
 	path := writePacketCheckCandidate(t, reviewer)
 	reviewerVerdict := runPacketCheck(t, Command{Mode: ModePacketCheck, Role: packetCheckRoleReviewer, Payload: path})
@@ -197,6 +206,7 @@ func TestPacketCheckRoleSelectsValidatorContract(t *testing.T) {
 }
 
 func TestPacketCheckReportsUnparsableCandidate(t *testing.T) {
+	t.Parallel()
 	malformed := runPacketCheck(t, Command{Mode: ModePacketCheck, Role: packetCheckRoleWorker,
 		Payload: writePacketCheckCandidate(t, "{not json")})
 	if malformed.Ok || !strings.Contains(malformed.Violation, "解析できません") {
@@ -210,6 +220,7 @@ func TestPacketCheckReportsUnparsableCandidate(t *testing.T) {
 }
 
 func TestPacketCheckMissingFileFailsClosed(t *testing.T) {
+	t.Parallel()
 	var stdout bytes.Buffer
 	err := printPacketCheck(Command{Mode: ModePacketCheck, Role: packetCheckRoleWorker, Payload: filepath.Join(t.TempDir(), "absent.json")}, &stdout)
 	if err == nil {

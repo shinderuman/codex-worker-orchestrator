@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestWriteFailedTerminalActionProjectsInterruptedErrorWithRecoveryHandoff(t *testing.T) {
@@ -25,7 +30,7 @@ func TestWriteFailedTerminalActionProjectsInterruptedErrorWithRecoveryHandoff(t 
 	terminalErr := errors.New("interrupted child exit")
 	var stdout bytes.Buffer
 
-	err := writeFailedTerminalAction(&stdout, append(append([]byte(nil), terminal...), '\n'), terminalErr, func() (json.RawMessage, error) {
+	err := writeFailedTerminalAction(config.AppConfig{}, &stdout, append(append([]byte(nil), terminal...), '\n'), terminalErr, func() (json.RawMessage, error) {
 		return handoff, nil
 	})
 	if !errors.Is(err, terminalErr) {
@@ -66,9 +71,10 @@ func TestWriteFailedTerminalActionFailsClosedForOversizedWorkerError(t *testing.
 	})
 	handoff := representativeHandoff(t, "small", "small")
 	terminalErr := errors.New("worker child exit")
+	cfg := continuationTestConfig(t)
 	var stdout bytes.Buffer
 
-	err := writeFailedTerminalAction(&stdout, append(append([]byte(nil), terminal...), '\n'), terminalErr, func() (json.RawMessage, error) {
+	err := writeFailedTerminalAction(cfg, &stdout, append(append([]byte(nil), terminal...), '\n'), terminalErr, func() (json.RawMessage, error) {
 		return handoff, nil
 	})
 	if !errors.Is(err, terminalErr) {
@@ -103,7 +109,193 @@ func TestWriteFailedTerminalActionFailsClosedForOversizedWorkerError(t *testing.
 	if _, ok := processError["detail"]; ok {
 		t.Fatalf("oversized diagnostic detail leaked into overflow identity: %s", envelope.Terminal)
 	}
+	assertContinuationPreservesTerminal(t, envelope.Continuation, terminal)
 	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
+}
+
+func TestWriteFailedTerminalActionBoundsUnboundedErrorMessageDoubleOverflow(t *testing.T) {
+	terminal := mustJSONRaw(t, map[string]any{
+		"error": map[string]any{
+			"kind":    "worker_error",
+			"message": strings.Repeat("unbounded-worker-error-message-", 700),
+		},
+	})
+	if len(terminal) <= parentActionTerminalBudgetBytes {
+		t.Fatalf("fixture must exceed the terminal budget twice: bytes=%d", len(terminal))
+	}
+	handoff := representativeHandoff(t, "small", "small")
+	terminalErr := errors.New("worker child exit")
+	cfg := continuationTestConfig(t)
+	var stdout bytes.Buffer
+
+	err := writeFailedTerminalAction(cfg, &stdout, append(append([]byte(nil), terminal...), '\n'), terminalErr, func() (json.RawMessage, error) {
+		return handoff, nil
+	})
+	if !errors.Is(err, terminalErr) {
+		t.Fatalf("error = %v, want original terminal error", err)
+	}
+	if stdout.Len() == 0 || stdout.Len() > parentActionTerminalBudgetBytes {
+		t.Fatalf("bounded overflow response missing or over budget: bytes=%d budget=%d", stdout.Len(), parentActionTerminalBudgetBytes)
+	}
+	machineJSON, err := decodeSingleMachineJSON(stdout.Bytes(), "bounded overflow response")
+	if err != nil {
+		t.Fatalf("normal error response was not returned: %v", err)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Status != "parent_action_terminal_projection_overflow" {
+		t.Fatalf("status = %q", envelope.Status)
+	}
+	if envelope.Projection == nil || !envelope.Projection.Overflow || envelope.Projection.ProjectedBytes != stdout.Len() {
+		t.Fatalf("overflow telemetry = %+v stdout=%d", envelope.Projection, stdout.Len())
+	}
+	var projected map[string]json.RawMessage
+	if err := json.Unmarshal(envelope.Terminal, &projected); err != nil {
+		t.Fatal(err)
+	}
+	var processError struct {
+		Kind    string `json:"kind"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(projected["error"], &processError); err != nil {
+		t.Fatal(err)
+	}
+	if processError.Kind != "worker_error" {
+		t.Fatalf("identity kind = %q", processError.Kind)
+	}
+	if len([]rune(processError.Message)) > terminalIdentityMessageMaxRunes+1 {
+		t.Fatalf("identity message was not bounded: %d runes", len([]rune(processError.Message)))
+	}
+	if !strings.HasSuffix(processError.Message, "…") {
+		t.Fatalf("identity message must mark the truncation: %q", processError.Message)
+	}
+	assertContinuationPreservesTerminal(t, envelope.Continuation, terminal)
+	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
+}
+
+func TestWriteFailedTerminalActionBoundsResultIdentityLists(t *testing.T) {
+	artifacts := make([]string, 0, 40)
+	for index := 0; index < 40; index++ {
+		artifacts = append(artifacts, fmt.Sprintf("/tmp/task-artifacts/%016d/report-%04d.json", index, index))
+	}
+	terminal := mustJSONRaw(t, map[string]any{
+		"status":    "IMPLEMENTED",
+		"risk":      "LOW",
+		"targets":   []string{strings.Repeat("t", 400), strings.Repeat("t", 400), strings.Repeat("t", 400), strings.Repeat("t", 400), strings.Repeat("t", 400), strings.Repeat("t", 400), strings.Repeat("t", 400)},
+		"artifacts": artifacts,
+		"summary":   strings.Repeat("s", 4000),
+	})
+	handoff := representativeHandoff(t, "small", "small")
+	terminalErr := errors.New("worker child exit")
+	cfg := continuationTestConfig(t)
+	var stdout bytes.Buffer
+
+	err := writeFailedTerminalAction(cfg, &stdout, append(append([]byte(nil), terminal...), '\n'), terminalErr, func() (json.RawMessage, error) {
+		return handoff, nil
+	})
+	if !errors.Is(err, terminalErr) {
+		t.Fatalf("error = %v, want original terminal error", err)
+	}
+	if stdout.Len() == 0 || stdout.Len() > parentActionTerminalBudgetBytes {
+		t.Fatalf("bounded overflow response missing or over budget: bytes=%d budget=%d", stdout.Len(), parentActionTerminalBudgetBytes)
+	}
+	machineJSON, decodeErr := decodeSingleMachineJSON(stdout.Bytes(), "bounded result identity overflow")
+	if decodeErr != nil {
+		t.Fatalf("normal error response was not returned: %v", decodeErr)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Projection == nil || !envelope.Projection.Overflow {
+		t.Fatalf("overflow telemetry = %+v", envelope.Projection)
+	}
+	var identity struct {
+		Status    string   `json:"status"`
+		Targets   []string `json:"targets"`
+		Artifacts []string `json:"artifacts"`
+	}
+	if err := json.Unmarshal(envelope.Terminal, &identity); err != nil {
+		t.Fatal(err)
+	}
+	if identity.Status != "IMPLEMENTED" || len(identity.Targets) != 5 || len(identity.Artifacts) >= len(artifacts) {
+		t.Fatalf("identity lists were not bounded: targets=%d artifacts=%d", len(identity.Targets), len(identity.Artifacts))
+	}
+	assertContinuationPreservesTerminal(t, envelope.Continuation, terminal)
+	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
+}
+
+func TestTerminalOverflowBoundsEscapedIdentityLists(t *testing.T) {
+	entries := make([]string, 6)
+	for index := range entries {
+		entries[index] = "/tmp/" + strings.Repeat("<", 300)
+	}
+	terminal := mustJSONRaw(t, map[string]any{
+		"status":    "IMPLEMENTED",
+		"risk":      "LOW",
+		"targets":   entries,
+		"artifacts": entries,
+		"summary":   strings.Repeat("s", 4000),
+	})
+	var stdout bytes.Buffer
+	err := writeProjectedTerminalEnvelope(continuationTestConfig(t), &stdout, terminal, representativeHandoff(t, "small", "small"))
+	if err == nil {
+		t.Fatal("oversized semantic result must fail closed")
+	}
+	if stdout.Len() == 0 || stdout.Len() > parentActionTerminalBudgetBytes {
+		t.Fatalf("overflow response bytes=%d budget=%d", stdout.Len(), parentActionTerminalBudgetBytes)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	var identity map[string]json.RawMessage
+	if err := json.Unmarshal(envelope.Terminal, &identity); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"targets", "artifacts"} {
+		if len(identity[field]) > terminalIdentityListMaxBytes {
+			t.Fatalf("%s serialized bytes=%d budget=%d", field, len(identity[field]), terminalIdentityListMaxBytes)
+		}
+	}
+	assertContinuationPreservesTerminal(t, envelope.Continuation, terminal)
+	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
+}
+
+func continuationTestConfig(t *testing.T) config.AppConfig {
+	t.Helper()
+	cfg := config.AppConfig{
+		RepoRoot:  t.TempDir(),
+		StateBase: t.TempDir(),
+		RepoHash:  "terminal-overflow-response-test",
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("task.id", "task-1"); err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+func assertContinuationPreservesTerminal(t *testing.T, continuation *parentActionTerminalContinuation, terminal json.RawMessage) {
+	t.Helper()
+	if continuation == nil {
+		t.Fatal("continuation missing")
+	}
+	if continuation.Kind != "terminal-json-artifact" || continuation.Bytes != len(terminal) {
+		t.Fatalf("continuation = %+v", continuation)
+	}
+	persisted, err := os.ReadFile(continuation.Locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(persisted, terminal) {
+		t.Fatal("continuation does not preserve the exact terminal body")
+	}
 }
 
 func TestWriteFailedTerminalActionDoesNotFallbackToMalformedRawOutput(t *testing.T) {
@@ -112,7 +304,7 @@ func TestWriteFailedTerminalActionDoesNotFallbackToMalformedRawOutput(t *testing
 	terminalErr := errors.New("malformed child exit")
 	var stdout bytes.Buffer
 
-	err := writeFailedTerminalAction(&stdout, raw, terminalErr, func() (json.RawMessage, error) {
+	err := writeFailedTerminalAction(config.AppConfig{}, &stdout, raw, terminalErr, func() (json.RawMessage, error) {
 		return handoff, nil
 	})
 	if !errors.Is(err, terminalErr) {
@@ -160,9 +352,10 @@ func TestWriteTerminalHandoffFailureBoundsOversizedTerminal(t *testing.T) {
 		"recommendation": "stop because canonical authority is unavailable",
 	})
 	handoffErr := errors.New(strings.Repeat("canonical-handoff-failure-", 100))
+	cfg := continuationTestConfig(t)
 	var stdout bytes.Buffer
 
-	err := writeTerminalHandoffFailure(&stdout, terminal, handoffErr)
+	err := writeTerminalHandoffFailure(cfg, &stdout, terminal, handoffErr)
 	if !errors.Is(err, handoffErr) {
 		t.Fatalf("error = %v, want handoff error", err)
 	}

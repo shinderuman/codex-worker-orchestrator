@@ -49,6 +49,7 @@ func writeProjectContinuationTask(t *testing.T, cfg config.AppConfig, path strin
 }
 
 func TestProjectContinuationNoRuntimeTaskUsesCurrentActiveTask(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
@@ -64,6 +65,7 @@ func TestProjectContinuationNoRuntimeTaskUsesCurrentActiveTask(t *testing.T) {
 }
 
 func TestProjectContinuationCurrentRuntimeTaskStaysCurrent(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	next := "IMPLEMENTATION_TASKS/next.md"
@@ -91,6 +93,7 @@ func TestProjectContinuationCurrentRuntimeTaskStaysCurrent(t *testing.T) {
 }
 
 func TestProjectContinuationUsesCanonicalNextRunnableAfterCurrentCompletion(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	next := "IMPLEMENTATION_TASKS/next.md"
@@ -110,6 +113,7 @@ func TestProjectContinuationUsesCanonicalNextRunnableAfterCurrentCompletion(t *t
 }
 
 func TestProjectContinuationBlockedOnlyUsesCanonicalBlocker(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	blocked := "IMPLEMENTATION_TASKS/blocked.md"
@@ -129,6 +133,7 @@ func TestProjectContinuationBlockedOnlyUsesCanonicalBlocker(t *testing.T) {
 }
 
 func TestProjectContinuationTerminalRequiresCompletedGoalAndSettledLifecycle(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
 	st, err := state.NewStateStore(cfg)
@@ -158,6 +163,7 @@ func TestProjectContinuationTerminalRequiresCompletedGoalAndSettledLifecycle(t *
 }
 
 func TestProjectContinuationInterruptedTaskIsExplicitStop(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
@@ -196,6 +202,7 @@ func TestProjectContinuationInterruptedTaskIsExplicitStop(t *testing.T) {
 }
 
 func TestProjectContinuationLegacyNextDoesNotCreateContinuationScope(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	next := "IMPLEMENTATION_TASKS/unscoped-next.md"
@@ -219,6 +226,7 @@ func TestProjectContinuationLegacyNextDoesNotCreateContinuationScope(t *testing.
 }
 
 func TestProjectStateJSONIncludesCanonicalContinuation(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
@@ -239,6 +247,7 @@ func TestProjectStateJSONIncludesCanonicalContinuation(t *testing.T) {
 }
 
 func TestProjectContinuationTerminalRejectsStaleRuntimeTask(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
 	st, err := state.NewStateStore(cfg)

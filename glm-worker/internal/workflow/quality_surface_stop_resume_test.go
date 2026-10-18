@@ -14,6 +14,7 @@ import (
 )
 
 func TestTransientStopResumeRestoresQualitySurfaceApprovalBoundary(t *testing.T) {
+	t.Parallel()
 	w, st, checkpoint, runner := qualitySurfaceStoppedResumeFixture(t)
 
 	_, restored, err := w.prepareResumeCheckpoint(checkpoint, externalFeasibility{}, false)
@@ -53,6 +54,7 @@ func TestTransientStopResumeRestoresQualitySurfaceApprovalBoundary(t *testing.T)
 }
 
 func TestActivatedQualitySurfaceRateLimitResumesContinuationWithoutReapproval(t *testing.T) {
+	t.Parallel()
 	_, st, scripted, w := newQualitySurfaceDecisionWorkflow(t, []runnerStep{{
 		runErr: errors.New("exit status 1"),
 		result: runner.RunResult{PlainFailure: runner.ProviderFailureClass{
@@ -108,6 +110,7 @@ func TestActivatedQualitySurfaceRateLimitResumesContinuationWithoutReapproval(t 
 }
 
 func TestTransientStopResumeRejectsStaleQualitySurfaceRetention(t *testing.T) {
+	t.Parallel()
 	w, st, checkpoint, _ := qualitySurfaceStoppedResumeFixture(t)
 	writeScopeFile(t, w.config.RepoRoot, "worker.go", "package sample\n\nvar changed = 2\n")
 

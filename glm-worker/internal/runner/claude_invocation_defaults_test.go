@@ -10,6 +10,7 @@ import (
 )
 
 func TestClaudeInvocationDefaultsPreserveConfiguredValues(t *testing.T) {
+	t.Parallel()
 	defaults := claudeInvocationEnvDefaults()
 	if got, want := defaults["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], strconv.Itoa(configuredAutoCompactWindowTokens); got != want {
 		t.Fatalf("auto compact env = %q, want %q", got, want)
@@ -26,6 +27,7 @@ func TestClaudeInvocationDefaultsPreserveConfiguredValues(t *testing.T) {
 }
 
 func TestAutoCompactArgumentDerivesFromConfiguredTokens(t *testing.T) {
+	t.Parallel()
 	if got := configuredAutoCompactWindowArgument; got != "500k" {
 		t.Fatalf("configured auto compact argument = %q, want 500k", got)
 	}
@@ -35,6 +37,7 @@ func TestAutoCompactArgumentDerivesFromConfiguredTokens(t *testing.T) {
 }
 
 func TestManagedClaudeSettingsMirrorOrchestratorInvocationDefaults(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join("..", "..", "..", "claude", "settings-managed.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -54,6 +57,7 @@ func TestManagedClaudeSettingsMirrorOrchestratorInvocationDefaults(t *testing.T)
 }
 
 func TestIsolationSmokeDerivesClaudeInvocationDefaults(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join("..", "..", "scripts", "isolation-smoke.sh")
 	data, err := os.ReadFile(path)
 	if err != nil {

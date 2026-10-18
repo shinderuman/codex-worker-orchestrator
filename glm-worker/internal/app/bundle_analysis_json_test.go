@@ -8,6 +8,7 @@ import (
 )
 
 func TestBundleAnalysisTypesDoNotCarryExplanationFields(t *testing.T) {
+	t.Parallel()
 	for name, value := range map[string]any{
 		"interval":           bundleAnalysisInterval{},
 		"subsequents":        bundleAnalysisSubsequents{},
@@ -36,6 +37,7 @@ func TestBundleAnalysisTypesDoNotCarryExplanationFields(t *testing.T) {
 }
 
 func TestBundleAnalysisJSONRemainsStructural(t *testing.T) {
+	t.Parallel()
 	start := "2026-09-01T00:00:00Z"
 	end := "2026-09-01T00:01:00Z"
 	yield := 1000.0

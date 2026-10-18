@@ -10,6 +10,7 @@ import (
 )
 
 func TestGuardRecoveryStatusIsVisibleAndResumable(t *testing.T) {
+	t.Parallel()
 	st, err := state.NewStateStore(config.AppConfig{
 		StateBase: t.TempDir(),
 		RepoHash:  "guard-recovery-status",
@@ -54,6 +55,7 @@ func TestGuardRecoveryStatusIsVisibleAndResumable(t *testing.T) {
 }
 
 func TestQualityGateRecoveryStatusIsVisibleAndResumable(t *testing.T) {
+	t.Parallel()
 	st, err := state.NewStateStore(config.AppConfig{
 		StateBase: t.TempDir(),
 		RepoHash:  "quality-gate-recovery-status",

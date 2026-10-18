@@ -3,6 +3,7 @@ package controller
 import "testing"
 
 func TestResolveFindingWithProjectAuthorityReplaysBlockingEpisode(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	finding := observeAcceptanceFinding(t, fixture, "canonical-blocker", "reviewer-a")
 	target := fixture.child

@@ -7,6 +7,7 @@ import (
 )
 
 func TestRunModelStopsWhenRepeatedConstraintChangesDisplayValue(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("first", "MEDIUM")},
@@ -33,6 +34,7 @@ func TestRunModelStopsWhenRepeatedConstraintChangesDisplayValue(t *testing.T) {
 }
 
 func TestPrepareResumeCheckpointKeepsResultCorrectionReadOnly(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	checkpoint := baseCorrectionCheckpoint()
 	checkpoint.ResultCorrection = true

@@ -8,6 +8,7 @@ import (
 )
 
 func TestParentRequestProjectionFromFocusedPreservesAutomation(t *testing.T) {
+	t.Parallel()
 	request := parentcontinuation.Request{
 		CompletionAdmitted: false,
 		StopAdmitted:       true,

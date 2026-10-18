@@ -8,14 +8,15 @@ import (
 )
 
 func (s *Store) parentSourceBeforeTree(op ExecutionOperation) (string, error) {
-	if len(op.Evidence.FinalizationRefs) != 1 {
-		return "", fmt.Errorf("source import lacks retention finalization")
-	}
-	final, err := s.LoadAttemptFinalization(op.Evidence.FinalizationRefs[0])
+	revisionRef, err := s.operationTaskSourceRevision(op)
 	if err != nil {
 		return "", err
 	}
-	for _, ref := range final.EvidenceRefs {
+	revision, err := s.LoadTaskSourceRevision(revisionRef)
+	if err != nil {
+		return "", err
+	}
+	for _, ref := range revision.EvidenceRefs {
 		if ref.Kind == "git-object-archive" && ref.LogicalIdentity == op.Transition.TransitionID+":source-before" {
 			roots, err := s.VerifyGitObjectArchive(ref)
 			if err != nil {
@@ -25,6 +26,25 @@ func (s *Store) parentSourceBeforeTree(op ExecutionOperation) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("source import before archive is missing")
+}
+
+func (s *Store) operationTaskSourceRevision(op ExecutionOperation) (EvidenceObjectRef, error) {
+	for _, taskRef := range op.Evidence.TaskRevisionRefs {
+		revision, err := s.LoadTaskIndexRevision(taskRef)
+		if err != nil {
+			return EvidenceObjectRef{}, err
+		}
+		for index := len(revision.SourceRevisions) - 1; index >= 0; index-- {
+			source, err := s.LoadTaskSourceRevision(revision.SourceRevisions[index])
+			if err != nil {
+				return EvidenceObjectRef{}, err
+			}
+			if source.TransitionID == op.Transition.TransitionID {
+				return revision.SourceRevisions[index], nil
+			}
+		}
+	}
+	return EvidenceObjectRef{}, fmt.Errorf("source import lacks its task source revision")
 }
 
 func parentSourceBeforeTreeRoot(roots []GitObjectArchiveRoot, head, index string) (string, error) {

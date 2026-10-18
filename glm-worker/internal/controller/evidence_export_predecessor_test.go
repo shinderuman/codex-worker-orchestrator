@@ -55,6 +55,7 @@ func decodeAnalysisIndex(t *testing.T, export EvidenceExport) EvidenceAnalysisIn
 }
 
 func TestExportEvidenceTaskContinuationIncludesPredecessorSeal(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.sealedAssociationRuntimeTask = "runtime-task-uuid-1"
@@ -121,6 +122,7 @@ func TestExportEvidenceTaskContinuationIncludesPredecessorSeal(t *testing.T) {
 }
 
 func TestExportEvidenceTaskContinuationFollowsMultiHopLineage(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.sealedAssociationRuntimeTask = "runtime-task-uuid-1"
@@ -142,6 +144,7 @@ func TestExportEvidenceTaskContinuationFollowsMultiHopLineage(t *testing.T) {
 }
 
 func TestExportEvidenceTaskContinuationVerifiesRuntimeTaskEqually(t *testing.T) {
+	t.Parallel()
 	aligned := "runtime-task-uuid-1"
 	liveOptions := func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
@@ -175,6 +178,7 @@ func TestExportEvidenceTaskContinuationVerifiesRuntimeTaskEqually(t *testing.T) 
 }
 
 func TestExportEvidenceTaskContinuationRequiresPredecessorRuntimeAssociation(t *testing.T) {
+	t.Parallel()
 	aligned := "runtime-task-uuid-1"
 	recentOptions := func(older func(*evidenceExportFixture)) func(*evidenceExportFixture) {
 		return func(f *evidenceExportFixture) {
@@ -207,6 +211,7 @@ func TestExportEvidenceTaskContinuationRequiresPredecessorRuntimeAssociation(t *
 }
 
 func TestExportEvidenceSelectsNewestAttemptOfTaskAndNamesArchiveByRuntimeTask(t *testing.T) {
+	t.Parallel()
 	aligned := "runtime-task-uuid-1"
 	options := func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
@@ -270,6 +275,7 @@ func TestExportEvidenceSelectsNewestAttemptOfTaskAndNamesArchiveByRuntimeTask(t 
 }
 
 func TestEvidenceExportTaskIDTargetMatchRejectsCrossTaskAmbiguity(t *testing.T) {
+	t.Parallel()
 	match := func(attemptID, taskPath string, createdAt time.Time) evidenceExportTaskMatch {
 		return evidenceExportTaskMatch{attempt: AttemptRecord{
 			AttemptID: attemptID, SemanticTaskRef: SemanticTaskRef{TaskPath: taskPath}, CreatedAt: createdAt,
@@ -310,6 +316,7 @@ func requireCollectedPredecessor(t *testing.T, export EvidenceExport, attemptID,
 }
 
 func TestExportEvidenceTaskContinuationDisclosesBrokenLineage(t *testing.T) {
+	t.Parallel()
 	t.Run("unknown predecessor record", func(t *testing.T) {
 		fixture := newEvidenceExportFixture(t)
 		fixture.rewriteLiveContinuation(t, "attempt-ghost", fixture.sealRef.LogicalIdentity)
@@ -400,6 +407,7 @@ func predecessorValidationFixture(t *testing.T, build func(fixture *evidenceExpo
 }
 
 func TestExportEvidenceTaskContinuationIncludesPredecessorValidationRuns(t *testing.T) {
+	t.Parallel()
 	fixture, _ := predecessorValidationFixture(t, func(fixture *evidenceExportFixture, repoRoot string) []qualitygate.RunRecord {
 		return []qualitygate.RunRecord{
 			predecessorValidationRun("77777777777777777777777777777777",
@@ -452,6 +460,7 @@ func TestExportEvidenceTaskContinuationIncludesPredecessorValidationRuns(t *test
 }
 
 func TestExportEvidenceTaskContinuationBindsTaskIdentifiedRunsByWindow(t *testing.T) {
+	t.Parallel()
 	fixture, _ := predecessorValidationFixture(t, func(fixture *evidenceExportFixture, repoRoot string) []qualitygate.RunRecord {
 		inWindow := predecessorValidationRun("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			fixture.seal.StartedAt.Add(time.Minute), fixture.seal.StartedAt.Add(2*time.Minute), repoRoot)
@@ -491,6 +500,7 @@ func TestExportEvidenceTaskContinuationBindsTaskIdentifiedRunsByWindow(t *testin
 }
 
 func TestExportEvidenceTaskContinuationDisclosesUnreadableModuleRunRecords(t *testing.T) {
+	t.Parallel()
 	fixture, repoRoot := predecessorValidationFixture(t, func(*evidenceExportFixture, string) []qualitygate.RunRecord { return nil })
 	garbageModule := state.AttachStateStore(config.AppConfig{StateBase: fixture.cfg.StateBase, RepoHash: config.RepoHashFor(repoRoot)})
 	if err := garbageModule.Write("repo-root", repoRoot); err != nil {
@@ -520,6 +530,7 @@ func TestExportEvidenceTaskContinuationDisclosesUnreadableModuleRunRecords(t *te
 }
 
 func TestExportEvidenceTaskContinuationCollectsValidationRunsWithPluralLeaseHistory(t *testing.T) {
+	t.Parallel()
 	fixture, _ := predecessorValidationFixture(t, func(fixture *evidenceExportFixture, repoRoot string) []qualitygate.RunRecord {
 		return []qualitygate.RunRecord{predecessorValidationRun("77777777777777777777777777777777",
 			fixture.seal.StartedAt.Add(time.Minute), fixture.seal.StartedAt.Add(2*time.Minute), repoRoot)}
@@ -545,6 +556,7 @@ func TestExportEvidenceTaskContinuationCollectsValidationRunsWithPluralLeaseHist
 }
 
 func TestExportEvidenceTaskBundleDisclosesAssociationReadFailures(t *testing.T) {
+	t.Parallel()
 	aligned := "runtime-task-uuid-1"
 	t.Run("unreadable association stays unverified", func(t *testing.T) {
 		fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
@@ -593,6 +605,7 @@ func TestExportEvidenceTaskBundleDisclosesAssociationReadFailures(t *testing.T) 
 }
 
 func TestExportEvidenceTaskBundleAccumulatesAllAttemptsOfTask(t *testing.T) {
+	t.Parallel()
 	aligned := "runtime-task-uuid-1"
 	t.Run("association recovers evidence past a broken chain link", func(t *testing.T) {
 		fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {

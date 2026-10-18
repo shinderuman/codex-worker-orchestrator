@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
 func TestTerminalProjectionBoundsDecisionAndPreservesSemanticFields(t *testing.T) {
@@ -72,7 +74,7 @@ func TestWriteProjectedTerminalEnvelopeReturnsSingleBoundedResultWithoutRecovery
 	handoff := representativeHandoff(t, strings.Repeat("baseline-", 300), strings.Repeat("validation-", 300))
 
 	var stdout bytes.Buffer
-	if err := writeProjectedTerminalEnvelope(&stdout, terminal, handoff); err != nil {
+	if err := writeProjectedTerminalEnvelope(config.AppConfig{}, &stdout, terminal, handoff); err != nil {
 		t.Fatalf("write projected terminal envelope: %v", err)
 	}
 	if stdout.Len() > parentActionTerminalBudgetBytes {

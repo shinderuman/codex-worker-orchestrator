@@ -35,6 +35,7 @@ var terminalPayloadDroppedEnvKeys = []string{
 }
 
 func TestTerminalPayloadBoundarySingleRender(t *testing.T) {
+	t.Parallel()
 	if os.Getenv(terminalPayloadHelperEnv) == "1" {
 		terminalPayloadHelperMain()
 		return

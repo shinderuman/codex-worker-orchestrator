@@ -8,6 +8,7 @@ import (
 )
 
 func TestParentContinuationReadsAdmittedLiveLaneWithoutGrantingPrimaryMutation(t *testing.T) {
+	t.Parallel()
 	harness := newLifecycleHarness(t)
 	cfg := controllerTestConfig(harness.repo, filepath.Join(filepath.Dir(filepath.Dir(harness.store.dir)), "sessions"))
 	root := harness.edit(t, harness.source, "root-binding.txt", "preserved root\n")
@@ -55,6 +56,7 @@ func TestParentContinuationReadsAdmittedLiveLaneWithoutGrantingPrimaryMutation(t
 }
 
 func TestWorkflowBindingFollowsExecutionTaskAcrossOneLane(t *testing.T) {
+	t.Parallel()
 	harness := newLifecycleHarness(t)
 	cfg := controllerTestConfig(harness.repo, filepath.Join(filepath.Dir(filepath.Dir(harness.store.dir)), "sessions"))
 	rootConfig, err := WorkflowConfig(cfg)

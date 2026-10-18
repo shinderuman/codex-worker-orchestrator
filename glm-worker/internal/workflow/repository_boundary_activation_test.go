@@ -8,6 +8,7 @@ import (
 )
 
 func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		activation   string
@@ -75,6 +76,7 @@ func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) 
 }
 
 func TestCaptureRepositoryBoundaryFailsClosedWhenActiveTaskLosesActivationPin(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, &scriptedRunner{})
 	if err := st.Write(activeTaskStateKey, activeTaskRepoPath); err != nil {
@@ -95,6 +97,7 @@ func TestCaptureRepositoryBoundaryFailsClosedWhenActiveTaskLosesActivationPin(t 
 }
 
 func TestReviewResumeInactiveHarnessRejectsCoincidentalParentPathChange(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer

@@ -10,6 +10,7 @@ import (
 )
 
 func TestRecoverParentActionCommandRestoresDecisionFromCanonicalState(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -62,6 +63,7 @@ func TestRecoverParentActionCommandRestoresDecisionFromCanonicalState(t *testing
 }
 
 func TestRecoverParentActionCommandRestoresFixFromCanonicalState(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -108,6 +110,7 @@ func TestRecoverParentActionCommandRestoresFixFromCanonicalState(t *testing.T) {
 }
 
 func TestRecoverParentActionCommandRejectsForeignConditions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		seed func(t *testing.T, st *state.StateStore)

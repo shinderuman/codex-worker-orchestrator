@@ -115,6 +115,7 @@ func TestClaudeRunnerWriteRunUsesExplicitWorkerToolSurface(t *testing.T) {
 }
 
 func TestClaudeRunnerReadOnlyRunRejectsRealBashWrite(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("live検証はUnix系環境向け")
 	}

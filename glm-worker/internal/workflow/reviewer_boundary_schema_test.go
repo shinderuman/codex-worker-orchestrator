@@ -10,6 +10,7 @@ import (
 )
 
 func TestLoadReviewedBlobRoundsIgnoresNonCurrentVersions(t *testing.T) {
+	t.Parallel()
 	w := newReviewedBoundarySchemaWorkflow(t, "ledger-version")
 	ledger := strings.Join([]string{
 		`{"version":1,"review_number":1,"files":[]}`,
@@ -31,6 +32,7 @@ func TestLoadReviewedBlobRoundsIgnoresNonCurrentVersions(t *testing.T) {
 }
 
 func TestPromoteLastReviewBlobsRequiresCurrentVersion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		version string
@@ -69,6 +71,7 @@ func TestPromoteLastReviewBlobsRequiresCurrentVersion(t *testing.T) {
 }
 
 func TestPromoteLastReviewBlobsSkipsFutureIncompatibleShape(t *testing.T) {
+	t.Parallel()
 	w := newReviewedBoundarySchemaWorkflow(t, "promotion-future-shape")
 	record := `{"version":999,"review_number":1,"files":{"future":"shape"}}`
 	if err := os.WriteFile(w.state.Path(lastReviewBlobsFile), []byte(record), 0o600); err != nil {

@@ -6,6 +6,7 @@ import (
 )
 
 func TestAnalysisExecutionUsageComparability(t *testing.T) {
+	t.Parallel()
 	start := time.Now().UTC().Truncate(time.Second)
 	end := start.Add(30 * time.Minute)
 	ownedInitial := analysisRolloutTurn{

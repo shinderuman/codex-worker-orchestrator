@@ -9,6 +9,7 @@ import (
 )
 
 func TestExecuteRepoSearchEvalFallsBackWhenRetainedEventsAreIncomplete(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -64,6 +65,7 @@ func TestExecuteRepoSearchEvalFallsBackWhenRetainedEventsAreIncomplete(t *testin
 }
 
 func TestExecuteEvalABUsesCurrentRepoSearchEventProjection(t *testing.T) {
+	t.Parallel()
 	cfg := evalABTestConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

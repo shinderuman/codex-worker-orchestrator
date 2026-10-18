@@ -12,6 +12,7 @@ import (
 )
 
 func TestCanonicalParentAcceptanceRequiresCurrentAttemptAndProjectsPublication(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	admission, err := controller.Activate(cfg)
@@ -75,6 +76,7 @@ func TestCanonicalParentAcceptanceRequiresCurrentAttemptAndProjectsPublication(t
 }
 
 func TestExistingParentResumeDoesNotBootstrapController(t *testing.T) {
+	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole, Model: "worker", Request: "saved", Prompt: "saved", OriginalPrompt: "saved", StopKind: state.ResumeStopInterrupted}

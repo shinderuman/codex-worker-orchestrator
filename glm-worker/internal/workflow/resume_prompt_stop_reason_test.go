@@ -8,6 +8,7 @@ import (
 )
 
 func TestResumePromptNormalStopsShareGenericContinuation(t *testing.T) {
+	t.Parallel()
 	const original = "ORIGINAL TASK AUTHORITY"
 	var baseline string
 	for _, kind := range []state.ResumeStopKind{
@@ -35,6 +36,7 @@ func TestResumePromptNormalStopsShareGenericContinuation(t *testing.T) {
 }
 
 func TestResumePromptPreservesOriginalPromptAuthority(t *testing.T) {
+	t.Parallel()
 	checkpoint := state.ResumeCheckpoint{
 		StopKind:       state.ResumeStopInterrupted,
 		Prompt:         "already wrapped resume prompt",
@@ -50,6 +52,7 @@ func TestResumePromptPreservesOriginalPromptAuthority(t *testing.T) {
 }
 
 func TestResumePromptKeepsSpecializedGuardRecovery(t *testing.T) {
+	t.Parallel()
 	prompt := resumePrompt(state.ResumeCheckpoint{
 		StopKind:       state.ResumeStopGuardRecoverable,
 		OriginalPrompt: "ORIGINAL TASK",
@@ -60,6 +63,7 @@ func TestResumePromptKeepsSpecializedGuardRecovery(t *testing.T) {
 }
 
 func TestResumePromptQualityGatePreservesOriginalWithoutWrapper(t *testing.T) {
+	t.Parallel()
 	const original = "ORIGINAL QUALITY-GATE TASK"
 	prompt := resumePrompt(state.ResumeCheckpoint{
 		StopKind:       state.ResumeStopQualityGate,
@@ -71,6 +75,7 @@ func TestResumePromptQualityGatePreservesOriginalWithoutWrapper(t *testing.T) {
 }
 
 func TestPrepareResumeContinuationRejectsUnsupportedStopKind(t *testing.T) {
+	t.Parallel()
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	for _, kind := range []state.ResumeStopKind{state.ResumeStopNone, state.ResumeStopKind("unknown-stop")} {
 		t.Run(string(kind), func(t *testing.T) {

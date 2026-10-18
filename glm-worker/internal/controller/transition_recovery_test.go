@@ -9,6 +9,7 @@ import (
 )
 
 func TestConcurrentModelCallAdmissionAllowsOnlyOneLiveCall(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
 	if err != nil {
@@ -69,6 +70,7 @@ func TestConcurrentModelCallAdmissionAllowsOnlyOneLiveCall(t *testing.T) {
 }
 
 func TestFinalizingTransitionResumesFromDurableJournal(t *testing.T) {
+	t.Parallel()
 	cfg, store, record, targetLease, actual := prepareFinalizingRecoveryFixture(t)
 	lock, err := store.acquireMutationLock()
 	if err != nil {

@@ -317,6 +317,7 @@ func TestParentValidationBudgetExhaustionKeepsFailureTargets(t *testing.T) {
 }
 
 func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
+	t.Parallel()
 	checkpoint := stateCheckpointWithParentValidation(packet.ParentValidationRequest{
 		Form:       packet.ParentValidationGoTest,
 		WorkingDir: "glm-worker",
@@ -346,6 +347,7 @@ func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
 }
 
 func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, &scriptedRunner{})
 	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
@@ -372,6 +374,7 @@ func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
 }
 
 func TestParentValidationRecordRejectsStatusOnlyPass(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	w := newWorkflowT(t, st, &scriptedRunner{})
 	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")

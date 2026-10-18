@@ -9,6 +9,7 @@ import (
 )
 
 func TestParentHandoffProjectsBoundedImprovementAdvisoryWithoutReplacingLifecycleAction(t *testing.T) {
+	t.Parallel()
 	callID := "33333333-3333-4333-8333-333333333333"
 	required := string(state.ParentActionAccept)
 	output := parentHandoffOutput{
@@ -61,6 +62,7 @@ func TestParentHandoffProjectsBoundedImprovementAdvisoryWithoutReplacingLifecycl
 }
 
 func TestParentHandoffDoesNotInventImprovementSignalFromNormalMaterial(t *testing.T) {
+	t.Parallel()
 	required := string(state.ParentActionAccept)
 	output := parentHandoffOutput{
 		RequiredAction: &required,
@@ -87,6 +89,7 @@ func TestParentHandoffDoesNotInventImprovementSignalFromNormalMaterial(t *testin
 }
 
 func TestParentHandoffDoesNotProjectSignalWithoutStableCallID(t *testing.T) {
+	t.Parallel()
 	required := string(state.ParentActionAccept)
 	output := parentHandoffOutput{
 		RequiredAction: &required,

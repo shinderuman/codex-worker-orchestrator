@@ -32,6 +32,7 @@ func readLiveStatus(t *testing.T, st *state.StateStore, taskID string) state.Tas
 }
 
 func TestStreamEventIngesterPublishesLiveToolDetails(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 3*time.Second)
 
@@ -72,6 +73,7 @@ func TestStreamEventIngesterPublishesLiveToolDetails(t *testing.T) {
 }
 
 func TestStreamEventIngesterLiveProgressEventsAdvanceIdleBase(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 2*time.Second)
 
@@ -95,6 +97,7 @@ func TestStreamEventIngesterLiveProgressEventsAdvanceIdleBase(t *testing.T) {
 }
 
 func TestStreamEventIngesterToolProgressAdvancesOnlyGenericActivity(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 2*time.Second)
 
@@ -118,6 +121,7 @@ func TestStreamEventIngesterToolProgressAdvancesOnlyGenericActivity(t *testing.T
 }
 
 func TestStreamEventIngesterModelActivityAcceptanceSet(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		line   string
@@ -173,6 +177,7 @@ func TestStreamEventIngesterModelActivityAcceptanceSet(t *testing.T) {
 }
 
 func TestStreamEventIngesterBoundsLiveDetailText(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 3*time.Second)
 
@@ -195,6 +200,7 @@ func TestStreamEventIngesterBoundsLiveDetailText(t *testing.T) {
 }
 
 func TestStreamEventIngesterLiveWriteFailureKeepsEventLog(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	if err := os.MkdirAll(filepath.Join(st.Path("events"), "t.live.json"), 0o700); err != nil {
 		t.Fatal(err)
@@ -216,6 +222,7 @@ func TestStreamEventIngesterLiveWriteFailureKeepsEventLog(t *testing.T) {
 }
 
 func TestClaudeRunnerLiveStatusSnapshotBoundary(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -263,6 +270,7 @@ func writeTimedStreamScript(t *testing.T, lines ...string) string {
 }
 
 func TestClaudeRunnerLiveModelActivityFromSuppressedThinkingTokens(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}

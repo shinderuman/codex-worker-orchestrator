@@ -42,6 +42,7 @@ func (w *qualityGateSignalWriter) String() string {
 }
 
 func TestQualityGateRecoveryCommandParsesRunSurfaces(t *testing.T) {
+	t.Parallel()
 	runID := strings.Repeat("a", 32)
 	for _, action := range []string{qualityGateActionStatus, qualityGateActionWatch, qualityGateActionResult} {
 		cmd, err := ParseCommand([]string{"--quality-gate", action, runID})
@@ -58,6 +59,7 @@ func TestQualityGateRecoveryCommandParsesRunSurfaces(t *testing.T) {
 }
 
 func TestQualityGateRunningIdentityMatchesOnlyExactSnapshot(t *testing.T) {
+	t.Parallel()
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("b", 32)
 	workingDir := t.TempDir()
@@ -94,6 +96,7 @@ func TestQualityGateRunningIdentityMatchesOnlyExactSnapshot(t *testing.T) {
 }
 
 func TestQualityGateCompletedRunIsNotReused(t *testing.T) {
+	t.Parallel()
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("c", 32)
 	workingDir := t.TempDir()
@@ -118,6 +121,7 @@ func TestQualityGateCompletedRunIsNotReused(t *testing.T) {
 }
 
 func TestQualityGateRunLogsRemainAddressablePerRun(t *testing.T) {
+	t.Parallel()
 	_, st := newQualityGateEnv(t)
 	firstID := strings.Repeat("d", 32)
 	secondID := strings.Repeat("e", 32)
@@ -140,6 +144,7 @@ func TestQualityGateRunLogsRemainAddressablePerRun(t *testing.T) {
 }
 
 func TestQualityGateStatusIsMachineReadableByRunID(t *testing.T) {
+	t.Parallel()
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("f", 32)
 	record := qualitygate.RunRecord{
@@ -234,78 +239,53 @@ func TestQualityGateConcurrentSameSnapshotAttachesAndStreamsRunID(t *testing.T) 
 	}
 }
 
-func TestQualityGateStatusMarksDeadRunnerInterrupted(t *testing.T) {
-	_, st := newQualityGateEnv(t)
-	runID := strings.Repeat("9", 32)
-	record := qualitygate.RunRecord{
-		ValidationRunID: runID,
-		Form:            "go-test",
-		Repository:      "/repo",
-		StartedAt:       time.Now().Add(-time.Second).UTC(),
-		Status:          qualitygate.StatusRunning,
-		RunnerPID:       2147483647,
+func TestQualityGateReconcileMarksInterruptedAtRunnerLivenessBoundaries(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		runnerPID  int
+		startedAgo time.Duration
+		want       string
+	}{
+		{name: "dead-runner-pid", runnerPID: 2147483647, startedAgo: time.Second, want: qualitygate.StatusInterrupted},
+		{name: "fresh-runner-without-pid", want: qualitygate.StatusRunning},
+		{name: "runner-without-pid-after-startup-grace", startedAgo: qualityGateRunnerStartupGrace + time.Second, want: qualitygate.StatusInterrupted},
 	}
-	if err := writeQualityGateRun(st, record); err != nil {
-		t.Fatal(err)
-	}
-	var stdout bytes.Buffer
-	if err := printQualityGateRun(st, runID, false, &stdout); err != nil {
-		t.Fatal(err)
-	}
-	var got qualitygate.RunRecord
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != qualitygate.StatusInterrupted || got.ExitCode != -1 || got.CompletedAt == nil || got.Log == "" {
-		t.Fatalf("reconciled record = %+v", got)
-	}
-}
-
-func TestQualityGateStatusKeepsFreshRunnerWithoutPIDRunning(t *testing.T) {
-	_, st := newQualityGateEnv(t)
-	runID := strings.Repeat("8", 32)
-	record := qualitygate.RunRecord{
-		ValidationRunID: runID,
-		Form:            "go-test",
-		Repository:      "/repo",
-		StartedAt:       time.Now().UTC(),
-		Status:          qualitygate.StatusRunning,
-	}
-	if err := writeQualityGateRun(st, record); err != nil {
-		t.Fatal(err)
-	}
-	got, err := reconcileQualityGateRun(st, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != qualitygate.StatusRunning || got.CompletedAt != nil {
-		t.Fatalf("fresh runner without pid was reconciled too early: %+v", got)
-	}
-}
-
-func TestQualityGateStatusMarksRunnerWithoutPIDInterruptedAfterStartupGrace(t *testing.T) {
-	_, st := newQualityGateEnv(t)
-	runID := strings.Repeat("7", 32)
-	record := qualitygate.RunRecord{
-		ValidationRunID: runID,
-		Form:            "go-test",
-		Repository:      "/repo",
-		StartedAt:       time.Now().Add(-qualityGateRunnerStartupGrace - time.Second).UTC(),
-		Status:          qualitygate.StatusRunning,
-	}
-	if err := writeQualityGateRun(st, record); err != nil {
-		t.Fatal(err)
-	}
-	got, err := reconcileQualityGateRun(st, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != qualitygate.StatusInterrupted || got.ExitCode != -1 || got.CompletedAt == nil || got.Log == "" {
-		t.Fatalf("runner without pid did not recover after startup grace: %+v", got)
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, st := newQualityGateEnv(t)
+			runID := strings.Repeat(string(rune('0'+index+1)), 32)
+			record := qualitygate.RunRecord{
+				ValidationRunID: runID,
+				Form:            "go-test",
+				Repository:      "/repo",
+				StartedAt:       time.Now().Add(-tc.startedAgo).UTC(),
+				Status:          qualitygate.StatusRunning,
+				RunnerPID:       tc.runnerPID,
+			}
+			if err := writeQualityGateRun(st, record); err != nil {
+				t.Fatal(err)
+			}
+			got, err := reconcileQualityGateRun(st, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != tc.want {
+				t.Fatalf("reconciled status = %q want %q: %+v", got.Status, tc.want, got)
+			}
+			if tc.want == qualitygate.StatusInterrupted && (got.ExitCode != -1 || got.CompletedAt == nil || got.Log == "") {
+				t.Fatalf("interrupted reconcile lost its terminal evidence: %+v", got)
+			}
+			if tc.want == qualitygate.StatusRunning && got.CompletedAt != nil {
+				t.Fatalf("running reconcile completed the record: %+v", got)
+			}
+		})
 	}
 }
 
 func TestQualityGateReconcileDoesNotClobberTerminalResultWrittenUnderRunLock(t *testing.T) {
+	t.Parallel()
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("6", 32)
 	record := qualitygate.RunRecord{

@@ -14,6 +14,7 @@ import (
 )
 
 func TestQualityEvidenceAdditionsAndMechanicalRenameStayLow(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceGoTest("got", "1", true))
 	writeGitTestFile(t, root, "sample_test.go", qualityEvidenceGoTest("actual", "1", true)+qualityEvidenceSecondGoTest())
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -23,6 +24,7 @@ func TestQualityEvidenceAdditionsAndMechanicalRenameStayLow(t *testing.T) {
 }
 
 func TestQualityEvidenceAssertionRemovalRaisesRisk(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceGoTest("got", "1", true))
 	writeGitTestFile(t, root, "sample_test.go", qualityEvidenceGoTest("got", "1", false))
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -32,6 +34,7 @@ func TestQualityEvidenceAssertionRemovalRaisesRisk(t *testing.T) {
 }
 
 func TestQualityEvidenceExpectedBehaviorChangeRaisesRisk(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceGoTest("got", "1", true))
 	writeGitTestFile(t, root, "sample_test.go", qualityEvidenceGoTest("got", "2", true))
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -41,6 +44,7 @@ func TestQualityEvidenceExpectedBehaviorChangeRaisesRisk(t *testing.T) {
 }
 
 func TestQualityEvidenceFailureMessageChangeStaysLow(t *testing.T) {
+	t.Parallel()
 	base := qualityEvidenceGoTest("got", "1", true)
 	root, baseline := newQualityEvidenceRepo(t, base)
 	writeGitTestFile(t, root, "sample_test.go", strings.Replace(base, "got %d", "value %d", 1))
@@ -51,6 +55,7 @@ func TestQualityEvidenceFailureMessageChangeStaysLow(t *testing.T) {
 }
 
 func TestQualityEvidenceSubtestFailureMessageChangeStaysLow(t *testing.T) {
+	t.Parallel()
 	base := qualityEvidenceSubtests(true)
 	root, baseline := newQualityEvidenceRepo(t, base)
 	writeGitTestFile(t, root, "sample_test.go", strings.Replace(base, `t.Fatal("negative")`, `t.Fatal("details")`, 1))
@@ -61,6 +66,7 @@ func TestQualityEvidenceSubtestFailureMessageChangeStaysLow(t *testing.T) {
 }
 
 func TestQualityEvidenceNegativeCaseDeletionRaisesRisk(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceSubtests(true))
 	writeGitTestFile(t, root, "sample_test.go", qualityEvidenceSubtests(false))
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -70,6 +76,7 @@ func TestQualityEvidenceNegativeCaseDeletionRaisesRisk(t *testing.T) {
 }
 
 func TestQualityEvidenceFileRenameWithSameEvidenceStaysLow(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceGoTest("got", "1", true))
 	if err := os.Rename(filepath.Join(root, "sample_test.go"), filepath.Join(root, "renamed_test.go")); err != nil {
 		t.Fatal(err)
@@ -81,6 +88,7 @@ func TestQualityEvidenceFileRenameWithSameEvidenceStaysLow(t *testing.T) {
 }
 
 func TestTextQualityEvidenceMechanicalUpdateStaysLow(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidencePathRepo(t, "tests/cases.txt", "case one\ncase two\n")
 	writeGitTestFile(t, root, "tests/cases.txt", "case alpha\ncase beta\n")
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -90,6 +98,7 @@ func TestTextQualityEvidenceMechanicalUpdateStaysLow(t *testing.T) {
 }
 
 func TestTextQualityEvidenceCoverageDeletionRaisesRisk(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidencePathRepo(t, "tests/cases.txt", "case one\ncase two\n")
 	writeGitTestFile(t, root, "tests/cases.txt", "case one\n")
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -99,6 +108,7 @@ func TestTextQualityEvidenceCoverageDeletionRaisesRisk(t *testing.T) {
 }
 
 func TestParentBehaviorEvalStatusOnlyChangeStaysLow(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRegistryRepo(t, "not-run", "positive contract")
 	writeGitTestFile(t, root, parentBehaviorEvalPath, qualityEvidenceRegistry("pass", "positive contract"))
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -108,6 +118,7 @@ func TestParentBehaviorEvalStatusOnlyChangeStaysLow(t *testing.T) {
 }
 
 func TestParentBehaviorEvalContractChangeRaisesRisk(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRegistryRepo(t, "not-run", "positive contract")
 	writeGitTestFile(t, root, parentBehaviorEvalPath, qualityEvidenceRegistry("not-run", "weakened contract"))
 	decision := qualityEvidenceDecisionForTest(t, root, baseline)
@@ -117,6 +128,7 @@ func TestParentBehaviorEvalContractChangeRaisesRisk(t *testing.T) {
 }
 
 func TestParentBehaviorEvalRegistryParsesFromRepository(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile(filepath.Join(scenarioRepoRoot(t), filepath.FromSlash(parentBehaviorEvalPath)))
 	if err != nil {
 		t.Fatal(err)
@@ -131,6 +143,7 @@ func TestParentBehaviorEvalRegistryParsesFromRepository(t *testing.T) {
 }
 
 func TestEffectiveRiskIncludesQualityEvidenceWeakening(t *testing.T) {
+	t.Parallel()
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceGoTest("got", "1", true))
 	writeGitTestFile(t, root, "sample_test.go", qualityEvidenceGoTest("got", "1", false))
 	cfg := config.AppConfig{RepoRoot: root, StateBase: t.TempDir(), RepoHash: "quality-evidence-risk"}

@@ -61,6 +61,7 @@ func readRateLimitedFlag(st *state.StateStore) bool {
 }
 
 func TestRecoveryExhaustsToProviderUnavailable(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -103,6 +104,7 @@ func TestRecoveryExhaustsToProviderUnavailable(t *testing.T) {
 }
 
 func TestRecoveryProbeSuccessThenResumeCompletes(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -130,6 +132,7 @@ func TestRecoveryProbeSuccessThenResumeCompletes(t *testing.T) {
 }
 
 func TestRecoveryFromPlainStdoutTransientSignal(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -163,6 +166,7 @@ func TestRecoveryFromPlainStdoutTransientSignal(t *testing.T) {
 }
 
 func TestRecoveryLinksRetryToFailedCall(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	recoveredRuntime := &state.CallRuntime{
 		WorkerRevision:           "recovered-revision",
@@ -219,6 +223,7 @@ func TestRecoveryLinksRetryToFailedCall(t *testing.T) {
 }
 
 func TestRecoveryAccountingSeparatesTaskAndProbeCalls(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -273,6 +278,7 @@ func TestRecoveryAccountingSeparatesTaskAndProbeCalls(t *testing.T) {
 }
 
 func TestRecoveryResumeTransientRetriesNextBackoff(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -298,6 +304,7 @@ func TestRecoveryResumeTransientRetriesNextBackoff(t *testing.T) {
 }
 
 func TestRecoveryStopsAtDeadline(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 529", runErr: errors.New("exit status 1")}},
@@ -332,6 +339,7 @@ func TestRecoveryStopsAtDeadline(t *testing.T) {
 }
 
 func TestRecoveryResumeNonTransientFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -371,6 +379,7 @@ func TestRecoveryResumeNonTransientFailsClosed(t *testing.T) {
 }
 
 func TestRecoveryResumeNonTransientFatalRecordsExecutedCall(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -450,6 +459,7 @@ func TestRecoveryResumeNonTransientFatalRecordsExecutedCall(t *testing.T) {
 }
 
 func TestRecoveryResumeFatalArtifactFailureKeepsSingleRecord(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -494,6 +504,7 @@ func TestRecoveryResumeFatalArtifactFailureKeepsSingleRecord(t *testing.T) {
 }
 
 func TestRecoveryDoesNotTriggerOnFiveHourLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{output: zaiFiveHourLog, runErr: errors.New("exit status 1")}}}
 	w, _ := newRecoveryWorkflowT(t, st, r)
@@ -518,6 +529,7 @@ func TestRecoveryDoesNotTriggerOnFiveHourLimit(t *testing.T) {
 }
 
 func TestRecoveryDoesNotTriggerOnNonTransientError(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{output: "boom fatal", runErr: errors.New("exit status 1")}}}
 	w, _ := newRecoveryWorkflowT(t, st, r)
@@ -536,6 +548,7 @@ func TestRecoveryDoesNotTriggerOnNonTransientError(t *testing.T) {
 }
 
 func TestProviderUnavailableTaskBlocksNewTask(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
@@ -557,6 +570,7 @@ func TestProviderUnavailableTaskBlocksNewTask(t *testing.T) {
 }
 
 func TestResumeFromProviderUnavailableRetriesSameSession(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)
@@ -608,6 +622,7 @@ func TestResumeFromProviderUnavailableRetriesSameSession(t *testing.T) {
 }
 
 func TestResumeFromProviderUnavailableRestoresStatusAfterRunnerError(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
 		Stage:                             state.ResumeStageWorker,
@@ -675,6 +690,7 @@ func seedProviderUnavailableCheckpoint(t *testing.T, st *state.StateStore) {
 }
 
 func TestRecoveryProbeNonTransientFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -714,6 +730,7 @@ func TestRecoveryProbeNonTransientFailsClosed(t *testing.T) {
 }
 
 func TestRecoveryProbeLocalExecErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -736,6 +753,7 @@ func TestRecoveryProbeLocalExecErrorFailsClosed(t *testing.T) {
 }
 
 func TestRecoveryAppliesJitter(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -761,6 +779,7 @@ func TestRecoveryAppliesJitter(t *testing.T) {
 }
 
 func TestResumeProbeGateProviderStillDownZeroFullRuns(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
@@ -786,6 +805,7 @@ func TestResumeProbeGateProviderStillDownZeroFullRuns(t *testing.T) {
 }
 
 func TestResumeProbeGateFailClosedOnNonTransientProbe(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
@@ -809,6 +829,7 @@ func TestResumeProbeGateFailClosedOnNonTransientProbe(t *testing.T) {
 }
 
 func TestRecoveryHitsFiveHourLimitSavesRateLimited(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -844,6 +865,7 @@ func TestRecoveryHitsFiveHourLimitSavesRateLimited(t *testing.T) {
 }
 
 func TestRecoveryProbeBlankResponseRetriesToProviderUnavailable(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:              []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -883,6 +905,7 @@ func TestRecoveryProbeBlankResponseRetriesToProviderUnavailable(t *testing.T) {
 }
 
 func TestRecoveryProbeContractFailureThenSuccessResumes(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -913,6 +936,7 @@ func TestRecoveryProbeContractFailureThenSuccessResumes(t *testing.T) {
 }
 
 func TestRecoveryProbeContractFailureUntilDeadlineStopsUnavailable(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:              []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -952,6 +976,7 @@ func TestRecoveryProbeContractFailureUntilDeadlineStopsUnavailable(t *testing.T)
 }
 
 func TestResumeProbeGateBlankResponseNotRecovered(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
@@ -988,6 +1013,7 @@ func (r *typedProbeRunner) Probe(model string) (runner.ProbeResult, error) {
 }
 
 func TestRecoveryTypedInvalidResponseErrorRetriesToUnavailable(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &typedProbeRunner{scriptedRunner{
 		steps: []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -1016,6 +1042,7 @@ func TestRecoveryTypedInvalidResponseErrorRetriesToUnavailable(t *testing.T) {
 }
 
 func TestResumeFromProviderUnavailableHitsFiveHourLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -1040,6 +1067,7 @@ func TestResumeFromProviderUnavailableHitsFiveHourLimit(t *testing.T) {
 }
 
 func TestRecoveryProbeFiveHourSignatureSavesRateLimited(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:          []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -1076,6 +1104,7 @@ func TestRecoveryProbeFiveHourSignatureSavesRateLimited(t *testing.T) {
 }
 
 func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
@@ -1105,6 +1134,7 @@ func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
 }
 
 func TestRecoveryProbeAuthSignalFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -1139,6 +1169,7 @@ func TestRecoveryProbeAuthSignalFailsClosed(t *testing.T) {
 }
 
 func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
@@ -1167,6 +1198,7 @@ func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
 }
 
 func TestRecoveryProbeBareHTTPNumberStaysProbeContract(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -1201,6 +1233,7 @@ func TestRecoveryProbeBareHTTPNumberStaysProbeContract(t *testing.T) {
 }
 
 func TestRecoveryProbeMixedTransientAuthWordRetriesAsTransient(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{
@@ -1228,6 +1261,7 @@ func TestRecoveryProbeMixedTransientAuthWordRetriesAsTransient(t *testing.T) {
 }
 
 func TestRecoveryProbeBareAuthWordStaysProbeContract(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps: []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -1270,6 +1304,7 @@ func TestRecoveryProbeBareAuthWordStaysProbeContract(t *testing.T) {
 }
 
 func TestResumeProbeGateBareAuthWordStaysUnavailable(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
@@ -1306,6 +1341,7 @@ func TestResumeProbeGateBareAuthWordStaysUnavailable(t *testing.T) {
 }
 
 func TestRecoveryProbeStatusAuthPhraseFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:          []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},

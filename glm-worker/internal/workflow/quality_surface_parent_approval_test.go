@@ -10,6 +10,7 @@ import (
 )
 
 func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "quality-scope@example.invalid")
@@ -73,6 +74,7 @@ func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
 }
 
 func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) {
+	t.Parallel()
 	_, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
 	checkpoint := stopDecisionContinuationForQualitySurface(t, st, w)
 	w.temp = t.TempDir()
@@ -130,6 +132,7 @@ func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) 
 }
 
 func TestApprovedQualitySurfaceRejectsEmptyCurrentSurface(t *testing.T) {
+	t.Parallel()
 	_, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
 	stopDecisionContinuationForQualitySurface(t, st, w)
 	w.temp = t.TempDir()
@@ -154,6 +157,7 @@ func TestApprovedQualitySurfaceRejectsEmptyCurrentSurface(t *testing.T) {
 }
 
 func TestApprovedQualitySurfaceRevalidatesAcceptedScopeAfterCapture(t *testing.T) {
+	t.Parallel()
 	repo, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
 	stopDecisionContinuationForQualitySurface(t, st, w)
 	w.temp = t.TempDir()

@@ -11,12 +11,14 @@ import (
 )
 
 func TestFinalHeadPlanSkipsGenuineUnbornRepository(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 
 	requireFinalHeadSkip(t, root, "skipped (no commits)")
 }
 
 func TestFinalHeadPlanSkipsGenuinelyUntrackedPlan(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFile(t, root, "README.md", "base\n")
 	commitFinalHeadFixture(t, root)
@@ -26,6 +28,7 @@ func TestFinalHeadPlanSkipsGenuinelyUntrackedPlan(t *testing.T) {
 }
 
 func TestFinalHeadPlanSkipsTrackedPlanNotYetInHead(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFile(t, root, "README.md", "base\n")
 	commitFinalHeadFixture(t, root)
@@ -36,6 +39,7 @@ func TestFinalHeadPlanSkipsTrackedPlanNotYetInHead(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsBrokenHeadAuthority(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
@@ -52,6 +56,7 @@ func TestFinalHeadPlanRejectsBrokenHeadAuthority(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsUnexpectedIndexFailure(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
@@ -68,6 +73,7 @@ func TestFinalHeadPlanRejectsUnexpectedIndexFailure(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsHeadPlanObjectReadFailure(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)

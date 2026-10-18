@@ -6,6 +6,7 @@ import (
 )
 
 func TestRiskSurfaceDecisionsAllowMissingBaselineHead(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	if err := os.Remove(st.Path("baseline-head")); err != nil {
@@ -31,6 +32,7 @@ func TestRiskSurfaceDecisionsAllowMissingBaselineHead(t *testing.T) {
 }
 
 func TestRiskSurfaceDecisionsFailClosedWhenBaselineHeadUnreadable(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	if err := os.Remove(st.Path("baseline-head")); err != nil {

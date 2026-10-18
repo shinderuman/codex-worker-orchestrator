@@ -41,7 +41,7 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	var terminal bytes.Buffer
 	terminalErr := executeParentActionCommand(cfg, descriptor, args, &terminal, stderr, true)
 	if terminalErr != nil {
-		return writeFailedTerminalAction(stdout, terminal.Bytes(), terminalErr, func() (json.RawMessage, error) {
+		return writeFailedTerminalAction(cfg, stdout, terminal.Bytes(), terminalErr, func() (json.RawMessage, error) {
 			return readTerminalHandoff(cfg, stderr, true)
 		})
 	}
@@ -51,12 +51,12 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	}
 	handoffJSON, err := readTerminalHandoff(cfg, stderr, false)
 	if err != nil {
-		return writeTerminalHandoffFailure(stdout, terminalJSON, fmt.Errorf("canonical handoff failed after parent action: %w", err))
+		return writeTerminalHandoffFailure(cfg, stdout, terminalJSON, fmt.Errorf("canonical handoff failed after parent action: %w", err))
 	}
-	return writeProjectedTerminalEnvelopeWithContinuation(cfg, stdout, terminalJSON, handoffJSON)
+	return writeProjectedTerminalEnvelopeMode(cfg, stdout, terminalJSON, handoffJSON, false)
 }
 
-func writeFailedTerminalAction(stdout io.Writer, terminalBytes []byte, terminalErr error, loadRecoveryHandoff terminalHandoffLoader) error {
+func writeFailedTerminalAction(cfg config.AppConfig, stdout io.Writer, terminalBytes []byte, terminalErr error, loadRecoveryHandoff terminalHandoffLoader) error {
 	if len(terminalBytes) == 0 {
 		return terminalErr
 	}
@@ -71,9 +71,9 @@ func writeFailedTerminalAction(stdout io.Writer, terminalBytes []byte, terminalE
 	handoffJSON, handoffErr := loadRecoveryHandoff()
 	if handoffErr != nil {
 		recoveryErr := fmt.Errorf("canonical recovery handoff failed after parent action error: %w", handoffErr)
-		return errors.Join(terminalErr, err, writeTerminalHandoffFailure(stdout, terminalJSON, recoveryErr))
+		return errors.Join(terminalErr, err, writeTerminalHandoffFailure(cfg, stdout, terminalJSON, recoveryErr))
 	}
-	projectionErr := writeProjectedRecoveryTerminalEnvelope(stdout, terminalJSON, handoffJSON)
+	projectionErr := writeProjectedTerminalEnvelopeMode(cfg, stdout, terminalJSON, handoffJSON, true)
 	return errors.Join(terminalErr, err, projectionErr)
 }
 
@@ -101,11 +101,7 @@ func readTerminalHandoff(cfg config.AppConfig, stderr io.Writer, recovery bool) 
 	return decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
 }
 
-func writeProjectedRecoveryTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
-	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, true)
-}
-
-func writeProjectedTerminalEnvelopeMode(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage, recovery bool) error {
+func writeProjectedTerminalEnvelopeMode(cfg config.AppConfig, stdout io.Writer, terminalJSON, handoffJSON json.RawMessage, recovery bool) error {
 	envelope, err := projectParentActionTerminalEnvelopeMode(terminalJSON, handoffJSON, recovery)
 	if err == nil {
 		return json.NewEncoder(stdout).Encode(envelope)
@@ -118,10 +114,14 @@ func writeProjectedTerminalEnvelopeMode(stdout io.Writer, terminalJSON, handoffJ
 	if failureErr != nil {
 		return fmt.Errorf("%w; encode projection overflow payload: %w", err, failureErr)
 	}
-	if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
-		return fmt.Errorf("%w; encode projection overflow envelope: %w", err, encodeErr)
+	continuation, continuationErr := persistParentActionTerminalContinuation(cfg, terminalJSON)
+	if continuationErr != nil {
+		if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
+			return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr), fmt.Errorf("encode projection overflow envelope: %w", encodeErr))
+		}
+		return errors.Join(err, fmt.Errorf("persist terminal continuation: %w", continuationErr))
 	}
-	return err
+	return writeTerminalProjectionContinuation(stdout, failure, continuation, err)
 }
 
 func parentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessage) parentActionTerminalEnvelopePayload {
@@ -132,7 +132,7 @@ func parentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessage) par
 	}
 }
 
-func writeTerminalHandoffFailure(stdout io.Writer, terminalJSON json.RawMessage, handoffErr error) error {
+func writeTerminalHandoffFailure(cfg config.AppConfig, stdout io.Writer, terminalJSON json.RawMessage, handoffErr error) error {
 	envelope := parentActionTerminalEnvelopePayload{
 		Status:       "parent_action_terminal_handoff_failed",
 		Terminal:     terminalJSON,
@@ -143,7 +143,7 @@ func writeTerminalHandoffFailure(stdout io.Writer, terminalJSON json.RawMessage,
 		return errors.Join(handoffErr, err)
 	}
 	if encodedJSONLineBytes(raw) > parentActionTerminalBudgetBytes {
-		identity, identityErr := projectTerminalIdentity(terminalJSON)
+		identity, identityOmitted, identityErr := projectTerminalIdentity(terminalJSON)
 		if identityErr != nil {
 			return errors.Join(handoffErr, identityErr)
 		}
@@ -153,6 +153,7 @@ func writeTerminalHandoffFailure(stdout io.Writer, terminalJSON json.RawMessage,
 			TerminalMode:    "identity-only",
 			HandoffMode:     "unavailable",
 			Overflow:        true,
+			OmittedFields:   sortedUniqueStrings(identityOmitted),
 			ParentToolCalls: 1,
 			RecoveryCalls:   0,
 		}
@@ -165,11 +166,27 @@ func writeTerminalHandoffFailure(stdout io.Writer, terminalJSON json.RawMessage,
 		if stats.ProjectedBytes > stats.BudgetBytes {
 			return fmt.Errorf("%w; bounded terminal handoff failure exceeds budget: projected=%d budget=%d", handoffErr, stats.ProjectedBytes, stats.BudgetBytes)
 		}
+		if err := attachTerminalContinuation(cfg, stdout, &envelope, terminalJSON, handoffErr); err != nil {
+			return err
+		}
+		return handoffErr
 	}
 	if err := json.NewEncoder(stdout).Encode(envelope); err != nil {
 		return fmt.Errorf("%w; encode terminal handoff failure envelope: %w", handoffErr, err)
 	}
 	return handoffErr
+}
+
+func attachTerminalContinuation(cfg config.AppConfig, stdout io.Writer, envelope *parentActionTerminalEnvelopePayload, terminalJSON json.RawMessage, cause error) error {
+	continuation, continuationErr := persistParentActionTerminalContinuation(cfg, terminalJSON)
+	if continuationErr != nil {
+		continuationErr = fmt.Errorf("persist terminal continuation: %w", continuationErr)
+		if encodeErr := json.NewEncoder(stdout).Encode(envelope); encodeErr != nil {
+			return errors.Join(cause, continuationErr, fmt.Errorf("encode terminal handoff failure envelope: %w", encodeErr))
+		}
+		return errors.Join(cause, continuationErr)
+	}
+	return writeTerminalProjectionContinuation(stdout, *envelope, continuation, cause)
 }
 
 func boundTerminalDiagnostic(value string, maxRunes int) string {

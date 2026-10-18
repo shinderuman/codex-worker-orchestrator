@@ -63,6 +63,7 @@ func timelineAgingOf(t *testing.T, agings []state.SessionAging, sessionID string
 }
 
 func TestTimelineRendersCallsToolsGraphAndAging(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -192,6 +193,7 @@ func TestTimelineRendersCallsToolsGraphAndAging(t *testing.T) {
 }
 
 func TestTimelineSkipsCorruptLines(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -237,6 +239,7 @@ func TestTimelineSkipsCorruptLines(t *testing.T) {
 }
 
 func TestTimelineCurrentTaskWithoutEvents(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -272,6 +275,7 @@ func TestTimelineCurrentTaskWithoutEvents(t *testing.T) {
 }
 
 func TestTimelineExplicitTask(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -357,6 +361,7 @@ func retainTimelineTask(t *testing.T, st *state.StateStore, record func(taskID s
 }
 
 func TestTimelineRetainedTaskReturnsPartialTelemetryTimeline(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -416,6 +421,7 @@ func TestTimelineRetainedTaskReturnsPartialTelemetryTimeline(t *testing.T) {
 }
 
 func TestTimelineRetainedTaskWithoutRecordsReturnsUnknownTimeline(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -449,6 +455,7 @@ func TestTimelineRetainedTaskWithoutRecordsReturnsUnknownTimeline(t *testing.T) 
 }
 
 func TestTimelineRetainedTaskWithMalformedTelemetryReportsUnreadable(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -508,6 +515,7 @@ func writeRetainedStatsArchive(t *testing.T, st *state.StateStore, taskID string
 }
 
 func TestTimelineStatsOnlyRetainedTaskProvesTaskFromVersionThreeArchive(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -556,6 +564,7 @@ func TestTimelineStatsOnlyRetainedTaskProvesTaskFromVersionThreeArchive(t *testi
 }
 
 func TestTimelineRetainedTaskWithUnusableStatsArchiveReportsSourceState(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -625,6 +634,7 @@ func writeTimelineSentinel(t *testing.T, cfg config.AppConfig) {
 }
 
 func TestTimelineRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -655,6 +665,7 @@ func TestTimelineRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
 }
 
 func TestTimelineRejectsTamperedCurrentTaskID(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -675,6 +686,7 @@ func TestTimelineRejectsTamperedCurrentTaskID(t *testing.T) {
 }
 
 func TestExecuteTimelineRejectsTraversal(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeTimelineSentinel(t, cfg)
 	cmd, err := ParseCommand([]string{"--timeline", "../../evil"})
@@ -691,6 +703,7 @@ func TestExecuteTimelineRejectsTraversal(t *testing.T) {
 }
 
 func TestExecuteTimelineDoesNotCreateState(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "timelinehash", RepoRoot: "/repo"}
 	cmd, err := ParseCommand([]string{"--timeline"})
@@ -728,6 +741,7 @@ func TestExecuteTimelineDoesNotCreateState(t *testing.T) {
 }
 
 func TestParseCommandTimeline(t *testing.T) {
+	t.Parallel()
 	cmd, err := ParseCommand([]string{"--timeline", "task-1"})
 	if err != nil {
 		t.Fatal(err)

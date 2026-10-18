@@ -10,6 +10,7 @@ import (
 )
 
 func TestReviewedParentSourceRevisionCreatesCheckpointAndRecoversIdempotently(t *testing.T) {
+	t.Parallel()
 	w, _ := acceptedResultRecoveryFixture(t)
 	cp, err := w.state.LoadResumeCheckpoint()
 	if err != nil {
@@ -82,6 +83,7 @@ func TestReviewedParentSourceRevisionCreatesCheckpointAndRecoversIdempotently(t 
 }
 
 func TestParentSourceReviewReportsUnprovableMethodTargetWithoutRewritingPacket(t *testing.T) {
+	t.Parallel()
 	w, _ := acceptedResultRecoveryFixture(t)
 	writeGitTestFile(t, w.config.RepoRoot, "review_target.go", "package sample\ntype Store struct{}\nfunc (s *Store) ImportParentSource() {}\n")
 	snapshot, err := state.CaptureGitSnapshot(w.config.RepoRoot)

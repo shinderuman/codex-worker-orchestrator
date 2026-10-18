@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -283,6 +284,7 @@ func qualityGateEnv() []string {
 
 func qualityGateSessionTransportEnv(entry string) bool {
 	for _, name := range []string{
+		executionunit.DispositionEnv,
 		state.ParentActionCodexThreadIDEnv,
 		state.ParentActionCodexSessionIDEnv,
 		state.SessionRotationClaimIDEnv,

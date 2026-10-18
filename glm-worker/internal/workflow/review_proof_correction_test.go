@@ -27,6 +27,7 @@ func reviewProofWorkflow(t *testing.T, r *scriptedRunner) (*Workflow, *state.Sta
 }
 
 func TestReviewProofCorrectsInvalidTargetBeforeBinding(t *testing.T) {
+	t.Parallel()
 	for _, target := range []string{"review_target.go:ImportParentSource", "missing.go:Missing", "review_target.go:99", "review_target.go:@diff"} {
 		t.Run(target, func(t *testing.T) {
 			r := &scriptedRunner{steps: []runnerStep{
@@ -67,6 +68,7 @@ func TestReviewProofCorrectsInvalidTargetBeforeBinding(t *testing.T) {
 }
 
 func TestReviewProofCorrectionRetainsCheckpointAcrossRateLimit(t *testing.T) {
+	t.Parallel()
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("work", "HIGH")},
 		{structured: reviewProofPacket("review_target.go:ImportParentSource")},
@@ -92,6 +94,7 @@ func TestReviewProofCorrectionRetainsCheckpointAcrossRateLimit(t *testing.T) {
 }
 
 func TestReviewProofRepeatedInvalidTargetStopsWithoutBinding(t *testing.T) {
+	t.Parallel()
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("work", "HIGH")},
 		{structured: reviewProofPacket("review_target.go:ImportParentSource")},
@@ -110,6 +113,7 @@ func TestReviewProofRepeatedInvalidTargetStopsWithoutBinding(t *testing.T) {
 }
 
 func TestReviewProofValidTargetDoesNotAddCorrection(t *testing.T) {
+	t.Parallel()
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("work", "HIGH")},
 		{structured: reviewProofPacket("review_target.go:Store.ImportParentSource")},

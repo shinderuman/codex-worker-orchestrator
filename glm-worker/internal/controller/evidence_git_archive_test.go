@@ -12,6 +12,7 @@ import (
 )
 
 func TestGitArchiveCacheBindsAllVerificationClaims(t *testing.T) {
+	t.Parallel()
 	source, _ := newControllerLinkedWorktree(t)
 	store := newEvidenceTestStore(t)
 	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
@@ -58,6 +59,7 @@ func TestGitArchiveCacheBindsAllVerificationClaims(t *testing.T) {
 }
 
 func TestGitObjectArchiveRejectsIncompleteObjectClosure(t *testing.T) {
+	t.Parallel()
 	source, _ := newControllerLinkedWorktree(t)
 	store := newEvidenceTestStore(t)
 	for _, objectType := range []string{"commit", "tree"} {
@@ -103,6 +105,7 @@ func TestGitArchiveVerificationFailureIsRetryable(t *testing.T) {
 }
 
 func TestGitObjectArchiveSurvivesSourceDeletionAndPathReuse(t *testing.T) {
+	t.Parallel()
 	source, _ := newControllerLinkedWorktree(t)
 	store := newEvidenceTestStore(t)
 	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
@@ -153,6 +156,7 @@ func TestGitObjectArchiveSurvivesSourceDeletionAndPathReuse(t *testing.T) {
 }
 
 func TestGitObjectArchiveCorruptionFailsLoudly(t *testing.T) {
+	t.Parallel()
 	source, _ := newControllerLinkedWorktree(t)
 	store := newEvidenceTestStore(t)
 	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
@@ -179,6 +183,7 @@ func TestGitObjectArchiveCorruptionFailsLoudly(t *testing.T) {
 }
 
 func TestGitObjectArchiveRejectsMalformedEnvelope(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	ref, err := store.PutEvidenceObject("git-object-archive", gitObjectArchiveMediaType, "attempt-malformed:git", true, []byte(`{"schema_version":1}`))
 	if err != nil {

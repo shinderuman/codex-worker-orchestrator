@@ -10,6 +10,7 @@ import (
 )
 
 func TestParentHandoffCarriesLegalPostCompletionTaskHandover(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
@@ -36,6 +37,7 @@ func TestParentHandoffCarriesLegalPostCompletionTaskHandover(t *testing.T) {
 }
 
 func TestParentHandoffFailsClosedOnUnrelatedStaleTaskAttribution(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	active := "IMPLEMENTATION_TASKS/current.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
@@ -61,6 +63,7 @@ func TestParentHandoffFailsClosedOnUnrelatedStaleTaskAttribution(t *testing.T) {
 }
 
 func TestParentHandoffRejectsFalseHandoverFromStaleStateTask(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
@@ -90,6 +93,7 @@ func TestParentHandoffRejectsFalseHandoverFromStaleStateTask(t *testing.T) {
 }
 
 func TestParentHandoffRejectsLifecycleReboundToCurrentActive(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
@@ -116,6 +120,7 @@ func TestParentHandoffRejectsLifecycleReboundToCurrentActive(t *testing.T) {
 }
 
 func TestParentHandoffRotationPendingKeepsTaskOwnersAndRecoveryDirective(t *testing.T) {
+	t.Parallel()
 	cfg, st, _ := seedSessionRotationAccept(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))

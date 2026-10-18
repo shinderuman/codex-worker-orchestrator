@@ -12,6 +12,7 @@ import (
 )
 
 func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "scope@example.invalid")
@@ -64,6 +65,7 @@ func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.
 }
 
 func TestAcceptedFixScopeDisablesOptimizationForNonParentDirtyBaseline(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "scope@example.invalid")

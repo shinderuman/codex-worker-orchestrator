@@ -9,6 +9,7 @@ import (
 )
 
 func TestExecuteExplicitFixRejectsCompletedTask(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
@@ -25,6 +26,7 @@ func TestExecuteExplicitFixRejectsCompletedTask(t *testing.T) {
 }
 
 func TestResumePromptUsesOriginalPrompt(t *testing.T) {
+	t.Parallel()
 	checkpoint := state.ResumeCheckpoint{
 		Prompt:         "already wrapped resume prompt",
 		OriginalPrompt: "ORIGINAL TASK",
@@ -40,6 +42,7 @@ func TestResumePromptUsesOriginalPrompt(t *testing.T) {
 }
 
 func TestExecuteNewTaskReachesPass(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -65,6 +68,7 @@ func TestExecuteNewTaskReachesPass(t *testing.T) {
 }
 
 func TestExecuteNewTaskNeedsSolDecision(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: needsSolDecisionPacket()},
@@ -83,6 +87,7 @@ func TestExecuteNewTaskNeedsSolDecision(t *testing.T) {
 }
 
 func TestExecuteNewTaskNeedsSolReview(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -99,6 +104,7 @@ func TestExecuteNewTaskNeedsSolReview(t *testing.T) {
 }
 
 func TestExecuteDecisionContinuesPendingTask(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
@@ -133,6 +139,7 @@ func TestExecuteDecisionContinuesPendingTask(t *testing.T) {
 }
 
 func TestExecuteExplicitFixContinuesSolReviewTask(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
@@ -167,6 +174,7 @@ func TestExecuteExplicitFixContinuesSolReviewTask(t *testing.T) {
 }
 
 func TestAutoFixNonConvergence(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -193,6 +201,7 @@ func TestAutoFixNonConvergence(t *testing.T) {
 }
 
 func TestAutoFixCanRequestSolDecision(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -210,6 +219,7 @@ func TestAutoFixCanRequestSolDecision(t *testing.T) {
 }
 
 func TestAutoFixRejectsReviewerStatus(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -229,6 +239,7 @@ func TestAutoFixRejectsReviewerStatus(t *testing.T) {
 }
 
 func TestWorkerRejectsReviewerStatus(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)

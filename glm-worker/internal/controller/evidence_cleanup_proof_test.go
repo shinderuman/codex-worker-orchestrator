@@ -6,6 +6,7 @@ import (
 )
 
 func TestCleanupDurabilityProofRequiresTaskAndEpisodeReachability(t *testing.T) {
+	t.Parallel()
 	store, sealRef, taskRef, episodeRef := newCleanupProofFixture(t, true)
 	proof, err := store.ProveCleanupDurability(sealRef)
 	if err != nil {
@@ -23,6 +24,7 @@ func TestCleanupDurabilityProofRequiresTaskAndEpisodeReachability(t *testing.T) 
 }
 
 func TestCleanupDurabilityProofRejectsEpisodeSealMissingEpisodeIndex(t *testing.T) {
+	t.Parallel()
 	store, sealRef, _, _ := newCleanupProofFixture(t, false)
 	if _, err := store.ProveCleanupDurability(sealRef); err == nil {
 		t.Fatal("episode attempt seal without episode-index reachability was accepted")
@@ -30,6 +32,7 @@ func TestCleanupDurabilityProofRejectsEpisodeSealMissingEpisodeIndex(t *testing.
 }
 
 func TestCleanupDurabilityProofRejectsUnindexedSeal(t *testing.T) {
+	t.Parallel()
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	sealRef, _ := storeCleanupProofSeal(t, store, repo, "")
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/OTHER.md", ContractDigest: "other"}

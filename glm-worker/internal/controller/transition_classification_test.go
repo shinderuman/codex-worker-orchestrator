@@ -6,6 +6,7 @@ import (
 )
 
 func TestTransitionClassificationUsesExactOldAndNewState(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	store, source := bootstrapControllerTestExecution(t, repo)
 	targetLease, err := store.prepareContinuationLease(source.Lease, source.Snapshot, source.Head.ControllerGeneration+3)
@@ -69,6 +70,7 @@ func TestTransitionClassificationUsesExactOldAndNewState(t *testing.T) {
 }
 
 func TestUnexpectedTransitionFailsClosedAndRevokesLease(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	store, source := bootstrapControllerTestExecution(t, repo)
 	targetLease, err := store.prepareContinuationLease(source.Lease, source.Snapshot, source.Head.ControllerGeneration+3)
@@ -118,6 +120,7 @@ func TestUnexpectedTransitionFailsClosedAndRevokesLease(t *testing.T) {
 }
 
 func TestTransitionClassificationDistinguishesObservedTargetFromMissingEffect(t *testing.T) {
+	t.Parallel()
 	effect := EffectExpectation{Surface: MutationSurfaceRef, Resource: "refs/heads/main", ExpectedOld: "same", ExpectedNew: "same"}
 	for _, test := range []struct {
 		name   string

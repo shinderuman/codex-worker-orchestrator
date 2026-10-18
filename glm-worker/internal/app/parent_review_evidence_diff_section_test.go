@@ -7,6 +7,7 @@ import (
 )
 
 func TestParentReviewDiffCoversQuotedPath(t *testing.T) {
+	t.Parallel()
 	diff := parentevidence.DiffBody{
 		Body:  "diff --git \"a/q\\\"x.go\" \"b/q\\\"x.go\"\n--- \"a/q\\\"x.go\"\n+++ \"b/q\\\"x.go\"\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []parentevidence.DiffFile{{Path: "q\"x.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
@@ -17,6 +18,7 @@ func TestParentReviewDiffCoversQuotedPath(t *testing.T) {
 }
 
 func TestParentReviewDiffCoversGitOctalQuotedPath(t *testing.T) {
+	t.Parallel()
 	diff := parentevidence.DiffBody{
 		Body:  "diff --git \"a/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\" \"b/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n--- \"a/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n+++ \"b/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []parentevidence.DiffFile{{Path: "日本語.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
@@ -27,6 +29,7 @@ func TestParentReviewDiffCoversGitOctalQuotedPath(t *testing.T) {
 }
 
 func TestParentReviewDiffSectionHandlesUnquotedPathWithSpacesWithoutAdmittingTarget(t *testing.T) {
+	t.Parallel()
 	body := "diff --git a/hello world.go b/hello world.go\n--- a/hello world.go\n+++ b/hello world.go\n@@ -1 +1 @@\n-old\n+new\n"
 	diff := parentevidence.DiffBody{
 		Body:  body,
@@ -41,6 +44,7 @@ func TestParentReviewDiffSectionHandlesUnquotedPathWithSpacesWithoutAdmittingTar
 }
 
 func TestParentReviewDiffSectionHandlesUnquotedRenameWithSpacesWithoutAdmittingTarget(t *testing.T) {
+	t.Parallel()
 	body := "diff --git a/old name.go b/new name.go\nsimilarity index 80%\n--- a/old name.go\n+++ b/new name.go\n@@ -1 +1 @@\n-old\n+new\n"
 	diff := parentevidence.DiffBody{
 		Body:  body,
@@ -55,6 +59,7 @@ func TestParentReviewDiffSectionHandlesUnquotedRenameWithSpacesWithoutAdmittingT
 }
 
 func TestParentReviewDiffBarePathRequiresVisibleSection(t *testing.T) {
+	t.Parallel()
 	diff := parentevidence.DiffBody{
 		Body:  "diff --git a/other.go b/other.go\n--- a/other.go\n+++ b/other.go\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []parentevidence.DiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
@@ -65,6 +70,7 @@ func TestParentReviewDiffBarePathRequiresVisibleSection(t *testing.T) {
 }
 
 func TestParentReviewDiffRejectsUnsupportedTargetSuffix(t *testing.T) {
+	t.Parallel()
 	diff := parentevidence.DiffBody{
 		Body:  "diff --git a/symbol.go b/symbol.go\n--- a/symbol.go\n+++ b/symbol.go\n@@ -1 +1 @@ TargetSymbol\n-old\n+new\n",
 		Files: []parentevidence.DiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},

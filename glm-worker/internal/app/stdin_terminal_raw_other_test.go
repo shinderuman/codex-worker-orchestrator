@@ -9,6 +9,7 @@ import (
 )
 
 func TestSetStdinFileRawUnsupportedPlatformBehavior(t *testing.T) {
+	t.Parallel()
 	nullDevice, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Skipf("character deviceが開けません: %v", err)

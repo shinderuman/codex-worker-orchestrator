@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
 func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T) {
@@ -82,7 +84,7 @@ func TestExecuteWithTerminalEnvelope(t *testing.T) {
 func TestWriteTerminalHandoffFailurePreservesTerminalResult(t *testing.T) {
 	var stdout bytes.Buffer
 	handoffErr := errors.New("handoff unavailable")
-	err := writeTerminalHandoffFailure(&stdout, json.RawMessage(`{"status":"PASS"}`), handoffErr)
+	err := writeTerminalHandoffFailure(config.AppConfig{}, &stdout, json.RawMessage(`{"status":"PASS"}`), handoffErr)
 	if !errors.Is(err, handoffErr) {
 		t.Fatalf("error = %v, want %v", err, handoffErr)
 	}

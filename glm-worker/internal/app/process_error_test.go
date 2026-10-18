@@ -48,6 +48,7 @@ func writeProcessErrorJSON(t *testing.T, err error) (decodeProcessError, string)
 }
 
 func TestWriteProcessErrorKindContract(t *testing.T) {
+	t.Parallel()
 	rateLimit := runner.ZaiRateLimitError{
 		Phase:     "reviewer-1",
 		Limit:     runner.ZaiFiveHourLimit{ResetAtCST: "2026-08-24 07:06:34", ResetAtRFC3339: "2026-08-24T07:06:34+08:00"},
@@ -188,6 +189,7 @@ func TestWriteProcessErrorKindContract(t *testing.T) {
 }
 
 func TestWriteProcessErrorQualityGateRecoverable(t *testing.T) {
+	t.Parallel()
 	envelope, raw := writeProcessErrorJSON(t, &workflow.QualityGateRecoverableError{
 		Phase:       "worker-new",
 		Failure:     "quality tool version mismatch: golangci-lint=2.6.0, required=2.7.0",

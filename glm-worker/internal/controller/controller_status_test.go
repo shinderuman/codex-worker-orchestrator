@@ -9,8 +9,10 @@ import (
 )
 
 func TestProjectStatusPreservesDiagnosticsWhenLiveAuthorityIsCorrupt(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"attempt", "lease"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			harness := newLifecycleHarness(t)
 			head, err := harness.store.LoadHead()
 			if err != nil {
@@ -35,6 +37,7 @@ func TestProjectStatusPreservesDiagnosticsWhenLiveAuthorityIsCorrupt(t *testing.
 }
 
 func TestProjectStatusTracksLifecycleWithoutMutating(t *testing.T) {
+	t.Parallel()
 	harness := newLifecycleHarness(t)
 	before, err := harness.store.LoadHead()
 	if err != nil {
@@ -136,6 +139,7 @@ func TestProjectStatusTracksLifecycleWithoutMutating(t *testing.T) {
 }
 
 func TestProjectStatusReportsPendingTransitionAndFailure(t *testing.T) {
+	t.Parallel()
 	harness := newLifecycleHarness(t)
 	rootSealed := harness.edit(t, harness.source, "pending-root.txt", "root work\n")
 	episode := harness.planBlockingEpisode(t, rootSealed, harness.blocker, "pending-blocker")

@@ -11,6 +11,7 @@ import (
 )
 
 func TestFinalHeadPlanVerified(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
@@ -22,6 +23,7 @@ func TestFinalHeadPlanVerified(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsMissingTask(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), false)
 	commitFinalHeadFixture(t, root)
@@ -33,6 +35,7 @@ func TestFinalHeadPlanRejectsMissingTask(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsActiveTaskMissingExternalFeasibility(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
@@ -45,6 +48,7 @@ func TestFinalHeadPlanRejectsActiveTaskMissingExternalFeasibility(t *testing.T) 
 }
 
 func TestFinalHeadPlanReadsActiveContractFromHead(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
@@ -57,6 +61,7 @@ func TestFinalHeadPlanReadsActiveContractFromHead(t *testing.T) {
 }
 
 func TestFinalHeadPlanAcceptsParkBranchWithoutPlanBranchString(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
@@ -69,6 +74,7 @@ func TestFinalHeadPlanAcceptsParkBranchWithoutPlanBranchString(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsDuplicateActiveSchedule(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	plan := finalHeadFixturePlan("- `IMPLEMENTATION_TASKS/active.md`\n")
 	writeFinalHeadFixture(t, root, plan, true)
@@ -81,6 +87,7 @@ func TestFinalHeadPlanRejectsDuplicateActiveSchedule(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsMalformedNonActiveSchedule(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	plan := strings.Replace(finalHeadFixturePlan(""), "- `IMPLEMENTATION_TASKS/next.md`", "not a schedule bullet", 1)
 	writeFinalHeadFixture(t, root, plan, true)
@@ -93,6 +100,7 @@ func TestFinalHeadPlanRejectsMalformedNonActiveSchedule(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsUnscheduledTask(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/unscheduled.md", "# stray\n")
@@ -105,6 +113,7 @@ func TestFinalHeadPlanRejectsUnscheduledTask(t *testing.T) {
 }
 
 func TestFinalHeadPlanAcceptsCompletionSync(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
@@ -122,6 +131,7 @@ func TestFinalHeadPlanAcceptsCompletionSync(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsNonRegularTaskAtHead(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	link := filepath.Join(root, "IMPLEMENTATION_TASKS", "link.md")
@@ -137,6 +147,7 @@ func TestFinalHeadPlanRejectsNonRegularTaskAtHead(t *testing.T) {
 }
 
 func TestFinalHeadPlanRejectsDuplicateNonActiveSchedule(t *testing.T) {
+	t.Parallel()
 	root := newFinalHeadRepo(t)
 	plan := finalHeadFixturePlan("- `IMPLEMENTATION_TASKS/next.md`\n")
 	writeFinalHeadFixture(t, root, plan, true)
@@ -149,6 +160,7 @@ func TestFinalHeadPlanRejectsDuplicateNonActiveSchedule(t *testing.T) {
 }
 
 func TestFinalHeadPlanSkipsNonGitRepository(t *testing.T) {
+	t.Parallel()
 	status, err := repositoryprojecthead.CheckFinalHeadPlan(t.TempDir())
 	if err != nil || status != "plan final head: skipped (not a git repository)" {
 		t.Fatalf("status=%q err=%v", status, err)

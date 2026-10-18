@@ -161,6 +161,7 @@ func (l *evidenceExportLaneFixture) exportFrom(t *testing.T, root string, reques
 }
 
 func TestExportEvidencePrimaryCallerReadsLaneWorkspace(t *testing.T) {
+	t.Parallel()
 	lane := newEvidenceExportLaneFixture(t)
 	objectsBefore := evidenceObjectTreeDigest(t, lane.store)
 	headBefore, err := lane.store.LoadHead()
@@ -223,6 +224,7 @@ func TestExportEvidencePrimaryCallerReadsLaneWorkspace(t *testing.T) {
 }
 
 func TestExportEvidencePrimaryCallerTaskIDSelectsLiveLaneAttempt(t *testing.T) {
+	t.Parallel()
 	lane := newEvidenceExportLaneFixture(t)
 	export, result := lane.exportFrom(t, lane.primary, EvidenceExportRequest{TaskID: lane.runtimeTask})
 	if !result.Target.Live || result.Target.SelectionBasis != evidenceExportBasisLiveBinding {
@@ -234,6 +236,7 @@ func TestExportEvidencePrimaryCallerTaskIDSelectsLiveLaneAttempt(t *testing.T) {
 }
 
 func TestExportEvidencePrimaryCallerStoppedAttemptKeepsLaneBinding(t *testing.T) {
+	t.Parallel()
 	lane := newEvidenceExportLaneFixture(t, func(f *evidenceExportFixture) {
 		f.skipLiveHead = true
 	})
@@ -257,6 +260,7 @@ func TestExportEvidencePrimaryCallerStoppedAttemptKeepsLaneBinding(t *testing.T)
 }
 
 func TestExportEvidencePrimaryCallerCompletedAttemptWithoutLane(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.skipLiveAttempt = true
@@ -282,6 +286,7 @@ func TestExportEvidencePrimaryCallerCompletedAttemptWithoutLane(t *testing.T) {
 }
 
 func TestExportEvidenceRejectsTamperedWorkspaceBinding(t *testing.T) {
+	t.Parallel()
 	t.Run("nonce identity no longer matches the lease", func(t *testing.T) {
 		lane := newEvidenceExportLaneFixture(t)
 		other, err := state.NewUUID()

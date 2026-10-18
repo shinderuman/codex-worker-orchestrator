@@ -8,6 +8,7 @@ import (
 )
 
 func TestParentSourceRevisionReentersWithoutMetadataCommit(t *testing.T) {
+	t.Parallel()
 	f, policy, head, old := acceptedAmendmentLane(t)
 	repo := f.store.Identity().PrimaryRoot
 	before := controllerGitOutput(t, repo, "rev-parse", "HEAD")
@@ -81,6 +82,7 @@ func TestParentSourceRevisionReentersWithoutMetadataCommit(t *testing.T) {
 }
 
 func TestParentSourceRevisionRejectsDifferentActiveTaskBeforePrepare(t *testing.T) {
+	t.Parallel()
 	f, _, head, old := acceptedAmendmentLane(t)
 	repo := f.store.Identity().PrimaryRoot
 	path := filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md")
@@ -107,6 +109,7 @@ func TestParentSourceRevisionRejectsDifferentActiveTaskBeforePrepare(t *testing.
 }
 
 func TestParentSourceRevisionPreservesPreparedJournalOnSourceRace(t *testing.T) {
+	t.Parallel()
 	f, _, head, old := acceptedAmendmentLane(t)
 	repo := f.store.Identity().PrimaryRoot
 	snapshot, err := CaptureWorkspaceSnapshot(repo)

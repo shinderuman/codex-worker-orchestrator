@@ -148,6 +148,7 @@ func TestExecuteZaiSelfResumeLoopDoesNotStackTenSecondsAfterLongCLIBackoff(t *te
 }
 
 func TestExecuteZaiSelfResumeLoopBoundsPostResetRetriesByWallClock(t *testing.T) {
+	t.Parallel()
 	st, limitErr := prepareZaiSelfResumeStop(t)
 	controller := runner.NewStopController()
 	now := time.Date(2026, 10, 3, 12, 2, 1, 0, time.UTC)
@@ -286,6 +287,7 @@ func TestWaitForZaiFiveHourSelfResumeFailsClosedWhenWakeBindingChanges(t *testin
 }
 
 func TestValidateZaiFiveHourSelfResumeStateRejectsTaskIdentityChange(t *testing.T) {
+	t.Parallel()
 	st, limitErr := prepareZaiSelfResumeStop(t)
 	limitErr.TaskID = "different-task"
 	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err == nil || !strings.Contains(err.Error(), "task identity changed") {
