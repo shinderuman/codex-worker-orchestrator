@@ -292,6 +292,7 @@ func TestIsolationPolicyPersistedBeforeExecutionOnFailure(t *testing.T) {
 }
 
 func TestIsolationPolicyWriteFailureAbortsBeforeClaude(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}

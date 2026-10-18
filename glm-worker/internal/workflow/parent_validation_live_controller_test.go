@@ -143,6 +143,7 @@ func stopLiveControllerDecisionAtAutoFix(t *testing.T, shape liveControllerStopS
 }
 
 func TestDecisionAutoFixStopsKeepConvergenceAndControllerAuthority(t *testing.T) {
+	t.Parallel()
 	for _, shape := range liveControllerStopShapes {
 		t.Run(shape.name, func(t *testing.T) {
 			scenario := stopLiveControllerDecisionAtAutoFix(t, shape)

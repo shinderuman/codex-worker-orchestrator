@@ -9,6 +9,7 @@ import (
 )
 
 func TestParentUsageChainBoundaryAggregation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name          string
 		secondAnchors [][6]int64
@@ -62,6 +63,7 @@ func TestParentUsageChainBoundaryAggregation(t *testing.T) {
 }
 
 func TestParentUsageChainBoundaryForwardJumpStaysAmbiguous(t *testing.T) {
+	t.Parallel()
 	task := newAnalysisTerminalTask(t)
 	report := buildChainBoundaryReport(t, task, [][6]int64{
 		{1101, 551, 261, 171, 1701, 130},

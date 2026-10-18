@@ -10,6 +10,7 @@ import (
 )
 
 func TestParentHandoffProjectsMilestoneReconsiderationAtNaturalBoundaries(t *testing.T) {
+	t.Parallel()
 	statuses := []state.TaskStatus{
 		state.TaskStatusWaitingSolReview,
 		state.TaskStatusRateLimited,
@@ -53,6 +54,7 @@ func TestParentHandoffProjectsMilestoneReconsiderationAtNaturalBoundaries(t *tes
 }
 
 func TestParentHandoffDoesNotAddDedicatedMilestoneReconsiderationOutsideNaturalBoundaries(t *testing.T) {
+	t.Parallel()
 	statuses := []state.TaskStatus{
 		state.TaskStatusNone,
 		state.TaskStatusActive,
@@ -73,6 +75,7 @@ func TestParentHandoffDoesNotAddDedicatedMilestoneReconsiderationOutsideNaturalB
 }
 
 func TestParentHandoffDefersMilestoneReconsiderationBehindBlockingParentWork(t *testing.T) {
+	t.Parallel()
 	rateLimited := string(state.TaskStatusRateLimited)
 	if actions := withExecutionMilestoneReconsideration(&rateLimited, nil, true, []string{string(state.ParentActionResume)}); containsString(actions, string(parentaction.ActionReviseMilestones)) {
 		t.Fatalf("pending decision exposed milestone reconsideration: %v", actions)
@@ -86,6 +89,7 @@ func TestParentHandoffDefersMilestoneReconsiderationBehindBlockingParentWork(t *
 }
 
 func TestParentHandoffRecoveryProjectsSameMilestoneReconsiderationSurface(t *testing.T) {
+	t.Parallel()
 	status := string(state.TaskStatusRateLimited)
 	output := parentHandoffRecoveryOutput{
 		Version:        parentHandoffVersion,

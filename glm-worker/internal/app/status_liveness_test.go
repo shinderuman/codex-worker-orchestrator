@@ -7,6 +7,7 @@ import (
 )
 
 func TestExecuteStatusShowsRepositoryLockFreeByDefault(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	output := executeStatusOutput(t, cfg)
 	statusString(t, "repository_lock", output.RepositoryLock, "free")
@@ -14,6 +15,7 @@ func TestExecuteStatusShowsRepositoryLockFreeByDefault(t *testing.T) {
 }
 
 func TestExecuteStatusActiveWithoutLockIsStaleCandidate(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -33,6 +35,7 @@ func TestExecuteStatusActiveWithoutLockIsStaleCandidate(t *testing.T) {
 }
 
 func TestExecuteStatusActiveWithLockHeldIsRunning(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -54,6 +57,7 @@ func TestExecuteStatusActiveWithLockHeldIsRunning(t *testing.T) {
 }
 
 func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -72,6 +76,7 @@ func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {
 }
 
 func TestExecuteStatusRateLimitedResumeFieldsUnchanged(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

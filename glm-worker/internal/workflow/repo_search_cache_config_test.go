@@ -11,6 +11,7 @@ import (
 )
 
 func TestRepoSearchTimerInjectsConfiguredCacheRoot(t *testing.T) {
+	t.Parallel()
 	cacheRoot := filepath.Join(t.TempDir(), "search")
 	now := time.Unix(1_700_000_000, 0).UTC()
 	w := &Workflow{

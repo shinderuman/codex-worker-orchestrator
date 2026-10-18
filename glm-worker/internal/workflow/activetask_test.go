@@ -44,6 +44,7 @@ func resolveActiveTaskCase(t *testing.T, plan func(t *testing.T, repoRoot string
 }
 
 func TestResolveActiveTaskPathValidForms(t *testing.T) {
+	t.Parallel()
 	tests := []activeTaskPathCase{
 		{
 			name: "backtick path resolves",
@@ -110,6 +111,7 @@ func TestResolveActiveTaskPathValidForms(t *testing.T) {
 }
 
 func TestResolveActiveTaskPathRejectsInvalidScheduleSyntax(t *testing.T) {
+	t.Parallel()
 	tests := []activeTaskPathCase{
 		{
 			name: "active section blank only fails",
@@ -191,6 +193,7 @@ func TestResolveActiveTaskPathRejectsInvalidScheduleSyntax(t *testing.T) {
 }
 
 func TestResolveActiveTaskPathRejectsInvalidTargets(t *testing.T) {
+	t.Parallel()
 	tests := []activeTaskPathCase{
 		{
 			name: "path escape rejected",
@@ -260,6 +263,7 @@ func TestResolveActiveTaskPathRejectsInvalidTargets(t *testing.T) {
 }
 
 func TestDecisionRetryAfterFailClosedReviewUsesCanonicalAdmission(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	decision := "同じ判断本文"
@@ -332,6 +336,7 @@ func TestDecisionRetryAfterFailClosedReviewUsesCanonicalAdmission(t *testing.T) 
 }
 
 func TestDecisionGateUnresolvablePlanRejectsWithoutStatusChange(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, _, out, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
@@ -363,6 +368,7 @@ func TestDecisionGateUnresolvablePlanRejectsWithoutStatusChange(t *testing.T) {
 }
 
 func TestExecuteNewTaskRecordsActiveTaskAndPromptBlock(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -387,6 +393,7 @@ func TestExecuteNewTaskRecordsActiveTaskAndPromptBlock(t *testing.T) {
 }
 
 func TestPlanWithoutActiveFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -420,6 +427,7 @@ func TestPlanWithoutActiveFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestActiveTaskFileDeletionFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	st := newStateStoreT(t)
@@ -449,6 +457,7 @@ func TestActiveTaskFileDeletionFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestDecisionAndFixPromptsCarryActiveTaskBlock(t *testing.T) {
+	t.Parallel()
 	reviewReport := `{"risk":"LOW","status":"IMPLEMENTED","summary":"done"}`
 	if got := decisionPrompt("r", "d", activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
 		t.Fatalf("decisionPromptが要求源blockを欠いています:\n%s", got)
@@ -468,6 +477,7 @@ func TestDecisionAndFixPromptsCarryActiveTaskBlock(t *testing.T) {
 }
 
 func TestResumePromptCarriesOriginalActiveTaskBlock(t *testing.T) {
+	t.Parallel()
 	original := newTaskPrompt("request", activeTaskGuardPath)
 	got := resumePrompt(state.ResumeCheckpoint{OriginalPrompt: original})
 	if !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
@@ -476,6 +486,7 @@ func TestResumePromptCarriesOriginalActiveTaskBlock(t *testing.T) {
 }
 
 func TestExecuteNewTaskClearsStaleActiveTaskState(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -502,6 +513,7 @@ func TestExecuteNewTaskClearsStaleActiveTaskState(t *testing.T) {
 }
 
 func TestActiveResolutionFailureClearsStaleActiveTaskState(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -523,6 +535,7 @@ func TestActiveResolutionFailureClearsStaleActiveTaskState(t *testing.T) {
 }
 
 func TestActiveTaskNonRegularFileFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "outside.md"), []byte("# outside\n"), 0o644); err != nil {
@@ -563,6 +576,7 @@ func TestActiveTaskNonRegularFileFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestExplicitFixAfterParentRepairResolvesActiveTask(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -596,6 +610,7 @@ func TestExplicitFixAfterParentRepairResolvesActiveTask(t *testing.T) {
 }
 
 func TestExplicitFixStillUnresolvableFailsClosedAgain(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -632,6 +647,7 @@ func TestExplicitFixStillUnresolvableFailsClosedAgain(t *testing.T) {
 }
 
 func TestEnsureActiveTaskPathRejectsFixedTaskMismatch(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)

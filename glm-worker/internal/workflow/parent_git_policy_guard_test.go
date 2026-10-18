@@ -43,6 +43,7 @@ func parentGitPolicyGuardTargets(t *testing.T) []string {
 }
 
 func TestCodexPolicySurfacesKeepParentGitWritePolicyAbsent(t *testing.T) {
+	t.Parallel()
 	for _, path := range parentGitPolicyGuardTargets(t) {
 		data, err := os.ReadFile(path)
 		if err != nil {

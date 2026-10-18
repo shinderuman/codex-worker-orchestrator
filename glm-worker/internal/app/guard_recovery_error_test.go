@@ -7,6 +7,7 @@ import (
 )
 
 func TestGuardRecoverableProcessError(t *testing.T) {
+	t.Parallel()
 	body := buildProcessError(&workflow.GuardRecoverableError{
 		Phase:       "worker-new",
 		TaskID:      "task-1",

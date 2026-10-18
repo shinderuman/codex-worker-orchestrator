@@ -8,6 +8,7 @@ import (
 )
 
 func TestGitAuthorityClaudeWrapperOwnsProcessTempRoot(t *testing.T) {
+	t.Parallel()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("git is not available")

@@ -51,6 +51,7 @@ func baseCorrectionCheckpoint() state.ResumeCheckpoint {
 }
 
 func TestRunModelUsesSecondCorrectionOnlyForNewViolation(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	taskID, err := st.TaskID()
 	if err != nil {
@@ -105,6 +106,7 @@ func TestRunModelUsesSecondCorrectionOnlyForNewViolation(t *testing.T) {
 }
 
 func TestRunModelStopsOnRepeatedFirstCorrectionViolation(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: constraintViolatingImplementedPacket()},
@@ -126,6 +128,7 @@ func TestRunModelStopsOnRepeatedFirstCorrectionViolation(t *testing.T) {
 }
 
 func TestRunModelCorrectionBudgetExhaustionIsTerminal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		third string
@@ -169,6 +172,7 @@ func TestRunModelCorrectionBudgetExhaustionIsTerminal(t *testing.T) {
 }
 
 func TestRunModelCorrectionFailsClosedOnSnapshotChange(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: constraintViolatingImplementedPacket()},
@@ -200,6 +204,7 @@ func TestRunModelCorrectionFailsClosedOnSnapshotChange(t *testing.T) {
 }
 
 func TestTerminalCorrectionStateBlocksFreshModelAdmission(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: constraintViolatingImplementedPacket()},
@@ -279,6 +284,7 @@ func oversizeImplementedPacket() string {
 }
 
 func TestBoundedTextKeepsSingleLineFieldContract(t *testing.T) {
+	t.Parallel()
 	omissionMarker := "[前方を省略] "
 	withinLimit := "そのまま返す観測値"
 	if got := boundedText(withinLimit, packet.MaxFieldBytes); got != withinLimit {
@@ -314,6 +320,7 @@ func TestBoundedTextKeepsSingleLineFieldContract(t *testing.T) {
 }
 
 func TestRunModelCorrectsInvalidResultInSameRunner(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: oversizeImplementedPacket()},
@@ -365,6 +372,7 @@ func TestRunModelCorrectsInvalidResultInSameRunner(t *testing.T) {
 }
 
 func TestRunModelFailsClosedOnStructuredMismatch(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		role     state.SessionRole
@@ -422,6 +430,7 @@ func TestRunModelFailsClosedOnStructuredMismatch(t *testing.T) {
 }
 
 func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name             string
 		runErr           error
@@ -480,6 +489,7 @@ func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
 }
 
 func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: constraintViolatingImplementedPacket()},
@@ -512,6 +522,7 @@ func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
 }
 
 func TestEmitResultRecordsEmittedPayloadBytes(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -533,6 +544,7 @@ func TestEmitResultRecordsEmittedPayloadBytes(t *testing.T) {
 }
 
 func TestRunModelStopsAfterRepeatedConstraintViolations(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: constraintViolatingImplementedPacket()},
@@ -560,6 +572,7 @@ func TestRunModelStopsAfterRepeatedConstraintViolations(t *testing.T) {
 }
 
 func TestRunModelPreservesResultCorrectionAcrossRateLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: constraintViolatingImplementedPacket()},
@@ -593,6 +606,7 @@ func TestRunModelPreservesResultCorrectionAcrossRateLimit(t *testing.T) {
 }
 
 func TestRunModelCorrectsArtifactOutsideTaskDir(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	outside := filepath.Join(t.TempDir(), "outside.md")
 	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
@@ -631,6 +645,7 @@ func TestRunModelCorrectsArtifactOutsideTaskDir(t *testing.T) {
 }
 
 func TestRunModelPreservesResultCorrectionPromptAcrossRateLimit(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: oversizeImplementedPacket()},
@@ -668,6 +683,7 @@ func TestRunModelPreservesResultCorrectionPromptAcrossRateLimit(t *testing.T) {
 }
 
 func TestRetryPromptsDelegatePacketGrammar(t *testing.T) {
+	t.Parallel()
 	correction := resultCorrectionPrompt("validator detail")
 	for _, want := range []string{
 		"意味検証に不合格",
@@ -718,6 +734,7 @@ func TestRetryPromptsDelegatePacketGrammar(t *testing.T) {
 }
 
 func TestFixRequiredTargetsPacketDispatchesReportOnlyPrompt(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -768,6 +785,7 @@ func TestFixRequiredTargetsPacketDispatchesReportOnlyPrompt(t *testing.T) {
 }
 
 func TestFixRequiredOtherTargetsKeepsImplementationAutoFix(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -807,6 +825,7 @@ func TestFixRequiredOtherTargetsKeepsImplementationAutoFix(t *testing.T) {
 }
 
 func TestFixRequiredWithoutTargetsCorrectsBeforeAutoFix(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	fixWithoutTargets := `{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":[],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
@@ -852,6 +871,7 @@ func TestFixRequiredWithoutTargetsCorrectsBeforeAutoFix(t *testing.T) {
 }
 
 func TestNeedsSolDecisionWithoutTargetsCorrectsBeforeParentDispatch(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	decisionWithoutTargets := `{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"d","evidence":"e","options":"o","recommendation":"r","test_obligations":"t","targets":[],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
@@ -891,6 +911,7 @@ func TestNeedsSolDecisionWithoutTargetsCorrectsBeforeParentDispatch(t *testing.T
 }
 
 func TestFixRequiredBlankTargetsElementCorrectsBeforeAutoFix(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	fixWithBlankElement := `{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["   "],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
@@ -932,6 +953,7 @@ func TestFixRequiredBlankTargetsElementCorrectsBeforeAutoFix(t *testing.T) {
 }
 
 func TestNeedsSolDecisionMixedNoneTargetsCorrectsBeforeParentDispatch(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	decisionMixedNone := `{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"d","evidence":"e","options":"o","recommendation":"r","test_obligations":"t","targets":["none","glm-worker/internal/packet/validate.go:validateTargets"],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
@@ -971,6 +993,7 @@ func TestNeedsSolDecisionMixedNoneTargetsCorrectsBeforeParentDispatch(t *testing
 }
 
 func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	reviewMixedNone := `{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"review","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["none","glm-worker/internal/packet/validate.go:validateTargets"],"artifacts":[],"sol_question":"q"}`
 	r := &scriptedRunner{steps: []runnerStep{

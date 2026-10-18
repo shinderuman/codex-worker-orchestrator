@@ -96,6 +96,7 @@ func TestProbeIsolationAndNoSessionPersistence(t *testing.T) {
 }
 
 func TestProbeRejectsMalformedSuccessResponses(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		script  string
@@ -198,6 +199,7 @@ func TestProbeRejectsMalformedSuccessResponses(t *testing.T) {
 }
 
 func TestProbeRejectsIsErrorResultOnExitZero(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		result string
@@ -256,6 +258,7 @@ func TestProbeRejectsIsErrorResultOnExitZero(t *testing.T) {
 }
 
 func TestProbeReturnsErrorOnExitFailure(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}

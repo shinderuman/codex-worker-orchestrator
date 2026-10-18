@@ -11,6 +11,7 @@ import (
 )
 
 func TestParentHandoffResultFormatStopIncludesResubmitReport(t *testing.T) {
+	t.Parallel()
 	for _, projection := range []string{"", "recovery"} {
 		t.Run(projection, func(t *testing.T) {
 			cfg := newAppConfig(t)
@@ -54,6 +55,7 @@ func TestParentHandoffResultFormatStopIncludesResubmitReport(t *testing.T) {
 }
 
 func TestParentHandoffActionSpecs(t *testing.T) {
+	t.Parallel()
 	specs := parentActionSpecs([]string{
 		string(state.ParentActionDecision),
 		string(state.ParentActionFix),
@@ -80,6 +82,7 @@ func TestParentHandoffActionSpecs(t *testing.T) {
 }
 
 func TestParentHandoffFixWithoutRequiredScopeDeclaresAllOptionalMetadata(t *testing.T) {
+	t.Parallel()
 	specs := parentActionSpecs([]string{string(state.ParentActionFix)}, nil)
 	fix := specs[string(state.ParentActionFix)]
 	if !reflect.DeepEqual(fix.PrepareCommand, []string{"glm-parent-action", "prepare", "fix"}) {
@@ -91,6 +94,7 @@ func TestParentHandoffFixWithoutRequiredScopeDeclaresAllOptionalMetadata(t *test
 }
 
 func TestParentHandoffJSONIncludesActionSpecs(t *testing.T) {
+	t.Parallel()
 	required := string(state.ParentActionDecision)
 	output := parentHandoffOutput{
 		Version:        parentHandoffVersion,
@@ -115,6 +119,7 @@ func TestParentHandoffJSONIncludesActionSpecs(t *testing.T) {
 }
 
 func TestParentHandoffRecoveryJSONIncludesActionSpecs(t *testing.T) {
+	t.Parallel()
 	output := parentHandoffRecoveryOutput{
 		Version:        parentHandoffVersion,
 		Consistent:     true,

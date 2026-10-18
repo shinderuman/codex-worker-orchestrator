@@ -94,6 +94,7 @@ func requireMarkerOutcomeEvent(t *testing.T, st *state.StateStore, outcome strin
 }
 
 func TestGenericForeignRepositoryRunsGenericHarnessWithoutRepositoryPolicy(t *testing.T) {
+	t.Parallel()
 	repoRoot := initForeignRepository(t)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -118,6 +119,7 @@ func TestGenericForeignRepositoryRunsGenericHarnessWithoutRepositoryPolicy(t *te
 }
 
 func TestActivatedRepositoryKeepsPolicySurfaces(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -161,6 +163,7 @@ func TestActivatedRepositoryKeepsPolicySurfaces(t *testing.T) {
 }
 
 func TestCoincidentalProtocolNamesDoNotActivateRepositoryPolicy(t *testing.T) {
+	t.Parallel()
 	repoRoot := initForeignRepository(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -182,6 +185,7 @@ func TestCoincidentalProtocolNamesDoNotActivateRepositoryPolicy(t *testing.T) {
 }
 
 func TestCoincidentalMalformedPlanDoesNotFailClosedInForeignRepository(t *testing.T) {
+	t.Parallel()
 	repoRoot := initForeignRepository(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -202,6 +206,7 @@ func TestCoincidentalMalformedPlanDoesNotFailClosedInForeignRepository(t *testin
 }
 
 func TestForeignPlanMutationDuringCallIsNotParentMetadataViolation(t *testing.T) {
+	t.Parallel()
 	repoRoot := initForeignRepository(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -224,6 +229,7 @@ func TestForeignPlanMutationDuringCallIsNotParentMetadataViolation(t *testing.T)
 }
 
 func TestMarkerLossDuringActivatedCallFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -243,6 +249,7 @@ func TestMarkerLossDuringActivatedCallFailsClosed(t *testing.T) {
 }
 
 func TestMarkerRewriteDuringActivatedCallFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -262,6 +269,7 @@ func TestMarkerRewriteDuringActivatedCallFailsClosed(t *testing.T) {
 }
 
 func TestMarkerSymlinkDuringActivatedCallFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -285,6 +293,7 @@ func TestMarkerSymlinkDuringActivatedCallFailsClosed(t *testing.T) {
 }
 
 func TestMarkerUntrackedDuringActivatedCallFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -305,6 +314,7 @@ func TestMarkerUntrackedDuringActivatedCallFailsClosed(t *testing.T) {
 }
 
 func TestActivatedTaskMarkerInvalidBeforeCallFailsClosed(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		outcome string
@@ -369,6 +379,7 @@ func TestActivatedTaskMarkerInvalidBeforeCallFailsClosed(t *testing.T) {
 }
 
 func TestPinnedActiveTaskWithoutMarkerFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	st := newStateStoreT(t)
@@ -397,6 +408,7 @@ func TestPinnedActiveTaskWithoutMarkerFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestMarkerVariantsDoNotOptIn(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		mutate func(t *testing.T, repoRoot string)

@@ -7,6 +7,7 @@ import (
 )
 
 func TestQualityGateWorkingDirIdentityResolvesSymlinks(t *testing.T) {
+	t.Parallel()
 	target := t.TempDir()
 	alias := filepath.Join(t.TempDir(), "module-link")
 	if err := os.Symlink(target, alias); err != nil {

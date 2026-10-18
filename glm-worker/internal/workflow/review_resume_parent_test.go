@@ -171,6 +171,7 @@ func assertReviewResumeStopped(t *testing.T, st *state.StateStore, r *scriptedRu
 }
 
 func TestReviewResumeParentUpdateAcceptedReanchorsBaseline(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
@@ -287,6 +288,7 @@ func assertReviewResumeAccepted(t *testing.T, run reviewResumeDeltaRun) {
 }
 
 func TestReviewResumeParentUpdatesDuringStopAreAccepted(t *testing.T) {
+	t.Parallel()
 	tests := []reviewResumeDeltaCase{
 		{
 			name:              "parent content update during stop accepted",
@@ -323,6 +325,7 @@ func TestReviewResumeParentUpdatesDuringStopAreAccepted(t *testing.T) {
 }
 
 func TestReviewResumeRepositoryDriftDuringStopIsRejected(t *testing.T) {
+	t.Parallel()
 	tests := []reviewResumeDeltaCase{
 		{
 			name:              "other path change during stop rejected",
@@ -373,6 +376,7 @@ func TestReviewResumeRepositoryDriftDuringStopIsRejected(t *testing.T) {
 }
 
 func TestReviewResumeReviewerMutationIsRejected(t *testing.T) {
+	t.Parallel()
 	tests := []reviewResumeDeltaCase{
 		{
 			name:              "reviewer change during call rejected",
@@ -414,6 +418,7 @@ func TestReviewResumeReviewerMutationIsRejected(t *testing.T) {
 }
 
 func TestReviewResumeLegacyStateFailsClosed(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		legacyStop     bool
@@ -462,6 +467,7 @@ func TestReviewResumeLegacyStateFailsClosed(t *testing.T) {
 }
 
 func TestReviewResumeParentUpdateThenReviewerMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
@@ -499,6 +505,7 @@ func TestReviewResumeParentUpdateThenReviewerMutationFailsClosed(t *testing.T) {
 }
 
 func TestFailedResumeCallRecapturesStopParentStates(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	var out bytes.Buffer
 	w := newReviewResumeWorkflow(t, st, nil, &out)

@@ -7,6 +7,7 @@ import (
 )
 
 func TestCompletionAmendmentRejectsChangedProductionAndSubject(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "implementation\n")
 	published, candidate := publishTerminalTestSource(t, fixture, policy, source)

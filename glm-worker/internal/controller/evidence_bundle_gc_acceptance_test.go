@@ -15,6 +15,7 @@ type gcAcceptanceBundles struct {
 }
 
 func TestHistoricalBundlesSurviveOperationalSnapshotGCAndSamePathReuse(t *testing.T) {
+	t.Parallel()
 	repo, lane := newControllerLinkedWorktree(t)
 	store := openGCAcceptanceEvidenceStore(t, repo)
 	writeGCAcceptanceFile(t, filepath.Join(lane, "lane-only.txt"), "lane B1\n")

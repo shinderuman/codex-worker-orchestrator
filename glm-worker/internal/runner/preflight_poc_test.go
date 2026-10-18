@@ -389,6 +389,7 @@ func TestClaudePreflightVersionAndHelpFailureBoundaries(t *testing.T) {
 }
 
 func TestClaudePreflightInventoryMatchesRunnerSourceFlags(t *testing.T) {
+	t.Parallel()
 	sourceFlags := map[string]bool{}
 	flagLiteral := regexp.MustCompile(`"(--?[A-Za-z][A-Za-z0-9_-]*)"`)
 	for _, name := range []string{"runner.go", "probe.go"} {
@@ -420,6 +421,7 @@ func TestClaudePreflightInventoryMatchesRunnerSourceFlags(t *testing.T) {
 }
 
 func TestClaudePreflightLiveClaudeCLI(t *testing.T) {
+	t.Parallel()
 	bin := os.Getenv("GLM_WORKER_CLAUDE_BIN")
 	if bin == "" {
 		bin = "claude"

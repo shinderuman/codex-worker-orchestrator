@@ -8,6 +8,7 @@ import (
 )
 
 func TestReviewGapMetadataCategoryRequiresTaskActivationEvidence(t *testing.T) {
+	t.Parallel()
 	previous := &state.RoundRecord{Paths: []state.RoundPathState{{
 		Path:       state.ParentPlanFile,
 		Class:      "doc",

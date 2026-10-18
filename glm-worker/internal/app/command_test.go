@@ -6,6 +6,7 @@ import (
 )
 
 func TestParseCommandModes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		args    []string
@@ -43,12 +44,14 @@ func TestParseCommandModes(t *testing.T) {
 }
 
 func TestParentUsageCommandIsRetired(t *testing.T) {
+	t.Parallel()
 	if _, ok := commandParsers["--parent-usage"]; ok {
 		t.Fatal("retired --parent-usage command remains registered")
 	}
 }
 
 func TestIsolateCommandIsRetired(t *testing.T) {
+	t.Parallel()
 	if _, ok := commandParsers["--isolate"]; ok {
 		t.Fatal("retired --isolate command remains registered")
 	}
@@ -58,6 +61,7 @@ func TestIsolateCommandIsRetired(t *testing.T) {
 }
 
 func TestParkCommandsAreRetired(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"--park", "--unpark"} {
 		if _, ok := commandParsers[name]; ok {
 			t.Fatalf("retired %s command remains registered", name)
@@ -69,6 +73,7 @@ func TestParkCommandsAreRetired(t *testing.T) {
 }
 
 func TestResetCommandIsRetired(t *testing.T) {
+	t.Parallel()
 	if _, ok := commandParsers["--reset"]; ok {
 		t.Fatal("retired --reset command remains registered")
 	}
@@ -80,6 +85,7 @@ func TestResetCommandIsRetired(t *testing.T) {
 }
 
 func TestGLMProviderAutoResumeCommandsAreRetired(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{
 		"--verify-auto-resume",
 		"--check-wake-coalesce",
@@ -94,6 +100,7 @@ func TestGLMProviderAutoResumeCommandsAreRetired(t *testing.T) {
 }
 
 func TestParseCommandStdinPayloadModes(t *testing.T) {
+	t.Parallel()
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 	tests := []struct {
@@ -135,6 +142,7 @@ func TestParseCommandStdinPayloadModes(t *testing.T) {
 }
 
 func TestParseCommandRejectsInvalidStdinArguments(t *testing.T) {
+	t.Parallel()
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	tests := [][]string{
 		{"--decision-stdin"},
@@ -159,6 +167,7 @@ func TestParseCommandRejectsInvalidStdinArguments(t *testing.T) {
 }
 
 func TestParseCommandRejectsUnknownCommandShapedFirstToken(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"--unknown"},
 		{"--unknown", "payload"},
@@ -182,6 +191,7 @@ func TestParseCommandRejectsUnknownCommandShapedFirstToken(t *testing.T) {
 }
 
 func TestParseCommandRejectsInvalidArguments(t *testing.T) {
+	t.Parallel()
 	tests := [][]string{
 		nil,
 		{"--resume", "extra"},
@@ -214,6 +224,7 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 }
 
 func TestParseCommandVerifyCodexWakeArgs(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{
 		"--verify-codex-wake",
 		"01a03a9e-10a0-7f11-801c-f04e5dbd5490",

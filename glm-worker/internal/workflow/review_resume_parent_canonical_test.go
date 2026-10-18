@@ -11,6 +11,7 @@ import (
 )
 
 func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
@@ -80,6 +81,7 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 }
 
 func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -124,6 +126,7 @@ func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 }
 
 func TestRateLimitStopRecordsStopParentFiles(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{{

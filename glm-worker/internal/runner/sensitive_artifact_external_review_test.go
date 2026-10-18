@@ -8,6 +8,7 @@ import (
 )
 
 func TestSensitiveArtifactAdmissionPropagatesInvalidArtifactPath(t *testing.T) {
+	t.Parallel()
 	const secret = "provider-auth-secret-outside-640"
 	cfg, st, _ := sensitiveArtifactTestState(t)
 	outside := filepath.Join(t.TempDir(), "outside.txt")
@@ -33,6 +34,7 @@ func TestSensitiveArtifactAdmissionPropagatesInvalidArtifactPath(t *testing.T) {
 }
 
 func TestSensitiveArtifactAdmissionFindsSecretAcrossScanChunks(t *testing.T) {
+	t.Parallel()
 	const secret = "provider-auth-secret-cross-chunk-640"
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	prefix := make([]byte, sensitiveArtifactScanChunkBytes-len(secret)/2)

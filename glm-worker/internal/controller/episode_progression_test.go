@@ -21,6 +21,7 @@ type episodeProgressionFixture struct {
 }
 
 func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.T) {
+	t.Parallel()
 	fixture := newEpisodeProgressionFixture(t)
 
 	if _, err := progressEpisodeGraphForTest(fixture.store, EpisodeSatisfactionInput{
@@ -127,6 +128,7 @@ func TestEpisodeSatisfactionProgressesSerialResumeAcrossRetiredTasks(t *testing.
 }
 
 func TestEpisodeSatisfactionRejectsTaskOutsideClosure(t *testing.T) {
+	t.Parallel()
 	fixture := newEpisodeProgressionFixture(t)
 	outside := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/outside.md", ContractDigest: digestStrings("outside")}
 	if _, err := progressEpisodeGraphForTest(fixture.store, EpisodeSatisfactionInput{
@@ -376,6 +378,7 @@ func progressEpisodeGraphForTest(store *Store, input EpisodeSatisfactionInput) (
 }
 
 func TestEpisodeSatisfactionCannotForgePublication(t *testing.T) {
+	t.Parallel()
 	fixture := newEpisodeProgressionFixture(t)
 	if _, err := fixture.store.SatisfyEpisodeTask(EpisodeSatisfactionInput{EpisodeID: fixture.episode.EpisodeID, ExpectedRevision: fixture.episode.Revision, ExpectedControllerGeneration: fixture.head.ControllerGeneration, ProjectSnapshotID: fixture.head.ProjectSnapshotID, SatisfiedTaskRef: fixture.c}); err == nil {
 		t.Fatal("unpublished Task fulfilled dependency")

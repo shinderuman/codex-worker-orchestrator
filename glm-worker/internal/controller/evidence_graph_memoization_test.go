@@ -7,6 +7,7 @@ import (
 )
 
 func TestEvidenceGraphMemoizesValidatedRevisionChains(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/memoized.md", ContractDigest: "memoized-task"}
 	subject := taskEvidenceSubjectID(task)
@@ -93,6 +94,7 @@ func TestEvidenceGraphMemoizesValidatedRevisionChains(t *testing.T) {
 }
 
 func TestEpisodeRevisionMemoizationIsScopedToPublishedTaskAuthority(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/episode-authority.md", ContractDigest: "episode-authority-task"}
 	subject := taskEvidenceSubjectID(task)

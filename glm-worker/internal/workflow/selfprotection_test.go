@@ -9,6 +9,7 @@ import (
 )
 
 func TestIsCriticalPath(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		path     string
 		critical bool
@@ -47,6 +48,7 @@ func TestIsCriticalPath(t *testing.T) {
 }
 
 func TestIsQualitySurface(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{
 		".golangci.yml",
 		"quality-tools.yml",
@@ -77,6 +79,7 @@ func TestIsQualitySurface(t *testing.T) {
 }
 
 func TestClassifySelfProtectionAggregatesCategories(t *testing.T) {
+	t.Parallel()
 	decision := classifySelfProtection([]string{
 		"README.md",
 		"glm-worker/internal/workflow/workflow.go",
@@ -88,6 +91,7 @@ func TestClassifySelfProtectionAggregatesCategories(t *testing.T) {
 }
 
 func TestCollectTaskChangedPaths(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	runGitTest(t, dir, "init")
 	runGitTest(t, dir, "config", "user.email", "t@example.com")

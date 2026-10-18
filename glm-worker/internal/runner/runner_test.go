@@ -32,6 +32,7 @@ func newTestStateStore(t *testing.T) *state.StateStore {
 }
 
 func TestSessionNameIncludesTaskID(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	if err := st.Write("task.id", "12345678-aaaa-bbbb-cccc-dddddddddddd"); err != nil {
 		t.Fatal(err)
@@ -206,6 +207,7 @@ func TestClaudeRunnerRunResumesSessionReadOnly(t *testing.T) {
 }
 
 func TestClaudeRunnerRejectsMissingPrompt(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	if err := st.Write("task.id", "12345678-aaaa-bbbb-cccc-dddddddddddd"); err != nil {
 		t.Fatal(err)
@@ -222,6 +224,7 @@ func TestClaudeRunnerRejectsMissingPrompt(t *testing.T) {
 }
 
 func TestClaudeRunnerRejectsMissingTaskID(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	r := NewClaudeRunner(config.AppConfig{}, st)
 
@@ -232,6 +235,7 @@ func TestClaudeRunnerRejectsMissingTaskID(t *testing.T) {
 }
 
 func TestClaudeRunnerPreservesErrorResultAndUsage(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -272,6 +276,7 @@ func TestClaudeRunnerPreservesErrorResultAndUsage(t *testing.T) {
 }
 
 func TestClaudeRunnerRejectsInvalidJSONWithoutMarkingSessionReady(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -303,6 +308,7 @@ func TestClaudeRunnerRejectsInvalidJSONWithoutMarkingSessionReady(t *testing.T) 
 }
 
 func TestParseClaudeJSONResultKeepsTopLevelAndTreeUsageSeparate(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "result.json")
 	data := `{"type":"result","result":"packet","modelUsage":{"glm-4.7":{"inputTokens":3,"cacheCreationInputTokens":4,"cacheReadInputTokens":5,"outputTokens":6},"glm-5.3":{"inputTokens":7,"outputTokens":8}}}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
@@ -321,6 +327,7 @@ func TestParseClaudeJSONResultKeepsTopLevelAndTreeUsageSeparate(t *testing.T) {
 }
 
 func TestPromptFileNameByRole(t *testing.T) {
+	t.Parallel()
 	if got := promptFileName(state.WorkerRole); got != "WORKER.md" {
 		t.Fatalf("worker prompt = %q", got)
 	}
@@ -330,6 +337,7 @@ func TestPromptFileNameByRole(t *testing.T) {
 }
 
 func TestZaiRateLimitErrorMessageMentionsPhase(t *testing.T) {
+	t.Parallel()
 	err := ZaiRateLimitError{Phase: "reviewer-1"}.Error()
 	if !strings.Contains(err, "reviewer-1") {
 		t.Fatalf("rate limit errorのmessageにphaseがありません: %s", err)
@@ -337,6 +345,7 @@ func TestZaiRateLimitErrorMessageMentionsPhase(t *testing.T) {
 }
 
 func TestZaiRateLimitErrorAutoResumeSchedule(t *testing.T) {
+	t.Parallel()
 	limit := ZaiRateLimitError{
 		Limit: ZaiFiveHourLimit{ResetAtRFC3339: "2026-08-09T22:35:58+08:00"},
 	}
@@ -355,6 +364,7 @@ func TestZaiRateLimitErrorAutoResumeSchedule(t *testing.T) {
 }
 
 func TestZaiRateLimitErrorAutoResumeKey(t *testing.T) {
+	t.Parallel()
 	key := ZaiRateLimitError{RepoShort: "abcdef123456", TaskID: "12345678-aaaa-bbbb-cccc-dddddddddddd"}.AutoResumeKey()
 	if key != "glm-worker-resume-abcdef123456-12345678" {
 		t.Fatalf("auto resume keyが違います: %s", key)

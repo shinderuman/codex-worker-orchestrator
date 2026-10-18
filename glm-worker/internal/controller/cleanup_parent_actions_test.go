@@ -9,6 +9,7 @@ import (
 )
 
 func TestCleanupArchivesIgnoredParentActionTransportAndDetectsRace(t *testing.T) {
+	t.Parallel()
 	f, retired, candidate := retiredLaneFixture(t)
 	root := f.source.Workspace.Root
 	exclude := filepath.Join(f.store.Identity().CommonDir, "info", "exclude")
@@ -51,6 +52,7 @@ func TestCleanupArchivesIgnoredParentActionTransportAndDetectsRace(t *testing.T)
 }
 
 func TestCleanupParentActionsRejectsSymlinkWithoutFollowingIt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out := filepath.Join(t.TempDir(), "outside")
 	if err := os.WriteFile(out, []byte("outside evidence"), 0o644); err != nil {

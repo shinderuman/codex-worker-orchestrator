@@ -8,6 +8,7 @@ import (
 )
 
 func TestReenteredReviewUsesSavedImplementedPacketWithoutAnotherWorkerCall(t *testing.T) {
+	t.Parallel()
 	w, _ := acceptedResultRecoveryFixture(t)
 	taskID, err := w.state.TaskID()
 	if err != nil {
@@ -50,6 +51,7 @@ func TestReenteredReviewUsesSavedImplementedPacketWithoutAnotherWorkerCall(t *te
 }
 
 func TestReenteredReviewPreparationRejectsExistingRecoveryCheckpoint(t *testing.T) {
+	t.Parallel()
 	w, _ := acceptedResultRecoveryFixture(t)
 	before := w.state.TaskStatus()
 	if err := w.PrepareReenteredReview(); err == nil {

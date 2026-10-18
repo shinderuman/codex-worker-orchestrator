@@ -50,6 +50,7 @@ exec ` + "'" + strings.ReplaceAll(realGo, "'", "'\"'\"'") + "'" + ` "$@"
 }
 
 func TestGoPreflightNestedProcess(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("GLM_GO_PREFLIGHT_NESTED_PROCESS") != "1" {
 		return
 	}

@@ -8,6 +8,7 @@ import (
 )
 
 func TestInstructionSurfaceBaselineSurvivesFreshTaskAndRebindsByTaskID(t *testing.T) {
+	t.Parallel()
 	if instructionSurfaceBaselineStateKey != state.InstructionSurfaceBaselineStateFile {
 		t.Fatalf("instruction surface state key is not registered in task lifetime policy: %q", instructionSurfaceBaselineStateKey)
 	}

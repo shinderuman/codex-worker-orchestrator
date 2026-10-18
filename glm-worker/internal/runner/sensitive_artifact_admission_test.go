@@ -14,6 +14,7 @@ import (
 )
 
 func TestSensitiveArtifactAdmissionRejectsEffectiveProviderAuthToken(t *testing.T) {
+	t.Parallel()
 	const secret = "provider-auth-secret-395"
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	if err := os.MkdirAll(cfg.ClaudeConfigDir, 0o700); err != nil {
@@ -68,6 +69,7 @@ func TestSensitiveArtifactAdmissionIgnoresUnforwardedParentAPIKey(t *testing.T) 
 }
 
 func TestSensitiveArtifactAdmissionRejectsLiveParentActionToken(t *testing.T) {
+	t.Parallel()
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	prepared, err := parentaction.Prepare(cfg.RepoRoot, string(parentaction.ActionDecision))
 	if err != nil {
@@ -88,6 +90,7 @@ func TestSensitiveArtifactAdmissionRejectsLiveParentActionToken(t *testing.T) {
 }
 
 func TestSensitiveArtifactAdmissionRemovesEveryRejectedArtifact(t *testing.T) {
+	t.Parallel()
 	const secret = "provider-auth-secret-all-395"
 	cfg, st, first := sensitiveArtifactTestState(t)
 	second := filepath.Join(filepath.Dir(first), "second-evidence.txt")
@@ -111,6 +114,7 @@ func TestSensitiveArtifactAdmissionRemovesEveryRejectedArtifact(t *testing.T) {
 }
 
 func TestSensitiveArtifactAdmissionScansSafeArtifactsFromInvalidList(t *testing.T) {
+	t.Parallel()
 	const secret = "provider-auth-secret-invalid-list-395"
 	values := []SensitiveArtifactValue{{Category: SensitiveArtifactProviderAuthToken, Value: secret}}
 	for _, tc := range []struct {
@@ -162,6 +166,7 @@ func TestSensitiveArtifactAdmissionScansSafeArtifactsFromInvalidList(t *testing.
 }
 
 func TestSensitiveArtifactAdmissionScansArtifactsFromOtherwiseInvalidPacket(t *testing.T) {
+	t.Parallel()
 	const secret = "provider-auth-secret-invalid-packet-395"
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	if err := os.WriteFile(artifact, []byte("secret="+secret), 0o600); err != nil {
@@ -186,6 +191,7 @@ func TestSensitiveArtifactAdmissionScansArtifactsFromOtherwiseInvalidPacket(t *t
 }
 
 func TestSensitiveArtifactAdmissionAcceptsSanitizedArtifact(t *testing.T) {
+	t.Parallel()
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	if err := os.MkdirAll(cfg.ClaudeConfigDir, 0o700); err != nil {
 		t.Fatal(err)

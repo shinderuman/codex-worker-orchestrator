@@ -7,6 +7,7 @@ import (
 )
 
 func TestRepositoryPresentRejectsNonGitPathWithoutResolvingIdentity(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	present, err := RepositoryPresent(root)
 	if err != nil {
@@ -18,6 +19,7 @@ func TestRepositoryPresentRejectsNonGitPathWithoutResolvingIdentity(t *testing.T
 }
 
 func TestRepositoryPresentAcceptsPrimaryAndLinkedWorktrees(t *testing.T) {
+	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	for _, root := range []string{repo, linked, filepath.Join(linked, "nested")} {
 		if root != repo && root != linked {

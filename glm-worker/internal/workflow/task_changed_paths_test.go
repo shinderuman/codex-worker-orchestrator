@@ -27,6 +27,7 @@ func writeCleanTaskBaselineState(t *testing.T, st *state.StateStore, baseline st
 }
 
 func TestWorkflowChangedPathsLayerConservativeExpansionOnExactTaskPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runGitTest(t, root, "init")
 	runGitTest(t, root, "config", "user.email", "changed-paths@example.invalid")

@@ -150,6 +150,7 @@ func appendReviewGapFixtureRounds(t *testing.T, st *state.StateStore, taskID str
 }
 
 func TestReviewGapCorrelatesDeclarationRoundAndCategories(t *testing.T) {
+	t.Parallel()
 	_, _, report := newReviewGapCorrelatedFixture(t)
 	if report.Version != reviewGapReportVersion || report.Scope != reviewGapScopeAll ||
 		report.TaskCount != 1 || report.FixCount != 2 || report.Coverage != reviewGapCoverageComplete {
@@ -190,6 +191,7 @@ func TestReviewGapCorrelatesDeclarationRoundAndCategories(t *testing.T) {
 }
 
 func TestReviewGapCorrelatesParentReworkInterval(t *testing.T) {
+	t.Parallel()
 	_, _, report := newReviewGapCorrelatedFixture(t)
 	interval := report.Fixes[0].ParentReworkInterval
 	if interval.From.Basis != reviewGapBasisTaskStart || interval.To.Basis != reviewGapBasisFixDeclaration {
@@ -213,6 +215,7 @@ func TestReviewGapCorrelatesParentReworkInterval(t *testing.T) {
 }
 
 func TestReviewGapCorrelatesDownstreamCalls(t *testing.T) {
+	t.Parallel()
 	_, _, report := newReviewGapCorrelatedFixture(t)
 	downstream := report.Fixes[0].Downstream
 	if downstream.Status != reviewGapKnown || len(downstream.WorkerCalls) != 1 || len(downstream.ReviewerCalls) != 1 {
@@ -228,6 +231,7 @@ func TestReviewGapCorrelatesDownstreamCalls(t *testing.T) {
 }
 
 func TestReviewGapSummaryCountsAndTaskScope(t *testing.T) {
+	t.Parallel()
 	cfg, taskID, report := newReviewGapCorrelatedFixture(t)
 	summary := report.Summary
 	if summary.ByOrigin[state.ParentOriginCodexReview] != 1 || summary.ByOrigin[state.ParentOriginGLMReviewer] != 1 ||
@@ -246,6 +250,7 @@ func TestReviewGapSummaryCountsAndTaskScope(t *testing.T) {
 }
 
 func TestReviewGapPreservesFixCountWithUnknownEvidence(t *testing.T) {
+	t.Parallel()
 	cfg, st, _ := newCodexBundleTestState(t)
 	taskID, err := st.StartNewTask()
 	if err != nil {
@@ -294,6 +299,7 @@ func TestReviewGapPreservesFixCountWithUnknownEvidence(t *testing.T) {
 }
 
 func TestReviewGapCounterResetNotSummed(t *testing.T) {
+	t.Parallel()
 	cfg, st, codexHome := newCodexBundleTestState(t)
 	taskID, err := st.StartNewTask()
 	if err != nil {
@@ -330,6 +336,7 @@ func TestReviewGapCounterResetNotSummed(t *testing.T) {
 }
 
 func TestReviewGapMissingTaskFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg, st, _ := newCodexBundleTestState(t)
 	err := printReviewGap(cfg, st, "missing-task", &bytes.Buffer{})
 	var notFound *machinecli.NotFoundError

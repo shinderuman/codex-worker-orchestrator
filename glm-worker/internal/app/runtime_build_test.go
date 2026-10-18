@@ -13,6 +13,7 @@ import (
 )
 
 func TestRuntimeBuildSettingsFromInjected(t *testing.T) {
+	t.Parallel()
 	got, ok := runtimeBuildSettingsFromInjected(" abc123 ", " false ")
 	if !ok || got.revision != "abc123" || got.modified == nil || *got.modified {
 		t.Fatalf("injected settings = %#v ok=%v", got, ok)
@@ -36,6 +37,7 @@ func TestRuntimeBuildSettingsFromInjected(t *testing.T) {
 }
 
 func TestRuntimeBuildSettingsFromGo(t *testing.T) {
+	t.Parallel()
 	got := runtimeBuildSettingsFromGo([]debug.BuildSetting{
 		{Key: "vcs.revision", Value: " abc123 "},
 		{Key: "vcs.modified", Value: "true"},
@@ -50,6 +52,7 @@ func TestRuntimeBuildSettingsFromGo(t *testing.T) {
 }
 
 func TestRuntimeBuildStatusRelationships(t *testing.T) {
+	t.Parallel()
 	repo := newRuntimeBuildRepo(t)
 	initialBranch := runtimeBuildGit(t, repo, "branch", "--show-current")
 	first := runtimeBuildGit(t, repo, "rev-parse", "HEAD")
@@ -78,6 +81,7 @@ func TestRuntimeBuildStatusRelationships(t *testing.T) {
 }
 
 func TestRuntimeBuildStatusUnknownBoundaries(t *testing.T) {
+	t.Parallel()
 	repo := newRuntimeBuildRepo(t)
 	head := runtimeBuildGit(t, repo, "rev-parse", "HEAD")
 	modified := true
@@ -97,6 +101,7 @@ func TestRuntimeBuildStatusUnknownBoundaries(t *testing.T) {
 }
 
 func TestBuildStatusOutputIncludesRuntimeBuild(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := stateStoreForRuntimeBuildTest(cfg)
 	if err != nil {
@@ -109,6 +114,7 @@ func TestBuildStatusOutputIncludesRuntimeBuild(t *testing.T) {
 }
 
 func TestExecuteStatusBeforeTaskUsesRepositoryWithoutCreatingState(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	cfg.RepoRoot = newRuntimeBuildRepo(t)
 	st := state.AttachStateStore(cfg)

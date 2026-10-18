@@ -7,6 +7,7 @@ import (
 )
 
 func TestExecutionLaneSerialReplanCleanupRetryAndSamePathReuse(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t, "IMPLEMENTATION_TASKS/deeper-blocker.md")
 	episode := planSuspensionTestEpisode(t, fixture)
 	root, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)
@@ -87,8 +88,10 @@ func TestExecutionLaneSerialReplanCleanupRetryAndSamePathReuse(t *testing.T) {
 }
 
 func TestExecutionMaterializationRecoversEachDurableBoundary(t *testing.T) {
+	t.Parallel()
 	for _, boundary := range []string{"prepared", "registered", "materialized", "committed", "head-committed"} {
 		t.Run(boundary, func(t *testing.T) {
+			t.Parallel()
 			fixture := newFindingAcceptanceFixture(t)
 			episode := planSuspensionTestEpisode(t, fixture)
 			suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)
@@ -139,6 +142,7 @@ func TestExecutionMaterializationRecoversEachDurableBoundary(t *testing.T) {
 }
 
 func TestExecutionMaterializationUnknownPartialStatePreservesAuthority(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	episode := planSuspensionTestEpisode(t, fixture)
 	suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)

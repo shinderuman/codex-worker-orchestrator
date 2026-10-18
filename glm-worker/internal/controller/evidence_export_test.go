@@ -645,6 +645,7 @@ func exportFileByPath(t *testing.T, export EvidenceExport, path string) []byte {
 }
 
 func TestExportEvidenceLiveAttemptCollectsRawSections(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	objectsBefore := evidenceObjectTreeDigest(t, fixture.store)
 	export, result, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
@@ -749,6 +750,7 @@ func TestExportEvidenceLiveAttemptCollectsRawSections(t *testing.T) {
 }
 
 func TestExportEvidenceCollectsTaskValidationEvidence(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	objectsBefore := evidenceObjectTreeDigest(t, fixture.store)
 	export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
@@ -842,6 +844,7 @@ func analysisValidationRunPresent(runs []EvidenceAnalysisValidationRun, runID, b
 }
 
 func TestExportEvidenceBindsRepositoryScopedValidationRuns(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	repoRoot, err := canonicalPath(fixture.repo)
 	if err != nil {
@@ -906,6 +909,7 @@ func TestExportEvidenceBindsRepositoryScopedValidationRuns(t *testing.T) {
 }
 
 func TestExportEvidenceDecodesRoundTrip(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
 	if err != nil {
@@ -939,6 +943,7 @@ func sealedRuntimeExportFixture(t *testing.T) (EvidenceExport, EvidenceExportRes
 }
 
 func TestExportEvidenceSealedAttemptMaterializesRuntimeEvidence(t *testing.T) {
+	t.Parallel()
 	export, result := sealedRuntimeExportFixture(t)
 	if result.Target.Kind != evidenceExportTargetTaskID || result.Target.AttemptID != evidenceExportSealedAttemptID {
 		t.Fatalf("sealed target = %#v", result.Target)
@@ -985,6 +990,7 @@ func TestExportEvidenceSealedAttemptMaterializesRuntimeEvidence(t *testing.T) {
 }
 
 func TestExportEvidenceSealedAttemptProjectsParentEvidenceAggregate(t *testing.T) {
+	t.Parallel()
 	export, _ := sealedRuntimeExportFixture(t)
 	sealedLedger := exportEntryByPath(t, export.Manifest, "attempt/state/parent-evidence.aggregate.json")
 	if sealedLedger.CanonicalDigest == "" || sealedLedger.OmittedPayload == "" {
@@ -1006,6 +1012,7 @@ func TestExportEvidenceSealedAttemptProjectsParentEvidenceAggregate(t *testing.T
 }
 
 func TestExportEvidenceSealedAttemptGitAuditStaysMetadataOnly(t *testing.T) {
+	t.Parallel()
 	export, _ := sealedRuntimeExportFixture(t)
 	if export.Manifest.Git == nil || len(export.Manifest.Git.Archives) != 1 {
 		t.Fatalf("sealed git audit = %#v", export.Manifest.Git)
@@ -1034,6 +1041,7 @@ func TestExportEvidenceSealedAttemptGitAuditStaysMetadataOnly(t *testing.T) {
 }
 
 func TestExportEvidenceSealedAttemptDisclosesUnreadableArchiveWithoutPathCollision(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.skipLiveAttempt = true
@@ -1081,6 +1089,7 @@ func TestExportEvidenceSealedAttemptDisclosesUnreadableArchiveWithoutPathCollisi
 }
 
 func TestExportEvidenceSealedAttemptCandidateEntriesHaveUniquePaths(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.skipLiveAttempt = true
@@ -1134,6 +1143,7 @@ func TestExportEvidenceSealedAttemptCandidateEntriesHaveUniquePaths(t *testing.T
 }
 
 func TestExportEvidenceSealedAttemptRepeatsSharedLineageRefIdempotently(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.skipLiveAttempt = true
@@ -1164,6 +1174,7 @@ func TestExportEvidenceSealedAttemptRepeatsSharedLineageRefIdempotently(t *testi
 }
 
 func TestExportEvidenceBoundSectionRecordsMissingTranscriptUnderBoundPrefix(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.skipLiveAttempt = true
@@ -1187,6 +1198,7 @@ func TestExportEvidenceBoundSectionRecordsMissingTranscriptUnderBoundPrefix(t *t
 }
 
 func TestExportEvidenceSealedAttemptAnalysisIndex(t *testing.T) {
+	t.Parallel()
 	export, _ := sealedRuntimeExportFixture(t)
 	var analysis EvidenceAnalysisIndex
 	if err := json.Unmarshal(exportFileByPath(t, export, "analysis-index.json"), &analysis); err != nil {
@@ -1218,6 +1230,7 @@ func TestExportEvidenceSealedAttemptAnalysisIndex(t *testing.T) {
 }
 
 func TestExportEvidenceRequiresRuntimeTaskIdentityForDefaultTargets(t *testing.T) {
+	t.Parallel()
 	t.Run("live attempt without a runtime binding", func(t *testing.T) {
 		fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 			f.skipRuntimeEvidence = true
@@ -1238,6 +1251,7 @@ func TestExportEvidenceRequiresRuntimeTaskIdentityForDefaultTargets(t *testing.T
 }
 
 func TestExportEvidenceAggregatesParentEvidenceRepetitions(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	ledger := evidenceTestParentEvidenceLedger(t, time.Unix(6500, 0).UTC())
 	if err := os.WriteFile(fixture.runtime.Path(evidenceExportParentEvidenceFile), ledger, 0o600); err != nil {
@@ -1289,6 +1303,7 @@ func TestExportEvidenceAggregatesParentEvidenceRepetitions(t *testing.T) {
 }
 
 func TestExportEvidenceRejectsUnknownTargetsAndSelectors(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	if _, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{TaskID: "runtime-task-unknown"}); err == nil {
 		t.Fatal("export accepted an unknown runtime task id")
@@ -1307,6 +1322,7 @@ func TestExportEvidenceRejectsUnknownTargetsAndSelectors(t *testing.T) {
 }
 
 func TestExportEvidenceTaskIDResolvesLiveRuntimeBinding(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	_, result, err := fixture.store.ExportEvidence(EvidenceExportRequest{TaskID: fixture.runtimeTask})
 	if err != nil {
@@ -1318,6 +1334,7 @@ func TestExportEvidenceTaskIDResolvesLiveRuntimeBinding(t *testing.T) {
 }
 
 func TestExportEvidenceTaskIDResolvesSurvivingRuntimeBinding(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.skipLiveHead = true
 	})
@@ -1368,6 +1385,7 @@ func TestExportEvidenceTaskIDResolvesSurvivingRuntimeBinding(t *testing.T) {
 }
 
 func TestExportEvidenceBoundSectionExcludesPostAttemptSessionRecords(t *testing.T) {
+	t.Parallel()
 	sealedOptions := func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.skipLiveAttempt = true
@@ -1524,6 +1542,7 @@ func writeParentGuardianRolloutSet(t *testing.T, fixture *evidenceExportFixture,
 }
 
 func TestExportEvidenceBoundSectionCollectsParentAndGuardianRawLogs(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
 		f.withSealedRuntime = true
 		f.skipLiveAttempt = true
@@ -1591,6 +1610,7 @@ func TestExportEvidenceBoundSectionCollectsParentAndGuardianRawLogs(t *testing.T
 }
 
 func TestExportEvidenceLiveSectionCollectsFullParentRollout(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	fixture.bindRuntimeParentIdentity(t, evidenceExportParentThreadID, evidenceExportParentSessionID)
 	_, parentBytes := writeParentGuardianRolloutSet(t, fixture, 6000)
@@ -1611,6 +1631,7 @@ func TestExportEvidenceLiveSectionCollectsFullParentRollout(t *testing.T) {
 }
 
 func TestExportEvidenceDisclosesMissingValidationLogs(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	logless := qualitygate.RunRecord{
 		ValidationRunID: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", Form: "go-test",
@@ -1659,6 +1680,7 @@ func TestExportEvidenceDisclosesMissingValidationLogs(t *testing.T) {
 }
 
 func TestExportEvidenceFailsClosedOnForeignGateRunInTaskStore(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	conflicting := qualitygate.RunRecord{
 		ValidationRunID: "abababababababababababababababab", Form: "go-test",
@@ -1673,6 +1695,7 @@ func TestExportEvidenceFailsClosedOnForeignGateRunInTaskStore(t *testing.T) {
 }
 
 func TestExportEvidenceFailsClosedOnRuntimeRebinding(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	binding, err := fixture.runtime.LoadControllerRuntimeBinding()
 	if err != nil {
@@ -1705,6 +1728,7 @@ func TestExportEvidenceFailsClosedOnRuntimeRebinding(t *testing.T) {
 }
 
 func TestExportEvidenceRejectsUnverifiedWorkspace(t *testing.T) {
+	t.Parallel()
 	fixture := newEvidenceExportFixture(t)
 	lease, err := fixture.store.loadLease(evidenceExportLiveLeaseID)
 	if err != nil {
@@ -1724,6 +1748,7 @@ func TestExportEvidenceRejectsUnverifiedWorkspace(t *testing.T) {
 }
 
 func TestEvidenceExportObservationAndFileChangeDetection(t *testing.T) {
+	t.Parallel()
 	before := RepositoryControllerHead{ControllerGeneration: 3, LiveAttemptID: "a1", LiveLeaseID: "l1"}
 	same := evidenceExportControllerObservation(before, before)
 	if same.AuthorityChangedDuringExport {
@@ -1767,6 +1792,7 @@ func TestEvidenceExportObservationAndFileChangeDetection(t *testing.T) {
 }
 
 func TestScanTranscriptWindowBoundsReusedSessions(t *testing.T) {
+	t.Parallel()
 	data := []byte("{\"timestamp\":\"2026-10-05T00:00:00Z\",\"n\":1}\n" +
 		"{\"timestamp\":\"2026-10-05T12:00:00Z\",\"n\":2}\n" +
 		"{\"timestamp\":\"2026-10-06T00:00:00Z\",\"n\":3}\n" +

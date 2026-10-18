@@ -10,6 +10,7 @@ import (
 )
 
 func TestReduceStreamEventPreservesOnlySanitizedCompactionMetadata(t *testing.T) {
+	t.Parallel()
 	raw := []byte(`{"type":"system","subtype":"compact_boundary","content":"Conversation compacted","compactMetadata":{"trigger":"auto","preTokens":167257,"postTokens":15406,"durationMs":94025,"cumulativeDroppedTokens":151851,"preservedSegment":{"headUuid":"secret-head","anchorUuid":"secret-anchor"},"preservedMessages":{"uuids":["secret-message"]},"summary":"secret-summary"}}`)
 	record := reduceStreamEvent(raw, state.TaskEventRecord{TaskID: "task", CallID: "call"}, 1, time.Unix(1, 0).UTC())
 	if record.Kind != "system" || record.Subtype != "compact_boundary" || record.Compaction == nil {
@@ -32,6 +33,7 @@ func TestReduceStreamEventPreservesOnlySanitizedCompactionMetadata(t *testing.T)
 }
 
 func TestReduceStreamEventDropsUnknownCompactionTrigger(t *testing.T) {
+	t.Parallel()
 	raw := []byte(`{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"provider-specific","preTokens":10}}`)
 	record := reduceStreamEvent(raw, state.TaskEventRecord{}, 1, time.Unix(1, 0).UTC())
 	if record.Compaction == nil || record.Compaction.Trigger != "" || record.Compaction.PreTokens != 10 {

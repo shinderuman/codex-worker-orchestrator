@@ -10,6 +10,7 @@ import (
 )
 
 func TestProjectExecutionProgressIsIndeterminateWithoutMilestones(t *testing.T) {
+	t.Parallel()
 	_, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -28,6 +29,7 @@ func TestProjectExecutionProgressIsIndeterminateWithoutMilestones(t *testing.T) 
 }
 
 func TestProjectExecutionProgressUsesMilestonePositionAndPhaseBand(t *testing.T) {
+	t.Parallel()
 	w, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -108,6 +110,7 @@ func TestProjectExecutionProgressUsesMilestonePositionAndPhaseBand(t *testing.T)
 }
 
 func TestProjectExecutionProgressFailsClosedOnStaleMilestoneTask(t *testing.T) {
+	t.Parallel()
 	w, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -138,6 +141,7 @@ func TestProjectExecutionProgressFailsClosedOnStaleMilestoneTask(t *testing.T) {
 }
 
 func TestProjectExecutionProgressMarksCompletedMilestonePlanExactlyComplete(t *testing.T) {
+	t.Parallel()
 	w, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)

@@ -19,6 +19,7 @@ type executionSwitchFixture struct {
 }
 
 func TestExecutionAuthorityTransitionJournalBindsRootAndExecution(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	record := fixture.record
 
@@ -39,6 +40,7 @@ func TestExecutionAuthorityTransitionJournalBindsRootAndExecution(t *testing.T) 
 }
 
 func TestExecutionAuthorityTransitionFinalizesTargetAndRevokesSourceLease(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	record := fixture.record

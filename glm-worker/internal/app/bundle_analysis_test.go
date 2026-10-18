@@ -28,6 +28,7 @@ const analysisOwningTurnID = "turn-owning"
 const analysisLaterTurnID = "turn-later"
 
 func TestScanCodexRolloutWindowRejectsMalformedRecords(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 9, 4, 1, 0, 0, 0, time.UTC)
 	end := start.Add(2 * time.Hour)
 	cases := []struct {

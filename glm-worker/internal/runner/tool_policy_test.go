@@ -8,6 +8,7 @@ import (
 )
 
 func TestBuildRunArgsUsesExplicitWorkerToolPolicy(t *testing.T) {
+	t.Parallel()
 	r := &ClaudeRunner{}
 	args := r.buildRunArgs(
 		state.WorkerRole,

@@ -18,6 +18,7 @@ func attachStop(t *testing.T, w *Workflow) *runner.StopController {
 }
 
 func TestStopDuringRunningCallSavesInterruptedState(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "test-session"},
@@ -88,6 +89,7 @@ func TestStopDuringRunningCallSavesInterruptedState(t *testing.T) {
 }
 
 func TestStopCleanupResidualCarriesWarningIntoStopOutcome(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	warning := "process group 424242に残存processがあります"
 	r := &scriptedRunner{steps: []runnerStep{{
@@ -120,6 +122,7 @@ func TestStopCleanupResidualCarriesWarningIntoStopOutcome(t *testing.T) {
 }
 
 func TestStopBeforeCallSavesInterruptedWithoutCallRecord(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
 	w, _ := newRecoveryWorkflowT(t, st, r)
@@ -157,6 +160,7 @@ func TestStopBeforeCallSavesInterruptedWithoutCallRecord(t *testing.T) {
 }
 
 func TestResumeAfterPreFirstCallStopStartsFreshSession(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
@@ -193,6 +197,7 @@ func TestResumeAfterPreFirstCallStopStartsFreshSession(t *testing.T) {
 }
 
 func TestStopDuringBackoffSleepInterruptsWithoutCallRecord(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
 		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
@@ -283,6 +288,7 @@ func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID str
 }
 
 func TestResumeFromInterruptedCheckpoint(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedInterruptedCheckpoint(t, st, "sess-interrupted-before", repo)
@@ -307,6 +313,7 @@ func TestResumeFromInterruptedCheckpoint(t *testing.T) {
 }
 
 func TestExecuteNewTaskRejectsInterruptedCheckpoint(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedInterruptedCheckpoint(t, st, "sess-interrupted-before", "")
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}

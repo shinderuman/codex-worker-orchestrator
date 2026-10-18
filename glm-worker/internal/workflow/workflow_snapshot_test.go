@@ -69,6 +69,7 @@ func workerPacket() string {
 }
 
 func TestSnapshotCaptureFailureFailsClosedBeforeReviewer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -101,6 +102,7 @@ func TestSnapshotCaptureFailureFailsClosedBeforeReviewer(t *testing.T) {
 }
 
 func TestSnapshotReviewStartCaptureFailureFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -130,6 +132,7 @@ func TestSnapshotReviewStartCaptureFailureFailsClosed(t *testing.T) {
 }
 
 func TestSnapshotWorkerEndReviewStartMismatchFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -180,6 +183,7 @@ func TestSnapshotWorkerEndReviewStartMismatchFailsClosed(t *testing.T) {
 }
 
 func TestSnapshotComparisonSaveFailureFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.SaveWorkerEndSnapshot(fixedSnapshot); err != nil {
 		t.Fatal(err)
@@ -214,6 +218,7 @@ func TestSnapshotComparisonSaveFailureFailsClosed(t *testing.T) {
 }
 
 func TestSnapshotMatchReachesReviewer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -247,6 +252,7 @@ func TestSnapshotMatchReachesReviewer(t *testing.T) {
 }
 
 func TestSnapshotReviewResumeDriftFailsClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seeded := state.GitSnapshot{Head: "a", IndexDigest: "a", WorktreeDigest: "a"}
 	if err := st.SaveReviewStartSnapshot(seeded); err != nil {
@@ -299,6 +305,7 @@ func TestSnapshotReviewResumeDriftFailsClosed(t *testing.T) {
 }
 
 func TestSnapshotReviewResumeMatchResumesReviewer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.SaveReviewStartSnapshot(fixedSnapshot); err != nil {
 		t.Fatal(err)
@@ -344,6 +351,7 @@ func TestSnapshotReviewResumeMatchResumesReviewer(t *testing.T) {
 }
 
 func TestSnapshotCapturedOnDecisionPath(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
@@ -376,6 +384,7 @@ func TestSnapshotCapturedOnDecisionPath(t *testing.T) {
 }
 
 func TestSnapshotCapturedOnAutoFixPath(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -398,6 +407,7 @@ func TestSnapshotCapturedOnAutoFixPath(t *testing.T) {
 }
 
 func TestSnapshotCapturedOnExplicitFixPath(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
@@ -427,6 +437,7 @@ func TestSnapshotCapturedOnExplicitFixPath(t *testing.T) {
 }
 
 func TestSnapshotCapturedOnWorkerResumePath(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)

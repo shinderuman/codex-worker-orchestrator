@@ -8,6 +8,7 @@ import (
 )
 
 func TestCurrentReviewDiffTargetsUsesActualTaskPaths(t *testing.T) {
+	t.Parallel()
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"z.go", "commentlint", "a.go", "z.go"}, nil
@@ -23,6 +24,7 @@ func TestCurrentReviewDiffTargetsUsesActualTaskPaths(t *testing.T) {
 }
 
 func TestCurrentReviewDiffTargetsRejectsUnavailableOrEmpty(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		collect func(string, string) ([]string, error)

@@ -14,6 +14,7 @@ import (
 )
 
 func TestControllerExecutionMachineDispatchPreservesAuthorityOnInvalidInput(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runControllerActivationGit(t, root, "init", "-q")
 	runControllerActivationGit(t, root, "config", "user.email", "controller-execution@example.invalid")

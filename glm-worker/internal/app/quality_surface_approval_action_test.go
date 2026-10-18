@@ -55,6 +55,7 @@ func seedQualitySurfaceApprovalState(t *testing.T, cfg config.AppConfig) *state.
 }
 
 func TestParentHandoffQualitySurfaceApprovalIsSoleRequiredAction(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	seedQualitySurfaceApprovalState(t, cfg)
 
@@ -72,6 +73,7 @@ func TestParentHandoffQualitySurfaceApprovalIsSoleRequiredAction(t *testing.T) {
 }
 
 func TestAcceptIsDeniedWithZeroModelCallsWhileApprovalPending(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	seedQualitySurfaceApprovalState(t, cfg)
 
@@ -100,6 +102,7 @@ func TestAcceptIsDeniedWithZeroModelCallsWhileApprovalPending(t *testing.T) {
 }
 
 func TestApproveSurfaceDeniedWhenNoApprovalIsPending(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {

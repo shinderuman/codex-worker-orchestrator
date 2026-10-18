@@ -68,6 +68,7 @@ func handoffAllowsAction(actions []string, action string) bool {
 }
 
 func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing.T) {
+	t.Parallel()
 	cfg, st := newAwaitingParentCompletionHandoff(t)
 	saveHandoffPublicationCandidate(t, st)
 
@@ -112,6 +113,7 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 }
 
 func TestParentHandoffAfterReopenProjectsWaitingSolReviewWithFixAction(t *testing.T) {
+	t.Parallel()
 	cfg, st := newAwaitingParentCompletionHandoff(t)
 	saveHandoffPublicationCandidate(t, st)
 	if _, err := st.RecordPublicationInvalidatingFinding(

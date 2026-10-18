@@ -358,6 +358,10 @@ func (w *Workflow) handleInvalidModelResult(
 	if checkpoint.ResultCorrection {
 		return packet.Result{}, w.resultCorrectionInvalidResponseFailure(checkpoint, resultErr)
 	}
+	var boundary *reviewerDecisionBoundaryError
+	if checkpoint.Role == state.ReviewerRole && errors.As(resultErr, &boundary) {
+		return packet.Result{}, w.persistInterruptedStop(checkpoint, nil)
+	}
 	return packet.Result{}, &WorkerError{
 		Phase:   checkpoint.Phase + "-format",
 		Message: resultErr.Error(),

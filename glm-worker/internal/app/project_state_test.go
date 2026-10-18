@@ -47,6 +47,7 @@ func projectStateTaskBodyWithFulfilled(dependencies, fulfilled string) string {
 }
 
 func TestProjectStatePlanAbsent(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	output, err := buildProjectState(cfg, state.AttachStateStore(cfg))
 	if err != nil {
@@ -58,6 +59,7 @@ func TestProjectStatePlanAbsent(t *testing.T) {
 }
 
 func TestProjectStateLegacyPlanWithoutGoal(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/second.md`\n- `IMPLEMENTATION_TASKS/third.md`\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n- `IMPLEMENTATION_TASKS/fourth.md`\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))
@@ -101,6 +103,7 @@ func projectStateDependencyOf(t *testing.T, dependencies []repositoryproject.Dep
 }
 
 func TestProjectStateGoalActiveCompletionUnmet(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/final.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/final.md", projectStateTaskBody("none"))
@@ -124,6 +127,7 @@ func TestProjectStateGoalActiveCompletionUnmet(t *testing.T) {
 }
 
 func TestProjectStateAwaitingParentCompletionIsNotReady(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/final.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/final.md", projectStateTaskBody("none"))
@@ -161,6 +165,7 @@ func TestProjectStateAwaitingParentCompletionIsNotReady(t *testing.T) {
 }
 
 func TestProjectStateGoalCompletionReady(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/final.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/final.md", projectStateTaskBody("none"))
@@ -216,6 +221,7 @@ func prepareCompletedGoalTaskState(t *testing.T, cfg config.AppConfig, taskPath 
 }
 
 func TestProjectStateGoalProgressionToTerminal(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/second.md`\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))
@@ -270,6 +276,7 @@ func TestProjectStateGoalProgressionToTerminal(t *testing.T) {
 }
 
 func TestProjectStateGoalCompletedEmptySchedule(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: completed\n\ncompletion decision: acceptance met\n\n## ACTIVE\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	output, err := buildProjectState(cfg, state.AttachStateStore(cfg))
@@ -288,6 +295,7 @@ func TestProjectStateGoalCompletedEmptySchedule(t *testing.T) {
 }
 
 func TestProjectStateGoalCompletedWithScheduleFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: completed\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/final.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/final.md", projectStateTaskBody("none"))
@@ -297,6 +305,7 @@ func TestProjectStateGoalCompletedWithScheduleFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateGoalActiveWithoutActiveFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	if _, err := buildProjectState(cfg, state.AttachStateStore(cfg)); err == nil {
@@ -305,6 +314,7 @@ func TestProjectStateGoalActiveWithoutActiveFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateMalformedScheduleFailsClosed(t *testing.T) {
+	t.Parallel()
 	for name, plan := range map[string]string{
 		"active goal with non-bullet NEXT line":       "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/final.md`\n\n## NEXT（優先順）\n\nplain prose line\n\n## BLOCKED / USER_PERMISSION_WAIT\n",
 		"completed goal with non-bullet BLOCKED line": "# Plan\n\n## GOAL\n\nstatus: completed\n\ncompletion decision: acceptance met\n\n## ACTIVE\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n\nplain prose line\n",
@@ -319,6 +329,7 @@ func TestProjectStateMalformedScheduleFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateExplicitFulfilledDependency(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBodyWithFulfilled("none", "- `IMPLEMENTATION_TASKS/done.md`"))
@@ -333,6 +344,7 @@ func TestProjectStateExplicitFulfilledDependency(t *testing.T) {
 }
 
 func TestProjectStateDeletedDependencyViaGitHistoryFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("- `IMPLEMENTATION_TASKS/done.md`"))
@@ -347,6 +359,7 @@ func TestProjectStateDeletedDependencyViaGitHistoryFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateUnknownDependencyFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("- `IMPLEMENTATION_TASKS/ghost.md`"))
@@ -357,6 +370,7 @@ func TestProjectStateUnknownDependencyFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateSelfDependencyFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("- `IMPLEMENTATION_TASKS/first.md`"))
@@ -366,6 +380,7 @@ func TestProjectStateSelfDependencyFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateDependencyCycleFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/a.md`\n\n## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/b.md`\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/a.md", projectStateTaskBody("- `IMPLEMENTATION_TASKS/b.md`"))
@@ -376,6 +391,7 @@ func TestProjectStateDependencyCycleFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateParseCommand(t *testing.T) {
+	t.Parallel()
 	cmd, err := ParseCommand([]string{"--project-state"})
 	if err != nil {
 		t.Fatalf("ParseCommand: %v", err)
@@ -389,6 +405,7 @@ func TestProjectStateParseCommand(t *testing.T) {
 }
 
 func TestProjectStateUnscheduledTaskFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))
@@ -400,6 +417,7 @@ func TestProjectStateUnscheduledTaskFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateDuplicateScheduleFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/second.md`\n- `IMPLEMENTATION_TASKS/second.md`\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))
@@ -411,6 +429,7 @@ func TestProjectStateDuplicateScheduleFailsClosed(t *testing.T) {
 }
 
 func TestProjectStateNonRegularTaskFailsClosed(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))

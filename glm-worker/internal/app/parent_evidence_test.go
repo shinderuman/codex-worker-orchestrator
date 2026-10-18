@@ -417,6 +417,7 @@ func newParentEvidenceFixture(t *testing.T) *parentEvidenceFixture {
 }
 
 func TestParentEvidenceHandoffPartCarriesSessionRotation(t *testing.T) {
+	t.Parallel()
 	cfg, st, threadID := seedSessionRotationAccept(t)
 	marker, err := st.LoadSessionRotationMarker(threadID)
 	if err != nil || marker == nil || marker.Directive == nil {

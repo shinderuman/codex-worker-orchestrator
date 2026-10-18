@@ -57,7 +57,7 @@ func (s *Store) commitAuthorityTransitionWithEvidenceLocked(
 func hasEvidencePublicationInput(input EvidencePublicationInput) bool {
 	return len(input.AttemptSeals) != 0 || len(input.Finalizations) != 0 || len(input.TaskRevisions) != 0 || len(input.EpisodeRevisions) != 0 ||
 		len(input.AttemptSealRefs) != 0 || len(input.FinalizationRefs) != 0 || len(input.FindingRecordRefs) != 0 ||
-		len(input.TaskRevisionRefs) != 0 || len(input.EpisodeRevisionRefs) != 0
+		len(input.SourceRevisionRefs) != 0 || len(input.TaskRevisionRefs) != 0 || len(input.EpisodeRevisionRefs) != 0
 }
 
 func (s *Store) validateEvidencePublicationAuthority(head RepositoryControllerHead, record TransitionRecord) error {
@@ -75,6 +75,7 @@ func (s *Store) materializeEvidencePublicationInput(input EvidencePublicationInp
 	result.AttemptSealRefs = append([]EvidenceObjectRef(nil), input.AttemptSealRefs...)
 	result.FinalizationRefs = append([]EvidenceObjectRef(nil), input.FinalizationRefs...)
 	result.FindingRecordRefs = append([]EvidenceObjectRef(nil), input.FindingRecordRefs...)
+	result.SourceRevisionRefs = append([]EvidenceObjectRef(nil), input.SourceRevisionRefs...)
 	result.TaskRevisionRefs = append([]EvidenceObjectRef(nil), input.TaskRevisionRefs...)
 	result.EpisodeRevisionRefs = append([]EvidenceObjectRef(nil), input.EpisodeRevisionRefs...)
 	for _, record := range input.AttemptSeals {
@@ -108,6 +109,7 @@ func (s *Store) materializeEvidencePublicationInput(input EvidencePublicationInp
 	result.AttemptSealRefs = canonicalEvidenceRefs(result.AttemptSealRefs)
 	result.FinalizationRefs = canonicalEvidenceRefs(result.FinalizationRefs)
 	result.FindingRecordRefs = canonicalEvidenceRefs(result.FindingRecordRefs)
+	result.SourceRevisionRefs = canonicalEvidenceRefs(result.SourceRevisionRefs)
 	result.TaskRevisionRefs = canonicalEvidenceRefs(result.TaskRevisionRefs)
 	result.EpisodeRevisionRefs = canonicalEvidenceRefs(result.EpisodeRevisionRefs)
 	return result, nil
@@ -185,6 +187,9 @@ func (s *Store) validatePublicationRefs(record TransitionRecord, input EvidenceP
 		return err
 	}
 	if err := s.validatePublicationFinalizations(record, input.FinalizationRefs); err != nil {
+		return err
+	}
+	if err := s.validatePublicationSourceRevisions(record, input); err != nil {
 		return err
 	}
 	return s.validatePublicationFindingRecords(input.FindingRecordRefs)

@@ -46,7 +46,7 @@ func completionCLICommand(t *testing.T, cfg config.AppConfig, surface string, in
 	command := exec.Command(executable, "-test.run", "^TestRetirementRecoveryCLIProcess$", "--", "--authority", surface)
 	command.Dir = cfg.RepoRoot
 	home := filepath.Dir(cfg.StateBase)
-	command.Env = append(os.Environ(), "GLM_RETIREMENT_RECOVERY_TEST_PROCESS=1", "GLM_WORKER_HOME="+home, "HOME="+home, "CODEX_CONFIG_DIR="+filepath.Join(home, "codex"), "CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude"))
+	command.Env = append(append(os.Environ(), "GLM_RETIREMENT_RECOVERY_TEST_PROCESS=1", "GLM_WORKER_HOME="+home, "HOME="+home, "CODEX_CONFIG_DIR="+filepath.Join(home, "codex"), "CLAUDE_CONFIG_DIR="+filepath.Join(home, "claude")), qualityToolsBinDirEnv(t)...)
 	command.Stdin = bytes.NewReader(raw)
 	return command
 }
@@ -94,7 +94,6 @@ func appTestGitOutput(t *testing.T, root string, args ...string) []byte {
 
 func TestCompletionCLIRecoversPublishedACKWithCanonicalGitGuard(t *testing.T) {
 	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
-	t.Setenv("GLM_WORKER_HOME", filepath.Dir(cfg.StateBase))
 	installCompletionGuard(t, cfg)
 	direct := exec.Command("git", "-C", cfg.RepoRoot, "push", policy.Remote, policy.LocalRef+":"+policy.RemoteRef)
 	if data, err := direct.CombinedOutput(); err == nil || !strings.Contains(string(data), "push rejected") {
@@ -146,27 +145,14 @@ func TestCompletionCLIRecoversPublishedACKWithCanonicalGitGuard(t *testing.T) {
 	if err != nil || string(pushes) != "x" {
 		t.Fatalf("CLI ACK recovery repeated Push: %q %v", pushes, err)
 	}
-	assertRetiredBootstrap(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/successor.md")
+	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
 }
 
 func recoverCompletionThroughParentCLI(t *testing.T, cfg config.AppConfig) {
 	t.Helper()
-	original, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(cfg.RepoRoot); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(original); err != nil {
-			t.Error(err)
-		}
-	})
 	handoff := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface || containsParentAction(handoff.AllowedActions, "start") {
 		t.Fatalf("ACK recovery canonical handoff: %#v", handoff)
 	}
-	installRetirementCLIProcess(t)
-	runStagedRetirementRecovery(t, handoff.RequiredActionParameters["controller_command_json"])
+	runStagedRetirementRecovery(t, cfg, handoff.RequiredActionParameters["controller_command_json"])
 }

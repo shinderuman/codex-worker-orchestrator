@@ -14,22 +14,27 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactioncmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func qualityToolsBinDirEnv(t *testing.T) []string {
+	t.Helper()
+	dir := os.Getenv("QUALITY_TOOLS_BIN_DIR")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir = filepath.Join(home, ".local", "share", "codex-worker-orchestrator", "quality-tools", "bin")
+	}
+	return []string{"QUALITY_TOOLS_BIN_DIR=" + dir}
+}
 
 func prepareCompletionQualityCorpus(t *testing.T, root string) {
 	t.Helper()
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("quality fixture source is unavailable")
-	}
-	if os.Getenv("QUALITY_TOOLS_BIN_DIR") == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv("QUALITY_TOOLS_BIN_DIR", filepath.Join(home, ".local", "share", "codex-worker-orchestrator", "quality-tools", "bin"))
 	}
 	repository := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", ".."))
 	paths, err := exec.Command("git", "-C", repository, "ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
@@ -50,6 +55,9 @@ func prepareCompletionQualityCorpus(t *testing.T, root string) {
 			t.Fatal(err)
 		}
 		data, err := os.ReadFile(filepath.Join(repository, path))
+		if os.IsNotExist(err) {
+			continue
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -85,8 +93,7 @@ func prepareCompletionQualityCorpus(t *testing.T, root string) {
 
 func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	cfg, store, retired, policy := interruptedCompletionWorkflowFixture(t)
-	t.Setenv("GLM_WORKER_HOME", filepath.Dir(cfg.StateBase))
-	assertRetiredBootstrap(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/successor.md")
+	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
 	bound, err := controller.WorkflowConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -123,9 +130,9 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	}
 	writeAppTestFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/successor.md", string(content)+"\n親metadataの追加要求\n")
 	runControllerActivationGit(t, cfg.RepoRoot, "add", "IMPLEMENTATION_TASKS/successor.md")
-	assertRetiredParentMaintenanceGateAdmits(t, cfg.RepoRoot)
+	assertRetiredParentMaintenanceGateAdmits(t, cfg)
 	runControllerActivationGit(t, cfg.RepoRoot, "commit", "-qm", "successor amendment")
-	assertRetiredBootstrap(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/successor.md")
+	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
 	handoff = buildParentHandoffWithConfig(bound, st)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != "controller-publication" {
 		t.Fatalf("metadata synchronization handoff: %#v", handoff)
@@ -176,46 +183,25 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	}
 }
 
-func assertRetiredParentMaintenanceGateAdmits(t *testing.T, root string) {
+func assertRetiredParentMaintenanceGateAdmits(t *testing.T, cfg config.AppConfig) {
 	t.Helper()
-	original, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	code := parentactioncmd.Run([]string{"continuation-metadata-guard"}, io.Discard, io.Discard)
-	if err := os.Chdir(original); err != nil {
-		t.Fatal(err)
-	}
-	if code != 0 {
-		t.Fatalf("continuation metadata guard rejected post-retire parent maintenance: exit=%d", code)
+	exit, _, diagnostics := runParentActionCLI(t, cfg, "continuation-metadata-guard")
+	if exit != 0 {
+		t.Fatalf("continuation metadata guard rejected post-retire parent maintenance: exit=%d %s", exit, diagnostics)
 	}
 }
 
-func assertRetiredBootstrap(t *testing.T, root, task string) {
+func assertRetiredBootstrap(t *testing.T, cfg config.AppConfig, task string) {
 	t.Helper()
-	original, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	_, runErr := runAuthorityBootstrap([]string{"--authority", "bootstrap"}, &out)
-	if err := os.Chdir(original); err != nil {
-		t.Fatal(err)
-	}
-	if runErr != nil {
-		t.Fatal(runErr)
+	exit, output := runAuthorityBootstrapChild(t, cfg)
+	if exit != 0 {
+		t.Fatalf("bootstrap authority exit=%d: %s", exit, output)
 	}
 	var result struct {
 		ActiveTask string `json:"active_task"`
 		Hash       string `json:"authority_snapshot_sha256"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatal(err)
 	}
 	if result.ActiveTask != task || result.Hash == "" {

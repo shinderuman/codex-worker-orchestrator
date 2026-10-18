@@ -3,6 +3,7 @@ package app
 import "testing"
 
 func TestCommandDispatchOwnersCoverAllModes(t *testing.T) {
+	t.Parallel()
 	for mode := ModeNewTask; mode <= ModeFailurePathAdvisory; mode++ {
 		if _, err := commandDispatchOwnerFor(mode); err != nil {
 			t.Fatalf("mode %d has no dispatch owner: %v", mode, err)
@@ -11,6 +12,7 @@ func TestCommandDispatchOwnersCoverAllModes(t *testing.T) {
 }
 
 func TestCommandDispatchOwnersSeparateRuntimeAndReadOnly(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []CommandMode{ModeStop, ModeCodexWakePlan, ModeCodexWakeResponse} {
 		owner, err := commandDispatchOwnerFor(mode)
 		if err != nil {
@@ -44,6 +46,7 @@ func TestCommandDispatchOwnersSeparateRuntimeAndReadOnly(t *testing.T) {
 }
 
 func TestCommandDispatchOwnersSeparateStateLockedAndWorkflow(t *testing.T) {
+	t.Parallel()
 	cases := map[CommandMode]commandDispatchOwner{
 		ModeVerifyCodexWake: dispatchStateCommand,
 		ModeInstallSmoke:    dispatchStateCommand,
@@ -64,6 +67,7 @@ func TestCommandDispatchOwnersSeparateStateLockedAndWorkflow(t *testing.T) {
 }
 
 func TestCodexWakeCommandsUseCanonicalParserRegistry(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"--codex-wake-plan", "--codex-wake-response-stdin"} {
 		if commandParsers[name] == nil {
 			t.Fatalf("canonical command parser missing %q", name)

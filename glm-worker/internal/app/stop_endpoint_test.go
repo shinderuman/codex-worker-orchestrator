@@ -30,6 +30,7 @@ func stopEndpointTestStore(t *testing.T) (*state.StateStore, config.AppConfig) {
 }
 
 func TestRequestStopFailsWhenEndpointAbsent(t *testing.T) {
+	t.Parallel()
 	_, cfg := stopEndpointTestStore(t)
 	err := requestStop(cfg, &strings.Builder{})
 	var endpointErr *StopEndpointError
@@ -42,6 +43,7 @@ func TestRequestStopFailsWhenEndpointAbsent(t *testing.T) {
 }
 
 func TestRequestStopFailsWhenEndpointIsStale(t *testing.T) {
+	t.Parallel()
 	st, cfg := stopEndpointTestStore(t)
 	path := stopEndpointPath(st)
 	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
@@ -76,6 +78,7 @@ func startStopEndpointForTest(t *testing.T, st *state.StateStore) (*stopEndpoint
 }
 
 func TestStopEndpointRejectsUnknownRequestLine(t *testing.T) {
+	t.Parallel()
 	st, _ := stopEndpointTestStore(t)
 	_, _, conn := startStopEndpointForTest(t, st)
 	if _, err := conn.Write([]byte("{\"type\":\"inject\",\"message\":\"x\"}\n")); err != nil {
@@ -103,6 +106,7 @@ func readStopEndpointResponseForTest(t *testing.T, conn net.Conn) stopEndpointRe
 }
 
 func TestStopEndpointAcknowledgesInterruptedStop(t *testing.T) {
+	t.Parallel()
 	st, cfg := stopEndpointTestStore(t)
 	_, controller, _ := startStopEndpointForTest(t, st)
 
@@ -127,6 +131,7 @@ func TestStopEndpointAcknowledgesInterruptedStop(t *testing.T) {
 }
 
 func TestStopEndpointAcknowledgesConcurrentStopRequests(t *testing.T) {
+	t.Parallel()
 	st, cfg := stopEndpointTestStore(t)
 	_, controller, _ := startStopEndpointForTest(t, st)
 
@@ -159,6 +164,7 @@ func TestStopEndpointAcknowledgesConcurrentStopRequests(t *testing.T) {
 }
 
 func TestStopEndpointAcknowledgesCleanupResidualAsTypedOutcome(t *testing.T) {
+	t.Parallel()
 	st, cfg := stopEndpointTestStore(t)
 	_, controller, _ := startStopEndpointForTest(t, st)
 
@@ -187,6 +193,7 @@ func TestStopEndpointAcknowledgesCleanupResidualAsTypedOutcome(t *testing.T) {
 }
 
 func TestStopEndpointCloseWaitsForPendingRequestAck(t *testing.T) {
+	t.Parallel()
 	st, _ := stopEndpointTestStore(t)
 	controller := runner.NewStopController()
 	server, err := startStopEndpoint(st, controller)
@@ -219,6 +226,7 @@ func TestStopEndpointCloseWaitsForPendingRequestAck(t *testing.T) {
 }
 
 func TestStopEndpointAcknowledgesNaturalTerminalAsTerminal(t *testing.T) {
+	t.Parallel()
 	st, cfg := stopEndpointTestStore(t)
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
@@ -245,6 +253,7 @@ func TestStopEndpointAcknowledgesNaturalTerminalAsTerminal(t *testing.T) {
 }
 
 func TestStopEndpointReportsActiveExitAsExited(t *testing.T) {
+	t.Parallel()
 	st, cfg := stopEndpointTestStore(t)
 	_, controller, _ := startStopEndpointForTest(t, st)
 
@@ -266,6 +275,7 @@ func TestStopEndpointReportsActiveExitAsExited(t *testing.T) {
 }
 
 func TestStopEndpointCloseRemovesSocketFile(t *testing.T) {
+	t.Parallel()
 	st, _ := stopEndpointTestStore(t)
 	controller := runner.NewStopController()
 	server, err := startStopEndpoint(st, controller)
@@ -283,6 +293,7 @@ func TestStopEndpointCloseRemovesSocketFile(t *testing.T) {
 }
 
 func TestStopEndpointPathFitsUnixSocketLimit(t *testing.T) {
+	t.Parallel()
 	deepBase := t.TempDir()
 	deep := deepBase
 	for i := 0; i < 8; i++ {

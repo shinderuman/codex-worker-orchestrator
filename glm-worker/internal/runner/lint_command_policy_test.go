@@ -7,6 +7,7 @@ import (
 )
 
 func TestBuildRunArgsDisallowsMutableWorkerDirectLintCommands(t *testing.T) {
+	t.Parallel()
 	runner := &ClaudeRunner{}
 	args := runner.buildRunArgs(
 		state.WorkerRole,
@@ -45,6 +46,7 @@ func TestBuildRunArgsDisallowsMutableWorkerDirectLintCommands(t *testing.T) {
 }
 
 func TestBuildRunArgsKeepsReadOnlyBashDenyCanonical(t *testing.T) {
+	t.Parallel()
 	runner := &ClaudeRunner{}
 	args := runner.buildRunArgs(
 		state.WorkerRole,

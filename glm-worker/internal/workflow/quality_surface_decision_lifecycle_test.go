@@ -134,6 +134,7 @@ func stopDecisionContinuationForQualitySurface(t *testing.T, st *state.StateStor
 }
 
 func TestDecisionContinuationQualitySurfaceStopConvergesToApprovalWait(t *testing.T) {
+	t.Parallel()
 	_, st, scripted, w := newQualitySurfaceDecisionWorkflow(t, []runnerStep{
 		{structured: implementedPacket("rules applied")},
 		{structured: passPacket()},
@@ -157,6 +158,7 @@ func TestDecisionContinuationQualitySurfaceStopConvergesToApprovalWait(t *testin
 }
 
 func TestApprovedQualitySurfaceSurvivesRateLimitStopInAutoFix(t *testing.T) {
+	t.Parallel()
 	_, st, scripted, w := newQualitySurfaceDecisionWorkflow(t, []runnerStep{
 		{structured: implementedPacket("rules applied")},
 		{structured: fixRequiredPacket()},

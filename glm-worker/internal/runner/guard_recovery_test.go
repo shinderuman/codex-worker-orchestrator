@@ -6,6 +6,7 @@ import (
 )
 
 func TestIsRecoverableGuardFailure(t *testing.T) {
+	t.Parallel()
 	refChange := GitRefChange{
 		Name:  "refs/heads/bypass",
 		After: &GitRefState{Name: "refs/heads/bypass", ObjectID: "2222222222222222222222222222222222222222"},
@@ -106,6 +107,7 @@ func TestIsRecoverableGuardFailure(t *testing.T) {
 }
 
 func TestIsPreCallGuardFailure(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error

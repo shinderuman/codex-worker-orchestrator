@@ -8,6 +8,7 @@ import (
 )
 
 func TestClassifySelfProtectionFailsClosedUnknownSurfaces(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{
 		".github/workflows/new-quality.yml",
 		"runtime/new-worker.py",
@@ -27,6 +28,7 @@ func TestClassifySelfProtectionFailsClosedUnknownSurfaces(t *testing.T) {
 }
 
 func TestClassifySelfProtectionKeepsKnownSafeLow(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{
 		"docs/guide.md",
 		"notes.md",
@@ -45,6 +47,7 @@ func TestClassifySelfProtectionKeepsKnownSafeLow(t *testing.T) {
 }
 
 func TestClassifySelfProtectionAggregatesUnknownWithKnownCritical(t *testing.T) {
+	t.Parallel()
 	decision := classifySelfProtection([]string{
 		"runtime/new-worker.py",
 		"glm-worker/internal/workflow/workflow.go",
@@ -55,6 +58,7 @@ func TestClassifySelfProtectionAggregatesUnknownWithKnownCritical(t *testing.T) 
 }
 
 func TestUnknownSurfaceRaisesRiskFloorBeforeCompletion(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -77,6 +81,7 @@ func TestUnknownSurfaceRaisesRiskFloorBeforeCompletion(t *testing.T) {
 }
 
 func TestUnknownSurfaceHighFloorAllowsFixRequiredBeforeSolEscalation(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("initial")},
@@ -101,6 +106,7 @@ func TestUnknownSurfaceHighFloorAllowsFixRequiredBeforeSolEscalation(t *testing.
 }
 
 func TestKnownSafeLowRiskReviewKeepsNormalPassPath(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},

@@ -7,6 +7,7 @@ import (
 )
 
 func TestAttemptSealPortableAuthorityRejectsIncompleteState(t *testing.T) {
+	t.Parallel()
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	base := validPortableAttemptSeal(t, store, repo)
 	cases := map[string]func(*AttemptSeal){
@@ -45,6 +46,7 @@ func TestAttemptSealPortableAuthorityRejectsIncompleteState(t *testing.T) {
 }
 
 func TestAttemptSealCanonicalIdentityIncludesDedicatedEvidenceWithoutOrderDependence(t *testing.T) {
+	t.Parallel()
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	record := validPortableAttemptSeal(t, store, repo)
 	findingA := putAttemptSealTestEvidence(t, store, "finding-record", "finding:a")
@@ -75,6 +77,7 @@ func TestAttemptSealCanonicalIdentityIncludesDedicatedEvidenceWithoutOrderDepend
 }
 
 func TestEvidenceGraphFailsWhenRequiredAttemptDedicatedEvidenceIsMissing(t *testing.T) {
+	t.Parallel()
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	record := validPortableAttemptSeal(t, store, repo)
 	finding := putAttemptSealTestEvidence(t, store, "finding-record", "finding:graph")
@@ -155,6 +158,7 @@ func containsEvidenceRef(refs []EvidenceObjectRef, target EvidenceObjectRef) boo
 }
 
 func TestSealedAttemptTimestampKeepsWindowOrderUnderBackwardClockStep(t *testing.T) {
+	t.Parallel()
 	started := time.Unix(6000, 0).UTC()
 	if sealed := sealedAttemptTimestamp(started, started.Add(-time.Second)); !sealed.Equal(started) {
 		t.Fatalf("backward clock step produced an inverted seal window: %v", sealed)

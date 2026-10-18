@@ -7,6 +7,7 @@ import (
 )
 
 func TestResolveAnalysisOwningTurnRequiresExactResumeEvidence(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
 	taskID := "task-exact"
 	initialStart := start.Add(-time.Minute)

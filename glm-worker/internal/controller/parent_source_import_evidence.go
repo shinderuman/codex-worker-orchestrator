@@ -4,17 +4,14 @@ import (
 	"fmt"
 )
 
+const taskStatusExecuting = "executing"
+
 func (s *Store) parentSourceImportEvidence(op ExecutionOperation) (EvidencePublicationInput, error) {
-	previous, err := s.loadAttempt(op.Source.Attempt.PredecessorAttemptID)
-	if err != nil {
-		return EvidencePublicationInput{}, err
+	if op.Attempt == nil || op.Attempt.AttemptID == "" || op.Attempt.AttemptID != op.Source.Attempt.AttemptID {
+		return EvidencePublicationInput{}, fmt.Errorf("parent source import evidence requires the same live attempt")
 	}
-	if previous.SemanticTaskRef.TaskPath != op.Source.Attempt.SemanticTaskRef.TaskPath {
-		return EvidencePublicationInput{}, fmt.Errorf("parent source import predecessor belongs to another Task")
-	}
-	sealRef, _, err := s.findAttemptSeal(op.Source.Head, previous)
-	if err != nil {
-		return EvidencePublicationInput{}, err
+	if op.Attempt.SemanticTaskRef.TaskPath != op.Source.Attempt.SemanticTaskRef.TaskPath {
+		return EvidencePublicationInput{}, fmt.Errorf("parent source import revises another Task")
 	}
 	worktree, err := captureParentSourceTree(op.Source.Workspace.Root)
 	if err != nil {
@@ -32,30 +29,77 @@ func (s *Store) parentSourceImportEvidence(op ExecutionOperation) (EvidencePubli
 	if err != nil {
 		return EvidencePublicationInput{}, err
 	}
-	refs := []EvidenceObjectRef{archive, sourceRef, op.ParentSource.Archive, *op.RuntimeBeforeRef}
-	final, err := s.storeOperationFinalization(op, sealRef, refs)
+	revisionRef, _, err := s.StoreTaskSourceRevision(TaskSourceRevisionRecord{
+		SchemaVersion:             evidenceSchemaVersion,
+		AttemptID:                 op.Source.Attempt.AttemptID,
+		PreviousTaskRef:           op.Source.Attempt.SemanticTaskRef,
+		RevisedTaskRef:            op.Attempt.SemanticTaskRef,
+		PreviousProjectSnapshotID: op.Transition.ProjectSnapshotOld,
+		RevisedProjectSnapshotID:  op.Transition.ProjectSnapshotNew,
+		SourceSnapshotID:          op.ParentSource.Snapshot.ID,
+		TransitionID:              op.Transition.TransitionID,
+		ControllerGeneration:      op.Transition.CommittedGeneration,
+		EvidenceRefs:              []EvidenceObjectRef{archive, sourceRef, op.ParentSource.Archive, *op.RuntimeBeforeRef},
+		CreatedAt:                 op.Transition.CreatedAt,
+	})
 	if err != nil {
 		return EvidencePublicationInput{}, err
 	}
-	return s.appendParentSourceFinalization(op, previous, final)
+	return s.appendTaskSourceRevisionIndex(op, revisionRef)
 }
 
-func (s *Store) appendParentSourceFinalization(op ExecutionOperation, previous AttemptRecord, final EvidenceObjectRef) (EvidencePublicationInput, error) {
-	ref, err := s.attemptTaskEvidenceRoot(op.Source.Head, previous)
-	if err != nil {
+func (s *Store) appendTaskSourceRevisionIndex(op ExecutionOperation, revisionRef EvidenceObjectRef) (EvidencePublicationInput, error) {
+	task := TaskIndexRevision{SchemaVersion: evidenceSchemaVersion, TaskRef: op.Attempt.SemanticTaskRef, SemanticStatus: taskStatusExecuting}
+	if current, ok, err := s.publishedTaskSubjectRevision(op.Source.Head, op.Attempt.SemanticTaskRef); err != nil {
 		return EvidencePublicationInput{}, err
+	} else if ok {
+		loaded, err := s.LoadTaskIndexRevision(current)
+		if err != nil {
+			return EvidencePublicationInput{}, err
+		}
+		task = loaded
+		task.PreviousRevision = &current
 	}
-	task, err := s.LoadTaskIndexRevision(ref)
-	if err != nil {
-		return EvidencePublicationInput{}, err
-	}
-	task.PreviousRevision = &ref
-	task.Finalizations = append(task.Finalizations, final)
+	task.SourceRevisions = append(task.SourceRevisions, revisionRef)
 	task.ControllerGeneration = op.Transition.CommittedGeneration
 	task.TransitionID = op.Transition.TransitionID
 	task.CreatedAt = op.Transition.CreatedAt
 	taskRef, _, err := s.StoreTaskIndexRevision(task)
-	return EvidencePublicationInput{FinalizationRefs: []EvidenceObjectRef{final}, TaskRevisionRefs: []EvidenceObjectRef{taskRef}}, err
+	return EvidencePublicationInput{
+		TaskRevisionRefs:   []EvidenceObjectRef{taskRef},
+		SourceRevisionRefs: []EvidenceObjectRef{revisionRef},
+	}, err
+}
+
+func (s *Store) publishedTaskSubjectRevision(head RepositoryControllerHead, taskRef SemanticTaskRef) (EvidenceObjectRef, bool, error) {
+	if head.EvidenceHeadRef == nil {
+		return EvidenceObjectRef{}, false, nil
+	}
+	evidenceHead, err := s.LoadEvidenceHead(*head.EvidenceHeadRef)
+	if err != nil {
+		return EvidenceObjectRef{}, false, err
+	}
+	subject, ok := evidenceSubjectHead(evidenceHead.TaskHeads, taskEvidenceSubjectID(taskRef))
+	if !ok {
+		return EvidenceObjectRef{}, false, nil
+	}
+	return subject.RevisionRef, true, nil
+}
+
+func (s *Store) publishedTaskSourceRevisionRefs(taskRef SemanticTaskRef) ([]EvidenceObjectRef, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return nil, err
+	}
+	current, ok, err := s.publishedTaskSubjectRevision(head, taskRef)
+	if err != nil || !ok {
+		return nil, err
+	}
+	revision, err := s.LoadTaskIndexRevision(current)
+	if err != nil {
+		return nil, err
+	}
+	return revision.SourceRevisions, nil
 }
 
 func (s *Store) ReentryReviewRepairEvidence(transitionID string) ([]byte, error) {

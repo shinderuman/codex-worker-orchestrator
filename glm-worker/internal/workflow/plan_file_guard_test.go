@@ -88,6 +88,7 @@ func requirePlanFileFailClosed(t *testing.T, st *state.StateStore, r *mutatingRu
 }
 
 func TestPlanFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -117,6 +118,7 @@ func TestPlanFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 }
 
 func TestPlanFileAbsentWorkerCreationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -130,6 +132,7 @@ func TestPlanFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 }
 
 func TestPlanFileDeletionFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -146,6 +149,7 @@ func TestPlanFileDeletionFailsClosed(t *testing.T) {
 }
 
 func TestParentManagedMetadataNonGuardedStatesProceed(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		setup   func(*testing.T, string)
@@ -190,6 +194,7 @@ func TestParentManagedMetadataNonGuardedStatesProceed(t *testing.T) {
 }
 
 func TestPlanFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(t *testing.T, repoRoot string){
 		"staged index entry": func(t *testing.T, repoRoot string) {
 			gitIn(t, repoRoot, "add", implementationPlanFile)
@@ -248,6 +253,7 @@ func TestPlanFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestPlanFileInvalidGitAuthorityFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 
 	if err := os.Remove(filepath.Join(repoRoot, ".git", "HEAD")); err != nil {
@@ -271,6 +277,7 @@ func TestPlanFileInvalidGitAuthorityFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestPlanFileUntrackedAbsentNonGitRepoProceeds(t *testing.T) {
+	t.Parallel()
 	repoRoot := t.TempDir()
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
@@ -292,6 +299,7 @@ func TestPlanFileUntrackedAbsentNonGitRepoProceeds(t *testing.T) {
 }
 
 func TestPlanFileDecisionWorkerMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	st := newStateStoreT(t)
@@ -313,6 +321,7 @@ func TestPlanFileDecisionWorkerMutationFailsClosed(t *testing.T) {
 }
 
 func TestPlanFileExplicitFixMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	st := newStateStoreT(t)
@@ -348,6 +357,7 @@ func planFileDecisionWorkflow(t *testing.T, st *state.StateStore, repoRoot strin
 }
 
 func TestPlanFileAutoFixMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -364,6 +374,7 @@ func TestPlanFileAutoFixMutationFailsClosed(t *testing.T) {
 }
 
 func TestPlanFileResumeWorkerMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	st := newStateStoreT(t)
@@ -380,6 +391,7 @@ func TestPlanFileResumeWorkerMutationFailsClosed(t *testing.T) {
 }
 
 func TestPlanFileResumeAdoptsParentUpdateAsBaseline(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	st := newStateStoreT(t)
@@ -425,6 +437,7 @@ func seedRateLimitedWorkerCheckpoint(t *testing.T, st *state.StateStore, request
 }
 
 func TestPlanFileTransientRecoveryResumedTaskMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -443,6 +456,7 @@ func TestPlanFileTransientRecoveryResumedTaskMutationFailsClosed(t *testing.T) {
 }
 
 func TestPlanFileReadErrorFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	if err := os.Mkdir(filepath.Join(repoRoot, implementationPlanFile), 0o755); err != nil {
 		t.Fatal(err)
@@ -522,6 +536,7 @@ func requireGuardTelemetryExactOnce(t *testing.T, st *state.StateStore, runnerCa
 }
 
 func TestPlanFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -537,6 +552,7 @@ func TestPlanFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 }
 
 func TestHistoryFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
@@ -553,6 +569,7 @@ func TestHistoryFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 }
 
 func TestPlanFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -585,6 +602,7 @@ func TestPlanFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 }
 
 func TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
@@ -605,6 +623,7 @@ func TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 }
 
 func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -635,6 +654,7 @@ func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
 }
 
 func TestHistoryFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
@@ -668,6 +688,7 @@ func TestHistoryFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 }
 
 func TestHistoryFileAbsentWorkerCreationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -682,6 +703,7 @@ func TestHistoryFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 }
 
 func TestHistoryFileDeletionFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
@@ -699,6 +721,7 @@ func TestHistoryFileDeletionFailsClosed(t *testing.T) {
 }
 
 func TestHistoryFileUnchangedProceedsToReview(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
@@ -719,6 +742,7 @@ func TestHistoryFileUnchangedProceedsToReview(t *testing.T) {
 }
 
 func TestHistoryFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(t *testing.T, repoRoot string){
 		"staged index entry": func(t *testing.T, repoRoot string) {
 			gitIn(t, repoRoot, "add", implementationHistoryFile)
@@ -781,6 +805,7 @@ func TestHistoryFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestHistoryFileReadErrorFailsClosedBeforeCall(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	if err := os.Mkdir(filepath.Join(repoRoot, implementationHistoryFile), 0o755); err != nil {
@@ -814,6 +839,7 @@ func TestHistoryFileReadErrorFailsClosedBeforeCall(t *testing.T) {
 }
 
 func TestHistoryFileResumeWorkerMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
@@ -831,6 +857,7 @@ func TestHistoryFileResumeWorkerMutationFailsClosed(t *testing.T) {
 }
 
 func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
@@ -862,6 +889,7 @@ func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) 
 }
 
 func TestPlanFileContractWiring(t *testing.T) {
+	t.Parallel()
 	root := scenarioRepoRoot(t)
 	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
 	if err != nil {

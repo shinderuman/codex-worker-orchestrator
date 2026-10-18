@@ -9,6 +9,7 @@ import (
 )
 
 func TestParentHandoffRotationPendingMismatchKeepsRecoveryDirective(t *testing.T) {
+	t.Parallel()
 	cfg, st, _ := seedSessionRotationAccept(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))

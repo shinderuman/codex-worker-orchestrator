@@ -7,6 +7,7 @@ import (
 )
 
 func TestExternalFeasibilitySnapshotsCurrentTaskAuthority(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)

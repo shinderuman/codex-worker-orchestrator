@@ -10,6 +10,7 @@ import (
 )
 
 func TestAttemptBundleStableAcrossLanePathReuseAndUnrelatedEvidence(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	source, _ := newControllerLinkedWorktree(t)
 	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "episode-1", 1)
@@ -64,6 +65,7 @@ func TestAttemptBundleStableAcrossLanePathReuseAndUnrelatedEvidence(t *testing.T
 }
 
 func TestAttemptBundleIncludesLaterFinalizationWithoutSealRewrite(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	source, _ := newControllerLinkedWorktree(t)
 	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "", 1)
@@ -106,6 +108,7 @@ func TestAttemptBundleIncludesLaterFinalizationWithoutSealRewrite(t *testing.T) 
 }
 
 func TestTaskAndEpisodeBundlesProjectHistoricalEvidence(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	source, _ := newControllerLinkedWorktree(t)
 	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "episode-1", 1)
@@ -132,6 +135,7 @@ func TestTaskAndEpisodeBundlesProjectHistoricalEvidence(t *testing.T) {
 }
 
 func TestTaskAndEpisodeBundlesIncludeSemanticEvidenceLinks(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	source, _ := newControllerLinkedWorktree(t)
 	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "episode-1", 1)
@@ -206,6 +210,7 @@ func TestTaskAndEpisodeBundlesIncludeSemanticEvidenceLinks(t *testing.T) {
 }
 
 func TestBundleFailsLoudlyWhenRequiredHistoricalEvidenceIsMissing(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	source, _ := newControllerLinkedWorktree(t)
 	sealRef, seal := storeBundleAttemptSeal(t, store, source, "attempt-b1", "IMPLEMENTATION_TASKS/B.md", "", 1)

@@ -35,6 +35,7 @@ func newReviewerSearchWorkflow(t *testing.T, paths []string) (*Workflow, *state.
 }
 
 func TestReviewerDiffFirstSkipsIndependentSearchForTestOnlyDiff(t *testing.T) {
+	t.Parallel()
 	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/foo_test.go"})
 	calls := 0
 	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
@@ -52,6 +53,7 @@ func TestReviewerDiffFirstSkipsIndependentSearchForTestOnlyDiff(t *testing.T) {
 }
 
 func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *testing.T) {
+	t.Parallel()
 	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
 	w.repoSearch = func(_ context.Context, _ string, query string, opts reposearch.Options) (reposearch.Report, error) {
 		if !strings.Contains(query, "review impact paths: glm-worker/internal/workflow/workflow.go") || opts.MaxResults != RepoSearchMaxResults {
@@ -79,6 +81,7 @@ func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *
 }
 
 func TestReviewerDiffFirstActiveHarnessSkipsParentOnlyDiff(t *testing.T) {
+	t.Parallel()
 	w, _, _ := newReviewerSearchWorkflow(t, []string{state.ParentPlanFile})
 	calls := 0
 	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
@@ -92,6 +95,7 @@ func TestReviewerDiffFirstActiveHarnessSkipsParentOnlyDiff(t *testing.T) {
 }
 
 func TestReviewerDiffFirstInactiveHarnessSearchesCoincidentalParentOnlyDiff(t *testing.T) {
+	t.Parallel()
 	w, st, _ := newReviewerSearchWorkflow(t, []string{state.ParentPlanFile})
 	pinRepositoryHarnessInactiveT(t, st)
 	calls := 0
@@ -109,6 +113,7 @@ func TestReviewerDiffFirstInactiveHarnessSearchesCoincidentalParentOnlyDiff(t *t
 }
 
 func TestReviewerDiffFirstExcludesParentManagedMetadataFromImpactTerms(t *testing.T) {
+	t.Parallel()
 	paths := []string{"glm-worker/internal/workflow/workflow.go", state.ParentPlanFile}
 	w, st, _ := newReviewerSearchWorkflow(t, paths)
 	root := w.config.RepoRoot
@@ -145,6 +150,7 @@ func TestReviewerDiffFirstExcludesParentManagedMetadataFromImpactTerms(t *testin
 }
 
 func TestReviewerDiffFirstInactiveHarnessKeepsCoincidentalParentMetadataImpactTerms(t *testing.T) {
+	t.Parallel()
 	paths := []string{"glm-worker/internal/workflow/workflow.go", state.ParentPlanFile}
 	w, st, _ := newReviewerSearchWorkflow(t, paths)
 	pinRepositoryHarnessInactiveT(t, st)
@@ -181,6 +187,7 @@ func TestReviewerDiffFirstInactiveHarnessKeepsCoincidentalParentMetadataImpactTe
 }
 
 func TestReviewerDiffFirstSearchFailureFallsBackToDiffInspection(t *testing.T) {
+	t.Parallel()
 	w, _, _ := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
 	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
 		return reposearch.Report{}, errors.New("search unavailable")
@@ -192,6 +199,7 @@ func TestReviewerDiffFirstSearchFailureFallsBackToDiffInspection(t *testing.T) {
 }
 
 func TestReviewerDiffFirstKeepsRepoSearchRouteOutOfLiveStats(t *testing.T) {
+	t.Parallel()
 	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
 	current := time.Date(2026, 8, 30, 3, 0, 0, 0, time.UTC)
 	w.now = func() time.Time {
@@ -220,6 +228,7 @@ func TestReviewerDiffFirstKeepsRepoSearchRouteOutOfLiveStats(t *testing.T) {
 }
 
 func TestReviewerDiffFirstDisabledKeepsDiffNavigationWithoutSearch(t *testing.T) {
+	t.Parallel()
 	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
 	w.config.RepoSearch = false
 	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
@@ -242,6 +251,7 @@ func TestReviewerDiffFirstDisabledKeepsDiffNavigationWithoutSearch(t *testing.T)
 }
 
 func TestReviewerPromptMakesDiffFirstNavigationProductionVisible(t *testing.T) {
+	t.Parallel()
 	navigation := renderReviewerDiffFirstNavigation(
 		[]string{"glm-worker/internal/workflow/workflow.go"},
 		reviewerSearchHit,

@@ -14,6 +14,7 @@ import (
 )
 
 func TestRunEntryControllerActivationRequiresExplicitMachineAction(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runControllerActivationGit(t, root, "init", "-q")
 	runControllerActivationGit(t, root, "config", "user.email", "controller-activation@example.invalid")

@@ -33,6 +33,7 @@ type runtimeEvidenceFixture struct {
 const runtimeEvidenceParentThreadID = "7e80986f-2269-4d4d-b576-9b048ef131f8"
 
 func TestSuspensionBundlePreservesBoundRuntimeTelemetry(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	runtime := bindRuntimeEvidenceFixture(t, fixture.store, fixture.source)
 	episode := planSuspensionTestEpisode(t, fixture)
@@ -86,6 +87,7 @@ func TestSuspensionBundlePreservesBoundRuntimeTelemetry(t *testing.T) {
 }
 
 func TestSuspensionSealsParentAndGuardianRawRollouts(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	bindRuntimeEvidenceFixture(t, fixture.store, fixture.source)
 	started := fixture.source.Attempt.CreatedAt
@@ -205,6 +207,7 @@ func sealedTranscriptBytes(t *testing.T, bundle EvidenceBundleProjection, kind s
 }
 
 func TestSuspensionSealsRepositoryScopedValidationRuns(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	runtime := bindRuntimeEvidenceFixture(t, fixture.store, fixture.source)
 	workspaceRoot := fixture.source.Workspace.Root
@@ -232,15 +235,6 @@ func TestSuspensionSealsRepositoryScopedValidationRuns(t *testing.T) {
 	foreignTaskRun.ValidationRunID = "dddddddddddddddddddddddddddddddd"
 	foreignTaskRun.TaskID = "older-runtime-task-of-same-path"
 	writeEvidenceGateRun(t, runtime.runtime, foreignTaskRun)
-	moduleRunData, err := json.Marshal(moduleRun)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondRuntimeRunData, err := json.Marshal(secondRuntimeRun)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	episode := planSuspensionTestEpisode(t, fixture)
 	suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)
 	if err != nil {
@@ -279,6 +273,41 @@ func TestSuspensionSealsRepositoryScopedValidationRuns(t *testing.T) {
 	if !sealedLogical[attemptID+":state/install-smoke-runs/"+evidenceExportSmokeRunID+"/"+evidenceExportValidationSmokeLog] {
 		t.Fatal("seal lost the runtime install smoke log")
 	}
+}
+
+func TestSuspensionSealedValidationRawSurvivesOwnerDeletion(t *testing.T) {
+	t.Parallel()
+	fixture := newFindingAcceptanceFixture(t)
+	runtime := bindRuntimeEvidenceFixture(t, fixture.store, fixture.source)
+	workspaceRoot := fixture.source.Workspace.Root
+	completed := fixture.source.Attempt.CreatedAt.Add(time.Minute)
+	moduleRun := qualitygate.RunRecord{
+		ValidationRunID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Form: "go-test",
+		Repository: workspaceRoot, WorkingDir: filepath.Join(workspaceRoot, "glm-worker"),
+		StartedAt: fixture.source.Attempt.CreatedAt, CompletedAt: &completed, Status: qualitygate.StatusPass,
+	}
+	module := state.AttachStateStore(config.AppConfig{StateBase: fixture.store.config.StateBase, RepoHash: config.RepoHashFor(workspaceRoot)})
+	if err := module.Write("repo-root", workspaceRoot); err != nil {
+		t.Fatal(err)
+	}
+	writeEvidenceGateRun(t, module, moduleRun)
+	secondRuntimeRun := moduleRun
+	secondRuntimeRun.ValidationRunID = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	writeEvidenceGateRun(t, runtime.runtime, secondRuntimeRun)
+	moduleRunData, err := json.Marshal(moduleRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRuntimeRunData, err := json.Marshal(secondRuntimeRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	episode := planSuspensionTestEpisode(t, fixture)
+	suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, path := range []string{runtime.runtime.Path("."), module.Path(".")} {
 		if err := os.RemoveAll(path); err != nil {
 			t.Fatal(err)
@@ -312,6 +341,7 @@ func TestSuspensionSealsRepositoryScopedValidationRuns(t *testing.T) {
 }
 
 func TestSuspensionWithoutRuntimeRecordsIncompleteCoverage(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	episode := planSuspensionTestEpisode(t, fixture)
 	suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)
@@ -340,6 +370,7 @@ func TestSuspensionWithoutRuntimeRecordsIncompleteCoverage(t *testing.T) {
 }
 
 func TestAcceptedCandidateBundlePreservesBoundRuntimeEvidence(t *testing.T) {
+	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "accepted.txt", "accepted runtime result\n")
 	runtime := bindRuntimeEvidenceFixture(t, fixture.store, source)
@@ -362,6 +393,7 @@ func TestAcceptedCandidateBundlePreservesBoundRuntimeEvidence(t *testing.T) {
 }
 
 func TestRuntimeEvidenceFailurePreservesSourceAuthority(t *testing.T) {
+	t.Parallel()
 	for _, failure := range []string{"missing-transcript", "untimestamped-transcript", "stale-attempt", "stale-task", "artifact-symlink", "missing-runtime"} {
 		t.Run(failure, func(t *testing.T) {
 			fixture := newFindingAcceptanceFixture(t)
@@ -543,6 +575,7 @@ func requireRuntimeBundleBytes(t *testing.T, bundle EvidenceBundleProjection, ru
 }
 
 func TestSuspensionBundlePreservesFindingAndEpisodeRecords(t *testing.T) {
+	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	if _, err := fixture.store.ObserveFinding(fixture.source, FindingObservationInput{Producer: "external-review", ProofClass: FindingProofUnverified, ProblemKey: "unverified-locator", Evidence: []FindingEvidenceRef{{Kind: "caller-locator", ID: "untrusted/path"}}}); err != nil {
 		t.Fatal(err)

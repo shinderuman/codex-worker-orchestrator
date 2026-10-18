@@ -10,6 +10,7 @@ import (
 )
 
 func TestValidationObservationsPreserveKnownValidationAcrossUnsupportedShellShapes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		command string
@@ -34,6 +35,7 @@ func TestValidationObservationsPreserveKnownValidationAcrossUnsupportedShellShap
 }
 
 func TestValidationObservationsDoNotWidenOperationCategory(t *testing.T) {
+	t.Parallel()
 	command := "GOFLAGS= go test ./... 2>&1 | tail -20"
 	if got := shellOperationCategory(command); got != state.OperationCategoryOther {
 		t.Fatalf("operation category = %q, want other", got)
@@ -44,6 +46,7 @@ func TestValidationObservationsDoNotWidenOperationCategory(t *testing.T) {
 }
 
 func TestReduceStreamBlockStoresValidationWithoutRawCommand(t *testing.T) {
+	t.Parallel()
 	input, err := json.Marshal(map[string]string{"command": "TOKEN=secret go test -race ./... | tail -1"})
 	if err != nil {
 		t.Fatal(err)

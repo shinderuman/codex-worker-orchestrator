@@ -12,6 +12,7 @@ import (
 )
 
 func TestExecuteFailsClosedBeforeModelCallOnInvalidRepositoryQualityScope(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		mutate func(t *testing.T, root string)
@@ -63,6 +64,7 @@ func TestExecuteFailsClosedBeforeModelCallOnInvalidRepositoryQualityScope(t *tes
 }
 
 func TestWriteProcessErrorRepositoryHarnessFailureHasNoQualityToolRepairGuidance(t *testing.T) {
+	t.Parallel()
 	cause := &repositoryharness.QualityScopeError{Reason: repositoryharness.QualityScopeModuleMissing}
 	err := newRepositoryHarnessPreflightError(cause)
 	envelope, raw := writeProcessErrorJSON(t, err)

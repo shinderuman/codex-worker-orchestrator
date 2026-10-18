@@ -9,6 +9,7 @@ import (
 )
 
 func TestEvidenceObjectRoundTripAndCorruptionFailsLoudly(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	ref, err := store.PutEvidenceObject("telemetry", "application/octet-stream", "attempt-a:telemetry", true, []byte("payload"))
 	if err != nil {
@@ -35,6 +36,7 @@ func TestEvidenceObjectRoundTripAndCorruptionFailsLoudly(t *testing.T) {
 }
 
 func TestAttemptSealCanonicalizesEvidenceOrderAndSurvivesMissingRuntimePath(t *testing.T) {
+	t.Parallel()
 	store, repo := newEvidenceTestStoreWithRepo(t)
 	commit := controllerGitOutput(t, repo, "rev-parse", "HEAD")
 	tree := controllerGitOutput(t, repo, "rev-parse", "HEAD^{tree}")
@@ -111,6 +113,7 @@ func TestAttemptSealCanonicalizesEvidenceOrderAndSurvivesMissingRuntimePath(t *t
 }
 
 func TestEvidenceMissingObjectFailsLoudly(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	ref, err := store.PutEvidenceObject("review", "text/plain", "attempt-a:review", true, []byte("review"))
 	if err != nil {

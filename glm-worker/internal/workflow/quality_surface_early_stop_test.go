@@ -16,6 +16,7 @@ import (
 )
 
 func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "quality-stop@example.invalid")
@@ -120,6 +121,7 @@ func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *te
 }
 
 func TestQualitySurfaceApprovalStopsAgainAfterLaterOutOfScopeMutation(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "quality-restop@example.invalid")
@@ -229,6 +231,7 @@ func TestQualitySurfaceApprovalStopsAgainAfterLaterOutOfScopeMutation(t *testing
 }
 
 func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "dirty-scope@example.invalid")
@@ -346,6 +349,7 @@ func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *te
 }
 
 func TestQualitySurfaceApprovalScopesPostBaselinePreexistingEdits(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "dirty-restop@example.invalid")
@@ -550,6 +554,7 @@ func vanishedUntrackedQualitySurfaceFixture(t *testing.T) (*Workflow, *state.Sta
 }
 
 func TestVanishedUntrackedQualitySurfaceStopsWithOwnerLocatorAndDigestEvidence(t *testing.T) {
+	t.Parallel()
 	_, st, _, output, baseline := vanishedUntrackedQualitySurfaceFixture(t)
 
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -589,6 +594,7 @@ func TestVanishedUntrackedQualitySurfaceStopsWithOwnerLocatorAndDigestEvidence(t
 }
 
 func TestVanishedUntrackedQualitySurfaceApprovalAdvancesBaselineAndCompletes(t *testing.T) {
+	t.Parallel()
 	w, st, runner, output, _ := vanishedUntrackedQualitySurfaceFixture(t)
 
 	output.Reset()
@@ -611,6 +617,7 @@ func TestVanishedUntrackedQualitySurfaceApprovalAdvancesBaselineAndCompletes(t *
 }
 
 func TestQualitySurfaceApprovalTargetFailureKeepsCheckpointHandoff(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "target-failure@example.invalid")

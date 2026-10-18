@@ -7,6 +7,7 @@ import (
 )
 
 func TestEvidenceGraphDigestIsOrderIndependent(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	first, err := store.PutEvidenceObject("validation", "text/plain", "first", true, []byte("first"))
@@ -37,6 +38,7 @@ func TestEvidenceGraphDigestIsOrderIndependent(t *testing.T) {
 }
 
 func TestEvidenceGraphFailsWhenRequiredIndexedObjectIsMissing(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	revision := testTaskIndexRevision(
@@ -62,6 +64,7 @@ func TestEvidenceGraphFailsWhenRequiredIndexedObjectIsMissing(t *testing.T) {
 }
 
 func TestEvidenceGraphFailsWhenRequiredTaskSemanticEvidenceIsMissing(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	findingRef, err := store.PutEvidenceObject("finding-record", "application/json", "finding:f1", true, []byte(`{"finding_id":"f1"}`))
@@ -92,6 +95,7 @@ func TestEvidenceGraphFailsWhenRequiredTaskSemanticEvidenceIsMissing(t *testing.
 }
 
 func TestEvidenceGraphRejectsBrokenLedgerSequence(t *testing.T) {
+	t.Parallel()
 	fixture := newExecutionSwitchFixture(t)
 	store := fixture.store
 	headRef, _, err := store.StoreEvidenceHead(EvidenceHead{
@@ -123,6 +127,7 @@ func TestEvidenceGraphRejectsBrokenLedgerSequence(t *testing.T) {
 }
 
 func TestEvidenceGraphRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"}
 	published := testTaskIndexRevision(task, 2, "transition-2", time.Unix(3300, 0).UTC())
@@ -200,6 +205,7 @@ func TestEvidenceGraphRejectsEpisodeTaskHeadOutsidePublishedTaskAuthority(t *tes
 }
 
 func TestEvidenceGraphAcceptsHistoricalEpisodeTaskHeadReachableFromPublishedAuthority(t *testing.T) {
+	t.Parallel()
 	store := newEvidenceTestStore(t)
 	task := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/A.md", ContractDigest: "task-a"}
 	first := testTaskIndexRevision(task, 1, "transition-1", time.Unix(3400, 0).UTC())

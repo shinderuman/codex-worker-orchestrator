@@ -11,6 +11,7 @@ import (
 )
 
 func TestRefMutationGuardStopPersistsEvidenceAndRequiresExactRepair(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	beforeDigest, err := runner.CaptureGitAuthorityRefDigest(repo)
@@ -85,6 +86,7 @@ func TestRefMutationGuardStopPersistsEvidenceAndRequiresExactRepair(t *testing.T
 }
 
 func TestRefMutationGuardRecoveryRejectsLegacyVolatileFailure(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done"), runErr: legacyVolatileRefError()}}}
@@ -124,6 +126,7 @@ func legacyVolatileRefError() *runner.GitAuthorityGuardError {
 }
 
 func TestRefMutationGuardRecoveryFailsClosedOnTruncatedVolatileEvidence(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	refErr := &runner.GitAuthorityGuardError{

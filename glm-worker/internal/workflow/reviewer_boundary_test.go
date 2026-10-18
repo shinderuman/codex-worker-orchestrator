@@ -12,6 +12,7 @@ import (
 )
 
 func TestReviewedBoundaryContextMarksOnlyIdenticalBlobsReviewed(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "reviewed-keep.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -79,6 +80,7 @@ func TestReviewedBoundaryContextMarksOnlyIdenticalBlobsReviewed(t *testing.T) {
 }
 
 func TestReviewedBoundaryFailsClosedWithoutProvenance(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	stateBase := t.TempDir()
 	st, err := state.NewStateStore(config.AppConfig{StateBase: stateBase, RepoHash: "boundaryhash2", RepoRoot: repo})

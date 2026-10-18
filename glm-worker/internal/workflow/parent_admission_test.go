@@ -25,6 +25,7 @@ func (r *admissionTestRunner) Probe(string) (runner.ProbeResult, error) {
 }
 
 func TestDirectWorkflowDecisionAdmissionRejectsBeforeModelOrMutation(t *testing.T) {
+	t.Parallel()
 	cfg, st := newAdmissionTestWorkflowState(t)
 	r := &admissionTestRunner{}
 	w := NewWorkflow(cfg, st, r, io.Discard)
@@ -43,6 +44,7 @@ func TestDirectWorkflowDecisionAdmissionRejectsBeforeModelOrMutation(t *testing.
 }
 
 func TestDirectWorkflowAdmissionFailsClosedOnLifecycleInconsistency(t *testing.T) {
+	t.Parallel()
 	cfg, st := newAdmissionTestWorkflowState(t)
 	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
 		t.Fatal(err)
@@ -66,6 +68,7 @@ func TestDirectWorkflowAdmissionFailsClosedOnLifecycleInconsistency(t *testing.T
 }
 
 func TestDirectWorkflowResumeAdmissionFailsClosedOnInadmissiblePendingDecision(t *testing.T) {
+	t.Parallel()
 	cfg, st := newAdmissionTestWorkflowState(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)

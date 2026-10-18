@@ -10,6 +10,7 @@ import (
 )
 
 func TestClaudeRunnerReportsWorkerInstructionReads(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -39,6 +40,7 @@ func TestClaudeRunnerReportsWorkerInstructionReads(t *testing.T) {
 }
 
 func TestClaudeRunnerRejectsFailedWorkerInstructionRead(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -68,6 +70,7 @@ func TestClaudeRunnerRejectsFailedWorkerInstructionRead(t *testing.T) {
 }
 
 func TestWorkerInstructionReadRejectsUnrelatedRead(t *testing.T) {
+	t.Parallel()
 	instructionDir := "/tmp/.codex/instructions/worker"
 	if name, ok := workerInstructionReadName(
 		"Read",

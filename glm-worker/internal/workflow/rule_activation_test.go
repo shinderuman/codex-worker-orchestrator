@@ -13,6 +13,7 @@ import (
 )
 
 func TestActivateCheckpointRulesInjectsOnlyApplicableContracts(t *testing.T) {
+	t.Parallel()
 	root, baseline := newRuleActivationRepo(t)
 	writeGitTestFile(t, root, "cmd/tool/main.go", "package main\nfunc main() {}\n")
 	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
@@ -41,6 +42,7 @@ func TestActivateCheckpointRulesInjectsOnlyApplicableContracts(t *testing.T) {
 }
 
 func TestActivateCheckpointRulesDoesNotTrustUserRuleMarker(t *testing.T) {
+	t.Parallel()
 	root, baseline := newRuleActivationRepo(t)
 	writeGitTestFile(t, root, "internal/app/handler.go", "package app\n")
 	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
@@ -75,6 +77,7 @@ func TestActivateCheckpointRulesDoesNotTrustUserRuleMarker(t *testing.T) {
 }
 
 func TestActivateCheckpointRulesHasZeroPromptDeltaForDocsOnlyChange(t *testing.T) {
+	t.Parallel()
 	root, baseline := newRuleActivationRepo(t)
 	writeGitTestFile(t, root, "README.md", "changed\n")
 	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
@@ -94,6 +97,7 @@ func TestActivateCheckpointRulesHasZeroPromptDeltaForDocsOnlyChange(t *testing.T
 }
 
 func TestObservedInstructionReadSatisfiesPostWorkerRuleGate(t *testing.T) {
+	t.Parallel()
 	workflow := &Workflow{}
 	workflow.resetInstructionReadObservation()
 	workflow.observeInstructionReads([]string{"go.md"})

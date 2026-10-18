@@ -10,6 +10,7 @@ import (
 )
 
 func TestValidationObservationsRecognizeTypecheckAndRepeatedRuns(t *testing.T) {
+	t.Parallel()
 	got := validationObservationForms(validationObservationsForCommand("npx tsc --noEmit; go test ./...; go test ./..."))
 	want := []string{"tsc", "go-test", "go-test"}
 	if !slices.Equal(got, want) {
@@ -18,6 +19,7 @@ func TestValidationObservationsRecognizeTypecheckAndRepeatedRuns(t *testing.T) {
 }
 
 func TestBindValidationObservationsAddsSnapshotPhaseAndRetry(t *testing.T) {
+	t.Parallel()
 	repoRoot := t.TempDir()
 	gitValidationBinding(t, repoRoot, "init", "-q")
 	gitValidationBinding(t, repoRoot, "-c", "user.name=validation test", "-c", "user.email=validation@example.invalid", "commit", "--allow-empty", "-q", "-m", "seed")
@@ -46,6 +48,7 @@ func TestBindValidationObservationsAddsSnapshotPhaseAndRetry(t *testing.T) {
 }
 
 func TestValidationAttemptsPersistAcrossRunnerCallsAndResetPerTask(t *testing.T) {
+	t.Parallel()
 	st := newTestStateStore(t)
 	runner := NewClaudeRunner(config.AppConfig{}, st)
 	values := []state.TaskValidationObservation{{Form: "go-test", GateClass: state.ValidationGateClassTest, Suite: "go-test"}}

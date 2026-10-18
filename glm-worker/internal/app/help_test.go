@@ -17,6 +17,7 @@ import (
 )
 
 func TestRunEntryHelpBypassesConfig(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"--help"}, {"-h"}} {
 		t.Run(args[0], func(t *testing.T) {
 			var stdout bytes.Buffer
@@ -113,6 +114,7 @@ func TestRunEntryAuthorityBypassesConfigAndReturnsJSON(t *testing.T) {
 }
 
 func TestRunEntryHelpRejectsExtraArgumentsBeforeConfig(t *testing.T) {
+	t.Parallel()
 	var stdout bytes.Buffer
 	err := runEntry(
 		[]string{"--help", "extra"},

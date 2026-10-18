@@ -8,6 +8,7 @@ import (
 )
 
 func TestResumeRetainsCompletedResultWhenRoutingFails(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	stopWorkflow := newGitWorkflowT(t, st, guardFailureRunner("done"), repo)

@@ -12,6 +12,7 @@ import (
 )
 
 func TestAcceptedFixScopeWaitingFixDoesNotAuthorizeParentAction(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -34,6 +35,7 @@ func TestAcceptedFixScopeWaitingFixDoesNotAuthorizeParentAction(t *testing.T) {
 }
 
 func TestAcceptedFixScopeWaitingApprovalAllowsOnlyPreActivationValidation(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -53,6 +55,7 @@ func TestAcceptedFixScopeWaitingApprovalAllowsOnlyPreActivationValidation(t *tes
 }
 
 func TestAcceptedFixScopeRejectsDifferentParentOwner(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -81,6 +84,7 @@ func TestAcceptedFixScopeRejectsDifferentParentOwner(t *testing.T) {
 }
 
 func TestAcceptedFixScopeRejectsDifferentTaskOwner(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -103,6 +107,7 @@ func TestAcceptedFixScopeRejectsDifferentTaskOwner(t *testing.T) {
 }
 
 func TestAcceptedFixScopeRejectsDifferentActionInvocation(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -129,6 +134,7 @@ func TestAcceptedFixScopeRejectsDifferentActionInvocation(t *testing.T) {
 }
 
 func TestAcceptedFixScopeExpiresWhenActionInvocationEnds(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -157,6 +163,7 @@ func TestAcceptedFixScopeExpiresWhenActionInvocationEnds(t *testing.T) {
 }
 
 func TestAcceptedFixScopeBeginParentFixFailureDiscardsAuthorization(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -179,6 +186,7 @@ func TestAcceptedFixScopeBeginParentFixFailureDiscardsAuthorization(t *testing.T
 }
 
 func TestAcceptedFixScopePreCallRollbackDiscardsAuthorization(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -204,6 +212,7 @@ func TestAcceptedFixScopePreCallRollbackDiscardsAuthorization(t *testing.T) {
 }
 
 func TestAcceptedFixScopeQualityApprovalValidationFailureDiscardsAuthorization(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	writeAcceptedScopeChange(t, repo)
@@ -247,6 +256,7 @@ func TestAcceptedFixScopeQualityApprovalValidationFailureDiscardsAuthorization(t
 }
 
 func TestAcceptedFixScopeConsumesAuthorizationOnceAfterParentActionStarts(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -272,6 +282,7 @@ func TestAcceptedFixScopeConsumesAuthorizationOnceAfterParentActionStarts(t *tes
 }
 
 func TestAcceptedApprovalScopeConsumesAuthorizationOnceAfterActivation(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)

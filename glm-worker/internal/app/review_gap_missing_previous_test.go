@@ -8,6 +8,7 @@ import (
 )
 
 func TestReviewGapCategoryUnknownWithoutPreviousRound(t *testing.T) {
+	t.Parallel()
 	cfg, st, _ := newCodexBundleTestState(t)
 	taskID, err := st.StartNewTask()
 	if err != nil {

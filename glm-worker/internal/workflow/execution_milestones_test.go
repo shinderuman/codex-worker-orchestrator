@@ -16,6 +16,7 @@ import (
 )
 
 func TestParseExecutionTaskPlanPayloadRejectsAmbiguousMilestones(t *testing.T) {
+	t.Parallel()
 	_, _, err := executionunit.ParseTaskPlanPayload(`{"request":"work","milestones":[{"id":"same","scope":"a","acceptance":"a"},{"id":"same","scope":"b","acceptance":"b"}]}`)
 	if err == nil || !strings.Contains(err.Error(), "duplicate execution milestone id") {
 		t.Fatalf("error = %v", err)
@@ -23,6 +24,7 @@ func TestParseExecutionTaskPlanPayloadRejectsAmbiguousMilestones(t *testing.T) {
 }
 
 func TestExecutionMilestonesAdvanceBeforeSingleFinalReview(t *testing.T) {
+	t.Parallel()
 	w, st, runner, taskPath := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: implementedPacket("first complete")},
 		{structured: implementedPacket("second complete")},
@@ -76,6 +78,7 @@ func TestExecutionMilestonesAdvanceBeforeSingleFinalReview(t *testing.T) {
 }
 
 func TestExecutionMilestoneAuthorityFailsClosedOnTaskContractChange(t *testing.T) {
+	t.Parallel()
 	w, st, _, taskPath := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -109,6 +112,7 @@ func TestExecutionMilestoneAuthorityFailsClosedOnTaskContractChange(t *testing.T
 }
 
 func TestReviseExecutionMilestonesBindsStoppedResumeCheckpoint(t *testing.T) {
+	t.Parallel()
 	w, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)

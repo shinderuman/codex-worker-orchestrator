@@ -8,6 +8,7 @@ import (
 )
 
 func TestProjectExecutionProgressDistinguishesExplicitSingleFromUntracked(t *testing.T) {
+	t.Parallel()
 	_, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)

@@ -50,6 +50,7 @@ func canonicalTaskIndexRevision(record TaskIndexRevision) (TaskIndexRevision, er
 	}
 	record.AttemptSeals = canonicalEvidenceRefs(record.AttemptSeals)
 	record.Finalizations = canonicalEvidenceRefs(record.Finalizations)
+	record.SourceRevisions = canonicalEvidenceRefs(record.SourceRevisions)
 	record.FindingRecords = canonicalEvidenceRefs(record.FindingRecords)
 	record.DependencyEdgeRecords = canonicalEvidenceRefs(record.DependencyEdgeRecords)
 	record.PublicationLineageRecords = canonicalEvidenceRefs(record.PublicationLineageRecords)

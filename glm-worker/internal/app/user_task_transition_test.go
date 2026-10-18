@@ -136,8 +136,7 @@ func TestUserTaskTransitionPreservesFailureEvidenceAndStartsSuccessor(t *testing
 	if _, err := store.RecoverExecutionOperation(result.TransitionID); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GLM_WORKER_HOME", filepath.Dir(cfg.StateBase))
-	assertRetiredBootstrap(t, cfg.RepoRoot, input.SuccessorTask.TaskPath)
+	assertRetiredBootstrap(t, cfg, input.SuccessorTask.TaskPath)
 	cfg, err = controller.WorkflowConfig(cfg)
 	if err != nil {
 		t.Fatal(err)

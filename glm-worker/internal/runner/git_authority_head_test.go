@@ -10,6 +10,7 @@ import (
 )
 
 func TestGitAuthoritySnapshotSupportsDetachedAndUnbornHead(t *testing.T) {
+	t.Parallel()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +42,7 @@ func TestGitAuthoritySnapshotSupportsDetachedAndUnbornHead(t *testing.T) {
 }
 
 func TestGitAuthorityGuardFailsClosedOnBrokenHead(t *testing.T) {
+	t.Parallel()
 	root := newGitAuthorityRepo(t)
 	refsHeads := filepath.Join(root, ".git", "refs", "heads")
 	if err := os.WriteFile(filepath.Join(refsHeads, "broken"), []byte("feedfacefeedfacefeedfacefeedfacefeedface\n"), 0o644); err != nil {
@@ -60,6 +62,7 @@ func TestGitAuthorityGuardFailsClosedOnBrokenHead(t *testing.T) {
 }
 
 func TestGitAuthorityGuardVerifyFailsClosedWhenHeadBecomesBroken(t *testing.T) {
+	t.Parallel()
 	root := newGitAuthorityRepo(t)
 	guard, err := prepareGitAuthorityGuard(root)
 	if err != nil {

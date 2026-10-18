@@ -27,6 +27,7 @@ type ptyParallelTransport struct {
 }
 
 func TestStdinPayloadPTYParallelNonInterference(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "darwin" {
 		t.Skip("PTY transport契約の実機検証はmacOSのscript前提")
 	}

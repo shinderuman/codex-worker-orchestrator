@@ -55,6 +55,7 @@ func writeFeasibilityActiveTask(t *testing.T, repoRoot string, declaration strin
 }
 
 func TestExternalFeasibilityDeclarationParsing(t *testing.T) {
+	t.Parallel()
 	taskWith := func(decl string) []byte {
 		return []byte("# task\n\n" + decl + "\n\n## Contract\n\n- seed\n")
 	}
@@ -106,6 +107,7 @@ func TestExternalFeasibilityDeclarationParsing(t *testing.T) {
 }
 
 func TestExternalFeasibilityDeclarationIgnoresFencedBlocks(t *testing.T) {
+	t.Parallel()
 
 	fencedExample := "```markdown\n## External feasibility\n\nstatus: poc\nassumption: fence内の例\n```"
 	withTopLevel := "# task\n\n````text\n" + fencedExample + "\n````\n\n" + feasibilityNotApplicableDecl + "\n\n## Contract\n\n- seed\n"
@@ -152,6 +154,7 @@ func requireFeasibilityFailClosed(t *testing.T, st *state.StateStore, r *mutatin
 }
 
 func TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorker(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -169,6 +172,7 @@ func TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorker(t *testing
 }
 
 func TestExternalFeasibilityUnverifiedImplementationFailsClosed(t *testing.T) {
+	t.Parallel()
 	for name, decl := range map[string]string{
 		"evidence欠落":  feasibilityUnverifiedDecl,
 		"人工fixtureだけ": feasibilityFixtureDecl,
@@ -190,6 +194,7 @@ func TestExternalFeasibilityUnverifiedImplementationFailsClosed(t *testing.T) {
 }
 
 func TestExternalFeasibilityMalformedDeclarationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "## External feasibility\n\nstatus: verified")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -204,6 +209,7 @@ func TestExternalFeasibilityMalformedDeclarationFailsClosed(t *testing.T) {
 }
 
 func TestExternalFeasibilityVerifiedImplementationProceedsNormally(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		decl string
@@ -237,6 +243,7 @@ func TestExternalFeasibilityVerifiedImplementationProceedsNormally(t *testing.T)
 }
 
 func TestExternalFeasibilityPoCTaskRunsReadOnlyAndReturnsGoNoGo(t *testing.T) {
+	t.Parallel()
 	for name, decl := range map[string]string{"poc": feasibilityPoCDecl, "observation": feasibilityObservationDecl} {
 		t.Run(name, func(t *testing.T) {
 			repoRoot := initMutationRepo(t)
@@ -273,6 +280,7 @@ func TestExternalFeasibilityPoCTaskRunsReadOnlyAndReturnsGoNoGo(t *testing.T) {
 }
 
 func TestExternalFeasibilityPoCWorkerMutationFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -300,6 +308,7 @@ func TestExternalFeasibilityPoCWorkerMutationFailsClosed(t *testing.T) {
 }
 
 func TestExternalFeasibilityDecisionGatePreservesPendingDecision(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityUnverifiedDecl)
 	st := newStateStoreT(t)
@@ -333,6 +342,7 @@ func TestExternalFeasibilityDecisionGatePreservesPendingDecision(t *testing.T) {
 }
 
 func TestExternalFeasibilityPoCToImplementationDecisionResumesWritable(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -372,6 +382,7 @@ func TestExternalFeasibilityPoCToImplementationDecisionResumesWritable(t *testin
 }
 
 func TestExternalFeasibilityFixGateFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityFixtureDecl)
 	st := newStateStoreT(t)
@@ -390,6 +401,7 @@ func TestExternalFeasibilityFixGateFailsClosed(t *testing.T) {
 }
 
 func TestExternalFeasibilityReviewResumeGateFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "")
 	st := newStateStoreT(t)
@@ -435,6 +447,7 @@ func TestExternalFeasibilityReviewResumeGateFailsClosed(t *testing.T) {
 }
 
 func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "")
 	st := newStateStoreT(t)
@@ -480,6 +493,7 @@ func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 }
 
 func TestExternalFeasibilityInterruptedResumeRejectThenRepairUsesCanonicalAdmission(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	taskPath := filepath.Join(repo, activeTaskGuardPath)
 	validTask := "# ACTIVE task\n\n" + feasibilityNotApplicableDecl + "\n\n## Contract\n\n- gate検証用seed\n"
@@ -538,6 +552,7 @@ func TestExternalFeasibilityInterruptedResumeRejectThenRepairUsesCanonicalAdmiss
 }
 
 func TestExternalFeasibilityPoCResumeUsesSavedSnapshot(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
 	st := newStateStoreT(t)
@@ -593,6 +608,7 @@ func TestExternalFeasibilityPoCResumeUsesSavedSnapshot(t *testing.T) {
 }
 
 func TestExternalFeasibilityPoCResumeWithoutSnapshotFailsClosed(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
 	st := newStateStoreT(t)
@@ -636,6 +652,7 @@ func TestExternalFeasibilityPoCResumeWithoutSnapshotFailsClosed(t *testing.T) {
 }
 
 func TestExternalFeasibilityDeclarationContextBudget(t *testing.T) {
+	t.Parallel()
 	notApplicable := "## External feasibility\n\nstatus: not-applicable\n"
 	implementation := feasibilityImplementationDecl + "\n"
 	if got := len(notApplicable); got > 64 {
@@ -683,6 +700,7 @@ func requireGoNoGoContract(t *testing.T, result packet.Result) {
 }
 
 func TestPoCGoNoGoResultKeepsValidatorContract(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		summary    string
@@ -742,6 +760,7 @@ func pocHeavyTargets(t *testing.T, count int, fillerLength int) []string {
 }
 
 func TestPoCGoNoGoResultPassesValidatorOnTargetHeavyInput(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name         string
 		summary      string
@@ -810,6 +829,7 @@ func requirePoCPassthroughSummarized(t *testing.T, result packet.Result, worker 
 }
 
 func TestPoCGoNoGoResultSummarizesUnfittablePassthrough(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name           string
 		targetCount    int
@@ -859,6 +879,7 @@ func TestPoCGoNoGoResultSummarizesUnfittablePassthrough(t *testing.T) {
 }
 
 func TestExternalFeasibilityPoCOverlongObservationEmitsValidGoNoGoPacket(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		worker packet.Result
@@ -915,6 +936,7 @@ func TestExternalFeasibilityPoCOverlongObservationEmitsValidGoNoGoPacket(t *test
 }
 
 func TestExternalFeasibilityPoCUnfittableTargetsEmitsValidGoNoGoPacket(t *testing.T) {
+	t.Parallel()
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
 	worker := packet.Result{

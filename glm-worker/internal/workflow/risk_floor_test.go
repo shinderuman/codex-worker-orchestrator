@@ -9,6 +9,7 @@ import (
 )
 
 func TestHighRiskWorkerUsesHighRiskReviewer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("done", "HIGH")},
@@ -26,6 +27,7 @@ func TestHighRiskWorkerUsesHighRiskReviewer(t *testing.T) {
 }
 
 func TestReviewNeedsHighRiskFloor(t *testing.T) {
+	t.Parallel()
 	lowWorker := resultFromBody(`{"status":"IMPLEMENTED","risk":"LOW"}`)
 	highWorker := resultFromBody(`{"status":"IMPLEMENTED","risk":"HIGH"}`)
 
@@ -53,6 +55,7 @@ func TestReviewNeedsHighRiskFloor(t *testing.T) {
 }
 
 func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
+	t.Parallel()
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
@@ -76,6 +79,7 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 }
 
 func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
+	t.Parallel()
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
 	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"],"sol_question":"q"}`)
@@ -95,6 +99,7 @@ func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
 }
 
 func TestRiskFloorRejectsPassOnHighRiskWorker(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -128,6 +133,7 @@ func TestRiskFloorRejectsPassOnHighRiskWorker(t *testing.T) {
 }
 
 func TestRiskFloorRejectsPassAfterDecision(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
@@ -164,6 +170,7 @@ func TestRiskFloorRejectsPassAfterDecision(t *testing.T) {
 }
 
 func TestRiskFloorRejectsPassAfterAutoFix(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -193,6 +200,7 @@ func TestRiskFloorRejectsPassAfterAutoFix(t *testing.T) {
 }
 
 func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
@@ -229,6 +237,7 @@ func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
 }
 
 func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedReviewStartSnapshot(t, st)
 	if err := st.Write("last-request", "req"); err != nil {
@@ -278,6 +287,7 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 }
 
 func TestRiskFloorAllowsLowRiskPass(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
@@ -301,6 +311,7 @@ func TestRiskFloorAllowsLowRiskPass(t *testing.T) {
 }
 
 func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
@@ -338,6 +349,7 @@ func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
 }
 
 func TestRiskFloorReemitResumeCompliant(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedReviewStartSnapshot(t, st)
 	if err := st.Write("last-request", "req"); err != nil {
@@ -385,6 +397,7 @@ func TestRiskFloorReemitResumeCompliant(t *testing.T) {
 }
 
 func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedReviewStartSnapshot(t, st)
 	if err := st.Write("last-request", "req"); err != nil {

@@ -17,6 +17,7 @@ import (
 )
 
 func TestParseCommandParentHandoff(t *testing.T) {
+	t.Parallel()
 	command, err := ParseCommand([]string{"--handoff"})
 	if err != nil {
 		t.Fatal(err)
@@ -47,6 +48,7 @@ func TestParseCommandParentHandoff(t *testing.T) {
 }
 
 func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
@@ -113,6 +115,7 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 }
 
 func TestParentHandoffRecoveryProjectionOmitsBroadEvidence(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
@@ -190,6 +193,7 @@ func TestParentHandoffRecoveryProjectionOmitsBroadEvidence(t *testing.T) {
 }
 
 func TestParentHandoffRecoveryIncludesGuardDiagnostics(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := st.SetTaskStatus(state.TaskStatusGuardRecoverable); err != nil {
@@ -246,6 +250,7 @@ func TestParentHandoffRecoveryIncludesGuardDiagnostics(t *testing.T) {
 }
 
 func TestParentHandoffRecoveryIncludesQualityGateDiagnostics(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	completed := packet.Result{Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: "implemented"}
@@ -308,6 +313,7 @@ func TestParentHandoffRecoveryIncludesQualityGateDiagnostics(t *testing.T) {
 }
 
 func TestParentHandoffStoppedDecisionContinuationAllowsResume(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := st.Write("last-request", "request"); err != nil {
@@ -358,6 +364,7 @@ func TestParentHandoffStoppedDecisionContinuationAllowsResume(t *testing.T) {
 }
 
 func TestParentHandoffFailsClosedOnLifecycleContradiction(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
 	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
@@ -374,6 +381,7 @@ func TestParentHandoffFailsClosedOnLifecycleContradiction(t *testing.T) {
 }
 
 func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -432,6 +440,7 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 }
 
 func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T) {
+	t.Parallel()
 	const routingEvidenceTaskID = "12345678-1111-2222-3333-444444444444"
 	cases := []struct {
 		name        string
@@ -554,6 +563,7 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 }
 
 func TestParentHandoffRejectsRoutingEvidenceWithoutTaskID(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -590,6 +600,7 @@ func TestParentHandoffRejectsRoutingEvidenceWithoutTaskID(t *testing.T) {
 }
 
 func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
+	t.Parallel()
 	_, st := newQualityGateEnv(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
 	if err := st.Write("task.id", taskID); err != nil {
@@ -682,6 +693,7 @@ func completeParentWithPendingRotation(st *state.StateStore, parentThreadID stri
 }
 
 func TestSessionRotationAcceptWritesPendingDirectiveProjectedByHandoff(t *testing.T) {
+	t.Parallel()
 	cfg, st, threadID := seedSessionRotationAccept(t)
 
 	marker, err := st.LoadSessionRotationMarker(threadID)
@@ -715,6 +727,7 @@ func TestSessionRotationAcceptWritesPendingDirectiveProjectedByHandoff(t *testin
 }
 
 func TestSessionRotationRecoveryHandoffCarriesProjection(t *testing.T) {
+	t.Parallel()
 	cfg, _, _ := seedSessionRotationAccept(t)
 
 	var out bytes.Buffer
@@ -731,6 +744,7 @@ func TestSessionRotationRecoveryHandoffCarriesProjection(t *testing.T) {
 }
 
 func TestSessionRotationRepeatedHandoffWritesNothingAndReturnsSameDirective(t *testing.T) {
+	t.Parallel()
 	cfg, st, threadID := seedSessionRotationAccept(t)
 
 	var first parentHandoffOutput

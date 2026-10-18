@@ -10,6 +10,7 @@ import (
 )
 
 func TestBuildModelCallLogCarriesContextWindowDeclaration(t *testing.T) {
+	t.Parallel()
 	st, err := state.NewStateStore(config.AppConfig{
 		StateBase: t.TempDir(),
 		RepoHash:  "context-window-test",

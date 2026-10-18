@@ -10,6 +10,7 @@ import (
 )
 
 func TestParseSemanticDecisionAuthorityDistinguishesFixedAndUnresolvedAxes(t *testing.T) {
+	t.Parallel()
 	content := `# task
 
 ## Sol decision authority
@@ -43,6 +44,7 @@ x
 }
 
 func TestParseSemanticDecisionAuthorityMissingSectionLeavesAxesUnresolved(t *testing.T) {
+	t.Parallel()
 	authority, err := parseSemanticDecisionAuthority("# task\n\n## Contract\nresult only\n")
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +55,7 @@ func TestParseSemanticDecisionAuthorityMissingSectionLeavesAxesUnresolved(t *tes
 }
 
 func TestParseSemanticDecisionAuthorityRejectsMalformedPresentSection(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		body string
@@ -74,6 +77,7 @@ func TestParseSemanticDecisionAuthorityRejectsMalformedPresentSection(t *testing
 }
 
 func TestDecisionBoundaryContextDoesNotTrustPromptMarker(t *testing.T) {
+	t.Parallel()
 	authority := semanticDecisionAuthority{fixed: map[semanticDecisionAxis]string{
 		decisionAxisResponsibility: "existing responsibility",
 	}}
@@ -100,6 +104,7 @@ func TestDecisionBoundaryContextDoesNotTrustPromptMarker(t *testing.T) {
 }
 
 func TestDecisionBoundaryContextProjectsAuthorityStateOnly(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		fixed      map[semanticDecisionAxis]string
@@ -154,6 +159,7 @@ func TestDecisionBoundaryContextProjectsAuthorityStateOnly(t *testing.T) {
 }
 
 func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
@@ -208,6 +214,7 @@ func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
 }
 
 func TestRunWorkerModelTreatsLegacyTaskAxesAsUnresolvedWithoutExtraModelCall(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
@@ -239,6 +246,7 @@ func TestRunWorkerModelTreatsLegacyTaskAxesAsUnresolvedWithoutExtraModelCall(t *
 }
 
 func TestRunWorkerModelRejectsMalformedDecisionAuthorityBeforeModelCall(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{}

@@ -24,6 +24,7 @@ type telemetryCompactFixture struct {
 }
 
 func TestTelemetryCompactSummaryUnifiedAcrossCommands(t *testing.T) {
+	t.Parallel()
 	fixture := newTelemetryCompactFixture(t)
 	for _, query := range [][]string{
 		{"history"},
@@ -60,6 +61,7 @@ func TestTelemetryCompactSummaryUnifiedAcrossCommands(t *testing.T) {
 }
 
 func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
+	t.Parallel()
 	fixture := newTelemetryCompactFixture(t)
 
 	var out bytes.Buffer
@@ -166,6 +168,7 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 }
 
 func TestTelemetryCompactSummaryHistoryPeriodAndTaskFilter(t *testing.T) {
+	t.Parallel()
 	fixture := newTelemetryCompactFixture(t)
 
 	var sinceOut bytes.Buffer
@@ -221,6 +224,7 @@ func TestTelemetryCompactSummaryHistoryPeriodAndTaskFilter(t *testing.T) {
 }
 
 func TestTelemetryCompactSummaryCurrentScope(t *testing.T) {
+	t.Parallel()
 	fixture := newTelemetryCompactFixture(t)
 
 	var out bytes.Buffer
@@ -262,6 +266,7 @@ func TestTelemetryCompactSummaryCurrentScope(t *testing.T) {
 }
 
 func TestTelemetryCompactSummaryCurrentScopeWithoutCurrentSchemaRecords(t *testing.T) {
+	t.Parallel()
 	assertEvaluatedEmptyCohort := func(t *testing.T, cfg config.AppConfig, wantScanStatus string, wantFilesConsidered float64) {
 		t.Helper()
 		var statsOut, outliersOut bytes.Buffer
@@ -347,6 +352,7 @@ func TestTelemetryCompactSummaryCurrentScopeWithoutCurrentSchemaRecords(t *testi
 }
 
 func TestTelemetryCompactSummaryPartialScan(t *testing.T) {
+	t.Parallel()
 	fixture := newTelemetryCompactFixture(t)
 	if err := os.Mkdir(fixture.st.Path("telemetry/77777777-7777-4777-8777-777777777777.jsonl"), 0o700); err != nil {
 		t.Fatal(err)
@@ -368,6 +374,7 @@ func TestTelemetryCompactSummaryPartialScan(t *testing.T) {
 }
 
 func TestTelemetryCompactSummaryParentUsageBuckets(t *testing.T) {
+	t.Parallel()
 	terminal := newAnalysisTerminalTask(t)
 	writeAnalysisRollout(t, terminal.codexHome, analysisRolloutRel(), codexTestParentThreadID,
 		terminal.start.Add(-3*time.Hour), parentUsagePhaseLines(t, terminal.start, terminal.completeAt))
@@ -423,6 +430,7 @@ func TestTelemetryCompactSummaryParentUsageBuckets(t *testing.T) {
 }
 
 func TestTelemetryCompactSummaryParentUsageAggregates(t *testing.T) {
+	t.Parallel()
 	cfg, st, codexHome := newCodexBundleTestState(t)
 	now := time.Now().UTC()
 	availableThread := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -589,6 +597,7 @@ func assertTelemetryParentUsageBounded(t *testing.T, parentUsage map[string]any)
 }
 
 func TestTelemetryCompactSummaryBoundedOnLargeFixture(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {

@@ -13,6 +13,7 @@ import (
 )
 
 func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
+	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("base\nchanged\n"), 0o644); err != nil {
@@ -70,6 +71,7 @@ func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
 }
 
 func TestRiskFloorFailClosedDoesNotSubstituteFallbackTarget(t *testing.T) {
+	t.Parallel()
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 	w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }

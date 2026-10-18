@@ -11,6 +11,7 @@ import (
 )
 
 func TestQualityFixSnapshotFeedsReviewer(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("initial")},
@@ -70,6 +71,7 @@ func TestQualityFixSnapshotFeedsReviewer(t *testing.T) {
 }
 
 func TestQualityFixRejectsUnprovenFixedReport(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"pass", "fail"} {
 		t.Run(status, func(t *testing.T) {
 			st := newStateStoreT(t)
@@ -108,6 +110,7 @@ func TestQualityFixRejectsUnprovenFixedReport(t *testing.T) {
 }
 
 func TestQualityViolationWithoutFixRejectsExternalChangeBeforeAutoFix(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 	w := newWorkflowT(t, st, r)
@@ -145,6 +148,7 @@ func TestQualityViolationWithoutFixRejectsExternalChangeBeforeAutoFix(t *testing
 }
 
 func TestQualityPassWithoutFixDoesNotRebaseExternalChange(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 	w := newWorkflowT(t, st, r)
@@ -176,6 +180,7 @@ func TestQualityPassWithoutFixDoesNotRebaseExternalChange(t *testing.T) {
 }
 
 func TestParentFileStatesRequireExactMatch(t *testing.T) {
+	t.Parallel()
 	before := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "before"}}
 	after := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "after"}}
 	if state.SameParentFileStates(before, after) {
@@ -208,6 +213,7 @@ func qualityFixReportForSnapshots(input, output state.GitSnapshot) harnesslint.R
 }
 
 func TestQualityFixSnapshotRejectsOutputMismatch(t *testing.T) {
+	t.Parallel()
 	workerEnd := state.GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "before"}
 	reviewInput := state.GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "after-external"}
 	report := qualityFixReportForSnapshots(workerEnd, state.GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "fixer-after"})

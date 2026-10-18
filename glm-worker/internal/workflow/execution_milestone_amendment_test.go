@@ -9,6 +9,7 @@ import (
 )
 
 func TestExecutionMilestonePromptDistinguishesExplicitAmendmentFromRedo(t *testing.T) {
+	t.Parallel()
 	plan := &executionmilestone.Plan{
 		Version:            executionmilestone.PlanVersion,
 		TaskID:             "task",

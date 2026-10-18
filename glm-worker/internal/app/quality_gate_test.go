@@ -101,6 +101,7 @@ func TestQualityGateEnvScrubsSessionTransport(t *testing.T) {
 }
 
 func TestQualityGateParseAcceptsOnlyExactForms(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		args     []string
 		wantForm string

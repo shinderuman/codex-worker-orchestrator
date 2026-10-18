@@ -110,6 +110,7 @@ func findTestImpactOperation(task map[string]any, category string) map[string]an
 }
 
 func TestExecuteTestImpactAggregatesSavedEvents(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -198,6 +199,7 @@ func TestExecuteTestImpactAggregatesSavedEvents(t *testing.T) {
 }
 
 func TestExecuteTestImpactEmptyState(t *testing.T) {
+	t.Parallel()
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "testimpacthash", RepoRoot: "/repo"}
 	cmd, err := ParseCommand([]string{"--test-impact"})
@@ -240,6 +242,7 @@ func TestExecuteTestImpactEmptyState(t *testing.T) {
 }
 
 func TestTestImpactPartialOnUnreadableEventLog(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -283,6 +286,7 @@ func TestTestImpactPartialOnUnreadableEventLog(t *testing.T) {
 }
 
 func TestTestImpactSkipsCorruptEventLines(t *testing.T) {
+	t.Parallel()
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {

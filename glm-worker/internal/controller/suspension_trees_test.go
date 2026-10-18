@@ -8,6 +8,7 @@ import (
 )
 
 func TestSuspensionCaptureAndTwoStageRebindPreserveWorkspaceSemantics(t *testing.T) {
+	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	files := map[string]string{"staged.txt": "original\n", "unstaged.txt": "original\n", "delete-index.txt": "original\n", "delete-worktree.txt": "original\n", "mode.txt": "original\n"}
 	for path, data := range files {
@@ -87,6 +88,7 @@ func TestSuspensionCaptureAndTwoStageRebindPreserveWorkspaceSemantics(t *testing
 }
 
 func TestSuspensionCaptureRejectsUnsupportedIndexBeforeMutation(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"intent-to-add", "assume-unchanged", "unresolved"} {
 		t.Run(kind, func(t *testing.T) {
 			repo, _ := newControllerLinkedWorktree(t)
@@ -126,6 +128,7 @@ func TestSuspensionCaptureRejectsUnsupportedIndexBeforeMutation(t *testing.T) {
 }
 
 func TestSuspensionRebindConflictPreservesSourceWorkspace(t *testing.T) {
+	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	base := controllerGitOutput(t, repo, "rev-parse", "HEAD")
 	baseline, err := CaptureExecutionTrees(repo, base)
@@ -169,6 +172,7 @@ func writeSuspensionTestFile(t *testing.T, repo, path, data string) {
 }
 
 func TestSuspensionGitlinkCapturePreservesCleanAndRejectsDirtySubmodule(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	child, _ := newControllerLinkedWorktree(t)
 	runControllerGit(t, repo, "-c", "protocol.file.allow=always", "submodule", "add", child, "child")

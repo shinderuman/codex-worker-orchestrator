@@ -7,6 +7,7 @@ import (
 )
 
 func TestUnrelatedRepositoryRefMutationKeepsLeaseAuthority(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
 	if err != nil {
@@ -41,6 +42,7 @@ func TestUnrelatedRepositoryRefMutationKeepsLeaseAuthority(t *testing.T) {
 }
 
 func TestAuthorityRefMutationInvalidatesLeaseAndRecordsRefProvenance(t *testing.T) {
+	t.Parallel()
 	repo, _ := newControllerLinkedWorktree(t)
 	store, err := Open(controllerTestConfig(repo, filepath.Join(t.TempDir(), "state", "sessions")))
 	if err != nil {

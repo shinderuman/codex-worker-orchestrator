@@ -7,6 +7,7 @@ import (
 )
 
 func TestGitAuthoritySandboxSettingsProtectMetadataAndOwnedTemp(t *testing.T) {
+	t.Parallel()
 	root := newGitAuthorityRepo(t)
 	guard, err := prepareGitAuthorityGuard(root)
 	if err != nil {
@@ -75,6 +76,7 @@ func TestGitAuthoritySandboxSettingsProtectMetadataAndOwnedTemp(t *testing.T) {
 }
 
 func TestGitAuthoritySandboxProtectsWorktreeMarkerAndCommonMetadata(t *testing.T) {
+	t.Parallel()
 	root := newGitAuthorityRepo(t)
 	worktree := filepath.Join(t.TempDir(), "worktree")
 	runGitAuthorityCommand(t, root, "worktree", "add", "-q", "-b", "sandbox-worktree", worktree)

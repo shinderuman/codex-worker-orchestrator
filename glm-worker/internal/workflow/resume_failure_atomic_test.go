@@ -9,6 +9,7 @@ import (
 )
 
 func TestResumeProbeGateRestoreFailureIsReported(t *testing.T) {
+	t.Parallel()
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	resumePath := st.Path("resume-state.json")
