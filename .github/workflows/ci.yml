@@ -65,24 +65,7 @@ jobs:
       - name: Go tests except internal/app
         if: ${{ matrix.mode == 'test' }}
         working-directory: glm-worker
-        run: go list ./... | grep -v '/internal/app
-  lint:
-    if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
-    needs:
-      - basic
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require basic validation
-        env:
-          BASIC_RESULT: ${{ needs.basic.result }}
-        run: test "$BASIC_RESULT" = success
-
-  install-smoke:
-    if: ${{ (github.event_name == 'push' && github.event.created == false && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
-    needs:
-      - lint
-    uses: ./.github/workflows/install-smoke.yml
- | xargs go test
+        run: go list ./... | grep -v '/internal/app$' | xargs go test
 
   lint:
     if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
