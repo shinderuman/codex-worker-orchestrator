@@ -137,7 +137,9 @@ func scheduleHeadingMatches(section planScheduleSection, heading string) bool {
 func scheduleEntryPath(section planScheduleSection, item string) (string, error) {
 	switch strings.Count(item, "`") {
 	case 0:
-		return item, nil
+		if !strings.ContainsAny(item, "[]()") {
+			return item, nil
+		}
 	case 2:
 		if strings.HasPrefix(item, "`") && strings.HasSuffix(item, "`") {
 			return item[1 : len(item)-1], nil
