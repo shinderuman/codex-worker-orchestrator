@@ -171,20 +171,9 @@ func (w *Workflow) convergeApprovedWorkerRules(
 	}
 	missing := missingWorkerRules(required, activated)
 	if len(missing) == 0 {
-		return w.finishWorkerRuleConvergence(checkpoint, result)
+		return w.convergeParentValidation(result)
 	}
 	return w.runWorkerRuleCorrection(checkpoint, result, activated, missing, round)
-}
-
-func (w *Workflow) finishWorkerRuleConvergence(
-	checkpoint state.ResumeCheckpoint,
-	result packet.Result,
-) (packet.Result, error) {
-	result, err := applyCheckpointParentValidation(checkpoint, result)
-	if err != nil {
-		return packet.Result{}, err
-	}
-	return w.convergeParentValidation(checkpoint, result)
 }
 
 func (w *Workflow) runWorkerRuleCorrection(

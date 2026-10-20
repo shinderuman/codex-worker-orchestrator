@@ -46,9 +46,9 @@ func TestAcceptedFixScopeSkipsRedundantRiskFloorCall(t *testing.T) {
 	}
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar retained = 1\n")
 
-	result, stopped, err := w.enforceRiskFloor("request", packet.Result{}, 1, 0, "none", true, packet.Result{Status: packet.StatusPass})
-	if err != nil || stopped || result.Status != packet.StatusPass {
-		t.Fatalf("result = %#v, stopped=%v, err=%v", result, stopped, err)
+	result, err := w.enforceRiskFloor(true, packet.Result{Status: packet.StatusPass})
+	if err != nil || result.Status != packet.StatusPass {
+		t.Fatalf("result = %#v, err=%v", result, err)
 	}
 	if len(runner.phases) != 0 {
 		t.Fatalf("redundant risk-floor model call phases = %v", runner.phases)

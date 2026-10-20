@@ -89,7 +89,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.ExecutionOperationResult, controller.AcceptedCandidate, *state.StateStore) {
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
-	evidence := canonicalWorkflowEvidence(t, store, admission, policy)
+	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
 	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "reentry corpus result", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)

@@ -7,9 +7,13 @@
 このrepositoryのfull Go suiteはsandboxで成立しないUnix socket capabilityを含むため、直接`go test`へfallbackせずrepositoryの固定quality-gate surfaceを使う。
 
 - full suite / race suiteの実行、固定argv・環境、実行directory、run identity、snapshot binding、同一running runへのattach、log/evidence保存、terminal resultはmachine側が所有する。親はこれらを再構成しない。
-- finalizationでは`glm-parent-action finalize-check <go-test|go-test-race>`をcanonical入口とし、current handoff / repository snapshot / validation freshnessの整合は`control:quality-snapshot-binding`へ委ねる。同じ目的で`--quality-gate`、status、handoff、snapshot比較を手作業で連結しない。
+- finalizationでは`glm-parent-action finalize-check <go-test|go-test-race>`をcanonical入口とし、候補tree確定後（accept後、promote/publish/Task完了前）のpositionで必要formごとに1回だけ実行する。対象formと検証directoryはaccepted candidateの`required_validations`（form, working_dir）宣言に従ってroot・子Taskとも候補専用checkoutで実行し、宣言のないform・候補より導出できないdirectoryはfail closedに扱う。validation freshnessの整合は`control:quality-snapshot-binding`がgate記録自身のsnapshot bindingとpublication側のcompletion readiness検査へ委ねる。同じ目的で`--quality-gate`、status、handoff、snapshot比較を手作業で連結しない。
 - machine resultがreadyなら、そのevidenceを使って最終semantic acceptanceを親Codexが判断する。blocked/failureならstage・reason・同梱evidenceを確認し、別directory・cache・commandを推測して成功へ読み替えない。
 - tool sessionを失った既存runの回収だけはmachineが返したexact run identityのstatus/watch/result surfaceを使い、新規runとの二重実行や周期pollを行わない。
+
+## Workflow接続検証
+
+検証配置・最終source binding・Publication/Fix接続を変更するTaskでは、通常成功と最終gate失敗後の再入場をState補正なしで通す `go -C glm-worker test -tags=workflowintegration -run '^TestCanonicalValidationCadenceWithoutRuntimeRepair$' ./internal/app` を変更に対応する検証として実行する。通常full suiteへ重複して含めず、専用build tagで明示実行する。モデルとGo test/vet/buildはfixtureの代替を使う制御経路検証なので、実suiteの品質・所要時間の証拠にせず、必要な実full suiteは上記の正規finalize-checkで別に成立させる。
 
 ## sandbox内gate
 

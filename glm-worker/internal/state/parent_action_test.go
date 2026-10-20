@@ -51,69 +51,6 @@ func TestParentActionPlanWaitingStates(t *testing.T) {
 	})
 }
 
-func TestParentValidationNonConvergenceStripsAcceptUntilNextReview(t *testing.T) {
-	st := newParentActionTestStore(t)
-	result := packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}
-	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.FinishParentValidationNonConvergence(result, ParentReviewProducer{Role: string(WorkerRole)}); err == nil {
-		t.Fatal("non-active transition must fail instead of a silent no-op")
-	}
-	if err := st.SetTaskStatus(TaskStatusActive); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Remove(parentEvidenceLeasePath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(st.Path(parentEvidenceLeasePath), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.FinishParentValidationNonConvergence(result, ParentReviewProducer{Role: string(WorkerRole)}); err == nil {
-		t.Fatal("persistence failure inside the transition must fail closed")
-	}
-	if st.TaskStatus() != TaskStatusActive {
-		t.Fatalf("failed transition left %s instead of rolling back to active", st.TaskStatus())
-	}
-	if open, err := st.CurrentParentReview(); err != nil || open != nil {
-		t.Fatalf("failed transition left an open review: %#v err=%v", open, err)
-	}
-	if err := os.RemoveAll(st.Path(parentEvidenceLeasePath)); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := st.FinishParentValidationNonConvergence(result, ParentReviewProducer{Role: string(WorkerRole)}); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != TaskStatusWaitingSolReview {
-		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
-	}
-	plan, err := st.ParentActionPlan()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) || !plan.Allows(ParentActionPark) {
-		t.Fatalf("non-convergence plan = %#v", plan)
-	}
-	if _, admitted, err := st.AdmitParentAction(ParentActionAccept); err != nil || admitted {
-		t.Fatalf("accept admission = %v err=%v", admitted, err)
-	}
-	if _, admitted, err := st.AdmitParentAction(ParentActionFix); err != nil || !admitted {
-		t.Fatalf("fix admission = %v err=%v", admitted, err)
-	}
-
-	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(ReviewerRole)}); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := st.ParentActionPlan()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reopened.RequiredAction != ParentActionReview || reopened.Allows(ParentActionAccept) || !reopened.Allows(ParentActionFix) {
-		t.Fatalf("next unbound review must remain evidence-gated = %#v", reopened)
-	}
-}
-
 func TestParentActionPlanQualitySurfaceApprovalRequiresDedicatedAction(t *testing.T) {
 	st := newParentActionTestStore(t)
 	if err := st.SaveResumeCheckpoint(qualitySurfaceApprovalCheckpoint()); err != nil {

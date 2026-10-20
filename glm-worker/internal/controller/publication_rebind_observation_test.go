@@ -139,7 +139,7 @@ func TestRebindObservationRejectsInconsistentRemoteBinding(t *testing.T) {
 	if err != nil || observed != remote {
 		t.Fatalf("remote observation: %s, %v", observed, err)
 	}
-	c, err := f.store.reboundCandidate(old, remote)
+	c, err := f.store.reboundCandidate(old, remote, *accepted.CandidateRef)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestRebindObservationRemoteRaceRejectsStaleObservation(t *testing.T) {
 	if err != nil || observed != remote {
 		t.Fatalf("remote observation: %s, %v", observed, err)
 	}
-	c, err := f.store.reboundCandidate(old, remote)
+	c, err := f.store.reboundCandidate(old, remote, *accepted.CandidateRef)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -178,8 +179,8 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 		wantArgv  string
 		wantLines int
 	}{
-		{form: "go-test", wantArgv: "test -timeout=20m ./...", wantLines: 6},
-		{form: "go-test-race", wantArgv: "test -race -timeout=20m ./...", wantLines: 6},
+		{form: "go-test", wantArgv: "test -timeout=25m ./...", wantLines: 6},
+		{form: "go-test-race", wantArgv: "test -race -timeout=45m ./...", wantLines: 6},
 	}
 	for _, tc := range cases {
 		t.Run(tc.form, func(t *testing.T) {
@@ -240,6 +241,57 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 	}
 }
 
+func TestQualityGateRejectsSourceMutationDespiteTargetSuccess(t *testing.T) {
+	for _, ignored := range []bool{false, true} {
+		t.Run(fmt.Sprint(ignored), func(t *testing.T) {
+			useInlineQualityGateRunner(t)
+			repo := initGitRepo(t)
+			if ignored {
+				if err := os.WriteFile(filepath.Join(repo, ".git", "info", "exclude"), []byte("untracked-input.txt\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			previousDir, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chdir(repo); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chdir(previousDir) })
+			shimDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte("#!/bin/sh\nprintf 'changed during validation\\n' > untracked-input.txt\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			_, st := newQualityGateEnv(t)
+			var output bytes.Buffer
+			err = runQualityGate("go-test", st, &output)
+			if err == nil {
+				t.Fatal("target success must not validate a source mutation")
+			}
+			entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, entry := range entries {
+				if !qualitygate.ValidRunID(entry.Name()) {
+					continue
+				}
+				record, err := qualitygate.Read(st, entry.Name())
+				if err != nil || record.Status != qualitygate.StatusFail || record.ExitSource != state.ValidationExitSourceWrapper {
+					t.Fatalf("source mutation must remain a wrapper failure: %#v %v", record, err)
+				}
+				found = true
+			}
+			if !found {
+				t.Fatal("source mutation lost its run evidence")
+			}
+		})
+	}
+}
+
 func TestQualityGateFailureIsStructuredProcessError(t *testing.T) {
 	useInlineQualityGateRunner(t)
 	failFlagPath := filepath.Join(t.TempDir(), "fail-flag")
@@ -290,7 +342,7 @@ func TestQualityGateFailureIsStructuredProcessError(t *testing.T) {
 	if envelope.Error.Kind != "quality_gate_failed" {
 		t.Fatalf("error kindが想定と異なります: %s", envelope.Error.Kind)
 	}
-	if envelope.Error.Detail["exit_code"] != float64(3) || envelope.Error.Detail["command"] != "go test -timeout=20m ./..." {
+	if envelope.Error.Detail["exit_code"] != float64(3) || envelope.Error.Detail["command"] != "go test -timeout=25m ./..." {
 		t.Fatalf("error detailが想定と異なります: %+v", envelope.Error.Detail)
 	}
 	if lines := qualityGateInvocationLines(t, invocationLog); len(lines) == 0 {

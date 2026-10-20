@@ -366,8 +366,8 @@ func TestExternalFeasibilityPoCToImplementationDecisionResumesWritable(t *testin
 	if err := w.ExecuteDecision("Go: 実装へ進める"); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.prompts) != 4 {
-		t.Fatalf("migration後のdecisionはwritable worker・reviewer・risk floor再出力の3呼出が追加されるべき: %d(%v)", len(r.prompts), r.phases)
+	if len(r.prompts) != 3 {
+		t.Fatalf("migration後のdecisionはwritable worker・reviewerの2呼出が追加されるべき: %d(%v)", len(r.prompts), r.phases)
 	}
 	if r.readOnlyCalls[1] {
 		t.Fatal("implementation migration後のdecision workerは書き込み可能であるべきです")

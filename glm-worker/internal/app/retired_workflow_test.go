@@ -94,11 +94,7 @@ func prepareCompletionQualityCorpus(t *testing.T, root string) {
 func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	cfg, store, retired, policy := interruptedCompletionWorkflowFixture(t)
 	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
-	bound, err := controller.WorkflowConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	st := state.AttachStateStore(bound)
+	bound, st := retiredWorkflowRuntime(t, cfg)
 	handoff := buildParentHandoffWithConfig(bound, st)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != "controller-execution" || containsParentAction(handoff.AllowedActions, "start") {
 		t.Fatalf("local retirement did not retain exclusive publication authority: %#v", handoff)
@@ -117,6 +113,7 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bound, st = retiredWorkflowRuntime(t, cfg)
 	handoff = buildParentHandoffWithConfig(bound, st)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != "start" {
 		t.Fatalf("published successor is not normally startable: %#v", handoff)
@@ -183,6 +180,15 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	}
 }
 
+func retiredWorkflowRuntime(t *testing.T, cfg config.AppConfig) (config.AppConfig, *state.StateStore) {
+	t.Helper()
+	bound, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bound, state.AttachStateStore(bound)
+}
+
 func assertRetiredParentMaintenanceGateAdmits(t *testing.T, cfg config.AppConfig) {
 	t.Helper()
 	exit, _, diagnostics := runParentActionCLI(t, cfg, "continuation-metadata-guard")
@@ -212,7 +218,7 @@ func assertRetiredBootstrap(t *testing.T, cfg config.AppConfig, task string) {
 func promotedWorkflowFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.ExecutionOperationResult, controller.PublicationPolicy, controller.AcceptedCandidate) {
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, true)
-	evidence := canonicalWorkflowEvidence(t, store, admission, policy)
+	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
 	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "root result", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)

@@ -22,7 +22,7 @@ func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOpe
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	c, err = s.reboundCandidate(c, remote)
+	c, err = s.reboundCandidate(c, remote, ref)
 	if err != nil {
 		return ExecutionOperationResult{}, s.preservePublicationConflict(head, nil, err)
 	}
@@ -119,7 +119,7 @@ func validateApprovedAmendmentProject(authority CommittedTaskAuthority, approval
 	return nil
 }
 
-func (s *Store) reboundCandidate(old AcceptedCandidate, base string) (AcceptedCandidate, error) {
+func (s *Store) reboundCandidate(old AcceptedCandidate, base string, superseded EvidenceObjectRef) (AcceptedCandidate, error) {
 	oldTree, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", old.BaseOID+"^{tree}")
 	if err != nil {
 		return AcceptedCandidate{}, err
@@ -128,7 +128,11 @@ func (s *Store) reboundCandidate(old AcceptedCandidate, base string) (AcceptedCa
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
-	tree, err := mergeSuspensionTrees(s.identity.PrimaryRoot, oldTree, old.TreeOID, newTree)
+	surface, err := s.rebaseCandidateSurface(oldTree, old)
+	if err != nil {
+		return AcceptedCandidate{}, err
+	}
+	tree, err := mergeSuspensionTrees(s.identity.PrimaryRoot, oldTree, surface, newTree)
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
@@ -140,10 +144,17 @@ func (s *Store) reboundCandidate(old AcceptedCandidate, base string) (AcceptedCa
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
+	files, finalTree, err := s.finalizeCandidateTrees(old.TaskRef, old.RootTaskRef, base, tree)
+	if err != nil {
+		return AcceptedCandidate{}, err
+	}
 	old.BaseOID = base
-	old.TreeOID = tree
-	old.SnapshotID = digestStrings("rebound-candidate", old.SnapshotID, base, tree)
-	old.CommitOID, err = createAcceptedCandidateCommit(s.identity.PrimaryRoot, tree, base, old.Message)
+	old.Previous = &superseded
+	old.ImplementationTree = tree
+	old.TerminalFiles = files
+	old.TreeOID = finalTree
+	old.SnapshotID = digestStrings("rebound-candidate", old.SnapshotID, base, finalTree)
+	old.CommitOID, err = createAcceptedCandidateCommit(s.identity.PrimaryRoot, finalTree, base, old.Message)
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
@@ -154,6 +165,18 @@ func (s *Store) reboundCandidate(old AcceptedCandidate, base string) (AcceptedCa
 	old.ObservedRemoteOID = ""
 	old.GitArchive, _, err = s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "candidate:"+old.CommitOID, []string{old.CommitOID})
 	return old, err
+}
+
+func (s *Store) rebaseCandidateSurface(oldTree string, old AcceptedCandidate) (string, error) {
+	surface := old.TreeOID
+	if old.ImplementationTree != "" {
+		surface = old.ImplementationTree
+	}
+	index, err := newSuspensionIndex(s.identity.PrimaryRoot, surface)
+	if err != nil {
+		return "", err
+	}
+	return normalizeCandidateTree(s.identity.PrimaryRoot, index, oldTree)
 }
 
 func (s *Store) publicationProjectAdvancement(head RepositoryControllerHead, tip string) (ProjectSnapshot, error) {

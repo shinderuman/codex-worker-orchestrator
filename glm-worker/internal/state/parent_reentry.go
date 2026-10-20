@@ -72,7 +72,7 @@ func (s *StateStore) applyControllerReentryTransition(risk string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.openParentReviewState(string(packet.StatusNeedsSolReview), risk, ParentReviewProducer{}, false); err != nil {
+	if err := s.openParentReviewState(string(packet.StatusNeedsSolReview), risk, ParentReviewProducer{}); err != nil {
 		return s.rollbackLifecycleFiles(err, review, status)
 	}
 	if err := s.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {

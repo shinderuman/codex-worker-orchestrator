@@ -12,6 +12,7 @@ import (
 
 func promoteTerminalTestSource(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, source Admission) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
+	seedFinalValidationNoneObligation(t, fixture.store, source)
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "terminal source result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
@@ -120,8 +121,8 @@ func TestTerminalRootRetirementAdvancesPlanAndKeepsPublishedEvidence(t *testing.
 		t.Fatal("one Task published more than one commit")
 	}
 	implementation, err := fixture.store.completionImplementation(candidate)
-	if err != nil || implementation.CommitOID == candidate.CommitOID {
-		t.Fatal("original implementation candidate was not preserved")
+	if err != nil || implementation.CommitOID != candidate.CommitOID || implementation.ImplementationRef != nil {
+		t.Fatal("completion implementation lineage was not preserved")
 	}
 	if _, err := fixture.store.LoadAcceptedCandidate(*candidate.ImplementationRef); err != nil {
 		t.Fatal("implementation proof is unavailable after retirement")
@@ -180,6 +181,7 @@ func TestTerminalBlockerRetirementFulfillsMetadataAndResumesBoundRoot(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedFinalValidationNoneObligation(t, fixture.store, fixture.source)
 	fixture, policy := configurePublicationTestFixture(t, fixture)
 	fixture.source = publicationTestEdit(t, fixture, "root-only.txt", "unfinished root\n")
 	episode := planSuspensionTestEpisode(t, fixture)

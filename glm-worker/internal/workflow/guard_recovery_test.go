@@ -183,8 +183,8 @@ func TestRestoredInstructionMutationConvergesDecisionContinuationToGuardRecovery
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
 	}
-	if len(resumeRunner.phases) != 2 || resumeRunner.phases[0] != "reviewer-1-high-floor" || resumeRunner.phases[1] != "reviewer-1-risk-floor" {
-		t.Fatalf("保存済みworker resultを再利用し独立reviewとrisk floor再出力だけで閉じるべき: phases=%v", resumeRunner.phases)
+	if len(resumeRunner.phases) != 1 || resumeRunner.phases[0] != "reviewer-1-high-floor" {
+		t.Fatalf("保存済みworker resultを再利用し独立reviewだけで閉じるべき: phases=%v", resumeRunner.phases)
 	}
 }
 

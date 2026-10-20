@@ -50,7 +50,7 @@ func applyPendingCompletionRecoveryHandoff(cfg config.AppConfig, output *parentH
 	if !pending {
 		return false
 	}
-	*output = parentHandoffOutput{Version: parentHandoffVersion, Controller: &report, Consistent: false, AllowedActions: []string{}, Validations: []parentHandoffValidation{}, RoutingEvidence: []parentHandoffRoutingEvidence{}}
+	*output = parentHandoffOutput{Version: parentHandoffVersion, Controller: &report, Consistent: false, AllowedActions: []string{}, Validations: []parentHandoffValidation{}}
 	if err != nil {
 		message := err.Error()
 		output.Inconsistency = &message

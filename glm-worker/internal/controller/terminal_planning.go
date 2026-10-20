@@ -17,29 +17,16 @@ func (s *Store) planTerminalMetadata(input TerminalTaskInput) (ExecutionOperatio
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	implementation, err := s.completionImplementation(c)
-	if err != nil {
-		return ExecutionOperation{}, head, err
-	}
-	metadata, err := s.completionMetadata(implementation)
-	if err != nil {
-		return ExecutionOperation{}, head, err
-	}
-	return s.buildTerminalMetadataOperation(head, c, candidateRef, project, metadata)
+	return s.buildTerminalMetadataOperation(head, c, candidateRef, project)
 }
 
-func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot, metadata repositoryprojectcommit.TerminalMetadata) (ExecutionOperation, RepositoryControllerHead, error) {
-	implementation := c
+func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot) (ExecutionOperation, RepositoryControllerHead, error) {
+	if len(c.TerminalFiles) == 0 {
+		return ExecutionOperation{}, head, fmt.Errorf("candidate lacks accept-time terminal finalization; re-enter and accept under the current contract")
+	}
 	record, c, candidateRef, err := s.planTerminalCompletionCandidate(head, c, candidateRef)
 	if err != nil {
 		return ExecutionOperation{}, head, err
-	}
-	files, tree, err := s.terminalMetadataTree(implementation.CommitOID, metadata)
-	if err != nil {
-		return ExecutionOperation{}, head, err
-	}
-	if c.ImplementationRef == nil || tree != c.TreeOID {
-		return ExecutionOperation{}, head, fmt.Errorf("terminal metadata must belong to the exact completion candidate")
 	}
 	commit := c.CommitOID
 	result, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, commit)
@@ -55,7 +42,7 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	payload := &TerminalMetadataOperation{Record: terminal, RecordRef: ref, Policy: c.Policy, Files: files, RootTaskRef: &result.Task}
+	payload := &TerminalMetadataOperation{Record: terminal, RecordRef: ref, Policy: c.Policy, Files: c.TerminalFiles, RootTaskRef: &result.Task}
 	record.ProjectSnapshotNew = result.ProjectSnapshotID
 	bindCompletionTransition(&record, c, result.Task)
 	if err := s.planTerminalMetadataEpisode(head, payload, &record, c.TaskRef); err != nil {
@@ -66,7 +53,7 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 		return ExecutionOperation{}, head, err
 	}
 	record.SourceWorkspaceID = workspace.ID
-	record.Effects = terminalMetadataEffects(*payload, implementation.CommitOID)
+	record.Effects = terminalMetadataEffects(*payload, commit)
 	op := ExecutionOperation{Transition: record, Source: Admission{Head: head}, Terminal: payload, SealRef: &c.SealRef, Workspace: &workspace}
 	if err := s.verifyTerminalMetadataSource(op); err != nil {
 		return ExecutionOperation{}, head, err
@@ -84,11 +71,8 @@ func (s *Store) planTerminalCompletionCandidate(head RepositoryControllerHead, c
 	if err != nil {
 		return record, c, candidateRef, err
 	}
-	c, err = s.amendCandidateCompletion(c, candidateRef)
-	if err != nil {
-		return record, c, candidateRef, err
-	}
 	c.Previous = &candidateRef
+	c.ImplementationRef = &candidateRef
 	c.State = candidateObserved
 	c.ObservedRemoteOID = c.CommitOID
 	c.ControllerGeneration = record.CommittedGeneration

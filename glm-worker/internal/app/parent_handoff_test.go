@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,12 +31,8 @@ func TestParseCommandParentHandoff(t *testing.T) {
 	if recovery.Mode != ModeHandoff || recovery.Payload != "recovery" {
 		t.Fatalf("recovery handoff command = %#v", recovery)
 	}
-	routing, err := ParseCommand([]string{"--handoff", "routing"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if routing.Mode != ModeHandoff || routing.Payload != "routing" {
-		t.Fatalf("routing handoff command = %#v", routing)
+	if _, err := ParseCommand([]string{"--handoff", "routing"}); err == nil {
+		t.Fatal("--handoff accepted the removed routing projection")
 	}
 	if _, err := ParseCommand([]string{"--handoff", "extra"}); err == nil {
 		t.Fatal("--handoff accepted an unknown projection")
@@ -436,166 +431,6 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 		if validation.ValidationRunID == stale.ValidationRunID || validation.WorkingDir == stale.WorkingDir {
 			t.Fatalf("stale snapshot validation leaked into handoff: %#v", validation)
 		}
-	}
-}
-
-func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T) {
-	t.Parallel()
-	const routingEvidenceTaskID = "12345678-1111-2222-3333-444444444444"
-	cases := []struct {
-		name        string
-		mutate      func(record *qualitygate.RunRecord)
-		wantMatches bool
-		wantMatch   string
-	}{
-		{
-			name:        "exact snapshot match stays routing evidence",
-			mutate:      func(_ *qualitygate.RunRecord) {},
-			wantMatches: true,
-			wantMatch:   routingSnapshotMatchExact,
-		},
-		{
-			name: "parent metadata drift stays routing evidence",
-			mutate: func(record *qualitygate.RunRecord) {
-				record.WorktreeDigest = "parent-metadata-drift"
-			},
-			wantMatches: true,
-			wantMatch:   routingSnapshotMatchParentMetadataOnly,
-		},
-		{
-			name: "legacy record without parent-excluded digest matches exact only",
-			mutate: func(record *qualitygate.RunRecord) {
-				record.WorktreeDigestExcludingParent = ""
-			},
-			wantMatches: true,
-			wantMatch:   routingSnapshotMatchExact,
-		},
-		{
-			name: "implementation drift drops routing evidence",
-			mutate: func(record *qualitygate.RunRecord) {
-				record.WorktreeDigest = "parent-metadata-drift"
-				record.WorktreeDigestExcludingParent = "implementation-drift"
-			},
-			wantMatches: false,
-		},
-		{
-			name: "head change drops routing evidence",
-			mutate: func(record *qualitygate.RunRecord) {
-				record.Head = "other-head"
-			},
-			wantMatches: false,
-		},
-		{
-			name: "index change drops routing evidence",
-			mutate: func(record *qualitygate.RunRecord) {
-				record.IndexDigest = "other-index"
-			},
-			wantMatches: false,
-		},
-		{
-			name: "task change drops routing evidence",
-			mutate: func(record *qualitygate.RunRecord) {
-				record.TaskID = "12345678-9999-8888-7777-666666666666"
-			},
-			wantMatches: false,
-		},
-		{
-			name: "failed validation is not routing evidence",
-			mutate: func(record *qualitygate.RunRecord) {
-				record.Status = qualitygate.StatusFail
-			},
-			wantMatches: false,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := newAppConfig(t)
-			st, err := state.NewStateStore(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := st.Write("task.id", routingEvidenceTaskID); err != nil {
-				t.Fatal(err)
-			}
-			seedParentReviewStateForTest(t, st, routingEvidenceTaskID)
-			snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
-			if err != nil {
-				t.Fatal(err)
-			}
-			record := qualitygate.RunRecord{
-				ValidationRunID:               strings.Repeat("a", 32),
-				Form:                          "go-test",
-				Repository:                    cfg.RepoRoot,
-				WorkingDir:                    filepath.Join(cfg.RepoRoot, "module"),
-				Head:                          snapshot.Head,
-				IndexDigest:                   snapshot.IndexDigest,
-				WorktreeDigest:                snapshot.WorktreeDigest,
-				WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
-				TaskID:                        routingEvidenceTaskID,
-				StartedAt:                     time.Now().UTC(),
-				Status:                        qualitygate.StatusPass,
-			}
-			tc.mutate(&record)
-			if err := writeQualityGateRun(st, record); err != nil {
-				t.Fatal(err)
-			}
-
-			output := buildParentHandoffWithConfig(cfg, st)
-			if !output.Consistent {
-				t.Fatalf("handoff = %#v", output)
-			}
-			if !tc.wantMatches {
-				if len(output.RoutingEvidence) != 0 {
-					t.Fatalf("routing evidence = %#v", output.RoutingEvidence)
-				}
-				return
-			}
-			if len(output.RoutingEvidence) != 1 {
-				t.Fatalf("routing evidence = %#v", output.RoutingEvidence)
-			}
-			evidence := output.RoutingEvidence[0]
-			if evidence.ValidationRunID != record.ValidationRunID || evidence.Form != record.Form ||
-				evidence.WorkingDir != record.WorkingDir || evidence.SnapshotMatch != tc.wantMatch {
-				t.Fatalf("routing evidence = %#v", evidence)
-			}
-		})
-	}
-}
-
-func TestParentHandoffRejectsRoutingEvidenceWithoutTaskID(t *testing.T) {
-	t.Parallel()
-	cfg := newAppConfig(t)
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record := qualitygate.RunRecord{
-		ValidationRunID:               strings.Repeat("b", 32),
-		Form:                          "go-test",
-		Repository:                    cfg.RepoRoot,
-		WorkingDir:                    filepath.Join(cfg.RepoRoot, "module"),
-		Head:                          snapshot.Head,
-		IndexDigest:                   snapshot.IndexDigest,
-		WorktreeDigest:                snapshot.WorktreeDigest,
-		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
-		StartedAt:                     time.Now().UTC(),
-		Status:                        qualitygate.StatusPass,
-	}
-	if err := writeQualityGateRun(st, record); err != nil {
-		t.Fatal(err)
-	}
-	digest := &state.SnapshotDigest{
-		Head:                          snapshot.Head,
-		IndexDigest:                   snapshot.IndexDigest,
-		WorktreeDigest:                snapshot.WorktreeDigest,
-		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
-	}
-	if got := currentParentRoutingEvidence(st, cfg.RepoRoot, "", digest); len(got) != 0 {
-		t.Fatalf("taskless routing evidence leaked: %#v", got)
 	}
 }
 

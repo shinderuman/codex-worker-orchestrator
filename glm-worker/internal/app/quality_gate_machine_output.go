@@ -25,7 +25,10 @@ func dispatchQualityGateMachineOutput(cmd Command, cfg config.AppConfig, stdout,
 	var st *state.StateStore
 	var storeErr error
 	if configErr == nil {
-		st, storeErr = state.NewStateStore(cfg)
+		st = state.AttachStateStore(cfg)
+		if !st.Exists("repo-root") {
+			st, storeErr = state.NewStateStore(cfg)
+		}
 	}
 	var execErr error
 	if storeErr == nil && configErr == nil {

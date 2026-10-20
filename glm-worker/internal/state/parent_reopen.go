@@ -83,13 +83,10 @@ func (s *StateStore) applyReopenTransition(completion ParentCompletionOutcome, c
 	if err := s.ClearRuntimeInstallEvidence(); err != nil {
 		return err
 	}
-	if err := s.ClearFinalizationEvidence(); err != nil {
-		return err
-	}
 	if err := s.ClearPublicationInvalidatingFinding(); err != nil {
 		return err
 	}
-	if err := s.openParentReviewState(string(packet.StatusNeedsSolReview), completion.Risk, ParentReviewProducer{}, false); err != nil {
+	if err := s.openParentReviewState(string(packet.StatusNeedsSolReview), completion.Risk, ParentReviewProducer{}); err != nil {
 		return err
 	}
 	if err := s.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {

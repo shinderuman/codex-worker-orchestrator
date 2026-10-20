@@ -71,15 +71,6 @@ func TestParentEvidenceReplayReducesModelVisibleBytesAndReturns(t *testing.T) {
 	}
 	boundedBytes += rejected.Len()
 
-	var routing bytes.Buffer
-	if err := printParentHandoffRoutingWithConfig(fixture.cfg, fixture.st, &routing); err != nil {
-		t.Fatalf("internal routing read was blocked by the parent-visible dedup: %v", err)
-	}
-	var routingHandoff parentHandoffOutput
-	if err := json.Unmarshal(routing.Bytes(), &routingHandoff); err != nil || routing.Len() == 0 {
-		t.Fatalf("routing handoff = %s (%v)", routing.String(), err)
-	}
-
 	if boundedBytes >= naiveBytes/2 {
 		t.Fatalf("bounded replay bytes = %d did not fall below half of naive = %d", boundedBytes, naiveBytes)
 	}

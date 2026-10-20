@@ -61,7 +61,7 @@ func TestQualityFixerMutationKeepsSubsequentModelCallAdmitted(t *testing.T) {
 	if !fixed {
 		t.Fatalf("quality gate did not run its machine fixer: %s", out.String())
 	}
-	if len(r.prompts) != 4 {
+	if len(r.prompts) != 3 {
 		t.Fatalf("auto-fix model call after the machine fixer did not run: prompts=%d", len(r.prompts))
 	}
 	if err := admitQualityMutationFixtureSnapshot(t, store, repo); err != nil {

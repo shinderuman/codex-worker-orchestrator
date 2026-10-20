@@ -12,7 +12,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
+func TestRiskFloorEscalationTargetsProduceParentDiffClaim(t *testing.T) {
 	t.Parallel()
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
@@ -21,7 +21,7 @@ func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
 	}
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
-	enforced, err := w.riskFloorFailClosedResult(passPkt)
+	enforced, err := w.riskFloorEscalationResult(passPkt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
 		t.Fatalf("targets = %#v", enforced.Targets)
 	}
 	if err := validateTypedResult(enforced); err != nil {
-		t.Fatalf("synthesized fail-closed packet invalid: %v", err)
+		t.Fatalf("escalated packet invalid: %v", err)
 	}
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
@@ -70,16 +70,16 @@ func TestRiskFloorFailClosedTargetsProduceParentDiffClaim(t *testing.T) {
 	}
 }
 
-func TestRiskFloorFailClosedDoesNotSubstituteFallbackTarget(t *testing.T) {
+func TestRiskFloorEscalationDoesNotSubstituteFallbackTarget(t *testing.T) {
 	t.Parallel()
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 	w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }
-	if _, err := w.riskFloorFailClosedResult(passPkt); err == nil || !strings.Contains(err.Error(), "no changed paths") {
-		t.Fatalf("empty task diff should fail closed without substitute target: %v", err)
+	if escalated, err := w.riskFloorEscalationResult(passPkt); err == nil || !strings.Contains(err.Error(), "no changed paths") || escalated.Status != "" {
+		t.Fatalf("empty diff must stop without a review handoff: %#v %v", escalated, err)
 	}
 	w.collectChangedPaths = func(string, string) ([]string, error) { return nil, errors.New("changed paths unavailable") }
-	if _, err := w.riskFloorFailClosedResult(passPkt); err == nil || !strings.Contains(err.Error(), "changed paths unavailable") {
-		t.Fatalf("changed-path failure should propagate instead of substituting target: %v", err)
+	if escalated, err := w.riskFloorEscalationResult(passPkt); err == nil || !strings.Contains(err.Error(), "changed paths unavailable") || escalated.Status != "" {
+		t.Fatalf("unavailable diff must stop without a review handoff: %#v %v", escalated, err)
 	}
 }

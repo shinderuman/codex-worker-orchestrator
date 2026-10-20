@@ -14,6 +14,7 @@ type CompletionReadiness struct {
 	SuccessorRuntimeTaskID string                         `json:"successor_runtime_task_id"`
 	LintRequired           bool                           `json:"lint_required"`
 	LintRef                *EvidenceObjectRef             `json:"lint_ref,omitempty"`
+	FinalValidations       []FinalValidationEvidence      `json:"final_validations,omitempty"`
 	RuntimeTaskID          string                         `json:"runtime_task_id,omitempty"`
 	RuntimeCompletion      *state.ParentCompletionOutcome `json:"runtime_completion,omitempty"`
 	OperationDigest        string                         `json:"operation_digest"`
@@ -29,6 +30,14 @@ type CompletionLintEvidence struct {
 
 func (s *Store) prepareCompletionReadiness(op ExecutionOperation) (EvidenceObjectRef, error) {
 	if err := s.verifyCompletionLocalTarget(op); err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	candidate, err := s.LoadAcceptedCandidate(op.Terminal.Record.CandidateRef)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	finalValidations, err := s.collectFinalValidationEvidence(candidate)
+	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
 	runtimeTaskID, outcome, err := s.prepareCompletionRuntime(op)
@@ -48,7 +57,7 @@ func (s *Store) prepareCompletionReadiness(op ExecutionOperation) (EvidenceObjec
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
-	ready := CompletionReadiness{SchemaVersion: controllerSchemaVersion, SuccessorRuntimeTaskID: successorID, LintRequired: lintRef != nil, LintRef: lintRef, RuntimeTaskID: runtimeTaskID, RuntimeCompletion: outcome, OperationDigest: op.Transition.OperationDigest, FinalOID: op.Terminal.Record.CandidateOID}
+	ready := CompletionReadiness{SchemaVersion: controllerSchemaVersion, SuccessorRuntimeTaskID: successorID, LintRequired: lintRef != nil, LintRef: lintRef, FinalValidations: finalValidations, RuntimeTaskID: runtimeTaskID, RuntimeCompletion: outcome, OperationDigest: op.Transition.OperationDigest, FinalOID: op.Terminal.Record.CandidateOID}
 	return s.putEvidenceJSON("completion-readiness", op.Transition.TransitionID, ready)
 }
 
@@ -117,6 +126,13 @@ func (s *Store) verifyCompletionLocalTarget(op ExecutionOperation) error {
 func (s *Store) validateCompletionReadiness(op ExecutionOperation, phase TransitionState) (CompletionReadiness, error) {
 	ready, err := s.loadCompletionReadiness(op, phase)
 	if err != nil {
+		return ready, err
+	}
+	candidate, err := s.LoadAcceptedCandidate(op.Terminal.Record.CandidateRef)
+	if err != nil {
+		return ready, err
+	}
+	if err := s.verifyFinalValidationEvidence(candidate, ready.FinalValidations); err != nil {
 		return ready, err
 	}
 	taskID, outcome, err := s.prepareCompletionRuntime(op)

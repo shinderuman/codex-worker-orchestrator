@@ -203,10 +203,3 @@ guardが汚染されたsessionを無効化したため、今回の呼び出し�
 %s
 `, originalPrompt)
 }
-
-func riskFloorReemitPrompt() string {
-	return `直前の独立reviewはHIGH RISK最終確認が必要な経路です。reviewerがPASSを返しましたが、wrapper risk floorがこれを却下しました。
-reviewerの自然言語判断だけではこの経路のriskを降格できません。
-実装・調査・テストをやり直さず、直前のreview結果の内容を保ったまま、実行環境から指定されたstructured schemaに従って結果だけを再出力してください。
-`
-}

@@ -290,7 +290,7 @@ func TestReopenUnsealedParentCompletionFailsClosedMidTransitionWithoutFalseSucce
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.openParentReviewState(string(packet.StatusNeedsSolReview), string(packet.RiskHigh), ParentReviewProducer{}, false); err != nil {
+	if err := st.openParentReviewState(string(packet.StatusNeedsSolReview), string(packet.RiskHigh), ParentReviewProducer{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.ReopenUnsealedParentCompletion(source); err == nil || !strings.Contains(err.Error(), "accepted parent outcome") {

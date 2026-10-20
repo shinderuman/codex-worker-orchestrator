@@ -425,48 +425,6 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 	}
 }
 
-func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
-	t.Parallel()
-	repoRoot := initMutationRepo(t)
-	reviewerCalls := 0
-	r := &mutatingRunner{
-		repoRoot: repoRoot,
-		steps: []runnerStep{
-			{structured: implementedPacketWithRisk("high risk work", "HIGH")},
-			{structured: passPacket()},
-			{structured: needsSolReviewPacket()},
-		},
-	}
-	r.mutate = func(root string) error {
-		reviewerCalls++
-		if reviewerCalls < 2 {
-			return nil
-		}
-		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
-	}
-	st := newStateStoreT(t)
-	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st, repoRoot)
-	w.runner = r
-	w.output = out
-	w.captureSnapshot = state.CaptureGitSnapshot
-	setCurrentTaskChangedPath(w, "tracked.txt")
-
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("status = %q", w.state.TaskStatus())
-	}
-	if len(r.prompts) != 3 {
-		t.Fatalf("reemit呼出で停止すべき: calls=%d", len(r.prompts))
-	}
-	pkt := lastPacketFromOutput(t, out.String())
-	if pkt.Status != "NEEDS_SOL_REVIEW" || !strings.Contains(out.String(), "reviewer実行中にrepository状態が変化") {
-		t.Fatalf("reemit結果ではなくfail closed packetであるべき: %q", out.String())
-	}
-}
-
 func TestReviewEndCaptureFailureFailsClosedNotMismatch(t *testing.T) {
 	t.Parallel()
 	st := newStateStoreT(t)

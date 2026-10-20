@@ -104,7 +104,7 @@ func describeParentFileChanges(before, after state.ParentFileStates) string {
 }
 
 func quietWhenTerminalResultEmitted(err error) error {
-	if errors.Is(err, errParentFileGuardStopped) || errors.Is(err, errParentValidationNonConverged) {
+	if errors.Is(err, errParentFileGuardStopped) {
 		return nil
 	}
 	return err

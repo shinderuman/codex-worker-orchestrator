@@ -109,8 +109,19 @@ func canonicalWorkflowAdmission(t *testing.T, cfg config.AppConfig, store *contr
 	return admission
 }
 
-func canonicalWorkflowEvidence(t *testing.T, store *controller.Store, admission controller.Admission, policy controller.PublicationPolicy) []controller.EvidenceObjectRef {
+func canonicalWorkflowEvidence(t *testing.T, cfg config.AppConfig, store *controller.Store, admission controller.Admission, policy controller.PublicationPolicy) []controller.EvidenceObjectRef {
 	t.Helper()
+	runtimeCfg := controller.WorkflowTaskConfig(cfg, store.Identity(), admission.Attempt.SemanticTaskRef)
+	runtimeCfg.RepoRoot = admission.Workspace.Root
+	runtime, err := state.NewStateStore(runtimeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.Exists(state.FinalValidationObligationKey) {
+		if err := runtime.Write(state.FinalValidationObligationKey, `{"None":true}`); err != nil {
+			t.Fatal(err)
+		}
+	}
 	tree, err := store.PreviewCandidateTree(admission, policy)
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +199,7 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	}
 	completeCanonicalWorkflowReview(t, blockerRunner, blockerCfg, blockerState)
 	blockedSource := canonicalWorkflowAdmission(t, blockerCfg, store)
-	accepted := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: blockedSource.Head.ControllerGeneration, Message: "F11 result", Policy: policy, Evidence: canonicalWorkflowEvidence(t, store, blockedSource, policy)})
+	accepted := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: blockedSource.Head.ControllerGeneration, Message: "F11 result", Policy: policy, Evidence: canonicalWorkflowEvidence(t, blockerCfg, store, blockedSource, policy)})
 	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
 	if err != nil {
 		t.Fatal(err)

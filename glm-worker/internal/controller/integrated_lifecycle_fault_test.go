@@ -175,6 +175,7 @@ func TestIntegratedLifecyclePublicationRaceAdoptsSafely(t *testing.T) {
 	blocker := harness.edit(t, harness.source, "blocker-result.txt", "blocker deliverable\n")
 
 	evidence := publicationTestEvidence(t, harness.store, blocker, harness.policy)
+	seedFinalValidationNoneObligation(t, harness.store, blocker)
 	accepted, err := harness.store.AcceptExecutionCandidate(blocker, CandidateAcceptanceInput{Message: "raced result\n", Policy: harness.policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)

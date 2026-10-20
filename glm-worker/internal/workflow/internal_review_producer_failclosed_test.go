@@ -26,7 +26,6 @@ func TestInternalReviewProducersDoNotEmitWithoutActualTaskTargets(t *testing.T) 
 			return w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, state.GitSnapshot{}, state.GitSnapshot{}, "mismatch", nil)
 		}},
 		{"non-convergence", func(w *Workflow) error { _, err := w.nonConvergedResult(failure); return err }},
-		{"parent-validation", func(w *Workflow) error { _, err := w.parentValidationNonConvergedResult(failure); return err }},
 	}
 	modes := []struct {
 		name    string
@@ -93,7 +92,7 @@ func TestQualitySurfaceBaselineFailureUsesCurrentDiffTargets(t *testing.T) {
 	}
 }
 
-func TestNonConvergenceAndParentValidationPreserveCanonicalTargets(t *testing.T) {
+func TestNonConvergencePreserveCanonicalTargets(t *testing.T) {
 	t.Parallel()
 	input := packet.Result{Targets: []string{"pkg/reviewer.go:12-20"}}
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
@@ -105,20 +104,13 @@ func TestNonConvergenceAndParentValidationPreserveCanonicalTargets(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	parent, err := w.parentValidationNonConvergedResult(input)
-	if err != nil {
-		t.Fatal(err)
-	}
 	want := []string{"pkg/reviewer.go:12-20"}
 	if !reflect.DeepEqual(nonConverged.Targets, want) {
 		t.Fatalf("non-convergence targets = %#v want %#v", nonConverged.Targets, want)
 	}
-	if !reflect.DeepEqual(parent.Targets, want) {
-		t.Fatalf("parent-validation targets = %#v want %#v", parent.Targets, want)
-	}
 }
 
-func TestNonConvergenceAndParentValidationFallbackToActualTaskDiff(t *testing.T) {
+func TestNonConvergenceFallsBackToActualTaskDiff(t *testing.T) {
 	t.Parallel()
 	input := packet.Result{}
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
@@ -130,15 +122,8 @@ func TestNonConvergenceAndParentValidationFallbackToActualTaskDiff(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	parent, err := w.parentValidationNonConvergedResult(input)
-	if err != nil {
-		t.Fatal(err)
-	}
 	want := []string{"pkg/a.go:@diff", "pkg/z.go:@diff"}
 	if !reflect.DeepEqual(nonConverged.Targets, want) {
 		t.Fatalf("non-convergence targets = %#v want %#v", nonConverged.Targets, want)
-	}
-	if !reflect.DeepEqual(parent.Targets, want) {
-		t.Fatalf("parent-validation targets = %#v want %#v", parent.Targets, want)
 	}
 }

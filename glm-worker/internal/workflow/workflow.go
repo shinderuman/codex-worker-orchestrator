@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -441,92 +442,42 @@ func (w *Workflow) emitReviewResult(value packet.Result) error {
 	return err
 }
 
-func (w *Workflow) enforceRiskFloor(
-	request string,
-	workerResult packet.Result,
-	reviewNumber int,
-	autoFixes int,
-	decision string,
-	effectiveHigh bool,
-	reviewResult packet.Result,
-) (packet.Result, bool, error) {
+func (w *Workflow) enforceRiskFloor(effectiveHigh bool, reviewResult packet.Result) (packet.Result, error) {
 	if !effectiveHigh || reviewResult.Status != packet.StatusPass {
-		return reviewResult, false, nil
+		return reviewResult, nil
 	}
 	if w.acceptedFixScopeCoversCurrent() {
-		return reviewResult, false, nil
+		return reviewResult, nil
 	}
-	reemitResult, stopped, err := w.riskFloorReemit(request, workerResult, reviewNumber, autoFixes, decision)
-	if err != nil || stopped {
-		return packet.Result{}, stopped, err
-	}
-	return reemitResult, false, nil
+	return w.riskFloorEscalationResult(reviewResult)
 }
 
-func (w *Workflow) riskFloorReemit(
-	request string,
-	workerResult packet.Result,
-	reviewNumber int,
-	autoFixes int,
-	decision string,
-) (packet.Result, bool, error) {
-	prompt := riskFloorReemitPrompt()
-	checkpoint := state.ResumeCheckpoint{
-		Stage:           state.ResumeStageReview,
-		Phase:           fmt.Sprintf("reviewer-%d-risk-floor", reviewNumber),
-		Role:            state.ReviewerRole,
-		Model:           w.config.HighRiskReviewerModel,
-		ReadOnly:        true,
-		Effort:          w.config.RoutineEffort,
-		Prompt:          prompt,
-		OriginalPrompt:  prompt,
-		Request:         request,
-		Decision:        decision,
-		WorkerResult:    &workerResult,
-		ReviewNumber:    reviewNumber,
-		AutoFixes:       autoFixes,
-		RiskFloorReemit: true,
-	}
-	reemitResult, err := w.runModel(checkpoint)
-	if err != nil {
-		return packet.Result{}, false, err
-	}
-	if stopped, err := w.verifyReviewEndSnapshot(); err != nil {
-		return packet.Result{}, false, err
-	} else if stopped {
-		return packet.Result{}, true, nil
-	}
-	resolved, err := w.resolveRiskFloorReemit(reemitResult)
-	if err != nil {
-		return packet.Result{}, false, err
-	}
-	return resolved, false, nil
-}
-
-func (w *Workflow) resolveRiskFloorReemit(reemitResult packet.Result) (packet.Result, error) {
-	if reemitResult.Status == packet.StatusNeedsSolReview {
-		return reemitResult, nil
-	}
-	return w.riskFloorFailClosedResult(reemitResult)
-}
-
-func (w *Workflow) riskFloorFailClosedResult(reemitResult packet.Result) (packet.Result, error) {
-	targets, err := w.riskFloorReviewTargets()
+func (w *Workflow) riskFloorEscalationResult(reviewResult packet.Result) (packet.Result, error) {
+	targets := canonicalReviewTargets(reviewResult.Targets)
+	raw, err := json.Marshal(reviewResult)
 	if err != nil {
 		return packet.Result{}, err
+	}
+	issues := fmt.Sprintf("raw reviewer result: %s; %s; raw packet: %s", reviewResult.Status, reviewResult.Issues, raw)
+	if len(targets) == 0 {
+		derived, deriveErr := w.riskFloorReviewTargets()
+		if deriveErr != nil {
+			return packet.Result{}, fmt.Errorf("HIGH risk-floor review evidence is unavailable: %w", deriveErr)
+		}
+		targets = derived
 	}
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
-		Summary:             fmt.Sprintf("reviewerがrisk floor再出力要求へ従わず%sを返したためSol確認へ昇格", reemitResult.Status),
-		RequirementCoverage: "reviewer再出力が非準拠のためSolが直接確認する必要あり",
-		Invariants:          "wrapper risk floorはHIGH RISK経路のreviewer PASSを許容しない",
-		TestEvidence:        "reviewer同一sessionへNEEDS_SOL_REVIEW/HIGH再出力を依頼済み",
-		Issues:              fmt.Sprintf("reviewer再出力が非許容STATUS(%s)を返却", reemitResult.Status),
-		ResidualRisk:        "reviewer判断だけでHIGH RISK経路を完了扱いできない",
+		Summary:             fmt.Sprintf("HIGH risk-floor経路のreviewer PASS (reviewer raw status=%s) を機械的にSol確認へ昇格", reviewResult.Status),
+		RequirementCoverage: "raw reviewer PASSのcoverage判断はSol確認対象であり昇格結果では主張しない",
+		Invariants:          "wrapper risk floorはHIGH RISK経路のreviewer PASSのみでの完了を許容しない",
+		TestEvidence:        reviewResult.TestEvidence,
+		Issues:              issues,
+		ResidualRisk:        "reviewer判断だけでHIGH RISK経路を完了扱いできない; raw reviewer PASSの内容は原文のまま保持",
 		Targets:             targets,
-		Artifacts:           append([]string(nil), reemitResult.Artifacts...),
-		SolQuestion:         "reviewer非準拠時の最終確認・修正方針をSolが判断する",
+		Artifacts:           append([]string(nil), reviewResult.Artifacts...),
+		SolQuestion:         "HIGH risk-floor経路のreviewer PASSの最終採否・修正方針をSolが判断する",
 	}, nil
 }
 
