@@ -14,6 +14,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 
 
+- `IMPLEMENTATION_TASKS/bundle-performance-regression-observability.md`
 - `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
 - `IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md`
