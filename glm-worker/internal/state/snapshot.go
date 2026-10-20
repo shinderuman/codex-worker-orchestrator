@@ -231,6 +231,10 @@ func buildWorktreeDigest(diffOutput, untrackedOutput []byte, repoRoot string) (s
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
+func CleanWorktreeDigestExcludingParent() (string, error) {
+	return buildWorktreeDigest(nil, nil, "")
+}
+
 func hashUntrackedEntry(hasher hash.Hash, absPath string, mode os.FileMode) error {
 	switch {
 	case mode.IsRegular():

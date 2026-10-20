@@ -67,7 +67,7 @@ func (w *Workflow) routeStoppedResultReuse(
 		return err
 	}
 	var routeErr error
-	if stopKind == state.ResumeStopQualityGate && parentValidationConverged(*completedResult) {
+	if stopKind == state.ResumeStopQualityGate {
 		routeErr = w.resumeQualityGateResult(checkpoint, *completedResult)
 	} else {
 		routeErr = w.routeResumeResult(checkpoint, decl, *completedResult)
@@ -359,10 +359,6 @@ func (w *Workflow) resumeQualityGateResult(checkpoint state.ResumeCheckpoint, re
 	return w.reviewUntilStable(checkpoint.Request, result, checkpoint.ReviewNumber, checkpoint.AutoFixes, checkpoint.Phase)
 }
 
-func parentValidationConverged(result packet.Result) bool {
-	return result.ParentValidationRequest() == nil || result.ParentValidationEvidence != nil
-}
-
 func (w *Workflow) routeWorkerResumeResult(
 	checkpoint state.ResumeCheckpoint,
 	decl externalFeasibility,
@@ -413,21 +409,9 @@ func (w *Workflow) resolveResumedReviewResult(
 	workerResult packet.Result,
 	result packet.Result,
 ) (packet.Result, bool, error) {
-	if checkpoint.RiskFloorReemit {
-		resolved, err := w.resolveRiskFloorReemit(result)
-		return resolved, false, err
-	}
-	decision := w.state.ReadOr("last-decision", "none")
 	highRiskFloor := w.resolveReviewResumeRisk(workerResult, checkpoint).high
-	return w.enforceRiskFloor(
-		checkpoint.Request,
-		workerResult,
-		checkpoint.ReviewNumber,
-		checkpoint.AutoFixes,
-		decision,
-		highRiskFloor,
-		result,
-	)
+	resolved, err := w.enforceRiskFloor(highRiskFloor, result)
+	return resolved, false, err
 }
 
 func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {

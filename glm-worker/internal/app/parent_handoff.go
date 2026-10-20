@@ -31,7 +31,6 @@ type parentHandoffOutput struct {
 	ArtifactDir              *string                            `json:"artifact_dir"`
 	LastMaterial             *parentHandoffMaterial             `json:"last_material"`
 	Validations              []parentHandoffValidation          `json:"validations"`
-	RoutingEvidence          []parentHandoffRoutingEvidence     `json:"routing_evidence"`
 	SessionRotation          *state.SessionRotationProjection   `json:"session_rotation"`
 	ParentRequest            *ParentRequestCompletionProjection `json:"parent_request"`
 }
@@ -90,19 +89,7 @@ type parentHandoffValidation struct {
 	WorktreeDigest  string `json:"worktree_digest"`
 }
 
-type parentHandoffRoutingEvidence struct {
-	ValidationRunID string `json:"validation_run_id"`
-	Form            string `json:"form"`
-	WorkingDir      string `json:"working_dir"`
-	SnapshotMatch   string `json:"snapshot_match"`
-}
-
 const parentHandoffVersion = 3
-
-const (
-	routingSnapshotMatchExact              = "exact"
-	routingSnapshotMatchParentMetadataOnly = "parent_metadata_only"
-)
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
 	recovery := parentHandoffRecoveryOutput{
@@ -183,7 +170,6 @@ func buildParentHandoffFromContinuation(st *state.StateStore, continuation paren
 		Baseline:         st.BaselineEvidence(),
 		Snapshot:         continuation.Snapshot,
 		Validations:      []parentHandoffValidation{},
-		RoutingEvidence:  []parentHandoffRoutingEvidence{},
 		SessionRotation:  continuation.SessionRotation,
 	}
 	if taskID != "" {
@@ -206,7 +192,6 @@ func buildParentHandoffFromContinuation(st *state.StateStore, continuation paren
 	}
 	applyParentLastMaterial(st, taskID, &output)
 	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
-	output.RoutingEvidence = currentParentRoutingEvidence(st, repoRoot, taskID, output.Snapshot)
 	return output
 }
 
@@ -298,70 +283,6 @@ func qualityGateMatchesHandoff(record qualitygate.RunRecord, repoRoot string, sn
 		record.Head == snapshot.Head &&
 		record.IndexDigest == snapshot.IndexDigest &&
 		record.WorktreeDigest == snapshot.WorktreeDigest
-}
-
-func currentParentRoutingEvidence(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) []parentHandoffRoutingEvidence {
-	if repoRoot == "" || taskID == "" || snapshot == nil {
-		return []parentHandoffRoutingEvidence{}
-	}
-	latestByForm := latestRoutingEvidenceRuns(st, repoRoot, taskID, snapshot)
-	forms := make([]string, 0, len(latestByForm))
-	for form := range latestByForm {
-		forms = append(forms, form)
-	}
-	sort.Strings(forms)
-	evidence := make([]parentHandoffRoutingEvidence, 0, len(forms))
-	for _, form := range forms {
-		record := latestByForm[form]
-		evidence = append(evidence, parentHandoffRoutingEvidence{
-			ValidationRunID: record.ValidationRunID,
-			Form:            record.Form,
-			WorkingDir:      record.WorkingDir,
-			SnapshotMatch:   routingSnapshotMatch(record, repoRoot, snapshot),
-		})
-	}
-	return evidence
-}
-
-func latestRoutingEvidenceRuns(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) map[string]qualitygate.RunRecord {
-	latestByForm := make(map[string]qualitygate.RunRecord, len(qualityGateForms))
-	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
-	if err != nil {
-		return latestByForm
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
-			continue
-		}
-		record, err := readQualityGateRun(st, entry.Name())
-		if err != nil || record.Status != qualitygate.StatusPass || record.TaskID != taskID {
-			continue
-		}
-		if routingSnapshotMatch(record, repoRoot, snapshot) == "" {
-			continue
-		}
-		previous, found := latestByForm[record.Form]
-		if !found || previous.StartedAt.Before(record.StartedAt) {
-			latestByForm[record.Form] = record
-		}
-	}
-	return latestByForm
-}
-
-func routingSnapshotMatch(record qualitygate.RunRecord, repoRoot string, snapshot *state.SnapshotDigest) string {
-	if filepath.Clean(record.Repository) != filepath.Clean(repoRoot) ||
-		record.Head != snapshot.Head ||
-		record.IndexDigest != snapshot.IndexDigest {
-		return ""
-	}
-	if record.WorktreeDigest == snapshot.WorktreeDigest {
-		return routingSnapshotMatchExact
-	}
-	if record.WorktreeDigestExcludingParent != "" &&
-		record.WorktreeDigestExcludingParent == snapshot.WorktreeDigestExcludingParent {
-		return routingSnapshotMatchParentMetadataOnly
-	}
-	return ""
 }
 
 func parentReviewPtr(label string) *string {

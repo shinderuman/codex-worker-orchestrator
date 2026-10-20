@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type findingAcceptanceFixture struct {
@@ -247,7 +249,20 @@ func newFindingAcceptanceFixture(t *testing.T, extraTasks ...string) findingAcce
 	if child.Empty() {
 		t.Fatal("finding target task missing from committed project snapshot")
 	}
+	seedFinalValidationNoneObligation(t, store, source)
 	return findingAcceptanceFixture{store: store, source: source, child: child}
+}
+
+func seedFinalValidationNoneObligation(t *testing.T, store *Store, source Admission) {
+	t.Helper()
+	cfg := WorkflowTaskConfig(store.config, store.identity, source.Attempt.SemanticTaskRef)
+	runtime, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Write(state.FinalValidationObligationKey, `{"None":true}`); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func observeAcceptanceFinding(

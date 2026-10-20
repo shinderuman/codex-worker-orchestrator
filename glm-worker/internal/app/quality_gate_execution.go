@@ -121,6 +121,10 @@ func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStar
 }
 
 func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.RunRecord, error) {
+	absent, err := qualitygate.NoIgnoredInputs(identity.Repository)
+	if err != nil {
+		return qualitygate.RunRecord{}, err
+	}
 	runID, err := qualitygate.NewRunID()
 	if err != nil {
 		return qualitygate.RunRecord{}, err
@@ -134,6 +138,7 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.Run
 		IndexDigest:                   identity.Snapshot.IndexDigest,
 		WorktreeDigest:                identity.Snapshot.WorktreeDigest,
 		WorktreeDigestExcludingParent: identity.Snapshot.WorktreeDigestExcludingParent,
+		IgnoredInputsAbsent:           &absent,
 		TaskID:                        identity.TaskID,
 		StartedAt:                     time.Now().UTC(),
 		Status:                        qualitygate.StatusRunning,
@@ -161,13 +166,43 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 	if err != nil || !active {
 		return err
 	}
-	gateLog, runErr := runQualityGateProcess(record, goArgs)
+	var gateLog []byte
+	runErr := verifyQualityGateSource(record)
+	if runErr == nil {
+		gateLog, runErr = runQualityGateProcess(record, goArgs)
+		if sourceErr := verifyQualityGateSource(record); sourceErr != nil {
+			runErr = sourceErr
+		}
+	}
+	if runErr != nil {
+		gateLog = append(gateLog, []byte("\n"+runErr.Error()+"\n")...)
+	}
 	final, err := completeQualityGateRun(st, record, gateLog, runErr)
 	if err != nil {
 		return err
 	}
 	if final.Status != qualitygate.StatusPass {
 		return qualityGateErrorFromRecord(final)
+	}
+	return nil
+}
+
+func verifyQualityGateSource(record qualitygate.RunRecord) error {
+	snapshot, err := state.CaptureGitSnapshot(record.Repository)
+	if err != nil {
+		return fmt.Errorf("quality gate source snapshotを確認できません: %w", err)
+	}
+	if !sameQualityGateSnapshot(record, record.Form, record.Repository, record.WorkingDir, snapshot) {
+		return fmt.Errorf("quality gate実行中にsource snapshotが変化しました")
+	}
+	if record.IgnoredInputsAbsent != nil && *record.IgnoredInputsAbsent {
+		absent, err := qualitygate.NoIgnoredInputs(record.Repository)
+		if err != nil {
+			return err
+		}
+		if !absent {
+			return fmt.Errorf("quality gate実行中にignored入力が追加されました")
+		}
 	}
 	return nil
 }

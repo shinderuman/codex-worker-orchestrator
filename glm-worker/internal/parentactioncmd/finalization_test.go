@@ -12,7 +12,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
-func TestFinalizationCheckReturnsCurrentValidationHandoffAndGitSummary(t *testing.T) {
+func TestFinalizationCheckReturnsCurrentValidationAndGitSummary(t *testing.T) {
 	repo := newFinalizationTestRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "untracked.txt"), []byte("x\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -20,10 +20,7 @@ func TestFinalizationCheckReturnsCurrentValidationHandoffAndGitSummary(t *testin
 	worker := writeFinalizationWorker(t, `
 case "$1" in
   --quality-gate)
-    printf '%s\n' '{"status":"pass","validation_run_id":"run-1","form":"go-test","command":"go test ./...","working_dir":"repo","duration_ms":1,"log":"gate.log"}'
-    ;;
-  --handoff)
-    printf '%s\n' '{"consistent":true,"validations":[{"validation_run_id":"run-1","status":"pass"}]}'
+    printf '%s\n' '{"status":"pass","validation_run_id":"run-1","form":"go-test","command":"go test ./...","working_dir":"repo","duration_ms":1,"head":"head-1","index_digest":"index-1","worktree_digest":"worktree-1","log":"gate.log"}'
     ;;
   *) exit 9 ;;
 esac
@@ -48,20 +45,18 @@ esac
 	if result.Git.UntrackedChanges != 1 || result.Git.Clean {
 		t.Fatalf("git = %#v", result.Git)
 	}
-	if len(result.Validation) == 0 || len(result.Handoff) == 0 {
+	if len(result.Validation) == 0 {
 		t.Fatalf("missing evidence = %#v", result)
 	}
 }
 
-func TestFinalizationCheckBlocksWhenValidationIsNotCurrentForHandoffSnapshot(t *testing.T) {
+func TestFinalizationCheckStopsAfterValidationFailure(t *testing.T) {
 	repo := newFinalizationTestRepo(t)
 	worker := writeFinalizationWorker(t, `
 case "$1" in
   --quality-gate)
-    printf '%s\n' '{"status":"pass","validation_run_id":"run-2","form":"go-test","command":"go test ./...","working_dir":"repo","duration_ms":1,"log":"gate.log"}'
-    ;;
-  --handoff)
-    printf '%s\n' '{"consistent":true,"validations":[]}'
+    printf '%s\n' '{"error":{"kind":"validation_failed"}}' >&2
+    exit 7
     ;;
   *) exit 9 ;;
 esac
@@ -74,40 +69,8 @@ esac
 	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != "blocked" || result.Failure == nil || result.Failure.Stage != "snapshot" || result.Failure.Reason != "validation_not_current_for_snapshot" {
-		t.Fatalf("result = %#v", result)
-	}
-}
-
-func TestFinalizationCheckStopsAfterValidationFailure(t *testing.T) {
-	repo := newFinalizationTestRepo(t)
-	marker := filepath.Join(t.TempDir(), "handoff-called")
-	t.Setenv("GLM_HANDOFF_MARKER", marker)
-	worker := writeFinalizationWorker(t, `
-case "$1" in
-  --quality-gate)
-    printf '%s\n' '{"error":{"kind":"validation_failed"}}' >&2
-    exit 7
-    ;;
-  --handoff)
-    touch "$GLM_HANDOFF_MARKER"
-    printf '%s\n' '{"consistent":true,"validations":[]}'
-    ;;
-esac
-`)
-	var output bytes.Buffer
-	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", nil, &output); err != nil {
-		t.Fatal(err)
-	}
-	var result finalizationCheckOutput
-	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
 	if result.Status != "blocked" || result.Failure == nil || result.Failure.Stage != "validation" || result.Failure.ExitCode != 7 {
 		t.Fatalf("result = %#v", result)
-	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatalf("handoff marker = %v", err)
 	}
 }
 
@@ -127,11 +90,7 @@ set -eu
 case "$1" in
   --quality-gate)
     test "$PWD" = "$EXPECTED_VALIDATION_DIR"
-    printf '%s\n' '{"status":"pass","validation_run_id":"run-module","form":"go-test","command":"go test ./...","working_dir":"module","duration_ms":1,"log":"gate.log"}'
-    ;;
-  --handoff)
-    test "$PWD" = "$EXPECTED_REPO_ROOT"
-    printf '%s\n' '{"consistent":true,"validations":[{"validation_run_id":"run-module","status":"pass"}]}'
+    printf '%s\n' '{"status":"pass","validation_run_id":"run-module","form":"go-test","command":"go test ./...","working_dir":"module","duration_ms":1,"head":"head-1","index_digest":"index-1","worktree_digest":"worktree-1","log":"gate.log"}'
     ;;
   *) exit 9 ;;
 esac
@@ -192,18 +151,6 @@ func TestExecuteFinalizationCheckRejectsWorkingDirectoryOutsideRepository(t *tes
 	err = execute(cfg, []string{"finalize-check", "go-test"}, &output, &output)
 	if err == nil || !strings.Contains(err.Error(), "inside repository") {
 		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestFinalizationVerifiedEvidenceDirRejectsLexicallyOutsideMissingPath(t *testing.T) {
-	repo := newFinalizationTestRepo(t)
-	outside := filepath.Join(t.TempDir(), "missing-module")
-	selected, failure := finalizationVerifiedEvidenceDir(repo, finalizationRoutingEvidenceProbe{WorkingDir: outside})
-	if selected != "" {
-		t.Fatalf("outside routing evidence selected = %q", selected)
-	}
-	if failure == nil || failure.Stage != "routing" || failure.Reason != "routing_evidence_outside_repository" {
-		t.Fatalf("outside missing routing evidence did not fail closed: %#v", failure)
 	}
 }
 

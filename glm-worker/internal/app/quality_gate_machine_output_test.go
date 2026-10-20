@@ -10,10 +10,83 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func TestFinalCandidateConsumesActualQualityGateDispatchEvidence(t *testing.T) {
+	useInlineQualityGateRunner(t)
+	shimDir, _ := writeQualityGateGoShim(t, filepath.Join(t.TempDir(), "absent-flag"))
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, repositoryharness.MarkerPath)); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, err = store.RecordAdmittedMutation(admission, "minimal publication corpus", "success", snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
+	runtimeCfg := controller.WorkflowTaskConfig(cfg, store.Identity(), admission.Attempt.SemanticTaskRef)
+	runtime, err := state.NewStateStore(runtimeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Write(state.FinalValidationObligationKey, `{"Form":"go-test","WorkingDir":"."}`); err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "final source", Policy: policy, Evidence: evidence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, release, err := controller.PrepareFinalValidationWorkspace(cfg, "go-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = release() })
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(previous) }()
+	raw := cfg
+	raw.RepoRoot = root
+	raw.RepoHash = config.RepoHashFor(root)
+	var stdout, stderr bytes.Buffer
+	if err := dispatchQualityGateMachineOutput(Command{Mode: ModeQualityGate, Payload: "go-test"}, raw, &stdout, &stderr); err != nil {
+		t.Fatalf("actual gate dispatch failed: %v %s", err, stderr.String())
+	}
+	if got := runtime.ReadOr("repo-root", ""); got != cfg.RepoRoot {
+		t.Fatalf("candidate validation changed Runtime repo-root: %s", got)
+	}
+	if err := os.Chdir(previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := store.PromoteAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PublishAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err != nil {
+		t.Fatalf("publication cannot consume the actual CLI run: %v", err)
+	}
+}
 
 func TestQualityGateDispatchBindsValidationToCanonicalRuntime(t *testing.T) {
 	useInlineQualityGateRunner(t)

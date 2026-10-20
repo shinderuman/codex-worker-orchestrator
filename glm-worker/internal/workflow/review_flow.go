@@ -24,7 +24,7 @@ func (w *Workflow) reviewUntilStable(
 	}
 	w.recordConvergenceRound(reviewNumber, autoFixes, workerPhase, workerEnd)
 
-	checkpoint, decision, highRisk, err := w.buildReviewCheckpoint(request, workerResult, reviewNumber, autoFixes)
+	checkpoint, _, highRisk, err := w.buildReviewCheckpoint(request, workerResult, reviewNumber, autoFixes)
 	if err != nil {
 		return err
 	}
@@ -32,16 +32,8 @@ func (w *Workflow) reviewUntilStable(
 	if err != nil || stopped {
 		return err
 	}
-	reviewResult, reemitStopped, err := w.enforceRiskFloor(
-		request,
-		workerResult,
-		reviewNumber,
-		autoFixes,
-		decision,
-		highRisk,
-		reviewResult,
-	)
-	if err != nil || reemitStopped {
+	reviewResult, err = w.enforceRiskFloor(highRisk, reviewResult)
+	if err != nil {
 		return err
 	}
 	if err := w.writeLastReview(reviewResult); err != nil {

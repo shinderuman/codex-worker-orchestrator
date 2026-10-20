@@ -30,7 +30,7 @@ func (s *Store) verifyTerminalMetadataSource(op ExecutionOperation) error {
 		return err
 	}
 	for _, effect := range op.Transition.Effects[1:] {
-		if actual[effect.Key()] != effect.ExpectedOld {
+		if actual[effect.Key()] != effect.ExpectedOld && actual[effect.Key()] != effect.ExpectedNew {
 			return fmt.Errorf("terminal metadata source is dirty or stale: %s", effect.Resource)
 		}
 	}

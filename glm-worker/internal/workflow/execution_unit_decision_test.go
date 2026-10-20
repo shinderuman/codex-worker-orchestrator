@@ -153,7 +153,6 @@ func TestExecutionUnitDecisionSingleCanReconsiderIntoMilestones(t *testing.T) {
 		"worker-explicit-fix",
 		"worker-milestone-2",
 		"reviewer-1-high-floor",
-		"reviewer-1-risk-floor",
 	}
 	if !reflect.DeepEqual(runner.phases, wantPhases) {
 		t.Fatalf("phases = %v want %v", runner.phases, wantPhases)

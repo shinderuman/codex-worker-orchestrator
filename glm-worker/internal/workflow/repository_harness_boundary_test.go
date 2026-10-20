@@ -125,7 +125,6 @@ func TestActivatedRepositoryKeepsPolicySurfaces(t *testing.T) {
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},
-		{structured: needsSolReviewPacket()},
 	}, "", 0, nil)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"src/app.go"}, nil
@@ -140,7 +139,7 @@ func TestActivatedRepositoryKeepsPolicySurfaces(t *testing.T) {
 	if got := st.ReadOr(repositoryharness.ActivationStateKey, ""); got != repositoryharness.ActivationActiveValue {
 		t.Fatalf("activation pin = %q want %q", got, repositoryharness.ActivationActiveValue)
 	}
-	if len(r.prompts) != 3 {
+	if len(r.prompts) != 2 {
 		t.Fatalf("unknown-surface変更はrisk floorでreviewer PASSを許容しない: %d(%v)", len(r.prompts), r.phases)
 	}
 	for i, prompt := range r.prompts[:2] {
@@ -150,9 +149,6 @@ func TestActivatedRepositoryKeepsPolicySurfaces(t *testing.T) {
 	}
 	if !strings.Contains(r.prompts[1], "RISK_FLOOR_SOURCE: self-protection:unknown-surface") {
 		t.Fatalf("reviewer promptがself-protection risk floorを欠いています:\n%s", r.prompts[1])
-	}
-	if !strings.Contains(r.prompts[2], "risk floor") {
-		t.Fatalf("prompt 2がrisk floor再出力指示であるべきです:\n%s", r.prompts[2])
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("risk floor後のtask status = %q want waiting-sol-review", st.TaskStatus())

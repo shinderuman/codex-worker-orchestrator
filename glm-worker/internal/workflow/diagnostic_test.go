@@ -53,6 +53,10 @@ func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -79,9 +83,8 @@ func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 	if reviewer.Snapshot.MismatchAxis != "" {
 		t.Fatalf("一致snapshotにmismatch軸が設定されている: %q", reviewer.Snapshot.MismatchAxis)
 	}
-	reemit := findLogByPhase(t, logs, "reviewer-1-risk-floor")
-	if reemit.EffectiveRisk != "" || reemit.RiskFloorCategory != "" {
-		t.Fatalf("reemit呼出へfloorが二重記録されている: %+v", reemit)
+	if phasesOf(logs)[len(phasesOf(logs))-1] != "reviewer-1-high-floor" {
+		t.Fatalf("risk floor昇格は追加model呼出しを行わない: %v", phasesOf(logs))
 	}
 
 	stats := currentStats(t, st)
@@ -429,44 +432,6 @@ func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 	}
 }
 
-func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
-	t.Parallel()
-	st := newStateStoreT(t)
-	r := &scriptedRunner{steps: []runnerStep{
-		{structured: implementedPacketWithRisk("risky", "HIGH")},
-		{structured: passPacket()},
-		{structured: passPacket()},
-	}}
-	w := newWorkflowT(t, st, r)
-	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
-	w.collectChangedPaths = func(string, string) ([]string, error) {
-		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
-	}
-
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	logs := taskLogs(t, st)
-	reviewer := findLogByPhase(t, logs, "reviewer-1-high-floor")
-	if reviewer.EffectiveRisk != "HIGH" || reviewer.RiskFloorCategory != "worker-declared" {
-		t.Fatalf("reviewer floor diag = %+v", reviewer)
-	}
-	reemit := findLogByPhase(t, logs, "reviewer-1-risk-floor")
-	if reemit.EffectiveRisk != "" || reemit.RiskFloorCategory != "" || reemit.RiskFloorSource != "" {
-		t.Fatalf("reemit呼出へfloorが記録されている: %+v", reemit)
-	}
-	if reemit.ReviewerReportedRisk != "LOW" {
-		t.Fatalf("reemit reporter risk = %q", reemit.ReviewerReportedRisk)
-	}
-	if reemit.Snapshot != nil {
-		t.Fatalf("reemit呼出へsnapshotが付与されている: %+v", reemit.Snapshot)
-	}
-	stats := currentStats(t, st)
-	if stats.RiskFloorByCategory["worker-declared"] != 1 {
-		t.Fatalf("reemitでfloorが二重計上された: %+v", stats.RiskFloorByCategory)
-	}
-}
-
 func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
 	t.Parallel()
 	st := newStateStoreT(t)
@@ -476,6 +441,10 @@ func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 	w.config.TelemetryContent = false
 
 	if err := w.ExecuteNewTask("secret request"); err != nil {

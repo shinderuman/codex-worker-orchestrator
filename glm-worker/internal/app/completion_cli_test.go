@@ -94,7 +94,7 @@ func appTestGitOutput(t *testing.T, root string, args ...string) []byte {
 
 func TestCompletionCLIRecoversProcessDeathAndPublishedACKWithCanonicalGitGuard(t *testing.T) {
 	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
-	planned := interruptCompletionBeforeMetadata(t, cfg, store, promoted, policy, candidate)
+	planned := interruptCompletionBeforePush(t, cfg, store, promoted, policy, candidate)
 	installCompletionGuard(t, cfg)
 	direct := exec.Command("git", "-C", cfg.RepoRoot, "push", policy.Remote, policy.LocalRef+":"+policy.RemoteRef)
 	if data, err := direct.CombinedOutput(); err == nil || !strings.Contains(string(data), "push rejected") {

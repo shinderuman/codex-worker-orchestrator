@@ -148,7 +148,7 @@ func (s *StateStore) recordSolResult(value packet.Result, producer ParentReviewP
 	if value.Status == packet.StatusNeedsSolReview && reviewSnapshot != nil {
 		err = s.openBoundParentReviewState(value, producer, *reviewSnapshot)
 	} else {
-		err = s.openParentReviewState(string(value.Status), string(value.Risk), producer, false)
+		err = s.openParentReviewState(string(value.Status), string(value.Risk), producer)
 	}
 	if err != nil {
 		return err

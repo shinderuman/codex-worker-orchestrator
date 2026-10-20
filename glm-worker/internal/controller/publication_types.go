@@ -23,40 +23,44 @@ type CandidateEvidence struct {
 }
 
 type AcceptedCandidate struct {
-	SchemaVersion        int                 `json:"schema_version"`
-	RevisionID           string              `json:"revision_id"`
-	CandidateID          string              `json:"candidate_id"`
-	Previous             *EvidenceObjectRef  `json:"previous,omitempty"`
-	ImplementationRef    *EvidenceObjectRef  `json:"implementation_ref,omitempty"`
-	AttemptID            string              `json:"attempt_id"`
-	TaskRef              SemanticTaskRef     `json:"task_ref"`
-	RootTaskRef          SemanticTaskRef     `json:"root_task_ref"`
-	EpisodeID            string              `json:"episode_id,omitempty"`
-	EpisodeRevision      uint64              `json:"episode_revision,omitempty"`
-	ProjectSnapshotID    string              `json:"project_snapshot_id"`
-	ControllerGeneration uint64              `json:"controller_generation"`
-	TransitionID         string              `json:"transition_id"`
-	BaseOID              string              `json:"base_oid"`
-	CommitOID            string              `json:"commit_oid"`
-	TreeOID              string              `json:"tree_oid"`
-	SnapshotID           string              `json:"snapshot_id"`
-	Message              string              `json:"message"`
-	State                string              `json:"state"`
-	DescendantTip        string              `json:"descendant_tip,omitempty"`
-	DescendantEvidence   []EvidenceObjectRef `json:"descendant_evidence,omitempty"`
-	EvidenceValid        bool                `json:"evidence_valid"`
-	Evidence             []EvidenceObjectRef `json:"evidence"`
-	GitArchive           EvidenceObjectRef   `json:"git_archive"`
-	SealRef              EvidenceObjectRef   `json:"seal_ref"`
-	Policy               PublicationPolicy   `json:"policy"`
-	ObservedRemoteOID    string              `json:"observed_remote_oid,omitempty"`
-	CreatedAt            time.Time           `json:"created_at"`
+	SchemaVersion        int                      `json:"schema_version"`
+	RevisionID           string                   `json:"revision_id"`
+	CandidateID          string                   `json:"candidate_id"`
+	Previous             *EvidenceObjectRef       `json:"previous,omitempty"`
+	ImplementationRef    *EvidenceObjectRef       `json:"implementation_ref,omitempty"`
+	AttemptID            string                   `json:"attempt_id"`
+	TaskRef              SemanticTaskRef          `json:"task_ref"`
+	RootTaskRef          SemanticTaskRef          `json:"root_task_ref"`
+	EpisodeID            string                   `json:"episode_id,omitempty"`
+	EpisodeRevision      uint64                   `json:"episode_revision,omitempty"`
+	ProjectSnapshotID    string                   `json:"project_snapshot_id"`
+	ControllerGeneration uint64                   `json:"controller_generation"`
+	TransitionID         string                   `json:"transition_id"`
+	BaseOID              string                   `json:"base_oid"`
+	CommitOID            string                   `json:"commit_oid"`
+	TreeOID              string                   `json:"tree_oid"`
+	SnapshotID           string                   `json:"snapshot_id"`
+	Message              string                   `json:"message"`
+	State                string                   `json:"state"`
+	ImplementationTree   string                   `json:"implementation_tree,omitempty"`
+	TerminalFiles        []TerminalMetadataFile   `json:"terminal_files,omitempty"`
+	RequiredValidations  []FinalValidationRequest `json:"required_validations,omitempty"`
+	DescendantTip        string                   `json:"descendant_tip,omitempty"`
+	DescendantEvidence   []EvidenceObjectRef      `json:"descendant_evidence,omitempty"`
+	EvidenceValid        bool                     `json:"evidence_valid"`
+	Evidence             []EvidenceObjectRef      `json:"evidence"`
+	GitArchive           EvidenceObjectRef        `json:"git_archive"`
+	SealRef              EvidenceObjectRef        `json:"seal_ref"`
+	Policy               PublicationPolicy        `json:"policy"`
+	ObservedRemoteOID    string                   `json:"observed_remote_oid,omitempty"`
+	CreatedAt            time.Time                `json:"created_at"`
 }
 
 type CandidateAcceptanceInput struct {
-	Message  string              `json:"message"`
-	Policy   PublicationPolicy   `json:"policy"`
-	Evidence []EvidenceObjectRef `json:"evidence"`
+	Message                 string              `json:"message"`
+	Policy                  PublicationPolicy   `json:"policy"`
+	Evidence                []EvidenceObjectRef `json:"evidence"`
+	RequiredValidationForms []string            `json:"required_validation_forms"`
 }
 
 type PublicationInput struct {

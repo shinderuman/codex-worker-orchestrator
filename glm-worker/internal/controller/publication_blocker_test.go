@@ -22,6 +22,7 @@ func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	}
 	fixture.source = *child.Admission
 	source := publicationTestEdit(t, fixture, "source.txt", "published blocker result\n")
+	seedFinalValidationNoneObligation(t, fixture.store, source)
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "publish blocker result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)

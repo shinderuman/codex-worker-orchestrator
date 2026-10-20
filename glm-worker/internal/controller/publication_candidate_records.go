@@ -67,22 +67,37 @@ func (s *Store) storeAcceptedCandidate(candidate AcceptedCandidate) (EvidenceObj
 }
 
 func (s *Store) LoadAcceptedCandidate(ref EvidenceObjectRef) (AcceptedCandidate, error) {
+	return s.loadAcceptedCandidateRecord(ref, s.validateAcceptedCandidate)
+}
+
+func (s *Store) loadCandidateArchive(ref EvidenceObjectRef) (AcceptedCandidate, error) {
+	return s.loadAcceptedCandidateRecord(ref, s.validateCandidateArchive)
+}
+
+func (s *Store) loadAcceptedCandidateRecord(ref EvidenceObjectRef, validate func(AcceptedCandidate) error) (AcceptedCandidate, error) {
 	return loadEvidenceRecord(s, ref, "accepted-candidate", func(c *AcceptedCandidate) (string, string) {
 		id := c.RevisionID
 		c.RevisionID = ""
 		return id, c.CandidateID
-	}, func(c *AcceptedCandidate, id string) { c.RevisionID = id }, s.validateAcceptedCandidate, "accepted candidate identity is inconsistent")
+	}, func(c *AcceptedCandidate, id string) { c.RevisionID = id }, validate, "accepted candidate identity is inconsistent")
 }
 
 func (s *Store) validateAcceptedCandidate(candidate AcceptedCandidate) error {
+	if err := s.validateCandidateArchive(candidate); err != nil {
+		return err
+	}
+	if err := validatePublicationPolicy(s.identity.PrimaryRoot, candidate.Policy); err != nil {
+		return err
+	}
+	return s.validateCandidateProofs(candidate)
+}
+
+func (s *Store) validateCandidateArchive(candidate AcceptedCandidate) error {
 	if err := validateCandidateIdentity(candidate); err != nil {
 		return err
 	}
 	if candidate.State != candidatePrepared && candidate.State != candidatePromoted && candidate.State != candidateObserved {
 		return fmt.Errorf("accepted candidate state is invalid")
-	}
-	if err := validatePublicationPolicy(s.identity.PrimaryRoot, candidate.Policy); err != nil {
-		return err
 	}
 	if _, err := s.LoadAttemptSeal(candidate.SealRef); err != nil {
 		return err
@@ -93,7 +108,7 @@ func (s *Store) validateAcceptedCandidate(candidate AcceptedCandidate) error {
 	if _, err := s.VerifyGitObjectArchive(candidate.GitArchive); err != nil {
 		return err
 	}
-	return s.validateCandidateProofs(candidate)
+	return nil
 }
 
 func (s *Store) validateCandidateProofs(candidate AcceptedCandidate) error {
