@@ -430,9 +430,12 @@ func (s *Store) terminalMetadataLineageRefs(root EvidenceObjectRef) ([]EvidenceO
 		if err != nil {
 			return nil, err
 		}
-		candidate, err := s.LoadAcceptedCandidate(record.CandidateRef)
+		candidate, err := s.loadCandidateArchive(record.CandidateRef)
 		if err != nil {
 			return nil, err
+		}
+		if !terminalCandidateMatches(record, candidate) {
+			return nil, fmt.Errorf("terminal metadata history candidate differs")
 		}
 		candidateRefs, err := s.candidatePublicationRefs(candidate, record.CandidateRef, nil)
 		if err != nil {

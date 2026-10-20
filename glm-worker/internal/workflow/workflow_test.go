@@ -178,7 +178,7 @@ func passPacket() string {
 		TestEvidence:        "ev",
 		Issues:              "none",
 		ResidualRisk:        "none",
-		Targets:             []string{"final diff"},
+		Targets:             []string{repositoryharness.MarkerPath + ":1"},
 	})
 }
 

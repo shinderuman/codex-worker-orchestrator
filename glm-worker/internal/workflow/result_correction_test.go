@@ -513,10 +513,10 @@ func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("status = %q", st.TaskStatus())
 	}
-	if len(r.prompts) != 4 {
-		t.Fatalf("修正再依頼・再出力は各1回だけ: calls=%d", len(r.prompts))
+	if len(r.prompts) != 3 {
+		t.Fatalf("修正再依頼は各1回だけ: calls=%d", len(r.prompts))
 	}
-	if strings.Join(r.models, ",") != "opus,opus,sonnet,sonnet" {
+	if strings.Join(r.models, ",") != "opus,opus,sonnet" {
 		t.Fatalf("models = %#v", r.models)
 	}
 }
@@ -708,29 +708,6 @@ func TestRetryPromptsDelegatePacketGrammar(t *testing.T) {
 		}
 	}
 
-	reemit := riskFloorReemitPrompt()
-	for _, want := range []string{
-		"HIGH RISK最終確認が必要",
-		"wrapper risk floor",
-		"実装・調査・テストをやり直さず",
-		"structured schemaに従って結果だけを再出力",
-	} {
-		if !strings.Contains(reemit, want) {
-			t.Fatalf("reemit promptに%qがありません: %s", want, reemit)
-		}
-	}
-	for _, forbidden := range []string{
-		"NEEDS_SOL_REVIEW",
-		"RISK: HIGH",
-		"TARGETS",
-		"SUMMARY",
-		"REQUIREMENT_COVERAGE",
-		"SOL_QUESTION",
-	} {
-		if strings.Contains(reemit, forbidden) {
-			t.Fatalf("reemit promptがpacket grammar %qを再定義しています: %s", forbidden, reemit)
-		}
-	}
 }
 
 func TestFixRequiredTargetsPacketDispatchesReportOnlyPrompt(t *testing.T) {

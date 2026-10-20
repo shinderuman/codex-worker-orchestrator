@@ -89,15 +89,9 @@ func TestFinalizationUsesLiveExecutionConfigAndCorrespondingModuleDirectory(t *t
 	}
 	primary := cfg
 	primary.RepoRoot = repo
-	if _, managed, failure := managedFinalizationState(primary, repo); managed || failure == nil || failure.Reason != "state_repository_mismatch" {
-		t.Fatal("fixture did not reproduce primary/live runtime binding mismatch")
-	}
 	bound, dir, err := finalizationExecutionContext(primary, filepath.Join(repo, "glm-worker"))
 	if err != nil || bound.RepoRoot != lane || dir != filepath.Join(lane, "glm-worker") || bound.RepoHash != cfg.RepoHash {
 		t.Fatalf("finalization execution context = %s %s %v", bound.RepoRoot, dir, err)
-	}
-	if _, managed, failure := managedFinalizationState(bound, bound.RepoRoot); !managed || failure != nil {
-		t.Fatalf("live finalization runtime unavailable: %v", failure)
 	}
 	if _, _, err := finalizationExecutionContext(primary, t.TempDir()); err == nil {
 		t.Fatal("foreign working directory mapped into execution lane")

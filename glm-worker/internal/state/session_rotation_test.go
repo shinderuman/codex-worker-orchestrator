@@ -304,7 +304,7 @@ func TestAcceptParentReviewRotationTransaction(t *testing.T) {
 		if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
 			t.Fatal(err)
 		}
-		if err := st.openParentReviewState("PASS", "LOW", ParentReviewProducer{}, false); err != nil {
+		if err := st.openParentReviewState("PASS", "LOW", ParentReviewProducer{}); err != nil {
 			t.Fatal(err)
 		}
 		return st

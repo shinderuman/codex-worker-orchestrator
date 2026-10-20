@@ -57,6 +57,7 @@ func newLifecycleHarness(t *testing.T) *lifecycleHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedFinalValidationNoneObligation(t, store, source)
 	project, err := store.LoadProjectSnapshot(source.Head.ProjectSnapshotID)
 	if err != nil {
 		t.Fatal(err)
@@ -247,6 +248,7 @@ func (h *lifecycleHarness) planBlockingEpisode(t *testing.T, admission Admission
 
 func (h *lifecycleHarness) retireLifecycleTask(t *testing.T, admission Admission, message string) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
+	seedFinalValidationNoneObligation(t, h.store, admission)
 	evidence := publicationTestEvidence(t, h.store, admission, h.policy)
 	accepted, err := h.store.AcceptExecutionCandidate(admission, CandidateAcceptanceInput{Message: message, Policy: h.policy, Evidence: evidence})
 	if err != nil {
