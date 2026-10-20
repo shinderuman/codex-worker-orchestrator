@@ -137,13 +137,21 @@ func scheduleHeadingMatches(section planScheduleSection, heading string) bool {
 func scheduleEntryPath(section planScheduleSection, item string) (string, error) {
 	switch strings.Count(item, "`") {
 	case 0:
-		return item, nil
+		if !strings.ContainsAny(item, "[]()") {
+			return item, nil
+		}
 	case 2:
 		if strings.HasPrefix(item, "`") && strings.HasSuffix(item, "`") {
 			return item[1 : len(item)-1], nil
 		}
+		if strings.HasPrefix(item, "[`") {
+			label, destination, ok := strings.Cut(item[2:], "`](")
+			if ok && destination == label+")" {
+				return label, nil
+			}
+		}
 	}
-	return "", fmt.Errorf("%s欄の項目 %qがbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反しています", section, item)
+	return "", fmt.Errorf("%s欄の項目 %qがbullet構文(単一task pathの直書き、逆引用符、または表示パスとリンク先が一致するMarkdownリンク)へ違反しています", section, item)
 }
 
 func containsSchedulePath(entries []string, target string) bool {
