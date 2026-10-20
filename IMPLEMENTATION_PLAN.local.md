@@ -8,11 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`](IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md)
+- [`IMPLEMENTATION_TASKS/bundle-performance-regression-observability.md`](IMPLEMENTATION_TASKS/bundle-performance-regression-observability.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/bundle-performance-regression-observability.md`](IMPLEMENTATION_TASKS/bundle-performance-regression-observability.md)
+- [`IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`](IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md)
 - [`IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`](IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md)
 - [`IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md`](IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md)
 - [`IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`](IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md)

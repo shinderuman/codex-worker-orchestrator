@@ -23,6 +23,20 @@
 
 ## Amendments
 
+### 2026-10-21 実行順指定の訂正（ユーザー原文）
+
+```text
+- [`IMPLEMENTATION_TASKS/bundle-performance-regression-observability.md`](https://github.com/shinderuman/codex-worker-orchestrator/blob/main/IMPLEMENTATION_TASKS/bundle-performance-regression-observability.md)
+
+が先頭になってないじゃん
+
+先頭ってのはActiveの次って意味じゃない
+
+Activeにするって意味だ
+```
+
+従来のNEXT先頭という解釈は本指示により上書きされた。実行scheduleの正本はPlanのみとする。
+
 ## Resolved references
 
 - 「いまのタスク」は`IMPLEMENTATION_TASKS/workflow-validation-cadence-and-source-binding.md`。その直後という実行priorityは`IMPLEMENTATION_PLAN.local.md`のNEXT先頭で表す。実際のcorrectness dependencyは、単に優先順が隣接することを理由として追加しない。
