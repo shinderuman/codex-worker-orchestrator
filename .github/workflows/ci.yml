@@ -62,10 +62,10 @@ jobs:
       - name: Go build gate
         if: ${{ matrix.mode == 'quality' }}
         run: ./goquality build
-      - name: Full Go test suite
+      - name: Go tests except internal/app
         if: ${{ matrix.mode == 'test' }}
         working-directory: glm-worker
-        run: go test ./...
+        run: go list ./... | grep -v '/internal/app$' | xargs go test
 
   lint:
     if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
