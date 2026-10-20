@@ -8,13 +8,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/go-suite-test-structure-consolidation.md`](IMPLEMENTATION_TASKS/go-suite-test-structure-consolidation.md)
+- [`IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`](IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md)
 
 ## NEXT（優先順）
 
 
-- [`IMPLEMENTATION_TASKS/workflow-validation-cadence-and-source-binding.md`](IMPLEMENTATION_TASKS/workflow-validation-cadence-and-source-binding.md)
-- [`IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`](IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md)
+
+
 - [`IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`](IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md)
 - [`IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md`](IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md)
 - [`IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`](IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md)

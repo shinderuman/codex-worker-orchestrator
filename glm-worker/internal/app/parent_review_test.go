@@ -297,7 +297,7 @@ func TestExecuteParentReviewStatsExposeRework(t *testing.T) {
 		t.Fatalf("parent_fix_rework = %#v", output.ParentFixRework)
 	}
 	rework := output.ParentFixRework[0]
-	if rework.Origin != state.ParentOriginGLMReviewer || rework.Calls != 3 || rework.WorkerCalls != 1 || rework.ReviewerCalls != 2 {
+	if rework.Origin != state.ParentOriginGLMReviewer || rework.Calls != 2 || rework.WorkerCalls != 1 || rework.ReviewerCalls != 1 {
 		t.Fatalf("parent_fix_rework = %#v", rework)
 	}
 	if output.ParentFixReworkCoverage != "complete" {

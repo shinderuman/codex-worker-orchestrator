@@ -17,11 +17,15 @@ func TestHighRiskWorkerUsesHighRiskReviewer(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(r.models, ",") != "opus,sonnet,sonnet" {
+	if strings.Join(r.models, ",") != "opus,sonnet" {
 		t.Fatalf("models = %#v", r.models)
 	}
 }
@@ -54,13 +58,13 @@ func TestReviewNeedsHighRiskFloor(t *testing.T) {
 	}
 }
 
-func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
+func TestRiskFloorEscalationPacketIsValid(t *testing.T) {
 	t.Parallel()
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
-	enforced, err := w.riskFloorFailClosedResult(passPkt)
+	enforced, err := w.riskFloorEscalationResult(passPkt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,30 +75,13 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 		t.Fatalf("fail closed結果がvalidate不合格: %v", err)
 	}
 	if enforced.RequirementCoverage == "covered" {
-		t.Fatalf("reviewerのPASS内容をfail closed結果へ捏造している: %#v", enforced)
+		t.Fatalf("reviewerのPASS内容を昇格結果へ捏造している: %#v", enforced)
+	}
+	if !strings.Contains(enforced.Summary, "PASS") || !strings.Contains(enforced.TestEvidence, "ev") {
+		t.Fatalf("raw reviewer PASSの内容を保持すべき: %#v", enforced)
 	}
 	if len(enforced.Targets) != 1 || enforced.Targets[0] != "internal/task/change.go:@diff" {
 		t.Fatalf("semantic review targets = %#v", enforced.Targets)
-	}
-}
-
-func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
-	t.Parallel()
-	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
-	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["glm-worker/internal/workflow/workflow_test.go:needsSolReviewPacket"],"sol_question":"q"}`)
-	resolved, err := w.resolveRiskFloorReemit(compliant)
-	if err != nil || resolved.Status != packet.StatusNeedsSolReview {
-		t.Fatalf("準拠再出力はそのまま採用すべき: %#v err=%v", resolved, err)
-	}
-
-	passed := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"pass again","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
-	closed, err := w.resolveRiskFloorReemit(passed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if closed.Status != packet.StatusNeedsSolReview || !strings.Contains(closed.Summary, "PASS") {
-		t.Fatalf("再違反はfail closedのNEEDS_SOL_REVIEWへ昇格すべき: %#v", closed)
 	}
 }
 
@@ -104,9 +91,12 @@ func TestRiskFloorRejectsPassOnHighRiskWorker(t *testing.T) {
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
 		{structured: passPacket()},
-		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -121,14 +111,17 @@ func TestRiskFloorRejectsPassOnHighRiskWorker(t *testing.T) {
 	if strings.Contains(review, "STATUS: PASS") {
 		t.Fatalf("PASSが通っている: %s", review)
 	}
-	if !strings.Contains(review, `"summary":"review"`) {
-		t.Fatalf("reviewer自身の再出力NEEDS_SOL_REVIEWを採用すべき(捏造でない): %s", review)
+	if !strings.Contains(review, "機械的にSol確認へ昇格") {
+		t.Fatalf("昇格は機械適用でありreviewer自身の再出力として記録しない: %s", review)
 	}
-	if len(r.prompts) != 3 || !strings.Contains(r.prompts[2], "wrapper risk floor") {
-		t.Fatalf("同一sessionへ再出力promptを送るべき: %#v", r.prompts)
+	if !strings.Contains(review, "reviewer raw status=PASS") {
+		t.Fatalf("raw reviewer PASSを原文として保持すべき: %s", review)
 	}
-	if strings.Join(r.models, ",") != "opus,sonnet,sonnet" {
-		t.Fatalf("再出力もHighRiskReviewerModelを使うべき: %#v", r.models)
+	if len(r.prompts) != 2 {
+		t.Fatalf("再出力model turnを行わない: %#v", r.prompts)
+	}
+	if strings.Join(r.models, ",") != "opus,sonnet" {
+		t.Fatalf("reviewまでの2呼び出しで完結すべき: %#v", r.models)
 	}
 }
 
@@ -150,6 +143,10 @@ func TestRiskFloorRejectsPassAfterDecision(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteDecision("A案で進める"); err != nil {
 		t.Fatal(err)
@@ -161,10 +158,10 @@ func TestRiskFloorRejectsPassAfterDecision(t *testing.T) {
 	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, `"summary":"review"`) {
-		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
+	if !strings.Contains(review, "機械的にSol確認へ昇格") {
+		t.Fatalf("昇格packetでない: %s", review)
 	}
-	if strings.Join(r.models, ",") != "opus,sonnet,sonnet" {
+	if strings.Join(r.models, ",") != "opus,sonnet" {
 		t.Fatalf("models = %#v", r.models)
 	}
 }
@@ -180,6 +177,10 @@ func TestRiskFloorRejectsPassAfterAutoFix(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -191,10 +192,10 @@ func TestRiskFloorRejectsPassAfterAutoFix(t *testing.T) {
 	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, `"summary":"review"`) {
-		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
+	if !strings.Contains(review, "機械的にSol確認へ昇格") {
+		t.Fatalf("昇格packetでない: %s", review)
 	}
-	if strings.Join(r.models, ",") != "opus,haiku,opus,sonnet,sonnet" {
+	if strings.Join(r.models, ",") != "opus,haiku,opus,sonnet" {
 		t.Fatalf("models = %#v", r.models)
 	}
 }
@@ -217,6 +218,10 @@ func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteExplicitFix("境界値を修正する", "", ""); err != nil {
 		t.Fatal(err)
@@ -228,10 +233,10 @@ func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
 	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, `"summary":"review"`) {
-		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
+	if !strings.Contains(review, "機械的にSol確認へ昇格") {
+		t.Fatalf("昇格packetでない: %s", review)
 	}
-	if strings.Join(r.models, ",") != "opus,sonnet,sonnet" {
+	if strings.Join(r.models, ",") != "opus,sonnet" {
 		t.Fatalf("models = %#v", r.models)
 	}
 }
@@ -264,9 +269,12 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 	}
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: passPacket()},
-		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
+	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
+	}
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
@@ -278,11 +286,11 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, `"summary":"review"`) {
-		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
+	if !strings.Contains(review, "機械的にSol確認へ昇格") {
+		t.Fatalf("昇格packetでない: %s", review)
 	}
-	if strings.Join(r.models, ",") != "sonnet,sonnet" {
-		t.Fatalf("resume後のreviewと再出力models = %#v", r.models)
+	if strings.Join(r.models, ",") != "sonnet" {
+		t.Fatalf("resume後のreview呼び出しのみ: %#v", r.models)
 	}
 }
 
@@ -310,12 +318,11 @@ func TestRiskFloorAllowsLowRiskPass(t *testing.T) {
 	}
 }
 
-func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
+func TestRiskFloorEscalationDoesNotRepeatModelCalls(t *testing.T) {
 	t.Parallel()
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
-		{structured: passPacket()},
 		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
@@ -328,122 +335,22 @@ func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("再違反時はfail closedでSol確認待ちへ: status=%q", st.TaskStatus())
+		t.Fatalf("昇格時はSol確認待ちへ: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
 	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
-		t.Fatalf("fail closed packetでない: %s", review)
+		t.Fatalf("昇格packetでない: %s", review)
 	}
 	if !strings.Contains(review, "PASS") {
-		t.Fatalf("再違反のfail closed summaryは非許容STATUSを明示すべき: %s", review)
+		t.Fatalf("昇格summaryはraw reviewer STATUSを明示すべき: %s", review)
 	}
 	if strings.Contains(review, `"requirement_coverage":"covered"`) {
 		t.Fatalf("reviewerのPASS内容を捏造してはいけない: %s", review)
 	}
-	if len(r.prompts) != 3 {
-		t.Fatalf("再出力は1回だけ行い無限反復しない: calls=%d", len(r.prompts))
+	if len(r.prompts) != 2 {
+		t.Fatalf("昇格に追加model呼出しを要しない: calls=%d", len(r.prompts))
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil {
-		t.Fatal("fail closed後はresume checkpointを残さない")
-	}
-}
-
-func TestRiskFloorReemitResumeCompliant(t *testing.T) {
-	t.Parallel()
-	st := newStateStoreT(t)
-	seedReviewStartSnapshot(t, st)
-	if err := st.Write("last-request", "req"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
-		Stage:           state.ResumeStageReview,
-		Phase:           "reviewer-1-risk-floor",
-		Role:            state.ReviewerRole,
-		Model:           "sonnet",
-		ReadOnly:        true,
-		Effort:          "high",
-		Prompt:          "reemit",
-		OriginalPrompt:  "reemit",
-		Request:         "request",
-		WorkerResult:    workerResultFromBody(workerPacketWithRisk("HIGH")),
-		ReviewNumber:    1,
-		StopKind:        state.ResumeStopRateLimited,
-		RiskFloorReemit: true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
-		t.Fatal(err)
-	}
-	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolReviewPacket()}}}
-	w := newWorkflowT(t, st, r)
-
-	if err := w.ExecuteResume(); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("再出力resumeの準拠結果はSol確認待ちへ: status=%q", st.TaskStatus())
-	}
-	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, `"summary":"review"`) {
-		t.Fatalf("reviewer自身の再出力NEEDS_SOL_REVIEWを採用すべき: %s", review)
-	}
-	if len(r.prompts) != 1 || !strings.Contains(r.prompts[0], "再開") {
-		t.Fatalf("再出力工程からresume再開すべき: %#v", r.prompts)
-	}
-	if len(r.models) != 1 || r.models[0] != "sonnet" {
-		t.Fatalf("models = %#v", r.models)
-	}
-}
-
-func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
-	t.Parallel()
-	st := newStateStoreT(t)
-	seedReviewStartSnapshot(t, st)
-	if err := st.Write("last-request", "req"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
-		Stage:           state.ResumeStageReview,
-		Phase:           "reviewer-1-risk-floor",
-		Role:            state.ReviewerRole,
-		Model:           "sonnet",
-		ReadOnly:        true,
-		Effort:          "high",
-		Prompt:          "reemit",
-		OriginalPrompt:  "reemit",
-		Request:         "request",
-		WorkerResult:    workerResultFromBody(workerPacketWithRisk("HIGH")),
-		ReviewNumber:    1,
-		StopKind:        state.ResumeStopRateLimited,
-		RiskFloorReemit: true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
-		t.Fatal(err)
-	}
-	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
-	w := newWorkflowT(t, st, r)
-	writeGitTestFile(t, w.config.RepoRoot, "glm-worker/internal/workflow/risk_floor_test.go", "package workflow\n")
-	w.collectChangedPaths = func(string, string) ([]string, error) {
-		return []string{"glm-worker/internal/workflow/risk_floor_test.go"}, nil
-	}
-
-	if err := w.ExecuteResume(); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("再出力resumeの再違反もfail closedでSol確認待ちへ: status=%q", st.TaskStatus())
-	}
-	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, "PASS") {
-		t.Fatalf("fail closed packetでない: %s", review)
-	}
-	if strings.Contains(review, `"requirement_coverage":"covered"`) {
-		t.Fatalf("reviewerのPASS内容を捏造してはいけない: %s", review)
-	}
-	if len(r.prompts) != 1 {
-		t.Fatalf("再出力resume後は追加呼出しない: calls=%d", len(r.prompts))
+		t.Fatal("昇格後はresume checkpointを残さない")
 	}
 }

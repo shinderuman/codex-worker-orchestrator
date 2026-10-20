@@ -39,7 +39,7 @@ func TestResumeRetainsCompletedResultWhenRoutingFails(t *testing.T) {
 	if after.StopKind != state.ResumeStopGuardRecoverable || after.CompletedResult == nil {
 		t.Fatalf("routing failure後にreusable checkpointが失われました: %#v", after)
 	}
-	if len(resumeRunner.phases) != 2 || resumeRunner.phases[0] != "reviewer-1-high-floor" || resumeRunner.phases[1] != "reviewer-1-risk-floor" {
+	if len(resumeRunner.phases) != 1 || resumeRunner.phases[0] != "reviewer-1-high-floor" {
 		t.Fatalf("reusable worker resultを再実行せずreviewへ進むべき: phases=%v", resumeRunner.phases)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type findingAcceptanceFixture struct {
@@ -67,6 +69,12 @@ func TestFindingIndependentNonBlockingPreservesExecutionAuthority(t *testing.T) 
 func TestFindingDuplicateConvergesOnCanonicalObservation(t *testing.T) {
 	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
+	harness := &lifecycleHarness{repo: fixture.source.Workspace.Root, store: fixture.store, source: fixture.source}
+	harness.baseLanes = len(harness.lanes(t))
+	before, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
 	first := observeAcceptanceFinding(t, fixture, "duplicate-problem", "reviewer-a")
 	second := observeAcceptanceFinding(t, fixture, "duplicate-problem", "reviewer-b")
 	if first.FindingID == second.FindingID {
@@ -76,7 +84,11 @@ func TestFindingDuplicateConvergesOnCanonicalObservation(t *testing.T) {
 		t.Fatalf("problem observations did not converge: first=%#v second=%#v", first, second)
 	}
 
-	result, err := fixture.store.ResolveFinding(second.FindingID, FindingDecision{Kind: FindingDecisionDuplicate})
+	if second.Producer == first.Producer {
+		t.Fatal("duplicate finding provenance was collapsed")
+	}
+
+	result, err := fixture.store.ResolveFindingWithProjectAuthority(second.FindingID, FindingDecision{Kind: FindingDecisionDuplicate})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +97,17 @@ func TestFindingDuplicateConvergesOnCanonicalObservation(t *testing.T) {
 		result.Disposition.CanonicalFindingID != first.FindingID {
 		t.Fatalf("duplicate disposition = %#v", result)
 	}
+	if result.Episode != nil {
+		t.Fatalf("duplicate disposition minted episode authority: %#v", result.Episode)
+	}
+	after, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ControllerGeneration != before.ControllerGeneration || after.ActiveEpisodeID != "" || after.LiveAttemptID != before.LiveAttemptID {
+		t.Fatalf("duplicate disposition changed execution authority: before=%#v after=%#v", before, after)
+	}
+	harness.assertInvariant(t, "duplicate disposition")
 }
 
 func TestFindingBlockingPlansEpisodeWithoutSwitchingExecutionAuthority(t *testing.T) {
@@ -226,7 +249,20 @@ func newFindingAcceptanceFixture(t *testing.T, extraTasks ...string) findingAcce
 	if child.Empty() {
 		t.Fatal("finding target task missing from committed project snapshot")
 	}
+	seedFinalValidationNoneObligation(t, store, source)
 	return findingAcceptanceFixture{store: store, source: source, child: child}
+}
+
+func seedFinalValidationNoneObligation(t *testing.T, store *Store, source Admission) {
+	t.Helper()
+	cfg := WorkflowTaskConfig(store.config, store.identity, source.Attempt.SemanticTaskRef)
+	runtime, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Write(state.FinalValidationObligationKey, `{"None":true}`); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func observeAcceptanceFinding(

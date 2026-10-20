@@ -205,7 +205,6 @@ func projectParentEvidenceValidations(st *state.StateStore) parentevidence.Part 
 		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
 	}
 	records := currentParentValidations(st, repoRoot, digest)
-	routing := currentParentRoutingEvidence(st, repoRoot, st.ReadOr("task.id", ""), digest)
 	part.Validations = make([]parentevidence.Validation, 0, len(records))
 	for _, record := range records {
 		part.Validations = append(part.Validations, parentevidence.Validation{
@@ -219,7 +218,7 @@ func projectParentEvidenceValidations(st *state.StateStore) parentevidence.Part 
 			WorktreeDigest:  record.WorktreeDigest,
 		})
 	}
-	part.Detail = fmt.Sprintf("%d runs, routing %d", len(records), len(routing))
+	part.Detail = fmt.Sprintf("%d runs", len(records))
 	if len(records) == 0 {
 		part.Status = parentevidence.PartUnknown
 		part.Reason = "no validation run matches the current snapshot"

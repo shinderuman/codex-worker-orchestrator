@@ -223,6 +223,7 @@ func importRevisedRootSource(t *testing.T, store *Store, admission Admission, ta
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedFinalValidationNoneObligation(t, store, admission)
 	result, err := store.ImportParentSource(admission, snapshot.ID, before, revised)
 	if err != nil {
 		t.Fatal(err)

@@ -44,6 +44,8 @@ const (
 
 	ExecutionMilestonesStateFile = "execution-milestones.json"
 	ResultCorrectionStateFile    = "result-correction.json"
+
+	FinalValidationObligationKey = "final-validation-obligation"
 )
 
 var removeStatePath = os.Remove

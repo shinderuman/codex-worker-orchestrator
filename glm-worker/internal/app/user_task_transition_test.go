@@ -41,7 +41,7 @@ func userTaskTransitionFixture(t *testing.T) (config.AppConfig, *controller.Stor
 	if err := runtime.Write("repo-root", source.Workspace.Root); err != nil {
 		t.Fatal(err)
 	}
-	accepted, err = store.AcceptExecutionCandidate(source, controller.CandidateAcceptanceInput{Message: "saved implementation", Policy: policy, Evidence: canonicalWorkflowEvidence(t, store, source, policy)})
+	accepted, err = store.AcceptExecutionCandidate(source, controller.CandidateAcceptanceInput{Message: "saved implementation", Policy: policy, Evidence: canonicalWorkflowEvidence(t, cfg, store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +87,7 @@ func userTaskTransitionFixture(t *testing.T) (config.AppConfig, *controller.Stor
 }
 
 func TestControllerExecutionRecoveryDispatchesFailClosedThroughCLI(t *testing.T) {
+	t.Parallel()
 	cfg, store, accepted, _, _ := sealedCandidateReentryFixture(t)
 	_, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "recover-accepted-result-rule-activation", ExpectedGeneration: accepted.Head.ControllerGeneration})
 	if err == nil || !strings.Contains(err.Error(), "accepted-result recovery requires exact source identity") {
@@ -98,12 +99,36 @@ func TestControllerExecutionRecoveryDispatchesFailClosedThroughCLI(t *testing.T)
 	}
 }
 
-func TestUserTaskTransitionPreservesFailureEvidenceAndStartsSuccessor(t *testing.T) {
+func TestUserTaskTransitionValidatesAuthorityAndStartsSuccessor(t *testing.T) {
 	cfg, store, input, runtime := userTaskTransitionFixture(t)
 	oldID := runtime.ReadOr("task.id", "")
 	before, err := store.LoadHead()
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, change := range []struct {
+		name   string
+		mutate func(*controller.UserTaskTransitionInput)
+	}{
+		{"stale-generation", func(in *controller.UserTaskTransitionInput) { in.ExpectedGeneration-- }},
+		{"foreign-task", func(in *controller.UserTaskTransitionInput) { in.SourceTask.TaskPath = in.SuccessorTask.TaskPath }},
+		{"foreign-source", func(in *controller.UserTaskTransitionInput) { in.SourceProjectID = "foreign" }},
+		{"foreign-successor", func(in *controller.UserTaskTransitionInput) { in.SuccessorTask.ContractDigest = "foreign" }},
+		{"stale-project", func(in *controller.UserTaskTransitionInput) { in.SuccessorProjectID = "foreign" }},
+		{"unproven-cleanup", func(in *controller.UserTaskTransitionInput) { in.CleanupTransitionID = "missing" }},
+		{"missing-reason", func(in *controller.UserTaskTransitionInput) { in.Reason = "" }},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			denied := input
+			change.mutate(&denied)
+			if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: denied.ExpectedGeneration, UserTermination: &denied}); err == nil {
+				t.Fatal("invalid termination admitted")
+			}
+			after, err := store.LoadHead()
+			if err != nil || !reflect.DeepEqual(before, after) || runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+				t.Fatal("rejected transition mutated authority")
+			}
+		})
 	}
 	oldCandidate, err := store.LoadAcceptedCandidate(*before.AcceptedCandidateRef)
 	if err != nil {
@@ -155,37 +180,5 @@ func TestUserTaskTransitionPreservesFailureEvidenceAndStartsSuccessor(t *testing
 	}
 	if _, err := store.RecoverExecutionOperation(result.TransitionID); err == nil {
 		t.Fatal("old closure recovered over new live authority")
-	}
-}
-
-func TestUserTaskTransitionRejectsStaleForeignAndUnprovenAuthority(t *testing.T) {
-	cfg, store, input, runtime := userTaskTransitionFixture(t)
-	before, err := store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, change := range []struct {
-		name   string
-		mutate func(*controller.UserTaskTransitionInput)
-	}{
-		{"stale-generation", func(in *controller.UserTaskTransitionInput) { in.ExpectedGeneration-- }},
-		{"foreign-task", func(in *controller.UserTaskTransitionInput) { in.SourceTask.TaskPath = in.SuccessorTask.TaskPath }},
-		{"foreign-source", func(in *controller.UserTaskTransitionInput) { in.SourceProjectID = "foreign" }},
-		{"foreign-successor", func(in *controller.UserTaskTransitionInput) { in.SuccessorTask.ContractDigest = "foreign" }},
-		{"stale-project", func(in *controller.UserTaskTransitionInput) { in.SuccessorProjectID = "foreign" }},
-		{"unproven-cleanup", func(in *controller.UserTaskTransitionInput) { in.CleanupTransitionID = "missing" }},
-		{"missing-reason", func(in *controller.UserTaskTransitionInput) { in.Reason = "" }},
-	} {
-		t.Run(change.name, func(t *testing.T) {
-			denied := input
-			change.mutate(&denied)
-			if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: denied.ExpectedGeneration, UserTermination: &denied}); err == nil {
-				t.Fatal("invalid termination admitted")
-			}
-			after, err := store.LoadHead()
-			if err != nil || !reflect.DeepEqual(before, after) || runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
-				t.Fatal("rejected transition mutated authority")
-			}
-		})
 	}
 }

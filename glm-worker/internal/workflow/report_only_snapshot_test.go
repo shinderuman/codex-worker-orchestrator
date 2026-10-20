@@ -350,10 +350,9 @@ func TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun(t *testing.T) {
 	}
 	r := &mutatingRunner{repoRoot: repoRoot}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return []string{"tracked.txt"}, nil
@@ -389,10 +388,9 @@ func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
 		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
 	}}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.temp = t.TempDir()
 	w.captureSnapshot = state.CaptureGitSnapshot
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -428,10 +426,9 @@ func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T)
 		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
 	}}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.temp = t.TempDir()
 	realCapture := state.CaptureGitSnapshot
 	calls := 0
@@ -512,10 +509,9 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 	}}
 	resumeRunner.mutatePhase = "worker-report-only-1"
 	out := &bytes.Buffer{}
-	rw := newMutationWorkflowShell(t, w.state)
+	rw := newMutationWorkflowShell(t, w.state, repoRoot)
 	rw.runner = resumeRunner
 	rw.output = out
-	rw.config.RepoRoot = repoRoot
 	realCapture := state.CaptureGitSnapshot
 	captures := 0
 	rw.captureSnapshot = func(root string) (state.GitSnapshot, error) {
@@ -564,10 +560,9 @@ func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 	}}
 	resumeRunner.mutatePhase = "worker-report-only-1"
 	out := &bytes.Buffer{}
-	rw := newMutationWorkflowShell(t, w.state)
+	rw := newMutationWorkflowShell(t, w.state, repoRoot)
 	rw.runner = resumeRunner
 	rw.output = out
-	rw.config.RepoRoot = repoRoot
 	rw.captureSnapshot = state.CaptureGitSnapshot
 
 	if err := rw.ExecuteResume(); err != nil {
@@ -660,10 +655,9 @@ func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *test
 		{structured: needsSolReviewPacket()},
 	}}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	realCapture := state.CaptureGitSnapshot
 	captures := 0
 	w.captureSnapshot = func(root string) (state.GitSnapshot, error) {
@@ -724,10 +718,9 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 		{structured: needsSolReviewPacket()},
 	}}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	realCapture := state.CaptureGitSnapshot
 	captures := 0
 	w.captureSnapshot = func(root string) (state.GitSnapshot, error) {
@@ -773,82 +766,39 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 	}
 }
 
-func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
+func TestReportOnlyNonCurrentCheckpointRejectedBeforeRouting(t *testing.T) {
 	t.Parallel()
-	for _, phase := range []string{"worker-report-only-1", "worker-report-only-1-packet-compact", "worker-auto-fix-1"} {
-		t.Run(phase, func(t *testing.T) {
-			repoRoot := initMutationRepo(t)
-			st := newStateStoreT(t)
-			if err := st.Write("last-request", "req"); err != nil {
-				t.Fatal(err)
-			}
-			legacy := `{"version":3,"stage":"auto-fix","phase":"` + phase + `","role":"worker","model":"opus","read_only":true,"effort":"high","prompt":"p","original_prompt":"p","request":"req","rate_limited":true}`
-			if err := os.WriteFile(st.Path("resume-state.json"), []byte(legacy), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
-				t.Fatal(err)
-			}
-			r := &mutatingRunner{repoRoot: repoRoot}
-			out := &bytes.Buffer{}
-			w := newMutationWorkflowShell(t, st)
-			w.runner = r
-			w.output = out
-			w.config.RepoRoot = repoRoot
-			w.captureSnapshot = state.CaptureGitSnapshot
-
-			err := w.ExecuteResume()
-			if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
-				t.Fatalf("v3 checkpointの拒否error = %v", err)
-			}
-			if len(r.prompts) != 0 || len(r.probes) != 0 {
-				t.Fatalf("routing前に拒否しworker/probeを呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
-			}
-			if _, err := st.LoadReportOnlyStartSnapshot(); err == nil {
-				t.Fatal("拒否したcheckpointへreport-only baselineを作成しています")
-			}
-		})
+	repoRoot := initMutationRepo(t)
+	st := newStateStoreT(t)
+	if err := st.Write("last-request", "req"); err != nil {
+		t.Fatal(err)
 	}
-}
+	legacy := `{"version":5,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","read_only":true,"effort":"high","prompt":"p","original_prompt":"p","request":"req","rate_limited":true}`
+	if err := os.WriteFile(st.Path("resume-state.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
+		t.Fatal(err)
+	}
+	r := &mutatingRunner{repoRoot: repoRoot}
+	out := &bytes.Buffer{}
+	w := newMutationWorkflowShell(t, st, repoRoot)
+	w.runner = r
+	w.output = out
+	w.captureSnapshot = state.CaptureGitSnapshot
 
-func TestReportOnlyV5RejectedBeforeRouting(t *testing.T) {
-	t.Parallel()
-	for _, phase := range []string{"worker-report-only-1", "worker-auto-fix-1"} {
-		t.Run(phase, func(t *testing.T) {
-			repoRoot := initMutationRepo(t)
-			st := newStateStoreT(t)
-			if err := st.Write("last-request", "req"); err != nil {
-				t.Fatal(err)
-			}
-			missing := `{"version":5,"stage":"auto-fix","phase":"` + phase + `","role":"worker","model":"opus","read_only":true,"effort":"high","prompt":"p","original_prompt":"p","request":"req","rate_limited":true}`
-			if err := os.WriteFile(st.Path("resume-state.json"), []byte(missing), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
-				t.Fatal(err)
-			}
-			r := &mutatingRunner{repoRoot: repoRoot}
-			out := &bytes.Buffer{}
-			w := newMutationWorkflowShell(t, st)
-			w.runner = r
-			w.output = out
-			w.config.RepoRoot = repoRoot
-			w.captureSnapshot = state.CaptureGitSnapshot
-
-			err := w.ExecuteResume()
-			if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
-				t.Fatalf("v5 checkpointの拒否error = %v", err)
-			}
-			if len(r.prompts) != 0 || len(r.probes) != 0 {
-				t.Fatalf("routing前に拒否しworker/probeを呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
-			}
-			if _, err := st.LoadReportOnlyStartSnapshot(); err == nil {
-				t.Fatal("拒否したcheckpointへreport-only baselineを作成しています")
-			}
-			if got := st.TaskStatus(); got != state.TaskStatusRateLimited {
-				t.Fatalf("拒否時もstatusをrate-limitedのまま保つ: %s", got)
-			}
-		})
+	err := w.ExecuteResume()
+	if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
+		t.Fatalf("非current checkpointの拒否error = %v", err)
+	}
+	if len(r.prompts) != 0 || len(r.probes) != 0 {
+		t.Fatalf("routing前に拒否しworker/probeを呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
+	}
+	if _, err := st.LoadReportOnlyStartSnapshot(); err == nil {
+		t.Fatal("拒否したcheckpointへreport-only baselineを作成しています")
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusRateLimited {
+		t.Fatalf("拒否時もstatusをrate-limitedのまま保つ: %s", got)
 	}
 }
 
@@ -882,10 +832,9 @@ func TestAutoFixResumeWithoutReportOnlyPhaseKeepsLegacyFlow(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 
 	if err := w.ExecuteResume(); err != nil {

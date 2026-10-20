@@ -15,6 +15,12 @@ import (
 
 func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
+	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID}); err == nil {
+		t.Fatal("stale generation reentered the candidate")
+	}
+	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"}); err == nil {
+		t.Fatal("foreign candidate reentered the sealed authority")
+	}
 
 	handoff := buildParentHandoffWithConfig(cfg, runtime)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
@@ -80,20 +86,10 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	}
 }
 
-func TestControllerReenterRejectsStaleAndForeignAuthority(t *testing.T) {
-	_, store, accepted, candidate, _ := sealedCandidateReentryFixture(t)
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID}); err == nil {
-		t.Fatal("stale generation reentered the candidate")
-	}
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"}); err == nil {
-		t.Fatal("foreign candidate reentered the sealed authority")
-	}
-}
-
 func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.ExecutionOperationResult, controller.AcceptedCandidate, *state.StateStore) {
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
-	evidence := canonicalWorkflowEvidence(t, store, admission, policy)
+	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
 	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "reentry corpus result", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)

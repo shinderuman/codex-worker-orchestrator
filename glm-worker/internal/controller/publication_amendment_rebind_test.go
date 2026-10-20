@@ -292,6 +292,7 @@ func TestApprovedTaskAmendmentRebindPreservesExecutionAuthority(t *testing.T) {
 	f.source = *scheduled.Admission
 	source := publicationTestEdit(t, f, "child.txt", "child task result\n")
 	f.source = source
+	seedFinalValidationNoneObligation(t, f.store, source)
 	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
 		Message: "child task result", Policy: p,
 		Evidence: publicationTestEvidence(t, f.store, source, p),

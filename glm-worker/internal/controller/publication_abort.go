@@ -114,17 +114,12 @@ func (s *Store) validateCompletionFailure(op ExecutionOperation, phase Transitio
 func (s *Store) restoreCompletionPrepare(op ExecutionOperation) error {
 	for index, file := range op.Terminal.Files {
 		effects := append([]EffectExpectation(nil), op.Transition.Effects[1+index*2:3+index*2]...)
-		for n := range effects {
-			effects[n].ExpectedOld, effects[n].ExpectedNew = effects[n].ExpectedNew, effects[n].ExpectedOld
-		}
-		file.OldOID, file.NewOID = file.NewOID, file.OldOID
-		file.OldBytes, file.NewBytes = file.NewBytes, file.OldBytes
 		if err := s.applyTerminalMetadataFile(file, effects); err != nil {
 			return err
 		}
 	}
 	effect := op.Transition.Effects[0]
-	if err := updatePublicationRef(s.identity.PrimaryRoot, effect.Resource, effect.ExpectedNew, effect.ExpectedOld); err != nil {
+	if err := updatePublicationRef(s.identity.PrimaryRoot, effect.Resource, effect.ExpectedOld, effect.ExpectedNew); err != nil {
 		return err
 	}
 	return nil

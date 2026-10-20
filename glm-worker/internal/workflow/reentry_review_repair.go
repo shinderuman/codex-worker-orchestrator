@@ -78,12 +78,12 @@ func (w *Workflow) CompleteReentryReviewRepair(data []byte) error {
 		return err
 	}
 	if open == nil && w.state.TaskStatus() == state.TaskStatusInterrupted && reflect.DeepEqual(current, target) {
-		return w.state.ClearFinalizationEvidence()
+		return nil
 	}
 	if err := w.replaceRetainedReentryReview(source, target); err != nil {
 		return err
 	}
-	return w.state.ClearFinalizationEvidence()
+	return nil
 }
 
 func (w *Workflow) refreshReentryReviewPrompt(target state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {

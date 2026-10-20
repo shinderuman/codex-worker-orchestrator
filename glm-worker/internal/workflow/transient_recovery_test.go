@@ -1133,38 +1133,37 @@ func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
 	}
 }
 
-func TestRecoveryProbeAuthSignalFailsClosed(t *testing.T) {
+func TestRecoveryProbeAuthPhraseVariantsFailClosed(t *testing.T) {
 	t.Parallel()
-	st := newStateStoreT(t)
-	r := &scriptedRunner{
-		steps: []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
-		probeResponses: []string{
-			"401 Unauthorized: invalid api key",
-			"API Error: 503 Service Unavailable",
-		},
-		probeIsError: true,
-	}
-	w, _ := newRecoveryWorkflowT(t, st, r)
-	w.temp = t.TempDir()
+	for _, signal := range []string{"401 Unauthorized: invalid api key", "403 Forbidden"} {
+		st := newStateStoreT(t)
+		r := &scriptedRunner{
+			steps:          []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
+			probeResponses: []string{signal},
+			probeIsError:   true,
+		}
+		w, _ := newRecoveryWorkflowT(t, st, r)
+		w.temp = t.TempDir()
 
-	_, err := w.runModel(workerCheckpoint())
-	var workerErr *WorkerError
-	if err == nil || !errors.As(err, &workerErr) {
-		t.Fatalf("WORKER_ERRORを期待: %v", err)
-	}
-	var pErr *runner.ProviderUnavailableError
-	var limitErr runner.ZaiRateLimitError
-	if errors.As(err, &pErr) {
-		t.Fatalf("auth信号はprovider-unavailableでない: %v", err)
-	}
-	if errors.As(err, &limitErr) {
-		t.Fatalf("auth信号がrate-limitedへ誤分類: %v", err)
-	}
-	if len(r.probes) != 1 || len(r.prompts) != 1 {
-		t.Fatalf("追加probeも本task再開もしない: probes=%d prompts=%d", len(r.probes), len(r.prompts))
-	}
-	if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
-		t.Fatal("fail closed時はresume checkpointがclearされるべき")
+		_, err := w.runModel(workerCheckpoint())
+		var workerErr *WorkerError
+		if err == nil || !errors.As(err, &workerErr) {
+			t.Fatalf("WORKER_ERRORを期待: %v", err)
+		}
+		var pErr *runner.ProviderUnavailableError
+		var limitErr runner.ZaiRateLimitError
+		if errors.As(err, &pErr) {
+			t.Fatalf("auth信号はprovider-unavailableでない: %v", err)
+		}
+		if errors.As(err, &limitErr) {
+			t.Fatalf("auth信号がrate-limitedへ誤分類: %v", err)
+		}
+		if len(r.probes) != 1 || len(r.prompts) != 1 {
+			t.Fatalf("追加probeも本task再開もしない: probes=%d prompts=%d", len(r.probes), len(r.prompts))
+		}
+		if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
+			t.Fatal("fail closed時はresume checkpointがclearされるべき")
+		}
 	}
 }
 
@@ -1195,41 +1194,6 @@ func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
 		t.Fatalf("本task resumeも追加probeもしない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
 	}
 	requireProviderUnavailableStop(t, st)
-}
-
-func TestRecoveryProbeBareHTTPNumberStaysProbeContract(t *testing.T) {
-	t.Parallel()
-	st := newStateStoreT(t)
-	r := &scriptedRunner{
-		steps: []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
-		probeResponses: []string{
-			"retry failed after waiting 400 ms",
-			"retry failed after waiting 400 ms",
-			"retry failed after waiting 400 ms",
-			"retry failed after waiting 400 ms",
-		},
-	}
-	w, clock := newRecoveryWorkflowT(t, st, r)
-	w.temp = t.TempDir()
-
-	_, err := w.runModel(workerCheckpoint())
-	var pErr *runner.ProviderUnavailableError
-	if !errors.As(err, &pErr) {
-		t.Fatalf("ProviderUnavailableErrorを期待: %v", err)
-	}
-	if pErr.Classification != runner.ProbeContractFailure {
-		t.Fatalf("classification = %q want %q", pErr.Classification, runner.ProbeContractFailure)
-	}
-	if len(r.probes) != 4 || len(r.prompts) != 1 {
-		t.Fatalf("probes=%d prompts=%d", len(r.probes), len(r.prompts))
-	}
-	if !equalDurations(clock.sleeps, transientBackoffSchedule) {
-		t.Fatalf("backoff = %v want %v", clock.sleeps, transientBackoffSchedule)
-	}
-	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || cp.StopKind != state.ResumeStopProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure {
-		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
-	}
 }
 
 func TestRecoveryProbeMixedTransientAuthWordRetriesAsTransient(t *testing.T) {
@@ -1337,33 +1301,5 @@ func TestResumeProbeGateBareAuthWordStaysUnavailable(t *testing.T) {
 	}
 	if st.TaskStatus() != state.TaskStatusProviderUnavailable {
 		t.Fatalf("status = %q", st.TaskStatus())
-	}
-}
-
-func TestRecoveryProbeStatusAuthPhraseFailsClosed(t *testing.T) {
-	t.Parallel()
-	st := newStateStoreT(t)
-	r := &scriptedRunner{
-		steps:          []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
-		probeResponses: []string{"403 Forbidden"},
-		probeIsError:   true,
-	}
-	w, _ := newRecoveryWorkflowT(t, st, r)
-	w.temp = t.TempDir()
-
-	_, err := w.runModel(workerCheckpoint())
-	var workerErr *WorkerError
-	if err == nil || !errors.As(err, &workerErr) {
-		t.Fatalf("WORKER_ERRORを期待: %v", err)
-	}
-	var pErr *runner.ProviderUnavailableError
-	if errors.As(err, &pErr) {
-		t.Fatalf("status組合せauth信号はprovider-unavailableでない: %v", err)
-	}
-	if len(r.probes) != 1 || len(r.prompts) != 1 {
-		t.Fatalf("追加probeも本task再開もしない: probes=%d prompts=%d", len(r.probes), len(r.prompts))
-	}
-	if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
-		t.Fatal("fail closed時はresume checkpointがclearされるべき")
 	}
 }

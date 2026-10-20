@@ -645,23 +645,31 @@
     {
       "id": "quality-snapshot-binding",
       "classification": "machine-enforced",
-      "purpose": "Bind quality validation evidence to the current handoff and repository snapshot before final parent acceptance.",
+      "purpose": "Bind each required validation form and module to the final candidate source before publication.",
       "machine_owners": [
         {
-          "path": "glm-worker/internal/parentactioncmd/finalization.go",
-          "symbol": "runFinalizationCheckWithWorker"
+          "path": "glm-worker/internal/controller/publication_final_validation.go",
+          "symbol": "Store.verifyFinalValidationEvidence"
+        },
+        {
+          "path": "glm-worker/internal/app/quality_gate_execution.go",
+          "symbol": "verifyQualityGateSource"
         }
       ],
       "tests": [
         {
-          "path": "glm-worker/internal/parentactioncmd/finalization_test.go",
-          "symbol": "TestFinalizationCheckBlocksWhenValidationIsNotCurrentForHandoffSnapshot"
+          "path": "glm-worker/internal/controller/publication_final_validation_test.go",
+          "symbol": "TestPublicationRefusesDirtyWorktreeFinalValidationRun"
+        },
+        {
+          "path": "glm-worker/internal/app/quality_gate_test.go",
+          "symbol": "TestQualityGateRejectsSourceMutationDespiteTargetSuccess"
         }
       ],
       "postconditions": [
         {
-          "path": "glm-worker/internal/parentactioncmd/finalization.go",
-          "symbol": "handoffContainsValidation"
+          "path": "glm-worker/internal/controller/publication_final_validation.go",
+          "symbol": "finalValidationMatchesSource"
         }
       ],
       "projection_guards": [

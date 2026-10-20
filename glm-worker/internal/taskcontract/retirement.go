@@ -127,6 +127,9 @@ func retirementPlanLine(line string, section planScheduleSection, target, succes
 	}
 	if path == target {
 		if section == planScheduleActive {
+			if strings.HasPrefix(strings.TrimSpace(line), "- [`") {
+				return "- [`" + successor + "`](" + successor + ")", nil
+			}
 			return "- `" + successor + "`", nil
 		}
 		return "", nil

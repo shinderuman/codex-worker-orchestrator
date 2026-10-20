@@ -127,7 +127,7 @@ func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 	}
 	if round.Review.Calls != 1 || round.Review.Outcome == nil || *round.Review.Outcome != "PASS" ||
 		round.Review.Risk == nil || *round.Review.Risk != "LOW" || round.Review.ReportedRisk == nil || *round.Review.ReportedRisk != "LOW" ||
-		round.Review.RiskFloorReemit || round.Review.Unresolved || round.Review.Snapshot != "matched" {
+		round.Review.RiskFloorReview || round.Review.Unresolved || round.Review.Snapshot != "matched" {
 		t.Fatalf("round #1 review = %#v", round.Review)
 	}
 	if round.ReviewerCost == nil || round.ReviewerCost.Calls != 1 || round.ReviewerCost.InputTokens != 250 || round.ReviewerCost.OutputTokens != 10 ||
@@ -369,7 +369,7 @@ func TestConvergenceUnresolvedAndHighCounters(t *testing.T) {
 	}
 	if round.Review.Calls != 1 || round.Review.Outcome == nil || *round.Review.Outcome != "FIX_REQUIRED" ||
 		round.Review.Risk == nil || *round.Review.Risk != "HIGH" || round.Review.ReportedRisk == nil || *round.Review.ReportedRisk != "LOW" ||
-		round.Review.RiskFloorReemit || !round.Review.Unresolved || round.Review.Snapshot != "unknown" {
+		round.Review.RiskFloorReview || !round.Review.Unresolved || round.Review.Snapshot != "unknown" {
 		t.Fatalf("round #1 review = %#v", round.Review)
 	}
 	summary := convergenceSummaryOf(t, output, "initial")

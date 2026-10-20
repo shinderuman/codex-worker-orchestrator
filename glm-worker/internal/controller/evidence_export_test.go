@@ -59,7 +59,7 @@ const (
 
 func newEvidenceExportFixture(t *testing.T, options ...func(*evidenceExportFixture)) *evidenceExportFixture {
 	t.Helper()
-	repo, _ := newControllerLinkedWorktree(t)
+	repo := newControllerRepo(t)
 	stateBase := filepath.Join(t.TempDir(), "state", "sessions")
 	cfg := controllerTestConfig(repo, stateBase)
 	cfg.ClaudeConfigDir = t.TempDir()
@@ -92,7 +92,7 @@ func newEvidenceExportFixture(t *testing.T, options ...func(*evidenceExportFixtu
 
 func (f *evidenceExportFixture) publishSealedEvidence(t *testing.T) {
 	t.Helper()
-	source, _ := newControllerLinkedWorktree(t)
+	source := newControllerRepo(t)
 	sealRef, seal := storeBundleAttemptSeal(t, f.store, source, evidenceExportSealedAttemptID, "IMPLEMENTATION_TASKS/B.md", "episode-1", 1)
 	if f.withSealedRuntime {
 		sealRef, seal = f.attachSealedRuntimeEvidence(t, seal)
@@ -652,159 +652,88 @@ func TestExportEvidenceLiveAttemptCollectsRawSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RuntimeStatus != evidenceExportRuntimeCollected || result.Coverage != evidenceExportCoveragePartial {
-		t.Fatalf("live export result = %#v", result)
+	var decoded EvidenceExportManifest
+	if err := json.Unmarshal(exportFileByPath(t, export, "manifest.json"), &decoded); err != nil {
+		t.Fatal(err)
 	}
-	if result.AttemptSectionStatus != evidenceExportAttemptAbsent {
-		t.Fatalf("live attempt section status = %q", result.AttemptSectionStatus)
-	}
-	if result.Target.Live != true || result.Target.AttemptID != evidenceExportLiveAttemptID || result.Target.Kind != evidenceExportTargetRunning {
-		t.Fatalf("export target = %#v", result.Target)
-	}
-	if result.Target.RuntimeTaskID != fixture.runtimeTask || result.Target.SelectionBasis != evidenceExportBasisLiveAttempt {
-		t.Fatalf("export target selection = %#v", result.Target)
-	}
-	if result.ManifestDigest != digestBytes(exportFileByPath(t, export, "manifest.json")) {
-		t.Fatal("manifest digest does not match manifest bytes")
+	var analysis EvidenceAnalysisIndex
+	if err := json.Unmarshal(exportFileByPath(t, export, "analysis-index.json"), &analysis); err != nil {
+		t.Fatal(err)
 	}
 	telemetry := exportEntryByPath(t, export.Manifest, "live/task/telemetry.jsonl")
-	if telemetry.TrailingFragment != true || telemetry.Records != 1 || telemetry.InProgress != true {
-		t.Fatalf("telemetry entry = %#v", telemetry)
-	}
-	if telemetry.SHA256 != digestBytes(exportFileByPath(t, export, "live/task/telemetry.jsonl")) {
-		t.Fatal("telemetry entry digest does not match stored bytes")
-	}
 	transcript := exportEntryByPath(t, export.Manifest, "live/transcripts/claude/session-worker/0")
-	if transcript.SHA256 != digestBytes([]byte(`{"timestamp":"1970-01-01T02:00:01Z","line":"in-window"}`+"\n")) {
-		t.Fatalf("transcript entry = %#v", transcript)
-	}
-	if transcript.Window == nil || transcript.Window.RecordsBefore != 1 || transcript.Window.Basis != evidenceWindowBasisTimestamp {
-		t.Fatalf("transcript window = %#v", transcript.Window)
-	}
 	missing := exportEntryByPath(t, export.Manifest, "live/transcripts/claude/session-reviewer")
-	if missing.Missing != true {
-		t.Fatalf("missing transcript entry = %#v", missing)
-	}
 	unsafe := exportEntryByPath(t, export.Manifest, "live/transcripts/claude/../escape")
-	if unsafe.Unreadable == "" || unsafe.Missing {
-		t.Fatalf("unsafe session id entry = %#v", unsafe)
+	artifact := exportEntryByPath(t, export.Manifest, "live/task/artifacts/report.txt")
+	staged := exportFileByPath(t, export, "live/git/diff-staged.patch")
+	untracked := exportEntryByPath(t, export.Manifest, "live/git/untracked/untracked-note.txt")
+	plan := exportEntryByPath(t, export.Manifest, "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionPlanPath)
+	gate := exportEntryByPath(t, export.Manifest, "live/validation/quality-gate/"+evidenceExportGateRunID+"/run.json")
+	smoke := exportEntryByPath(t, export.Manifest, "live/validation/install-smoke/"+evidenceExportSmokeRunID+"/smoke.log")
+	smokeMeta := exportEntryByPath(t, export.Manifest, "live/validation/install-smoke/"+evidenceExportSmokeRunID+"/run.json")
+	for _, check := range []struct {
+		name   string
+		valid  bool
+		actual any
+	}{
+		{"manifest-round-trip/identity", decoded.Format == evidenceExportFormat && decoded.SchemaVersion == evidenceSchemaVersion, decoded},
+		{"manifest-round-trip/analysis-index", decoded.AnalysisIndex.Path == "analysis-index.json" && decoded.AnalysisIndex.SHA256 == digestBytes(exportFileByPath(t, export, "analysis-index.json")), decoded.AnalysisIndex},
+		{"live-result/coverage", result.RuntimeStatus == evidenceExportRuntimeCollected && result.Coverage == evidenceExportCoveragePartial, result},
+		{"live-result/attempt-absent", result.AttemptSectionStatus == evidenceExportAttemptAbsent && export.Manifest.Attempt.AbsenceReason != "", []any{result.AttemptSectionStatus, export.Manifest.Attempt}},
+		{"live-result/target", result.Target.Live && result.Target.AttemptID == evidenceExportLiveAttemptID && result.Target.Kind == evidenceExportTargetRunning, result.Target},
+		{"live-result/selection", result.Target.RuntimeTaskID == fixture.runtimeTask && result.Target.SelectionBasis == evidenceExportBasisLiveAttempt, result.Target},
+		{"manifest-digest", result.ManifestDigest == digestBytes(exportFileByPath(t, export, "manifest.json")), result.ManifestDigest},
+		{"telemetry/window", telemetry.TrailingFragment && telemetry.Records == 1 && telemetry.InProgress, telemetry},
+		{"telemetry/digest", telemetry.SHA256 == digestBytes(exportFileByPath(t, export, "live/task/telemetry.jsonl")), telemetry},
+		{"transcript/digest", transcript.SHA256 == digestBytes([]byte(`{"timestamp":"1970-01-01T02:00:01Z","line":"in-window"}`+"\n")), transcript},
+		{"transcript/window", transcript.Window != nil && transcript.Window.RecordsBefore == 1 && transcript.Window.Basis == evidenceWindowBasisTimestamp, transcript.Window},
+		{"transcript/missing", missing.Missing, missing},
+		{"transcript/unsafe", unsafe.Unreadable != "" && !unsafe.Missing, unsafe},
+		{"artifact/digest", artifact.SHA256 == digestBytes([]byte("artifact bytes\n")), artifact},
+		{"git/staged", bytes.Contains(staged, []byte("source.txt")), string(staged)},
+		{"git/untracked", untracked.SHA256 == digestBytes([]byte("untracked bytes\n")), untracked},
+		{"instructions/plan", plan.Basis == evidenceExportBasisWorkspaceObservation && plan.SHA256 != "", plan},
+		{"instructions/rules", exportHasEntry(export.Manifest, "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionRulesPath), export.Manifest.Entries},
+		{"instructions/history", exportHasEntry(export.Manifest, "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionHistoryPath), export.Manifest.Entries},
+		{"git/audit", export.Manifest.Git != nil && export.Manifest.Git.ExecutionBaseOID != "" && export.Manifest.Git.Snapshot != nil, export.Manifest.Git},
+		{"analysis/sessions", analysis.Sessions.Status == evidenceAnalysisStatusCollected && len(analysis.Sessions.Sessions) > 0, analysis.Sessions},
+		{"analysis/window", !analysis.Window.Start.IsZero() && !analysis.Window.End.IsZero(), analysis.Window},
+		{"analysis/instructions", analysis.Instructions.Status == evidenceAnalysisStatusCollected && analysis.Instructions.Task != nil && analysis.Instructions.Task.Entry == "live/task/authority.md" && analysis.Instructions.Plan != nil && analysis.Instructions.Plan.Entry == "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionPlanPath && analysis.Instructions.Rules != nil && analysis.Instructions.Rules.SHA256 != "" && analysis.Instructions.History != nil && analysis.Instructions.History.SHA256 != "", analysis.Instructions},
+		{"validation/gate-metadata", gate.Basis == evidenceExportBasisRuntimeValidation && !gate.Missing && gate.Unreadable == "", gate},
+		{"validation/gate-log", string(exportFileByPath(t, export, "live/validation/quality-gate/"+evidenceExportGateRunID+"/gate.log")) == "gate log for "+evidenceExportGateRunID+"\n", gate},
+		{"validation/smoke-log", !smoke.Missing && smoke.Unreadable == "", smoke},
+		{"validation/smoke-metadata", smokeMeta.Basis == evidenceExportBasisRuntimeValidation && !smokeMeta.Missing, smokeMeta},
+		{"validation/canonical-gate", analysisValidationRunPresent(analysis.CanonicalValidationRuns, evidenceExportGateRunID, evidenceExportBasisRuntimeValidation), analysis.CanonicalValidationRuns},
+		{"validation/canonical-smoke", analysisValidationRunPresent(analysis.CanonicalValidationRuns, evidenceExportSmokeRunID, evidenceExportBasisRuntimeValidation), analysis.CanonicalValidationRuns},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			if !check.valid {
+				t.Fatalf("%s = %#v", check.name, check.actual)
+			}
+		})
 	}
 	for _, file := range export.Files {
 		if strings.Contains(file.Path, "..") || strings.Contains(file.Path, `\`) || strings.HasPrefix(file.Path, "/") {
 			t.Fatalf("export archive entry escapes its prefix: %s", file.Path)
 		}
 	}
-	artifact := exportEntryByPath(t, export.Manifest, "live/task/artifacts/report.txt")
-	if artifact.SHA256 != digestBytes([]byte("artifact bytes\n")) {
-		t.Fatalf("artifact entry = %#v", artifact)
-	}
-	staged := exportFileByPath(t, export, "live/git/diff-staged.patch")
-	if !bytes.Contains(staged, []byte("source.txt")) {
-		t.Fatalf("staged diff omits staged change: %s", staged)
-	}
-	untracked := exportEntryByPath(t, export.Manifest, "live/git/untracked/untracked-note.txt")
-	if untracked.SHA256 != digestBytes([]byte("untracked bytes\n")) {
-		t.Fatalf("untracked entry = %#v", untracked)
-	}
-	planSnapshot := exportEntryByPath(t, export.Manifest, "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionPlanPath)
-	if planSnapshot.Basis != evidenceExportBasisWorkspaceObservation || planSnapshot.SHA256 == "" {
-		t.Fatalf("plan snapshot entry = %#v", planSnapshot)
-	}
-	if !exportHasEntry(export.Manifest, "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionRulesPath) {
-		t.Fatal("live export lost the rules snapshot")
-	}
-	if !exportHasEntry(export.Manifest, "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionHistoryPath) {
-		t.Fatal("live export lost the history snapshot")
-	}
 	for _, entry := range export.Manifest.Entries {
 		if entry.Path == "live/git/object-archive.json" {
 			t.Fatal("live export embedded a git object archive payload")
 		}
 	}
-	if export.Manifest.Git == nil || export.Manifest.Git.ExecutionBaseOID == "" || export.Manifest.Git.Snapshot == nil {
-		t.Fatalf("live git audit = %#v", export.Manifest.Git)
-	}
-	var analysis EvidenceAnalysisIndex
-	if err := json.Unmarshal(exportFileByPath(t, export, "analysis-index.json"), &analysis); err != nil {
-		t.Fatal(err)
-	}
-	if analysis.Sessions.Status != evidenceAnalysisStatusCollected || len(analysis.Sessions.Sessions) == 0 {
-		t.Fatalf("analysis sessions = %#v", analysis.Sessions)
-	}
-	if analysis.Window.Start.IsZero() || analysis.Window.End.IsZero() {
-		t.Fatalf("analysis window = %#v", analysis.Window)
-	}
-	if analysis.Instructions.Status != evidenceAnalysisStatusCollected || analysis.Instructions.Task == nil ||
-		analysis.Instructions.Task.Entry != "live/task/authority.md" || analysis.Instructions.Plan == nil ||
-		analysis.Instructions.Plan.Entry != "live/"+evidenceExportSnapshotEntryDir+"/"+evidenceExportInstructionPlanPath ||
-		analysis.Instructions.Rules == nil || analysis.Instructions.Rules.SHA256 == "" ||
-		analysis.Instructions.History == nil || analysis.Instructions.History.SHA256 == "" {
-		t.Fatalf("analysis instructions = %#v", analysis.Instructions)
-	}
-	if export.Manifest.Attempt.AbsenceReason == "" {
-		t.Fatalf("live attempt absence reason is empty: %#v", export.Manifest.Attempt)
-	}
-	if evidenceObjectTreeDigest(t, fixture.store) != objectsBefore {
-		t.Fatal("live evidence export mutated controller evidence objects")
-	}
-}
-
-func TestExportEvidenceCollectsTaskValidationEvidence(t *testing.T) {
-	t.Parallel()
-	fixture := newEvidenceExportFixture(t)
-	objectsBefore := evidenceObjectTreeDigest(t, fixture.store)
-	export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	gateMeta := exportEntryByPath(t, export.Manifest, "live/validation/quality-gate/"+evidenceExportGateRunID+"/run.json")
-	if gateMeta.Basis != evidenceExportBasisRuntimeValidation || gateMeta.Missing || gateMeta.Unreadable != "" {
-		t.Fatalf("gate run metadata entry = %#v", gateMeta)
-	}
-	if string(exportFileByPath(t, export, "live/validation/quality-gate/"+evidenceExportGateRunID+"/gate.log")) != "gate log for "+evidenceExportGateRunID+"\n" {
-		t.Fatal("gate run log bytes were not archived")
-	}
-	smoke := exportEntryByPath(t, export.Manifest, "live/validation/install-smoke/"+evidenceExportSmokeRunID+"/smoke.log")
-	if smoke.Missing || smoke.Unreadable != "" {
-		t.Fatalf("install smoke entry = %#v", smoke)
-	}
-	smokeMeta := exportEntryByPath(t, export.Manifest, "live/validation/install-smoke/"+evidenceExportSmokeRunID+"/run.json")
-	if smokeMeta.Basis != evidenceExportBasisRuntimeValidation || smokeMeta.Missing {
-		t.Fatalf("install smoke run record entry = %#v", smokeMeta)
-	}
-	var analysis EvidenceAnalysisIndex
-	if err := json.Unmarshal(exportFileByPath(t, export, "analysis-index.json"), &analysis); err != nil {
-		t.Fatal(err)
-	}
-	if !analysisValidationRunPresent(analysis.CanonicalValidationRuns, evidenceExportGateRunID, evidenceExportBasisRuntimeValidation) {
-		t.Fatalf("analysis canonical runs miss the gate run: %#v", analysis.CanonicalValidationRuns)
-	}
+	gateRows := 0
 	for _, run := range analysis.CanonicalValidationRuns {
-		if run.RunID == evidenceExportGateRunID && run.Basis == evidenceExportBasisRuntimeValidation &&
-			run.Binding != evidenceValidationBindingTaskStore {
-			t.Fatalf("task-store gate run binding = %#v", run)
-		}
-	}
-	if !analysisValidationRunPresent(analysis.CanonicalValidationRuns, evidenceExportSmokeRunID, evidenceExportBasisRuntimeValidation) {
-		t.Fatalf("analysis canonical runs miss the install smoke run: %#v", analysis.CanonicalValidationRuns)
-	}
-	gateCanonicalRows := 0
-	for _, run := range analysis.CanonicalValidationRuns {
-		if run.Basis == evidenceAnalysisBasisBlockObservation || run.Basis == evidenceAnalysisBasisEvents {
-			t.Fatalf("observation leaked into canonical runs: %#v", run)
+		if run.Basis == evidenceAnalysisBasisBlockObservation || run.Basis == evidenceAnalysisBasisEvents ||
+			(run.RunID == evidenceExportGateRunID && run.Basis == evidenceExportBasisRuntimeValidation && run.Binding != evidenceValidationBindingTaskStore) ||
+			(run.Log != "" && !exportHasEntry(export.Manifest, run.Log)) {
+			t.Fatalf("canonical validation run has invalid classification, binding or archive log: %#v", run)
 		}
 		if run.RunID == evidenceExportGateRunID {
-			gateCanonicalRows++
-		}
-		if run.Log != "" && !exportHasEntry(export.Manifest, run.Log) {
-			t.Fatalf("canonical run log does not reference an archive entry: %#v", run)
+			gateRows++
 		}
 	}
-	if gateCanonicalRows != 1 {
-		t.Fatalf("gate run appears %d times in canonical runs: %#v", gateCanonicalRows, analysis.CanonicalValidationRuns)
-	}
-	eventObserved := false
-	mergedDuplicates := 0
+	eventObserved, mergedDuplicates := false, 0
 	for _, run := range analysis.ObservedValidationActions {
 		if run.Basis == evidenceAnalysisBasisEvents {
 			eventObserved = run.RunID == evidenceExportGateRunID && run.Log == "" && run.Result == "pass"
@@ -817,21 +746,33 @@ func TestExportEvidenceCollectsTaskValidationEvidence(t *testing.T) {
 			mergedDuplicates = run.Occurrences
 		}
 	}
-	if !eventObserved {
-		t.Fatalf("observed validation actions lost the gate run event relation: %#v", analysis.ObservedValidationActions)
+	for _, check := range []struct {
+		name   string
+		valid  bool
+		actual any
+	}{
+		{"validation/canonical-uniqueness", gateRows == 1, analysis.CanonicalValidationRuns},
+		{"validation/event-relation", eventObserved, analysis.ObservedValidationActions},
+		{"validation/duplicate-provenance", mergedDuplicates == 2 && len(analysis.ObservedValidationActions) == 3, analysis.ObservedValidationActions},
+		{"validation/retries", len(analysis.Retries.ValidationReruns) > 0, analysis.Retries},
+		{"validation/in-progress", len(analysis.EvidenceStates.InProgress) > 0, analysis.EvidenceStates},
+		{"export/read-only", evidenceObjectTreeDigest(t, fixture.store) == objectsBefore, fixture.store.dir},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			if !check.valid {
+				t.Fatalf("%s = %#v", check.name, check.actual)
+			}
+		})
 	}
-	if mergedDuplicates != 2 || len(analysis.ObservedValidationActions) != 3 {
-		t.Fatalf("observed validation actions lost duplicate provenance: %#v", analysis.ObservedValidationActions)
-	}
-	if len(analysis.Retries.ValidationReruns) == 0 {
-		t.Fatalf("analysis lost the retried observations: %#v", analysis.Retries)
-	}
-	if len(analysis.EvidenceStates.InProgress) == 0 {
-		t.Fatalf("analysis in-progress states are empty: %#v", analysis.EvidenceStates)
-	}
-	if evidenceObjectTreeDigest(t, fixture.store) != objectsBefore {
-		t.Fatal("live evidence export mutated controller evidence objects")
-	}
+	t.Run("task-id-live-binding", func(t *testing.T) {
+		_, result, err := fixture.store.ExportEvidence(EvidenceExportRequest{TaskID: fixture.runtimeTask})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.Target.Live || result.Target.SelectionBasis != evidenceExportBasisLiveBinding {
+			t.Fatalf("live task id target = %#v", result.Target)
+		}
+	})
 }
 
 func analysisValidationRunPresent(runs []EvidenceAnalysisValidationRun, runID, basis string) bool {
@@ -908,26 +849,6 @@ func TestExportEvidenceBindsRepositoryScopedValidationRuns(t *testing.T) {
 	}
 }
 
-func TestExportEvidenceDecodesRoundTrip(t *testing.T) {
-	t.Parallel()
-	fixture := newEvidenceExportFixture(t)
-	export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	data := exportFileByPath(t, export, "manifest.json")
-	var decoded EvidenceExportManifest
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Format != evidenceExportFormat || decoded.SchemaVersion != evidenceSchemaVersion {
-		t.Fatalf("manifest identity = %#v", decoded)
-	}
-	if decoded.AnalysisIndex.Path != "analysis-index.json" || decoded.AnalysisIndex.SHA256 != digestBytes(exportFileByPath(t, export, "analysis-index.json")) {
-		t.Fatalf("analysis index reference = %#v", decoded.AnalysisIndex)
-	}
-}
-
 func sealedRuntimeExportFixture(t *testing.T) (EvidenceExport, EvidenceExportResult) {
 	t.Helper()
 	fixture := newEvidenceExportFixture(t, func(f *evidenceExportFixture) {
@@ -942,102 +863,97 @@ func sealedRuntimeExportFixture(t *testing.T) (EvidenceExport, EvidenceExportRes
 	return export, result
 }
 
-func TestExportEvidenceSealedAttemptMaterializesRuntimeEvidence(t *testing.T) {
+func TestExportEvidenceSealedAttemptProjectsCanonicalSections(t *testing.T) {
 	t.Parallel()
 	export, result := sealedRuntimeExportFixture(t)
-	if result.Target.Kind != evidenceExportTargetTaskID || result.Target.AttemptID != evidenceExportSealedAttemptID {
-		t.Fatalf("sealed target = %#v", result.Target)
-	}
-	if result.Target.RuntimeTaskID != evidenceExportSealedRuntimeTask || result.Target.SelectionBasis != evidenceExportBasisSessionAssociation {
-		t.Fatalf("sealed target binding = %#v", result.Target)
-	}
-	if result.RuntimeStatus != evidenceExportRuntimeAbsent || result.Coverage != evidenceExportCoverageAttemptOnly {
-		t.Fatalf("sealed export result = %#v", result)
-	}
-	if result.AttemptSectionStatus != evidenceExportAttemptPresent {
-		t.Fatalf("sealed attempt section status = %q", result.AttemptSectionStatus)
-	}
-	if export.Manifest.Attempt.RuntimeTaskID != evidenceExportSealedRuntimeTask || !export.Manifest.Attempt.RuntimeEvidence {
-		t.Fatalf("sealed attempt section = %#v", export.Manifest.Attempt)
-	}
-	expectedEntries := []string{
-		"attempt/seal.json",
-		"attempt/session-association.json",
-		"attempt/telemetry.jsonl",
-		"attempt/events.jsonl",
-		"attempt/rounds.jsonl",
-		"attempt/state/worker.id",
-		"attempt/transcripts/model/session-sealed-worker/0",
-		"attempt/transcripts/parent/parent-thread-1/0",
-		"attempt/transcripts/guardian/guardian-rollout-1",
-	}
-	for _, path := range expectedEntries {
-		entry := exportEntryByPath(t, export.Manifest, path)
-		if entry.Missing || entry.Unreadable != "" {
-			t.Fatalf("sealed entry %s = %#v", path, entry)
+	t.Run("runtime-evidence", func(t *testing.T) {
+		for _, check := range []struct {
+			name   string
+			valid  bool
+			actual any
+		}{
+			{"target", result.Target.Kind == evidenceExportTargetTaskID && result.Target.AttemptID == evidenceExportSealedAttemptID, result.Target},
+			{"binding", result.Target.RuntimeTaskID == evidenceExportSealedRuntimeTask && result.Target.SelectionBasis == evidenceExportBasisSessionAssociation, result.Target},
+			{"coverage", result.RuntimeStatus == evidenceExportRuntimeAbsent && result.Coverage == evidenceExportCoverageAttemptOnly, result},
+			{"attempt-section", result.AttemptSectionStatus == evidenceExportAttemptPresent && export.Manifest.Attempt.RuntimeTaskID == evidenceExportSealedRuntimeTask && export.Manifest.Attempt.RuntimeEvidence, []any{result.AttemptSectionStatus, export.Manifest.Attempt}},
+			{"worker-state", string(exportFileByPath(t, export, "attempt/state/worker.id")) == "session-sealed-worker\n", exportFileByPath(t, export, "attempt/state/worker.id")},
+		} {
+			t.Run(check.name, func(t *testing.T) {
+				if !check.valid {
+					t.Fatalf("%s = %#v", check.name, check.actual)
+				}
+			})
 		}
-		if entry.CanonicalDigest == "" || entry.Basis == "" {
-			t.Fatalf("sealed entry %s lacks canonical association: %#v", path, entry)
+		for _, path := range []string{"attempt/seal.json", "attempt/session-association.json", "attempt/telemetry.jsonl", "attempt/events.jsonl", "attempt/rounds.jsonl", "attempt/state/worker.id", "attempt/transcripts/model/session-sealed-worker/0", "attempt/transcripts/parent/parent-thread-1/0", "attempt/transcripts/guardian/guardian-rollout-1"} {
+			entry := exportEntryByPath(t, export.Manifest, path)
+			if entry.Missing || entry.Unreadable != "" || entry.CanonicalDigest == "" || entry.Basis == "" || entry.SHA256 != digestBytes(exportFileByPath(t, export, path)) {
+				t.Fatalf("sealed entry %s lacks readable bytes, canonical association or matching digest: %#v", path, entry)
+			}
 		}
-		if entry.SHA256 != digestBytes(exportFileByPath(t, export, path)) {
-			t.Fatalf("sealed entry %s digest mismatch", path)
+	})
+	t.Run("parent-evidence-aggregate", func(t *testing.T) {
+		ledger := exportEntryByPath(t, export.Manifest, "attempt/state/parent-evidence.aggregate.json")
+		var aggregate evidenceParentEvidenceAggregate
+		if err := json.Unmarshal(exportFileByPath(t, export, "attempt/state/parent-evidence.aggregate.json"), &aggregate); err != nil {
+			t.Fatal(err)
 		}
-	}
-	workerState := exportFileByPath(t, export, "attempt/state/worker.id")
-	if string(workerState) != "session-sealed-worker\n" {
-		t.Fatalf("sealed worker state bytes = %q", workerState)
-	}
-}
-
-func TestExportEvidenceSealedAttemptProjectsParentEvidenceAggregate(t *testing.T) {
-	t.Parallel()
-	export, _ := sealedRuntimeExportFixture(t)
-	sealedLedger := exportEntryByPath(t, export.Manifest, "attempt/state/parent-evidence.aggregate.json")
-	if sealedLedger.CanonicalDigest == "" || sealedLedger.OmittedPayload == "" {
-		t.Fatalf("sealed parent evidence aggregate entry = %#v", sealedLedger)
-	}
-	var sealedAggregate evidenceParentEvidenceAggregate
-	if err := json.Unmarshal(exportFileByPath(t, export, "attempt/state/parent-evidence.aggregate.json"), &sealedAggregate); err != nil {
-		t.Fatal(err)
-	}
-	if sealedAggregate.Records != 6 || sealedAggregate.GroupCount != 4 || sealedAggregate.RepetitionsOmitted != 2 ||
-		sealedAggregate.SourceSHA256 != sealedLedger.CanonicalDigest {
-		t.Fatalf("sealed parent evidence aggregate = %#v", sealedAggregate)
-	}
-	for _, file := range export.Files {
-		if file.Path == "attempt/state/parent-evidence.jsonl" {
-			t.Fatal("sealed export embedded the raw parent evidence ledger")
+		if ledger.CanonicalDigest == "" || ledger.OmittedPayload == "" || aggregate.Records != 6 || aggregate.GroupCount != 4 || aggregate.RepetitionsOmitted != 2 || aggregate.SourceSHA256 != ledger.CanonicalDigest {
+			t.Fatalf("sealed parent evidence aggregate: entry=%#v aggregate=%#v", ledger, aggregate)
 		}
-	}
-}
-
-func TestExportEvidenceSealedAttemptGitAuditStaysMetadataOnly(t *testing.T) {
-	t.Parallel()
-	export, _ := sealedRuntimeExportFixture(t)
-	if export.Manifest.Git == nil || len(export.Manifest.Git.Archives) != 1 {
-		t.Fatalf("sealed git audit = %#v", export.Manifest.Git)
-	}
-	archiveMetadata := exportFileByPath(t, export, "attempt/git/archives/0.json")
-	if bytes.Contains(archiveMetadata, []byte(`"pack":`)) {
-		t.Fatal("sealed export embedded a git pack payload")
-	}
-	archiveEntry := exportEntryByPath(t, export.Manifest, "attempt/git/archives/0.json")
-	if archiveEntry.SHA256 != digestBytes(archiveMetadata) || archiveEntry.Bytes != int64(len(archiveMetadata)) {
-		t.Fatalf("archive metadata entry digest/bytes disagree with archived bytes: entry=%#v archive=%d bytes",
-			archiveEntry, len(archiveMetadata))
-	}
-	var metadata evidenceExportGitArchiveMetadata
-	if err := json.Unmarshal(archiveMetadata, &metadata); err != nil {
-		t.Fatal(err)
-	}
-	if metadata.PackDigest == "" || metadata.CanonicalDigest != export.Manifest.Git.Archives[0].Digest || metadata.OmittedPayload == "" {
-		t.Fatalf("archive metadata = %#v", metadata)
-	}
-	for _, file := range export.Files {
-		if file.Path == "sealed/task-bundle.json" {
-			t.Fatal("sealed export kept the nested task bundle projection")
+		for _, file := range export.Files {
+			if file.Path == "attempt/state/parent-evidence.jsonl" {
+				t.Fatal("sealed export embedded the raw parent evidence ledger")
+			}
 		}
-	}
+	})
+	t.Run("git-audit-metadata-only", func(t *testing.T) {
+		if export.Manifest.Git == nil || len(export.Manifest.Git.Archives) != 1 {
+			t.Fatalf("sealed git audit = %#v", export.Manifest.Git)
+		}
+		data := exportFileByPath(t, export, "attempt/git/archives/0.json")
+		entry := exportEntryByPath(t, export.Manifest, "attempt/git/archives/0.json")
+		var metadata evidenceExportGitArchiveMetadata
+		if err := json.Unmarshal(data, &metadata); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte(`"pack":`)) || entry.SHA256 != digestBytes(data) || entry.Bytes != int64(len(data)) || metadata.PackDigest == "" || metadata.CanonicalDigest != export.Manifest.Git.Archives[0].Digest || metadata.OmittedPayload == "" {
+			t.Fatalf("sealed git archive must expose matching metadata without pack bytes: entry=%#v metadata=%#v bytes=%d", entry, metadata, len(data))
+		}
+		for _, file := range export.Files {
+			if file.Path == "sealed/task-bundle.json" {
+				t.Fatal("sealed export kept the nested task bundle projection")
+			}
+		}
+	})
+	t.Run("analysis-index", func(t *testing.T) {
+		var analysis EvidenceAnalysisIndex
+		if err := json.Unmarshal(exportFileByPath(t, export, "analysis-index.json"), &analysis); err != nil {
+			t.Fatal(err)
+		}
+		for _, run := range analysis.ObservedValidationActions {
+			if run.Basis != evidenceAnalysisBasisEvents || run.Log != "" {
+				t.Fatalf("sealed validation event observation = %#v", run)
+			}
+		}
+		for _, check := range []struct {
+			name   string
+			valid  bool
+			actual any
+		}{
+			{"validation", len(analysis.CanonicalValidationRuns) == 0 && len(analysis.ObservedValidationActions) == 2 && len(analysis.Retries.ValidationReruns) == 1, analysis},
+			{"sessions", analysis.Sessions.Status == evidenceAnalysisStatusCollected && len(analysis.Sessions.Sessions) == 1, analysis.Sessions},
+			{"parent", analysis.Parent != nil && analysis.Parent.Status == evidenceAnalysisStatusCollected && analysis.Parent.ThreadID == "parent-thread-1", analysis.Parent},
+			{"guardian", len(analysis.Guardian) == 1, analysis.Guardian},
+			{"model-calls", analysis.ModelCalls.Status == evidenceAnalysisStatusCollected && analysis.ModelCalls.Total == 1, analysis.ModelCalls},
+			{"review-rounds", analysis.ReviewRounds.Status == evidenceAnalysisStatusCollected && analysis.ReviewRounds.Count == 1, analysis.ReviewRounds},
+		} {
+			t.Run(check.name, func(t *testing.T) {
+				if !check.valid {
+					t.Fatalf("%s = %#v", check.name, check.actual)
+				}
+			})
+		}
+	})
 }
 
 func TestExportEvidenceSealedAttemptDisclosesUnreadableArchiveWithoutPathCollision(t *testing.T) {
@@ -1197,38 +1113,6 @@ func TestExportEvidenceBoundSectionRecordsMissingTranscriptUnderBoundPrefix(t *t
 	}
 }
 
-func TestExportEvidenceSealedAttemptAnalysisIndex(t *testing.T) {
-	t.Parallel()
-	export, _ := sealedRuntimeExportFixture(t)
-	var analysis EvidenceAnalysisIndex
-	if err := json.Unmarshal(exportFileByPath(t, export, "analysis-index.json"), &analysis); err != nil {
-		t.Fatal(err)
-	}
-	if len(analysis.CanonicalValidationRuns) != 0 || len(analysis.ObservedValidationActions) != 2 || len(analysis.Retries.ValidationReruns) != 1 {
-		t.Fatalf("analysis validation runs = %#v observed = %#v retries = %#v", analysis.CanonicalValidationRuns, analysis.ObservedValidationActions, analysis.Retries)
-	}
-	for _, run := range analysis.ObservedValidationActions {
-		if run.Basis != evidenceAnalysisBasisEvents || run.Log != "" {
-			t.Fatalf("sealed validation event observation = %#v", run)
-		}
-	}
-	if analysis.Sessions.Status != evidenceAnalysisStatusCollected || len(analysis.Sessions.Sessions) != 1 {
-		t.Fatalf("analysis sessions = %#v", analysis.Sessions)
-	}
-	if analysis.Parent == nil || analysis.Parent.Status != evidenceAnalysisStatusCollected || analysis.Parent.ThreadID != "parent-thread-1" {
-		t.Fatalf("analysis parent = %#v", analysis.Parent)
-	}
-	if len(analysis.Guardian) != 1 {
-		t.Fatalf("analysis guardian = %#v", analysis.Guardian)
-	}
-	if analysis.ModelCalls.Status != evidenceAnalysisStatusCollected || analysis.ModelCalls.Total != 1 {
-		t.Fatalf("analysis model calls = %#v", analysis.ModelCalls)
-	}
-	if analysis.ReviewRounds.Status != evidenceAnalysisStatusCollected || analysis.ReviewRounds.Count != 1 {
-		t.Fatalf("analysis review rounds = %#v", analysis.ReviewRounds)
-	}
-}
-
 func TestExportEvidenceRequiresRuntimeTaskIdentityForDefaultTargets(t *testing.T) {
 	t.Parallel()
 	t.Run("live attempt without a runtime binding", func(t *testing.T) {
@@ -1318,18 +1202,6 @@ func TestExportEvidenceRejectsUnknownTargetsAndSelectors(t *testing.T) {
 	})
 	if _, _, err := empty.store.ExportEvidence(EvidenceExportRequest{}); err == nil {
 		t.Fatal("export accepted a repository without executed tasks")
-	}
-}
-
-func TestExportEvidenceTaskIDResolvesLiveRuntimeBinding(t *testing.T) {
-	t.Parallel()
-	fixture := newEvidenceExportFixture(t)
-	_, result, err := fixture.store.ExportEvidence(EvidenceExportRequest{TaskID: fixture.runtimeTask})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Target.Live != true || result.Target.SelectionBasis != evidenceExportBasisLiveBinding {
-		t.Fatalf("live task id target = %#v", result.Target)
 	}
 }
 

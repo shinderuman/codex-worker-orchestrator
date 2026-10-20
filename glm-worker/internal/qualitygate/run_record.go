@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ type RunRecord struct {
 	IndexDigest                   string     `json:"index_digest"`
 	WorktreeDigest                string     `json:"worktree_digest"`
 	WorktreeDigestExcludingParent string     `json:"worktree_digest_excluding_parent,omitempty"`
+	IgnoredInputsAbsent           *bool      `json:"ignored_inputs_absent,omitempty"`
 	TaskID                        string     `json:"task_id,omitempty"`
 	StartedAt                     time.Time  `json:"started_at"`
 	CompletedAt                   *time.Time `json:"completed_at,omitempty"`
@@ -42,6 +44,14 @@ const (
 	StatusFail        = "fail"
 	StatusInterrupted = "interrupted"
 )
+
+func NoIgnoredInputs(repository string) (bool, error) {
+	data, err := exec.Command("git", "-C", repository, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").Output()
+	if err != nil {
+		return false, fmt.Errorf("inspect ignored validation inputs: %w", err)
+	}
+	return len(data) == 0, nil
+}
 
 func NewRunID() (string, error) {
 	buf := make([]byte, 16)

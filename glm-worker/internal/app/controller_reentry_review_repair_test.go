@@ -101,7 +101,8 @@ func (f reentryReviewRepairFixture) revisePrimaryTask(t *testing.T, amendment st
 	return snapshot, controller.SemanticTaskRef{TaskPath: taskPath, ContractDigest: fmt.Sprintf("%x", sha256.Sum256(task))}
 }
 
-func TestControllerReentryReviewRepairImportsRevisedContractOnLiveLane(t *testing.T) {
+func validatedReentryReviewRepairFixture(t *testing.T) reentryReviewRepairFixture {
+	t.Helper()
 	f := reentryReviewRepairAppFixture(t)
 	snapshot, revised := f.revisePrimaryTask(t, "\n## Amendments\n\n親Codexの改訂と独立GLM Review。\n")
 	headBefore, err := f.store.LoadHead()
@@ -156,18 +157,11 @@ func TestControllerReentryReviewRepairImportsRevisedContractOnLiveLane(t *testin
 	if _, err := f.store.ReentryReviewRepairEvidence(updated.TransitionID); err != nil {
 		t.Fatalf("reentry review repair lost its runtime identity: %v", err)
 	}
+	return f
 }
 
-func TestControllerReentryReviewRepairRecoversPartialRuntimeCompletion(t *testing.T) {
-	f := reentryReviewRepairAppFixture(t)
-	snapshot, revised := f.revisePrimaryTask(t, "\n## Amendments\n\n親Codex実装と独立GLM Review。\n")
-	headBefore, err := f.store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "update-reentry-review", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: snapshot.ID, RevisedTask: &revised}); err != nil {
-		t.Fatal(err)
-	}
+func TestControllerReentryReviewRepairPreservesAuthorityAndRecoversPartialCompletion(t *testing.T) {
+	f := validatedReentryReviewRepairFixture(t)
 	completed, err := f.runtime.LoadResumeCheckpoint()
 	if err != nil {
 		t.Fatal(err)

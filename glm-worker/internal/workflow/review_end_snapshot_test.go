@@ -114,18 +114,17 @@ func newMutationWorkflow(t *testing.T, repoRoot string, steps []runnerStep, muta
 	st := newStateStoreT(t)
 	r := &mutatingRunner{repoRoot: repoRoot, steps: steps, mutate: mutate}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	return w, r, out
 }
 
-func newMutationWorkflowShell(t *testing.T, st *state.StateStore) *Workflow {
+func newMutationWorkflowShell(t *testing.T, st *state.StateStore, repoRoot string) *Workflow {
 	t.Helper()
 	pinRepositoryHarnessActiveT(t, st)
-	return newWorkflowT(t, st, &scriptedRunner{})
+	return newWorkflowTInRepo(t, st, &scriptedRunner{}, repoRoot)
 }
 
 func setCurrentTaskChangedPath(w *Workflow, path string) {
@@ -406,10 +405,9 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	}}
 	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = out
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 	setCurrentTaskChangedPath(w, "tracked.txt")
 
@@ -424,49 +422,6 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 	}
 	if event := mismatchEvent(t, st); event.Snapshot.Stage != string(state.SnapshotStageReviewEnd) {
 		t.Fatalf("resume後のreview-end mismatch記録 = %+v", event.Snapshot)
-	}
-}
-
-func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
-	t.Parallel()
-	repoRoot := initMutationRepo(t)
-	reviewerCalls := 0
-	r := &mutatingRunner{
-		repoRoot: repoRoot,
-		steps: []runnerStep{
-			{structured: implementedPacketWithRisk("high risk work", "HIGH")},
-			{structured: passPacket()},
-			{structured: needsSolReviewPacket()},
-		},
-	}
-	r.mutate = func(root string) error {
-		reviewerCalls++
-		if reviewerCalls < 2 {
-			return nil
-		}
-		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
-	}
-	st := newStateStoreT(t)
-	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
-	w.runner = r
-	w.output = out
-	w.config.RepoRoot = repoRoot
-	w.captureSnapshot = state.CaptureGitSnapshot
-	setCurrentTaskChangedPath(w, "tracked.txt")
-
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("status = %q", w.state.TaskStatus())
-	}
-	if len(r.prompts) != 3 {
-		t.Fatalf("reemit呼出で停止すべき: calls=%d", len(r.prompts))
-	}
-	pkt := lastPacketFromOutput(t, out.String())
-	if pkt.Status != "NEEDS_SOL_REVIEW" || !strings.Contains(out.String(), "reviewer実行中にrepository状態が変化") {
-		t.Fatalf("reemit結果ではなくfail closed packetであるべき: %q", out.String())
 	}
 }
 

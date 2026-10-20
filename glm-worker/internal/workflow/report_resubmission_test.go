@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -176,7 +174,7 @@ func TestReportResubmissionIsOneShotPerTask(t *testing.T) {
 	}
 }
 
-func TestParentValidationPreGateStopSavesResultAndResumesThroughConvergence(t *testing.T) {
+func TestQualityGateStopSavesResultAndResumesToReview(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	r := &scriptedRunner{steps: []runnerStep{{structured: parentValidationObligatedPacket("initial")}}}
@@ -184,21 +182,14 @@ func TestParentValidationPreGateStopSavesResultAndResumesThroughConvergence(t *t
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{}, errors.New(qualityGateVersionMismatchFailure)
 	}
-	workingDir := filepath.Join(repo, "glm-worker")
-	if err := os.MkdirAll(workingDir, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, "glm-worker"), 0o700); err != nil {
 		t.Fatal(err)
-	}
-	previous := parentValidationGateRunner
-	defer func() { parentValidationGateRunner = previous }()
-	parentValidationGateRunner = func(_ *Workflow, _ packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
-		t.Error("pre-gate tool failure must not reach the parent validation gate")
-		return qualitygate.RunRecord{}, errors.New("unexpected parent gate call")
 	}
 
 	err := w.ExecuteNewTask("request")
 	var stopped *QualityGateRecoverableError
 	if !errors.As(err, &stopped) {
-		t.Fatalf("converge-entry gate failure must stop recoverably: %v", err)
+		t.Fatalf("review-entry gate failure must stop recoverably: %v", err)
 	}
 	if !strings.Contains(stopped.Failure, qualityGateVersionMismatchFailure) {
 		t.Fatalf("stop failure = %q", stopped.Failure)
@@ -215,49 +206,28 @@ func TestParentValidationPreGateStopSavesResultAndResumesThroughConvergence(t *t
 	}
 	saved := checkpoint.CompletedResult
 	if saved.ParentValidationRequest() == nil || saved.ParentValidationEvidence != nil {
-		t.Fatalf("saved result must keep the unconverged parent validation obligation: %#v", saved)
+		t.Fatalf("saved result must keep the declared final validation obligation without evidence: %#v", saved)
 	}
 
 	resumeRunner := &scriptedRunner{steps: []runnerStep{
 		{structured: passPacket()},
-		{structured: needsSolReviewPacket()},
 	}}
 	resumeWorkflow := newGitWorkflowT(t, st, resumeRunner, repo)
 	resumeWorkflow.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
-	gateRuns := 0
-	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
-		gateRuns++
-		if len(resumeRunner.phases) != 0 {
-			t.Fatalf("parent validation must converge before any reviewer recall: %v", resumeRunner.phases)
-		}
-		snapshot, snapErr := state.CaptureGitSnapshot(repo)
-		if snapErr != nil {
-			return qualitygate.RunRecord{}, snapErr
-		}
-		return parentValidationTerminalPassT(t, qualitygate.RunRecord{
-			ValidationRunID: "run-pass",
-			Form:            request.Form,
-			Repository:      repo,
-			WorkingDir:      workingDir,
-			Head:            snapshot.Head,
-			IndexDigest:     snapshot.IndexDigest,
-			WorktreeDigest:  snapshot.WorktreeDigest,
-		}), nil
-	}
 
 	if err := resumeWorkflow.ExecuteResume(); err != nil {
-		t.Fatalf("resume through parent validation convergence failed: %v", err)
-	}
-	if gateRuns != 1 {
-		t.Fatalf("parent validation runs = %d want 1", gateRuns)
+		t.Fatalf("resume to review failed: %v", err)
 	}
 	if len(resumeRunner.phases) == 0 || !strings.HasPrefix(resumeRunner.phases[0], "reviewer-1") {
 		t.Fatalf("resume must continue to review without worker recall: %v", resumeRunner.phases)
 	}
-	if !strings.Contains(resumeRunner.prompts[0], "parent_validation_evidence") {
-		t.Fatalf("review prompt lacks the converged parent validation evidence: %s", resumeRunner.prompts[0])
+	if strings.Contains(resumeRunner.prompts[0], "parent_validation_evidence") {
+		t.Fatalf("round review prompt must not carry parent validation evidence: %s", resumeRunner.prompts[0])
+	}
+	if !strings.Contains(resumeRunner.prompts[0], "parent process validation required") {
+		t.Fatalf("review prompt lost the worker's unverified claim: %s", resumeRunner.prompts[0])
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil {
 		t.Fatal("successful resume must consume the stop checkpoint")

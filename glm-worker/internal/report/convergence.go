@@ -75,7 +75,7 @@ type convergenceReviewOut struct {
 	Outcome         *string `json:"outcome"`
 	Risk            *string `json:"risk"`
 	ReportedRisk    *string `json:"reported_risk"`
-	RiskFloorReemit bool    `json:"risk_floor_reemit"`
+	RiskFloorReview bool    `json:"risk_floor_review"`
 	Unresolved      bool    `json:"unresolved"`
 	Snapshot        string  `json:"snapshot"`
 }
@@ -379,7 +379,7 @@ func ConvergenceReviewOutDetail(round ConvergenceRound) convergenceReviewOut {
 	}
 	for _, entry := range round.reviewer {
 		if parsed, ok := state.ParseReviewerPhase(entry.Phase); ok && parsed.Category == state.ReviewerPhaseCategoryRiskFloor {
-			out.RiskFloorReemit = true
+			out.RiskFloorReview = true
 		}
 		if entry.PacketStatus != "" {
 			out.Outcome = machinecli.StringPtr(entry.PacketStatus)
