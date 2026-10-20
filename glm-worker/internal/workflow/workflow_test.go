@@ -178,7 +178,7 @@ func passPacket() string {
 		TestEvidence:        "ev",
 		Issues:              "none",
 		ResidualRisk:        "none",
-		Targets:             []string{"final diff"},
+		Targets:             []string{repositoryharness.MarkerPath + ":1"},
 	})
 }
 
@@ -286,6 +286,13 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 	repoRoot := t.TempDir()
 	gitIn(t, repoRoot, "init", "-q")
 	trackRepositoryHarnessMarker(t, repoRoot)
+	w := newWorkflowTInRepo(t, st, r, repoRoot)
+	w.output = output
+	return w
+}
+
+func newWorkflowTInRepo(t *testing.T, st *state.StateStore, r *scriptedRunner, repoRoot string) *Workflow {
+	t.Helper()
 	writeReviewTargetFixture(t, st, repoRoot)
 	if st.TaskStatus() != state.TaskStatusActive {
 		pinRepositoryHarnessActiveT(t, st)
@@ -298,7 +305,7 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 		MaxAutoFixRounds:      2,
 		TelemetryContent:      true,
 		RepoRoot:              repoRoot,
-	}, st, r, output)
+	}, st, r, io.Discard)
 	w.admitCanonicalMutation = func() error { return nil }
 	w.admitModelMutation = func(state.ResumeCheckpoint) (controllerModelCallGuard, error) {
 		return controllerModelCallGuard{}, nil

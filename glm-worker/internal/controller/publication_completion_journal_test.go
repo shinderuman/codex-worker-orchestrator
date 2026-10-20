@@ -341,5 +341,6 @@ func acceptedCompletionRuntime(t *testing.T, store *Store, source Admission) *st
 	if accepted, err := runtime.AcceptParentReview(); err != nil || !accepted {
 		t.Fatalf("accepted Runtime: %v %v", accepted, err)
 	}
+	seedFinalValidationNoneObligation(t, store, source)
 	return runtime
 }

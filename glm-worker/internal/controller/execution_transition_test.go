@@ -139,6 +139,7 @@ func newExecutionSwitchFixture(t *testing.T) executionSwitchFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedFinalValidationNoneObligation(t, store, source)
 	project, err := store.LoadProjectSnapshot(source.Head.ProjectSnapshotID)
 	if err != nil {
 		t.Fatal(err)

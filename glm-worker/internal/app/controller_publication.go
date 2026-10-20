@@ -9,16 +9,17 @@ import (
 )
 
 type controllerPublicationCommand struct {
-	Action             string                            `json:"action"`
-	ExpectedGeneration uint64                            `json:"expected_generation"`
-	CandidateID        string                            `json:"candidate_id,omitempty"`
-	TransitionID       string                            `json:"transition_id,omitempty"`
-	Policy             controller.PublicationPolicy      `json:"policy"`
-	Message            string                            `json:"message,omitempty"`
-	Evidence           []controller.EvidenceObjectRef    `json:"evidence,omitempty"`
-	EvidenceRecord     *controller.CandidateEvidence     `json:"evidence_record,omitempty"`
-	ArtifactJSON       json.RawMessage                   `json:"artifact_json,omitempty"`
-	Amendment          *controller.TaskAmendmentApproval `json:"amendment,omitempty"`
+	Action                  string                            `json:"action"`
+	ExpectedGeneration      uint64                            `json:"expected_generation"`
+	CandidateID             string                            `json:"candidate_id,omitempty"`
+	TransitionID            string                            `json:"transition_id,omitempty"`
+	Policy                  controller.PublicationPolicy      `json:"policy"`
+	Message                 string                            `json:"message,omitempty"`
+	Evidence                []controller.EvidenceObjectRef    `json:"evidence,omitempty"`
+	RequiredValidationForms []string                          `json:"required_validation_forms,omitempty"`
+	EvidenceRecord          *controller.CandidateEvidence     `json:"evidence_record,omitempty"`
+	ArtifactJSON            json.RawMessage                   `json:"artifact_json,omitempty"`
+	Amendment               *controller.TaskAmendmentApproval `json:"amendment,omitempty"`
 }
 
 func executeControllerPublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
@@ -79,7 +80,7 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 		tree, err := store.PreviewCandidateTree(admission, command.Policy)
 		return map[string]string{"tree_oid": tree, "base_oid": admission.Head.IntegrationTip, "attempt_id": admission.Attempt.AttemptID, "snapshot_id": admission.Snapshot.ID}, err
 	case "accept":
-		return store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, Evidence: command.Evidence})
+		return store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, Evidence: command.Evidence, RequiredValidationForms: command.RequiredValidationForms})
 	default:
 		return store.AdoptMutableExternalAdvancement(admission, command.Policy)
 	}

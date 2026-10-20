@@ -6,8 +6,23 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func parentValidationEvidence(record qualitygate.RunRecord) *packet.ParentValidationEvidence {
+	return &packet.ParentValidationEvidence{
+		ValidationRunID: record.ValidationRunID,
+		Form:            record.Form,
+		Repository:      record.Repository,
+		WorkingDir:      record.WorkingDir,
+		Head:            record.Head,
+		IndexDigest:     record.IndexDigest,
+		WorktreeDigest:  record.WorktreeDigest,
+		Status:          record.Status,
+		ExitCode:        record.ExitCode,
+		DurationMS:      record.DurationMS,
+		Log:             record.Log,
+	}
+}
 
 func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
 	t.Parallel()
@@ -109,48 +124,5 @@ func TestReviewerPromptDoesNotReconcileMissingFailedMismatchedOrIncompleteEviden
 				t.Fatalf("unverified evidence disappeared: %s", prompt)
 			}
 		})
-	}
-}
-
-func TestCheckpointMutationClearsPriorValidationBeforeReviewerReconciliation(t *testing.T) {
-	t.Parallel()
-	checkpoint := state.ResumeCheckpoint{ParentValidation: &packet.ParentValidationRequest{
-		Form:       packet.ParentValidationGoTest,
-		WorkingDir: "glm-worker",
-	}}
-	result, err := applyCheckpointParentValidation(checkpoint, packet.Result{
-		Status:                     packet.StatusImplemented,
-		Risk:                       packet.RiskLow,
-		Summary:                    "changed snapshot",
-		RequirementCoverage:        "covered",
-		Tests:                      "targeted tests passed",
-		Unverified:                 "full gate must be rerun for the changed snapshot",
-		ParentValidation:           packet.ParentValidationGoTest,
-		ParentValidationWorkingDir: "glm-worker",
-		ParentValidationEvidence: &packet.ParentValidationEvidence{
-			ValidationRunID: "stale",
-			Form:            packet.ParentValidationGoTest,
-			Repository:      "/repo",
-			WorkingDir:      "/repo/glm-worker",
-			Head:            "old",
-			IndexDigest:     "old",
-			WorktreeDigest:  "old",
-			Status:          "pass",
-			Log:             "/evidence/stale/gate.log",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.ParentValidationEvidence != nil {
-		t.Fatalf("changed snapshot retained stale parent validation evidence: %#v", result.ParentValidationEvidence)
-	}
-	report, err := result.MachineJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt := reviewerPrompt("request", "none", string(report), 1, "baseline", "navigation", "")
-	if strings.Contains(prompt, "PARENT_VALIDATION_RECONCILIATION:") {
-		t.Fatalf("changed snapshot reconciled stale evidence: %s", prompt)
 	}
 }

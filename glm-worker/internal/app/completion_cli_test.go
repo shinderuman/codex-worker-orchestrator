@@ -92,8 +92,9 @@ func appTestGitOutput(t *testing.T, root string, args ...string) []byte {
 	return data
 }
 
-func TestCompletionCLIRecoversPublishedACKWithCanonicalGitGuard(t *testing.T) {
+func TestCompletionCLIRecoversProcessDeathAndPublishedACKWithCanonicalGitGuard(t *testing.T) {
 	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
+	planned := interruptCompletionBeforePush(t, cfg, store, promoted, policy, candidate)
 	installCompletionGuard(t, cfg)
 	direct := exec.Command("git", "-C", cfg.RepoRoot, "push", policy.Remote, policy.LocalRef+":"+policy.RemoteRef)
 	if data, err := direct.CombinedOutput(); err == nil || !strings.Contains(string(data), "push rejected") {
@@ -108,37 +109,46 @@ func TestCompletionCLIRecoversPublishedACKWithCanonicalGitGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(storeDir, 0o700) })
-	command := completionCLICommand(t, cfg, controllerPublicationSurface, controllerPublicationCommand{Action: "publish", ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
-	interruption, commandErr := command.CombinedOutput()
-	if commandErr == nil {
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	transitionID := head.PendingTransitionID
+	exit, interruption := runCompletionRecoveryThroughParentCLI(t, cfg)
+	if exit == 0 {
 		t.Fatalf("ACK write fault did not interrupt CLI: %s", interruption)
 	}
-	head, err := store.LoadHead()
-	if err != nil || head.PendingTransitionID == "" || head.MetadataLineageRef != nil {
-		t.Fatalf("ACK fault completed or lost authority: %v; CLI=%v %s", err, commandErr, interruption)
+	head, err = store.LoadHead()
+	if err != nil || head.PendingTransitionID != transitionID || head.MetadataLineageRef != nil {
+		t.Fatalf("ACK fault completed or lost authority: %v; CLI=%v %s", err, exit, interruption)
 	}
 	_, phase, err := store.LoadTransition(head.PendingTransitionID)
 	if err != nil || phase.Completion == nil || phase.Completion.ObservationRef == nil {
-		t.Fatalf("CLI push did not save remote observation: %v; CLI=%v %s", err, commandErr, interruption)
+		t.Fatalf("CLI push did not save remote observation: %v; CLI=%v %s", err, exit, interruption)
 	}
 	before, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	final := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD")))
+	if final != planned {
+		t.Fatal("ACK recovery changed the commit planned before local process death")
+	}
 	if data := appTestGitOutput(t, cfg.RepoRoot, "ls-remote", policy.Remote, policy.RemoteRef); !strings.HasPrefix(string(data), final+"\t") {
 		t.Fatal("ACK fault occurred before successful real Push")
 	}
 	if err := os.Chmod(storeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	recoverCompletionThroughParentCLI(t, cfg)
+	if exit, diagnostics := runCompletionRecoveryThroughParentCLI(t, cfg); exit != 0 {
+		t.Fatalf("canonical CLI recovery: exit=%d %s", exit, diagnostics)
+	}
 	after, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
 	if err != nil || after != before {
 		t.Fatalf("journal recovery changed source, Metadata, index or commit: %v", err)
 	}
 	recovered, err := store.LoadHead()
-	if err != nil || recovered.PendingTransitionID != "" || recovered.IntegrationTip != final || recovered.MetadataLineageRef == nil {
+	if err != nil || recovered.PendingTransitionID != "" || recovered.ExecutionTaskRef != nil || recovered.IntegrationTip != final || recovered.MetadataLineageRef == nil {
 		t.Fatalf("CLI journal replay did not finalize authority: %v", err)
 	}
 	pushes, err := os.ReadFile(log)
@@ -148,11 +158,11 @@ func TestCompletionCLIRecoversPublishedACKWithCanonicalGitGuard(t *testing.T) {
 	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
 }
 
-func recoverCompletionThroughParentCLI(t *testing.T, cfg config.AppConfig) {
+func runCompletionRecoveryThroughParentCLI(t *testing.T, cfg config.AppConfig) (int, string) {
 	t.Helper()
 	handoff := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface || containsParentAction(handoff.AllowedActions, "start") {
 		t.Fatalf("ACK recovery canonical handoff: %#v", handoff)
 	}
-	runStagedRetirementRecovery(t, cfg, handoff.RequiredActionParameters["controller_command_json"])
+	return runStagedRetirementRecovery(t, cfg, handoff.RequiredActionParameters["controller_command_json"])
 }

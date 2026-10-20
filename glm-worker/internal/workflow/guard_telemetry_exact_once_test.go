@@ -46,10 +46,9 @@ func (c exactOnceCase) run(t *testing.T) {
 	if c.mutateState != nil {
 		r.mutate = func(string) error { return c.mutateState(st) }
 	}
-	w := newMutationWorkflowShell(t, st)
+	w := newMutationWorkflowShell(t, st, repoRoot)
 	w.runner = r
 	w.output = &strings.Builder{}
-	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
 
 	err := c.entry(w)

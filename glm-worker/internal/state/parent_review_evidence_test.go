@@ -170,34 +170,34 @@ func TestParentReviewEvidenceDoesNotChangeOtherAcceptSemantics(t *testing.T) {
 	})
 }
 
-func TestNonConvergenceMarkerClearsOnReviewerCompletionAndAcceptRestoresViaEvidence(t *testing.T) {
+func TestOpenSolReviewRestoresAcceptViaEvidence(t *testing.T) {
 	st, _, snapshot := newBoundParentReviewTestStore(t)
 	taskID, err := st.TaskID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetTaskStatus(TaskStatusActive); err != nil {
+	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.FinishParentValidationNonConvergence(
+	if err := st.RecordSolResult(
 		packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh},
 		ParentReviewProducer{Role: string(WorkerRole), Model: "opus"},
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	duringFailure, err := st.ParentActionPlan()
+	duringOpen, err := st.ParentActionPlan()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if duringFailure.Allows(ParentActionAccept) || duringFailure.AdmitsCommand(ParentActionAccept) || !duringFailure.Allows(ParentActionFix) || !duringFailure.Allows(ParentActionPark) {
-		t.Fatalf("non-convergence admission = %#v", duringFailure)
+	if duringOpen.Allows(ParentActionAccept) || duringOpen.AdmitsCommand(ParentActionAccept) || !duringOpen.Allows(ParentActionFix) || !duringOpen.Allows(ParentActionPark) {
+		t.Fatalf("open sol review admission = %#v", duringOpen)
 	}
 
 	openBoundReviewForTest(t, st, snapshot, "review.go:1")
 	open, err := st.CurrentParentReview()
-	if err != nil || open == nil || open.ParentValidationNonConvergence {
-		t.Fatalf("reviewer completion must drop the non-convergence marker: %#v err=%v", open, err)
+	if err != nil || open == nil {
+		t.Fatalf("reviewer completion must open a bound review: %#v err=%v", open, err)
 	}
 	binding, err := st.CurrentParentReviewBinding()
 	if err != nil || binding == nil {

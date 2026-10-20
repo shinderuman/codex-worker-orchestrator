@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactioncmd"
 )
 
@@ -121,20 +123,26 @@ func runAuthorityBootstrapChild(t *testing.T, cfg config.AppConfig) (int, string
 	return childExitCode(command.Run()), output.String()
 }
 
-func TestPartialCompletionProcessDeathRecoversThroughCanonicalParentCLI(t *testing.T) {
-	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
+func interruptCompletionBeforePush(t *testing.T, cfg config.AppConfig, store *controller.Store, promoted controller.ExecutionOperationResult, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate) string {
+	t.Helper()
 	hooks := t.TempDir()
 	pidFile := filepath.Join(t.TempDir(), "controller-pid")
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
-	script := "#!/bin/sh\nset -eu\nif [ \"$1\" = committed ]; then\nwhile read old new ref; do\nif [ \"$ref\" = " + quote(policy.LocalRef) + " ]; then kill -KILL \"$(cat " + quote(pidFile) + ")\"; fi\ndone\nfi\n"
-	if err := os.WriteFile(filepath.Join(hooks, "reference-transaction"), []byte(script), 0o755); err != nil {
+	script := "#!/bin/sh\nset -eu\nkill -KILL \"$(cat " + quote(pidFile) + ")\"\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	runControllerActivationGit(t, cfg.RepoRoot, "config", "core.hooksPath", hooks)
 	command := completionCLICommand(t, cfg, controllerPublicationSurface, controllerPublicationCommand{Action: "publish", ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
 	command.Env = append(command.Env, "GLM_COMPLETION_PID_FILE="+pidFile)
-	if data, err := command.CombinedOutput(); err == nil {
-		t.Fatalf("local effect process death did not interrupt CLI: %s", data)
+	data, runErr := command.CombinedOutput()
+	var exitErr *exec.ExitError
+	if !errors.As(runErr, &exitErr) {
+		t.Fatalf("process death did not interrupt CLI: %v %s", runErr, data)
+	}
+	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL {
+		t.Fatalf("controller did not die by SIGKILL: %v %s", runErr, data)
 	}
 	runControllerActivationGit(t, cfg.RepoRoot, "config", "--unset", "core.hooksPath")
 	head, err := store.LoadHead()
@@ -142,32 +150,24 @@ func TestPartialCompletionProcessDeathRecoversThroughCanonicalParentCLI(t *testi
 		t.Fatalf("process death lost its journal: %v", err)
 	}
 	_, phase, err := store.LoadTransition(head.PendingTransitionID)
-	if err != nil || phase.Completion != nil {
-		t.Fatalf("local process died after publication intent rather than during preparation: %v", err)
+	if err != nil || phase.Completion == nil || !phase.Completion.WriteIntent || phase.Completion.ObservationRef != nil {
+		t.Fatalf("process did not die after durable push intent and before observation: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(cfg.RepoRoot, candidate.TaskRef.TaskPath)); err != nil {
-		t.Fatal("injected death occurred after final Metadata was applied")
+	if _, err := os.Stat(filepath.Join(cfg.RepoRoot, candidate.TaskRef.TaskPath)); !os.IsNotExist(err) {
+		t.Fatalf("final Metadata was not applied before publication: %v", err)
 	}
 	before := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD")))
-	if before == candidate.CommitOID {
-		t.Fatal("injected death occurred before the local ref effect")
+	if before != candidate.CommitOID {
+		t.Fatal("process death changed the final candidate commit")
 	}
-	if exit, output := runAuthorityBootstrapChild(t, cfg); exit == 0 {
-		t.Fatalf("partial local preparation was reported as successful bootstrap: exit=%d %s", exit, output)
-	}
-	recoverCompletionThroughParentCLI(t, cfg)
-	recovered, err := store.LoadHead()
-	if err != nil || recovered.PendingTransitionID != "" || recovered.ExecutionTaskRef != nil || recovered.IntegrationTip != before {
-		t.Fatalf("CLI did not complete the exact saved journal: %v", err)
+	if remote := appTestGitOutput(t, cfg.RepoRoot, "ls-remote", policy.Remote, policy.RemoteRef); !strings.HasPrefix(string(remote), candidate.BaseOID+"\t") {
+		t.Fatal("injected death allowed a remote write")
 	}
 	assertRetiredBootstrap(t, cfg, "IMPLEMENTATION_TASKS/successor.md")
-	actual := appTestGitOutput(t, cfg.RepoRoot, "ls-remote", policy.Remote, policy.RemoteRef)
-	if !strings.HasPrefix(string(actual), before+"\t") {
-		t.Fatal("recovery did not publish the planned final commit")
-	}
+	return before
 }
 
-func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command string) {
+func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command string) (int, string) {
 	t.Helper()
 	exit, out, diagnostics := runParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
 	if exit != 0 {
@@ -192,7 +192,5 @@ func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command str
 		t.Fatal(err)
 	}
 	exit, _, diagnostics = runParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
-	if exit != 0 {
-		t.Fatalf("canonical CLI recovery: exit=%d %s", exit, diagnostics)
-	}
+	return exit, diagnostics
 }

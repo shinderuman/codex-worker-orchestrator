@@ -23,7 +23,7 @@ type lifecycleHarness struct {
 
 func newLifecycleHarness(t *testing.T) *lifecycleHarness {
 	t.Helper()
-	repo, _ := newControllerLinkedWorktree(t)
+	repo := newControllerRepo(t)
 	blockerPath := "IMPLEMENTATION_TASKS/lifecycle-b.md"
 	deeperPath := "IMPLEMENTATION_TASKS/lifecycle-c.md"
 	rootPath := "IMPLEMENTATION_TASKS/root.md"
@@ -57,6 +57,7 @@ func newLifecycleHarness(t *testing.T) *lifecycleHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedFinalValidationNoneObligation(t, store, source)
 	project, err := store.LoadProjectSnapshot(source.Head.ProjectSnapshotID)
 	if err != nil {
 		t.Fatal(err)
@@ -247,6 +248,7 @@ func (h *lifecycleHarness) planBlockingEpisode(t *testing.T, admission Admission
 
 func (h *lifecycleHarness) retireLifecycleTask(t *testing.T, admission Admission, message string) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
+	seedFinalValidationNoneObligation(t, h.store, admission)
 	evidence := publicationTestEvidence(t, h.store, admission, h.policy)
 	accepted, err := h.store.AcceptExecutionCandidate(admission, CandidateAcceptanceInput{Message: message, Policy: h.policy, Evidence: evidence})
 	if err != nil {
@@ -339,11 +341,8 @@ func TestIntegratedLifecycleNormalBlocker(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending, err := harness.store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending.PendingTransitionID != op.Transition.TransitionID || pending.LiveLeaseID != rootSuspended.Lease.LeaseID {
-		t.Fatalf("prepared suspension did not reserve authority exactly: %#v", pending)
+	if err != nil || pending.PendingTransitionID != op.Transition.TransitionID || pending.LiveLeaseID != rootSuspended.Lease.LeaseID {
+		t.Fatalf("prepared suspension did not reserve authority exactly: head=%#v err=%v", pending, err)
 	}
 	suspended, err := harness.store.RecoverExecutionOperation(op.Transition.TransitionID)
 	if err != nil {
@@ -364,14 +363,8 @@ func TestIntegratedLifecycleNormalBlocker(t *testing.T) {
 		EpisodeID:          episode.EpisodeID,
 		EpisodeRevision:    episode.Revision,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if materialized.Admission == nil || !materialized.Admission.Attempt.SemanticTaskRef.Equal(harness.blocker) {
-		t.Fatalf("blocker authority mismatch: %#v", materialized.Admission)
-	}
-	if !materialized.Admission.Attempt.RootTaskRef.Equal(harness.root) {
-		t.Fatalf("blocker execution lost focus root: %#v", materialized.Admission.Attempt.RootTaskRef)
+	if err != nil || materialized.Admission == nil || !materialized.Admission.Attempt.SemanticTaskRef.Equal(harness.blocker) || !materialized.Admission.Attempt.RootTaskRef.Equal(harness.root) {
+		t.Fatalf("blocker authority or focus root mismatch: admission=%#v err=%v", materialized.Admission, err)
 	}
 	harness.source = *materialized.Admission
 	harness.assertInvariant(t, "blocker materialized")
@@ -412,15 +405,21 @@ func TestIntegratedLifecycleNormalBlocker(t *testing.T) {
 		EpisodeRevision:    published.Head.ActiveEpisodeRevision,
 		SuspensionID:       suspended.Suspension.SnapshotID,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || resumed.Admission == nil || !resumed.Admission.Attempt.SemanticTaskRef.Equal(*published.Head.RootTaskRef) {
+		t.Fatalf("root resume authority mismatch: admission=%#v err=%v", resumed.Admission, err)
 	}
-	if resumed.Admission == nil || !resumed.Admission.Attempt.SemanticTaskRef.Equal(*published.Head.RootTaskRef) {
-		t.Fatalf("root resume authority mismatch: %#v", resumed.Admission)
-	}
-	if resumed.Admission.Attempt.PredecessorAttemptID != rootSuspended.Attempt.AttemptID ||
-		resumed.Admission.Attempt.ResumedFromSealID != suspended.SealRef.LogicalIdentity {
-		t.Fatalf("root resume lost exact suspension binding: %#v", resumed.Admission.Attempt)
+	for _, check := range []struct {
+		name  string
+		valid bool
+	}{
+		{"suspension-lineage", resumed.Admission.Attempt.PredecessorAttemptID == rootSuspended.Attempt.AttemptID && resumed.Admission.Attempt.ResumedFromSealID == suspended.SealRef.LogicalIdentity},
+		{"post-blocker-base", resumed.Admission.Attempt.ExecutionBaseOID == cleaned.Head.IntegrationTip},
+		{"fresh-lease", resumed.Admission.Lease.LeaseID != rootSuspended.Lease.LeaseID},
+		{"recycled-lane-fresh-identity", resumed.Admission.Workspace.Root == blocker.Workspace.Root && resumed.Admission.Workspace.ID != blocker.Workspace.ID},
+	} {
+		if !check.valid {
+			t.Fatalf("root resume %s: resumed=%#v predecessor=%#v suspension=%#v base=%s blocker=%#v", check.name, resumed.Admission, rootSuspended, suspended.SealRef, cleaned.Head.IntegrationTip, blocker.Workspace)
+		}
 	}
 	for path, want := range map[string]string{"root-owned.txt": "unfinished root production work\n", "blocker-result.txt": "blocker deliverable\n"} {
 		data, err := os.ReadFile(filepath.Join(resumed.Admission.Workspace.Root, path))

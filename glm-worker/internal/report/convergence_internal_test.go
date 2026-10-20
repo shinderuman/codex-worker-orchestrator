@@ -39,13 +39,13 @@ func TestConvergenceRiskFloorResultCorrectionRemainsRiskFloor(t *testing.T) {
 	riskRound := ConvergenceRound{reviewer: []state.ModelCallLog{{
 		Role: state.ReviewerRole, Phase: "reviewer-1-risk-floor-result-correct",
 	}}}
-	if got := ConvergenceReviewOutDetail(riskRound); !got.RiskFloorReemit {
+	if got := ConvergenceReviewOutDetail(riskRound); !got.RiskFloorReview {
 		t.Fatalf("risk-floor result correction lost risk-floor identity: %#v", got)
 	}
 	highRound := ConvergenceRound{reviewer: []state.ModelCallLog{{
 		Role: state.ReviewerRole, Phase: "reviewer-1-high-floor-result-correct",
 	}}}
-	if got := ConvergenceReviewOutDetail(highRound); got.RiskFloorReemit {
+	if got := ConvergenceReviewOutDetail(highRound); got.RiskFloorReview {
 		t.Fatalf("high-floor result correction was conflated with risk-floor: %#v", got)
 	}
 }

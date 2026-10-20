@@ -37,7 +37,7 @@ func TestRecoverInterruptedParentReopenRollsBackEveryDurablePrefix(t *testing.T)
 				func() error { return st.ClearRuntimeInstallEvidence() },
 				func() error { return st.ClearPublicationInvalidatingFinding() },
 				func() error {
-					return st.openParentReviewState(string(packet.StatusNeedsSolReview), completion.Risk, ParentReviewProducer{}, false)
+					return st.openParentReviewState(string(packet.StatusNeedsSolReview), completion.Risk, ParentReviewProducer{})
 				},
 				func() error { return st.SetTaskStatus(TaskStatusWaitingSolReview) },
 			}

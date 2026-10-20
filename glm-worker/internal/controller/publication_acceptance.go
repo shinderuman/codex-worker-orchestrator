@@ -5,9 +5,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"
 )
 
 func (s *Store) PreviewCandidateTree(admission Admission, policy PublicationPolicy) (string, error) {
+	implementationTree, err := s.previewImplementationTree(admission, policy)
+	if err != nil {
+		return "", err
+	}
+	_, finalTree, err := s.finalizeCandidateTree(admission, implementationTree)
+	return finalTree, err
+}
+
+func (s *Store) previewImplementationTree(admission Admission, policy PublicationPolicy) (string, error) {
 	if err := validatePublicationPolicy(s.identity.PrimaryRoot, policy); err != nil {
 		return "", err
 	}
@@ -37,6 +48,26 @@ func (s *Store) PreviewCandidateTree(admission Admission, policy PublicationPoli
 	return mergeSuspensionTrees(s.identity.PrimaryRoot, admission.Attempt.BaselineTrees.WorktreeTree, trees.WorktreeTree, base)
 }
 
+func (s *Store) finalizeCandidateTree(admission Admission, implementationTree string) ([]TerminalMetadataFile, string, error) {
+	return s.finalizeCandidateTrees(admission.Attempt.SemanticTaskRef, admission.Attempt.RootTaskRef, admission.Head.IntegrationTip, implementationTree)
+}
+
+func (s *Store) finalizeCandidateTrees(task, root SemanticTaskRef, base string, implementationTree string) ([]TerminalMetadataFile, string, error) {
+	implementation, err := createAcceptedCandidateCommit(s.identity.PrimaryRoot, implementationTree, base, "terminal finalization source")
+	if err != nil {
+		return nil, "", err
+	}
+	project, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, implementation)
+	if err != nil {
+		return nil, "", err
+	}
+	metadata, err := project.RetireTerminalMetadata(task.TaskPath, !task.Equal(root))
+	if err != nil {
+		return nil, "", err
+	}
+	return s.terminalMetadataTree(implementation, metadata)
+}
+
 func (s *Store) AcceptExecutionCandidate(admission Admission, input CandidateAcceptanceInput) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
@@ -57,10 +88,14 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 	if strings.TrimSpace(input.Message) == "" || admission.Lease.InFlightCallID != "" {
 		return ExecutionOperation{}, fmt.Errorf("candidate acceptance requires message and quiescent execution")
 	}
+	requiredValidations, err := s.inheritRequiredValidations(admission, input.RequiredValidationForms)
+	if err != nil {
+		return ExecutionOperation{}, err
+	}
 	if err := s.validateUnresolvedAttemptFindings(admission); err != nil {
 		return ExecutionOperation{}, err
 	}
-	tree, err := s.PreviewCandidateTree(admission, input.Policy)
+	tree, err := s.previewImplementationTree(admission, input.Policy)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -77,21 +112,40 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 	record.SourceWorkspaceID = admission.Workspace.ID
 	record.TargetExecutionTaskRef = admission.Attempt.SemanticTaskRef
 	record.TargetRootTaskRef = admission.Attempt.RootTaskRef
-	commit, err := createAcceptedCandidateCommit(s.identity.PrimaryRoot, tree, admission.Head.IntegrationTip, input.Message)
+	candidate, err := s.buildAcceptedCandidate(admission, input, record, tree, requiredValidations)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
-	candidate := AcceptedCandidate{SchemaVersion: controllerSchemaVersion, AttemptID: admission.Attempt.AttemptID, TaskRef: admission.Attempt.SemanticTaskRef, RootTaskRef: admission.Attempt.RootTaskRef, EpisodeID: admission.Head.ActiveEpisodeID, EpisodeRevision: admission.Head.ActiveEpisodeRevision, ProjectSnapshotID: admission.Head.ProjectSnapshotID, ControllerGeneration: record.CommittedGeneration, TransitionID: record.TransitionID, BaseOID: admission.Head.IntegrationTip, CommitOID: commit, TreeOID: tree, SnapshotID: admission.Snapshot.ID, Message: input.Message, State: candidatePrepared, EvidenceValid: true, Evidence: input.Evidence, Policy: input.Policy, CreatedAt: record.CreatedAt}
-	if err := s.validateCandidateEvidence(candidate, input.Evidence); err != nil {
-		return ExecutionOperation{}, err
+	return s.assembleCandidateAcceptance(admission, input, record, captured, candidate)
+}
+
+func (s *Store) buildAcceptedCandidate(admission Admission, input CandidateAcceptanceInput, record TransitionRecord, implementationTree string, requiredValidations []FinalValidationRequest) (AcceptedCandidate, error) {
+	files, finalTree, err := s.finalizeCandidateTree(admission, implementationTree)
+	if err != nil {
+		return AcceptedCandidate{}, err
 	}
+	if len(files) == 0 {
+		return AcceptedCandidate{}, fmt.Errorf("candidate terminal finalization produced no metadata changes")
+	}
+	commit, err := createAcceptedCandidateCommit(s.identity.PrimaryRoot, finalTree, admission.Head.IntegrationTip, input.Message)
+	if err != nil {
+		return AcceptedCandidate{}, err
+	}
+	candidate := AcceptedCandidate{SchemaVersion: controllerSchemaVersion, AttemptID: admission.Attempt.AttemptID, TaskRef: admission.Attempt.SemanticTaskRef, RootTaskRef: admission.Attempt.RootTaskRef, EpisodeID: admission.Head.ActiveEpisodeID, EpisodeRevision: admission.Head.ActiveEpisodeRevision, ProjectSnapshotID: admission.Head.ProjectSnapshotID, ControllerGeneration: record.CommittedGeneration, TransitionID: record.TransitionID, BaseOID: admission.Head.IntegrationTip, CommitOID: commit, TreeOID: finalTree, ImplementationTree: implementationTree, SnapshotID: admission.Snapshot.ID, Message: input.Message, State: candidatePrepared, TerminalFiles: files, RequiredValidations: requiredValidations, EvidenceValid: true, Evidence: input.Evidence, Policy: input.Policy, CreatedAt: record.CreatedAt}
+	if err := s.validateCandidateEvidence(candidate, input.Evidence); err != nil {
+		return AcceptedCandidate{}, err
+	}
+	return candidate, nil
+}
+
+func (s *Store) assembleCandidateAcceptance(admission Admission, input CandidateAcceptanceInput, record TransitionRecord, captured SuspensionSnapshot, candidate AcceptedCandidate) (ExecutionOperation, error) {
 	op := ExecutionOperation{Transition: record, Source: admission, Suspension: &captured, Publication: &PublicationOperation{Policy: input.Policy, OldTip: admission.Head.IntegrationTip, NewTip: admission.Head.IntegrationTip}}
 	seal, err := s.buildAcceptedCandidateSeal(op, candidate)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
 	candidate.SealRef = seal
-	candidate.GitArchive, _, err = s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "candidate:"+commit, []string{commit})
+	candidate.GitArchive, _, err = s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "candidate:"+candidate.CommitOID, []string{candidate.CommitOID})
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -101,7 +155,7 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 	}
 	op.SealRef = &seal
 	op.Publication.After = &ref
-	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceRef, Resource: candidateRetentionRef(commit), ExpectedNew: commit}, {Surface: MutationSurfaceRef, Resource: suspensionRef(captured.SnapshotID), ExpectedNew: captured.RetainedCommitOID}}
+	op.Transition.Effects = []EffectExpectation{{Surface: MutationSurfaceRef, Resource: candidateRetentionRef(candidate.CommitOID), ExpectedNew: candidate.CommitOID}, {Surface: MutationSurfaceRef, Resource: suspensionRef(captured.SnapshotID), ExpectedNew: captured.RetainedCommitOID}}
 	return op, nil
 }
 

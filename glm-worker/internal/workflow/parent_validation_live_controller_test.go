@@ -14,7 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -142,8 +141,7 @@ func stopLiveControllerDecisionAtAutoFix(t *testing.T, shape liveControllerStopS
 	return liveControllerStopScenario{repo: repo, cfg: cfg, store: store, st: st, activated: activated, taskID: taskID}
 }
 
-func TestDecisionAutoFixStopsKeepConvergenceAndControllerAuthority(t *testing.T) {
-	t.Parallel()
+func TestDecisionAutoFixStopPreservesLiveControllerAuthority(t *testing.T) {
 	for _, shape := range liveControllerStopShapes {
 		t.Run(shape.name, func(t *testing.T) {
 			scenario := stopLiveControllerDecisionAtAutoFix(t, shape)
@@ -156,8 +154,8 @@ func TestDecisionAutoFixStopsKeepConvergenceAndControllerAuthority(t *testing.T)
 				checkpoint.Decision != "A案で進める" || checkpoint.Request != "integration request" {
 				t.Fatalf("live-controller auto-fix stop checkpoint = %#v err=%v", checkpoint, cerr)
 			}
-			if checkpoint.ParentValidation == nil || checkpoint.ParentValidation.Form != packet.ParentValidationGoTest || checkpoint.ParentValidation.WorkingDir != "glm-worker" {
-				t.Fatalf("auto-fix stop checkpoint lost the parent validation obligation: %#v", checkpoint.ParentValidation)
+			if obligation := loadFinalValidationObligation(t, scenario.st); obligation.Form != packet.ParentValidationGoTest || obligation.WorkingDir != "glm-worker" {
+				t.Fatalf("declared final validation obligation = %#v", obligation)
 			}
 			plan, perr := scenario.st.ParentActionPlan()
 			if perr != nil || plan.RequiredAction != state.ParentActionResume || !plan.Allows(state.ParentActionResume) {
@@ -188,27 +186,9 @@ func TestDecisionAutoFixStopResumesThroughLiveControllerLease(t *testing.T) {
 	for _, shape := range liveControllerStopShapes {
 		t.Run(shape.name, func(t *testing.T) {
 			scenario := stopLiveControllerDecisionAtAutoFix(t, shape)
-			stoppedHead, err := scenario.store.LoadHead()
+			head, err := scenario.store.LoadHead()
 			if err != nil {
 				t.Fatal(err)
-			}
-
-			previous := parentValidationGateRunner
-			defer func() { parentValidationGateRunner = previous }()
-			parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (qualitygate.RunRecord, error) {
-				snapshot, serr := state.CaptureGitSnapshot(w.config.RepoRoot)
-				if serr != nil {
-					return qualitygate.RunRecord{}, serr
-				}
-				return parentValidationTerminalPassT(t, qualitygate.RunRecord{
-					ValidationRunID: "run-pass",
-					Form:            request.Form,
-					Repository:      w.config.RepoRoot,
-					WorkingDir:      filepath.Join(w.config.RepoRoot, "glm-worker"),
-					Head:            snapshot.Head,
-					IndexDigest:     snapshot.IndexDigest,
-					WorktreeDigest:  snapshot.WorktreeDigest,
-				}), nil
 			}
 			resumeRunner := &scriptedRunner{steps: []runnerStep{
 				{structured: parentValidationObligatedPacket("fixed")},
@@ -231,8 +211,11 @@ func TestDecisionAutoFixStopResumesThroughLiveControllerLease(t *testing.T) {
 			if !strings.Contains(resumeRunner.prompts[0], "A案で進める") {
 				t.Fatal("resumed auto-fix prompt lost the decision context")
 			}
-			if !strings.Contains(resumeRunner.prompts[1], "parent_validation_evidence") || !strings.Contains(resumeRunner.prompts[1], `"validation_run_id":"run-pass"`) {
-				t.Fatalf("review prompt lacks the passed parent validation evidence: %s", resumeRunner.prompts[1])
+			if strings.Contains(resumeRunner.prompts[1], "parent_validation_evidence") {
+				t.Fatalf("round review prompt must not carry parent validation evidence: %s", resumeRunner.prompts[1])
+			}
+			if !strings.Contains(resumeRunner.prompts[1], "parent process validation required") {
+				t.Fatalf("review prompt lost the worker's unverified claim: %s", resumeRunner.prompts[1])
 			}
 			if _, rerr := scenario.st.LoadResumeCheckpoint(); !errors.Is(rerr, state.ErrNoResumeCheckpoint) {
 				t.Fatalf("completed resume left a checkpoint behind: %v", rerr)
@@ -248,7 +231,7 @@ func TestDecisionAutoFixStopResumesThroughLiveControllerLease(t *testing.T) {
 			if resumedHead.LiveLeaseID == "" || resumedHead.LiveAttemptID != scenario.activated.Attempt.AttemptID {
 				t.Fatalf("resume lost the live controller execution: %#v", resumedHead)
 			}
-			if resumedHead.ControllerGeneration <= stoppedHead.ControllerGeneration {
+			if resumedHead.ControllerGeneration <= head.ControllerGeneration {
 				t.Fatalf("resumed auto-fix did not re-admit through the live lease: %#v", resumedHead)
 			}
 			if afterTask, terr := scenario.st.TaskID(); terr != nil || afterTask != scenario.taskID {

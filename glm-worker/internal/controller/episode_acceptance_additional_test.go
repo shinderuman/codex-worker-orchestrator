@@ -41,6 +41,7 @@ func TestCanonicalBlockingResolutionPreservesNoRunnableEpisode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedFinalValidationNoneObligation(t, store, admission)
 	project, err := store.LoadProjectSnapshot(admission.Head.ProjectSnapshotID)
 	if err != nil {
 		t.Fatal(err)

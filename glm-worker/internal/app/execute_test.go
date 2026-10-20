@@ -111,7 +111,7 @@ func passPacketApp() string {
 		TestEvidence:        "ev",
 		Issues:              "none",
 		ResidualRisk:        "none",
-		Targets:             []string{"final diff"},
+		Targets:             []string{"glm-worker/internal/app/stdin_payload_test.go:needsSolReviewPacketApp"},
 	})
 }
 
@@ -595,8 +595,8 @@ func TestInstructionMutationGuardRecoveryCLIAcceptance(t *testing.T) {
 	if final.ResumeAvailable || final.PendingDecision {
 		t.Fatalf("terminal状態 = resume:%v pending:%v", final.ResumeAvailable, final.PendingDecision)
 	}
-	if len(resumeRunner.prompts) != 2 {
-		t.Fatalf("保存済みworker resultを再利用し独立reviewとrisk floor再出力だけで閉じるべき: prompts=%d", len(resumeRunner.prompts))
+	if len(resumeRunner.prompts) != 1 {
+		t.Fatalf("保存済みworker resultを再利用し独立review一度で閉じるべき: prompts=%d", len(resumeRunner.prompts))
 	}
 }
 
