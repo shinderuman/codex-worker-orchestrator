@@ -27,7 +27,11 @@ func qualityToolsBinDirEnv(t *testing.T) []string {
 		}
 		dir = filepath.Join(home, ".local", "share", "codex-worker-orchestrator", "quality-tools", "bin")
 	}
-	return []string{"QUALITY_TOOLS_BIN_DIR=" + dir}
+	moduleCache, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []string{"QUALITY_TOOLS_BIN_DIR=" + dir, "GOMODCACHE=" + strings.TrimSpace(string(moduleCache))}
 }
 
 func prepareCompletionQualityCorpus(t *testing.T, root string) {
@@ -36,11 +40,6 @@ func prepareCompletionQualityCorpus(t *testing.T, root string) {
 	if !ok {
 		t.Fatal("quality fixture source is unavailable")
 	}
-	moduleCache, err := exec.Command("go", "env", "GOMODCACHE").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GOMODCACHE", strings.TrimSpace(string(moduleCache)))
 	repository := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", ".."))
 	paths, err := exec.Command("git", "-C", repository, "ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
 	if err != nil {
