@@ -1,4 +1,4 @@
-name: internal/app Go tests (sharded)
+name: internal/app Go tests
 
 on:
   pull_request:
@@ -18,13 +18,9 @@ concurrency:
 jobs:
   app-tests:
     if: ${{ (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
-    name: internal/app (shard ${{ matrix.shard }} of 4)
+    name: internal/app
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
@@ -47,32 +43,6 @@ jobs:
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-      - name: Test internal/app shard
+      - name: Test all internal/app tests
         working-directory: glm-worker
-        env:
-          SHARD: ${{ matrix.shard }}
-          SHARDS: 4
-        shell: bash
-        run: |
-          set -euo pipefail
-          listing="$(go test -list . ./internal/app)"
-          mapfile -t tests < <(printf '%s\n' "$listing" | grep -E '^(Test|Example|Fuzz)[[:alnum:]_]+$')
-          if (( ${#tests[@]} == 0 )); then
-            echo 'No internal/app tests were discovered' >&2
-            exit 1
-          fi
-          selected=()
-          for i in "${!tests[@]}"; do
-            if (( i % SHARDS == SHARD )); then
-              selected+=("${tests[$i]}")
-            fi
-          done
-          if (( ${#selected[@]} == 0 )); then
-            echo "Shard $SHARD has no tests" >&2
-            exit 1
-          fi
-          printf 'Discovered %s tests; shard %s/%s runs %s:\n' "${#tests[@]}" "$SHARD" "$SHARDS" "${#selected[@]}"
-          printf '  %s\n' "${selected[@]}"
-          pattern="$(printf '%s|' "${selected[@]}")"
-          pattern="${pattern%|}"
-          /usr/bin/time -p go test -count=1 -timeout=10m -run "^(${pattern})$" ./internal/app
+        run: /usr/bin/time -p go test -count=1 ./internal/app
