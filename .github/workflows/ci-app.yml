@@ -1,0 +1,78 @@
+name: internal/app Go tests (sharded)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'web-gpt/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app-tests:
+    if: ${{ (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
+    name: internal/app (shard ${{ matrix.shard }} of 4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Cache quality tools
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
+      - name: Install quality tools
+        run: |
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - name: Test internal/app shard
+        working-directory: glm-worker
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          listing="$(go test -list . ./internal/app)"
+          mapfile -t tests < <(printf '%s\n' "$listing" | grep -E '^(Test|Example|Fuzz)[[:alnum:]_]+$')
+          if (( ${#tests[@]} == 0 )); then
+            echo 'No internal/app tests were discovered' >&2
+            exit 1
+          fi
+          selected=()
+          for i in "${!tests[@]}"; do
+            if (( i % SHARDS == SHARD )); then
+              selected+=("${tests[$i]}")
+            fi
+          done
+          if (( ${#selected[@]} == 0 )); then
+            echo "Shard $SHARD has no tests" >&2
+            exit 1
+          fi
+          printf 'Discovered %s tests; shard %s/%s runs %s:\n' "${#tests[@]}" "$SHARD" "$SHARDS" "${#selected[@]}"
+          printf '  %s\n' "${selected[@]}"
+          pattern="$(printf '%s|' "${selected[@]}")"
+          pattern="${pattern%|}"
+          /usr/bin/time -p go test -count=1 -timeout=10m -run "^(${pattern})$" ./internal/app
