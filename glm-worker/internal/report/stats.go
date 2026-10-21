@@ -7,7 +7,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
@@ -120,12 +119,7 @@ type statsHistoryOutput struct {
 	Telemetry state.TelemetryHistoryScan `json:"telemetry"`
 }
 
-type CompactSummaryFunc func(cfg config.AppConfig, st *state.StateStore, query Query, stdout io.Writer) error
-
-func PrintStats(cfg config.AppConfig, st *state.StateStore, query Query, compact CompactSummaryFunc, stdout io.Writer) error {
-	if query.Compact {
-		return compact(cfg, st, query, stdout)
-	}
+func PrintStats(st *state.StateStore, query Query, stdout io.Writer) error {
 	if query.IsHistory() {
 		return printStatsHistory(st, query, stdout)
 	}

@@ -1,4 +1,4 @@
-package app
+package bundleanalysis
 
 import (
 	"errors"
@@ -160,7 +160,7 @@ const reviewGapBasisFixDeclaration = "fix-declaration"
 
 const reviewGapWorkerExplicitFixPhase = state.WorkerPhaseCategoryExplicitFix
 
-func printReviewGap(cfg config.AppConfig, st *state.StateStore, requestedTaskID string, stdout io.Writer) error {
+func PrintReviewGap(cfg config.AppConfig, st *state.StateStore, requestedTaskID string, stdout io.Writer) error {
 	tasks, scope, err := reviewGapTasks(st, requestedTaskID)
 	if err != nil {
 		return err

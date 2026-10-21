@@ -3,8 +3,8 @@ package controller
 import "fmt"
 
 func (s *Store) applyAdvancementSuspension(op ExecutionOperation) error {
-	if retiredMetadataAdvancement(op) {
-		return s.validateRetiredMetadataAdvancement(op)
+	if retiredBaseAdvancement(op) {
+		return s.validateRetiredAdvancement(op)
 	}
 	if op.Suspension == nil {
 		return s.preflightSuspendedRebind(op.Publication.NewTip)
@@ -29,7 +29,7 @@ func (s *Store) applyAdvancementSuspension(op ExecutionOperation) error {
 }
 
 func (s *Store) commitAdvancementExecution(next *RepositoryControllerHead, op ExecutionOperation) error {
-	if retiredMetadataAdvancement(op) {
+	if retiredBaseAdvancement(op) {
 		task := op.Transition.TargetRootTaskRef
 		next.RootTaskRef = &task
 		return nil

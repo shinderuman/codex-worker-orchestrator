@@ -11,6 +11,7 @@ import (
 type controllerPublicationCommand struct {
 	Action                  string                            `json:"action"`
 	ExpectedGeneration      uint64                            `json:"expected_generation"`
+	SourceOID               string                            `json:"source_oid,omitempty"`
 	CandidateID             string                            `json:"candidate_id,omitempty"`
 	TransitionID            string                            `json:"transition_id,omitempty"`
 	Policy                  controller.PublicationPolicy      `json:"policy"`
@@ -59,6 +60,8 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 		return store.RevalidateAcceptedCandidate(input, command.Evidence)
 	case "reenter":
 		return store.ReenterAcceptedCandidate(input)
+	case "adopt-source":
+		return store.AdoptRetiredExternalSource(controller.RetiredSourceAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy, SourceOID: command.SourceOID})
 	case "adopt":
 		return store.AdoptExternalAdvancement(controller.ExternalAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy})
 	default:

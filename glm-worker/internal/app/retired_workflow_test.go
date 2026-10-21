@@ -41,39 +41,30 @@ func prepareCompletionQualityCorpus(t *testing.T, root string) {
 		t.Fatal("quality fixture source is unavailable")
 	}
 	repository := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", ".."))
-	paths, err := exec.Command("git", "-C", repository, "ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
-	if err != nil {
-		t.Fatal(err)
+	paths := []string{
+		".golangci.yml", "quality-tools.yml", "install.sh", "harnesslint",
+		".githooks/post-merge", ".githooks/pre-push", ".githooks/reference-transaction", "install-quality-tools.sh",
+		".github/workflows/ci.yml", ".github/workflows/install-smoke.yml",
+		"tests/install_quality_tools_smoke.sh",
+		"glm-worker/internal/workflow/quality_gate.go",
+		"glm-worker/internal/workflow/workflow.go",
+		"glm-worker/internal/workflow/quality_mutation.go",
+		"glm-worker/internal/workflow/review_flow.go",
 	}
-	for _, name := range bytes.Split(paths, []byte{0}) {
-		path := string(name)
-		if path == "" || (strings.HasPrefix(path, "IMPLEMENTATION_") && path != "IMPLEMENTATION_RULES.md") {
-			continue
-		}
-		target := filepath.Join(root, path)
-		if _, err := os.Lstat(target); err == nil {
-			if !strings.HasPrefix(path, "glm-worker/") && path != "IMPLEMENTATION_RULES.md" {
-				continue
-			}
-		} else if !os.IsNotExist(err) {
-			t.Fatal(err)
-		}
+	for _, path := range paths {
 		data, err := os.ReadFile(filepath.Join(repository, path))
-		if os.IsNotExist(err) {
-			continue
-		}
 		if err != nil {
 			t.Fatal(err)
 		}
-		info, err := os.Stat(filepath.Join(repository, path))
-		if err != nil {
-			t.Fatal(err)
+		if strings.HasSuffix(path, ".go") {
+			data = append([]byte("//go:build ignore\n\n"), data...)
 		}
 		writeAppTestFile(t, root, path, string(data))
-		if err := os.Chmod(target, info.Mode().Perm()); err != nil {
-			t.Fatal(err)
-		}
 	}
+	writeAppTestFile(t, root, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n\ngo 1.22\n")
+	writeAppTestFile(t, root, "glm-worker/cmd/fixture/main.go", "package main\n\nimport \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/fixture\"\n\nfunc main() { fixture.Run() }\n")
+	writeAppTestFile(t, root, "glm-worker/internal/fixture/fixture.go", "package fixture\n\nfunc Run() {}\n")
+	prepareWorkflowQualityProcesses(t, root)
 	if err := harnesslint.PreflightQualityTools(root); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +140,7 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != "start" || adopted.Head.LiveLeaseID != "" {
 		t.Fatalf("synchronized successor handoff: %#v", handoff)
 	}
+	assertRetiredExternalPullSynchronization(t, cfg, store, policy)
 	var out bytes.Buffer
 	if err := Execute(Command{Mode: ModeHandoff}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)

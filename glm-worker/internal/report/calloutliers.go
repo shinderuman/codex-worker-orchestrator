@@ -4,7 +4,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -26,10 +25,7 @@ type callOutliersHistoryOutput struct {
 	Reports   []callOutliersHistoryReport `json:"reports"`
 }
 
-func PrintCallOutliers(cfg config.AppConfig, st *state.StateStore, query Query, compact CompactSummaryFunc, stdout io.Writer) error {
-	if query.Compact {
-		return compact(cfg, st, query, stdout)
-	}
+func PrintCallOutliers(st *state.StateStore, query Query, stdout io.Writer) error {
 	if query.IsHistory() {
 		return printCallOutliersHistory(st, query, stdout)
 	}

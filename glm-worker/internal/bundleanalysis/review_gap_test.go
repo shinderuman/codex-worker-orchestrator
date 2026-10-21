@@ -1,4 +1,4 @@
-package app
+package bundleanalysis
 
 import (
 	"bytes"
@@ -58,7 +58,7 @@ func reviewGapParentEvent(taskID string, at time.Time, phase, outcome, origin, c
 func runReviewGap(t *testing.T, cfg config.AppConfig, taskID string) reviewGapReport {
 	t.Helper()
 	var stdout bytes.Buffer
-	if err := Execute(Command{Mode: ModeReviewGap, Payload: taskID}, cfg, nil, &stdout, nil); err != nil {
+	if err := PrintReviewGap(cfg, state.AttachStateStore(cfg), taskID, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Count(stdout.Bytes(), []byte("\n{")) != 0 {
@@ -338,7 +338,7 @@ func TestReviewGapCounterResetNotSummed(t *testing.T) {
 func TestReviewGapMissingTaskFailsClosed(t *testing.T) {
 	t.Parallel()
 	cfg, st, _ := newCodexBundleTestState(t)
-	err := printReviewGap(cfg, st, "missing-task", &bytes.Buffer{})
+	err := PrintReviewGap(cfg, st, "missing-task", &bytes.Buffer{})
 	var notFound *machinecli.NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Fatalf("missing task error = %#v", err)

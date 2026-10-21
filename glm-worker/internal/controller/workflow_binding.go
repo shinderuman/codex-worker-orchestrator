@@ -214,11 +214,9 @@ func (store *Store) retiredWorkflowAuthority(cfg config.AppConfig, head Reposito
 	if err != nil {
 		return SemanticTaskRef{}, true, err
 	}
-	if authority.Task.TaskPath != head.RootTaskRef.TaskPath {
-		return SemanticTaskRef{}, true, fmt.Errorf("retired metadata advancement changes selected Task authority")
-	}
-	if err := validateParentMetadataHistory(cfg.RepoRoot, head.IntegrationTip, authority.Snapshot.HeadOID); err != nil {
-		return SemanticTaskRef{}, true, err
+	descendant, err := isPublicationDescendant(cfg.RepoRoot, head.IntegrationTip, authority.Snapshot.HeadOID)
+	if err != nil || !descendant {
+		return SemanticTaskRef{}, true, fmt.Errorf("retired read authority is outside integration history: %w", err)
 	}
 	return authority.Task, true, nil
 }

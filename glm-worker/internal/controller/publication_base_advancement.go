@@ -77,7 +77,7 @@ func (s *Store) validateBaseAdvancement(op ExecutionOperation) error {
 	if err := validateBaseAdvancementAuthority(op.Publication, op); err != nil {
 		return err
 	}
-	if retiredMetadataAdvancement(op) {
+	if retiredBaseAdvancement(op) {
 		if err := s.validateRetiredBaseAdvancement(op); err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func (s *Store) validateRetiredBaseAdvancement(op ExecutionOperation) error {
 	if _, err := s.retiredProjectAuthority(op.Source.Head); err != nil {
 		return err
 	}
-	return s.validateRetiredMetadataAdvancement(op)
+	return s.validateRetiredAdvancement(op)
 }
 
 func (s *Store) applyBaseAdvancement(op ExecutionOperation) error {
@@ -118,6 +118,9 @@ func (s *Store) applyBaseAdvancement(op ExecutionOperation) error {
 		if err := s.abortRacedBaseAdvancement(op, remote); err != nil {
 			return err
 		}
+	}
+	if err := s.validateRetiredAdvancementBoundary(op); err != nil {
+		return err
 	}
 	if err := s.applyAdvancementSuspension(op); err != nil {
 		return err
@@ -191,7 +194,7 @@ func (s *Store) baseAdvancementEvidence(op ExecutionOperation) (EvidencePublicat
 	if err != nil {
 		return EvidencePublicationInput{}, err
 	}
-	if retiredMetadataAdvancement(op) {
+	if retiredBaseAdvancement(op) {
 		record, err := s.LoadTerminalTaskRecord(*op.Source.Head.MetadataLineageRef)
 		if err != nil {
 			return EvidencePublicationInput{}, err

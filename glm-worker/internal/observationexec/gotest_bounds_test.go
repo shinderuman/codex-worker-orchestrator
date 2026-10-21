@@ -3,6 +3,7 @@ package observationexec
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,7 +57,30 @@ func TestDurableBoundedLogMarksTruncationWithinLimit(t *testing.T) {
 }
 
 func TestIsolatedGoTestEnvDoesNotInheritHostHome(t *testing.T) {
-	t.Setenv("HOME", filepath.Join(t.TempDir(), "host-home"))
+	hostHome := filepath.Join(t.TempDir(), "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(hostHome, "config"))
+	t.Setenv("APPDATA", filepath.Join(hostHome, "config"))
+	configHome, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(hostHome, configHome)
+	if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		t.Fatalf("telemetry fixture escapes fake HOME: %q %v", configHome, err)
+	}
+	mode := filepath.Join(configHome, "go", "telemetry", "mode")
+	if err := os.MkdirAll(filepath.Dir(mode), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mode, []byte("off"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "env", "GOTELEMETRY")
+	command.Env = append(os.Environ(), "GOENV=off")
+	if data, err := command.Output(); err != nil || strings.TrimSpace(string(data)) != "off" {
+		t.Fatalf("real Go telemetry mode: %q %v", data, err)
+	}
 	tempRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tempRoot, "home"), 0o700); err != nil {
 		t.Fatal(err)

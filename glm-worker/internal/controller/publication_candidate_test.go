@@ -149,11 +149,7 @@ func publicationTestEdit(t *testing.T, fixture findingAcceptanceFixture, path, d
 
 func publicationTestEvidence(t *testing.T, store *Store, source Admission, policy PublicationPolicy) []EvidenceObjectRef {
 	t.Helper()
-	tree, err := store.PreviewCandidateTree(source, policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return storePublicationTestEvidence(t, store, AcceptedCandidate{AttemptID: source.Attempt.AttemptID, SnapshotID: source.Snapshot.ID, BaseOID: source.Head.IntegrationTip, TreeOID: tree})
+	return storePublicationTestEvidence(t, store, publicationTestCandidateView(t, store, source, policy))
 }
 
 func storePublicationTestEvidence(t *testing.T, store *Store, c AcceptedCandidate) []EvidenceObjectRef {

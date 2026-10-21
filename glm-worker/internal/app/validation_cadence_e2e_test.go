@@ -319,3 +319,68 @@ func cadenceFailedFinalFix(t *testing.T, binary string, cfg config.AppConfig, po
 	}
 	return next, nextGeneration
 }
+
+func TestCanonicalCadenceCompletedRuntimeAdmitsExternalPullSyncAndSuccessor(t *testing.T) {
+	binary, err := buildMultiRepoWorkerBinary(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, rootTask, policy, log, _ := cadenceWorkflowFixture(t, binary)
+	r := &cadenceWorkflowRunner{canonicalWorkflowRunner: canonicalWorkflowRunner{complete: true, t: t, task: rootTask, path: "cadence-result.txt"}}
+	evidence := cadenceExecute(t, cfg, ModeNewTask, r)
+	cfg = r.cfg
+	taskID := state.AttachStateStore(cfg).ReadOr("task.id", "")
+	if taskID == "" {
+		t.Fatal("cadence runtime did not record a task")
+	}
+	review := cadenceParentAcceptance(t, cfg, r)
+	candidate, generation := cadenceAcceptCandidate(t, cfg, policy, evidence, review)
+	cadenceFinalPublication(t, cfg, policy, candidate, generation, log, taskID, 1)
+
+	sourceTip := pullExternalSourceChange(t, cfg, policy, map[string]string{"external-code.txt": "external code update\n"}, nil)
+	handoff := executeParentHandoff(t, cfg)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("completed cadence runtime external pull handoff: %#v", handoff)
+	}
+	var sourceCommand controllerPublicationCommand
+	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &sourceCommand); err != nil {
+		t.Fatal(err)
+	}
+	if sourceCommand.Action != "adopt-source" || sourceCommand.SourceOID != sourceTip {
+		t.Fatalf("external source command: %#v", sourceCommand)
+	}
+	executeStagedParentAction(t, cfg, handoff.RequiredActionParameters["controller_command_json"])
+
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := store.LoadHead()
+	if err != nil || head.RootTaskRef == nil {
+		t.Fatalf("completed controller lacks a selected successor: %v", err)
+	}
+	pullExternalSourceChange(t, cfg, policy, nil, &[2]string{head.RootTaskRef.TaskPath, "IMPLEMENTATION_TASKS/alternate-successor.md"})
+	switchHandoff := executeParentHandoff(t, cfg)
+	if !switchHandoff.Consistent || switchHandoff.RequiredAction == nil || *switchHandoff.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("completed cadence runtime successor switch handoff: %v %#v", switchHandoff.Inconsistency, switchHandoff)
+	}
+	var switchCommand controllerPublicationCommand
+	if err := json.Unmarshal([]byte(switchHandoff.RequiredActionParameters["controller_command_json"]), &switchCommand); err != nil {
+		t.Fatal(err)
+	}
+	if switchCommand.Action != "adopt" {
+		t.Fatalf("metadata-only switch command: %#v", switchCommand)
+	}
+	executeStagedParentAction(t, cfg, switchHandoff.RequiredActionParameters["controller_command_json"])
+
+	final := executeParentHandoff(t, cfg)
+	if !final.Consistent || final.RequiredAction == nil || *final.RequiredAction != "start" {
+		t.Fatalf("synchronized successor handoff: %#v", final)
+	}
+	successor := &cadenceWorkflowRunner{canonicalWorkflowRunner: canonicalWorkflowRunner{complete: true, t: t, task: "IMPLEMENTATION_TASKS/alternate-successor.md", path: "successor-result.txt"}}
+	cadenceExecute(t, cfg, ModeNewTask, successor)
+	successorState := state.AttachStateStore(successor.cfg)
+	if successor.workerCalls != 1 || successor.reviewerCalls != 1 || successorState.TaskStatus() != state.TaskStatusWaitingSolReview || successorState.ReadOr("task.id", "") == taskID {
+		t.Fatal("normal successor start did not create and review a fresh task")
+	}
+}

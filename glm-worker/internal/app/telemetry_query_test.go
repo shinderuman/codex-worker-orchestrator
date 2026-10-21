@@ -130,10 +130,10 @@ func TestStatsExplicitCurrentScopeMatchesDefaultOutput(t *testing.T) {
 	st.RecordModelCall(state.WorkerRole, "opus")
 
 	var defaultOut, explicitOut bytes.Buffer
-	if err := report.PrintStats(cfg, st, report.Query{}, nil, &defaultOut); err != nil {
+	if err := report.PrintStats(st, report.Query{}, &defaultOut); err != nil {
 		t.Fatal(err)
 	}
-	if err := report.PrintStats(cfg, st, report.Query{Scope: state.TelemetryScopeCurrent}, nil, &explicitOut); err != nil {
+	if err := report.PrintStats(st, report.Query{Scope: state.TelemetryScopeCurrent}, &explicitOut); err != nil {
 		t.Fatal(err)
 	}
 	if defaultOut.String() != explicitOut.String() {

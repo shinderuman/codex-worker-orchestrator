@@ -147,7 +147,7 @@ func TestRetiredMetadataAdvancementRejectsNonMetadataHistoryBeforeTransition(t *
 			}
 			if mode != "policy" {
 				runControllerGit(t, repo, "push", "origin", policy.LocalRef+":"+policy.RemoteRef)
-				if _, _, err := WorkflowAuthorityTask(fixture.store.config); err == nil {
+				if _, _, err := WorkflowAuthorityTask(fixture.store.config); err == nil && mode != "source" && mode != "reverted-source" {
 					t.Fatal("invalid advancement supplied bootstrap authority")
 				}
 			}

@@ -114,7 +114,7 @@ func newParentReviewOpportunity(t *testing.T) (config.AppConfig, *state.StateSto
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
+	if err := st.SetParentCodexIdentity(appTestParentThreadID, appTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	return cfg, st
@@ -280,7 +280,7 @@ func TestExecuteParentReviewStatsExposeRework(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStats}, cfg, nil, &statsOut, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	if output.ParentOutcomes[state.ParentOutcomeAccepted] != 1 || output.ParentOutcomes[state.ParentOutcomeFix] != 1 {
 		t.Fatalf("parent_outcomes = %#v: %q", output.ParentOutcomes, statsOut.String())
 	}
@@ -389,7 +389,7 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 		t.Fatalf("awaiting中の新task開始がfail closedしませんでした: %v prompts=%d", err, len(awaiting.prompts))
 	}
 
-	if _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {
+	if _, err := completeParentWithPendingRotation(st, appTestParentThreadID); err != nil {
 		t.Fatal(err)
 	}
 	if got := st.TaskStatus(); got != state.TaskStatusComplete {

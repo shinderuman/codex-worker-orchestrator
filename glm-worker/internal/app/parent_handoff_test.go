@@ -492,7 +492,7 @@ func seedSessionRotationAcceptConfig(t *testing.T, cfg config.AppConfig) (config
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
+	if err := st.SetParentCodexIdentity(appTestParentThreadID, appTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	var accept acceptOutput
@@ -506,10 +506,10 @@ func seedSessionRotationAcceptConfig(t *testing.T, cfg config.AppConfig) (config
 	if !accept.Accepted {
 		t.Fatal("open reviewをacceptできませんでした")
 	}
-	if _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {
+	if _, err := completeParentWithPendingRotation(st, appTestParentThreadID); err != nil {
 		t.Fatal(err)
 	}
-	return cfg, st, codexTestParentThreadID
+	return cfg, st, appTestParentThreadID
 }
 
 func completeParentWithPendingRotation(st *state.StateStore, parentThreadID string) (bool, error) {

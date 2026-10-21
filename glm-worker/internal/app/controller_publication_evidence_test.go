@@ -12,7 +12,6 @@ import (
 )
 
 func TestControllerPublicationStoresEvidenceJSONThroughMachineCLI(t *testing.T) {
-	t.Parallel()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, true)
 	tree, err := store.PreviewCandidateTree(admission, policy)
 	if err != nil {

@@ -33,7 +33,7 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	archive, _, err := s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "terminal:"+record.TransitionID, []string{commit})
+	archive, _, err := s.captureGitObjectArchiveReusing(s.identity.PrimaryRoot, "terminal:"+record.TransitionID, &c.GitArchive, []string{commit})
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}

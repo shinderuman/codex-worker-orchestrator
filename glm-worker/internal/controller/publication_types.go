@@ -112,14 +112,15 @@ type PublicationObservation struct {
 }
 
 const (
-	publicationAccept     = "ACCEPT_EXECUTION_ATTEMPT"
-	publicationPromote    = "PROMOTE_UNOBSERVED_CANDIDATE"
-	publicationPublish    = "PUBLISH_ACCEPTED_TASK"
-	publicationRebind     = "REBIND_UNPUBLISHED_CANDIDATE"
-	publicationAdopt      = "ADOPT_EXTERNAL_ADVANCEMENT"
-	publicationReenter    = "REENTER_ACCEPTED_CANDIDATE"
-	publicationRevalidate = "REVALIDATE_CANDIDATE"
-	candidatePrepared     = "prepared"
-	candidatePromoted     = "locally-promoted-unobserved"
-	candidateObserved     = "remotely-observed"
+	publicationAccept      = "ACCEPT_EXECUTION_ATTEMPT"
+	publicationPromote     = "PROMOTE_UNOBSERVED_CANDIDATE"
+	publicationPublish     = "PUBLISH_ACCEPTED_TASK"
+	publicationRebind      = "REBIND_UNPUBLISHED_CANDIDATE"
+	publicationAdopt       = "ADOPT_EXTERNAL_ADVANCEMENT"
+	publicationAdoptSource = "ADOPT_RETIRED_EXTERNAL_SOURCE"
+	publicationReenter     = "REENTER_ACCEPTED_CANDIDATE"
+	publicationRevalidate  = "REVALIDATE_CANDIDATE"
+	candidatePrepared      = "prepared"
+	candidatePromoted      = "locally-promoted-unobserved"
+	candidateObserved      = "remotely-observed"
 )

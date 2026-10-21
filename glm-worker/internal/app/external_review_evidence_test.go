@@ -6,54 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-func TestParentUsageRejectsEveryChainMemberWithoutUsableCounterAnchor(t *testing.T) {
-	t.Parallel()
-	for _, position := range []string{"first", "last"} {
-		for _, shape := range []string{"no-token-event", "missing-total"} {
-			t.Run(position+"/"+shape, func(t *testing.T) {
-				task := newAnalysisTerminalTask(t)
-				firstRel := analysisRolloutRel()
-				lastRel := "archived_sessions/rollout-last-" + codexTestParentThreadID + ".jsonl"
-				firstAt := task.start.Add(-time.Minute)
-				lastAt := task.start.Add(10 * time.Minute)
-				lines := func(at time.Time, missing bool) []string {
-					if !missing {
-						return []string{chainTokenCountLine(t, at, 100, 50, 10, 5, 110, 110)}
-					}
-					if shape == "missing-total" {
-						return []string{`{"timestamp":"` + at.Format(time.RFC3339Nano) + `","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":110}}}}`}
-					}
-					return []string{parentUsageToolCallLine(t, at, "without-counter")}
-				}
-				writeChainRollout(t, task.codexHome, firstRel, codexTestParentThreadID, firstAt.Add(-time.Minute), "/repo", "Codex Desktop", lines(firstAt, position == "first"))
-				writeChainRollout(t, task.codexHome, lastRel, codexTestParentThreadID, lastAt.Add(-time.Minute), "/repo", "Codex Desktop", lines(lastAt, position == "last"))
-				stats, err := task.st.AllTaskStats()
-				if err != nil {
-					t.Fatal(err)
-				}
-				var selected state.TaskStats
-				for _, record := range stats {
-					if record.TaskID == task.taskID {
-						selected = record
-					}
-				}
-				report := buildParentUsageReport(task.cfg, task.st, bundleTask{ID: task.taskID, Status: string(state.TaskStatusComplete), Stats: selected})
-				if report.ParentSession.Status != codexStatusAmbiguous || !strings.Contains(report.ParentSession.Detail, "no usable token counter anchor") {
-					t.Fatalf("parent session = %#v", report.ParentSession)
-				}
-				if report.Intervals.TaskExecution.Tokens.Status != codexStatusAmbiguous {
-					t.Fatalf("missing counter produced token totals: %#v", report.Intervals.TaskExecution.Tokens)
-				}
-			})
-		}
-	}
-}
 
 func TestParentEvidenceLedgerLockFailureDoesNotReleaseBody(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)

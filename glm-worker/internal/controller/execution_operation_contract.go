@@ -81,10 +81,11 @@ var executionOperationContractTable = map[string]executionOperationContractFacto
 	publicationPublish: func(s *Store) executionOperationContract {
 		return executionOperationContract{effects: executionOperationEffectsOneOrMore, validate: s.validateTerminalMetadataOperation, apply: s.applyCandidateCompletion, verifyCommitted: s.verifyCommittedCompletion, projectResult: projectTerminalExecutionResult}
 	},
-	publicationRebind:     publicationExecutionOperationContract,
-	publicationAdopt:      publicationExecutionOperationContract,
-	publicationRevalidate: publicationExecutionOperationContract,
-	publicationReenter:    publicationExecutionOperationContract,
+	publicationRebind:      publicationExecutionOperationContract,
+	publicationAdopt:       publicationExecutionOperationContract,
+	publicationAdoptSource: publicationExecutionOperationContract,
+	publicationRevalidate:  publicationExecutionOperationContract,
+	publicationReenter:     publicationExecutionOperationContract,
 }
 
 func (s *Store) executionOperationContract(kind string) (executionOperationContract, error) {

@@ -38,6 +38,11 @@ type fakeRunner struct {
 	probes    []string
 }
 
+const (
+	appTestParentThreadID  = "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	appTestParentSessionID = "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+)
+
 func (r *fakeRunner) Run(
 	_ state.SessionRole,
 	_ string,
@@ -257,7 +262,7 @@ func TestPrintStatsAggregatesAndSortsModelAliases(t *testing.T) {
 		TopLevelTurns: 2,
 	})
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	if len(output.ModelCallsByAlias) != 3 || output.ModelCallsByAlias["haiku"] != 1 || output.ModelCallsByAlias["opus"] != 1 || output.ModelCallsByAlias["sonnet"] != 1 {
 		t.Fatalf("model別stats = %#v", output.ModelCallsByAlias)
 	}
@@ -337,13 +342,13 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	if _, err := os.Stat(st.LockPath()); err != nil {
 		t.Fatal("lockファイルが作成されていません")
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
+	if err := st.SetParentCodexIdentity(appTestParentThreadID, appTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if accept := executeAccept(t, cfg); !accept.Accepted {
 		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
 	}
-	if _, err := completeParentWithPendingRotation(st, codexTestParentThreadID); err != nil {
+	if _, err := completeParentWithPendingRotation(st, appTestParentThreadID); err != nil {
 		t.Fatal(err)
 	}
 	prepareNextRotatedTask(t, st)

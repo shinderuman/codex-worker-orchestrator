@@ -19,6 +19,7 @@ func TestExecutionOperationContractsCoverCurrentKinds(t *testing.T) {
 		{publicationPublish, executionOperationEffectsOneOrMore},
 		{publicationRebind, executionOperationEffectsOneOrMore},
 		{publicationAdopt, executionOperationEffectsOneOrMore},
+		{publicationAdoptSource, executionOperationEffectsOneOrMore},
 		{publicationRevalidate, executionOperationEffectsOneOrMore},
 		{publicationReenter, executionOperationEffectsOneOrMore},
 	}

@@ -364,24 +364,29 @@ func markInconsistent(projection *Projection, detail string) {
 func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan state.ParentActionPlan) (Request, bool, error) {
 	task, canonical, err := controller.WorkflowExecutionTask(cfg)
 	quiescent := canonical && err != nil
+	var head *controller.RepositoryControllerHead
 	if quiescent {
-		task, err = quiescentControllerTask(cfg, err)
+		task, head, err = quiescentControllerTask(cfg, err)
 	}
 	if err != nil || !canonical {
 		return Request{}, canonical, err
 	}
 	status := st.TaskStatus()
-	policy := repositoryproject.SelectedTaskParentRequestProjection(repositoryproject.SelectedTaskContinuationInput{
-		Task:                 task.TaskPath,
-		RequiredAction:       string(plan.RequiredAction),
-		StartRequired:        status == state.TaskStatusNone,
-		TemporaryBlockReason: temporaryBlockReason(status),
-		Interrupted:          status == state.TaskStatusInterrupted,
-	})
 	lifecycleTask, err := canonicalLifecycleTask(st, task, quiescent)
 	if err != nil {
 		return Request{}, true, err
 	}
+	handover, err := retiredRuntimeHandover(cfg, head, lifecycleTask, task.TaskPath)
+	if err != nil {
+		return Request{}, true, err
+	}
+	policy := repositoryproject.SelectedTaskParentRequestProjection(repositoryproject.SelectedTaskContinuationInput{
+		Task:                 task.TaskPath,
+		RequiredAction:       string(plan.RequiredAction),
+		StartRequired:        status == state.TaskStatusNone || handover,
+		TemporaryBlockReason: temporaryBlockReason(status),
+		Interrupted:          status == state.TaskStatusInterrupted,
+	})
 	attribution := repositoryproject.DeriveTaskAttribution(lifecycleTask, task.TaskPath, policy.Continuation)
 	if authorityTask, err := st.CurrentTaskAuthorityPath(); err == nil {
 		attribution = repositoryproject.BindTaskAuthority(attribution, authorityTask)
@@ -408,33 +413,55 @@ func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRe
 	return binding.TaskPath, nil
 }
 
-func quiescentControllerTask(cfg config.AppConfig, admissionError error) (controller.SemanticTaskRef, error) {
+func retiredRuntimeHandover(cfg config.AppConfig, head *controller.RepositoryControllerHead, lifecycleTask, selectedTask string) (bool, error) {
+	if head == nil || lifecycleTask == "" || selectedTask == "" || lifecycleTask == selectedTask || !retiredQuiescentHead(*head) {
+		return false, nil
+	}
 	store, err := controller.Open(cfg)
 	if err != nil {
-		return controller.SemanticTaskRef{}, err
+		return false, err
+	}
+	record, err := store.LoadTerminalTaskRecord(*head.MetadataLineageRef)
+	if err != nil {
+		return false, err
+	}
+	return record.TaskRef.TaskPath == lifecycleTask, nil
+}
+
+func retiredQuiescentHead(head controller.RepositoryControllerHead) bool {
+	return head.Status == controller.ControllerStatusActive && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
+		head.ExecutionTaskRef == nil && head.LiveAttemptID == "" && head.LiveLeaseID == "" &&
+		head.AcceptedCandidateRef == nil && head.PendingTransitionID == "" && head.ActiveEpisodeID == ""
+}
+
+func quiescentControllerTask(cfg config.AppConfig, admissionError error) (controller.SemanticTaskRef, *controller.RepositoryControllerHead, error) {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return controller.SemanticTaskRef{}, nil, err
 	}
 	head, err := store.LoadHead()
 	if err != nil {
-		return controller.SemanticTaskRef{}, err
+		return controller.SemanticTaskRef{}, nil, err
 	}
 	if head.PendingTransitionID != "" {
-		return store.PendingExecutionRecoveryTask(head)
+		task, err := store.PendingExecutionRecoveryTask(head)
+		return task, &head, err
 	}
 	if head.Status != controller.ControllerStatusActive || head.LiveLeaseID != "" {
-		return controller.SemanticTaskRef{}, admissionError
+		return controller.SemanticTaskRef{}, &head, admissionError
 	}
 	if head.ExecutionTaskRef == nil {
 		task, canonical, authorityErr := controller.WorkflowAuthorityTask(cfg)
 		if !canonical {
-			return controller.SemanticTaskRef{}, admissionError
+			return controller.SemanticTaskRef{}, &head, admissionError
 		}
 		if authorityErr == nil {
-			return task, nil
+			return task, &head, nil
 		}
 		if head.RootTaskRef == nil {
-			return controller.SemanticTaskRef{}, authorityErr
+			return controller.SemanticTaskRef{}, &head, authorityErr
 		}
-		return *head.RootTaskRef, nil
+		return *head.RootTaskRef, &head, nil
 	}
-	return *head.ExecutionTaskRef, nil
+	return *head.ExecutionTaskRef, &head, nil
 }
