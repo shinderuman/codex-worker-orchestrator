@@ -28,7 +28,7 @@ func (s *Store) validatePublicationOperation(op ExecutionOperation) error {
 }
 
 func isBaseAdvancementOperation(op ExecutionOperation) bool {
-	return op.Publication != nil && op.Publication.After == nil && op.Transition.Kind == publicationAdopt
+	return op.Publication != nil && op.Publication.After == nil && (op.Transition.Kind == publicationAdopt || op.Transition.Kind == publicationAdoptSource)
 }
 
 func (s *Store) validatePublicationPrimaryArchive(op ExecutionOperation, candidate AcceptedCandidate) error {

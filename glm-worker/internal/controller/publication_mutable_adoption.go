@@ -57,7 +57,7 @@ func (s *Store) planMutableAdvancement(admission Admission, policy PublicationPo
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
-	archive, _, err := s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "external:"+remote, []string{remote})
+	archive, err := s.mutableAdvancementArchive(admission, remote)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -67,6 +67,15 @@ func (s *Store) planMutableAdvancement(admission Admission, policy PublicationPo
 		return ExecutionOperation{}, err
 	}
 	return op, nil
+}
+
+func (s *Store) mutableAdvancementArchive(admission Admission, remote string) (EvidenceObjectRef, error) {
+	canonical, err := s.admissionCanonicalArchive(admission.Head)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	archive, _, err := s.captureGitObjectArchiveReusing(s.identity.PrimaryRoot, "external:"+remote, canonical, []string{remote})
+	return archive, err
 }
 
 func (s *Store) mutableAdvancementEvidence(op ExecutionOperation) (EvidencePublicationInput, *EvidenceObjectRef, error) {

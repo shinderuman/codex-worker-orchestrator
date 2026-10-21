@@ -78,7 +78,7 @@ func (s *Store) verifyRetiredMetadataLineage(head RepositoryControllerHead) erro
 func retiredLineageMatchesFinalizedTransition(op ExecutionOperation, evidence EvidenceHead, ledger EvidenceLedgerRecord, transition TransitionRecord, phase TransitionState, head RepositoryControllerHead) bool {
 	return evidence.ProjectSnapshotID == head.ProjectSnapshotID && ledger.ProjectSnapshotID == head.ProjectSnapshotID &&
 		reflect.DeepEqual(op.Transition, transition) && phase.Phase == TransitionPhaseFinalized && transition.TargetGeneration <= head.ControllerGeneration &&
-		retiredMetadataAdvancement(op) && op.Source.Head.ControllerGeneration < head.ControllerGeneration &&
+		retiredBaseAdvancement(op) && op.Source.Head.ControllerGeneration < head.ControllerGeneration &&
 		op.Publication.Project.SnapshotID == head.ProjectSnapshotID && op.Publication.NewTip == head.IntegrationTip &&
 		op.Transition.TargetRootTaskRef.Equal(*head.RootTaskRef) && evidenceRefsEqual(*op.Source.Head.MetadataLineageRef, *head.MetadataLineageRef)
 }
@@ -188,7 +188,7 @@ func validateParentMetadataCommit(repo, commit string) error {
 			continue
 		}
 		if !state.IsParentManagedPath(path) || !strings.HasSuffix(path, ".md") {
-			return fmt.Errorf("external advancement changes non-parent metadata: %s", path)
+			return &externalSourceChange{Path: path}
 		}
 		if err := validateParentMetadataEntry(repo, commit, path); err != nil {
 			return err
@@ -228,7 +228,7 @@ func (s *Store) validateRetiredMetadataAdvancement(op ExecutionOperation) error 
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(authority.Snapshot, *op.Publication.Project) || !authority.Task.Equal(op.Transition.TargetRootTaskRef) || authority.Task.TaskPath != head.RootTaskRef.TaskPath {
+	if !reflect.DeepEqual(authority.Snapshot, *op.Publication.Project) || !authority.Task.Equal(op.Transition.TargetRootTaskRef) {
 		return fmt.Errorf("retired metadata advancement changes selected Task authority")
 	}
 	return nil
@@ -236,6 +236,9 @@ func (s *Store) validateRetiredMetadataAdvancement(op ExecutionOperation) error 
 
 func (s *Store) planRetiredMetadataAdvancement(head RepositoryControllerHead, policy PublicationPolicy) (ExecutionOperationResult, error) {
 	if _, err := s.retiredProjectAuthority(head); err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if _, err := s.QuiescentRuntimeAdmission(head); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	if head.PublicationPolicy == nil || policy != *head.PublicationPolicy {
@@ -259,15 +262,15 @@ func (s *Store) planRetiredMetadataAdvancement(head RepositoryControllerHead, po
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	op, err := s.retiredAdvancementOperation(head, policy, authority, tip, remote)
+	op, err := s.retiredAdvancementOperation(head, policy, authority, tip, remote, publicationAdopt)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	return s.finalizeRetiredAdvancement(head, op, tip)
 }
 
-func (s *Store) retiredAdvancementOperation(head RepositoryControllerHead, policy PublicationPolicy, authority CommittedTaskAuthority, tip, remote string) (ExecutionOperation, error) {
-	record, err := executionTransition(head, publicationAdopt)
+func (s *Store) retiredAdvancementOperation(head RepositoryControllerHead, policy PublicationPolicy, authority CommittedTaskAuthority, tip, remote, kind string) (ExecutionOperation, error) {
+	record, err := executionTransition(head, kind)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -278,25 +281,65 @@ func (s *Store) retiredAdvancementOperation(head RepositoryControllerHead, polic
 		record.Effects = append(record.Effects, EffectExpectation{Surface: MutationSurfaceHistory, Resource: policy.Remote + ":" + policy.RemoteRef, ExpectedOld: remote, ExpectedNew: tip})
 	}
 	op := ExecutionOperation{Transition: record, Source: Admission{Head: head}, Publication: &PublicationOperation{Policy: policy, OldTip: head.IntegrationTip, NewTip: tip, RemoteOID: remote, Project: &authority.Snapshot}}
-	if err := s.validateRetiredMetadataAdvancement(op); err != nil {
+	if err := s.validateRetiredAdvancement(op); err != nil {
 		return ExecutionOperation{}, err
 	}
 	return op, nil
 }
 
-func (s *Store) finalizeRetiredAdvancement(head RepositoryControllerHead, op ExecutionOperation, tip string) (ExecutionOperationResult, error) {
-	archive, _, err := s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "external:"+tip, []string{tip})
+func (s *Store) sealRetiredAdvancementPlan(head RepositoryControllerHead, op *ExecutionOperation, tip string) error {
+	canonical, err := s.retiredCanonicalArchive(head)
 	if err != nil {
-		return ExecutionOperationResult{}, err
+		return err
+	}
+	archive, _, err := s.captureGitObjectArchiveReusing(s.identity.PrimaryRoot, "external:"+tip, canonical, []string{tip})
+	if err != nil {
+		return err
 	}
 	op.Publication.AdvancementRef = &archive
-	if err := s.planAdvancementLocalRef(&op, head); err != nil {
-		return ExecutionOperationResult{}, err
+	return s.planAdvancementLocalRef(op, head)
+}
+
+func (s *Store) retiredCanonicalArchive(head RepositoryControllerHead) (*EvidenceObjectRef, error) {
+	if head.MetadataLineageRef == nil {
+		return nil, nil
 	}
+	record, err := s.LoadTerminalTaskRecord(*head.MetadataLineageRef)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := s.LoadAcceptedCandidate(record.CandidateRef)
+	if err != nil {
+		return nil, err
+	}
+	archive := candidate.GitArchive
+	return &archive, nil
+}
+
+func (s *Store) admissionCanonicalArchive(head RepositoryControllerHead) (*EvidenceObjectRef, error) {
+	if head.AcceptedCandidateRef == nil {
+		return nil, nil
+	}
+	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return nil, err
+	}
+	archive := candidate.GitArchive
+	return &archive, nil
+}
+
+func (s *Store) executeRetiredAdvancementPlan(head RepositoryControllerHead, op ExecutionOperation) (ExecutionOperationResult, error) {
 	if err := s.prepareExecutionOperation(&op, head); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	return s.recoverExecutionOperationLocked(op)
+}
+
+func (s *Store) finalizeRetiredAdvancement(head RepositoryControllerHead, op ExecutionOperation, tip string) (ExecutionOperationResult, error) {
+	if err := s.sealRetiredAdvancementPlan(head, &op, tip); err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	return s.executeRetiredAdvancementPlan(head, op)
 }
 
 func (s *Store) retiredAdvancementTip(head RepositoryControllerHead, policy PublicationPolicy, remote string) (string, error) {

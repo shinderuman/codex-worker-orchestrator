@@ -71,7 +71,7 @@ func TestPrintStatsKeepsHistoricalPacketCompactions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	if output.PacketCompactions != 2 {
 		t.Fatalf("旧archiveのpacket_compactions集計 = %d: %#v", output.PacketCompactions, output)
 	}
@@ -96,7 +96,7 @@ func TestPrintStatsTelemetryCoverageHistoricalGapAndCurrentTask(t *testing.T) {
 	recordCoverageTaskCall(st, current)
 	recordCoverageTaskCall(st, current)
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	if output.ModelCalls != 3 {
 		t.Fatalf("model_calls = %d", output.ModelCalls)
 	}
@@ -130,7 +130,7 @@ func TestPrintStatsTelemetryCoverageComplete(t *testing.T) {
 	st.RecordModelCall(state.WorkerRole, "opus")
 	recordCoverageTaskCall(st, current)
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	coverage := output.TelemetryCoverage
 	if coverage.Status != "complete" || coverage.StatsCalls != 1 || coverage.RawRecords != 1 || coverage.MissingCalls != 0 {
 		t.Fatalf("complete時のcoverage = %#v", coverage)
@@ -168,7 +168,7 @@ func TestPrintStatsTelemetryCoverageCurrentTaskShortageAndUnreadable(t *testing.
 		t.Fatal(err)
 	}
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	coverage := output.TelemetryCoverage
 	if coverage.Status != "unreadable" || coverage.MissingCalls != 1 {
 		t.Fatalf("coverage = %#v", coverage)
@@ -210,7 +210,7 @@ func TestPrintStatsTelemetryCoverageOrphanOnlyIsIncomplete(t *testing.T) {
 	orphanTask := "orphan0001-1111-4222-8333-444444444444"
 	recordCoverageTaskCall(st, orphanTask)
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	coverage := output.TelemetryCoverage
 	if coverage.Status != "incomplete" || coverage.StatsCalls != 1 || coverage.RawRecords != 1 || coverage.MissingCalls != 0 || coverage.ExcessRecords != 0 {
 		t.Fatalf("orphanのみ時のcoverage = %#v", coverage)
@@ -241,7 +241,7 @@ func TestPrintStatsTelemetryCoverageExcessOnlyTaskLineHasUsageUnknown(t *testing
 	recordCoverageTaskCall(st, current)
 	recordCoverageTaskCall(st, current)
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	coverage := output.TelemetryCoverage
 	if coverage.Status != "incomplete" || coverage.MissingCalls != 0 || coverage.ExcessRecords != 1 {
 		t.Fatalf("過剰のみ時のcoverage = %#v", coverage)

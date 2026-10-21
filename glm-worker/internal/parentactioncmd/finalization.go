@@ -284,11 +284,17 @@ func finalizationValidationDir(repoRoot, validationDir string) (string, error) {
 }
 
 func runFinalizationCheckWithWorker(worker, repoRoot, validationDir, form string, routing *finalizationRoutingSummary, stdout io.Writer) error {
-	validation, failure := collectFinalizationValidation(worker, validationDir, form)
-	if failure != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form, Routing: routing, Failure: failure})
+	var repositoryLint json.RawMessage
+	if routing == nil || routing.Basis != finalizationRoutingBasisCandidate {
+		var failure *finalizationFailure
+		repositoryLint, failure = collectFinalizationRepositoryLint(repoRoot)
+		if failure != nil {
+			return writeFinalizationOutput(stdout, finalizationCheckOutput{
+				Status: finalizationStatusBlocked, Form: form, Routing: routing, RepositoryLint: repositoryLint, Failure: failure,
+			})
+		}
 	}
-	repositoryLint, failure := collectFinalizationRepositoryLint(repoRoot)
+	validation, failure := collectFinalizationValidation(worker, validationDir, form)
 	if failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
 			Status: finalizationStatusBlocked, Form: form, Routing: routing, Validation: validation, RepositoryLint: repositoryLint, Failure: failure,

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/bundleanalysis"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -96,7 +97,10 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	case ModeHandoff:
 		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:
-		return report.PrintStatsWithArchiveScan(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
+		if cmd.Query.Compact {
+			return printTelemetryCompactSummary(cfg, st, cmd.Query, stdout)
+		}
+		return report.PrintStatsWithArchiveScan(st, cmd.Query, stdout)
 	case ModeCodexLimit:
 		return printCodexLimit(cfg, stdout)
 	case ModePacketCheck:
@@ -143,7 +147,10 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 		st.EnableRepoSearchReadProjection()
 		return report.PrintEvalAB(st, cmd.Payload, stdout)
 	case ModeCallOutliers:
-		return report.PrintCallOutliers(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
+		if cmd.Query.Compact {
+			return printTelemetryCompactSummary(cfg, st, cmd.Query, stdout)
+		}
+		return report.PrintCallOutliers(st, cmd.Query, stdout)
 	case ModeModelRouting:
 		return report.PrintModelRouting(st, stdout)
 	case ModeTestImpact:
@@ -151,7 +158,7 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 	case ModeRepoSearchEval:
 		return report.PrintRepoSearchEval(st, stdout)
 	case ModeReviewGap:
-		return printReviewGap(cfg, st, cmd.Payload, stdout)
+		return bundleanalysis.PrintReviewGap(cfg, st, cmd.Payload, stdout)
 	case ModeShadowEval, ModeFailurePathAdvisory:
 		return executeShadowObservation(cmd, cfg, st, stdout)
 	default:

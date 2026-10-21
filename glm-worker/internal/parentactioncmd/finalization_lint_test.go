@@ -49,12 +49,12 @@ esac
 	if result.Status != "blocked" || result.Failure == nil || result.Failure.Stage != "repository_lint" || result.Failure.Reason != "repository_lint_failed" {
 		t.Fatalf("result=%#v", result)
 	}
-	if len(result.Validation) == 0 || len(result.RepositoryLint) == 0 {
+	if len(result.Validation) != 0 || len(result.RepositoryLint) == 0 {
 		t.Fatalf("evidence=%#v", result)
 	}
 }
 
-func TestFinalizationCheckRunsRepositoryLintAtRepositoryRootBetweenValidationAndHandoff(t *testing.T) {
+func TestFinalizationCallerLintRejectsBeforeFullSuite(t *testing.T) {
 	repo := newFinalizationTestRepo(t)
 	moduleDir := filepath.Join(repo, "module")
 	if err := os.MkdirAll(moduleDir, 0o700); err != nil {
@@ -86,8 +86,8 @@ esac
 		if root != repo || fix {
 			t.Fatalf("lint root=%q fix=%v", root, fix)
 		}
-		if _, err := os.Stat(qualityMarker); err != nil {
-			t.Fatalf("lint ran before Go validation: %v", err)
+		if _, err := os.Stat(qualityMarker); err == nil {
+			t.Fatal("caller lint ran after the full suite")
 		}
 		lintCalled = true
 		return harnesslint.Report{Status: finalizationValidationStatusPass, Violations: []harnesslint.Violation{}}, nil
@@ -110,4 +110,30 @@ func setFinalizationRepositoryLint(t *testing.T, run func(string, bool) (harness
 	previous := runFinalizationRepositoryLint
 	runFinalizationRepositoryLint = run
 	t.Cleanup(func() { runFinalizationRepositoryLint = previous })
+}
+
+func TestFinalizationAcceptedCandidateUsesCompletionLintOwner(t *testing.T) {
+	repo := newFinalizationTestRepo(t)
+	worker := writeFinalizationWorker(t, `
+case "$1" in
+  --quality-gate) printf '%s\n' '{"status":"pass","validation_run_id":"run-candidate","form":"go-test"}';;
+  *) exit 9;;
+esac
+`)
+	setFinalizationRepositoryLint(t, func(string, bool) (harnesslint.Report, error) {
+		t.Fatal("accepted candidate reran repository lint before its exact-commit completion owner")
+		return harnesslint.Report{}, nil
+	})
+	var output bytes.Buffer
+	routing := &finalizationRoutingSummary{SelectedDir: repo, Basis: finalizationRoutingBasisCandidate}
+	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", routing, &output); err != nil {
+		t.Fatal(err)
+	}
+	var result finalizationCheckOutput
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "ready_for_parent_decision" || len(result.Validation) == 0 || len(result.RepositoryLint) != 0 {
+		t.Fatalf("candidate finalization lost validation or claimed a duplicate lint: %#v", result)
+	}
 }

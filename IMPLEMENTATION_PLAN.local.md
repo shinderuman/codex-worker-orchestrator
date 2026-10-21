@@ -12,6 +12,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+
 - [`IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`](IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md)
 - [`IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`](IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md)
 - [`IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md`](IMPLEMENTATION_TASKS/active-only-minimal-instruction-workflow.md)
@@ -30,7 +31,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`](IMPLEMENTATION_TASKS/repo-search-result-context-budget.md)
 - [`IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`](IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md)
-- [`IMPLEMENTATION_TASKS/controller-git-archive-cost-evaluation.md`](IMPLEMENTATION_TASKS/controller-git-archive-cost-evaluation.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`](IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)

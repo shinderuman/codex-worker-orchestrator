@@ -40,6 +40,93 @@ func (s *Store) CaptureGitObjectArchive(repoPath, logicalIdentity string, rootOI
 	return ref, append([]GitObjectArchiveRoot(nil), roots...), nil
 }
 
+func (s *Store) captureGitObjectArchiveReusing(repoPath, logicalIdentity string, canonical *EvidenceObjectRef, rootOIDs []string) (EvidenceObjectRef, []GitObjectArchiveRoot, error) {
+	if canonical == nil {
+		return s.CaptureGitObjectArchive(repoPath, logicalIdentity, rootOIDs)
+	}
+	roots, objectFormat, err := plannedGitObjectArchiveRoots(repoPath, rootOIDs)
+	if err != nil {
+		return EvidenceObjectRef{}, nil, err
+	}
+	envelope, err := s.loadGitObjectArchiveEnvelope(*canonical)
+	if err != nil {
+		return EvidenceObjectRef{}, nil, err
+	}
+	if envelope.ObjectFormat != objectFormat || !sameGitObjectArchiveRoots(envelope.Roots, roots) {
+		return s.CaptureGitObjectArchive(repoPath, logicalIdentity, rootOIDs)
+	}
+	if err := s.verifyGitObjectArchivePack(*canonical, envelope); err != nil {
+		return EvidenceObjectRef{}, nil, err
+	}
+	return *canonical, append([]GitObjectArchiveRoot(nil), roots...), nil
+}
+
+func (s *Store) verifyGitObjectArchivePack(ref EvidenceObjectRef, envelope gitObjectArchiveEnvelope) error {
+	if err := s.verifyGitObjectPackCached(envelope); err != nil {
+		return gitArchiveIntegrityError(ref, err.Error())
+	}
+	return nil
+}
+
+func (s *Store) loadGitObjectArchiveEnvelope(ref EvidenceObjectRef) (gitObjectArchiveEnvelope, error) {
+	if err := validateTypedEvidenceRef(ref, "git-object-archive"); err != nil {
+		return gitObjectArchiveEnvelope{}, err
+	}
+	if ref.MediaType != gitObjectArchiveMediaType {
+		return gitObjectArchiveEnvelope{}, gitArchiveIntegrityError(ref, "git object archive media type is unsupported")
+	}
+	data, err := s.LoadEvidenceObject(ref)
+	if err != nil {
+		return gitObjectArchiveEnvelope{}, err
+	}
+	var envelope gitObjectArchiveEnvelope
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return gitObjectArchiveEnvelope{}, gitArchiveIntegrityError(ref, "git object archive envelope is invalid")
+	}
+	if err := validateGitObjectArchiveEnvelope(ref, envelope); err != nil {
+		return gitObjectArchiveEnvelope{}, err
+	}
+	return envelope, nil
+}
+
+func plannedGitObjectArchiveRoots(repoPath string, rootOIDs []string) ([]GitObjectArchiveRoot, string, error) {
+	objectFormat, err := resolveGitObjectFormat(repoPath)
+	if err != nil {
+		return nil, "", err
+	}
+	roots := make([]GitObjectArchiveRoot, 0, len(rootOIDs))
+	seen := make(map[string]bool, len(rootOIDs))
+	for _, rawOID := range rootOIDs {
+		root, err := resolveGitObjectArchiveRoot(repoPath, rawOID)
+		if err != nil {
+			return nil, "", err
+		}
+		if seen[root.OID] {
+			continue
+		}
+		seen[root.OID] = true
+		roots = append(roots, root)
+	}
+	sort.Slice(roots, func(i, j int) bool { return roots[i].OID < roots[j].OID })
+	return roots, objectFormat, nil
+}
+
+func sameGitObjectArchiveRoots(left, right []GitObjectArchiveRoot) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	byOID := make(map[string]string, len(left))
+	for _, root := range left {
+		byOID[root.OID] = root.Type
+	}
+	for _, root := range right {
+		if byOID[root.OID] != root.Type {
+			return false
+		}
+	}
+	return true
+}
+
 func buildGitObjectArchiveEnvelope(repoPath string, rootOIDs []string) ([]byte, []GitObjectArchiveRoot, error) {
 	roots, objectIDs, objectFormat, err := collectGitObjectClosure(repoPath, rootOIDs)
 	if err != nil {
@@ -65,25 +152,12 @@ func buildGitObjectArchiveEnvelope(repoPath string, rootOIDs []string) ([]byte, 
 }
 
 func (s *Store) VerifyGitObjectArchive(ref EvidenceObjectRef) ([]GitObjectArchiveRoot, error) {
-	if err := validateTypedEvidenceRef(ref, "git-object-archive"); err != nil {
-		return nil, err
-	}
-	if ref.MediaType != gitObjectArchiveMediaType {
-		return nil, gitArchiveIntegrityError(ref, "git object archive media type is unsupported")
-	}
-	data, err := s.LoadEvidenceObject(ref)
+	envelope, err := s.loadGitObjectArchiveEnvelope(ref)
 	if err != nil {
 		return nil, err
 	}
-	var envelope gitObjectArchiveEnvelope
-	if err := json.Unmarshal(data, &envelope); err != nil {
-		return nil, gitArchiveIntegrityError(ref, "git object archive envelope is invalid")
-	}
-	if err := validateGitObjectArchiveEnvelope(ref, envelope); err != nil {
+	if err := s.verifyGitObjectArchivePack(ref, envelope); err != nil {
 		return nil, err
-	}
-	if err := s.verifyGitObjectPackCached(envelope); err != nil {
-		return nil, gitArchiveIntegrityError(ref, err.Error())
 	}
 	return append([]GitObjectArchiveRoot(nil), envelope.Roots...), nil
 }
@@ -279,8 +353,8 @@ func verifyGitObjectPack(envelope gitObjectArchiveEnvelope) error {
 	if _, err := runGitBinary("", nil, "init", "--bare", "--quiet", "--object-format="+envelope.ObjectFormat, repo); err != nil {
 		return err
 	}
-	if _, err := runGitBinaryWithGitDir(repo, envelope.Pack, "unpack-objects", "-r"); err != nil {
-		return fmt.Errorf("unpack git object archive: %w", err)
+	if _, err := runGitBinaryWithGitDir(repo, envelope.Pack, "index-pack", "--stdin"); err != nil {
+		return fmt.Errorf("index git object archive pack: %w", err)
 	}
 	for _, root := range envelope.Roots {
 		if _, err := runGitBinaryWithGitDir(repo, nil, "cat-file", "-e", root.OID); err != nil {

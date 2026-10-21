@@ -1,4 +1,4 @@
-package app
+package bundleanalysis
 
 func analysisTokenSegments(scan bundleRolloutScan, baseline, end analysisRolloutTokenAnchor) []analysisTokenSegment {
 	if baseline.File == end.File {

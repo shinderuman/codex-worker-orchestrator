@@ -24,6 +24,13 @@ func (e *PublicationAdvancementRequired) Error() string {
 	return fmt.Sprintf("publication transition %s was not applied; %s at controller generation %d for remote %s", e.TransitionID, e.Action, e.ControllerGeneration, e.RemoteOID)
 }
 
+func publicationAbortAction(op ExecutionOperation) string {
+	if op.Transition.Kind == publicationAdopt || op.Transition.Kind == publicationAdoptSource {
+		return "adopt-external-advancement"
+	}
+	return "rebind-unpublished-candidate"
+}
+
 func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryControllerHead, phase TransitionState) (ExecutionOperationResult, error) {
 	if head.PendingTransitionID == op.Transition.TransitionID && head.ControllerGeneration == op.Transition.PreparedGeneration {
 		head.ControllerGeneration = op.Transition.TargetGeneration
@@ -35,10 +42,7 @@ func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryCon
 	if head.ControllerGeneration != op.Transition.TargetGeneration || head.PendingTransitionID != "" {
 		return ExecutionOperationResult{}, fmt.Errorf("aborted publication no longer owns controller")
 	}
-	action := "rebind-unpublished-candidate"
-	if op.Transition.Kind == publicationAdopt {
-		action = "adopt-external-advancement"
-	}
+	action := publicationAbortAction(op)
 	if op.Terminal != nil && phase.Completion != nil && phase.Completion.AbortRemoteOID == op.Source.Head.IntegrationTip {
 		action = "reenter-accepted-candidate"
 	}

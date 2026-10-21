@@ -108,12 +108,13 @@ func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffO
 			output.RequiredAction = nil
 			return
 		}
-		if authority.ProjectSnapshotID != head.ProjectSnapshotID {
+		if authority.ProjectSnapshotID != head.ProjectSnapshotID || authority.Snapshot.HeadOID != head.IntegrationTip {
 			action = controllerPublicationSurface
 		}
 	}
 	output.RequiredAction = &action
 	output.AllowedActions = []string{action, "controller-evidence"}
+	applyRetiredSourceSyncHandoff(cfg, output, head)
 	if head.PendingTransitionID == "" && head.AcceptedCandidateRef != nil {
 		if action != controllerExecutionSurface {
 			output.AllowedActions = append(output.AllowedActions, controllerExecutionSurface)

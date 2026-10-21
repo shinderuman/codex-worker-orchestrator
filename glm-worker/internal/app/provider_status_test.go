@@ -9,14 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func executeStatsOutput(t *testing.T, cfg config.AppConfig, st *state.StateStore) report.StatsOutput {
+func executeStatsOutput(t *testing.T, st *state.StateStore) report.StatsOutput {
 	t.Helper()
 	var out bytes.Buffer
-	if err := report.PrintStats(cfg, st, report.Query{}, nil, &out); err != nil {
+	if err := report.PrintStats(st, report.Query{}, &out); err != nil {
 		t.Fatal(err)
 	}
 	var output report.StatsOutput
@@ -129,7 +128,7 @@ func TestPrintStatsAggregatesProviderUnavailable(t *testing.T) {
 	st.RecordProviderUnavailable("opus")
 	st.RecordProviderUnavailable("haiku")
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	if output.ProviderUnavailable != 3 {
 		t.Fatalf("provider_unavailable = %d", output.ProviderUnavailable)
 	}
@@ -158,7 +157,7 @@ func TestPrintStatsReportsDiagnosticAggregates(t *testing.T) {
 	st.RecordProbeOutcome("probe_success")
 	st.RecordTransientRetry()
 
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	if len(output.RiskFloorByCategory) != 2 || output.RiskFloorByCategory["self-protection"] != 1 || output.RiskFloorByCategory["worker-declared"] != 2 {
 		t.Fatalf("risk_floor_by_category = %#v", output.RiskFloorByCategory)
 	}
@@ -195,7 +194,7 @@ func TestPrintStatsReportsDiagnosticAggregatesEmpty(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	output := executeStatsOutput(t, cfg, st)
+	output := executeStatsOutput(t, st)
 	if len(output.RiskFloorByCategory) != 0 {
 		t.Fatalf("risk_floor_by_category = %#v", output.RiskFloorByCategory)
 	}

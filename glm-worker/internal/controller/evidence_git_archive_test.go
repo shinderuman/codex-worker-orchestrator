@@ -209,3 +209,41 @@ func controllerGitOutput(t *testing.T, dir string, args ...string) string {
 	}
 	return strings.TrimSpace(string(output))
 }
+
+func TestCaptureGitObjectArchiveReusesCanonicalEnvelopeForSameRoots(t *testing.T) {
+	t.Parallel()
+	source, _ := newControllerLinkedWorktree(t)
+	store := newEvidenceTestStore(t)
+	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
+	canonical, _, err := store.CaptureGitObjectArchive(source, "candidate:"+commit, []string{commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reused, _, err := store.captureGitObjectArchiveReusing(source, "remote:"+commit, &canonical, []string{commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Digest != canonical.Digest || reused.LogicalIdentity != canonical.LogicalIdentity {
+		t.Fatalf("same-roots capture minted a duplicate envelope: %#v", reused)
+	}
+	invalid := canonical
+	invalid.MediaType = "application/json"
+	if _, _, err := store.captureGitObjectArchiveReusing(source, "remote:"+commit, &invalid, []string{commit}); err == nil {
+		t.Fatal("reuse accepted an archive with an unsupported media type")
+	}
+	tree := controllerGitOutput(t, source, "rev-parse", "HEAD^{tree}")
+	fresh, _, err := store.captureGitObjectArchiveReusing(source, "external:"+tree, &canonical, []string{tree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Digest == canonical.Digest {
+		t.Fatal("different-roots capture reused an unrelated envelope")
+	}
+	uncached, _, err := store.captureGitObjectArchiveReusing(source, "external:"+commit, nil, []string{commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uncached.LogicalIdentity != "external:"+commit {
+		t.Fatalf("capture without a canonical reference did not mint its own envelope: %#v", uncached)
+	}
+}

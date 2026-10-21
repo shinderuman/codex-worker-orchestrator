@@ -1,4 +1,4 @@
-package app
+package bundleanalysis
 
 import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"

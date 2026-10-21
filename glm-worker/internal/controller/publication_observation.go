@@ -13,7 +13,8 @@ func (s *Store) storePublicationObservation(op ExecutionOperation, c AcceptedCan
 	if !contains {
 		return nil, fmt.Errorf("publication observation does not contain candidate")
 	}
-	archive, _, err := s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "remote:"+remote, []string{remote})
+	canonical := c.GitArchive
+	archive, _, err := s.captureGitObjectArchiveReusing(s.identity.PrimaryRoot, "remote:"+remote, &canonical, []string{remote})
 	if err != nil {
 		return nil, err
 	}
