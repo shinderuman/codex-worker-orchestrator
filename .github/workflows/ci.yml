@@ -26,8 +26,14 @@ jobs:
         include:
           - name: quality
             mode: quality
-          - name: test
+          - name: test-1
             mode: test
+            shard: 0
+          - name: test-2
+            mode: test
+            shard: 1
+          - name: app
+            mode: app
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
@@ -62,10 +68,28 @@ jobs:
       - name: Go build gate
         if: ${{ matrix.mode == 'quality' }}
         run: ./goquality build
-      - name: Go tests except internal/app
+      - name: Go tests except internal/app (half)
         if: ${{ matrix.mode == 'test' }}
         working-directory: glm-worker
-        run: go list ./... | grep -v '/internal/app$' | xargs go test
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          packages="$(go list ./... | grep -v '/internal/app$' | sort)"
+          count="$(printf '%s\n' "$packages" | wc -l)"
+          if (( count < 2 )); then
+            echo 'Expected at least two non-app packages' >&2
+            exit 1
+          fi
+          cut=$(( (count + 1) / 2 ))
+          printf 'Non-app packages: %s; half %s; cut at %s\n' "$count" "$SHARD" "$cut"
+          printf '%s\n' "$packages" | awk -v shard="$SHARD" -v cut="$cut" '
+            (shard == 0 && NR <= cut) || (shard == 1 && NR > cut) { print }
+          ' | tee /dev/stderr | xargs -r go test
+      - name: Go tests for internal/app
+        if: ${{ matrix.mode == 'app' }}
+        working-directory: glm-worker
+        run: /usr/bin/time -p go test -count=1 ./internal/app
 
   lint:
     if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
