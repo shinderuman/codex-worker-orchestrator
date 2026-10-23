@@ -30,6 +30,9 @@ type cadenceWorkflowRunner struct {
 }
 
 func (r *cadenceWorkflowRunner) Run(role state.SessionRole, phase, model string, readOnly bool, effort, prompt, resume string) (runner.RunResult, error) {
+	if err := state.AttachStateStore(r.cfg).CommitParentActionBegin(); err != nil {
+		return runner.RunResult{}, err
+	}
 	result, err := r.canonicalWorkflowRunner.Run(role, phase, model, readOnly, effort, prompt, resume)
 	if err != nil {
 		return result, err
@@ -114,7 +117,7 @@ func TestCanonicalValidationCadenceWithoutRuntimeRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"success", "final-failure", "observation-failure", "promoted-fix", "publication-interruption"} {
+	for _, scenario := range []string{"success", "final-failure", "observation-failure", "promoted-fix", "publication-interruption", "cleanup-reentry"} {
 		t.Run(scenario, func(t *testing.T) {
 			cfg, task, policy, log, failFlag := cadenceWorkflowFixture(t, binary)
 			r := &cadenceWorkflowRunner{canonicalWorkflowRunner: canonicalWorkflowRunner{complete: true, t: t, task: task, path: "cadence-result.txt"}}
@@ -141,6 +144,9 @@ func TestCanonicalValidationCadenceWithoutRuntimeRepair(t *testing.T) {
 			case "observation-failure", "promoted-fix":
 				candidate, generation = cadenceObservationFix(t, binary, cfg, policy, candidate, generation, r, failFlag, taskID, scenario)
 				expectedCalls = 2
+			case "cleanup-reentry":
+				candidate, generation = cadenceFixCandidate(t, binary, cfg, policy, candidate, generation, r, taskID, false)
+				candidate, generation = cadenceFixCandidate(t, binary, r.cfg, policy, candidate, generation, r, taskID, true)
 			}
 			cadenceFinalPublication(t, cfg, policy, candidate, generation, log, taskID, expectedCalls, scenario == "publication-interruption")
 			cadenceCleanup(t, binary, cfg, candidate)
@@ -343,15 +349,29 @@ func cadenceFailedFinalFix(t *testing.T, binary string, cfg config.AppConfig, po
 	if err := os.Remove(failFlag); err != nil {
 		t.Fatal(err)
 	}
-	return cadenceFixCandidate(t, binary, cfg, policy, candidate, generation, r, taskID)
+	return cadenceFixCandidate(t, binary, cfg, policy, candidate, generation, r, taskID, false)
 }
 
-func cadenceFixCandidate(t *testing.T, binary string, cfg config.AppConfig, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate, generation uint64, r *cadenceWorkflowRunner, taskID string) (controller.AcceptedCandidate, uint64) {
+func cadenceFixCandidate(t *testing.T, binary string, cfg config.AppConfig, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate, generation uint64, r *cadenceWorkflowRunner, taskID string, cleanup bool) (controller.AcceptedCandidate, uint64) {
 	t.Helper()
+	previousCalls := r.workerCalls
 	reentered := cadencePublication(t, cfg, controllerPublicationCommand{Action: "reenter", ExpectedGeneration: generation, CandidateID: candidate.CandidateID}).(controller.ExecutionOperationResult)
+	if cleanup {
+		store, err := controller.Open(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reentered = cadenceCleanupBeforeReentry(t, binary, cfg, candidate, reentered)
+		cfg.RepoRoot = store.Identity().PrimaryRoot
+	}
 	materialized := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if materialized.Admission == nil {
 		t.Fatal("reentry did not materialize a live execution")
+	}
+	if cleanup {
+		if body, err := os.ReadFile(filepath.Join(materialized.Admission.Workspace.Root, r.path)); err != nil || string(body) != fmt.Sprintf("version %d\n", previousCalls) {
+			t.Fatalf("cleanup reentry lost saved implementation: %q %v", body, err)
+		}
 	}
 	laneCfg, err := controller.ParentContinuationConfig(cfg)
 	if err != nil {
@@ -359,7 +379,7 @@ func cadenceFixCandidate(t *testing.T, binary string, cfg config.AppConfig, poli
 	}
 	validation := cadenceExecute(t, laneCfg, ModeFix, r)
 	laneCfg = r.cfg
-	if st := state.AttachStateStore(laneCfg); st.ReadOr("task.id", "") != taskID || r.workerCalls != 2 || r.reviewerCalls != 2 {
+	if st := state.AttachStateStore(laneCfg); st.ReadOr("task.id", "") != taskID || r.workerCalls != previousCalls+1 || r.reviewerCalls != r.workerCalls {
 		t.Fatal("final failure Fix lost same Task/model cadence")
 	}
 	review := cadenceParentAcceptance(t, laneCfg, r)
@@ -409,7 +429,42 @@ func cadenceObservationFix(t *testing.T, binary string, cfg config.AppConfig, po
 	if !handoff.Consistent || !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) {
 		t.Fatalf("failure/fix lifecycle closed: %#v", handoff)
 	}
-	return cadenceFixCandidate(t, binary, cfg, policy, candidate, generation, r, taskID)
+	return cadenceFixCandidate(t, binary, cfg, policy, candidate, generation, r, taskID, false)
+}
+
+func cadenceCleanupBeforeReentry(t *testing.T, binary string, cfg config.AppConfig, candidate controller.AcceptedCandidate, reentered controller.ExecutionOperationResult) controller.ExecutionOperationResult {
+	t.Helper()
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seal, err := store.LoadAttemptSeal(candidate.SealRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	suspension, err := store.LoadSuspension(store.Identity().PrimaryRoot, seal.OperationalSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primaryCfg := cfg
+	primaryCfg.RepoRoot = store.Identity().PrimaryRoot
+	cleaned := canonicalCLIExecution(t, binary, primaryCfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: reentered.Head.ControllerGeneration, WorkspaceID: suspension.WorkspaceID, SealRef: &candidate.SealRef})
+	if _, err := os.Stat(cfg.RepoRoot); !os.IsNotExist(err) {
+		t.Fatalf("sealed execution lane was not removed: %v", err)
+	}
+	handoff := executeParentHandoff(t, primaryCfg)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("cleanup hid normal materialization: %#v", handoff)
+	}
+	assertRetiredBootstrap(t, primaryCfg, candidate.TaskRef.TaskPath)
+	if _, err := executeControllerExecution(primaryCfg, store, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID}); err == nil {
+		t.Fatal("cleanup admitted stale materialization authority")
+	}
+	if _, err := store.ProveCleanupDurability(candidate.SealRef); err != nil {
+		t.Fatal(err)
+	}
+	cleaned.Suspension = reentered.Suspension
+	return cleaned
 }
 
 func cadenceCleanup(t *testing.T, binary string, cfg config.AppConfig, candidate controller.AcceptedCandidate) {

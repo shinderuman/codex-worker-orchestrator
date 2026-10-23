@@ -147,5 +147,9 @@ Task本文に残る旧ACTIVE前提の記述、現在のScheduleと矛盾するde
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`
 - `IMPLEMENTATION_TASKS/cli-positive-task-start-admission.md`
+
+
+## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/execution-worktree-architecture-review.md`

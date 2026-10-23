@@ -58,6 +58,15 @@ func (c *evidenceLiveCollector) collectValidationEvidence() error {
 
 func (c *evidenceLiveCollector) taskStoreGateRunBinds(record qualitygate.RunRecord) (bool, error) {
 	if record.TaskID != "" && record.TaskID != c.taskID {
+		if state.ValidGeneratedUUID(record.TaskID) {
+			archived, err := c.runtime.ArchivedTaskStatsEvidence(record.TaskID)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, fmt.Errorf("verify historical validation task %s: %w", record.TaskID, err)
+			}
+			if err == nil && archived.Proven {
+				return false, nil
+			}
+		}
 		return false, fmt.Errorf("runtime validation store holds gate run %s bound to task %s, not %s",
 			record.ValidationRunID, record.TaskID, c.taskID)
 	}
