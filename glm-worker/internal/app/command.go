@@ -91,6 +91,7 @@ const approveSurfaceUsage = "usage: glm-worker --approve-surface current-diff"
 const acceptedFixScopeCurrentDiffCLI = "current-diff"
 
 var commandParsers = map[string]commandParser{
+	"--task": newTaskCommand,
 	"--decision-stdin": func(args []string) (Command, error) {
 		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
 	},
@@ -177,15 +178,19 @@ var commandParsers = map[string]commandParser{
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, machinecli.UsageErrorf("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker <command>; run glm-worker --help for command list")
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
 	}
-	if strings.HasPrefix(args[0], "--") {
-		return Command{}, machinecli.UsageErrorf("unknown command %q; run glm-worker --help for command list", args[0])
+	return Command{}, machinecli.UsageErrorf("unknown command %q; run glm-worker --help for command list", args[0])
+}
+
+func newTaskCommand(args []string) (Command, error) {
+	if len(args) != 2 || strings.TrimSpace(args[1]) == "" {
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker --task <instruction>")
 	}
-	return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
+	return Command{Mode: ModeNewTask, Payload: args[1]}, nil
 }
 
 func singleArgCommand(args []string, mode CommandMode, usage string) (Command, error) {

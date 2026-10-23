@@ -15,7 +15,7 @@ func TestOwnerLostActiveTaskRejectsNewTask(t *testing.T) {
 
 	holdCtx, cancelHold := context.WithTimeout(context.Background(), multiRepoRunTimeout)
 	defer cancelHold()
-	holder := env.start(t, holdCtx, env.repoA, "owner-lost task marker")
+	holder := env.start(t, holdCtx, env.repoA, "--task", "owner-lost task marker")
 	stateDir := env.waitStateDir(t, env.repoA, holder)
 	env.waitHeldWithWorkerSession(t, stateDir)
 	taskID := readStateFile(t, stateDir, "task.id")
@@ -31,7 +31,7 @@ func TestOwnerLostActiveTaskRejectsNewTask(t *testing.T) {
 		t.Fatalf("owner loss後のtask status = %v", got)
 	}
 
-	denied := env.run(t, env.repoA, "replacement task marker")
+	denied := env.run(t, env.repoA, "--task", "replacement task marker")
 	if denied.code != 1 || !strings.Contains(denied.stderr, "controller-semantic") {
 		t.Fatalf("active task上のnew-task startが拒否されません: code=%d stderr=%s", denied.code, denied.stderr)
 	}

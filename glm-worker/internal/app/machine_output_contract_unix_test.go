@@ -57,9 +57,9 @@ func TestDispatchCommandMachineOutputContract(t *testing.T) {
 		requireMachineProcessContract(t, nil, outcome)
 	})
 
-	t.Run("default payload mode", func(t *testing.T) {
-		outcome := runBinaryForMachineContract(t, binary, []string{machineContractProbeArg}, false, true)
-		requireMachineProcessContract(t, []string{machineContractProbeArg}, outcome)
+	t.Run("explicit task payload mode", func(t *testing.T) {
+		outcome := runBinaryForMachineContract(t, binary, []string{"--task", machineContractProbeArg}, false, true)
+		requireMachineProcessContract(t, []string{"--task", machineContractProbeArg}, outcome)
 	})
 
 	earlyCommands := [][]string{{"--help"}, {"-h"}, {"--help", "extra"}, {"--authority", "active"}, {"--authority"}}

@@ -432,7 +432,7 @@ func payloadWorkerArgsForDescriptor(descriptor parentaction.PayloadAction, paylo
 func directWorkerArgs(action string) []string {
 	switch action {
 	case actionStart:
-		return []string{activeTaskRequest}
+		return []string{"--task", activeTaskRequest}
 	case actionApprove:
 		return []string{"--approve-surface", "current-diff"}
 	case actionAccept:
