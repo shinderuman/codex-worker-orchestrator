@@ -16,7 +16,7 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		return
 	}
 	output.Controller = &report
-	if applyPendingCompletionRecoveryHandoff(cfg, output, report) {
+	if applyPendingControllerMaintenanceHandoff(cfg, output, report) {
 		return
 	}
 	if !output.Consistent {
@@ -43,34 +43,45 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 	}
 }
 
-func applyPendingCompletionRecoveryHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
+func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
 	if report.Head.PendingTransitionID == "" {
-		return false
+		return applyRuntimeDispositionHandoff(cfg, output, report)
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
 		return false
 	}
-	pending, err := store.PendingCompletionRecovery(report.Head)
-	if !pending {
-		return false
+	checks := []struct {
+		surface string
+		pending func(controller.RepositoryControllerHead) (bool, error)
+	}{
+		{controllerExecutionSurface, store.PendingCompletionRecovery},
+		{controllerPublicationSurface, store.PendingAdvancementRecovery},
 	}
-	*output = parentHandoffOutput{Version: parentHandoffVersion, Controller: &report, Consistent: false, AllowedActions: []string{}, Validations: []parentHandoffValidation{}}
-	if err != nil {
-		message := err.Error()
-		output.Inconsistency = &message
+	for _, check := range checks {
+		pending, err := check.pending(report.Head)
+		if !pending {
+			continue
+		}
+		*output = parentHandoffOutput{Version: parentHandoffVersion, Controller: &report, Consistent: false, AllowedActions: []string{}, Validations: []parentHandoffValidation{}}
+		if err != nil {
+			message := err.Error()
+			output.Inconsistency = &message
+			return true
+		}
+		command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+		if err != nil {
+			message := err.Error()
+			output.Inconsistency = &message
+			return true
+		}
+		applyControllerRecoveryHandoff(output, check.surface, string(command))
 		return true
 	}
-	command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
-	if err != nil {
-		return true
-	}
-	applyControllerExecutionCompletionHandoff(output, string(command))
-	return true
+	return false
 }
 
-func applyControllerExecutionCompletionHandoff(output *parentHandoffOutput, command string) {
-	action := controllerExecutionSurface
+func applyControllerRecoveryHandoff(output *parentHandoffOutput, action string, command string) {
 	output.Consistent = true
 	output.Inconsistency = nil
 	output.ParentRequest = nil
@@ -311,4 +322,22 @@ func canonicalHandoffStatus(cfg config.AppConfig) (controller.ControllerStatusRe
 	}
 	report, err := store.ProjectStatus()
 	return report, err == nil && report.CanonicalActive
+}
+
+func applyRuntimeDispositionHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false
+	}
+	input, err := store.PreviewRuntimeDisposition(report.Head)
+	if err != nil || input == nil {
+		return false
+	}
+	command, err := json.Marshal(controllerExecutionCommand{Action: "dispose-runtime", ExpectedGeneration: report.Head.ControllerGeneration, RuntimeDisposition: input})
+	if err != nil {
+		return false
+	}
+	applyControllerRecoveryHandoff(output, controllerExecutionSurface, string(command))
+	output.RequiredActionParameters["semantic_slot"] = "runtime_disposition.reason"
+	return true
 }

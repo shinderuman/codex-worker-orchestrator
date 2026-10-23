@@ -203,14 +203,19 @@ func TestTerminalFindingCannotReopenBlockerInterruption(t *testing.T) {
 
 func newFindingAcceptanceFixture(t *testing.T, extraTasks ...string) findingAcceptanceFixture {
 	t.Helper()
+	return findingAcceptanceFixtureForChild(t, "# finding child\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nchild finding target\n\n## Dependencies\n\nnone\n", extraTasks...)
+}
+
+func findingAcceptanceFixtureForChild(t *testing.T, childContent string, extraTasks ...string) findingAcceptanceFixture {
+	t.Helper()
 	repo, _ := newControllerLinkedWorktree(t)
 	childPath := "IMPLEMENTATION_TASKS/finding-child.md"
-	if err := os.WriteFile(filepath.Join(repo, childPath), []byte("# finding child\n\n## Contract\n\nchild finding target\n\n## Dependencies\n\nnone\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, childPath), []byte(childContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	plan := "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/finding-child.md`\n"
 	for _, path := range extraTasks {
-		if err := os.WriteFile(filepath.Join(repo, path), []byte("# additional finding target\n\n## Contract\n\nindependent blocker\n\n## Dependencies\n\nnone\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(repo, path), []byte("# additional finding target\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nindependent blocker\n\n## Dependencies\n\nnone\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		plan += "- `" + path + "`\n"

@@ -16,6 +16,11 @@ func (s *Store) PublishAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
+	if pending, err := s.PreviewRuntimeDisposition(head); err != nil {
+		return ExecutionOperationResult{}, err
+	} else if pending != nil {
+		return ExecutionOperationResult{}, &RuntimeDispositionRequired{Input: *pending}
+	}
 	op, head, err := s.planTerminalMetadata(TerminalTaskInput{ExpectedGeneration: input.ExpectedGeneration, ProjectSnapshotID: head.ProjectSnapshotID, CandidateID: c.CandidateID, TaskRef: c.TaskRef})
 	if err != nil {
 		return ExecutionOperationResult{}, err

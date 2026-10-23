@@ -13,6 +13,7 @@ func TestExecutionOperationContractsCoverCurrentKinds(t *testing.T) {
 		{executionSuspend, executionOperationEffectsSingle},
 		{executionMaterialize, executionOperationEffectsSingle},
 		{executionCleanup, executionOperationEffectsSingle},
+		{executionRuntimeDisposition, executionOperationEffectsSingle},
 		{executionGC, executionOperationEffectsSingle},
 		{publicationAccept, executionOperationEffectsOneOrMore},
 		{publicationPromote, executionOperationEffectsOneOrMore},

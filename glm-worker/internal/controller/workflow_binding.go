@@ -238,7 +238,7 @@ func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string
 	cfg := WorkflowTaskConfig(s.config, s.identity, *head.RootTaskRef)
 	cfg.RepoRoot = s.identity.PrimaryRoot
 	runtime := state.AttachStateStore(cfg)
-	_, admitted, err := runtime.AdmitNewTask()
+	admitted, err := quiescentRuntimeReady(runtime)
 	if err != nil {
 		return "", err
 	}
@@ -249,4 +249,19 @@ func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string
 		return "", nil
 	}
 	return runtime.TaskID()
+}
+
+func quiescentRuntimeReady(runtime *state.StateStore) (bool, error) {
+	_, admitted, err := runtime.AdmitNewTask()
+	if err != nil || !admitted {
+		return false, err
+	}
+	switch runtime.TaskStatus() {
+	case state.TaskStatusNone:
+		return !runtime.Exists("task.id"), nil
+	case state.TaskStatusComplete, state.TaskStatusUserTerminated:
+		return true, nil
+	default:
+		return false, nil
+	}
 }

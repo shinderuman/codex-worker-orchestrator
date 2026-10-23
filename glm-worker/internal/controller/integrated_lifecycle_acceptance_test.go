@@ -309,7 +309,7 @@ func writeLifecycleTask(t *testing.T, repo, path, content string) {
 
 func lifecycleTaskBody(name, contract string, dependencies, fulfilled []string) string {
 	var body strings.Builder
-	body.WriteString("# " + name + "\n\n## Contract\n\n" + contract + "\n\n## Dependencies\n\n")
+	body.WriteString("# " + name + "\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\n" + contract + "\n\n## Dependencies\n\n")
 	if len(dependencies) == 0 {
 		body.WriteString("none\n")
 	} else {

@@ -160,7 +160,7 @@ func retiredWorkflowCorpus(t *testing.T, completionQuality bool) (config.AppConf
 	writeAppTestFile(t, repo, "IMPLEMENTATION_RULES.md", "# rules\n")
 	writeAppTestFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/successor.md`\n")
-	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/successor.md", "# successor\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
+	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/successor.md", "# successor\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
 	if completionQuality {
 		prepareCompletionQualityCorpus(t, repo)
 	}

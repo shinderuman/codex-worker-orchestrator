@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojectcommit"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecthead"
 )
 
 func (s *Store) PreviewCandidateTree(admission Admission, policy PublicationPolicy) (string, error) {
@@ -65,7 +66,18 @@ func (s *Store) finalizeCandidateTrees(task, root SemanticTaskRef, base string, 
 	if err != nil {
 		return nil, "", err
 	}
-	return s.terminalMetadataTree(implementation, metadata)
+	files, tree, err := s.terminalMetadataTree(implementation, metadata)
+	if err != nil {
+		return nil, "", err
+	}
+	final, err := createAcceptedCandidateCommit(s.identity.PrimaryRoot, tree, base, "terminal metadata preflight")
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := repositoryprojecthead.CheckCommitPlan(s.identity.PrimaryRoot, final); err != nil {
+		return nil, "", fmt.Errorf("terminal candidate Plan preflight: %w", err)
+	}
+	return files, tree, nil
 }
 
 func (s *Store) AcceptExecutionCandidate(admission Admission, input CandidateAcceptanceInput) (ExecutionOperationResult, error) {

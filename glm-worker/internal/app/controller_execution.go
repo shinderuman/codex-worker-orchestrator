@@ -12,6 +12,7 @@ import (
 )
 
 type controllerExecutionCommand struct {
+	RuntimeDisposition     *controller.RuntimeDispositionInput       `json:"runtime_disposition,omitempty"`
 	SourceSnapshotID       string                                    `json:"source_snapshot_id,omitempty"`
 	CandidateID            string                                    `json:"candidate_id,omitempty"`
 	Action                 string                                    `json:"action"`
@@ -95,6 +96,8 @@ func executeControllerExecution(cfg config.AppConfig, store *controller.Store, c
 
 func executeControllerExecutionAction(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
 	switch command.Action {
+	case "dispose-runtime":
+		return executeControllerRuntimeDisposition(store, command)
 	case "recover-runtime-start":
 		return executeControllerRuntimeStartRecovery(cfg, store)
 	case "recover-accepted-result-rule-activation":
@@ -272,4 +275,11 @@ func decodeControllerCommand(loadConfig func() (config.AppConfig, error), stdin 
 		return cfg, nil, err
 	}
 	return cfg, store, nil
+}
+
+func executeControllerRuntimeDisposition(store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
+	if command.RuntimeDisposition == nil || command.RuntimeDisposition.ExpectedGeneration != command.ExpectedGeneration {
+		return controller.ExecutionOperationResult{}, fmt.Errorf("runtime disposition requires exact generation")
+	}
+	return store.DisposeUnfinishedRuntime(*command.RuntimeDisposition)
 }

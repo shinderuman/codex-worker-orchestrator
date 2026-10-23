@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -20,12 +22,14 @@ type parentWaitOutput struct {
 }
 
 type parentWaitRecoveryHandoff struct {
-	Projection     string   `json:"projection"`
-	Consistent     *bool    `json:"consistent"`
-	TaskID         *string  `json:"task_id"`
-	TaskStatus     *string  `json:"task_status"`
-	RequiredAction *string  `json:"required_action"`
-	AllowedActions []string `json:"allowed_actions"`
+	Inconsistency  *string         `json:"inconsistency"`
+	Projection     string          `json:"projection"`
+	Consistent     *bool           `json:"consistent"`
+	Controller     json.RawMessage `json:"controller"`
+	TaskID         *string         `json:"task_id"`
+	TaskStatus     *string         `json:"task_status"`
+	RequiredAction *string         `json:"required_action"`
+	AllowedActions []string        `json:"allowed_actions"`
 }
 
 const parentWaitLockFile = "parent-wait.lock"
@@ -36,7 +40,7 @@ const parentWaitStatusReleased = "released"
 const parentWaitStatusSuperseded = "superseded"
 
 func withParentWaitLease(cfg config.AppConfig, body func() error) error {
-	st, err := state.NewStateStore(cfg)
+	st, err := parentWaitStore(cfg)
 	if err != nil {
 		return err
 	}
@@ -77,7 +81,7 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 	if len(args) != 1 {
 		return fmt.Errorf("usage: glm-parent-action wait")
 	}
-	st, err := state.NewStateStore(cfg)
+	st, err := parentWaitStore(cfg)
 	if err != nil {
 		return err
 	}
@@ -106,7 +110,7 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 		return encodeParentWaitSuperseded(stdout)
 	}
 
-	worker, err := repolock.AcquireWait(st.LockPath())
+	worker, err := repolock.AcquireWait(state.AttachStateStore(cfg).LockPath())
 	if err != nil {
 		return fmt.Errorf("wait for worker owner: %w", err)
 	}
@@ -124,7 +128,7 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 	if err != nil {
 		return err
 	}
-	status := st.TaskStatus()
+	status := state.AttachStateStore(cfg).TaskStatus()
 	return json.NewEncoder(stdout).Encode(parentWaitOutput{
 		Status:     parentWaitStatusReleased,
 		TaskStatus: status,
@@ -162,11 +166,11 @@ func validateParentWaitRecoveryHandoff(data []byte) error {
 	if handoff.Consistent == nil {
 		return fmt.Errorf("parent wait recovery handoff is missing consistent")
 	}
-	if handoff.TaskID == nil || strings.TrimSpace(*handoff.TaskID) == "" {
-		return fmt.Errorf("parent wait recovery handoff is missing task_id")
+	if !*handoff.Consistent {
+		return validateInconsistentRecoveryHandoff(handoff)
 	}
-	if handoff.TaskStatus == nil || !state.TaskStatus(*handoff.TaskStatus).Known() {
-		return fmt.Errorf("parent wait recovery handoff has invalid task_status")
+	if !handoffHasRuntimeIdentity(handoff) && !controllerRecoveryHandoff(handoff) {
+		return fmt.Errorf("parent wait recovery handoff has no Runtime or controller authority")
 	}
 	if handoff.RequiredAction == nil || strings.TrimSpace(*handoff.RequiredAction) == "" {
 		return fmt.Errorf("parent wait recovery handoff is missing required_action")
@@ -175,4 +179,39 @@ func validateParentWaitRecoveryHandoff(data []byte) error {
 		return fmt.Errorf("parent wait recovery handoff is missing allowed_actions")
 	}
 	return nil
+}
+
+func controllerRecoveryHandoff(handoff parentWaitRecoveryHandoff) bool {
+	var report controller.ControllerStatusReport
+	if json.Unmarshal(handoff.Controller, &report) != nil || !report.CanonicalActive || report.Head.RepositoryIdentity == "" || handoff.RequiredAction == nil || handoff.Consistent == nil || !*handoff.Consistent {
+		return false
+	}
+	return *handoff.RequiredAction == "controller-execution" || *handoff.RequiredAction == "controller-publication" || *handoff.RequiredAction == "start"
+}
+
+func parentWaitStore(cfg config.AppConfig) (*state.StateStore, error) {
+	if cfg.RepositoryLockPath != "" {
+		cfg.StateBase = filepath.Dir(cfg.RepositoryLockPath)
+		cfg.RepoHash = filepath.Base(cfg.RepositoryLockPath) + ".parent-wait"
+	}
+	return state.NewStateStore(cfg)
+}
+
+func handoffHasRuntimeIdentity(handoff parentWaitRecoveryHandoff) bool {
+	return handoff.TaskID != nil && strings.TrimSpace(*handoff.TaskID) != "" && handoff.TaskStatus != nil && state.TaskStatus(*handoff.TaskStatus).Known()
+}
+
+func validateInconsistentRecoveryHandoff(handoff parentWaitRecoveryHandoff) error {
+	if handoff.Inconsistency == nil || strings.TrimSpace(*handoff.Inconsistency) == "" {
+		return fmt.Errorf("inconsistent recovery handoff has no diagnostic")
+	}
+	if !handoffHasRuntimeIdentity(handoff) && !handoffHasControllerAuthority(handoff) {
+		return fmt.Errorf("inconsistent recovery handoff has no Runtime or controller authority")
+	}
+	return nil
+}
+
+func handoffHasControllerAuthority(handoff parentWaitRecoveryHandoff) bool {
+	var report controller.ControllerStatusReport
+	return json.Unmarshal(handoff.Controller, &report) == nil && report.CanonicalActive && report.Head.RepositoryIdentity != ""
 }

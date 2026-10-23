@@ -11,25 +11,26 @@ import (
 )
 
 type ExecutionOperation struct {
-	TaskAmendment    *TaskAmendmentApproval       `json:"task_amendment,omitempty"`
-	RuntimeBeforeRef *EvidenceObjectRef           `json:"runtime_before_ref,omitempty"`
-	ParentSource     *ParentSourceRevision        `json:"parent_source,omitempty"`
-	UserTermination  *UserTaskTransitionOperation `json:"user_termination,omitempty"`
-	Terminal         *TerminalMetadataOperation   `json:"terminal,omitempty"`
-	Publication      *PublicationOperation        `json:"publication,omitempty"`
-	Transition       TransitionRecord             `json:"transition"`
-	Source           Admission                    `json:"source"`
-	Suspension       *SuspensionSnapshot          `json:"suspension,omitempty"`
-	Episode          *BlockerEpisodeRevision      `json:"episode,omitempty"`
-	Rebound          *ReboundSuspension           `json:"rebound,omitempty"`
-	Workspace        *WorkspaceIdentity           `json:"workspace,omitempty"`
-	Attempt          *AttemptRecord               `json:"attempt,omitempty"`
-	Lease            *ExecutionLease              `json:"lease,omitempty"`
-	SealRef          *EvidenceObjectRef           `json:"seal_ref,omitempty"`
-	CleanupSnapshot  *WorkspaceSnapshot           `json:"cleanup_snapshot,omitempty"`
-	CleanupTrees     *ExecutionTrees              `json:"cleanup_trees,omitempty"`
-	CleanupArchive   *EvidenceObjectRef           `json:"cleanup_archive,omitempty"`
-	Evidence         EvidencePublicationInput     `json:"evidence"`
+	RuntimeDisposition *RuntimeDispositionOperation `json:"runtime_disposition,omitempty"`
+	TaskAmendment      *TaskAmendmentApproval       `json:"task_amendment,omitempty"`
+	RuntimeBeforeRef   *EvidenceObjectRef           `json:"runtime_before_ref,omitempty"`
+	ParentSource       *ParentSourceRevision        `json:"parent_source,omitempty"`
+	UserTermination    *UserTaskTransitionOperation `json:"user_termination,omitempty"`
+	Terminal           *TerminalMetadataOperation   `json:"terminal,omitempty"`
+	Publication        *PublicationOperation        `json:"publication,omitempty"`
+	Transition         TransitionRecord             `json:"transition"`
+	Source             Admission                    `json:"source"`
+	Suspension         *SuspensionSnapshot          `json:"suspension,omitempty"`
+	Episode            *BlockerEpisodeRevision      `json:"episode,omitempty"`
+	Rebound            *ReboundSuspension           `json:"rebound,omitempty"`
+	Workspace          *WorkspaceIdentity           `json:"workspace,omitempty"`
+	Attempt            *AttemptRecord               `json:"attempt,omitempty"`
+	Lease              *ExecutionLease              `json:"lease,omitempty"`
+	SealRef            *EvidenceObjectRef           `json:"seal_ref,omitempty"`
+	CleanupSnapshot    *WorkspaceSnapshot           `json:"cleanup_snapshot,omitempty"`
+	CleanupTrees       *ExecutionTrees              `json:"cleanup_trees,omitempty"`
+	CleanupArchive     *EvidenceObjectRef           `json:"cleanup_archive,omitempty"`
+	Evidence           EvidencePublicationInput     `json:"evidence"`
 }
 
 type ExecutionOperationResult struct {

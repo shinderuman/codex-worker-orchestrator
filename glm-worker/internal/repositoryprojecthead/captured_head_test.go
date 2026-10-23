@@ -35,6 +35,9 @@ func TestPreparedValidationUsesCapturedHead(t *testing.T) {
 	if _, err := CheckFinalHeadPlan(root); err == nil {
 		t.Fatal("current HEAD unexpectedly validated")
 	}
+	if _, err := CheckCommitPlan(root, snapshot.Head); err != nil {
+		t.Fatalf("captured candidate Plan followed HEAD: %v", err)
+	}
 	if err := validatePreparedPlan(root, snapshot.Head, prepared); err != nil {
 		t.Fatalf("captured HEAD validation followed mutable HEAD: %v", err)
 	}

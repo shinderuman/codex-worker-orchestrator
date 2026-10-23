@@ -105,7 +105,7 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 
 func lookupParentActionCommand(action string) (parentActionCommandDescriptor, bool) {
 	if parentaction.IsControllerAction(action) {
-		return parentActionCommandDescriptor{Action: action, Execute: parentActionExecutionController, TerminalExecute: parentActionExecutionController}, true
+		return parentActionCommandDescriptor{Action: action, Execute: parentActionExecutionController, TerminalExecute: parentActionExecutionController, TerminalEnvelope: action != "controller-evidence"}, true
 	}
 	if payload, ok := parentaction.LookupPayloadAction(action); ok {
 		terminalExecute := parentActionExecutionPayload

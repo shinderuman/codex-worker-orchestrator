@@ -117,6 +117,10 @@ Task本文に残る旧ACTIVE前提の記述、現在のScheduleと矛盾するde
 
 例外を含む長期Task、コマンド修復Task、例外なしの通常開発Taskの三つを比較し、Task全体のDogfood Auditと実装の単純さが成立するかを確認する。実装修正を必須成果にしない。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - 既存`glm-parent-action export-bundle`を用い、Task IDごとの最新ZIP一つを検証する。Attempt間とseal後を含む取得可能な親Codex・Guardian・GLM生ログを維持し、収集側でAudit対象を過剰に選別しない。

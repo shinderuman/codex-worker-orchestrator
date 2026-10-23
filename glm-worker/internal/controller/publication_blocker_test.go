@@ -5,11 +5,20 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
+	rootRuntime := fixture.store.dispositionRuntime(fixture.source.Attempt.RootTaskRef)
+	if err := os.MkdirAll(rootRuntime.Path("."), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rootRuntime.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
 	fixture.source = publicationTestEdit(t, fixture, "source.txt", "root unfinished conflicting work\n")
 	episode := planSuspensionTestEpisode(t, fixture)
 	suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)
@@ -35,11 +44,18 @@ func TestPublishedBlockerSurvivesParentRestoreConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	retired, candidate := prepareCompletionTestCandidate(t, fixture.store, promoted, c)
-	c = candidate
-	published, err := fixture.store.RecoverExecutionOperation(retired.TransitionID)
+	if input, err := fixture.store.PreviewRuntimeDisposition(promoted.Head); err != nil || input != nil {
+		t.Fatalf("suspended root offered for disposition: %v", err)
+	}
+	if _, err := fixture.store.runtimeDispositionTarget(promoted.Head); err == nil {
+		t.Fatal("suspended root admitted as disposal target")
+	}
+	published, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: c.CandidateID})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if rootRuntime.TaskStatus() != state.TaskStatusActive || rootRuntime.Exists(state.RuntimeDispositionFile) {
+		t.Fatal("blocker publication terminated suspended root")
 	}
 	progress, err := fixture.store.LoadEpisodeRevision(episode.EpisodeID, published.Head.ActiveEpisodeRevision)
 	if err != nil {

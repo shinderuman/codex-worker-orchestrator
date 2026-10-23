@@ -25,9 +25,15 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 	if command == nil {
 		return fmt.Errorf("controller command must be a JSON object")
 	}
-	if err := runWorker(cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(payload), stdout, stderr, nil); err != nil {
+	run := func() error {
+		if err := runWorker(cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(payload), stdout, stderr, nil); err != nil {
+			return err
+		}
+		_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
 		return err
 	}
-	_, err = parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
-	return err
+	if args[0] == "controller-evidence" {
+		return run()
+	}
+	return withParentWaitLease(cfg, run)
 }

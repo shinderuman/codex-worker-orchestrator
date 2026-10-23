@@ -21,6 +21,7 @@ const (
 )
 
 var taskBoundStatePolicies = []taskBoundStatePolicy{
+	{name: RuntimeDispositionFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: controllerRuntimeBindingStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "task.status", lifetime: taskBoundStateFreshTaskClear},
 	{name: parentCodexIdentityFile, lifetime: taskBoundStateFreshTaskClear},

@@ -36,6 +36,7 @@ type parentHandoffOutput struct {
 }
 
 type parentHandoffRecoveryOutput struct {
+	Inconsistency            *string                            `json:"inconsistency,omitempty"`
 	Controller               *controller.ControllerStatusReport `json:"controller,omitempty"`
 	Version                  int                                `json:"version"`
 	Projection               string                             `json:"projection"`
@@ -96,6 +97,7 @@ func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecov
 		Controller:               output.Controller,
 		Version:                  output.Version,
 		Projection:               "recovery",
+		Inconsistency:            output.Inconsistency,
 		Consistent:               output.Consistent,
 		TaskID:                   output.TaskID,
 		TaskStatus:               output.TaskStatus,

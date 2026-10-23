@@ -255,7 +255,7 @@ func newControllerRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rootTask := "# root\n\n## Contract\n\ncontroller root task\n\n## Dependencies\n\nnone\n"
+	rootTask := "# root\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\ncontroller root task\n\n## Dependencies\n\nnone\n"
 	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_TASKS", "root.md"), []byte(rootTask), 0o644); err != nil {
 		t.Fatal(err)
 	}

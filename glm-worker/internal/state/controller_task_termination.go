@@ -83,6 +83,9 @@ func (s *StateStore) verifyExistingControllerTaskTermination(record ControllerTa
 }
 
 func (s *StateStore) userTerminatedActionPlan() (ParentActionPlan, error) {
+	if s.Exists(RuntimeDispositionFile) {
+		return s.runtimeDispositionActionPlan()
+	}
 	data, err := os.ReadFile(s.Path(controllerTaskTerminationFile))
 	if err != nil {
 		return ParentActionPlan{}, err

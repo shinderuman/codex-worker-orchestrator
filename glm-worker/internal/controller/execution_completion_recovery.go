@@ -31,6 +31,32 @@ func (s *Store) PreparedCompletionAuthority(head RepositoryControllerHead) (Sema
 }
 
 func (s *Store) PendingCompletionRecovery(head RepositoryControllerHead) (bool, error) {
+	return s.pendingTransitionRecovery(head, pendingCompletionRecoveryKind)
+}
+
+func (s *Store) PendingAdvancementRecovery(head RepositoryControllerHead) (bool, error) {
+	return s.pendingTransitionRecovery(head, pendingAdvancementRecoveryKind)
+}
+
+func pendingCompletionRecoveryKind(kind string) bool {
+	switch kind {
+	case publicationPromote, publicationPublish, executionTaskAuthoritySync, executionRuntimeDisposition:
+		return true
+	default:
+		return false
+	}
+}
+
+func pendingAdvancementRecoveryKind(kind string) bool {
+	switch kind {
+	case publicationAdopt, publicationAdoptSource:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Store) pendingTransitionRecovery(head RepositoryControllerHead, recoverableKind func(string) bool) (bool, error) {
 	if head.PendingTransitionID == "" {
 		return false, nil
 	}
@@ -38,9 +64,7 @@ func (s *Store) PendingCompletionRecovery(head RepositoryControllerHead) (bool, 
 	if err != nil {
 		return true, err
 	}
-	switch record.Kind {
-	case publicationPromote, publicationPublish, executionTaskAuthoritySync:
-	default:
+	if !recoverableKind(record.Kind) {
 		return false, nil
 	}
 	var op ExecutionOperation
@@ -48,7 +72,7 @@ func (s *Store) PendingCompletionRecovery(head RepositoryControllerHead) (bool, 
 		return true, err
 	}
 	if !reflect.DeepEqual(record, op.Transition) {
-		return true, fmt.Errorf("completion recovery journal differs from transition")
+		return true, fmt.Errorf("pending transition recovery journal differs from transition")
 	}
 	if _, err := s.validateExecutionOperation(op); err != nil {
 		return true, err
@@ -58,7 +82,7 @@ func (s *Store) PendingCompletionRecovery(head RepositoryControllerHead) (bool, 
 		return true, err
 	}
 	if !reflect.DeepEqual(current, head) {
-		return true, fmt.Errorf("completion recovery controller changed")
+		return true, fmt.Errorf("pending transition recovery controller changed")
 	}
 	return true, validateCompletionRecoveryGeneration(op, head, phase)
 }

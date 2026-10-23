@@ -166,3 +166,29 @@ func recordRecoverySemanticMaterial(t *testing.T, st *state.StateStore, role sta
 		PacketStatus: string(packet.StatusNeedsSolDecision),
 	})
 }
+
+func TestParentHandoffRecoveryPreservesInconsistencyDiagnostic(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := Execute(Command{Mode: ModeHandoff, Payload: "recovery"}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Consistent     bool    `json:"consistent"`
+		Inconsistency  string  `json:"inconsistency"`
+		RequiredAction *string `json:"required_action"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Consistent || result.Inconsistency == "" || result.RequiredAction != nil {
+		t.Fatalf("recovery lost failure diagnostic or admitted action: %s", stdout.String())
+	}
+}

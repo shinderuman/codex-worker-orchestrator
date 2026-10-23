@@ -6,6 +6,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +184,17 @@ func TestCompletionReadinessFailureRestoresUnpublishedPreparation(t *testing.T) 
 				t.Fatal(err)
 			}
 			_, err = fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: implementation.CandidateID})
+			if successor {
+				var blocked *RuntimeDispositionRequired
+				head, loadErr := fixture.store.LoadHead()
+				if !errors.As(err, &blocked) || blocked.Input.Task != task || loadErr != nil || !reflect.DeepEqual(head, promoted.Head) {
+					t.Fatalf("successor refusal changed publication authority: %v %v", err, loadErr)
+				}
+				if observeTestRemote(t, fixture.store.identity.PrimaryRoot, policy) != implementation.BaseOID {
+					t.Fatal("blocked successor changed remote")
+				}
+				return
+			}
 			var refusal *PublicationAdvancementRequired
 			if !errors.As(err, &refusal) || refusal.Action != "reenter-accepted-candidate" {
 				t.Fatalf("unfinished runtime did not return existing repair action: %v", err)
