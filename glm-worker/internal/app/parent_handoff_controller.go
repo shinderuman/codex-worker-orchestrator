@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -19,6 +20,9 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		return
 	}
 	if !output.Consistent {
+		if applyExternalAdvancementSyncHandoff(cfg, output, report) {
+			return
+		}
 		applyExecutionTerminationHandoff(cfg, output)
 		return
 	}
@@ -30,7 +34,8 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		}
 		output.RequiredAction = &action
 	}
-	if report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "" {
+	if !applyTaskAuthoritySyncHandoff(cfg, output, report) &&
+		(report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "") {
 		applyCanonicalQuiescentHandoff(cfg, output, report.Head)
 	}
 	if output.ParentRequest != nil && output.RequiredAction != nil {
@@ -72,6 +77,111 @@ func applyControllerExecutionCompletionHandoff(output *parentHandoffOutput, comm
 	output.RequiredAction = &action
 	output.AllowedActions = []string{action}
 	output.RequiredActionParameters = map[string]string{"controller_command_json": command}
+}
+
+func applyExternalAdvancementSyncHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
+	attribution := observedTaskAttribution(output)
+	if attribution == nil {
+		return false
+	}
+	authority, explained := externalAdvancementAuthority(cfg, report.Head)
+	if !explained || !externalAdvancementExplainsAttribution(*attribution, authority) {
+		return false
+	}
+	restored := *output
+	applyCanonicalQuiescentHandoff(cfg, output, report.Head)
+	if output.RequiredAction == nil || *output.RequiredAction != controllerPublicationSurface {
+		*output = restored
+		return false
+	}
+	output.Consistent = true
+	output.Inconsistency = nil
+	output.ParentRequest.TaskAttribution.LegalNextAction = controllerPublicationSurface
+	output.ParentRequest.Continuation.RequiredAction = controllerPublicationSurface
+	return true
+}
+
+func observedTaskAttribution(output *parentHandoffOutput) *repositoryproject.TaskAttribution {
+	if output.ParentRequest == nil {
+		return nil
+	}
+	return &output.ParentRequest.TaskAttribution
+}
+
+func externalAdvancementExplainsAttribution(attribution repositoryproject.TaskAttribution, authority controller.CommittedTaskAuthority) bool {
+	if attribution.Matches || attribution.Reason != repositoryproject.ReasonActiveTaskMismatch || attribution.Handover {
+		return false
+	}
+	return attribution.ActiveTask == authority.Task.TaskPath && attribution.ActiveTask != attribution.LifecycleTask && authority.Task.TaskPath != ""
+}
+
+func externalAdvancementAuthority(cfg config.AppConfig, head controller.RepositoryControllerHead) (controller.CommittedTaskAuthority, bool) {
+	if head.MetadataLineageRef == nil || head.PublicationPolicy == nil {
+		return controller.CommittedTaskAuthority{}, false
+	}
+	authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	if err != nil || authority.Snapshot.HeadOID == head.IntegrationTip {
+		return controller.CommittedTaskAuthority{}, false
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return controller.CommittedTaskAuthority{}, false
+	}
+	if _, err := store.RetiredSourceAdvancementRequired(head, authority.Snapshot.HeadOID); err != nil {
+		return controller.CommittedTaskAuthority{}, false
+	}
+	return authority, true
+}
+
+func applyTaskAuthoritySyncHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false
+	}
+	required, err := store.RequiredTaskAuthoritySync(report.Head)
+	if err != nil {
+		output.Consistent = false
+		message := err.Error()
+		output.Inconsistency = &message
+		output.RequiredAction = nil
+		output.AllowedActions = []string{"controller-evidence"}
+		output.RequiredActionParameters = nil
+		return true
+	}
+	if required == nil {
+		return false
+	}
+	if !required.Admittable {
+		if applyReentrySourceHandoff(cfg, output, report.Head, required.Plan.RevisedTaskRef, store) {
+			return true
+		}
+		output.Consistent = false
+		message := "active Task contract is stale but the regular sync owner cannot admit it: " + required.Reason
+		output.Inconsistency = &message
+		output.RequiredAction = nil
+		output.AllowedActions = []string{"controller-evidence"}
+		output.RequiredActionParameters = nil
+		return true
+	}
+	plan := required.Plan
+	command, err := json.Marshal(controllerExecutionCommand{
+		Action:             "sync-task-authority",
+		ExpectedGeneration: report.Head.ControllerGeneration,
+		SourceSnapshotID:   plan.SourceSnapshotID,
+		RevisedTask:        &plan.RevisedTaskRef,
+	})
+	if err != nil {
+		return false
+	}
+	action := controllerExecutionSurface
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action, "controller-evidence"}
+	output.RequiredActionParameters = map[string]string{
+		"controller_command_json":       string(command),
+		"previous_task_contract_sha256": plan.PreviousTaskRef.ContractDigest,
+		"revised_task_contract_sha256":  plan.RevisedTaskRef.ContractDigest,
+	}
+	return true
 }
 
 func applyExecutionTerminationHandoff(cfg config.AppConfig, output *parentHandoffOutput) {

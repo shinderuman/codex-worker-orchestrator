@@ -161,5 +161,7 @@ func (s *Store) loadCompletionFailure(ref EvidenceObjectRef) (EvidenceObjectRef,
 }
 
 func completionFailureProvesNoWrite(intent bool, failure CompletionFailure, policy PublicationPolicy) bool {
-	return (!intent && failure.Stage == "prepare") || (intent && failure.Stage == "push-rejected" && publicationPushRejected(failure.GitOutput, policy))
+	return (!intent && failure.Stage == "prepare") ||
+		(intent && failure.Stage == "push-guard") ||
+		(intent && failure.Stage == "push-rejected" && publicationPushRejected(failure.GitOutput, policy))
 }

@@ -185,24 +185,24 @@ func loadStableSnapshot(root string, read func(string) (snapshot, error)) (snaps
 }
 
 func readSnapshot(root string) (snapshot, error) {
-	rules, err := os.ReadFile(filepath.Join(root, rulesFile))
-	if err != nil {
-		return snapshot{}, fmt.Errorf("read %s: %w", rulesFile, err)
-	}
-	plan, err := os.ReadFile(filepath.Join(root, planFile))
-	if err != nil {
-		return snapshot{}, fmt.Errorf("read %s: %w", planFile, err)
-	}
-	activePath, err := taskcontract.ParsePlanSchedule(string(plan)).ActiveTask()
-	if err != nil {
-		return snapshot{}, err
-	}
 	stateHome, err := config.StateHome()
 	if err != nil {
 		return snapshot{}, err
 	}
 	cfg := config.AppConfig{RepoRoot: root, StateBase: filepath.Join(stateHome, "sessions")}
 	cfg, err = controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		return snapshot{}, err
+	}
+	metadata, sealed, err := controller.WorkflowSealedMetadata(cfg)
+	if err != nil {
+		return snapshot{}, err
+	}
+	rules, plan, err := readSnapshotMetadata(cfg.RepoRoot, metadata, sealed)
+	if err != nil {
+		return snapshot{}, err
+	}
+	activePath, err := taskcontract.ParsePlanSchedule(string(plan)).ActiveTask()
 	if err != nil {
 		return snapshot{}, err
 	}
@@ -213,25 +213,54 @@ func readSnapshot(root string) (snapshot, error) {
 	if canonical {
 		activePath = executionTask.TaskPath
 	}
+	active, err := readSnapshotActive(cfg.RepoRoot, activePath, metadata, sealed)
+	if err != nil {
+		return snapshot{}, err
+	}
+	return snapshot{rules: rules, plan: plan, active: active, activePath: activePath, hash: snapshotHash(rules, plan, activePath, active)}, nil
+}
+
+func readSnapshotMetadata(root string, metadata map[string][]byte, sealed bool) ([]byte, []byte, error) {
+	if sealed {
+		rules, rulesOK := metadata[rulesFile]
+		plan, planOK := metadata[planFile]
+		if !rulesOK || !planOK {
+			return nil, nil, fmt.Errorf("sealed authority lacks Rules or Plan")
+		}
+		return rules, plan, nil
+	}
+	rules, err := os.ReadFile(filepath.Join(root, rulesFile))
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", rulesFile, err)
+	}
+	plan, err := os.ReadFile(filepath.Join(root, planFile))
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", planFile, err)
+	}
+	return rules, plan, nil
+}
+
+func readSnapshotActive(root, activePath string, metadata map[string][]byte, sealed bool) ([]byte, error) {
+	if sealed {
+		active, ok := metadata[activePath]
+		if !ok {
+			return nil, fmt.Errorf("sealed Task metadata lacks %s", activePath)
+		}
+		return active, nil
+	}
 	activeFile := filepath.Join(root, filepath.FromSlash(activePath))
 	info, err := os.Lstat(activeFile)
 	if err != nil {
-		return snapshot{}, fmt.Errorf("inspect ACTIVE task %s: %w", activePath, err)
+		return nil, fmt.Errorf("inspect ACTIVE task %s: %w", activePath, err)
 	}
 	if !info.Mode().IsRegular() {
-		return snapshot{}, fmt.Errorf("ACTIVE task file %s is not a regular file (%s)", activePath, info.Mode().Type())
+		return nil, fmt.Errorf("ACTIVE task file %s is not a regular file (%s)", activePath, info.Mode().Type())
 	}
 	active, err := os.ReadFile(activeFile)
 	if err != nil {
-		return snapshot{}, fmt.Errorf("read ACTIVE task %s: %w", activePath, err)
+		return nil, fmt.Errorf("read ACTIVE task %s: %w", activePath, err)
 	}
-	return snapshot{
-		rules:      rules,
-		plan:       plan,
-		active:     active,
-		activePath: activePath,
-		hash:       snapshotHash(rules, plan, activePath, active),
-	}, nil
+	return active, nil
 }
 
 func sameSnapshot(left snapshot, right snapshot) bool {

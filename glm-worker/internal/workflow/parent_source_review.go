@@ -4,21 +4,15 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func (w *Workflow) PrepareReenteredReview() error {
-	if err := w.admitReenteredReviewPreparation(); err != nil {
-		return err
-	}
-	result, err := w.previousImplementedReviewContext()
+	result, request, err := w.reenteredReviewPreparationContext()
 	if err != nil {
 		return err
-	}
-	request := w.state.ReadOr("last-request", "")
-	if request == "" {
-		return fmt.Errorf("review preparation has no original request")
 	}
 	if err := w.admitCanonicalReenteredReview(); err != nil {
 		return err
@@ -49,13 +43,38 @@ func (w *Workflow) PrepareReenteredReview() error {
 	return w.state.EnterReenteredReviewStop(checkpoint)
 }
 
+func (w *Workflow) ValidateReenteredReviewPreparation() error {
+	_, _, err := w.reenteredReviewPreparationContext()
+	return err
+}
+
+func (w *Workflow) reenteredReviewPreparationContext() (packet.Result, string, error) {
+	if err := w.admitReenteredReviewPreparation(); err != nil {
+		return packet.Result{}, "", err
+	}
+	result, err := w.previousImplementedReviewContext()
+	if err != nil {
+		return result, "", err
+	}
+	request := w.state.ReadOr("last-request", "")
+	if request == "" {
+		return result, "", fmt.Errorf("review preparation has no original request")
+	}
+	return result, request, nil
+}
+
 func (w *Workflow) admitCanonicalReenteredReview() error {
-	if err := w.admitCanonicalWorkflowMutation(); err != nil {
+	admission, err := controller.Activate(w.config)
+	if err != nil {
 		return err
 	}
-	if w.canonicalAdmission == nil || w.canonicalAdmission.Attempt.PredecessorAttemptID == "" || w.canonicalAdmission.Lease.InFlightCallID != "" {
+	if admission.Attempt.PredecessorAttemptID == "" || admission.Lease.InFlightCallID != "" {
 		return fmt.Errorf("review preparation requires the canonical idle reentered attempt")
 	}
+	if err := w.bindCanonicalWorkflowAttempt(admission); err != nil {
+		return err
+	}
+	w.canonicalAdmission = &admission
 	return nil
 }
 

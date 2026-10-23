@@ -429,16 +429,20 @@ func scanCodexRolloutChainMember(scan *bundleRolloutScan, member codexRollout, s
 	}
 	defer func() { _ = file.Close() }()
 
+	return scanCodexRolloutReader(scan, file, member.HomeRelative, member.CounterContinuation, start, end)
+}
+
+func scanCodexRolloutReader(scan *bundleRolloutScan, input io.Reader, source string, continuation bool, start, end time.Time) error {
 	fileIndex := scan.fileCount
 	scan.fileCount++
-	scan.counterContinuations = append(scan.counterContinuations, member.CounterContinuation)
-	reader := bufio.NewReaderSize(file, 64*1024)
+	scan.counterContinuations = append(scan.counterContinuations, continuation)
+	reader := bufio.NewReaderSize(input, 64*1024)
 	lineNumber := 0
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			lineNumber++
-			if err := observeAnalysisRolloutLine(scan, line, lineNumber, fileIndex, member.HomeRelative, start, end); err != nil {
+			if err := observeAnalysisRolloutLine(scan, line, lineNumber, fileIndex, source, start, end); err != nil {
 				return err
 			}
 			scan.totalBytes += int64(len(line))

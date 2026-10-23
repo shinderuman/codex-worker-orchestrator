@@ -16,13 +16,15 @@ type parentHandoffRecoveryOutputAlias parentHandoffRecoveryOutput
 
 func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 	projected := output
-	projected.AllowedActions = withExecutionMilestoneReconsideration(
-		output.TaskStatus,
-		output.RequiredAction,
-		output.PendingDecision,
-		output.AllowedActions,
-	)
-	projected.AllowedActions = withNewTaskExecutionUnitActions(output.ParentRequest, projected.AllowedActions)
+	if output.Consistent {
+		projected.AllowedActions = withExecutionMilestoneReconsideration(
+			output.TaskStatus,
+			output.RequiredAction,
+			output.PendingDecision,
+			output.AllowedActions,
+		)
+		projected.AllowedActions = withNewTaskExecutionUnitActions(output.ParentRequest, projected.AllowedActions)
+	}
 	improvementSignal := projectImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffOutputAlias
@@ -37,13 +39,15 @@ func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 
 func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 	projected := output
-	projected.AllowedActions = withExecutionMilestoneReconsideration(
-		output.TaskStatus,
-		output.RequiredAction,
-		output.PendingDecision,
-		output.AllowedActions,
-	)
-	projected.AllowedActions = withNewTaskExecutionUnitActions(output.ParentRequest, projected.AllowedActions)
+	if output.Consistent {
+		projected.AllowedActions = withExecutionMilestoneReconsideration(
+			output.TaskStatus,
+			output.RequiredAction,
+			output.PendingDecision,
+			output.AllowedActions,
+		)
+		projected.AllowedActions = withNewTaskExecutionUnitActions(output.ParentRequest, projected.AllowedActions)
+	}
 	improvementSignal := projectRecoveryImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffRecoveryOutputAlias

@@ -36,7 +36,7 @@ func (w *Workflow) admitNewTask() error {
 		return &WorkerError{Message: err.Error()}
 	}
 	if admitted {
-		if err := w.admitCanonicalMutation(); err != nil {
+		if err := w.admitNewTaskMutation(); err != nil {
 			return err
 		}
 		if claimID == "" {

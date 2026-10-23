@@ -16,12 +16,12 @@ func TestRevisionStatusAllowsNaturalParentBoundaries(t *testing.T) {
 		state.TaskStatusQualityGateRecoverable,
 		state.TaskStatusInterrupted,
 	} {
-		if !revisionStatusAllowed(status) {
+		if !RevisionStatusAllowed(status) {
 			t.Fatalf("natural parent boundary %q rejected", status)
 		}
 	}
 	for _, status := range []state.TaskStatus{state.TaskStatusActive, state.TaskStatusComplete, state.TaskStatusNone} {
-		if revisionStatusAllowed(status) {
+		if RevisionStatusAllowed(status) {
 			t.Fatalf("non-boundary status %q accepted", status)
 		}
 	}

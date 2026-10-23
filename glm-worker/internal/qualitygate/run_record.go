@@ -8,31 +8,47 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type RunToolchain struct {
+	GoVersion           string `json:"go_version,omitempty"`
+	GOOS                string `json:"goos,omitempty"`
+	GOARCH              string `json:"goarch,omitempty"`
+	GoCache             string `json:"go_cache,omitempty"`
+	Parallelism         int    `json:"parallelism,omitempty"`
+	Command             string `json:"command,omitempty"`
+	GoFlags             string `json:"go_flags"`
+	EnvironmentRecorded bool   `json:"environment_recorded"`
+	TestCache           string `json:"test_cache,omitempty"`
+}
+
 type RunRecord struct {
-	ValidationRunID               string     `json:"validation_run_id"`
-	Form                          string     `json:"form"`
-	Repository                    string     `json:"repository"`
-	WorkingDir                    string     `json:"working_dir"`
-	Head                          string     `json:"head"`
-	IndexDigest                   string     `json:"index_digest"`
-	WorktreeDigest                string     `json:"worktree_digest"`
-	WorktreeDigestExcludingParent string     `json:"worktree_digest_excluding_parent,omitempty"`
-	IgnoredInputsAbsent           *bool      `json:"ignored_inputs_absent,omitempty"`
-	TaskID                        string     `json:"task_id,omitempty"`
-	StartedAt                     time.Time  `json:"started_at"`
-	CompletedAt                   *time.Time `json:"completed_at,omitempty"`
-	Status                        string     `json:"status"`
-	RunnerPID                     int        `json:"runner_pid,omitempty"`
-	ExitCode                      int        `json:"exit_code,omitempty"`
-	ExitSource                    string     `json:"exit_source,omitempty"`
-	DurationMS                    int64      `json:"duration_ms,omitempty"`
-	Log                           string     `json:"log,omitempty"`
+	ValidationRunID               string        `json:"validation_run_id"`
+	Form                          string        `json:"form"`
+	Repository                    string        `json:"repository"`
+	WorkingDir                    string        `json:"working_dir"`
+	Head                          string        `json:"head"`
+	IndexDigest                   string        `json:"index_digest"`
+	WorktreeDigest                string        `json:"worktree_digest"`
+	WorktreeDigestExcludingParent string        `json:"worktree_digest_excluding_parent,omitempty"`
+	IgnoredInputsAbsent           *bool         `json:"ignored_inputs_absent,omitempty"`
+	TaskID                        string        `json:"task_id,omitempty"`
+	Toolchain                     *RunToolchain `json:"toolchain,omitempty"`
+	StartedAt                     time.Time     `json:"started_at"`
+	CompletedAt                   *time.Time    `json:"completed_at,omitempty"`
+	Status                        string        `json:"status"`
+	RunnerPID                     int           `json:"runner_pid,omitempty"`
+	ExitCode                      int           `json:"exit_code,omitempty"`
+	ExitSource                    string        `json:"exit_source,omitempty"`
+	DurationMS                    int64         `json:"duration_ms,omitempty"`
+	Log                           string        `json:"log,omitempty"`
+	TestTimings                   string        `json:"test_timings,omitempty"`
 }
 
 const (
@@ -44,6 +60,71 @@ const (
 	StatusFail        = "fail"
 	StatusInterrupted = "interrupted"
 )
+
+func (t RunToolchain) Recorded() bool {
+	return t.GoVersion != "" && t.GOOS != "" && t.GOARCH != "" && t.GoCache != "" && t.Parallelism > 0 && t.Command != "" && t.EnvironmentRecorded && t.TestCache == "executed"
+}
+
+func CaptureToolchain(workingDir string, goArgs, executionEnv []string) *RunToolchain {
+	t := &RunToolchain{Parallelism: runtime.NumCPU(), Command: "go " + strings.Join(goArgs, " "), TestCache: "unknown"}
+	if value := environmentValue(executionEnv, "GOMAXPROCS"); value != "" {
+		n, err := strconv.Atoi(value)
+		if err != nil || n <= 0 {
+			return t
+		}
+		t.Parallelism = n
+	}
+	cmd := exec.Command("go", "env", "-json", "GOVERSION", "GOOS", "GOARCH", "GOCACHE", "GOFLAGS")
+	cmd.Dir = workingDir
+	cmd.Env = executionEnv
+	output, err := cmd.Output()
+	if err != nil {
+		return t
+	}
+	var env map[string]string
+	if json.Unmarshal(output, &env) != nil {
+		return t
+	}
+	t.GoVersion, t.GOOS, t.GOARCH, t.GoCache = env["GOVERSION"], env["GOOS"], env["GOARCH"], env["GOCACHE"]
+	flags, ok := env["GOFLAGS"]
+	t.GoFlags, t.EnvironmentRecorded = flags, ok
+	return t
+}
+
+func TestCacheObservation(log []byte) string {
+	mask := 0
+	for _, line := range strings.Split(string(log), "\n") {
+		mask |= testCacheLineMask(line)
+	}
+	switch mask {
+	case 1:
+		return "cached"
+	case 2:
+		return "executed"
+	case 3:
+		return "mixed"
+	default:
+		return "unknown"
+	}
+}
+
+func testCacheLineMask(line string) int {
+	var event goTestJSONEvent
+	if json.Unmarshal([]byte(line), &event) != nil || event.Action != "output" || event.Package == "" || event.Test != "" {
+		return 0
+	}
+	text := strings.TrimSpace(event.Output)
+	if strings.HasPrefix(text, "ok ") || strings.HasPrefix(text, "ok\t") {
+		if strings.Contains(text, "(cached)") {
+			return 1
+		}
+		return 2
+	}
+	if strings.HasPrefix(text, "FAIL\t") || strings.HasPrefix(text, "FAIL ") {
+		return 2
+	}
+	return 0
+}
 
 func NoIgnoredInputs(repository string) (bool, error) {
 	data, err := exec.Command("git", "-C", repository, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").Output()
@@ -114,4 +195,13 @@ func VerifyTerminalPass(record RunRecord) error {
 		return fmt.Errorf("quality gate log evidence is unavailable: %w", err)
 	}
 	return nil
+}
+
+func environmentValue(env []string, key string) string {
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, key+"="); ok {
+			return value
+		}
+	}
+	return ""
 }

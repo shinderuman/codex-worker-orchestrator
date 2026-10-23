@@ -2,29 +2,34 @@ package controller
 
 import (
 	"encoding/json"
+	"math"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type EvidenceAnalysisIndex struct {
-	SchemaVersion             int                             `json:"schema_version"`
-	GeneratedAt               time.Time                       `json:"generated_at"`
-	Window                    EvidenceAnalysisWindow          `json:"window"`
-	Sessions                  EvidenceAnalysisSessions        `json:"sessions"`
-	Parent                    *EvidenceAnalysisParent         `json:"parent,omitempty"`
-	Guardian                  []EvidenceAnalysisGuardian      `json:"guardian,omitempty"`
-	Predecessors              []EvidenceAnalysisPredecessor   `json:"predecessors,omitempty"`
-	Instructions              EvidenceAnalysisInstructions    `json:"instructions"`
-	CanonicalValidationRuns   []EvidenceAnalysisValidationRun `json:"canonical_validation_runs,omitempty"`
-	ObservedValidationActions []EvidenceAnalysisValidationRun `json:"observed_validation_actions,omitempty"`
-	Retries                   EvidenceAnalysisRetries         `json:"retries"`
-	ModelCalls                EvidenceAnalysisModelCalls      `json:"model_calls"`
-	ReviewRounds              EvidenceAnalysisReviewRounds    `json:"review_rounds"`
-	Git                       *EvidenceAnalysisGit            `json:"git,omitempty"`
-	EvidenceStates            EvidenceAnalysisStates          `json:"evidence_states"`
+	SchemaVersion             int                                  `json:"schema_version"`
+	GeneratedAt               time.Time                            `json:"generated_at"`
+	Window                    EvidenceAnalysisWindow               `json:"window"`
+	Sessions                  EvidenceAnalysisSessions             `json:"sessions"`
+	Parent                    *EvidenceAnalysisParent              `json:"parent,omitempty"`
+	Guardian                  []EvidenceAnalysisGuardian           `json:"guardian,omitempty"`
+	Predecessors              []EvidenceAnalysisPredecessor        `json:"predecessors,omitempty"`
+	Instructions              EvidenceAnalysisInstructions         `json:"instructions"`
+	CanonicalValidationRuns   []EvidenceAnalysisValidationRun      `json:"canonical_validation_runs,omitempty"`
+	ObservedValidationActions []EvidenceAnalysisValidationRun      `json:"observed_validation_actions,omitempty"`
+	Retries                   EvidenceAnalysisRetries              `json:"retries"`
+	Workflow                  EvidenceAnalysisWorkflow             `json:"workflow"`
+	TestTimingRegression      EvidenceAnalysisTestTimingRegression `json:"test_timing_regression"`
+	ModelCalls                EvidenceAnalysisModelCalls           `json:"model_calls"`
+	ReviewRounds              EvidenceAnalysisReviewRounds         `json:"review_rounds"`
+	Git                       *EvidenceAnalysisGit                 `json:"git,omitempty"`
+	EvidenceStates            EvidenceAnalysisStates               `json:"evidence_states"`
 }
 
 type EvidenceAnalysisWindow struct {
@@ -74,19 +79,22 @@ type EvidenceAnalysisGuardian struct {
 }
 
 type EvidenceAnalysisValidationRun struct {
-	RunID       string    `json:"run_id,omitempty"`
-	Form        string    `json:"form"`
-	GateClass   string    `json:"gate_class,omitempty"`
-	Result      string    `json:"result"`
-	Attempt     string    `json:"attempt,omitempty"`
-	SnapshotID  string    `json:"snapshot_id,omitempty"`
-	Log         string    `json:"log,omitempty"`
-	Binding     string    `json:"binding,omitempty"`
-	ExitCode    int       `json:"exit_code,omitempty"`
-	DurationMS  int64     `json:"duration_ms,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
-	Basis       string    `json:"basis"`
-	Occurrences int       `json:"occurrences,omitempty"`
+	RunID         string    `json:"run_id,omitempty"`
+	Form          string    `json:"form"`
+	GateClass     string    `json:"gate_class,omitempty"`
+	Result        string    `json:"result"`
+	Attempt       string    `json:"attempt,omitempty"`
+	SnapshotID    string    `json:"snapshot_id,omitempty"`
+	Log           string    `json:"log,omitempty"`
+	TestTimings   string    `json:"test_timings,omitempty"`
+	Tests         int       `json:"tests,omitempty"`
+	SlowestTestMS int64     `json:"slowest_test_ms,omitempty"`
+	Binding       string    `json:"binding,omitempty"`
+	ExitCode      int       `json:"exit_code,omitempty"`
+	DurationMS    int64     `json:"duration_ms,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
+	Basis         string    `json:"basis"`
+	Occurrences   int       `json:"occurrences,omitempty"`
 }
 
 type EvidenceAnalysisRetries struct {
@@ -163,6 +171,63 @@ type EvidenceAnalysisInstructions struct {
 	History *EvidenceAnalysisSnapshotFile `json:"history,omitempty"`
 }
 
+type EvidenceAnalysisTestTimingRegression struct {
+	Status      string                                 `json:"status"`
+	Basis       string                                 `json:"basis"`
+	Runs        int                                    `json:"runs"`
+	Conditions  EvidenceAnalysisTestTimingConditions   `json:"conditions"`
+	Comparisons []EvidenceAnalysisTestTimingComparison `json:"comparisons,omitempty"`
+}
+
+type EvidenceAnalysisTestTimingConditions struct {
+	RatioThreshold float64 `json:"ratio_threshold"`
+	DeltaFloorMS   int64   `json:"delta_floor_ms"`
+	Candidates     int     `json:"candidates_bound"`
+	ComparedPairs  string  `json:"compared_pairs"`
+	Uncaptured     string  `json:"uncaptured"`
+}
+
+type EvidenceAnalysisTestTimingComparison struct {
+	Form       string                                `json:"form"`
+	WorkingDir string                                `json:"working_dir"`
+	Baseline   EvidenceAnalysisTestTimingRunSide     `json:"baseline"`
+	Latest     EvidenceAnalysisTestTimingRunSide     `json:"latest"`
+	Candidates []EvidenceAnalysisTestTimingCandidate `json:"candidates,omitempty"`
+	Unknown    string                                `json:"unknown,omitempty"`
+}
+
+type EvidenceAnalysisTestTimingRunSide struct {
+	RunID      string                                    `json:"run_id"`
+	Repository string                                    `json:"repository"`
+	WorkingDir string                                    `json:"working_dir"`
+	Head       string                                    `json:"head,omitempty"`
+	TaskID     string                                    `json:"task_id,omitempty"`
+	Result     string                                    `json:"result"`
+	StartedAt  time.Time                                 `json:"started_at"`
+	Conditions *EvidenceAnalysisTestTimingConditionsSide `json:"conditions,omitempty"`
+}
+
+type EvidenceAnalysisTestTimingConditionsSide = qualitygate.RunToolchain
+
+type EvidenceAnalysisTestTimingCandidate struct {
+	Package    string  `json:"package"`
+	Test       string  `json:"test"`
+	BaselineMS int64   `json:"baseline_ms"`
+	LatestMS   int64   `json:"latest_ms"`
+	DeltaMS    int64   `json:"delta_ms"`
+	Ratio      float64 `json:"ratio,omitempty"`
+}
+
+type testTimingGroupKey struct {
+	form       string
+	workingDir string
+}
+
+type testTimingKey struct {
+	pkg  string
+	test string
+}
+
 const evidenceAnalysisIndexSchemaVersion = 1
 
 const (
@@ -176,6 +241,14 @@ const (
 	evidenceAnalysisBasisRounds           = "review-rounds"
 	evidenceAnalysisBasisAssociation      = "session-association"
 	evidenceAnalysisBasisBlockObservation = "task-event-block-observations"
+
+	evidenceAnalysisBasisTestTimings = "validation-test-timings"
+)
+
+const (
+	testTimingRegressionRatioThreshold  = 1.5
+	testTimingRegressionDeltaFloorMS    = int64(500)
+	testTimingRegressionCandidatesBound = 20
 )
 
 const evidenceAnalysisIndexEntryPath = "analysis-index.json"
@@ -200,6 +273,8 @@ func (b *evidenceExportBuilder) buildAnalysisIndex(live EvidenceExportRuntimeSec
 	index.Guardian = b.analysisGuardian()
 	index.Predecessors = b.analysisPredecessors()
 	index.Retries = b.analysisRetries(canonicalRuns, observedActions)
+	index.Workflow = b.analysisWorkflow(live)
+	index.TestTimingRegression = b.analysisTestTimingRegression()
 	index.EvidenceStates = b.analysisStates()
 	data, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
@@ -472,14 +547,20 @@ func completeSnapshotFile(file *EvidenceAnalysisSnapshotFile) bool {
 
 func (b *evidenceExportBuilder) analysisValidationRuns() (canonical []EvidenceAnalysisValidationRun, observed []EvidenceAnalysisValidationRun) {
 	for _, collected := range b.validationRuns {
-		canonical = append(canonical, EvidenceAnalysisValidationRun{
+		run := EvidenceAnalysisValidationRun{
 			RunID: collected.run.ValidationRunID, Form: collected.run.Form,
 			GateClass: state.ValidationGateClass(collected.run.Form), Result: collected.run.Status,
 			SnapshotID: state.ValidationSnapshotID(collected.run.Head, collected.run.IndexDigest, collected.run.WorktreeDigest),
 			Log:        collected.logEntry, Binding: collected.binding, ExitCode: collected.run.ExitCode,
 			DurationMS: collected.run.DurationMS, Timestamp: collected.run.StartedAt,
 			Basis: collected.basis,
-		})
+		}
+		if collected.timings != nil {
+			run.TestTimings = collected.timingsEntry
+			run.Tests = collected.timings.CountTests()
+			run.SlowestTestMS = collected.timings.SlowestTestMS()
+		}
+		canonical = append(canonical, run)
 	}
 	for _, record := range b.taskEvents() {
 		if record.Kind == taskEventKindValidation && record.Validation != nil {
@@ -644,25 +725,7 @@ func (b *evidenceExportBuilder) analysisStates() EvidenceAnalysisStates {
 }
 
 func (b *evidenceExportBuilder) telemetryCalls() []state.ModelCallLog {
-	data, ok := b.runtimeFileBytes("task/telemetry.jsonl")
-	if !ok {
-		data, ok = b.fileBytes("attempt/telemetry.jsonl")
-	}
-	if !ok || len(data) == 0 {
-		return nil
-	}
-	var logs []state.ModelCallLog
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		var log state.ModelCallLog
-		if err := json.Unmarshal([]byte(line), &log); err != nil {
-			continue
-		}
-		logs = append(logs, log)
-	}
-	return logs
+	return parseWorkflowTelemetry(b.runtimeTelemetryBytes())
 }
 
 func (b *evidenceExportBuilder) taskEvents() []state.TaskEventRecord {
@@ -728,4 +791,215 @@ func sortedStringSet(values map[string]struct{}) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+func (b *evidenceExportBuilder) analysisTestTimingRegression() EvidenceAnalysisTestTimingRegression {
+	regression := EvidenceAnalysisTestTimingRegression{
+		Status: evidenceAnalysisStatusAbsent,
+		Basis:  evidenceAnalysisBasisTestTimings,
+		Conditions: EvidenceAnalysisTestTimingConditions{
+			RatioThreshold: testTimingRegressionRatioThreshold,
+			DeltaFloorMS:   testTimingRegressionDeltaFloorMS,
+			Candidates:     testTimingRegressionCandidatesBound,
+			ComparedPairs:  "latest run vs nearest older run with equal recorded toolchain conditions per form and repository-relative module; pass-to-pass tests only",
+			Uncaptured:     "machine load, CPU model, and cache warmth are not captured; runs without recorded toolchain conditions never form pairs",
+		},
+	}
+	groups := collectTestTimingGroups(b.validationRuns)
+	for _, runs := range groups {
+		regression.Runs += len(runs)
+	}
+	if regression.Runs == 0 {
+		return regression
+	}
+	regression.Status = evidenceAnalysisStatusCollected
+	for _, key := range sortedTestTimingGroupKeys(groups) {
+		regression.Comparisons = append(regression.Comparisons, testTimingComparison(key.form, key.workingDir, groups[key]))
+	}
+	return regression
+}
+
+func collectTestTimingGroups(validationRuns []collectedValidationRun) map[testTimingGroupKey][]collectedValidationRun {
+	groups := map[testTimingGroupKey][]collectedValidationRun{}
+	for _, collected := range validationRuns {
+		if collected.timings == nil {
+			continue
+		}
+		module := testTimingModule(collected.run)
+		key := testTimingGroupKey{form: collected.run.Form, workingDir: module}
+		groups[key] = append(groups[key], collected)
+	}
+	return groups
+}
+
+func testTimingModule(run qualitygate.RunRecord) string {
+	if !filepath.IsAbs(run.Repository) || !filepath.IsAbs(run.WorkingDir) {
+		return ""
+	}
+	module, err := filepath.Rel(run.Repository, run.WorkingDir)
+	if err != nil || !validFinalValidationWorkingDir(module) {
+		return ""
+	}
+	return filepath.ToSlash(module)
+}
+
+func sortedTestTimingGroupKeys(groups map[testTimingGroupKey][]collectedValidationRun) []testTimingGroupKey {
+	keys := make([]testTimingGroupKey, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].form != keys[j].form {
+			return keys[i].form < keys[j].form
+		}
+		return keys[i].workingDir < keys[j].workingDir
+	})
+	return keys
+}
+
+func testTimingComparison(form, workingDir string, runs []collectedValidationRun) EvidenceAnalysisTestTimingComparison {
+	runs = append([]collectedValidationRun(nil), runs...)
+	sort.Slice(runs, func(i, j int) bool {
+		if !runs[i].run.StartedAt.Equal(runs[j].run.StartedAt) {
+			return runs[i].run.StartedAt.Before(runs[j].run.StartedAt)
+		}
+		return runs[i].run.ValidationRunID < runs[j].run.ValidationRunID
+	})
+	latest := runs[len(runs)-1]
+	comparison := EvidenceAnalysisTestTimingComparison{
+		Form:       form,
+		WorkingDir: workingDir,
+		Latest:     testTimingRunSide(latest),
+	}
+	if workingDir == "" {
+		comparison.Unknown = "run does not record a module within its repository checkout"
+		return comparison
+	}
+	latestConditions := testTimingConditions(latest)
+	if latestConditions == nil {
+		comparison.Unknown = "latest run does not record its execution conditions"
+		return comparison
+	}
+	if latest.timings == nil || !latest.timings.Coverage.Captured || latest.timings.Coverage.UntimedTerminalEvents > 0 || latest.run.Status != qualitygate.StatusPass {
+		comparison.Unknown = "latest run captured no machine-readable test events"
+		return comparison
+	}
+	baseline, ok := nearestComparableTimingRun(runs, len(runs)-1, latestConditions)
+	if !ok {
+		comparison.Unknown = "no older comparable run with recorded conditions and captured test events in this export"
+		return comparison
+	}
+	comparison.Baseline = testTimingRunSide(baseline)
+	comparison.Candidates = testTimingCandidates(baseline.timings, latest.timings)
+	return comparison
+}
+
+func nearestComparableTimingRun(runs []collectedValidationRun, latest int, latestConditions *qualitygate.RunToolchain) (collectedValidationRun, bool) {
+	for index := latest - 1; index >= 0; index-- {
+		if conditions := testTimingConditions(runs[index]); conditions == nil || *conditions != *latestConditions {
+			continue
+		}
+		if runs[index].timings == nil || !runs[index].timings.Coverage.Captured || runs[index].timings.Coverage.UntimedTerminalEvents > 0 || runs[index].run.Status != qualitygate.StatusPass {
+			continue
+		}
+		return runs[index], true
+	}
+	return collectedValidationRun{}, false
+}
+
+func testTimingRunSide(collected collectedValidationRun) EvidenceAnalysisTestTimingRunSide {
+	return EvidenceAnalysisTestTimingRunSide{
+		RunID:      collected.run.ValidationRunID,
+		Repository: collected.run.Repository,
+		WorkingDir: collected.run.WorkingDir,
+		Head:       collected.run.Head,
+		TaskID:     collected.run.TaskID,
+		Result:     collected.run.Status,
+		StartedAt:  collected.run.StartedAt,
+		Conditions: testTimingConditionsSide(collected),
+	}
+}
+
+func testTimingConditionsSide(collected collectedValidationRun) *EvidenceAnalysisTestTimingConditionsSide {
+	toolchain := testTimingConditions(collected)
+	if toolchain == nil {
+		return nil
+	}
+	copy := *toolchain
+	return &copy
+}
+
+func testTimingConditions(collected collectedValidationRun) *qualitygate.RunToolchain {
+	if collected.run.Toolchain == nil || !collected.run.Toolchain.Recorded() {
+		return nil
+	}
+	return collected.run.Toolchain
+}
+
+func testTimingCandidates(baseline, latest *qualitygate.TestTimings) []EvidenceAnalysisTestTimingCandidate {
+	base := baselineTestTimings(baseline)
+	var candidates []EvidenceAnalysisTestTimingCandidate
+	for _, timing := range latest.Tests {
+		candidate, ok := testTimingCandidate(timing, base)
+		if ok {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return boundTestTimingCandidates(candidates)
+}
+
+func baselineTestTimings(baseline *qualitygate.TestTimings) map[testTimingKey]qualitygate.TestTiming {
+	base := map[testTimingKey]qualitygate.TestTiming{}
+	for _, timing := range baseline.Tests {
+		if timing.IsPackageTiming() {
+			continue
+		}
+		base[testTimingKey{pkg: timing.Package, test: timing.Test}] = timing
+	}
+	return base
+}
+
+func testTimingCandidate(timing qualitygate.TestTiming, base map[testTimingKey]qualitygate.TestTiming) (EvidenceAnalysisTestTimingCandidate, bool) {
+	if timing.IsPackageTiming() || timing.Action != qualitygate.TestTimingActionPass {
+		return EvidenceAnalysisTestTimingCandidate{}, false
+	}
+	compared, ok := base[testTimingKey{pkg: timing.Package, test: timing.Test}]
+	if !ok || compared.Action != qualitygate.TestTimingActionPass {
+		return EvidenceAnalysisTestTimingCandidate{}, false
+	}
+	delta := timing.ElapsedMS - compared.ElapsedMS
+	if delta < testTimingRegressionDeltaFloorMS {
+		return EvidenceAnalysisTestTimingCandidate{}, false
+	}
+	if compared.ElapsedMS > 0 && float64(timing.ElapsedMS) < float64(compared.ElapsedMS)*testTimingRegressionRatioThreshold {
+		return EvidenceAnalysisTestTimingCandidate{}, false
+	}
+	return newTestTimingCandidate(timing, compared, delta), true
+}
+
+func newTestTimingCandidate(timing, compared qualitygate.TestTiming, delta int64) EvidenceAnalysisTestTimingCandidate {
+	candidate := EvidenceAnalysisTestTimingCandidate{
+		Package: timing.Package, Test: timing.Test,
+		BaselineMS: compared.ElapsedMS, LatestMS: timing.ElapsedMS, DeltaMS: delta,
+	}
+	if compared.ElapsedMS > 0 {
+		candidate.Ratio = math.Round(float64(timing.ElapsedMS)/float64(compared.ElapsedMS)*100) / 100
+	}
+	return candidate
+}
+
+func boundTestTimingCandidates(candidates []EvidenceAnalysisTestTimingCandidate) []EvidenceAnalysisTestTimingCandidate {
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].DeltaMS != candidates[j].DeltaMS {
+			return candidates[i].DeltaMS > candidates[j].DeltaMS
+		}
+		if candidates[i].Package != candidates[j].Package {
+			return candidates[i].Package < candidates[j].Package
+		}
+		return candidates[i].Test < candidates[j].Test
+	})
+	if len(candidates) > testTimingRegressionCandidatesBound {
+		candidates = candidates[:testTimingRegressionCandidatesBound]
+	}
+	return candidates
 }

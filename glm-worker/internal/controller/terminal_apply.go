@@ -9,7 +9,7 @@ import (
 func terminalMetadataEffects(p TerminalMetadataOperation, implementation string) []EffectExpectation {
 	result := []EffectExpectation{{Surface: MutationSurfaceRef, Resource: p.Policy.LocalRef, ExpectedOld: implementation, ExpectedNew: p.Record.ResultProject.HeadOID}}
 	for _, file := range p.Files {
-		result = append(result, EffectExpectation{Surface: MutationSurfaceIndex, Resource: file.Path, ExpectedOld: file.OldOID, ExpectedNew: file.NewOID}, EffectExpectation{Surface: MutationSurfaceSource, Resource: file.Path, ExpectedOld: terminalFileIdentity(file.Mode, file.OldBytes, true), ExpectedNew: terminalFileIdentity(file.Mode, file.NewBytes, file.NewOID != "")})
+		result = append(result, EffectExpectation{Surface: MutationSurfaceIndex, Resource: file.Path, ExpectedOld: file.OldOID, ExpectedNew: file.NewOID}, EffectExpectation{Surface: MutationSurfaceSource, Resource: file.Path, ExpectedOld: terminalFileIdentity(file.Mode, file.OldBytes, file.OldOID != ""), ExpectedNew: terminalFileIdentity(file.Mode, file.NewBytes, file.NewOID != "")})
 	}
 	return result
 }

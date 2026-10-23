@@ -96,6 +96,7 @@ func cadenceWorkflowFixture(t *testing.T, binary string) (config.AppConfig, stri
 		t.Fatal(err)
 	}
 	forward := "#!/bin/sh\ncase \"$1\" in test|vet|build) ;; *) exec '" + strings.ReplaceAll(realGo, "'", "'\"'\"'") + "' \"$@\";; esac\n"
+	forward += "if [ \"$1\" = test ] && [ -f '" + failFlag + ".plain' ]; then\n  printf 'argv:%s\\n' \"$*\" >>'" + log + "'\n  printf '%s\\n' 'ok example.com/fixture 0.25s'\n  exit 0\nfi\n"
 	if err := os.WriteFile(shimPath, []byte(forward+strings.TrimPrefix(string(shimBody), "#!/bin/sh\n")), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +114,7 @@ func TestCanonicalValidationCadenceWithoutRuntimeRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"success", "final-failure"} {
+	for _, scenario := range []string{"success", "final-failure", "observation-failure", "promoted-fix", "publication-interruption"} {
 		t.Run(scenario, func(t *testing.T) {
 			cfg, task, policy, log, failFlag := cadenceWorkflowFixture(t, binary)
 			r := &cadenceWorkflowRunner{canonicalWorkflowRunner: canonicalWorkflowRunner{complete: true, t: t, task: task, path: "cadence-result.txt"}}
@@ -133,11 +134,16 @@ func TestCanonicalValidationCadenceWithoutRuntimeRepair(t *testing.T) {
 			review := cadenceParentAcceptance(t, cfg, r)
 			candidate, generation := cadenceAcceptCandidate(t, cfg, policy, evidence, review)
 			expectedCalls := 1
-			if scenario == "final-failure" {
+			switch scenario {
+			case "final-failure":
 				candidate, generation = cadenceFailedFinalFix(t, binary, cfg, policy, candidate, generation, r, failFlag, taskID)
 				expectedCalls = 2
+			case "observation-failure", "promoted-fix":
+				candidate, generation = cadenceObservationFix(t, binary, cfg, policy, candidate, generation, r, failFlag, taskID, scenario)
+				expectedCalls = 2
 			}
-			cadenceFinalPublication(t, cfg, policy, candidate, generation, log, taskID, expectedCalls)
+			cadenceFinalPublication(t, cfg, policy, candidate, generation, log, taskID, expectedCalls, scenario == "publication-interruption")
+			cadenceCleanup(t, binary, cfg, candidate)
 		})
 	}
 }
@@ -208,7 +214,7 @@ func cadenceAcceptCandidate(t *testing.T, cfg config.AppConfig, policy controlle
 	return candidate, accepted.Head.ControllerGeneration
 }
 
-func cadenceFinalPublication(t *testing.T, cfg config.AppConfig, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate, generation uint64, log, taskID string, expectedCalls int) {
+func cadenceFinalPublication(t *testing.T, cfg config.AppConfig, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate, generation uint64, log, taskID string, expectedCalls int, interrupted bool) {
 	t.Helper()
 	output := cadenceFinalCheck(t, cfg)
 	var final struct {
@@ -225,7 +231,12 @@ func cadenceFinalPublication(t *testing.T, cfg config.AppConfig, policy controll
 		t.Fatalf("full test invocations = %d", calls)
 	}
 	promoted := cadencePublication(t, cfg, controllerPublicationCommand{Action: "promote", ExpectedGeneration: generation, CandidateID: candidate.CandidateID}).(controller.ExecutionOperationResult)
-	published := cadencePublication(t, cfg, controllerPublicationCommand{Action: "publish", ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}).(controller.ExecutionOperationResult)
+	var published controller.ExecutionOperationResult
+	if interrupted {
+		published = cadenceInterruptedPublication(t, cfg, policy, candidate, promoted.Head.ControllerGeneration)
+	} else {
+		published = cadencePublication(t, cfg, controllerPublicationCommand{Action: "publish", ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}).(controller.ExecutionOperationResult)
+	}
 	if published.Head.IntegrationTip != candidate.CommitOID || published.Head.LiveLeaseID != "" || published.Head.ExecutionTaskRef != nil {
 		t.Fatal("publication did not retire the exact candidate")
 	}
@@ -245,6 +256,40 @@ func cadenceFinalPublication(t *testing.T, cfg config.AppConfig, policy controll
 	if successor := state.AttachStateStore(successorCfg); successor.ReadOr("task.id", "") != "" {
 		t.Fatal("successor Task was started")
 	}
+}
+
+func cadenceInterruptedPublication(t *testing.T, cfg config.AppConfig, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate, generation uint64) controller.ExecutionOperationResult {
+	t.Helper()
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primaryCfg := cfg
+	primaryCfg.RepoRoot = store.Identity().PrimaryRoot
+	hooks := t.TempDir()
+	writeAppTestFile(t, hooks, "pre-push", "#!/bin/sh\nexit 1\n")
+	if err := os.Chmod(filepath.Join(hooks, "pre-push"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runControllerActivationGit(t, primaryCfg.RepoRoot, "config", "core.hooksPath", hooks)
+	_, publishErr := executeControllerPublication(cfg, store, controllerPublicationCommand{Action: "publish", ExpectedGeneration: generation, CandidateID: candidate.CandidateID})
+	runControllerActivationGit(t, primaryCfg.RepoRoot, "config", "--unset", "core.hooksPath")
+	if publishErr == nil {
+		t.Fatal("publication interruption was not observed")
+	}
+	authority, err := controller.ResolveCommittedTaskAuthority(primaryCfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRetiredBootstrap(t, primaryCfg, authority.Task.TaskPath)
+	if code, diagnostics := runCompletionRecoveryThroughParentCLI(t, primaryCfg); code != 0 {
+		t.Fatalf("normal publication recovery failed: %d %s", code, diagnostics)
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return controller.ExecutionOperationResult{Head: head}
 }
 
 func cadenceFullCalls(lines []string) int {
@@ -298,6 +343,11 @@ func cadenceFailedFinalFix(t *testing.T, binary string, cfg config.AppConfig, po
 	if err := os.Remove(failFlag); err != nil {
 		t.Fatal(err)
 	}
+	return cadenceFixCandidate(t, binary, cfg, policy, candidate, generation, r, taskID)
+}
+
+func cadenceFixCandidate(t *testing.T, binary string, cfg config.AppConfig, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate, generation uint64, r *cadenceWorkflowRunner, taskID string) (controller.AcceptedCandidate, uint64) {
+	t.Helper()
 	reentered := cadencePublication(t, cfg, controllerPublicationCommand{Action: "reenter", ExpectedGeneration: generation, CandidateID: candidate.CandidateID}).(controller.ExecutionOperationResult)
 	materialized := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if materialized.Admission == nil {
@@ -320,6 +370,83 @@ func cadenceFailedFinalFix(t *testing.T, binary string, cfg config.AppConfig, po
 	return next, nextGeneration
 }
 
+func cadenceObservationFix(t *testing.T, binary string, cfg config.AppConfig, policy controller.PublicationPolicy, candidate controller.AcceptedCandidate, generation uint64, r *cadenceWorkflowRunner, flag, taskID, scenario string) (controller.AcceptedCandidate, uint64) {
+	t.Helper()
+	plain := flag + ".plain"
+	if scenario == "observation-failure" {
+		if err := os.WriteFile(plain, []byte("plain"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if output := cadenceFinalCheck(t, cfg); !strings.Contains(output, "ready_for_parent_decision") {
+		t.Fatal(output)
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := executeControllerPublication(cfg, store, controllerPublicationCommand{Action: "promote", ExpectedGeneration: generation, CandidateID: candidate.CandidateID})
+	if scenario == "observation-failure" {
+		if err == nil || !strings.Contains(err.Error(), "not captured from machine-readable") {
+			t.Fatalf("uncaptured observation passed promotion: %v", err)
+		}
+		head, loadErr := store.LoadHead()
+		if loadErr != nil || head.ControllerGeneration != generation || head.PendingTransitionID != "" {
+			t.Fatal("observation failure crossed the promotion boundary")
+		}
+		if err := os.Remove(plain); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err != nil {
+			t.Fatal(err)
+		}
+		generation = promoted.(controller.ExecutionOperationResult).Head.ControllerGeneration
+	}
+	primaryCfg := cfg
+	primaryCfg.RepoRoot = store.Identity().PrimaryRoot
+	handoff := executeParentHandoff(t, primaryCfg)
+	if !handoff.Consistent || !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) {
+		t.Fatalf("failure/fix lifecycle closed: %#v", handoff)
+	}
+	return cadenceFixCandidate(t, binary, cfg, policy, candidate, generation, r, taskID)
+}
+
+func cadenceCleanup(t *testing.T, binary string, cfg config.AppConfig, candidate controller.AcceptedCandidate) {
+	t.Helper()
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seal, err := store.LoadAttemptSeal(candidate.SealRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primary, err := controller.ResolveWorkspaceIdentity(store.Identity().PrimaryRoot, store.Identity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seal.WorkspaceID == primary.ID {
+		if _, err := store.ProveCleanupDurability(candidate.SealRef); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	suspension, err := store.LoadSuspension(store.Identity().PrimaryRoot, seal.OperationalSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RepoRoot = store.Identity().PrimaryRoot
+	cleaned := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: head.ControllerGeneration, WorkspaceID: suspension.WorkspaceID, SealRef: &candidate.SealRef})
+	if cleaned.Head.LiveLeaseID != "" || cleaned.Head.PendingTransitionID != "" {
+		t.Fatal("Cleanup retained live lifecycle authority")
+	}
+}
+
 func TestCanonicalCadenceCompletedRuntimeAdmitsExternalPullSyncAndSuccessor(t *testing.T) {
 	binary, err := buildMultiRepoWorkerBinary(t)
 	if err != nil {
@@ -335,7 +462,7 @@ func TestCanonicalCadenceCompletedRuntimeAdmitsExternalPullSyncAndSuccessor(t *t
 	}
 	review := cadenceParentAcceptance(t, cfg, r)
 	candidate, generation := cadenceAcceptCandidate(t, cfg, policy, evidence, review)
-	cadenceFinalPublication(t, cfg, policy, candidate, generation, log, taskID, 1)
+	cadenceFinalPublication(t, cfg, policy, candidate, generation, log, taskID, 1, false)
 
 	sourceTip := pullExternalSourceChange(t, cfg, policy, map[string]string{"external-code.txt": "external code update\n"}, nil)
 	handoff := executeParentHandoff(t, cfg)

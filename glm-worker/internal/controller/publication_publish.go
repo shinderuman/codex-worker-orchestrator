@@ -65,7 +65,7 @@ func (s *Store) pushAndObserveCandidate(op ExecutionOperation, c AcceptedCandida
 		return "", fmt.Errorf("completion remote changed; journal retained")
 	}
 	if err := s.guardCompletionPush(op, PublicationPushGuardInput{RemoteName: c.Policy.Remote, LocalRef: c.Policy.LocalRef, LocalOID: c.CommitOID, RemoteRef: c.Policy.RemoteRef, RemoteOID: remote}); err != nil {
-		return "", err
+		return "", s.failCompletionPushGuard(op, err, remote)
 	}
 	output, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", c.Policy.Remote, c.Policy.LocalRef+":"+c.Policy.RemoteRef)
 	observed, err := observePublicationRemote(s.identity.PrimaryRoot, c.Policy)
@@ -90,6 +90,14 @@ func (s *Store) pushAndObserveCandidate(op ExecutionOperation, c AcceptedCandida
 		return "", errors.Join(fmt.Errorf("completion publication outcome is unresolved; journal retained"), pushErr)
 	}
 	return observed, nil
+}
+
+func (s *Store) failCompletionPushGuard(op ExecutionOperation, cause error, remote string) error {
+	phase, err := s.loadTransitionState(op.Transition.TransitionID)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	return s.failUnwrittenCompletion(op, &phase, "push-guard", cause, remote)
 }
 
 func (s *Store) validateCandidatePublicationLocal(c AcceptedCandidate) error {

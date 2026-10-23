@@ -193,6 +193,7 @@ type EvidenceExportResult struct {
 
 type evidenceExportBuilder struct {
 	store          *Store
+	targetTask     SemanticTaskRef
 	head           RepositoryControllerHead
 	observedAt     time.Time
 	files          []EvidenceExportFile

@@ -41,6 +41,7 @@ type Workflow struct {
 	captureQualitySurface   func(root string) (string, error)
 	repoSearch              repoSearchFunc
 	admitCanonicalMutation  func() error
+	admitNewTaskMutation    func() error
 	admitModelMutation      func(state.ResumeCheckpoint) (controllerModelCallGuard, error)
 	canonicalAdmission      *controller.Admission
 
@@ -134,6 +135,7 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		captureQualitySurface: captureQualitySurfaceDigest,
 	}
 	w.admitCanonicalMutation = w.admitCanonicalWorkflowMutation
+	w.admitNewTaskMutation = w.admitCanonicalNewTaskMutation
 	w.admitModelMutation = w.admitControllerModelCall
 	return w
 }

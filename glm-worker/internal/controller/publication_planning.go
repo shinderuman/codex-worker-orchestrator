@@ -30,6 +30,11 @@ func (s *Store) PromoteAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if complete {
 		return ExecutionOperationResult{Head: head, CandidateRef: &ref}, nil
 	}
+	checkRef, err := s.prepareCandidateBundleObservation(c)
+	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	c.BundleCheckRef = &checkRef
 	c.State = candidatePromoted
 	op, err := s.planCandidateRevision(head, c, ref, publicationPromote)
 	if err != nil {

@@ -15,10 +15,12 @@ import (
 )
 
 type collectedValidationRun struct {
-	run      qualitygate.RunRecord
-	logEntry string
-	basis    string
-	binding  string
+	run          qualitygate.RunRecord
+	logEntry     string
+	timingsEntry string
+	timings      *qualitygate.TestTimings
+	basis        string
+	binding      string
 }
 
 const (
@@ -156,10 +158,44 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 	if c.addValidationLog(store.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.RunLog)), c.validationEntry("quality-gate/"+runID+"/"+qualitygate.RunLog), evidenceExportSourceGateRun, basis) {
 		logEntry = c.validationEntry("quality-gate/" + runID + "/" + qualitygate.RunLog)
 	}
+	timingsEntry, timings := c.collectGateRunTimings(store, runID, record.Form, basis)
 	c.builder.validationRuns = append(c.builder.validationRuns, collectedValidationRun{
-		run: record, logEntry: logEntry, basis: basis, binding: c.gateRunBinding(record, storeBinding),
+		run: record, logEntry: logEntry, timingsEntry: timingsEntry, timings: timings, basis: basis, binding: c.gateRunBinding(record, storeBinding),
 	})
 	return nil
+}
+
+func (c *evidenceLiveCollector) collectGateRunTimings(store *state.StateStore, runID, form, basis string) (string, *qualitygate.TestTimings) {
+	path := store.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.TestTimingsFile))
+	entry := c.validationEntry("quality-gate/" + runID + "/" + qualitygate.TestTimingsFile)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", nil
+	}
+	timings, err := readGateRunTimings(path, runID, form)
+	if err != nil {
+		c.recordUnreadable(entry, err.Error())
+		return "", nil
+	}
+	if !c.addValidationLog(path, entry, evidenceExportSourceGateRun, basis) {
+		return "", nil
+	}
+	return entry, timings
+}
+
+func readGateRunTimings(path, runID, form string) (*qualitygate.TestTimings, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	timings, err := qualitygate.DecodeTestTimings(data)
+	if err != nil {
+		return nil, err
+	}
+	if timings.ValidationRunID != runID || timings.Form != form {
+		return nil, fmt.Errorf("test timings run identity or form differs")
+	}
+	return &timings, nil
 }
 
 func (c *evidenceLiveCollector) gateRunBinding(record qualitygate.RunRecord, storeBinding string) string {

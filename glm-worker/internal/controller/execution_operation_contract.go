@@ -28,6 +28,9 @@ var executionOperationContractTable = map[string]executionOperationContractFacto
 	executionParentSourceImport: func(s *Store) executionOperationContract {
 		return executionOperationContract{effects: executionOperationEffectsSingle, validate: s.validateParentSourceImport, apply: s.applyParentSourceImport, verifyCommitted: s.verifyCommittedParentSourceImport, projectResult: s.projectExecutionAdmissionResult}
 	},
+	executionTaskAuthoritySync: func(s *Store) executionOperationContract {
+		return executionOperationContract{effects: executionOperationEffectsSingle, validate: s.validateTaskAuthoritySync, apply: s.applyParentSourceImport, verifyCommitted: s.verifyCommittedParentSourceImport, projectResult: s.projectExecutionAdmissionResult}
+	},
 	userTaskTransition: func(s *Store) executionOperationContract {
 		return executionOperationContract{effects: executionOperationEffectsSingle, validate: s.validateUserTaskTransitionOperation, apply: s.applyUserTaskTransition, verifyCommitted: s.verifyCommittedUserTaskTransition}
 	},

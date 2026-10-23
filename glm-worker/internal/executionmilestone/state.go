@@ -220,7 +220,7 @@ func prepareRevision(
 	if err := executionunit.ValidateMilestoneDefinitions(definitions); err != nil {
 		return nil, err
 	}
-	if !revisionStatusAllowed(st.TaskStatus()) {
+	if !RevisionStatusAllowed(st.TaskStatus()) {
 		return nil, fmt.Errorf("execution milestones can only be revised at a stopped worker parent boundary")
 	}
 	plan, err := Load(st)
@@ -243,6 +243,25 @@ func prepareRevision(
 		plan.UpdatedAt = now
 	}
 	return plan, nil
+}
+
+func SyncTaskContract(st *state.StateStore, taskID, activeTaskPath, previousDigest, digest string, now time.Time) error {
+	plan, err := Load(st)
+	if err != nil || plan == nil {
+		return err
+	}
+	if plan.TaskID != taskID || plan.ActiveTaskPath != activeTaskPath {
+		return fmt.Errorf("execution milestone plan does not belong to the synced Task")
+	}
+	if plan.TaskContractSHA256 == digest {
+		return nil
+	}
+	if plan.TaskContractSHA256 != previousDigest {
+		return fmt.Errorf("execution milestone contract is outside the task authority sync lineage")
+	}
+	plan.TaskContractSHA256 = digest
+	plan.UpdatedAt = now
+	return Save(st, plan)
 }
 
 func currentAuthority(cfg config.AppConfig, st *state.StateStore) (revisionAuthority, error) {
@@ -350,7 +369,7 @@ func ValidateCurrent(plan *Plan, milestoneID string) error {
 	return nil
 }
 
-func revisionStatusAllowed(status state.TaskStatus) bool {
+func RevisionStatusAllowed(status state.TaskStatus) bool {
 	switch status {
 	case state.TaskStatusWaitingDecision,
 		state.TaskStatusWaitingSolReview,

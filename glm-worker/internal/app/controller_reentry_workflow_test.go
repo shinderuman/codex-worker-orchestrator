@@ -86,6 +86,26 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	}
 }
 
+func TestPromotedTaskMetadataKeepsPublicationAndReentryAvailable(t *testing.T) {
+	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
+	promoted, err := store.PromoteAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []string{"promoted", "reentered"} {
+		assertRetiredBootstrap(t, cfg, candidate.TaskRef.TaskPath)
+		handoff := buildParentHandoffWithConfig(cfg, runtime)
+		if !handoff.Consistent || !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) {
+			t.Fatalf("%s Task closure blocked normal lifecycle: %#v", stage, handoff)
+		}
+		if stage == "promoted" {
+			if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
 func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.ExecutionOperationResult, controller.AcceptedCandidate, *state.StateStore) {
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)

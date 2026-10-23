@@ -307,6 +307,7 @@ func newWorkflowTInRepo(t *testing.T, st *state.StateStore, r *scriptedRunner, r
 		RepoRoot:              repoRoot,
 	}, st, r, io.Discard)
 	w.admitCanonicalMutation = func() error { return nil }
+	w.admitNewTaskMutation = w.admitCanonicalMutation
 	w.admitModelMutation = func(state.ResumeCheckpoint) (controllerModelCallGuard, error) {
 		return controllerModelCallGuard{}, nil
 	}
@@ -395,6 +396,7 @@ func workerPacketWithRisk(risk string) string {
 func newUnitWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, out io.Writer) *Workflow {
 	w := NewWorkflow(cfg, st, r, out)
 	w.admitCanonicalMutation = func() error { return nil }
+	w.admitNewTaskMutation = w.admitCanonicalMutation
 	w.admitModelMutation = func(state.ResumeCheckpoint) (controllerModelCallGuard, error) { return controllerModelCallGuard{}, nil }
 	return w
 }

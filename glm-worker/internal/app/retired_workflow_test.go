@@ -162,14 +162,14 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	handoff = buildParentHandoffWithConfig(bound, st)
-	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != "start" {
-		t.Fatalf("terminated predecessor prevented fresh Task start: %#v", handoff)
+	if handoff.Consistent || handoff.RequiredAction != nil || containsParentAction(handoff.AllowedActions, "start") {
+		t.Fatalf("unbound termination record admitted a Task start: %#v", handoff)
 	}
-	if _, admitted, err := st.AdmitParentAction(state.ParentActionResume); err != nil || admitted {
-		t.Fatalf("terminated execution was admitted for resume: %v %v", admitted, err)
+	if _, admitted, err := st.AdmitParentAction(state.ParentActionResume); err == nil || admitted {
+		t.Fatalf("unbound termination record was admitted for resume: %v %v", admitted, err)
 	}
-	if _, admitted, err := st.AdmitNewTask(); err != nil || !admitted {
-		t.Fatalf("fresh Task start was not admitted: %v", err)
+	if _, admitted, err := st.AdmitNewTask(); err == nil || admitted {
+		t.Fatalf("unbound termination record admitted fresh Task: %v %v", admitted, err)
 	}
 	if st.ReadOr("task.id", "") != "previous-task" || st.TaskStatus() != state.TaskStatusUserTerminated {
 		t.Fatal("handoff inspection changed terminated runtime")

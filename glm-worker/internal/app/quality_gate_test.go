@@ -17,13 +17,38 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+var qualityGateShimPassEvents = strings.Join([]string{
+	`{"Action":"start","Package":"example.com/m"}`,
+	`{"Action":"run","Package":"example.com/m","Test":"TestShimGate"}`,
+	`{"Action":"output","Package":"example.com/m","Test":"TestShimGate","Output":"--- PASS: TestShimGate (0.20s)\n"}`,
+	`{"Action":"pass","Package":"example.com/m","Test":"TestShimGate","Elapsed":0.2}`,
+	`{"Action":"output","Package":"example.com/m","Output":"ok  example.com/m 0.30s\n"}`,
+	`{"Action":"pass","Package":"example.com/m","Elapsed":0.3}`,
+}, "\n")
+
+var qualityGateShimFailEvents = strings.Join([]string{
+	`{"Action":"start","Package":"example.com/m"}`,
+	`{"Action":"run","Package":"example.com/m","Test":"TestShimGate"}`,
+	`{"Action":"output","Package":"example.com/m","Test":"TestShimGate","Output":"--- FAIL: TestShimGate (0.10s)\n"}`,
+	`{"Action":"fail","Package":"example.com/m","Test":"TestShimGate","Elapsed":0.1}`,
+	`{"Action":"output","Package":"example.com/m","Output":"FAIL example.com/m\n"}`,
+	`{"Action":"fail","Package":"example.com/m","Elapsed":0.1}`,
+}, "\n")
+
 func writeQualityGateGoShim(t *testing.T, failFlagPath string) (string, string) {
 	t.Helper()
 	shimDir := t.TempDir()
 	invocationLog := filepath.Join(t.TempDir(), "go-invocations.log")
 	shim := filepath.Join(shimDir, "go")
+	testEvents := "  if [ \"$1\" = test ]; then\n" +
+		"    cat <<'EOF'\n%s\nEOF\n"
 	body := "#!/bin/sh\n" +
 		"log_file='" + invocationLog + "'\n" +
+		"if [ \"$1\" = env ]; then\n" +
+		"  printf 'goflags:%s\\n' \"$GOFLAGS\" >>\"$log_file.env\"\n" +
+		"  printf '%s\\n' '{\"GOVERSION\":\"go1.25.4\",\"GOOS\":\"darwin\",\"GOARCH\":\"arm64\",\"GOCACHE\":\"/fixture/cache\",\"GOFLAGS\":\"\"}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"printf 'argv:%s\\n' \"$*\" >>\"$log_file\"\n" +
 		"printf 'goflags:%s\\n' \"$GOFLAGS\" >>\"$log_file\"\n" +
 		"printf 'claim:%s\\n' \"$GLM_SESSION_ROTATION_CLAIM_ID\" >>\"$log_file\"\n" +
@@ -31,8 +56,13 @@ func writeQualityGateGoShim(t *testing.T, failFlagPath string) (string, string) 
 		"printf 'session:%s\\n' \"$GLM_PARENT_ACTION_CODEX_SESSION_ID\" >>\"$log_file\"\n" +
 		"printf 'execution-unit:%s\\n' \"$GLM_EXECUTION_UNIT_DISPOSITION\" >>\"$log_file\"\n" +
 		"if [ -f '" + failFlagPath + "' ]; then\n" +
+		fmt.Sprintf(testEvents, qualityGateShimFailEvents) +
+		"  fi\n" +
 		"  printf '%s\\n' 'go shim: forced failure'\n" +
 		"  exit 3\n" +
+		"fi\n" +
+		fmt.Sprintf(testEvents, qualityGateShimPassEvents) +
+		"    exit 0\n" +
 		"fi\n" +
 		"printf '%s\\n' 'go shim: ok'\n"
 	if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
@@ -179,8 +209,8 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 		wantArgv  string
 		wantLines int
 	}{
-		{form: "go-test", wantArgv: "test -timeout=25m ./...", wantLines: 6},
-		{form: "go-test-race", wantArgv: "test -race -timeout=45m ./...", wantLines: 6},
+		{form: "go-test", wantArgv: "test -json -timeout=25m ./...", wantLines: 6},
+		{form: "go-test-race", wantArgv: "test -race -json -timeout=45m ./...", wantLines: 6},
 	}
 	for _, tc := range cases {
 		t.Run(tc.form, func(t *testing.T) {
@@ -220,13 +250,17 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 			if err != nil {
 				t.Fatalf("log fileが読めません: %v", err)
 			}
-			if !strings.Contains(string(logData), "go shim: ok") {
-				t.Fatalf("logへsubprocess出力が保存されていません: %s", logData)
+			if !strings.Contains(string(logData), `"Action":"pass","Package":"example.com/m"`) {
+				t.Fatalf("logへgo test JSON出力が保存されていません: %s", logData)
 			}
 
 			lines := qualityGateInvocationLines(t, invocationLog)
 			if len(lines) != tc.wantLines {
 				t.Fatalf("go呼出記録が想定と異なります: %v", lines)
+			}
+			envLog, err := os.ReadFile(invocationLog + ".env")
+			if err != nil || string(envLog) != "goflags:\n" {
+				t.Fatalf("toolchain query did not use scrubbed execution environment: %s %v", envLog, err)
 			}
 			if lines[0] != "argv:"+tc.wantArgv {
 				t.Fatalf("固定argvが起動されていません: %s", lines[0])
@@ -342,7 +376,7 @@ func TestQualityGateFailureIsStructuredProcessError(t *testing.T) {
 	if envelope.Error.Kind != "quality_gate_failed" {
 		t.Fatalf("error kindが想定と異なります: %s", envelope.Error.Kind)
 	}
-	if envelope.Error.Detail["exit_code"] != float64(3) || envelope.Error.Detail["command"] != "go test -timeout=25m ./..." {
+	if envelope.Error.Detail["exit_code"] != float64(3) || envelope.Error.Detail["command"] != "go test -json -timeout=25m ./..." {
 		t.Fatalf("error detailが想定と異なります: %+v", envelope.Error.Detail)
 	}
 	if lines := qualityGateInvocationLines(t, invocationLog); len(lines) == 0 {

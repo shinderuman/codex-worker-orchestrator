@@ -29,6 +29,9 @@ func applyRetiredSourceSyncHandoff(cfg config.AppConfig, output *parentHandoffOu
 	}
 	command, err := json.Marshal(controllerPublicationCommand{Action: action, ExpectedGeneration: head.ControllerGeneration, Policy: *head.PublicationPolicy, SourceOID: authority.Snapshot.HeadOID})
 	if err == nil {
-		output.RequiredActionParameters = map[string]string{"controller_command_json": string(command)}
+		output.RequiredActionParameters = map[string]string{"controller_command_json": string(command), "active_task_path": authority.Task.TaskPath, "source_oid": authority.Snapshot.HeadOID, "integration_tip": head.IntegrationTip, "sync_reason": "committed primary source or project authority advanced beyond the retired controller"}
+		if head.RootTaskRef != nil {
+			output.RequiredActionParameters["previous_task_path"] = head.RootTaskRef.TaskPath
+		}
 	}
 }

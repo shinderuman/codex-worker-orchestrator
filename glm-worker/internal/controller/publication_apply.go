@@ -43,7 +43,7 @@ func (s *Store) applyLocalPublicationEffects(op ExecutionOperation, candidate Ac
 		}
 		return s.applyPlannedLocalRef(op, candidate)
 	case publicationReenter:
-		return s.applyPlannedLocalRef(op, candidate)
+		return s.applyCandidateReentry(op, candidate)
 	case publicationAdopt:
 		return s.applyAdvancementLocalRef(op)
 	case publicationRevalidate:

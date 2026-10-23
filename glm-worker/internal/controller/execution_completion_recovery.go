@@ -39,7 +39,7 @@ func (s *Store) PendingCompletionRecovery(head RepositoryControllerHead) (bool, 
 		return true, err
 	}
 	switch record.Kind {
-	case publicationPromote, publicationPublish:
+	case publicationPromote, publicationPublish, executionTaskAuthoritySync:
 	default:
 		return false, nil
 	}

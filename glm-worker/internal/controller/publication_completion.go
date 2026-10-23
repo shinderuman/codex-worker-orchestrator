@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"reflect"
 )
 
 func (s *Store) completionImplementation(c AcceptedCandidate) (AcceptedCandidate, error) {
@@ -17,6 +18,7 @@ func (s *Store) completionImplementation(c AcceptedCandidate) (AcceptedCandidate
 	}
 	if implementation.ImplementationRef != nil ||
 		!sameCompletionSource(implementation, c) ||
+		!reflect.DeepEqual(implementation.BundleCheckRef, c.BundleCheckRef) ||
 		!evidenceRefListsEqual(implementation.Evidence, c.Evidence) {
 		return implementation, fmt.Errorf("completion implementation authority differs")
 	}

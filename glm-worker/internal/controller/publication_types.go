@@ -45,6 +45,7 @@ type AcceptedCandidate struct {
 	ImplementationTree   string                   `json:"implementation_tree,omitempty"`
 	TerminalFiles        []TerminalMetadataFile   `json:"terminal_files,omitempty"`
 	RequiredValidations  []FinalValidationRequest `json:"required_validations,omitempty"`
+	BundleCheckRef       *EvidenceObjectRef       `json:"bundle_check_ref,omitempty"`
 	DescendantTip        string                   `json:"descendant_tip,omitempty"`
 	DescendantEvidence   []EvidenceObjectRef      `json:"descendant_evidence,omitempty"`
 	EvidenceValid        bool                     `json:"evidence_valid"`

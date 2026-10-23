@@ -129,6 +129,7 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.Run
 	if err != nil {
 		return qualitygate.RunRecord{}, err
 	}
+	toolchain := qualitygate.CaptureToolchain(identity.WorkingDir, identity.GoArgs, qualityGateEnv())
 	return qualitygate.RunRecord{
 		ValidationRunID:               runID,
 		Form:                          identity.Form,
@@ -140,6 +141,7 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.Run
 		WorktreeDigestExcludingParent: identity.Snapshot.WorktreeDigestExcludingParent,
 		IgnoredInputsAbsent:           &absent,
 		TaskID:                        identity.TaskID,
+		Toolchain:                     toolchain,
 		StartedAt:                     time.Now().UTC(),
 		Status:                        qualitygate.StatusRunning,
 	}, nil
@@ -259,6 +261,14 @@ func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, 
 			exitSource = state.ValidationExitSourceWrapper
 		}
 		logPath = ""
+	}
+	timingsPath, timingsErr := writeQualityGateTestTimingsRecord(st, record, gateLog)
+	if timingsErr != nil {
+		return qualitygate.RunRecord{}, timingsErr
+	}
+	record.TestTimings = timingsPath
+	if record.Toolchain != nil {
+		record.Toolchain.TestCache = qualitygate.TestCacheObservation(gateLog)
 	}
 	completed := time.Now().UTC()
 	record.Status = status

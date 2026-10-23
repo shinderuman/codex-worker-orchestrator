@@ -61,7 +61,11 @@ func (s *Store) prepareCandidateCompletionWrite(op ExecutionOperation, phase *Tr
 
 func (s *Store) beginCandidateCompletionWrite(op ExecutionOperation, phase *TransitionState) error {
 	if _, err := s.validateCompletionReadiness(op, *phase); err != nil {
-		return err
+		remote, observeErr := observePublicationRemote(s.identity.PrimaryRoot, op.Terminal.Policy)
+		if observeErr != nil {
+			return fmt.Errorf("completion readiness failed: %w; remote proof unavailable: %w", err, observeErr)
+		}
+		return s.failUnwrittenCompletion(op, phase, "prepare", err, remote)
 	}
 	phase.Completion.WriteIntent = true
 	return s.writeTransitionState(*phase)
@@ -189,10 +193,7 @@ func (s *Store) verifyCompletionObservationArchive(observation PublicationObserv
 
 func (s *Store) publishPreparedCompletion(op ExecutionOperation, phase TransitionState, c AcceptedCandidate, remote string) error {
 	if err := s.prepareCandidateCompletionWrite(op, &phase); err != nil {
-		if saveErr := s.saveCompletionFailure(op, &phase, "prepare", "", err.Error(), remote); saveErr != nil {
-			return saveErr
-		}
-		return fmt.Errorf("completion readiness failed: %w; %w", err, s.abortCompletionPrepare(op, phase, remote))
+		return s.failUnwrittenCompletion(op, &phase, "prepare", err, remote)
 	}
 	if err := s.beginCandidateCompletionWrite(op, &phase); err != nil {
 		return err
@@ -202,4 +203,11 @@ func (s *Store) publishPreparedCompletion(op ExecutionOperation, phase Transitio
 		return err
 	}
 	return s.observeCandidateCompletion(op, phase, c, remote)
+}
+
+func (s *Store) failUnwrittenCompletion(op ExecutionOperation, phase *TransitionState, stage string, cause error, remote string) error {
+	if err := s.saveCompletionFailure(op, phase, stage, "", cause.Error(), remote); err != nil {
+		return err
+	}
+	return fmt.Errorf("completion readiness failed: %w; %w", cause, s.abortCompletionPrepare(op, *phase, remote))
 }

@@ -250,7 +250,7 @@ func (c *attemptRuntimeEvidence) captureRepositoryValidationRun(module *state.St
 	if !validationRunBindsToWindow(*record, c.taskID, c.workspace, c.seal.StartedAt, c.seal.SealedAt) {
 		return nil
 	}
-	files := []string{qualitygate.RunFile, qualitygate.RunLog}
+	files := []string{qualitygate.RunFile, qualitygate.RunLog, qualitygate.TestTimingsFile}
 	if directory == evidenceExportValidationSmokeDirectory {
 		files = []string{qualitygate.RunFile, evidenceExportValidationSmokeLog}
 	}

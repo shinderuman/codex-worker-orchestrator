@@ -25,7 +25,7 @@ func seedDeclaredFinalValidation(t *testing.T, store *Store, source Admission, f
 	}
 }
 
-func promoteFinalValidationSource(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, source Admission, additions []string) (ExecutionOperationResult, AcceptedCandidate) {
+func acceptFinalValidationSource(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, source Admission, additions []string) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
 		Message: "final validation source", Policy: policy,
@@ -39,11 +39,7 @@ func promoteFinalValidationSource(t *testing.T, fixture findingAcceptanceFixture
 	if err != nil {
 		t.Fatal(err)
 	}
-	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return promoted, candidate
+	return accepted, candidate
 }
 
 func seedFinalValidationRun(t *testing.T, store *Store, form, status string, mutate func(*qualitygate.RunRecord)) qualitygate.RunRecord {
@@ -94,6 +90,7 @@ func seedFinalValidationRunAt(t *testing.T, store *Store, primary, form, status 
 	if status == qualitygate.StatusPass {
 		completed := time.Now().UTC()
 		record.CompletedAt = &completed
+		record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
 		record.ExitCode = 0
 		record.ExitSource = state.ValidationExitSourceTarget
 	}
@@ -105,6 +102,13 @@ func seedFinalValidationRunAt(t *testing.T, store *Store, primary, form, status 
 		t.Fatal(err)
 	}
 	record.Log = logPath
+	timingsData, err := qualitygate.EncodeTestTimings(qualitygate.DistillTestTimings(runID, form, []byte(`{"Action":"pass","Package":"example.com/fixture","Test":"TestFinalFixture","Elapsed":0.25}`+"\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(logPath), qualitygate.TestTimingsFile), timingsData, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if mutate != nil {
 		mutate(&record)
 	}
@@ -120,8 +124,15 @@ func seedFinalValidationRunAt(t *testing.T, store *Store, primary, form, status 
 
 func publishFinalValidationCompletion(t *testing.T, fixture findingAcceptanceFixture, promoted ExecutionOperationResult, candidate AcceptedCandidate) (*state.StateStore, error) {
 	t.Helper()
-	runtime := acceptedCompletionRuntime(t, fixture.store, fixture.source)
-	_, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	runtime := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.identity, fixture.source.Attempt.SemanticTaskRef))
+	if runtime.ReadOr("task.id", "") == "" {
+		runtime = acceptedCompletionRuntime(t, fixture.store, fixture.source)
+	}
+	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		return runtime, err
+	}
+	_, err = fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
 	return runtime, err
 }
 
@@ -146,7 +157,7 @@ func TestPublicationRefusesFinalValidationFormsWithoutCurrentRun(t *testing.T) {
 			fixture, policy := newPublicationTestFixture(t)
 			source := publicationTestEdit(t, fixture, "validated.txt", "final validation source\n")
 			seedDeclaredFinalValidation(t, fixture.store, source, form)
-			promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+			promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 			runtime, err := publishFinalValidationCompletion(t, fixture, promoted, candidate)
 			assertFinalValidationRefused(t, fixture, policy, runtime, err, form)
 		})
@@ -159,7 +170,7 @@ func TestPublicationRefusesWhenOnlyAnotherFormHasCurrentRun(t *testing.T) {
 	source := publicationTestEdit(t, fixture, "validated.txt", "race-required source\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test-race")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	root, release, err := PrepareFinalValidationWorkspace(fixture.store.config, "go-test-race")
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +187,7 @@ func TestPublicationCompletesWithCurrentFinalValidationRun(t *testing.T) {
 	source := publicationTestEdit(t, fixture, "validated.txt", "completed implementation\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, nil)
 	runtime, err := publishFinalValidationCompletion(t, fixture, promoted, candidate)
 	if err != nil {
@@ -203,7 +214,7 @@ func TestFinalValidationReadinessRejectsNewerFailure(t *testing.T) {
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "validated.txt", "implementation\n")
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	_, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	_, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, nil)
 	evidence, err := fixture.store.collectFinalValidationEvidence(candidate)
 	if err != nil {
@@ -222,7 +233,7 @@ func TestFinalValidationRejectsUnknownOrPresentIgnoredInputs(t *testing.T) {
 			fixture, policy := newPublicationTestFixture(t)
 			source := publicationTestEdit(t, fixture, "validated.txt", "implementation\n")
 			seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-			_, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+			_, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 			seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, func(record *qualitygate.RunRecord) {
 				record.IgnoredInputsAbsent = observed
 			})
@@ -238,7 +249,7 @@ func TestFailedCandidateFixCanPromoteAnotherFinalSource(t *testing.T) {
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "validated.txt", "before fix\n")
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusFail, nil)
 	if _, err := fixture.store.collectFinalValidationEvidence(candidate); err == nil {
 		t.Fatal("failed candidate acquired final validation evidence")
@@ -254,7 +265,7 @@ func TestFailedCandidateFixCanPromoteAnotherFinalSource(t *testing.T) {
 	fixture.source = *resumed.Admission
 	source = publicationTestEdit(t, fixture, "validated.txt", "after fix\n")
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	_, fixed := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	_, fixed := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	if candidate.CommitOID == fixed.CommitOID {
 		t.Fatal("Fix retained the failed candidate source")
 	}
@@ -280,7 +291,7 @@ func TestChildFinalValidationUsesFinalCandidateWithoutReplacingParentSource(t *t
 	fixture.source = *child.Admission
 	source := publicationTestEdit(t, fixture, "child.txt", "child result\n")
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	primary := fixture.store.identity.PrimaryRoot
 	before, err := os.ReadFile(filepath.Join(primary, "root-only.txt"))
 	if err != nil {
@@ -309,6 +320,10 @@ func TestChildFinalValidationUsesFinalCandidateWithoutReplacingParentSource(t *t
 	if err != nil || string(before) != string(after) {
 		t.Fatal("child validation replaced unfinished parent source")
 	}
+	promoted, err = fixture.store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +335,7 @@ func TestPublicationRefusesFailedCurrentFinalValidationRun(t *testing.T) {
 	source := publicationTestEdit(t, fixture, "validated.txt", "failing implementation\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusFail, nil)
 	runtime, err := publishFinalValidationCompletion(t, fixture, promoted, candidate)
 	if err == nil || !strings.Contains(err.Error(), "is not a terminal PASS") {
@@ -337,7 +352,7 @@ func TestPublicationRefusesFinalValidationRunWithoutLogEvidence(t *testing.T) {
 	source := publicationTestEdit(t, fixture, "validated.txt", "logless implementation\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, func(record *qualitygate.RunRecord) {
 		record.Log = filepath.Join(t.TempDir(), "missing-gate.log")
 	})
@@ -356,7 +371,7 @@ func TestPublicationRefusesStaleFinalValidationRun(t *testing.T) {
 	source := publicationTestEdit(t, fixture, "validated.txt", "stale implementation\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, func(record *qualitygate.RunRecord) {
 		record.Head = "0000000000000000000000000000000000000001"
 		record.IndexDigest = "stale-index-digest"
@@ -373,7 +388,7 @@ func TestPublicationRefusesDirtyWorktreeFinalValidationRun(t *testing.T) {
 			source := publicationTestEdit(t, fixture, "validated.txt", "dirty executed source\n")
 			acceptedCompletionRuntime(t, fixture.store, source)
 			seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-			promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+			promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 			seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, func(record *qualitygate.RunRecord) {
 				if parent {
 					record.WorktreeDigest = "dirty-parent-metadata"
@@ -393,7 +408,7 @@ func TestPublicationRefusesWrongModuleFinalValidationRun(t *testing.T) {
 	source := publicationTestEdit(t, fixture, "validated.txt", "wrong module run\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	promoted, candidate := promoteFinalValidationSource(t, fixture, policy, source, nil)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, func(record *qualitygate.RunRecord) {
 		record.WorkingDir = t.TempDir()
 	})

@@ -11,8 +11,8 @@ func TestCompletionReadinessBindsAcceptedRuntimeOutcome(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "reviewed implementation\n")
-	promoted, implementation := promoteTerminalTestSource(t, fixture, policy, source)
 	runtime := acceptedCompletionRuntime(t, fixture.store, source)
+	promoted, implementation := promoteTerminalTestSource(t, fixture, policy, source)
 	prepared, err := prepareCompletionFixture(fixture.store, TerminalTaskInput{ExpectedGeneration: promoted.Head.ControllerGeneration, ProjectSnapshotID: promoted.Head.ProjectSnapshotID, CandidateID: implementation.CandidateID, TaskRef: implementation.TaskRef})
 	if err != nil {
 		t.Fatal(err)

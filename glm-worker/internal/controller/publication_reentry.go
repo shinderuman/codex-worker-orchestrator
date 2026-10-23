@@ -35,10 +35,60 @@ func (s *Store) ReenterAcceptedCandidate(input PublicationInput) (ExecutionOpera
 			return ExecutionOperationResult{}, err
 		}
 	}
+	metadata := candidateReentryMetadata(c)
+	if err := s.verifyCandidateReentryMetadata(metadata); err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	op.Transition.Effects = append(op.Transition.Effects, candidateReentryMetadataEffects(metadata)...)
 	if err := s.prepareExecutionOperation(&op, head); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	return s.recoverExecutionOperationLocked(op)
+}
+
+func candidateReentryMetadata(c AcceptedCandidate) []TerminalMetadataFile {
+	if c.State != candidatePromoted || !c.TaskRef.Equal(c.RootTaskRef) {
+		return nil
+	}
+	files := make([]TerminalMetadataFile, 0, len(c.TerminalFiles))
+	for _, file := range c.TerminalFiles {
+		file.OldOID, file.NewOID = file.NewOID, file.OldOID
+		file.OldBytes, file.NewBytes = file.NewBytes, file.OldBytes
+		files = append(files, file)
+	}
+	return files
+}
+
+func candidateReentryMetadataEffects(files []TerminalMetadataFile) []EffectExpectation {
+	return terminalMetadataEffects(TerminalMetadataOperation{Files: files}, "")[1:]
+}
+
+func (s *Store) verifyCandidateReentryMetadata(files []TerminalMetadataFile) error {
+	op := ExecutionOperation{Terminal: &TerminalMetadataOperation{Files: files}}
+	actual, err := s.observeTerminalFileEffects(op)
+	if err != nil {
+		return err
+	}
+	for _, effect := range candidateReentryMetadataEffects(files) {
+		if value := actual[effect.Key()]; value != effect.ExpectedOld && value != effect.ExpectedNew {
+			return fmt.Errorf("candidate reentry metadata has an unattributed change: %s", effect.Resource)
+		}
+	}
+	return nil
+}
+
+func (s *Store) applyCandidateReentry(op ExecutionOperation, c AcceptedCandidate) error {
+	files := candidateReentryMetadata(c)
+	if err := s.verifyCandidateReentryMetadata(files); err != nil {
+		return err
+	}
+	effects := candidateReentryMetadataEffects(files)
+	for index, file := range files {
+		if err := s.applyTerminalMetadataFile(file, effects[index*2:index*2+2]); err != nil {
+			return err
+		}
+	}
+	return s.applyPlannedLocalRef(op, c)
 }
 
 func (s *Store) planUnobservedLocalRetirement(op *ExecutionOperation, c AcceptedCandidate) error {

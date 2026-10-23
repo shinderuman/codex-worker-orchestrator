@@ -210,6 +210,24 @@ func writeQualityGateRunLog(st *state.StateStore, runID string, data []byte) (st
 	return path, nil
 }
 
+func writeQualityGateTestTimingsRecord(st *state.StateStore, record qualitygate.RunRecord, gateLog []byte) (string, error) {
+	if !qualityGateFormProducesTestTimings(record.Form) {
+		return "", nil
+	}
+	data, err := qualitygate.EncodeTestTimings(qualitygate.DistillTestTimings(record.ValidationRunID, record.Form, gateLog))
+	if err != nil {
+		return "", fmt.Errorf("quality gate test timingsをencodeできません: %w", err)
+	}
+	path := st.Path(filepath.Join(qualitygate.RunDirectory, record.ValidationRunID, qualitygate.TestTimingsFile))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 func failQualityGateLaunch(st *state.StateStore, record qualitygate.RunRecord, launchErr error) error {
 	completed := time.Now().UTC()
 	record.Status = qualitygate.StatusFail

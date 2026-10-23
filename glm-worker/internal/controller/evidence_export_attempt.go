@@ -38,6 +38,7 @@ type evidenceExportTaskWalk struct {
 const evidenceKindRuntimeState = "runtime-state"
 
 func (b *evidenceExportBuilder) collectAttemptSection(target EvidenceExportTarget, attempt AttemptRecord) (*EvidenceExportGitAudit, error) {
+	b.targetTask = attempt.SemanticTaskRef
 	b.attemptSection = EvidenceExportAttemptSection{Status: evidenceExportAttemptAbsent}
 	walk, absent, err := b.walkAttemptEvidence(target, attempt)
 	if err != nil {

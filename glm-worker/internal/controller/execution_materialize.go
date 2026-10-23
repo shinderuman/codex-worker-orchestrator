@@ -197,6 +197,9 @@ func verifyLaneMaterializationPaths(root string, entries []workspaceTreeEntry) e
 		if err != nil {
 			return err
 		}
+		if relative == ".git" && entry.IsDir() {
+			return filepath.SkipDir
+		}
 		if entry.IsDir() {
 			return nil
 		}

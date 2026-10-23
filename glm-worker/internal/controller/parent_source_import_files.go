@@ -83,6 +83,10 @@ func (s *Store) applyParentSourceFiles(op ExecutionOperation) error {
 	}
 	entries := append([]workspaceTreeEntry(nil), before...)
 	entries = append(entries, after...)
+	entries, err = captureCleanupParentActions(op.Workspace.Root, entries)
+	if err != nil {
+		return err
+	}
 	if err := verifyLaneMaterializationPaths(op.Workspace.Root, entries); err != nil {
 		return err
 	}

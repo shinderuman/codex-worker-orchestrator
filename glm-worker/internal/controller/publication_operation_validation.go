@@ -1,6 +1,9 @@
 package controller
 
-import "fmt"
+import (
+	"fmt"
+	"reflect"
+)
 
 func (s *Store) validatePublicationOperation(op ExecutionOperation) error {
 	if isBaseAdvancementOperation(op) {
@@ -34,6 +37,18 @@ func isBaseAdvancementOperation(op ExecutionOperation) bool {
 func (s *Store) validatePublicationPrimaryArchive(op ExecutionOperation, candidate AcceptedCandidate) error {
 	if op.Transition.Kind == publicationPromote {
 		return s.validatePrimaryPromotion(op, candidate)
+	}
+	if op.Transition.Kind == publicationReenter {
+		var actual []EffectExpectation
+		for _, effect := range op.Transition.Effects {
+			if effect.Surface == MutationSurfaceSource || effect.Surface == MutationSurfaceIndex {
+				actual = append(actual, effect)
+			}
+		}
+		expected := candidateReentryMetadataEffects(candidateReentryMetadata(candidate))
+		if len(actual) != len(expected) || (len(actual) != 0 && !reflect.DeepEqual(actual, expected)) {
+			return fmt.Errorf("candidate reentry metadata effects differ from its sealed source")
+		}
 	}
 	if op.Publication.PrimaryArchive != nil {
 		return fmt.Errorf("primary promotion archive is outside promotion authority")
@@ -120,10 +135,19 @@ func (s *Store) provePublicationEffect(op ExecutionOperation, c AcceptedCandidat
 		}
 		return op.Publication.After.Digest, nil
 	case MutationSurfaceSource, MutationSurfaceIndex:
-		return s.provePrimaryPromotionEffect(op, effect)
+		return s.provePublicationSourceEffect(op, c, effect)
 	default:
 		return "", fmt.Errorf("unsupported publication effect surface")
 	}
+}
+
+func (s *Store) provePublicationSourceEffect(op ExecutionOperation, c AcceptedCandidate, effect EffectExpectation) (string, error) {
+	if op.Transition.Kind == publicationReenter {
+		files := candidateReentryMetadata(c)
+		actual, err := s.observeTerminalFileEffects(ExecutionOperation{Terminal: &TerminalMetadataOperation{Files: files}})
+		return actual[effect.Key()], err
+	}
+	return s.provePrimaryPromotionEffect(op, effect)
 }
 
 func (s *Store) provePrimaryPromotionEffect(op ExecutionOperation, effect EffectExpectation) (string, error) {

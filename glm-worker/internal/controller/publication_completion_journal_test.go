@@ -8,14 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPublicationCompletesTaskInOneJournal(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "completed implementation\n")
-	promoted, implementation := promoteTerminalTestSource(t, fixture, policy, source)
 	runtime := acceptedCompletionRuntime(t, fixture.store, source)
+	promoted, implementation := promoteTerminalTestSource(t, fixture, policy, source)
 	result, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: implementation.CandidateID})
 	if err != nil {
 		t.Fatal(err)
@@ -67,8 +68,8 @@ func TestCompletionRecoversPublishedTaskWithoutAnotherPush(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "completed implementation\n")
-	promoted, implementation := promoteTerminalTestSource(t, fixture, policy, source)
 	runtime := acceptedCompletionRuntime(t, fixture.store, source)
+	promoted, implementation := promoteTerminalTestSource(t, fixture, policy, source)
 	remote := controllerGitOutput(t, fixture.store.identity.PrimaryRoot, "remote", "get-url", policy.Remote)
 	pushLog := filepath.Join(t.TempDir(), "pushes")
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
@@ -324,13 +325,27 @@ func TestCompletionLostPushResponseObservesWithoutAnotherPush(t *testing.T) {
 
 func acceptedCompletionRuntime(t *testing.T, store *Store, source Admission) *state.StateStore {
 	t.Helper()
+	return acceptedCompletionRuntimeOptions(t, store, source, true)
+}
+
+func acceptedCompletionRuntimeOptions(t *testing.T, store *Store, source Admission, telemetry bool) *state.StateStore {
+	t.Helper()
 	cfg := WorkflowTaskConfig(store.config, store.identity, source.Attempt.SemanticTaskRef)
 	runtime, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtime.StartNewTask(); err != nil {
+	taskID, err := runtime.StartNewTask()
+	if err != nil {
 		t.Fatal(err)
+	}
+	if telemetry {
+		started := time.Now().UTC()
+		runtime.RecordModelCallLog(state.ModelCallLog{
+			TaskID: taskID, CallType: state.CallTypeTask, Role: state.WorkerRole,
+			ModelAlias: "opus", Effort: "high", Outcome: "success",
+			StartedAt: started, CompletedAt: started.Add(30 * time.Second), WallDurationMS: 30000,
+		})
 	}
 	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{AttemptID: source.Attempt.AttemptID, TaskPath: source.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: source.Attempt.SemanticTaskRef.ContractDigest}); err != nil {
 		t.Fatal(err)

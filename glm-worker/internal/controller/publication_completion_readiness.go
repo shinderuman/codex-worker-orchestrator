@@ -14,6 +14,7 @@ type CompletionReadiness struct {
 	SuccessorRuntimeTaskID string                         `json:"successor_runtime_task_id"`
 	LintRequired           bool                           `json:"lint_required"`
 	LintRef                *EvidenceObjectRef             `json:"lint_ref,omitempty"`
+	BundleCheckRef         *EvidenceObjectRef             `json:"bundle_check_ref"`
 	FinalValidations       []FinalValidationEvidence      `json:"final_validations,omitempty"`
 	RuntimeTaskID          string                         `json:"runtime_task_id,omitempty"`
 	RuntimeCompletion      *state.ParentCompletionOutcome `json:"runtime_completion,omitempty"`
@@ -44,6 +45,14 @@ func (s *Store) prepareCompletionReadiness(op ExecutionOperation) (EvidenceObjec
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
+	bundleCheck, err := s.candidateBundleObservation(op, candidate, runtimeTaskID, finalValidations)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	bundleCheckRef, err := s.putEvidenceJSON(completionBundleCheckEvidenceKind, op.Transition.TransitionID, bundleCheck)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
 	lintRef, err := s.completionMetadataLint(op)
 	if err != nil {
 		return EvidenceObjectRef{}, err
@@ -57,7 +66,7 @@ func (s *Store) prepareCompletionReadiness(op ExecutionOperation) (EvidenceObjec
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
-	ready := CompletionReadiness{SchemaVersion: controllerSchemaVersion, SuccessorRuntimeTaskID: successorID, LintRequired: lintRef != nil, LintRef: lintRef, FinalValidations: finalValidations, RuntimeTaskID: runtimeTaskID, RuntimeCompletion: outcome, OperationDigest: op.Transition.OperationDigest, FinalOID: op.Terminal.Record.CandidateOID}
+	ready := CompletionReadiness{SchemaVersion: controllerSchemaVersion, SuccessorRuntimeTaskID: successorID, LintRequired: lintRef != nil, LintRef: lintRef, BundleCheckRef: &bundleCheckRef, FinalValidations: finalValidations, RuntimeTaskID: runtimeTaskID, RuntimeCompletion: outcome, OperationDigest: op.Transition.OperationDigest, FinalOID: op.Terminal.Record.CandidateOID}
 	return s.putEvidenceJSON("completion-readiness", op.Transition.TransitionID, ready)
 }
 
@@ -135,18 +144,8 @@ func (s *Store) validateCompletionReadiness(op ExecutionOperation, phase Transit
 	if err := s.verifyFinalValidationEvidence(candidate, ready.FinalValidations); err != nil {
 		return ready, err
 	}
-	taskID, outcome, err := s.prepareCompletionRuntime(op)
-	if err != nil {
+	if err := s.reverifyCompletionRuntime(op, candidate, ready); err != nil {
 		return ready, err
-	}
-	target := op.Source.Head
-	applyCompletionTargetAuthority(&target, *op.Terminal)
-	successorID, err := s.QuiescentRuntimeAdmission(target)
-	if err != nil {
-		return ready, err
-	}
-	if taskID != ready.RuntimeTaskID || !reflect.DeepEqual(outcome, ready.RuntimeCompletion) || successorID != ready.SuccessorRuntimeTaskID {
-		return ready, fmt.Errorf("completion Runtime identity changed after readiness")
 	}
 	applies, err := repositoryharness.QualityToolsApply(s.identity.PrimaryRoot)
 	if err != nil {
@@ -159,6 +158,23 @@ func (s *Store) validateCompletionReadiness(op ExecutionOperation, phase Transit
 		return ready, err
 	}
 	return ready, s.verifyCompletionLocalTarget(op)
+}
+
+func (s *Store) reverifyCompletionRuntime(op ExecutionOperation, c AcceptedCandidate, ready CompletionReadiness) error {
+	taskID, outcome, err := s.prepareCompletionRuntime(op)
+	if err != nil {
+		return err
+	}
+	target := op.Source.Head
+	applyCompletionTargetAuthority(&target, *op.Terminal)
+	successorID, err := s.QuiescentRuntimeAdmission(target)
+	if err != nil {
+		return err
+	}
+	if taskID != ready.RuntimeTaskID || !reflect.DeepEqual(outcome, ready.RuntimeCompletion) || successorID != ready.SuccessorRuntimeTaskID {
+		return fmt.Errorf("completion Runtime identity changed after readiness")
+	}
+	return s.verifyCompletionBundleCheck(op, c, ready)
 }
 
 func (s *Store) loadCompletionReadiness(op ExecutionOperation, phase TransitionState) (CompletionReadiness, error) {
@@ -181,6 +197,9 @@ func (s *Store) loadCompletionReadiness(op ExecutionOperation, phase TransitionS
 		return ready, fmt.Errorf("completion readiness belongs to different operation")
 	}
 	if err := validateCompletionRuntimePlan(ready); err != nil {
+		return ready, err
+	}
+	if _, err := s.loadCompletionBundleCheck(op, ready); err != nil {
 		return ready, err
 	}
 	return ready, s.validateCompletionLint(op, ready)

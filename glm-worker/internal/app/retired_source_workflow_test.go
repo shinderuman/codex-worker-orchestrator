@@ -80,7 +80,9 @@ func pullExternalSourceChange(t *testing.T, cfg config.AppConfig, policy control
 		if err := os.WriteFile(planPath, []byte(switched), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		writeAppTestFile(t, external, activeSwitch[1], "# alternate successor\n\n## Contract\n\nalternate successor task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+		if _, provided := files[activeSwitch[1]]; !provided {
+			writeAppTestFile(t, external, activeSwitch[1], "# alternate successor\n\n## Contract\n\nalternate successor task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+		}
 	}
 	runControllerActivationGit(t, external, "add", "--all")
 	runControllerActivationGit(t, external, "commit", "-qm", "external advancement")
@@ -104,7 +106,12 @@ func mustCommandOutput(t *testing.T, repo string, args ...string) []byte {
 
 func executeStagedParentAction(t *testing.T, cfg config.AppConfig, payload string) {
 	t.Helper()
-	exit, output, diagnostics := runParentActionCLI(t, cfg, "prepare", controllerPublicationSurface)
+	executeStagedControllerAction(t, cfg, controllerPublicationSurface, payload)
+}
+
+func executeStagedControllerAction(t *testing.T, cfg config.AppConfig, surface string, payload string) {
+	t.Helper()
+	exit, output, diagnostics := runParentActionCLI(t, cfg, "prepare", surface)
 	if exit != 0 {
 		t.Fatalf("prepare staged parent action: %s", diagnostics)
 	}
@@ -122,7 +129,7 @@ func executeStagedParentAction(t *testing.T, cfg config.AppConfig, payload strin
 	if err := os.WriteFile(prepared.Path, []byte(strings.Replace(string(body), "__GLM_PARENT_ACTION_PAYLOAD__", payload, 1)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	exit, _, diagnostics = runParentActionCLI(t, cfg, controllerPublicationSurface, prepared.Token)
+	exit, _, diagnostics = runParentActionCLI(t, cfg, surface, prepared.Token)
 	if exit != 0 {
 		t.Fatalf("execute staged parent action: %s", diagnostics)
 	}
@@ -282,5 +289,27 @@ func TestStaleRuntimeBindingRegularHandoffFailsClosed(t *testing.T) {
 	handoff := executeParentHandoff(t, cfg)
 	if handoff.Consistent || handoff.RequiredAction != nil || containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || containsParentAction(handoff.AllowedActions, "start") {
 		t.Fatalf("stale runtime binding handoff admitted an action: %#v", handoff)
+	}
+}
+
+func TestBrokenSessionExternalAdvancementFailsClosed(t *testing.T) {
+	cfg, _, store, policy, _ := completedRetiredWorkflowFixture(t)
+	retired, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newActive := "IMPLEMENTATION_TASKS/alternate-successor.md"
+	pullExternalSourceChange(t, cfg, policy, map[string]string{"external-code.txt": "external code update\n"}, &[2]string{retired.RootTaskRef.TaskPath, newActive})
+	runtime := attachWorkflowRuntime(t, cfg)
+	if err := runtime.Write("parent-codex-identity.json", "not-json"); err != nil {
+		t.Fatal(err)
+	}
+	handoff := executeParentHandoff(t, cfg)
+	if handoff.Consistent || handoff.RequiredAction != nil || containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || containsParentAction(handoff.AllowedActions, "start") {
+		t.Fatalf("corrupt identity was explained away by external advancement: %#v", handoff)
+	}
+	after, err := store.LoadHead()
+	if err != nil || !reflect.DeepEqual(after, retired) {
+		t.Fatal("rejected handoff changed controller")
 	}
 }

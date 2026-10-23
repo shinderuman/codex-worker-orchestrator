@@ -24,6 +24,55 @@ func reenteredParentSourceFixture(t *testing.T) (findingAcceptanceFixture, Admis
 	return f, *live.Admission
 }
 
+func TestParentSourceImportRejectsDiscardingLaneImplementation(t *testing.T) {
+	t.Parallel()
+	f, source := reenteredParentSourceFixture(t)
+	f.source = source
+	source = publicationTestEdit(t, f, "lane-unique.txt", "Lane implementation\n")
+	repo := f.store.identity.PrimaryRoot
+	writeSuspensionTestFile(t, repo, "parent-fix.txt", "parent correction\n")
+	snapshot, err := CaptureWorkspaceSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.store.PutEvidenceObject("runtime-artifact", "application/json", source.Attempt.AttemptID+":reentry-review-repair:"+snapshot.ID, true, []byte(`{"retained":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.ImportParentSource(source, snapshot.ID, before, source.Attempt.SemanticTaskRef); err == nil || !strings.Contains(err.Error(), "discard Lane") {
+		t.Fatalf("source replacement lost an independent Lane change: %v", err)
+	}
+	head, err := f.store.LoadHead()
+	if err != nil || head.ControllerGeneration != source.Head.ControllerGeneration || head.PendingTransitionID != "" {
+		t.Fatal("rejected source replacement changed authority")
+	}
+	writeSuspensionTestFile(t, repo, "lane-unique.txt", "Lane implementation\n")
+	snapshot, err = CaptureWorkspaceSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.store.PreviewParentSourceImport(source.Workspace.Root); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := f.store.ImportParentSource(source, snapshot.ID, before, source.Attempt.SemanticTaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(source.Workspace.Root, "lane-unique.txt"))
+	if err != nil || string(data) != "Lane implementation\n" {
+		t.Fatal("preserved Lane implementation differs after import")
+	}
+	f.source = *imported.Admission
+	source = publicationTestEdit(t, f, "lane-unique-after-import.txt", "new Lane implementation\n")
+	if _, err := f.store.ImportParentSource(source, snapshot.ID, before, source.Attempt.SemanticTaskRef); err == nil {
+		t.Fatal("repeated import discarded a Lane change after the previous import")
+	}
+	head, err = f.store.LoadHead()
+	if err != nil || head.ControllerGeneration != source.Head.ControllerGeneration || head.PendingTransitionID != "" {
+		t.Fatal("rejected repeated source replacement changed authority")
+	}
+}
+
 func TestParentSourceImportPreservesAttemptAndEvidenceAcrossRecovery(t *testing.T) {
 	t.Parallel()
 	f, source := reenteredParentSourceFixture(t)

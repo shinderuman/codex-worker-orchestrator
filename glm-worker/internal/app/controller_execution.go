@@ -122,6 +122,8 @@ func executeControllerParentSourceAction(cfg config.AppConfig, store *controller
 		return executeControllerParentSourcePreview(store)
 	case "rebind-parent-source":
 		return store.RebindParentSourceCandidate(controller.PublicationInput{ExpectedGeneration: command.ExpectedGeneration, CandidateID: command.CandidateID}, command.SourceSnapshotID)
+	case "sync-task-authority":
+		return executeControllerTaskAuthoritySync(cfg, store, command)
 	case "prepare-reentry-review":
 		return executeControllerReentryReview(cfg, store)
 	default:

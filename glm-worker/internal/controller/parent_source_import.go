@@ -2,18 +2,27 @@ package controller
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const executionParentSourceImport = "IMPORT_PARENT_SOURCE"
 
 func (s *Store) ImportParentSource(admission Admission, sourceSnapshotID string, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperationResult, error) {
+	return s.executeParentSourceRevision(admission, func() (ExecutionOperation, error) {
+		return s.planParentSourceImport(admission, sourceSnapshotID, runtimeRef, task)
+	})
+}
+
+func (s *Store) executeParentSourceRevision(admission Admission, plan func() (ExecutionOperation, error)) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	op, err := s.planParentSourceImport(admission, sourceSnapshotID, runtimeRef, task)
+	op, err := plan()
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -37,30 +46,197 @@ func (s *Store) planParentSourceImport(admission Admission, sourceSnapshotID str
 	if !authority.Task.Equal(task) || task.TaskPath != admission.Attempt.SemanticTaskRef.TaskPath {
 		return ExecutionOperation{}, fmt.Errorf("live parent source import changes Task authority")
 	}
-	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
+	rebound, err := s.parentSourceImportTrees(admission, source, authority.Snapshot.HeadOID)
 	if err != nil {
 		return ExecutionOperation{}, err
-	}
-	current, err := CaptureExecutionTrees(admission.Workspace.Root, base)
-	if err != nil {
-		return ExecutionOperation{}, err
-	}
-	tree, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", source.AuthorityOID+"^{tree}")
-	if err != nil {
-		return ExecutionOperation{}, err
-	}
-	rebound := ReboundSuspension{BaseOID: admission.Snapshot.Head, Baseline: admission.Attempt.BaselineTrees, Current: current}
-	rebound.Current.WorktreeTree = tree
-	if err := normalizeReboundTrees(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, &rebound); err != nil {
-		return ExecutionOperation{}, err
-	}
-	if rebound.Current.WorktreeTree != tree {
-		return ExecutionOperation{}, fmt.Errorf("live parent source import differs from its Project metadata")
 	}
 	if err := s.writeProjectSnapshot(authority.Snapshot); err != nil {
 		return ExecutionOperation{}, err
 	}
 	return s.buildParentSourceImport(admission, source, rebound, runtimeRef, task)
+}
+
+func (s *Store) parentSourceImportTrees(admission Admission, source ParentSourceRevision, metadataBase string) (ReboundSuspension, error) {
+	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
+	if err != nil {
+		return ReboundSuspension{}, err
+	}
+	current, err := CaptureExecutionTrees(admission.Workspace.Root, base)
+	if err != nil {
+		return ReboundSuspension{}, err
+	}
+	tree, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", source.AuthorityOID+"^{tree}")
+	if err != nil {
+		return ReboundSuspension{}, err
+	}
+	if err := s.verifyParentSourcePreservation(admission, current, tree, base); err != nil {
+		return ReboundSuspension{}, err
+	}
+	rebound := ReboundSuspension{BaseOID: admission.Snapshot.Head, Baseline: admission.Attempt.BaselineTrees, Current: current}
+	rebound.Current.WorktreeTree = tree
+	if err := normalizeReboundTrees(s.identity.PrimaryRoot, metadataBase, &rebound); err != nil {
+		return ReboundSuspension{}, err
+	}
+	if rebound.Current.WorktreeTree != tree {
+		return ReboundSuspension{}, fmt.Errorf("live parent source import differs from its Project metadata")
+	}
+	return rebound, nil
+}
+
+func (s *Store) PreviewParentSourceImport(workspaceRoot string) (Admission, WorkspaceSnapshot, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return Admission{}, WorkspaceSnapshot{}, err
+	}
+	workspace, err := ResolveWorkspaceIdentity(workspaceRoot, s.identity)
+	if err != nil {
+		return Admission{}, WorkspaceSnapshot{}, err
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(workspaceRoot)
+	if err != nil {
+		return Admission{}, WorkspaceSnapshot{}, err
+	}
+	authority, err := MutationAuthorityFromHead(head)
+	if err != nil {
+		return Admission{}, WorkspaceSnapshot{}, err
+	}
+	admission, err := s.AdmitMutation(authority, workspace, snapshot)
+	if err != nil {
+		return admission, WorkspaceSnapshot{}, err
+	}
+	primary, err := s.previewParentSourcePreservation(admission)
+	return admission, primary, err
+}
+
+func (s *Store) previewParentSourcePreservation(admission Admission) (WorkspaceSnapshot, error) {
+	if admission.Lease.InFlightCallID != "" {
+		return WorkspaceSnapshot{}, fmt.Errorf("parent source import requires an idle live lease")
+	}
+	primary, err := CaptureWorkspaceSnapshot(s.identity.PrimaryRoot)
+	if err != nil {
+		return primary, err
+	}
+	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
+	if err != nil {
+		return primary, err
+	}
+	current, err := CaptureExecutionTrees(admission.Workspace.Root, base)
+	if err != nil {
+		return primary, err
+	}
+	tree, err := captureParentSourceTree(s.identity.PrimaryRoot)
+	if err != nil {
+		return primary, err
+	}
+	if err := s.verifyParentSourcePreservation(admission, current, tree, base); err != nil {
+		return primary, err
+	}
+	after, err := CaptureWorkspaceSnapshot(s.identity.PrimaryRoot)
+	if err != nil {
+		return primary, err
+	}
+	if after != primary {
+		return primary, fmt.Errorf("parent source changed during import preview")
+	}
+	return primary, nil
+}
+
+func (s *Store) verifyParentSourcePreservation(admission Admission, current ExecutionTrees, primaryTree, base string) error {
+	baseline, err := s.parentSourceBaseline(admission)
+	if err != nil {
+		return err
+	}
+	rebound := ReboundSuspension{Baseline: baseline, Current: current}
+	if err := normalizeReboundTrees(s.identity.PrimaryRoot, base, &rebound); err != nil {
+		return err
+	}
+	index, err := newSuspensionIndex(s.identity.PrimaryRoot, primaryTree)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(index) }()
+	primary, err := normalizeCandidateTree(s.identity.PrimaryRoot, index, base)
+	if err != nil {
+		return err
+	}
+	merged, err := mergeSuspensionTrees(s.identity.PrimaryRoot, rebound.Baseline.WorktreeTree, rebound.Current.WorktreeTree, primary)
+	if err != nil {
+		return err
+	}
+	if merged != primary {
+		return fmt.Errorf("parent source import would discard Lane implementation changes")
+	}
+	return nil
+}
+
+func (s *Store) parentSourceBaseline(admission Admission) (ExecutionTrees, error) {
+	ref := admission.Head.EvidenceLedgerHeadRef
+	sequence := admission.Head.EvidenceLedgerSequence
+	for ref != nil {
+		ledger, err := s.LoadEvidenceLedgerRecord(*ref)
+		if err != nil {
+			return ExecutionTrees{}, err
+		}
+		if ledger.Sequence != sequence || ledger.ControllerGeneration+1 < admission.Attempt.StartControllerGeneration {
+			break
+		}
+		record, phase, err := s.LoadTransition(ledger.TransitionID)
+		if err != nil {
+			return ExecutionTrees{}, err
+		}
+		if record.CommittedGeneration != ledger.ControllerGeneration || phase.Phase != TransitionPhaseFinalized {
+			return ExecutionTrees{}, fmt.Errorf("parent source baseline transition is not finalized")
+		}
+		if record.TargetAttemptID == admission.Attempt.AttemptID && (record.Kind == executionMaterialize || record.Kind == executionParentSourceImport) {
+			return s.parentSourceOperationTrees(record, admission.Attempt.AttemptID)
+		}
+		ref = ledger.PreviousRecord
+		sequence--
+	}
+	return s.materializedParentSourceBaseline(admission.Attempt)
+}
+
+func (s *Store) materializedParentSourceBaseline(attempt AttemptRecord) (ExecutionTrees, error) {
+	entries, err := os.ReadDir(filepath.Join(s.dir, "transitions"))
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	var found *TransitionRecord
+	for _, entry := range entries {
+		var record TransitionRecord
+		if err := readJSON(filepath.Join(s.dir, "transitions", entry.Name()), &record); err != nil {
+			return ExecutionTrees{}, err
+		}
+		if record.TargetGeneration != attempt.StartControllerGeneration || record.TargetAttemptID != attempt.AttemptID || record.Kind != executionMaterialize {
+			continue
+		}
+		if found != nil {
+			return ExecutionTrees{}, fmt.Errorf("parent source baseline materialization is ambiguous")
+		}
+		found = &record
+	}
+	if found == nil {
+		return ExecutionTrees{}, fmt.Errorf("parent source baseline has no finalized materialization")
+	}
+	return s.parentSourceOperationTrees(*found, attempt.AttemptID)
+}
+
+func (s *Store) parentSourceOperationTrees(record TransitionRecord, attemptID string) (ExecutionTrees, error) {
+	var op ExecutionOperation
+	if err := readJSON(s.executionOperationPath(record.TransitionID), &op); err != nil {
+		return ExecutionTrees{}, err
+	}
+	if _, err := s.validateExecutionOperation(op); err != nil {
+		return ExecutionTrees{}, err
+	}
+	phase, err := s.loadTransitionState(record.TransitionID)
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	if op.Transition.OperationDigest != record.OperationDigest || phase.Phase != TransitionPhaseFinalized || op.Rebound == nil || op.Attempt == nil || op.Attempt.AttemptID != attemptID {
+		return ExecutionTrees{}, fmt.Errorf("parent source baseline operation authority differs")
+	}
+	return op.Rebound.Current, nil
 }
 
 func (s *Store) buildParentSourceImport(admission Admission, source ParentSourceRevision, rebound ReboundSuspension, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperation, error) {

@@ -28,6 +28,11 @@ type reentryReviewRepairFixture struct {
 
 func reentryReviewRepairAppFixture(t *testing.T) reentryReviewRepairFixture {
 	t.Helper()
+	return reentryReviewRepairAppFixtureWithPreparation(t, true)
+}
+
+func reentryReviewRepairAppFixtureWithPreparation(t *testing.T, prepare bool) reentryReviewRepairFixture {
+	t.Helper()
 	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
 	reentered, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
 	if err != nil {
@@ -71,6 +76,9 @@ func reentryReviewRepairAppFixture(t *testing.T) reentryReviewRepairFixture {
 		Role: state.WorkerRole, Outcome: "success", PacketStatus: string(packet.StatusImplemented),
 		Response: string(response), ResponseSHA256: hex.EncodeToString(digest[:]),
 	})
+	if !prepare {
+		return reentryReviewRepairFixture{cfg: cfg, store: store, runtime: runtime, admit: source}
+	}
 	if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "prepare-reentry-review", ExpectedGeneration: source.Head.ControllerGeneration}); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +90,41 @@ func reentryReviewRepairAppFixture(t *testing.T) reentryReviewRepairFixture {
 		t.Fatalf("reentered reviewer checkpoint: %#v %v", queued, err)
 	}
 	return reentryReviewRepairFixture{cfg: cfg, store: store, runtime: runtime, admit: source}
+}
+
+func TestReentrySourceHandoffPreparesThenImportsParentRevision(t *testing.T) {
+	f := reentryReviewRepairAppFixtureWithPreparation(t, false)
+	_, revised := f.revisePrimaryTask(t, "\n## Amendments\n\nTaskとproduction sourceを同時改訂する。\n")
+	taskID := f.runtime.ReadOr("task.id", "")
+	for _, action := range []string{"prepare-reentry-review", "repair-reentry-review"} {
+		handoff := buildParentHandoffWithConfig(f.cfg, f.runtime)
+		if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
+			t.Fatalf("source revision lost its regular owner: %#v", handoff)
+		}
+		var command controllerExecutionCommand
+		if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil || command.Action != action {
+			t.Fatalf("source revision command: %#v %v", command, err)
+		}
+		if _, err := executeControllerExecution(f.cfg, f.store, command); err != nil {
+			t.Fatal(err)
+		}
+	}
+	binding, err := f.runtime.LoadControllerRuntimeBinding()
+	if err != nil || binding.TaskContractDigest != revised.ContractDigest || f.runtime.ReadOr("task.id", "") != taskID {
+		t.Fatal("source revision lost the current Task identity or contract")
+	}
+}
+
+func TestReentrySourceHandoffRejectsMissingWorkerContext(t *testing.T) {
+	f := reentryReviewRepairAppFixtureWithPreparation(t, false)
+	f.revisePrimaryTask(t, "\n## Amendments\n\n保存contextの欠損を検出する。\n")
+	if err := os.Remove(f.runtime.ModelCallLogPath(f.runtime.ReadOr("task.id", ""))); err != nil {
+		t.Fatal(err)
+	}
+	handoff := buildParentHandoffWithConfig(f.cfg, f.runtime)
+	if handoff.Consistent || handoff.RequiredAction != nil {
+		t.Fatal("handoff admitted an unexecutable source preparation")
+	}
 }
 
 func (f reentryReviewRepairFixture) revisePrimaryTask(t *testing.T, amendment string) (controller.WorkspaceSnapshot, controller.SemanticTaskRef) {
@@ -122,7 +165,12 @@ func validatedReentryReviewRepairFixture(t *testing.T) reentryReviewRepairFixtur
 	if err != nil || !reflect.DeepEqual(afterRejection, headBefore) {
 		t.Fatal("rejected reentry review repair mutated controller authority")
 	}
-	updated, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "update-reentry-review", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: snapshot.ID, RevisedTask: &revised})
+	handoff := buildParentHandoffWithConfig(f.cfg, f.runtime)
+	var command controllerExecutionCommand
+	if !handoff.Consistent || json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command) != nil || command.Action != "repair-reentry-review" || command.SourceSnapshotID != snapshot.ID {
+		t.Fatalf("parent source revision was hidden by Task-only synchronization: %#v", handoff)
+	}
+	updated, err := executeControllerExecution(f.cfg, f.store, command)
 	if err != nil {
 		t.Fatal(err)
 	}

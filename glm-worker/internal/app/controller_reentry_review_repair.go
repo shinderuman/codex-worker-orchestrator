@@ -46,14 +46,21 @@ func executeControllerExecutionRecovery(cfg config.AppConfig, store *controller.
 	if err != nil {
 		return result, err
 	}
-	before, err := store.ReentryReviewRepairEvidence(transitionID)
-	if err != nil || before == nil {
-		return result, err
-	}
 	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
 	if err != nil {
 		return result, err
 	}
 	wf := workflow.NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
-	return result, wf.CompleteReentryReviewRepair(before)
+	before, err := store.ReentryReviewRepairEvidence(transitionID)
+	if err != nil {
+		return result, err
+	}
+	if before != nil {
+		return result, wf.CompleteReentryReviewRepair(before)
+	}
+	syncBefore, err := store.TaskAuthoritySyncEvidence(transitionID)
+	if err != nil || syncBefore == nil {
+		return result, err
+	}
+	return result, wf.CompleteTaskAuthoritySync(syncBefore)
 }

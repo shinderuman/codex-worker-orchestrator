@@ -91,8 +91,11 @@ func (s *StateStore) userTerminatedActionPlan() (ParentActionPlan, error) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		return ParentActionPlan{}, err
 	}
-	if record.Version != 1 || record.TransitionID == "" || record.Reason == "" || record.PrimaryRoot != s.ReadOr("repo-root", "") {
+	if !validControllerTaskTermination(record) {
 		return ParentActionPlan{}, fmt.Errorf("user terminated runtime authority is invalid")
+	}
+	if err := s.verifyControllerTaskTerminationSource(record); err != nil {
+		return ParentActionPlan{}, err
 	}
 	return actionPlan(ParentActionNone, ""), nil
 }

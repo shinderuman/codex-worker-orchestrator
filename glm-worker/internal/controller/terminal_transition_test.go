@@ -55,6 +55,16 @@ func prepareCompletionFixture(store *Store, input TerminalTaskInput) (ExecutionO
 
 func prepareCompletionTestCandidate(t *testing.T, store *Store, promoted ExecutionOperationResult, candidate AcceptedCandidate) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
+	current, err := store.LoadAcceptedCandidate(*promoted.Head.AcceptedCandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.State == candidatePrepared {
+		promoted, err = store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	retired, err := prepareCompletionFixture(store, TerminalTaskInput{ExpectedGeneration: promoted.Head.ControllerGeneration, ProjectSnapshotID: promoted.Head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef})
 	if err != nil {
 		t.Fatal(err)

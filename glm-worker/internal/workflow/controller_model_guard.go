@@ -16,17 +16,7 @@ type controllerModelCallGuard struct {
 }
 
 func (w *Workflow) admitCanonicalWorkflowMutation() error {
-	if w.state.TaskStatus() != state.TaskStatusNone {
-		exists, err := controller.Exists(w.config)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return fmt.Errorf("existing workflow requires canonical controller execution authority")
-		}
-	}
-
-	admission, err := controller.Activate(w.config)
+	admission, err := w.canonicalWorkflowAdmission()
 	if err != nil {
 		return err
 	}
@@ -37,13 +27,59 @@ func (w *Workflow) admitCanonicalWorkflowMutation() error {
 	return nil
 }
 
-func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (controllerModelCallGuard, error) {
-	if checkpoint.ReadOnly {
-		return controllerModelCallGuard{}, nil
+func (w *Workflow) admitCanonicalNewTaskMutation() error {
+	admission, err := w.canonicalWorkflowAdmission()
+	if err != nil {
+		return err
 	}
+	w.canonicalAdmission = &admission
+	return nil
+}
+
+func (w *Workflow) canonicalWorkflowAdmission() (controller.Admission, error) {
+	if w.state.TaskStatus() != state.TaskStatusNone {
+		exists, err := controller.Exists(w.config)
+		if err != nil {
+			return controller.Admission{}, err
+		}
+		if !exists {
+			return controller.Admission{}, fmt.Errorf("existing workflow requires canonical controller execution authority")
+		}
+	}
+	admission, err := controller.Activate(w.config)
+	if err != nil {
+		return controller.Admission{}, err
+	}
+	if required, err := w.requiredTaskAuthoritySync(admission.Head); err != nil {
+		return controller.Admission{}, err
+	} else if required != nil {
+		return controller.Admission{}, required
+	}
+	return admission, nil
+}
+
+func (w *Workflow) requiredTaskAuthoritySync(head controller.RepositoryControllerHead) (*controller.TaskAuthoritySyncRequiredError, error) {
+	store, err := controller.Open(w.config)
+	if err != nil {
+		return nil, err
+	}
+	return store.RequiredTaskAuthoritySync(head)
+}
+
+func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (controllerModelCallGuard, error) {
 	store, head, active, err := w.liveControllerStore()
 	if err != nil {
 		return controllerModelCallGuard{}, err
+	}
+	if active {
+		if required, err := store.RequiredTaskAuthoritySync(head); err != nil {
+			return controllerModelCallGuard{}, err
+		} else if required != nil {
+			return controllerModelCallGuard{}, required
+		}
+	}
+	if checkpoint.ReadOnly {
+		return controllerModelCallGuard{}, nil
 	}
 	if !active {
 		return controllerModelCallGuard{}, fmt.Errorf("mutating model call requires canonical controller execution authority")

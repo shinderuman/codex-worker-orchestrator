@@ -344,6 +344,11 @@ func completeCanonicalWorkflowReview(t *testing.T, blockerRunner *canonicalWorkf
 	if err := Execute(Command{Mode: ModeResume}, blockerCfg, factory, &resumed, io.Discard); err != nil {
 		t.Fatal(err)
 	}
+	acceptCanonicalWorkflowReview(t, blockerRunner, blockerCfg, blockerState, resumed.String())
+}
+
+func acceptCanonicalWorkflowReview(t *testing.T, blockerRunner *canonicalWorkflowRunner, blockerCfg config.AppConfig, blockerState *state.StateStore, resumed string) {
+	t.Helper()
 	manifest := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{Version: parentevidence.ManifestVersion, Reason: "inspect the scripted independent review target", Source: []parentevidence.SourceRequest{{Question: "verify current blocker source", Path: blockerRunner.path, LineStart: 1, LineEnd: 1, BudgetBytes: 4096}}})
 	var delivered bytes.Buffer
 	if err := printParentEvidence(Command{EvidenceManifest: manifest}, blockerCfg, blockerState, &delivered); err != nil {
@@ -351,7 +356,7 @@ func completeCanonicalWorkflowReview(t *testing.T, blockerRunner *canonicalWorkf
 	}
 	binding, err := blockerState.CurrentParentReviewBinding()
 	if err != nil || binding == nil || binding.Proof == nil {
-		t.Fatalf("scripted review target lacks delivered source proof: %v binding=%#v evidence=%s result=%s", err, binding, delivered.String(), resumed.String())
+		t.Fatalf("scripted review target lacks delivered source proof: %v binding=%#v evidence=%s result=%s", err, binding, delivered.String(), resumed)
 	}
 	if err := Execute(Command{Mode: ModeAccept}, blockerCfg, nil, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)

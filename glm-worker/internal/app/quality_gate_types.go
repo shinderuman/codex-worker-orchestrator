@@ -54,11 +54,16 @@ const (
 )
 
 var qualityGateForms = map[string][]string{
-	"go-test":      {"test", "-timeout=25m", "./..."},
-	"go-test-race": {"test", "-race", "-timeout=45m", "./..."},
+	"go-test":      {"test", "-json", "-timeout=25m", "./..."},
+	"go-test-race": {"test", "-race", "-json", "-timeout=45m", "./..."},
 }
 
 var launchQualityGateRunner qualityGateRunnerLauncher = launchQualityGateRunnerProcess
+
+func qualityGateFormProducesTestTimings(form string) bool {
+	_, ok := qualityGateForms[form]
+	return ok
+}
 
 func (e *QualityGateError) Error() string {
 	return fmt.Sprintf("quality gateが失敗しました (exit %d)", e.ExitCode)

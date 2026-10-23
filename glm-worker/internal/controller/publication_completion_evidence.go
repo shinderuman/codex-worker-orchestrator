@@ -54,6 +54,9 @@ func (s *Store) completionReceiptRefs(op ExecutionOperation, phase TransitionSta
 		return nil, err
 	}
 	refs := []EvidenceObjectRef{*phase.Completion.ReadinessRef, *phase.Completion.ObservationRef, observation.GitArchive}
+	if ready.BundleCheckRef != nil {
+		refs = append(refs, *ready.BundleCheckRef)
+	}
 	if ready.LintRef != nil {
 		refs = append(refs, *ready.LintRef)
 	}

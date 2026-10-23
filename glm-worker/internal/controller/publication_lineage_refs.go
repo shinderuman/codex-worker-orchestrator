@@ -4,6 +4,9 @@ import "encoding/json"
 
 func (s *Store) candidatePublicationRefs(c AcceptedCandidate, lineage EvidenceObjectRef, observation *EvidenceObjectRef) ([]EvidenceObjectRef, error) {
 	refs := []EvidenceObjectRef{lineage, c.GitArchive}
+	if c.BundleCheckRef != nil {
+		refs = append(refs, *c.BundleCheckRef)
+	}
 	if c.ImplementationRef != nil {
 		implementation, err := s.loadCandidateArchive(*c.ImplementationRef)
 		if err != nil {
