@@ -17,6 +17,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -387,7 +388,7 @@ func TestRunUsesInjectedDependencies(t *testing.T) {
 	var out bytes.Buffer
 
 	err := run(
-		[]string{"request"},
+		[]string{"--task", "request"},
 		func() (config.AppConfig, error) { return cfg, nil },
 		r.factory(),
 		strings.NewReader(""),
@@ -406,7 +407,7 @@ func TestRunStopsWhenConfigLoadFails(t *testing.T) {
 	t.Parallel()
 	want := errors.New("config failure")
 	err := run(
-		[]string{"request"},
+		[]string{"--task", "request"},
 		func() (config.AppConfig, error) { return config.AppConfig{}, want },
 		nil,
 		strings.NewReader(""),
@@ -415,6 +416,30 @@ func TestRunStopsWhenConfigLoadFails(t *testing.T) {
 	)
 	if !errors.Is(err, want) {
 		t.Fatalf("config error = %v", err)
+	}
+}
+
+func TestNewTaskAdmissionRejectsBeforeConfigAndExecution(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"bundle", "task-id"},
+		{"unknown-command", "payload"},
+		{"--unknown", "payload"},
+		{"-x"},
+		{"調査して 実装する"},
+		{"--task"},
+		{"--task", " \n\t"},
+		{"--task", "request", "extra"},
+	} {
+		var stdout, stderr bytes.Buffer
+		err := runEntry(args, nil, nil, nil, &stdout, &stderr)
+		var usage *machinecli.UsageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("argv=%q: usage errorを期待: %v", args, err)
+		}
+		if stdout.Len() != 0 || stderr.Len() != 0 {
+			t.Fatalf("argv=%q: 拒否前にexecution出力が発生: stdout=%q stderr=%q", args, &stdout, &stderr)
+		}
 	}
 }
 

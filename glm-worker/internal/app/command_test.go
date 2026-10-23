@@ -13,8 +13,9 @@ func TestParseCommandModes(t *testing.T) {
 		mode    CommandMode
 		payload string
 	}{
-		{name: "new task", args: []string{"調査して", "実装する"}, mode: ModeNewTask, payload: "調査して 実装する"},
-		{name: "new task with later option-shaped token", args: []string{"調査して", "--unknown"}, mode: ModeNewTask, payload: "調査して --unknown"},
+		{name: "new task", args: []string{"--task", "調査して 実装する"}, mode: ModeNewTask, payload: "調査して 実装する"},
+		{name: "new task with option-shaped text", args: []string{"--task", "調査して --unknown"}, mode: ModeNewTask, payload: "調査して --unknown"},
+		{name: "new task preserves bytes", args: []string{"--task", "  調査して\n実装する  "}, mode: ModeNewTask, payload: "  調査して\n実装する  "},
 		{name: "resume", args: []string{"--resume"}, mode: ModeResume},
 		{name: "stop", args: []string{"--stop"}, mode: ModeStop},
 		{name: "status", args: []string{"--status"}, mode: ModeStatus},
@@ -171,6 +172,13 @@ func TestParseCommandRejectsUnknownCommandShapedFirstToken(t *testing.T) {
 	for _, args := range [][]string{
 		{"--unknown"},
 		{"--unknown", "payload"},
+		{"unknown"},
+		{"unknown", "payload"},
+		{"bundle", "task-id"},
+		{"start", "payload"},
+		{"-x"},
+		{""},
+		{"調査して", "実装する"},
 		{"--decision", "A案で進める"},
 		{"--fix", "指摘を修正"},
 	} {
@@ -186,6 +194,21 @@ func TestParseCommandRejectsUnknownCommandShapedFirstToken(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), "--decision-stdin") || strings.Contains(err.Error(), "--fix-stdin") {
 			t.Fatalf("retired command-specific migration hintが残っています: %v", err)
+		}
+	}
+}
+
+func TestParseCommandRejectsInvalidNewTask(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"--task"},
+		{"--task", ""},
+		{"--task", " \n\t"},
+		{"--task", "調査して", "実装する"},
+		{"--task", "調査して", "--unknown"},
+	} {
+		if _, err := ParseCommand(args); err == nil {
+			t.Fatalf("invalid new-task argvを受理しました: %#v", args)
 		}
 	}
 }

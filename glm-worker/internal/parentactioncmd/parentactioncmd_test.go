@@ -17,7 +17,7 @@ const codexIdentityTestThreadID = "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 
 func TestDirectWorkerArgsStartUsesCurrentActiveTask(t *testing.T) {
 	args := directWorkerArgs("start")
-	if len(args) != 1 || args[0] != activeTaskRequest {
+	if len(args) != 2 || args[0] != "--task" || args[1] != activeTaskRequest {
 		t.Fatalf("start args = %#v", args)
 	}
 }

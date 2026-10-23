@@ -257,7 +257,7 @@ func terminalPayloadFakeResultJSON() string {
 }
 
 func terminalPayloadHelperMain() {
-	if err := Run([]string{os.Getenv(terminalPayloadRequestEnv)}); err != nil {
+	if err := Run([]string{"--task", os.Getenv(terminalPayloadRequestEnv)}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(3)
 	}

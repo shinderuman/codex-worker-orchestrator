@@ -136,7 +136,7 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 
 	holdCtx, cancelHold := context.WithTimeout(context.Background(), multiRepoRunTimeout)
 	defer cancelHold()
-	holder := env.start(t, holdCtx, env.repoA, "repo A first task marker MRISOA1")
+	holder := env.start(t, holdCtx, env.repoA, "--task", "repo A first task marker MRISOA1")
 
 	stateA := env.waitStateDir(t, env.repoA, holder)
 	env.waitHeldWithWorkerSession(t, stateA)
@@ -220,7 +220,13 @@ func assertRepoLockSemantics(t *testing.T, env *multiRepoEnv, stateA string, sta
 
 func assertSameRepoSecondProcessDenied(t *testing.T, env *multiRepoEnv, repo string) {
 	t.Helper()
-	denied := env.run(t, repo, "second task while owner is active")
+	for _, args := range [][]string{{"bundle", "task-id"}, {"unknown-command", "payload"}, {"--unknown"}} {
+		denied := env.run(t, repo, args...)
+		if denied.code == 0 || denied.stdout != "" || !strings.Contains(denied.stderr, `"kind":"usage"`) {
+			t.Fatalf("未知commandがlock取得前に拒否されません: args=%q code=%d stdout=%s stderr=%s", args, denied.code, denied.stdout, denied.stderr)
+		}
+	}
+	denied := env.run(t, repo, "--task", "second task while owner is active")
 	if denied.code == 0 || !strings.Contains(denied.stderr, "another glm-worker is already running for this repository") {
 		t.Fatalf("同一repo 2本目のlock拒否が成立していません: code=%d stderr=%s", denied.code, denied.stderr)
 	}
@@ -496,7 +502,7 @@ func (e *multiRepoEnv) run(t *testing.T, repo string, args ...string) multiRepoR
 
 func (e *multiRepoEnv) runTaskToPass(t *testing.T, repo string, instruction string) string {
 	t.Helper()
-	result := e.run(t, repo, instruction)
+	result := e.run(t, repo, "--task", instruction)
 	if result.code != 0 || !strings.Contains(result.stdout, `"status":"PASS"`) {
 		t.Fatalf("repo %sのtaskがPASS完結しません: code=%d stdout=%s stderr=%s", repo, result.code, result.stdout, result.stderr)
 	}

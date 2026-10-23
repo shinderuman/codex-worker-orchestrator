@@ -26,7 +26,7 @@ func runHelp(args []string, stdout io.Writer) (bool, error) {
 	commands = append(commands, "--authority", "--help")
 	sort.Strings(commands)
 	return true, writeValidatedMachineJSON(stdout, helpOutput{
-		Usage:    "glm-worker <instruction> | <command>",
+		Usage:    "glm-worker <command>",
 		Commands: commands,
 		Aliases:  map[string]string{"-h": "--help"},
 	})

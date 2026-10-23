@@ -414,7 +414,7 @@ func TestDispatchWithholdsTypedWarningWhenExecuteFailsAfterWarning(t *testing.T)
 
 	var stdout, stderr bytes.Buffer
 	err = run(
-		[]string{"new task request"},
+		[]string{"--task", "new task request"},
 		func() (config.AppConfig, error) { return cfg, nil },
 		r.factory(),
 		strings.NewReader(""),

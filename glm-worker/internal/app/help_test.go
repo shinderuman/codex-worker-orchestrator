@@ -42,7 +42,7 @@ func TestRunEntryHelpBypassesConfig(t *testing.T) {
 			if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 				t.Fatal(err)
 			}
-			if output.Usage != "glm-worker <instruction> | <command>" || output.Aliases["-h"] != "--help" {
+			if output.Usage != "glm-worker <command>" || output.Aliases["-h"] != "--help" {
 				t.Fatalf("help output = %#v", output)
 			}
 			foundHelp := false

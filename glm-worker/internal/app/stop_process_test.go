@@ -28,7 +28,7 @@ func stopWorkerCallWithToolChild(t *testing.T, env *multiRepoEnv) {
 	env.setStubMode(t, env.stubA, "hold-with-tool")
 	holdCtx, cancel := context.WithTimeout(context.Background(), multiRepoRunTimeout)
 	defer cancel()
-	holder := env.start(t, holdCtx, env.repoA, "stop series worker marker STOPW1")
+	holder := env.start(t, holdCtx, env.repoA, "--task", "stop series worker marker STOPW1")
 
 	stateA := env.waitStateDir(t, env.repoA, holder)
 	env.waitHeldWithWorkerSession(t, stateA)
@@ -94,7 +94,7 @@ func stopReviewerCall(t *testing.T, env *multiRepoEnv) {
 	env.setStubMode(t, env.stubB, "reviewer-hold")
 	holdCtx, cancel := context.WithTimeout(context.Background(), multiRepoRunTimeout)
 	defer cancel()
-	holder := env.start(t, holdCtx, env.repoB, "stop series reviewer marker STOPR1")
+	holder := env.start(t, holdCtx, env.repoB, "--task", "stop series reviewer marker STOPR1")
 
 	stateB := env.waitStateDir(t, env.repoB, holder)
 	waitStopFile(t, filepath.Join(stateB, "reviewer.id"))
