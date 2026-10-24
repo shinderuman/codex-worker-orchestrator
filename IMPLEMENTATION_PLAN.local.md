@@ -8,13 +8,9 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`](IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md)
+- [`IMPLEMENTATION_TASKS/typed-parent-completion-workflow.md`](IMPLEMENTATION_TASKS/typed-parent-completion-workflow.md)
 
 ## NEXT（優先順）
-
-
-
-
 
 
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)

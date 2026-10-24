@@ -51,4 +51,9 @@ Codex→parent action→glm-worker→Claude CLIの通信経路を全体として
 
 ## Dependencies
 
+none
+
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`
