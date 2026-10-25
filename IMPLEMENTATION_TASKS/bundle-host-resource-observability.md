@@ -36,7 +36,7 @@ Dogfood Bundleから、ローカル/CIでテスト・Worker・Reviewer等の実�
 - 今回の観測追加を口実にCI分割方式、Goバージョン、実テストのロジックやTaskライフサイクルを変更しない。
 - 単一の最終スナップショットだけで「実行中の資源不足を把握できる」と扱わない。
 - すべてのOSで同じ指標を取得できると仮定した擬似値・ゼロ埋めをしない。
-- Python等のその場限りのラッパ、外部監視service、別Task専用の蓄積形式を標準Workflowへ追加しない。
+- 外部監視serviceや別Task専用の蓄積形式を標準Workflowへ追加しない。
 - 既存のスキーマ互換層を新設しない。必要なschema更新を現行正規ownerに集約する。
 
 ## Acceptance criteria
