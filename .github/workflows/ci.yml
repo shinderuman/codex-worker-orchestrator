@@ -26,14 +26,16 @@ jobs:
         include:
           - name: quality
             mode: quality
+          - name: app
+            mode: app
+          - name: controller
+            mode: controller
           - name: test-1
             mode: test
             shard: 0
           - name: test-2
             mode: test
             shard: 1
-          - name: app
-            mode: app
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
@@ -68,21 +70,21 @@ jobs:
       - name: Go build gate
         if: ${{ matrix.mode == 'quality' }}
         run: ./goquality build
-      - name: Go tests except internal/app (half)
+      - name: Go tests except internal/app and internal/controller (half)
         if: ${{ matrix.mode == 'test' }}
         working-directory: glm-worker
         env:
           SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
-          packages="$(go list ./... | grep -v '/internal/app$' | sort)"
+          packages="$(go list ./... | grep -Ev '/internal/(app|controller)$' | sort)"
           count="$(printf '%s\n' "$packages" | wc -l)"
           if (( count < 2 )); then
-            echo 'Expected at least two non-app packages' >&2
+            echo 'Expected at least two other packages' >&2
             exit 1
           fi
           cut=$(( (count + 1) / 2 ))
-          printf 'Non-app packages: %s; half %s; cut at %s\n' "$count" "$SHARD" "$cut"
+          printf 'Other packages: %s; half %s; cut at %s\n' "$count" "$SHARD" "$cut"
           printf '%s\n' "$packages" | awk -v shard="$SHARD" -v cut="$cut" '
             (shard == 0 && NR <= cut) || (shard == 1 && NR > cut) { print }
           ' | tee /dev/stderr | xargs -r go test
@@ -90,6 +92,10 @@ jobs:
         if: ${{ matrix.mode == 'app' }}
         working-directory: glm-worker
         run: /usr/bin/time -p go test -count=1 ./internal/app
+      - name: Go tests for internal/controller
+        if: ${{ matrix.mode == 'controller' }}
+        working-directory: glm-worker
+        run: /usr/bin/time -p go test -count=1 ./internal/controller
 
   lint:
     if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
