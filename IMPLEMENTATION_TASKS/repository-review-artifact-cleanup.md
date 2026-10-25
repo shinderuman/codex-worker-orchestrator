@@ -25,6 +25,14 @@
 前回と今回の両方のレビュー由来Taskが完了するまでcleanupしない。Review.mdの既存対応表に加え、「2026-10 再監査」の対応表を対象に含める。review-evidence/october-2026/request.mdは新規Task共通の要求正本なので、参照する全Taskが完了する前に削除しない。
 ````
 
+### 2026-10-25 External ReviewのCodex採否によるcleanup対象の明確化
+
+親Codex指示:
+
+````text
+PR #1375 discussion_r4347607640のreview-evidence/workflow-performance-result.mdを既存directory cleanupの対象として明示する。同文書のordinary completion chronology・計測snapshotを恒久的なtracked Markdown正本へ移し替えない。必要なlive requirement・回帰検証・実証に必要なexact artifact locatorが残る場合は正規ownerへの移管と回収可否を確認してから削除する。「本Task artifact」という未特定locatorだけで移管完了と扱わない。必要な要求がある間は先行削除しない。
+````
+
 ## Resolved references
 
 - `Review.md` の「2026-10 再監査」の対応表も対象とする。共通要求source・fixture・診断は `review-evidence/october-2026/` にあり、同じdirectory全体cleanupへ含める。

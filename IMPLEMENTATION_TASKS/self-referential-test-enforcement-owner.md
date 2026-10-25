@@ -13,7 +13,13 @@ Dogfood改善のTaskの次に今回調べたテストをするテストを改善
 
 ## Amendments
 
-none
+### 2026-10-25 External ReviewのCodex採否によるrename境界の明確化
+
+親Codex指示:
+
+````text
+PR #1353 discussion_r4282514693について、単純renameの受理はstale locatorを無条件に通すという意味ではない。存在確認を現行の正規契約として残す間はcoordinated renameで登録locatorも更新する。locatorの責務自体を変更する場合はconsumerを確認し、既存の不正provenance/missing symbolに対するfail-closedを維持する。coverageの意味保証とは区別する。
+````
 
 ## Resolved references
 

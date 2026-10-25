@@ -23,6 +23,27 @@ Mac側の速度改善要求（原文）:
 NEXTの先頭でやるべきだと思うだがこのあとConflictして順序が変わるはずなのでその後改めて順序は支持する
 ````
 
+### 2026-10-25 External Reviewから同一責務へ統合: quality-gate-timing-write-finalization
+
+親CodexによるExternal Review採否の具体化指示（2026-10-25）:
+
+````text
+timing書込失敗をwrapper failureとして記録し元のchild失敗を保存する。
+completeQualityGateRunでtiming artifact書込失敗後もrecordを確定し、child成功時はwrapper由来FAIL/nonzero、child失敗時は既存exit code/sourceを維持する。
+timings pathは不存在artifactを指さず、runner reconcileのinterrupted/unknownで原因を上書きしない。
+````
+
+### 2026-10-25 External Reviewから同一責務へ統合: timing-analysis-validation-run-identity
+
+親CodexによるExternal Review採否の具体化指示（2026-10-25）:
+
+````text
+同じvalidation runを自分自身のbaselineへ選ばない。
+runtime/repository/predecessor等から集まる同一ValidationRunIDをtiming group生成前に正規identityへ収束させる。
+同じIDで内容/条件が矛盾する場合のunknown/errorを定め、単なるfirst winsで証拠矛盾を隠さない。新しい第二indexを追加しない。
+nil timingsや条件欠落の扱いと、form/module/toolchain条件の比較境界を維持する。
+````
+
 2026-10-26 追加要求（原文）:
 
 ````text
@@ -45,9 +66,26 @@ Goのバージョンの作業内容を修正するPRを出せ
 - Goバージョン逸脱の是正とMacテスト高速化はこのTaskに統合する。BundleのCPU・メモリ・swapサンプリングは独立Task `IMPLEMENTATION_TASKS/bundle-host-resource-observability.md` に委ねる。
 - 「バージョン不整合」の追加対象: 正規Quality Gateが契約外のGoを使った問題に加え、Codex・GLMが診断・局所確認のためにQuality Gate外で直接起動する `go test`（focused package/test、必要なraceやintegrationテスト等）も、同じrepositoryのGo version契約に従わせる。診断用テストのPASSと正規Quality GateのPASSは別物として扱う。
 
+- PR #1381 / comment 4362202703: timings書込失敗はrecord確定前にreturnし、後続reconcileでinterrupted/unknownになる。非終端ではなく誤分類として修復し、既存nonzero child exitを保存する。
+
+Reviewは外部の参考情報とし、実装要求は本Taskの親Codex判断を正とする。実行時にはcurrent sourceで成立性を再確認する。原Taskの要求はGit履歴 `ecb2e74611ecf7a09a1e6b673cc2982e8a4e9cc9:IMPLEMENTATION_TASKS/external-review-finding-adjudication.md` で回収できる。
+
+- `glm-worker/internal/app/quality_gate_execution.go:completeQualityGateRun`
+
+- PR #1381 / comment 4362202715: collector群のappendとtiming groupにRunID dedupがなく、latestのcopyをbaselineにできる。重複を除いて真の旧baselineを維持する。矛盾する同ID内容を黙って選ばない。
+
+- `glm-worker/internal/controller/evidence_export_validation.go:collectGateRun`
+- `glm-worker/internal/controller/evidence_export_predecessor.go:collectPredecessorValidationRuns`
+- `glm-worker/internal/controller/evidence_export_analysis.go:collectTestTimingGroups`
+- `glm-worker/internal/controller/evidence_export_analysis.go:nearestComparableTimingRun`
+
 ## Purpose
 
 正規Go Quality Gateがリポジトリの `quality-tools.yml` が選択したバージョンを確実に使う状態を成立させた上で、Macの通常Goテストが20～30分以上かかる原因を定量的に特定し、coverageと失敗検出力を維持しつつ短縮する。バージョン整合性と性能改善は単一Taskの連続する責務として扱う。
+
+## External feasibility
+
+status: not-applicable
 
 ## Contract
 
@@ -75,6 +113,17 @@ Goのバージョンの作業内容を修正するPRを出せ
 - 根本原因に基づく実装上の改善（不要な待機、同期I/Oや子プロセス実行、fixtureの反復、資源競合、適切な検証分割）を評価し、実際に速度に寄与するものだけ採用する。CI側の追加分割やGo version変更は本Taskの目的そのものにはしない。
 - 改善前後のwall-clock、主要package/test時間、CPU/I/O等可能な資源証拠を同じ条件で比較し、局所最適で全体が悪化していないか確認する。速くならない場合も原因・確認限界を正確に記録し、無理に変更を作らない。
 
+External Reviewで確認した同一責務の具体条件（quality-gate-timing-write-finalization）:
+
+- completeQualityGateRunでtiming artifact書込失敗後もrecordを確定し、child成功時はwrapper由来FAIL/nonzero、child失敗時は既存exit code/sourceを維持する。
+- timings pathは不存在artifactを指さず、runner reconcileのinterrupted/unknownで原因を上書きしない。
+
+External Reviewで確認した同一責務の具体条件（timing-analysis-validation-run-identity）:
+
+- runtime/repository/predecessor等から集まる同一ValidationRunIDをtiming group生成前に正規identityへ収束させる。
+- 同じIDで内容/条件が矛盾する場合のunknown/errorを定め、単なるfirst winsで証拠矛盾を隠さない。新しい第二indexを追加しない。
+- nil timingsや条件欠落の扱いと、form/module/toolchain条件の比較境界を維持する。
+
 ## Must not
 
 - `quality-tools.yml` の値を、手元Macで偶然選ばれた1.27.0に合わせるだけで修正完了にしない。バージョン更新自体が別途必要なら意図的なrepository-wide contract変更として判断する。
@@ -89,6 +138,10 @@ Goのバージョンの作業内容を修正するPRを出せ
 - 正規Quality Gateを都度の手製ラッパや直接`go test`実行へ置き換えない。必要なdiagnostic実験とcanonical validationの違いは証拠上区別する。
 - 無関係なTask実装、CIの設定変更、未完了Bundle資源収録を勝手に取り込まない。
 
+- 対象外の外部指摘を一括実装しない。current schema拒否、Git/Task/source authority、独立Reviewを弱めない。
+- 第二state DB、専用daemon、旧schema/旧protocol互換fallbackを追加しない。
+- 根本原因・永続状態/公開API/architectureの未確定判断は実装前にSolへ戻す。
+
 ## Acceptance criteria
 
 1. macOSの正規Quality Gateにおける規定外Go 1.27.0使用の発生経路を特定し、`quality-tools.yml` と実際の検証toolchainが一致することを機械的に保証する。親Codexへの注意喚起やGoの値の変更だけで是正完了としない。
@@ -97,6 +150,13 @@ Goのバージョンの作業内容を修正するPRを出せ
 4. 整合性を成立させた後、Macの20～30分の主な所要時間をpackage/test実測で説明し、単独実行・full suite、Linux CIとの差、並列実行・プロセス・Git・I/O・メモリの影響を切り分ける。証拠がない事項は未確定とする。
 5. 改善を採用する場合は同条件の正規Quality Gateで変更前後のwall-clock、主要package/test時間、CIの回帰を比較し、検証のcoverageや品質を落とさず短縮できたことを確認する。改善不能なら確認できた原因と残る制約を明示し、未達を完了扱いしない。
 6. 関連テスト、正規validation、独立Review、Runtime/source整合確認を実施する。利用できないOS・環境の確認結果は成功済みとみなさない。
+
+- child成功/失敗それぞれにtimings書込失敗を注入し、terminal statusとexit provenanceを検証する。
+- record/必要logを残し、通常timings成功経路を維持する。
+- 関連する正規test/lintと独立Reviewを実施し、current sourceに束縛した証拠を残す。
+
+- 最新runの複数copyが存在してもRunsを水増しせず、真の旧baselineを選ぶ。
+- 重複しかない場合は自己比較せず、異内容同IDは誤った改善/劣化へ数えない。
 
 ## Historical invariants
 
