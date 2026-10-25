@@ -2,33 +2,17 @@
 
 ## Original instruction
 
-2026-10-26 ユーザー指示（原文）:
-
-````text
-ちげーよばか
-実装担当はCodexだよ
-だからCodex向きにIMPLEMENTATION_PLANを起票してそれのPRを作ってMergeすれば終わりだよ馬鹿
-````
-
-````text
-さっさとIMPLEMENTATION_PLANの修正のPR作ってMergeしろよ
-````
+2026-10-26 Dogfood Auditで、Bundleの `analysis-index.model_calls` がモデルを呼び出していないtelemetry eventをモデル呼出として計上している不具合が確認された。親Codexは現行のtelemetry分類契約と全consumerを確認し、集計の正確性を回復すること。修正前後の実データと回帰テストで、Task/Reviewer別の呼出数とsession別集計が同じ対象recordから導かれることを実証する。既存の正規Workflow、独立Review、検証、Publicationを維持し、別の分類正本や旧schema互換経路を追加しない。
 
 ## Amendments
 
-2026-10-26 Plan配置の追加指示（原文）:
-
-````text
-いやNextの次だ
-````
+none
 
 ## Resolved references
 
-- 「実装担当はCodex」: 親Codexが本Taskのsemantic ownerであり、通常のrepository lifecycleに従って実装・独立Review・検証・最終採否を管理する。Web GPTは今回のPlan/Task起票とPR Mergeだけを担当する。
-- 「Nextの次」: 現在のNEXT先頭 `IMPLEMENTATION_TASKS/bundle-host-resource-observability.md` の直後、`codex-efficiency-intermediate-checkpoint.md` の直前に置く。現在のACTIVE `macos-go-test-performance.md` は変更しない。実行時のpriority正本はPlan。
-- 一次証拠: 2026-10-25 Dogfood Bundle `d2ee35ad-2be8-4933-ad03-4462207ba8c9(1).zip`。raw `attempt/telemetry.jsonl` は `call_type=task` 14件（worker 10、reviewer 4）と `call_type=event` 2件。にもかかわらず `analysis-index.json.model_calls` は total 16 / reviewer 6 / worker 10を報告し、`by_session` 合計は14。実測値と集計値の意味が不一致。
-- source owner: `glm-worker/internal/controller/evidence_export_analysis.go:analysisModelCalls` は全telemetryの `len(logs)` と `ByRole` を集計。`glm-worker/internal/controller/evidence_export_workflow.go:workflowModelCalls` は `CallTypeTask` / `CallTypeProbe` を明示的に選別。現行の `glm-worker/internal/state/telemetry.go` に `CallTypeTask`、`CallTypeProbe`、`CallTypeEvent` の定義がある。
-- 過去のtelemetry分類一元化ではTask呼出・probe・eventを区別する契約が成立していたが、analysis-indexの新たなconsumerで同一不変条件が再流出した。current sourceと最終仕様を先に照合する。
+- 現象: 2026-10-25 Dogfood Bundle `d2ee35ad-2be8-4933-ad03-4462207ba8c9(1).zip` の `attempt/telemetry.jsonl` には `call_type=task` 14件（worker 10、reviewer 4）と `call_type=event` 2件がある。一方 `analysis-index.json.model_calls` は total 16 / reviewer 6 / worker 10を報告し、`by_session` 合計は14。2件のeventを誤ってreviewer callに算入している。
+- 発生箇所: `glm-worker/internal/controller/evidence_export_analysis.go:analysisModelCalls` は `len(logs)` と `ByRole` へ全telemetry recordを算入する。`glm-worker/internal/controller/evidence_export_workflow.go:workflowModelCalls` は明示的に `CallTypeTask` / `CallTypeProbe` を選別する。
+- 型の正本: `glm-worker/internal/state/telemetry.go` に `CallTypeTask`、`CallTypeProbe`、`CallTypeEvent` が存在する。過去のtelemetry分類一元化で区別したものがanalysis-indexで再発している。実装時はcurrent Gitを正とし、既存predicate / readerの再利用を優先する。
 
 ## Purpose
 
