@@ -22,6 +22,10 @@ none
 
 Codex→parent action→glm-worker→Claude CLIの通信経路を全体として調査し、同等の指示・prompt・payload輸送を原則一つのcanonical方式に統一する。旧方式を互換目的で維持して保守面積・失敗経路を増やさない。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - 親start/decision/fix/milestone/accept/resume、通常Worker、独立Reviewer、単発Decision、停止・再開・recoveryの呼出元と入出力を追跡する。argv、stdin/pipe、PTY、staging file、framing、session、schema、error処理を現行コードと実際の利用状況に照合する。

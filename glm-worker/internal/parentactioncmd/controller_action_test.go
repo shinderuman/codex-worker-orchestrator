@@ -13,7 +13,7 @@ import (
 )
 
 func TestControllerParentTransportPreservesPayloadAndRejectsReplay(t *testing.T) {
-	for _, action := range []string{"controller-semantic", "controller-execution", "controller-publication", "controller-evidence"} {
+	for _, action := range []string{"controller-semantic", "controller-execution", "controller-evidence"} {
 		t.Run(action, func(t *testing.T) {
 			cfg := newControllerActionTestConfig(t, true)
 			bin := t.TempDir()
@@ -57,6 +57,48 @@ func TestControllerParentTransportPreservesPayloadAndRejectsReplay(t *testing.T)
 				t.Fatal("consumed token replayed")
 			}
 		})
+	}
+}
+
+func TestPublicationStagedTransportRejectsUnadmittedEvidenceTemplate(t *testing.T) {
+	cfg := newControllerActionTestConfig(t, true)
+	bin := t.TempDir()
+	stub := "#!/bin/sh\n[ \"$1\" = --authority ] || exit 2\n[ \"$2\" = controller-publication ] || exit 3\ncat\n"
+	if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	staged := parentaction.StagedTemplate{
+		Payload: []byte("COMMAND_TEMPLATE: {\"action\":\"store-evidence\",\"expected_generation\":1}\n"),
+	}
+	prepared, err := parentaction.PrepareStaged(cfg.RepoRoot, controllerPublicationAction, staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := execute(cfg, []string{controllerPublicationAction, prepared.Token}, &out, &bytes.Buffer{}); err == nil {
+		t.Fatal("unadmitted evidence template bypassed the machine projection")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("unadmitted template reached the worker: %s", out.String())
+	}
+	if _, err := parentaction.Peek(cfg.RepoRoot, controllerPublicationAction, prepared.Token); err != nil {
+		t.Fatalf("rejected template consumed its stage: %v", err)
+	}
+}
+
+func TestPublicationStagedTransportRejectsUnsuppliedSlot(t *testing.T) {
+	cfg := newControllerActionTestConfig(t, false)
+	staged := parentaction.StagedTemplate{
+		Payload: []byte("MESSAGE: " + parentaction.PublicationMessagePlaceholder + "\n" +
+			"COMMAND_TEMPLATE: {\"action\":\"accept\",\"expected_generation\":1}\n"),
+	}
+	prepared, err := parentaction.PrepareStaged(cfg.RepoRoot, controllerPublicationAction, staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := execute(cfg, []string{controllerPublicationAction, prepared.Token}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "not supplied completely") {
+		t.Fatalf("unsubstituted publication slot accepted: %v", err)
 	}
 }
 

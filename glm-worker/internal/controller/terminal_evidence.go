@@ -86,15 +86,26 @@ func (s *Store) validateTerminalMetadataOperation(op ExecutionOperation) error {
 	if err := validateTerminalMetadataJournal(op, record, implementation.CommitOID); err != nil {
 		return err
 	}
-	for _, file := range p.Files {
-		if err := s.validateTerminalMetadataFile(record, file); err != nil {
-			return err
-		}
+	if err := s.validateTerminalMetadataFiles(record, p.Files, implementation); err != nil {
+		return err
 	}
 	if err := validateCompletionEvidenceShape(op, op.Evidence); err != nil {
 		return err
 	}
 	return s.validateCompletionEpisode(op)
+}
+
+func (s *Store) validateTerminalMetadataFiles(record TerminalTaskRecord, files []TerminalMetadataFile, implementation AcceptedCandidate) error {
+	metadataBase, err := s.candidateMetadataBase(implementation)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if err := s.validateTerminalMetadataFile(record, file, metadataBase); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func completeTerminalMetadataPayload(op ExecutionOperation) bool {
@@ -367,13 +378,13 @@ func (s *Store) verifyTerminalPublicationOperation(record TransitionRecord, phas
 	return true, nil
 }
 
-func (s *Store) validateTerminalMetadataFile(record TerminalTaskRecord, file TerminalMetadataFile) error {
+func (s *Store) validateTerminalMetadataFile(record TerminalTaskRecord, file TerminalMetadataFile, metadataBase string) error {
 	if !state.IsParentManagedPath(file.Path) || (file.Path != state.ParentPlanFile && file.Path != record.TaskRef.TaskPath && !bindingContainsPath(record.Bindings, file.Path)) {
 		return fmt.Errorf("terminal metadata path is outside exact retirement ownership")
 	}
-	old, err := readCommittedObject(s.identity.PrimaryRoot, record.SourceProject.HeadOID, file.Path)
+	old, err := readCommittedObject(s.identity.PrimaryRoot, metadataBase, file.Path)
 	if err != nil || !reflect.DeepEqual(old, file.OldBytes) {
-		return fmt.Errorf("terminal metadata old bytes differ from source project")
+		return fmt.Errorf("terminal metadata old bytes differ from accepted metadata source")
 	}
 	if file.NewOID != "" {
 		newBytes, err := readCommittedObject(s.identity.PrimaryRoot, record.ResultProject.HeadOID, file.Path)

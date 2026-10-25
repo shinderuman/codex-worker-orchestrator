@@ -10,8 +10,10 @@ import (
 )
 
 type ParentCompletionOutcome struct {
-	Terminal string `json:"terminal"`
-	Risk     string `json:"risk"`
+	Terminal string               `json:"terminal"`
+	Risk     string               `json:"risk"`
+	Source   *SnapshotDigest      `json:"source,omitempty"`
+	Review   *ParentReviewBinding `json:"review,omitempty"`
 }
 
 type ParentReviewState struct {
@@ -193,19 +195,9 @@ func (s *StateStore) resolveParentReviewStateWithCompletion(kind, origin, cause,
 	if err := validateParentOutcomeResolution(kind, origin, cause, terminal); err != nil {
 		return ParentReviewOpenState{}, false, err
 	}
-	taskID, taskErr := s.Read("task.id")
-	if errors.Is(taskErr, os.ErrNotExist) || taskID == "" {
-		return ParentReviewOpenState{}, false, nil
-	}
-	if taskErr != nil {
-		return ParentReviewOpenState{}, false, taskErr
-	}
-	state, err := s.loadParentReviewState()
-	if err != nil {
+	state, available, err := s.parentReviewResolutionState()
+	if err != nil || !available {
 		return ParentReviewOpenState{}, false, err
-	}
-	if state.Open == nil {
-		return ParentReviewOpenState{}, false, nil
 	}
 	if kind == ParentOutcomeAccepted && state.Open.PacketStatus == string(packet.StatusNeedsSolDecision) {
 		return ParentReviewOpenState{}, false, fmt.Errorf("pending Sol decision must be resolved with --decision before --accept")
@@ -215,6 +207,11 @@ func (s *StateStore) resolveParentReviewStateWithCompletion(kind, origin, cause,
 	if err != nil {
 		return ParentReviewOpenState{}, false, err
 	}
+	if completion != nil && terminal == SessionRotationTerminalAccept {
+		if err := s.bindCompletionSource(completion, state.Review); err != nil {
+			return ParentReviewOpenState{}, false, err
+		}
+	}
 	state.Open = nil
 	state.Review = nil
 	state.Completion = completion
@@ -222,6 +219,31 @@ func (s *StateStore) resolveParentReviewStateWithCompletion(kind, origin, cause,
 		return ParentReviewOpenState{}, false, err
 	}
 	return resolved, true, nil
+}
+
+func (s *StateStore) bindCompletionSource(completion *ParentCompletionOutcome, review *ParentReviewBinding) error {
+	if review != nil {
+		current, err := CaptureGitSnapshot(s.ReadOr("repo-root", ""))
+		if err != nil {
+			return err
+		}
+		source := snapshotDigest(current)
+		if !sameParentReviewSnapshot(source, review.Snapshot) {
+			return fmt.Errorf("parent completion source changed during acceptance")
+		}
+		completion.Source, completion.Review = &source, review
+		return nil
+	}
+	if !s.Exists(workerEndSnapshotFile) {
+		return nil
+	}
+	snapshot, err := s.LoadWorkerEndSnapshot()
+	if err != nil {
+		return err
+	}
+	source := snapshotDigest(snapshot)
+	completion.Source = &source
+	return nil
 }
 
 func validateParentOutcomeResolution(kind, origin, cause, terminal string) error {
@@ -255,4 +277,22 @@ func parentCompletionOutcome(terminal, risk string) (*ParentCompletionOutcome, e
 		return nil, err
 	}
 	return outcome, nil
+}
+
+func (s *StateStore) parentReviewResolutionState() (ParentReviewState, bool, error) {
+	taskID, taskErr := s.Read("task.id")
+	if errors.Is(taskErr, os.ErrNotExist) || taskID == "" {
+		return ParentReviewState{}, false, nil
+	}
+	if taskErr != nil {
+		return ParentReviewState{}, false, taskErr
+	}
+	state, err := s.loadParentReviewState()
+	if err != nil {
+		return ParentReviewState{}, false, err
+	}
+	if state.Open == nil {
+		return ParentReviewState{}, false, nil
+	}
+	return state, true, nil
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
 
@@ -18,15 +19,21 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 	if err != nil {
 		return err
 	}
-	var command map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &command); err != nil {
-		return fmt.Errorf("controller command JSON: %w", err)
-	}
-	if command == nil {
-		return fmt.Errorf("controller command must be a JSON object")
+	command, err := decodeControllerStaging(cfg, args[0], payload)
+	if err != nil {
+		return err
 	}
 	run := func() error {
-		if err := runWorker(cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(payload), stdout, stderr, nil); err != nil {
+		consume := func() error {
+			_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
+			return err
+		}
+		if args[0] == controllerPublicationAction {
+			if handled, err := runTypedCompletionAction(cfg, command, consume, stdout, stderr); handled {
+				return err
+			}
+		}
+		if err := runWorker(cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(command), stdout, stderr, nil); err != nil {
 			return err
 		}
 		_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
@@ -36,4 +43,48 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 		return run()
 	}
 	return withParentWaitLease(cfg, run)
+}
+
+func validateControllerCommandObject(payload []byte) error {
+	var command map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &command); err != nil {
+		return fmt.Errorf("controller command JSON: %w", err)
+	}
+	if command == nil {
+		return fmt.Errorf("controller command must be a JSON object")
+	}
+	return nil
+}
+
+func decodeControllerStaging(cfg config.AppConfig, action string, payload []byte) ([]byte, error) {
+	if action == controllerPublicationAction {
+		command, err := mergePublicationStagedPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		return command, validatePreparedCompletionBinding(cfg, payload, command)
+	}
+	if action == controllerExecutionAction && !json.Valid(payload) {
+		command, err := mergeExecutionStagedPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		return command, validateExecutionStagedBinding(cfg, payload)
+	}
+	return payload, validateControllerCommandObject(payload)
+}
+
+func runTypedCompletionAction(cfg config.AppConfig, command []byte, consume func() error, stdout, stderr io.Writer) (bool, error) {
+	var typed completionPublicationCommand
+	if err := json.Unmarshal(command, &typed); err != nil {
+		return true, err
+	}
+	switch typed.Action {
+	case controller.PublicationOperationAccept:
+		return true, runCompletionWorkflow(cfg, typed, consume, stdout, stderr)
+	case controller.PublicationOperationValidationFailure, controller.PublicationOperationInstall:
+		return true, resolveCompletionValidationFailure(cfg, typed, consume, stdout, stderr)
+	default:
+		return false, nil
+	}
 }

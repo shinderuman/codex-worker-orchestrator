@@ -398,6 +398,10 @@ func (w *Workflow) runAutoFixCheckpoint(checkpoint state.ResumeCheckpoint) (pack
 		if err != nil || stopped {
 			return packet.Result{}, stopped, err
 		}
+		fixResult, err = w.convergeParentValidation(fixResult)
+		if err != nil {
+			return packet.Result{}, false, err
+		}
 	}
 	return fixResult, false, nil
 }

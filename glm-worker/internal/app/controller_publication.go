@@ -50,6 +50,8 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 		return executeUnsealedCompletionReentry(cfg, store, command)
 	case "store-evidence":
 		return storePublicationCommandEvidence(store, command.EvidenceRecord, command.ArtifactJSON)
+	case "install-completion":
+		return executeParentCompletionInstall(cfg, store, input, command)
 	case "promote":
 		return store.PromoteAcceptedCandidate(input)
 	case "publish":
@@ -71,7 +73,7 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 
 func executeMutablePublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
 
-	if command.Action != "preview" && command.Action != "accept" && command.Action != "adopt-mutable" {
+	if command.Action != "preview" && command.Action != "accept" && command.Action != "adopt-mutable" && command.Action != "complete" {
 		return nil, fmt.Errorf("unsupported controller publication action %q", command.Action)
 	}
 	admission, err := currentControllerSemanticAdmission(cfg, store)
@@ -79,6 +81,8 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 		return nil, err
 	}
 	switch command.Action {
+	case "complete":
+		return store.AcceptParentCompletion(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy})
 	case "preview":
 		tree, err := store.PreviewCandidateTree(admission, command.Policy)
 		return map[string]string{"tree_oid": tree, "base_oid": admission.Head.IntegrationTip, "attempt_id": admission.Attempt.AttemptID, "snapshot_id": admission.Snapshot.ID}, err

@@ -5,6 +5,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"strings"
 )
 
 type Spec struct {
@@ -20,7 +21,14 @@ type Spec struct {
 const (
 	Binary = "glm-parent-action"
 
-	StartAction = "start"
+	PublicationOperationOption    = "--operation"
+	PublicationOperationParameter = "operation"
+	StartAction                   = "start"
+	FinalizeCheckAction           = "finalize-check"
+	FinalValidationForm           = "form"
+	finalizeCheckGoTest           = "go-test"
+	finalizeCheckGoRace           = "go-test-race"
+	goTestWorkingDirParam         = "working_dir"
 
 	AcceptedScopeParameter = state.ParentActionAcceptedScopeParameter
 	SignalKindParameter    = "signal-kind"
@@ -31,11 +39,17 @@ const (
 )
 
 func Project(action string, requiredParameters map[string]string) (Spec, bool) {
+	if action == "controller-publication" && requiredParameters["completion_operations"] != "" {
+		return projectPublicationSelection(requiredParameters)
+	}
 	if parentaction.IsControllerAction(action) {
 		return staged(action), true
 	}
 	if spec, handled := projectExecutionUnitAction(action); handled {
 		return spec, true
+	}
+	if action == FinalizeCheckAction {
+		return projectFinalizeCheck(requiredParameters)
 	}
 
 	switch state.ParentAction(action) {
@@ -68,6 +82,22 @@ func projectExecutionUnitAction(action string) (Spec, bool) {
 	default:
 		return Spec{}, false
 	}
+}
+
+func projectFinalizeCheck(requiredParameters map[string]string) (Spec, bool) {
+	form := requiredParameters[FinalValidationForm]
+	if form != finalizeCheckGoTest && form != finalizeCheckGoRace {
+		return Spec{}, false
+	}
+	parameters := map[string]string{FinalValidationForm: form}
+	if workingDir := requiredParameters[goTestWorkingDirParam]; workingDir != "" {
+		parameters[goTestWorkingDirParam] = workingDir
+	}
+	return Spec{
+		Kind:       "direct",
+		Command:    []string{Binary, FinalizeCheckAction, form},
+		Parameters: parameters,
+	}, true
 }
 
 func ValidateApproveSurfaceArgs(args []string) bool {
@@ -118,4 +148,17 @@ func projectApproveSurface(requiredParameters map[string]string) (Spec, bool) {
 		Command:    []string{Binary, string(state.ParentActionApproveSurface), AcceptedScopeOption, acceptedScope},
 		Parameters: map[string]string{AcceptedScopeParameter: acceptedScope},
 	}, true
+}
+
+func projectPublicationSelection(parameters map[string]string) (Spec, bool) {
+	choices := strings.Split(parameters["completion_operations"], ",")
+	for _, operation := range choices {
+		if operation != "complete" && operation != "reopen-unsealed" {
+			return Spec{}, false
+		}
+	}
+	spec := staged("controller-publication")
+	spec.OptionalParameters = []string{PublicationOperationParameter}
+	spec.Choices = map[string][]string{PublicationOperationParameter: choices}
+	return spec, true
 }

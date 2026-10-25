@@ -11,6 +11,8 @@ import (
 )
 
 func TestActiveCompletionPreservesAndDisposesUnfinishedSuccessor(t *testing.T) {
+	binary := typedCompletionWorkerBinary(t)
+	t.Setenv("PATH", filepath.Dir(binary)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
 	authority, err := controller.ResolveCommittedTaskAuthorityAt(cfg.RepoRoot, candidate.CommitOID)
 	if err != nil {
@@ -56,12 +58,7 @@ func TestActiveCompletionPreservesAndDisposesUnfinishedSuccessor(t *testing.T) {
 	if _, err := executeControllerExecution(cfg, store, command); err == nil {
 		t.Fatal("termination without reason was admitted")
 	}
-	command.RuntimeDisposition.Reason = "明示承認: 旧successor実行を未完了のまま終了し証拠を保全する"
-	payload, err := json.Marshal(command)
-	if err != nil {
-		t.Fatal(err)
-	}
-	executeStagedControllerAction(t, cfg, controllerExecutionSurface, string(payload))
+	runTypedRuntimeDispositionCLI(t, cfg, "明示承認: 旧successor実行を未完了のまま終了し証拠を保全する")
 	if old.TaskStatus() != state.TaskStatusUserTerminated || old.ReadOr("task.id", "") != id || !old.Exists("pending-decision") || old.ReadOr("last-request", "") != "unfinished older successor work" {
 		t.Fatal("Runtime disposition lost unfinished evidence or fabricated success")
 	}

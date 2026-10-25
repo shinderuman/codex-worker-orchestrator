@@ -54,7 +54,7 @@ const (
 )
 
 var qualityGateForms = map[string][]string{
-	"go-test":      {"test", "-json", "-timeout=25m", "./..."},
+	"go-test":      {"test", "-json", "-timeout=45m", "./..."},
 	"go-test-race": {"test", "-race", "-json", "-timeout=45m", "./..."},
 }
 

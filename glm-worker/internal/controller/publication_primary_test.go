@@ -20,6 +20,12 @@ func primaryPromotionFixture(t *testing.T) (findingAcceptanceFixture, Publicatio
 	}
 	f.source = *resumed.Admission
 	source := publicationTestEdit(t, f, "lane-only.txt", "reviewed lane result\n")
+	primary := f.store.identity.PrimaryRoot
+	plan, err := os.ReadFile(filepath.Join(primary, "IMPLEMENTATION_PLAN.local.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSuspensionTestFile(t, primary, "IMPLEMENTATION_PLAN.local.md", string(plan)+"\n")
 	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "lane result", Policy: policy, Evidence: publicationTestEvidence(t, f.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
@@ -59,12 +65,16 @@ func TestRootPromotionMaterializesRetainedLaneSourceAndIndex(t *testing.T) {
 
 func TestRootPromotionRejectsUnattributedPrimaryChangesBeforeMutation(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"worktree", "index-only"} {
+	for _, mode := range []string{"worktree", "index-only", "metadata"} {
 		t.Run(mode, func(t *testing.T) {
 			f, _, accepted, candidate := primaryPromotionFixture(t)
 			root := f.store.identity.PrimaryRoot
-			path := filepath.Join(root, "unrelated.txt")
-			writeSuspensionTestFile(t, root, "unrelated.txt", "must survive\n")
+			file := "unrelated.txt"
+			if mode == "metadata" {
+				file = candidate.TaskRef.TaskPath
+			}
+			path := filepath.Join(root, file)
+			writeSuspensionTestFile(t, root, file, "must survive\n")
 			if mode == "index-only" {
 				runControllerGit(t, root, "add", "unrelated.txt")
 				if err := os.Remove(path); err != nil {

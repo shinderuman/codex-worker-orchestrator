@@ -26,7 +26,7 @@ func (s *Store) previewImplementationTree(admission Admission, policy Publicatio
 	if _, err := s.AdmitMutation(admission.MutationAuthority(), admission.Workspace, admission.Snapshot); err != nil {
 		return "", err
 	}
-	metadataBase, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
+	metadataBase, err := s.completionMetadataBase(admission)
 	if err != nil {
 		return "", err
 	}
