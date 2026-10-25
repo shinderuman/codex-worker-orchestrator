@@ -13,7 +13,14 @@ Dogfood改善のTaskの次に今回調べたテストをするテストを改善
 
 ## Amendments
 
-none
+### 2026-10-25 External ReviewのCodex採否による検証対象の具体化
+
+親Codex指示:
+
+````text
+PR #1349 discussion_r4269331579のparentactioncmd基盤Git失敗テストはstderr非空だけではfake Gitのexit 97へ到達したことを証明しない。実際の対象呼出/原因を観測し、config等の前段失敗で偽PASSしないようにする。
+PR #1364 pullrequestreview-5583823819のduplicate Finding dispositionテストはheadの一部fieldだけを比較している。既存assertFindingHeadUnchanged等の実authority比較を使い、lease・execution task・episode revision等が意図せず変わる誤実装で失敗するようにする。helperの名前や存在だけを固定する自己確認テストを追加しない。
+````
 
 ## Resolved references
 

@@ -12,7 +12,13 @@
 
 ## Amendments
 
-none
+### 2026-10-25 External ReviewのCodex採否による具体化
+
+親Codex指示:
+
+````text
+PR #1343 discussion_r4242081415のhistorical fixtureはavailable=falseを通す弱いassertionを持つ。既存A2の正規ownerへ回帰を移す際、tracked bytes変更に対してtaskdiffがavailable=trueかつ非空のraw patchを返すことを検証する。fixtureをcurrent sourceへ互換追従させず、外部driver/textconvを起動しないという本Taskの要求を維持する。
+````
 
 ## Resolved references
 
