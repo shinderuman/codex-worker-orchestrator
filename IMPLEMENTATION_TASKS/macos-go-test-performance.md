@@ -44,6 +44,16 @@ runtime/repository/predecessor等から集まる同一ValidationRunIDをtiming g
 nil timingsや条件欠落の扱いと、form/module/toolchain条件の比較境界を維持する。
 ````
 
+2026-10-26 追加要求（原文）:
+
+````text
+バージョン不整合の問題はさっきのPRでのタスクでの修正範囲に入っているのか
+````
+
+````text
+Goのバージョンの作業内容を修正するPRを出せ
+````
+
 ## Resolved references
 
 - `quality-tools.yml` の `go` がrepositoryの既存のtoolchain contract。観測当時は `go: 1.25.4` で、CIの `actions/setup-go` と `goquality` はこの値を参照する。
@@ -54,6 +64,7 @@ nil timingsや条件欠落の扱いと、form/module/toolchain条件の比較境
 - Bundleの正規通常 `go-test` 3 runは約25分（タイムアウトFAIL）・30分（PASS）・32分（PASS）。成功回の `internal/app` は約30分、`internal/controller` は約15～17分。
 - Linux CIの2026-10-25比較実行では、 `internal/app` 81～104秒、`internal/controller` 93～114秒。CIはLinux x86_64かつ独立matrixのため、ソース/バージョン/同時負荷/キャッシュが一致した比較ではない。
 - Goバージョン逸脱の是正とMacテスト高速化はこのTaskに統合する。BundleのCPU・メモリ・swapサンプリングは独立Task `IMPLEMENTATION_TASKS/bundle-host-resource-observability.md` に委ねる。
+- 「バージョン不整合」の追加対象: 正規Quality Gateが契約外のGoを使った問題に加え、Codex・GLMが診断・局所確認のためにQuality Gate外で直接起動する `go test`（focused package/test、必要なraceやintegrationテスト等）も、同じrepositoryのGo version契約に従わせる。診断用テストのPASSと正規Quality GateのPASSは別物として扱う。
 
 - PR #1381 / comment 4362202703: timings書込失敗はrecord確定前にreturnし、後続reconcileでinterrupted/unknownになる。非終端ではなく誤分類として修復し、既存nonzero child exitを保存する。
 
@@ -86,6 +97,13 @@ status: not-applicable
 - `go test` / `go test -race` の正規run・restart/attach/resultとタスク・snapshot bindingが崩れないことを確認する。既存のrecording・validation・export経路へ結び付ける。
 - MacとCIの両方で、規定どおりに実行されたことが検証可能であること。必要なテストは環境変数で別バージョンを注入しても、失敗または正規バージョンへ明示的に固定されることを示す。
 
+### 正規Quality Gate外のGo診断実行にも同じtoolchain契約を適用する
+
+- 親CodexとGLM Worker/Reviewerが実装中の局所検証・調査で起動する `go test`（`-run`、単一package、integration、`-race` 等）も、既存の `quality-tools.yml` の `go` 値を唯一の実行バージョン正本とする。正規Quality Gateの外にあることを理由に、`PATH` 上の任意のGoや自動選択された別バージョンで検証しない。
+- 現行の親/Worker/Reviewerのコマンド実行境界とrepository-owned toolchain選択の仕組みを確認し、既存の機械制御面を優先して一貫したバージョンを適用・検証する。Codex/GLMの自発的な注意や毎回の手製ラッパにだけ依存させない。規定バージョンを利用できないときは、診断結果を正しい条件でのPASSと扱わず、実行を停止・失敗として報告する。
+- 診断用Goテストの証拠には、実使用Goバージョン、対象source、コマンド・実行範囲と結果を追跡可能にし、正規Quality Gateの結果とは区別する。Goバージョンが異なる過去の診断結果は、規定バージョンでの検証として流用しない。
+- 本Taskが必要とする診断経路の範囲を越えた汎用コマンド制御の再設計はしない。既存の検証・実行インターフェースで不足があれば、canonical ownerに必要な機能を加えるか、検証不能として明示する。
+
 ### 比較可能な条件を確立した上でのMac高速化
 
 - このTask内で上記のtoolchain整合性を成立・検証した後、同じsourceと固定Go version（`quality-tools.yml`）の比較条件を確立する。`GOVERSION`、arch/OS、GOFLAGS、GOMAXPROCS、cache、go test args、source snapshotを照合し、環境差を明示する。
@@ -110,6 +128,7 @@ External Reviewで確認した同一責務の具体条件（timing-analysis-vali
 
 - `quality-tools.yml` の値を、手元Macで偶然選ばれた1.27.0に合わせるだけで修正完了にしない。バージョン更新自体が別途必要なら意図的なrepository-wide contract変更として判断する。
 - GO toolchain選択をCodexの個別指示や都度の手作業に依存させない。
+- 正規Quality Gateだけを固定して、Codex/GLMの個別・診断用Goテストには規定外バージョンを許容する状態を完了扱いにしない。診断結果を正規Quality Gateの成功証拠に昇格させない。
 - 既存のCLI/State/Schemaへの歴史的互換コード、新規wrapper daemon、手動のfallback成功扱いを追加しない。
 - CIの分割変更やBundle資源サンプルの追加をこのTaskへ混ぜない。
 
@@ -127,9 +146,10 @@ External Reviewで確認した同一責務の具体条件（timing-analysis-vali
 
 1. macOSの正規Quality Gateにおける規定外Go 1.27.0使用の発生経路を特定し、`quality-tools.yml` と実際の検証toolchainが一致することを機械的に保証する。親Codexへの注意喚起やGoの値の変更だけで是正完了としない。
 2. 外部 `PATH` / `GOTOOLCHAIN` が異なる条件でも、実際の `go test` / `go test -race` と保存されたevidenceが規定に一致するか、明示的に失敗することを検証する。source binding、resume/error経路、検証証拠を保持する。
-3. 整合性を成立させた後、Macの20～30分の主な所要時間をpackage/test実測で説明し、単独実行・full suite、Linux CIとの差、並列実行・プロセス・Git・I/O・メモリの影響を切り分ける。証拠がない事項は未確定とする。
-4. 改善を採用する場合は同条件の正規Quality Gateで変更前後のwall-clock、主要package/test時間、CIの回帰を比較し、検証のcoverageや品質を落とさず短縮できたことを確認する。改善不能なら確認できた原因と残る制約を明示し、未達を完了扱いしない。
-5. 関連テスト、正規validation、独立Review、Runtime/source整合確認を実施する。利用できないOS・環境の確認結果は成功済みとみなさない。
+3. Codex/GLMの正規Quality Gate外の個別 `go test` / focused / race / integration診断でも、規定のGoバージョンが実際に選択されるか、規定外の実行が明示的に拒否されることを、異なる `PATH` / `GOTOOLCHAIN` 条件と実行証拠で検証する。診断結果が正規GateのPASSと混同されないことも確認する。
+4. 整合性を成立させた後、Macの20～30分の主な所要時間をpackage/test実測で説明し、単独実行・full suite、Linux CIとの差、並列実行・プロセス・Git・I/O・メモリの影響を切り分ける。証拠がない事項は未確定とする。
+5. 改善を採用する場合は同条件の正規Quality Gateで変更前後のwall-clock、主要package/test時間、CIの回帰を比較し、検証のcoverageや品質を落とさず短縮できたことを確認する。改善不能なら確認できた原因と残る制約を明示し、未達を完了扱いしない。
+6. 関連テスト、正規validation、独立Review、Runtime/source整合確認を実施する。利用できないOS・環境の確認結果は成功済みとみなさない。
 
 - child成功/失敗それぞれにtimings書込失敗を注入し、terminal statusとexit provenanceを検証する。
 - record/必要logを残し、通常timings成功経路を維持する。
