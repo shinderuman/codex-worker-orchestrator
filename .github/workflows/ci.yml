@@ -45,11 +45,8 @@ jobs:
           printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ matrix.mode == 'quality' && steps.quality-tools.outputs.go_version || '1.27.0' }}
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Record experimental Go version
-        if: ${{ matrix.mode != 'quality' }}
-        run: go version
       - name: Cache quality tools
         continue-on-error: true
         uses: actions/cache@v6
