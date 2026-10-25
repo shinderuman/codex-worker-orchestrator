@@ -178,19 +178,14 @@ func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command str
 		Slots       []struct{ Name, Placeholder string } `json:"slots"`
 		NextCommand []string                             `json:"next_command"`
 	}
-	if err := json.Unmarshal([]byte(out), &prepared); err != nil || len(prepared.Slots) != 1 || prepared.Slots[0].Name != "controller_command_json" || len(prepared.NextCommand) < 2 {
+	if err := json.Unmarshal([]byte(out), &prepared); err != nil || len(prepared.Slots) != 0 || len(prepared.NextCommand) < 2 {
 		t.Fatalf("recovery preparation contract: %v %s", err, out)
 	}
 	data, err := os.ReadFile(prepared.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(data), prepared.Slots[0].Placeholder) != 1 {
-		t.Fatal("recovery slot is not unique")
-	}
-	if err := os.WriteFile(prepared.Path, []byte(strings.Replace(string(data), prepared.Slots[0].Placeholder, command, 1)), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	assertStagedPublicationTemplate(t, data, command)
 	exit, _, diagnostics = runParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
 	return exit, diagnostics
 }

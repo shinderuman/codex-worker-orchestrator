@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -38,15 +39,18 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("reentered candidate handoff must direct materialization: %#v", handoff)
 	}
-	if !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) {
-		t.Fatal("quiescent candidate hid the existing publication owner")
+	var materializeCommand controllerExecutionCommand
+	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &materializeCommand); err != nil {
+		t.Fatal(err)
+	}
+	if materializeCommand.Action != "materialize" || materializeCommand.ExpectedGeneration != reentered.Head.ControllerGeneration || materializeCommand.SuspensionID != reentered.Suspension.SnapshotID {
+		t.Fatalf("reentry handoff lost its exact materialization authority: %#v", materializeCommand)
+	}
+	if _, err := store.PromoteAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: reentered.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err == nil {
+		t.Fatal("publication advanced the candidate invalidated for reentry")
 	}
 
-	materialized, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
-		Action:             "materialize",
-		ExpectedGeneration: reentered.Head.ControllerGeneration,
-		SuspensionID:       reentered.Suspension.SnapshotID,
-	})
+	materialized, err := executeControllerExecution(cfg, store, materializeCommand)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,13 +99,18 @@ func TestPromotedTaskMetadataKeepsPublicationAndReentryAvailable(t *testing.T) {
 	for _, stage := range []string{"promoted", "reentered"} {
 		assertRetiredBootstrap(t, cfg, candidate.TaskRef.TaskPath)
 		handoff := buildParentHandoffWithConfig(cfg, runtime)
-		if !handoff.Consistent || !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) {
+		if !handoff.Consistent || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) {
 			t.Fatalf("%s Task closure blocked normal lifecycle: %#v", stage, handoff)
 		}
 		if stage == "promoted" {
+			if !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) {
+				t.Fatal("promoted candidate lost its publication owner")
+			}
 			if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err != nil {
 				t.Fatal(err)
 			}
+		} else if handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface || handoff.RequiredActionParameters["controller_command_json"] == "" {
+			t.Fatal("reentered promoted candidate lost its machine recovery command")
 		}
 	}
 }

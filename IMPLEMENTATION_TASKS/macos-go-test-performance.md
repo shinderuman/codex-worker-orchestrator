@@ -32,7 +32,7 @@ NEXTの先頭でやるべきだと思うだがこのあとConflictして順序�
 - 「Mac側」: M1 Mac mini、メモリ16GB、Apple Silicon。2026-10-25のユーザー提示Bundle `1a25e51c-8935-4150-8b6f-520d2d0d3848.zip` は `darwin/arm64`、Go 1.27.0、parallelism 8を記録。
 - Bundleの正規通常 `go-test` 3 runは約25分（タイムアウトFAIL）・30分（PASS）・32分（PASS）。成功回の `internal/app` は約30分、`internal/controller` は約15～17分。
 - Linux CIの2026-10-25比較実行では、 `internal/app` 81～104秒、`internal/controller` 93～114秒。CIはLinux x86_64かつ独立matrixのため、ソース/バージョン/同時負荷/キャッシュが一致した比較ではない。
-- Goバージョン逸脱の是正とMacテスト高速化はこのTaskに統合する。BundleのCPU・メモリ・swapサンプリングは別PR #1387 が追加予定の `IMPLEMENTATION_TASKS/bundle-host-resource-observability.md` に委ねる。
+- Goバージョン逸脱の是正とMacテスト高速化はこのTaskに統合する。BundleのCPU・メモリ・swapサンプリングは独立Task `IMPLEMENTATION_TASKS/bundle-host-resource-observability.md` に委ねる。
 
 ## Purpose
 

@@ -126,12 +126,37 @@ func executeStagedControllerAction(t *testing.T, cfg config.AppConfig, surface s
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(prepared.Path, []byte(strings.Replace(string(body), "__GLM_PARENT_ACTION_PAYLOAD__", payload, 1)), 0600); err != nil {
+	if surface == controllerPublicationSurface {
+		assertStagedPublicationTemplate(t, body, payload)
+	} else if err := os.WriteFile(prepared.Path, []byte(strings.Replace(string(body), "__GLM_PARENT_ACTION_PAYLOAD__", payload, 1)), 0600); err != nil {
 		t.Fatal(err)
 	}
 	exit, _, diagnostics = runParentActionCLI(t, cfg, surface, prepared.Token)
 	if exit != 0 {
 		t.Fatalf("execute staged parent action: %s", diagnostics)
+	}
+}
+
+func assertStagedPublicationTemplate(t *testing.T, body []byte, payload string) {
+	t.Helper()
+	template := ""
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, "COMMAND_TEMPLATE: ") {
+			template = strings.TrimPrefix(line, "COMMAND_TEMPLATE: ")
+		}
+	}
+	if template == "" {
+		t.Fatal("staged publication payload lacks the machine command template")
+	}
+	var staged, projected map[string]any
+	if err := json.Unmarshal([]byte(template), &staged); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(payload), &projected); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(staged, projected) {
+		t.Fatalf("staged publication template %s disagrees with handoff command %s", template, payload)
 	}
 }
 

@@ -21,7 +21,7 @@ func TestControllerTransportReturnsTerminalAndWaitSurvivesTaskHandover(t *testin
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	prepared, err := parentaction.Prepare(cfg.RepoRoot, "controller-publication")
+	prepared, err := parentaction.Prepare(cfg.RepoRoot, "controller-execution")
 	if err != nil {
 		t.Fatal(err)
 	}

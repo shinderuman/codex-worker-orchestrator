@@ -26,18 +26,12 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		applyExecutionTerminationHandoff(cfg, output)
 		return
 	}
-	output.AllowedActions = canonicalParentActions(output.AllowedActions)
-	if output.RequiredAction != nil {
-		action := canonicalParentAction(*output.RequiredAction)
-		if action != *output.RequiredAction {
-			output.RequiredActionParameters = nil
-		}
-		output.RequiredAction = &action
-	}
+	canonicalizeParentAction(output)
 	if !applyTaskAuthoritySyncHandoff(cfg, output, report) &&
 		(report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "") {
 		applyCanonicalQuiescentHandoff(cfg, output, report.Head)
 	}
+	applyParentCompletionOperationHandoff(cfg, output)
 	if output.ParentRequest != nil && output.RequiredAction != nil {
 		output.ParentRequest.Continuation.RequiredAction = *output.RequiredAction
 	}
@@ -78,7 +72,17 @@ func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *pare
 		applyControllerRecoveryHandoff(output, check.surface, string(command))
 		return true
 	}
-	return false
+	if _, _, err := store.LoadTransition(report.Head.PendingTransitionID); err != nil {
+		failParentCompletionHandoff(output, err)
+		return true
+	}
+	command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+	if err != nil {
+		failParentCompletionHandoff(output, err)
+		return true
+	}
+	applyControllerRecoveryHandoff(output, controllerExecutionSurface, string(command))
+	return true
 }
 
 func applyControllerRecoveryHandoff(output *parentHandoffOutput, action string, command string) {
@@ -340,4 +344,16 @@ func applyRuntimeDispositionHandoff(cfg config.AppConfig, output *parentHandoffO
 	applyControllerRecoveryHandoff(output, controllerExecutionSurface, string(command))
 	output.RequiredActionParameters["semantic_slot"] = "runtime_disposition.reason"
 	return true
+}
+
+func canonicalizeParentAction(output *parentHandoffOutput) {
+	output.AllowedActions = canonicalParentActions(output.AllowedActions)
+	if output.RequiredAction != nil {
+		action := canonicalParentAction(*output.RequiredAction)
+		if action != *output.RequiredAction {
+			output.RequiredActionParameters = nil
+		}
+		output.RequiredAction = &action
+	}
+
 }

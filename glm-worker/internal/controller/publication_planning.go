@@ -12,7 +12,7 @@ func (s *Store) PromoteAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if err := validateCandidatePromotion(c); err != nil {
+	if err := s.validateCompletionPromotion(c); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	remote, err := s.observeCandidateRemote(head, c)
@@ -162,4 +162,11 @@ func (s *Store) RevalidateAcceptedCandidate(input PublicationInput, evidence []E
 		return ExecutionOperationResult{}, err
 	}
 	return s.recoverExecutionOperationLocked(op)
+}
+
+func (s *Store) validateCompletionPromotion(c AcceptedCandidate) error {
+	if err := validateCandidatePromotion(c); err != nil {
+		return err
+	}
+	return s.requireCompletedCandidateInstall(c)
 }
