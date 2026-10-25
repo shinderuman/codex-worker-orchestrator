@@ -14,6 +14,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
+- [`IMPLEMENTATION_TASKS/quality-gate-go-toolchain-authority.md`](IMPLEMENTATION_TASKS/quality-gate-go-toolchain-authority.md)
+- [`IMPLEMENTATION_TASKS/macos-go-test-performance.md`](IMPLEMENTATION_TASKS/macos-go-test-performance.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-redesign.md`](IMPLEMENTATION_TASKS/self-referential-test-redesign.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md`](IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md`](IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md)
