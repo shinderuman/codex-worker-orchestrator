@@ -68,6 +68,10 @@ func TestRetiredExternalSourcePullPreservesHistoryAndStartsSuccessor(t *testing.
 		t.Fatal(err)
 	}
 	tip := pullRetiredExternalSource(t, fixture, policy)
+	operation, err := store.ProjectParentCompletion()
+	if err != nil || operation.Operation != PublicationOperationAdoptSource || operation.Command == nil || operation.Command.SourceOID != tip {
+		t.Fatalf("retired external source lost its synchronization owner: %#v err=%v", operation, err)
+	}
 	selected, canonical, err := WorkflowAuthorityTask(store.config)
 	if err != nil || !canonical || !selected.Equal(*retired.Head.RootTaskRef) {
 		t.Fatalf("read-only authority after pull: %v", err)

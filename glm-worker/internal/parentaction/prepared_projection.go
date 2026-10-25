@@ -3,14 +3,19 @@ package parentaction
 import "encoding/json"
 
 type PreparedSlot struct {
-	Name         string `json:"name"`
-	Placeholder  string `json:"placeholder"`
-	RequiredWhen string `json:"required_when,omitempty"`
+	Name         string   `json:"name"`
+	Placeholder  string   `json:"placeholder"`
+	RequiredWhen string   `json:"required_when,omitempty"`
+	Choices      []string `json:"choices,omitempty"`
 }
 
 type preparedAlias Prepared
 
 func (prepared Prepared) MarshalJSON() ([]byte, error) {
+	slots := prepared.Slots
+	if slots == nil {
+		slots = preparedSlots(prepared.Action)
+	}
 	return json.Marshal(struct {
 		Status string `json:"status"`
 		preparedAlias
@@ -19,7 +24,7 @@ func (prepared Prepared) MarshalJSON() ([]byte, error) {
 	}{
 		Status:        "prepared",
 		preparedAlias: preparedAlias(prepared),
-		Slots:         preparedSlots(prepared.Action),
+		Slots:         slots,
 		NextCommand:   []string{"glm-parent-action", prepared.Action, prepared.Token},
 	})
 }

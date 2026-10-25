@@ -104,6 +104,48 @@ func TestReopenUnsealedParentCompletionRetainsSourceAndReentersFix(t *testing.T)
 	}
 }
 
+func TestReopenUnsealedParentCompletionPreservesAmendmentUntilAuthoritySync(t *testing.T) {
+	t.Parallel()
+	w, cfg, st, admission := newUnsealedReentryWorkflow(t)
+	path := filepath.Join(cfg.RepoRoot, admission.Attempt.SemanticTaskRef.TaskPath)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	amended := string(body) + "\n## Amendments\n\n採用後の追加条件を再確認する。\n"
+	if err := os.WriteFile(path, []byte(amended), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission, err = store.RecordAdmittedMutation(admission, "user Task amendment", "success", snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if required, err := store.RequiredTaskAuthoritySync(admission.Head); err != nil || required == nil {
+		t.Fatalf("fixture has no pending Task authority amendment: %v", err)
+	}
+	if _, err := w.ReopenUnsealedParentCompletion(admission.Head.ControllerGeneration, "追加条件により元の採用を撤回する"); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := st.LoadControllerRuntimeBinding()
+	if err != nil || binding.TaskContractDigest != admission.Attempt.SemanticTaskRef.ContractDigest || st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("state-only rejection changed source authority: %v", err)
+	}
+	if current, err := os.ReadFile(path); err != nil || string(current) != amended {
+		t.Fatal("rejection rewrote the user amendment")
+	}
+	if _, err := w.admitControllerModelCall(state.ResumeCheckpoint{Role: state.ReviewerRole, ReadOnly: true}); err == nil {
+		t.Fatal("rejection admitted an unsynchronized model call")
+	}
+}
+
 func TestReopenUnsealedParentCompletionRejectsUnsafeAdmissionWithoutChangingSource(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

@@ -112,6 +112,16 @@ func TestFindingDispositionAfterSourceRevisionRejectsBrokenContinuity(t *testing
 			want:    "neither current live execution nor accepted terminal history",
 		},
 		{
+			name:    "foreign project snapshot",
+			finding: FindingRecord{SourceAttemptID: source.Attempt.AttemptID, SourceSemanticTaskRef: finding.SourceSemanticTaskRef, SourceControllerGeneration: finding.SourceControllerGeneration, ProjectSnapshotID: "unrelated", SourceWorkspaceSnapshotID: finding.SourceWorkspaceSnapshotID},
+			want:    "neither current live execution nor accepted terminal history",
+		},
+		{
+			name:    "foreign workspace snapshot",
+			finding: FindingRecord{SourceAttemptID: source.Attempt.AttemptID, SourceSemanticTaskRef: finding.SourceSemanticTaskRef, SourceControllerGeneration: finding.SourceControllerGeneration, ProjectSnapshotID: finding.ProjectSnapshotID, SourceWorkspaceSnapshotID: "unrelated"},
+			want:    "neither current live execution nor accepted terminal history",
+		},
+		{
 			name:    "current digest with stale generation",
 			finding: FindingRecord{SourceAttemptID: source.Attempt.AttemptID, SourceSemanticTaskRef: revised, SourceControllerGeneration: imported.Head.ControllerGeneration - 1},
 			want:    "finding source controller generation is stale",

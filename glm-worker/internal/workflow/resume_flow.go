@@ -415,17 +415,17 @@ func (w *Workflow) resolveResumedReviewResult(
 }
 
 func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
+	var err error
 	if checkpoint.ReportOnly {
 		if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil || stopped {
 			return err
 		}
-	}
-	if !checkpoint.ReportOnly {
-		var err error
+		result, err = w.convergeParentValidation(result)
+	} else {
 		result, err = w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
-		if err != nil {
-			return err
-		}
+	}
+	if err != nil {
+		return err
 	}
 	return w.handleAutoFixResult(
 		checkpoint.Request,

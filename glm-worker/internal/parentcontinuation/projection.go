@@ -62,9 +62,10 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	repoRoot := st.ReadOr("repo-root", "")
 	repoRoot = quiescentSnapshotRoot(cfg, repoRoot)
 	if repoRoot == "" && st.TaskStatus() == state.TaskStatusNone {
-		_, canonical, err := controller.WorkflowAuthorityTask(cfg)
-		if err == nil && canonical {
-			repoRoot = cfg.RepoRoot
+		var err error
+		repoRoot, err = freshRepositoryAuthorityRoot(cfg)
+		if err != nil {
+			markInconsistent(&projection, "fresh repository authority is unavailable: "+err.Error())
 		}
 	}
 	applyRequest(cfg, repoRoot, st, plan, &projection)
@@ -72,6 +73,24 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
 	return projection
+}
+
+func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
+	_, canonical, err := controller.WorkflowAuthorityTask(cfg)
+	if err != nil {
+		return "", err
+	}
+	if canonical {
+		return cfg.RepoRoot, nil
+	}
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil || !decision.Active {
+		return "", err
+	}
+	if _, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot); err != nil {
+		return "", err
+	}
+	return cfg.RepoRoot, nil
 }
 
 func quiescentSnapshotRoot(cfg config.AppConfig, repoRoot string) string {

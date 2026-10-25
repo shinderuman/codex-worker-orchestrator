@@ -17,6 +17,11 @@ func (w *Workflow) PrepareReenteredReview() error {
 	if err := w.admitCanonicalReenteredReview(); err != nil {
 		return err
 	}
+	obligation, err := w.recordFinalValidationObligation(result.ParentValidationRequest())
+	if err != nil {
+		return err
+	}
+	result.SetParentValidationRequest(obligation)
 	request += "\n親のソース改訂を含む現在の差分全体を独立Reviewする。保存されたWorker報告は改訂前の背景資料であり、現在の差分や検証済み状態の代用ではない。現在のACTIVE Task本文とIntegration baseからの全差分を正とする。"
 	checkpoint, _, _, err := w.buildReviewCheckpoint(request, result, 1, 0)
 	if err != nil {

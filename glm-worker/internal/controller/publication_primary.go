@@ -54,7 +54,11 @@ func (s *Store) primaryPromotionEffects(op ExecutionOperation, c AcceptedCandida
 }
 
 func (s *Store) validatePromotionSourceOwnership(c AcceptedCandidate, before ExecutionTrees) error {
-	metadataBase, err := s.projectMetadataBase(c.ProjectSnapshotID)
+	metadataBase, err := s.candidateMetadataBase(c)
+	if err != nil {
+		return err
+	}
+	baseSource, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", c.BaseOID+"^{tree}")
 	if err != nil {
 		return err
 	}
@@ -62,7 +66,7 @@ func (s *Store) validatePromotionSourceOwnership(c AcceptedCandidate, before Exe
 	if err != nil {
 		return err
 	}
-	allowed := map[string]bool{base: true, c.TreeOID: true}
+	allowed := map[string]bool{baseSource: true, base: true, c.TreeOID: true}
 	if c.ImplementationTree != "" {
 		implementation, err := s.normalizePromotionTree(c.ImplementationTree, metadataBase)
 		if err != nil {
@@ -160,6 +164,7 @@ func (s *Store) allowSealedPromotionTrees(seal AttemptSeal, metadataBase string,
 		allowed[seal.CandidateTreeOID] = true
 	}
 	for _, tree := range []string{seal.CurrentIndexTree, seal.CurrentWorktreeTree} {
+		allowed[tree] = true
 		normalized, err := s.normalizePromotionTree(tree, metadataBase)
 		if err != nil {
 			return err

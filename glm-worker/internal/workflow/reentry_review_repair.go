@@ -90,6 +90,13 @@ func (w *Workflow) refreshReentryReviewPrompt(target state.ResumeCheckpoint) (st
 	if target.WorkerResult == nil {
 		return target, fmt.Errorf("reentry review checkpoint lacks its retained Worker report")
 	}
+	request, err := w.recordFinalValidationObligation(target.WorkerResult.ParentValidationRequest())
+	if err != nil {
+		return target, err
+	}
+	workerResult := *target.WorkerResult
+	workerResult.SetParentValidationRequest(request)
+	target.WorkerResult = &workerResult
 	current, _, _, err := w.buildReviewCheckpoint(target.Request, *target.WorkerResult, target.ReviewNumber, target.AutoFixes)
 	if err != nil {
 		return target, err

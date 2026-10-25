@@ -366,73 +366,14 @@ func (s *Store) findingSourceLiveAuthority(finding FindingRecord, attempt Attemp
 	if !live {
 		return false, false, nil
 	}
-	if head.ExecutionTaskRef.Equal(finding.SourceSemanticTaskRef) {
+	if head.ExecutionTaskRef.Equal(finding.SourceSemanticTaskRef) && head.ControllerGeneration == finding.SourceControllerGeneration {
 		return true, true, nil
 	}
 	continued, err := s.findingSourceContinuedToCurrentAuthority(finding, attempt, head)
-	return continued, false, err
-}
-
-func (s *Store) findingSourceContinuedToCurrentAuthority(finding FindingRecord, attempt AttemptRecord, head RepositoryControllerHead) (bool, error) {
-	current := *head.ExecutionTaskRef
-	if finding.SourceSemanticTaskRef.TaskPath != current.TaskPath || finding.SourceSemanticTaskRef.Equal(current) {
-		return false, nil
+	if err != nil || continued {
+		return continued, false, err
 	}
-	reachable := map[string]bool{taskEvidenceSubjectID(current): true}
-	frontier := []SemanticTaskRef{current}
-	seenRecords := map[string]bool{}
-	for len(frontier) != 0 {
-		ref := frontier[len(frontier)-1]
-		frontier = frontier[:len(frontier)-1]
-		continued, predecessors, err := s.findingSourceRevisionPredecessors(head, ref, &finding, attempt, seenRecords)
-		if err != nil {
-			return false, err
-		}
-		if continued {
-			return true, nil
-		}
-		for _, previous := range predecessors {
-			if key := taskEvidenceSubjectID(previous); !reachable[key] {
-				reachable[key] = true
-				frontier = append(frontier, previous)
-			}
-		}
-	}
-	return false, nil
-}
-
-func (s *Store) findingSourceRevisionPredecessors(head RepositoryControllerHead, ref SemanticTaskRef, finding *FindingRecord, attempt AttemptRecord, seenRecords map[string]bool) (bool, []SemanticTaskRef, error) {
-	subject, published, err := s.publishedTaskSubjectRevision(head, ref)
-	if err != nil {
-		return false, nil, err
-	}
-	if !published {
-		return false, nil, nil
-	}
-	revision, err := s.LoadTaskIndexRevision(subject)
-	if err != nil {
-		return false, nil, err
-	}
-	var predecessors []SemanticTaskRef
-	for _, recordRef := range revision.SourceRevisions {
-		record, err := s.LoadTaskSourceRevision(recordRef)
-		if err != nil {
-			return false, nil, err
-		}
-		if !taskSourceRevisionContinues(record, ref, attempt.AttemptID) || seenRecords[record.SourceRevisionID] {
-			continue
-		}
-		seenRecords[record.SourceRevisionID] = true
-		predecessors = append(predecessors, record.PreviousTaskRef)
-		if record.PreviousTaskRef.Equal(finding.SourceSemanticTaskRef) {
-			return true, predecessors, nil
-		}
-	}
-	return false, predecessors, nil
-}
-
-func taskSourceRevisionContinues(record TaskSourceRevisionRecord, ref SemanticTaskRef, attemptID string) bool {
-	return record.AttemptID == attemptID && record.RevisedTaskRef.Equal(ref)
+	return head.ExecutionTaskRef.Equal(finding.SourceSemanticTaskRef), true, nil
 }
 
 func (s *Store) resolveFindingDecision(

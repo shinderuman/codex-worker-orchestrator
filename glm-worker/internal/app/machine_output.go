@@ -56,6 +56,9 @@ func runEntry(
 	if handled, err := runControllerStatus(args, loadConfig, stdout); handled {
 		return err
 	}
+	if handled, err := runControllerExecutionProjection(args, loadConfig, stdout); handled {
+		return err
+	}
 	if handled, err := runControllerOperations(args, loadConfig, stdin, stdout); handled {
 		return err
 	}

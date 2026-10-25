@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -254,10 +255,13 @@ func TestReportOnlyHeadMutationFailsClosedBeforeReview(t *testing.T) {
 func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 	t.Parallel()
 	repoRoot := initMutationRepo(t)
+	if err := os.MkdirAll(filepath.Join(repoRoot, "glm-worker"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
 		{structured: fixRequiredPacketWithTargets("PACKET")},
-		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: parentValidationObligatedPacket("report re-emitted")},
 		{structured: needsSolReviewPacket()},
 	}, nil)
 
@@ -299,6 +303,10 @@ func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 			t.Fatalf("不変性が保たれているのにmismatch eventが記録されています: %+v", l)
 		}
 	}
+	if obligation := loadFinalValidationObligation(t, w.state); obligation.Form != packet.ParentValidationGoTest || obligation.WorkingDir != "glm-worker" {
+		t.Fatalf("report-only lost the final validation obligation: %#v", obligation)
+	}
+
 }
 
 func TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun(t *testing.T) {
@@ -545,6 +553,9 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 	t.Parallel()
 	repoRoot := initMutationRepo(t)
+	if err := os.MkdirAll(filepath.Join(repoRoot, "glm-worker"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	w, _, _ := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
 		{structured: fixRequiredPacketWithTargets("PACKET")},
@@ -555,7 +566,7 @@ func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 		t.Fatal("rate limit errorを期待")
 	}
 	resumeRunner := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: parentValidationObligatedPacket("report re-emitted")},
 		{structured: needsSolReviewPacket()},
 	}}
 	resumeRunner.mutatePhase = "worker-report-only-1"
@@ -586,6 +597,10 @@ func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 			t.Fatalf("変化していないのにmismatch eventが記録されています: %+v", l)
 		}
 	}
+	if obligation := loadFinalValidationObligation(t, rw.state); obligation.Form != packet.ParentValidationGoTest || obligation.WorkingDir != "glm-worker" {
+		t.Fatalf("report-only lost the final validation obligation: %#v", obligation)
+	}
+
 }
 
 func TestReportOnlyTransientRecoveryStillEnforcesInvariant(t *testing.T) {

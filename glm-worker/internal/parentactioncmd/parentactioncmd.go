@@ -128,24 +128,63 @@ func prepare(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	}
 	action := args[1]
 	options := args[2:]
-	if action != string(parentaction.ActionFix) && len(options) != 0 {
-		return fmt.Errorf("%s", usage)
-	}
-	if action == string(parentaction.ActionFix) {
-		if err := validateFixOptions(options); err != nil {
-			return err
-		}
+	if err := validatePrepareOptions(action, options); err != nil {
+		return err
 	}
 	if action == actionObservationExecute {
 		if err := prepareObservationExecuteAdmission(cfg); err != nil {
 			return err
 		}
 	}
-	prepared, err := parentaction.Prepare(cfg.RepoRoot, action)
+	template, err := stagedTemplateForAction(cfg, action, options)
 	if err != nil {
 		return err
 	}
+	prepared, err := prepareParentActionPayload(cfg, action, template)
+	if err != nil {
+		return err
+	}
+	if action == controllerPublicationAction {
+		options = nil
+	}
 	return encodePreparedProjection(stdout, prepared, options)
+}
+
+func validatePrepareOptions(action string, options []string) error {
+	if action == string(parentaction.ActionFix) {
+		return validateFixOptions(options)
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	if action == controllerPublicationAction && len(options) == 2 && options[0] == parentactiongrammar.PublicationOperationOption {
+		return nil
+	}
+	return fmt.Errorf("%s", usage)
+}
+
+func stagedTemplateForAction(cfg config.AppConfig, action string, options []string) (parentaction.StagedTemplate, error) {
+	switch action {
+	case controllerPublicationAction:
+		selected := ""
+		if len(options) == 2 {
+			selected = options[1]
+		}
+		return publicationStagedTemplate(cfg, selected)
+	case controllerExecutionAction:
+		staged, selected, err := executionStagedTemplate(cfg)
+		if err != nil || selected {
+			return staged, err
+		}
+	}
+	return parentaction.StagedTemplate{}, nil
+}
+
+func prepareParentActionPayload(cfg config.AppConfig, action string, staged parentaction.StagedTemplate) (parentaction.Prepared, error) {
+	if staged.Payload != nil {
+		return parentaction.PrepareStaged(cfg.RepoRoot, action, staged)
+	}
+	return parentaction.Prepare(cfg.RepoRoot, action)
 }
 
 func encodePreparedProjection(stdout io.Writer, prepared parentaction.Prepared, options []string) error {

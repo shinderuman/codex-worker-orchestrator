@@ -14,9 +14,15 @@ import (
 )
 
 type Prepared struct {
-	Action string `json:"action"`
-	Token  string `json:"token"`
-	Path   string `json:"path"`
+	Action string         `json:"action"`
+	Token  string         `json:"token"`
+	Path   string         `json:"path"`
+	Slots  []PreparedSlot `json:"-"`
+}
+
+type StagedTemplate struct {
+	Payload []byte
+	Slots   []PreparedSlot
 }
 
 const (
@@ -41,6 +47,14 @@ const (
 	observationReferencePlaceholder  = "__GLM_OBSERVATION_REFERENCE__"
 	observationWorkingDirPlaceholder = "__GLM_OBSERVATION_WORKING_DIR__"
 	observationDeadlinePlaceholder   = "__GLM_OBSERVATION_DEADLINE_MS__"
+
+	PublicationMessagePlaceholder            = "__GLM_PUBLICATION_MESSAGE__"
+	PublicationRequireInstallPlaceholder     = "__GLM_PUBLICATION_REQUIRE_INSTALL__"
+	RuntimeDispositionReasonPlaceholder      = "__GLM_RUNTIME_DISPOSITION_REASON__"
+	PublicationFailureDispositionPlaceholder = "__GLM_PUBLICATION_FAILURE_DISPOSITION__"
+
+	PublicationMessageSlotName        = "message"
+	PublicationRequireInstallSlotName = "require_install"
 )
 
 const observationExecuteTemplate = "OPERATION: " + observationOperationPlaceholder + "\n" +
@@ -49,6 +63,25 @@ const observationExecuteTemplate = "OPERATION: " + observationOperationPlacehold
 	"DEADLINE_MS: " + observationDeadlinePlaceholder + "\n"
 
 func Prepare(repoRoot, action string) (Prepared, error) {
+	return prepareStaged(repoRoot, action, defaultPayloadTemplate(action))
+}
+
+func PrepareStaged(repoRoot, action string, staged StagedTemplate) (Prepared, error) {
+	return prepareStaged(repoRoot, action, staged)
+}
+
+func defaultPayloadTemplate(action string) StagedTemplate {
+	payloadTemplate := placeholder
+	if action == string(ActionDecision) {
+		payloadTemplate = decisionTemplate
+	}
+	if action == string(ActionObservationExecute) {
+		payloadTemplate = observationExecuteTemplate
+	}
+	return StagedTemplate{Payload: []byte(payloadTemplate)}
+}
+
+func prepareStaged(repoRoot, action string, staged StagedTemplate) (Prepared, error) {
 	if !validPayloadAction(action) {
 		return Prepared{}, fmt.Errorf("unsupported parent payload action %q", action)
 	}
@@ -68,14 +101,7 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 	if err != nil {
 		return Prepared{}, fmt.Errorf("create parent action staging file: %w", err)
 	}
-	payloadTemplate := placeholder
-	if action == string(ActionDecision) {
-		payloadTemplate = decisionTemplate
-	}
-	if action == string(ActionObservationExecute) {
-		payloadTemplate = observationExecuteTemplate
-	}
-	initial := tokenHeader(token) + payloadTemplate
+	initial := tokenHeader(token) + string(staged.Payload)
 	if _, err := io.WriteString(file, initial); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -85,7 +111,7 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 		_ = os.Remove(path)
 		return Prepared{}, fmt.Errorf("close parent action staging file: %w", err)
 	}
-	return Prepared{Action: action, Token: token, Path: path}, nil
+	return Prepared{Action: action, Token: token, Path: path, Slots: staged.Slots}, nil
 }
 
 func Peek(repoRoot, action, token string) ([]byte, error) {
@@ -166,17 +192,22 @@ func decodePayload(raw []byte, token string) ([]byte, error) {
 	if len(payload) > maxPayloadBytes {
 		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
 	}
-	if len(payload) == 0 ||
-		bytes.Contains(payload, []byte(placeholder)) ||
-		bytes.Contains(payload, []byte(decisionPlaceholder)) ||
-		bytes.Contains(payload, []byte(executionUnitPlaceholder)) ||
-		bytes.Contains(payload, []byte(observationOperationPlaceholder)) ||
-		bytes.Contains(payload, []byte(observationReferencePlaceholder)) ||
-		bytes.Contains(payload, []byte(observationWorkingDirPlaceholder)) ||
-		bytes.Contains(payload, []byte(observationDeadlinePlaceholder)) {
+	if !payloadComplete(payload) {
 		return nil, fmt.Errorf("parent action payload was not supplied completely")
 	}
 	return payload, nil
+}
+
+func payloadComplete(payload []byte) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	for _, marker := range []string{placeholder, decisionPlaceholder, executionUnitPlaceholder, observationOperationPlaceholder, observationReferencePlaceholder, observationWorkingDirPlaceholder, observationDeadlinePlaceholder, PublicationMessagePlaceholder, PublicationRequireInstallPlaceholder, RuntimeDispositionReasonPlaceholder, PublicationFailureDispositionPlaceholder} {
+		if bytes.Contains(payload, []byte(marker)) {
+			return false
+		}
+	}
+	return true
 }
 
 func readRegularPayload(path string, headerBytes int) ([]byte, error) {

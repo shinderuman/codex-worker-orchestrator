@@ -17,13 +17,26 @@ const (
 )
 
 func validateCandidateEvidenceMetadata(record CandidateEvidence, repository string) error {
-	if record.SchemaVersion != controllerSchemaVersion || record.RepositoryIdentity != repository || record.AttemptID == "" || record.SnapshotID == "" || record.BaseOID == "" || record.TreeOID == "" || record.Result != candidateEvidencePass {
+	if !candidateEvidenceIdentityComplete(record, repository) {
 		return fmt.Errorf("candidate evidence identity/result is incomplete")
+	}
+	if record.Kind == candidateEvidenceKindValidationObligation || record.Kind == candidateEvidenceKindInstallObligation {
+		if record.Result != candidateEvidenceDeclared {
+			return fmt.Errorf("an obligation must be declared, never reported as successful execution")
+		}
+		return nil
+	}
+	if record.Result != candidateEvidencePass {
+		return fmt.Errorf("candidate evidence is not a passing result")
 	}
 	if record.Kind != candidateEvidenceKindReview && record.Kind != candidateEvidenceKindValidation && record.Kind != candidateEvidenceKindInstall {
 		return fmt.Errorf("unsupported candidate evidence kind")
 	}
 	return nil
+}
+
+func candidateEvidenceIdentityComplete(record CandidateEvidence, repository string) bool {
+	return record.SchemaVersion == controllerSchemaVersion && record.RepositoryIdentity == repository && record.AttemptID != "" && record.SnapshotID != "" && record.BaseOID != "" && record.TreeOID != ""
 }
 
 func (s *Store) StoreCandidateEvidenceJSON(record CandidateEvidence, artifact json.RawMessage) (EvidenceObjectRef, error) {
@@ -143,7 +156,8 @@ func (s *Store) validateCandidateEvidence(candidate AcceptedCandidate, refs []Ev
 		}
 		seen[kind] = true
 	}
-	if !seen[candidateEvidenceKindReview] || !seen[candidateEvidenceKindValidation] || (candidate.Policy.RequireInstall && !seen[candidateEvidenceKindInstall]) {
+	installPending := candidate.State == candidatePrepared && seen[candidateEvidenceKindInstallObligation]
+	if !seen[candidateEvidenceKindReview] || (!seen[candidateEvidenceKindValidation] && !seen[candidateEvidenceKindValidationObligation]) || (candidate.Policy.RequireInstall && !seen[candidateEvidenceKindInstall] && !installPending) {
 		return fmt.Errorf("candidate review/validation/install evidence requires re-entry")
 	}
 	return nil
@@ -183,6 +197,9 @@ func (s *Store) validateCandidateEvidenceRecord(candidate AcceptedCandidate, ref
 	if _, err := s.LoadEvidenceObject(record.Artifact); err != nil {
 		return "", err
 	}
+	if validate := s.obligationValidation(record.Kind); validate != nil {
+		return record.Kind, validate(candidate, record.Artifact)
+	}
 	if record.Kind != candidateEvidenceKindReview && record.Kind != candidateEvidenceKindValidation && record.Kind != candidateEvidenceKindInstall {
 		return "", fmt.Errorf("invalid candidate evidence kind")
 	}
@@ -190,5 +207,16 @@ func (s *Store) validateCandidateEvidenceRecord(candidate AcceptedCandidate, ref
 }
 
 func candidateEvidenceMatches(record CandidateEvidence, candidate AcceptedCandidate, repository string) bool {
-	return record.SchemaVersion == controllerSchemaVersion && record.RepositoryIdentity == repository && record.AttemptID == candidate.AttemptID && record.SnapshotID == candidate.SnapshotID && record.BaseOID == candidate.BaseOID && record.TreeOID == candidate.TreeOID && record.Result == "pass"
+	return validateCandidateEvidenceMetadata(record, repository) == nil && record.AttemptID == candidate.AttemptID && record.SnapshotID == candidate.SnapshotID && record.BaseOID == candidate.BaseOID && record.TreeOID == candidate.TreeOID
+}
+
+func (s *Store) obligationValidation(kind string) func(AcceptedCandidate, EvidenceObjectRef) error {
+	switch kind {
+	case candidateEvidenceKindValidationObligation:
+		return s.validateCandidateValidationObligation
+	case candidateEvidenceKindInstallObligation:
+		return s.validateCandidateInstallObligation
+	default:
+		return nil
+	}
 }

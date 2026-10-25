@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,14 +40,26 @@ func (w *Workflow) unsealedCompletionAdmission(generation uint64, reason string)
 	if !active || head.ControllerGeneration != generation || head.AcceptedCandidateRef != nil || head.PendingTransitionID != "" || strings.TrimSpace(reason) == "" {
 		return nil, controller.Admission{}, fmt.Errorf("unsealed completion reentry requires exact live authority, no candidate or pending transition, and a reason")
 	}
-	if err := w.admitCanonicalMutation(); err != nil {
+	a, err := w.unsealedReopenSourceAuthority()
+	if err != nil {
 		return nil, controller.Admission{}, err
 	}
-	a := *w.canonicalAdmission
 	if a.Head.ControllerGeneration != generation || a.Attempt.AttemptState != controller.AttemptStateLive || a.Attempt.AttemptSealID != "" || a.Lease.InFlightCallID != "" {
 		return nil, controller.Admission{}, fmt.Errorf("unsealed completion reentry requires the exact idle live attempt")
 	}
 	return store, a, nil
+}
+
+func (w *Workflow) unsealedReopenSourceAuthority() (controller.Admission, error) {
+	err := w.admitCanonicalMutation()
+	if err == nil {
+		return *w.canonicalAdmission, nil
+	}
+	var changedTask *controller.TaskAuthoritySyncRequiredError
+	if !errors.As(err, &changedTask) {
+		return controller.Admission{}, err
+	}
+	return controller.Activate(w.config)
 }
 
 func (w *Workflow) retainUnsealedCompletionSource(store *controller.Store, a controller.Admission, source json.RawMessage, reason string) (controller.EvidenceObjectRef, error) {
