@@ -13,6 +13,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## NEXT（優先順）
 
 - [`IMPLEMENTATION_TASKS/bundle-host-resource-observability.md`](IMPLEMENTATION_TASKS/bundle-host-resource-observability.md)
+- [`IMPLEMENTATION_TASKS/macos-go-test-performance.md`](IMPLEMENTATION_TASKS/macos-go-test-performance.md)
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
 - [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
 - [`IMPLEMENTATION_TASKS/finding-source-revision-disposition.md`](IMPLEMENTATION_TASKS/finding-source-revision-disposition.md)
