@@ -148,8 +148,12 @@ func captureSnapshotIndexDigest(repoRoot string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("git ls-files: %w", err)
 	}
+	return DigestIndexListing(output), nil
+}
+
+func DigestIndexListing(output []byte) string {
 	sum := sha256.Sum256(output)
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:])
 }
 
 func captureSnapshotWorktreeDigest(repoRoot string) (string, string, error) {

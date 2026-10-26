@@ -69,6 +69,10 @@ func canonicalHostHome() (string, error) {
 func confinementProfile(writeRoot, hostHome string) string {
 	var profile strings.Builder
 	profile.WriteString("(version 1)\n")
+	profile.WriteString("(allow process*)\n")
+	profile.WriteString("(allow file-read*)\n")
+	profile.WriteString("(allow sysctl-read)\n")
+	profile.WriteString("(allow mach-lookup)\n")
 	profile.WriteString("(deny file-write*)\n")
 	profile.WriteString("(deny network*)\n")
 	for _, relative := range hostReadSensitiveSubpaths {

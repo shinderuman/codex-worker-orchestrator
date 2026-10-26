@@ -123,6 +123,114 @@ func capturedFixtureTimings(tests []qualitygate.TestTiming) qualitygate.TestTimi
 	}
 }
 
+func TestTimingComparisonCollapsesDuplicateRunIdentity(t *testing.T) {
+	t.Parallel()
+	baseline := regressionFixtureRun("/validation/first", "ccccccccccccccccccccccccccccccc1", time.Unix(6100, 0))
+	latest := regressionFixtureRun("/validation/second", "ccccccccccccccccccccccccccccccc2", time.Unix(6200, 0))
+	oldTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 100}})
+	newTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 1000}})
+	oldTimings.ValidationRunID = baseline.ValidationRunID
+	newTimings.ValidationRunID = latest.ValidationRunID
+	b := evidenceExportBuilder{validationRuns: []collectedValidationRun{
+		{run: baseline, timings: &oldTimings},
+		{run: latest, timings: &newTimings},
+		{run: latest, timings: &newTimings},
+	}}
+	result := b.analysisTestTimingRegression()
+	if result.Runs != 2 {
+		t.Fatalf("duplicate run identity inflated the run count: %d", result.Runs)
+	}
+	if len(result.IdentityConflicts) != 0 {
+		t.Fatalf("identical copies were treated as conflicts: %v", result.IdentityConflicts)
+	}
+	if len(result.Comparisons) != 1 {
+		t.Fatalf("comparisons = %#v", result.Comparisons)
+	}
+	comparison := result.Comparisons[0]
+	if comparison.Baseline.RunID != baseline.ValidationRunID {
+		t.Fatalf("latest copy became its own baseline: %#v", comparison)
+	}
+	if len(comparison.Candidates) != 1 || comparison.Candidates[0].Test != "TestSlow" {
+		t.Fatalf("candidates = %#v", comparison.Candidates)
+	}
+}
+
+func TestTimingComparisonDoesNotSelfCompareDuplicateOnlyGroup(t *testing.T) {
+	t.Parallel()
+	latest := regressionFixtureRun("/validation/first", "ccccccccccccccccccccccccccccccc3", time.Unix(6200, 0))
+	newTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 1000}})
+	newTimings.ValidationRunID = latest.ValidationRunID
+	b := evidenceExportBuilder{validationRuns: []collectedValidationRun{
+		{run: latest, timings: &newTimings},
+		{run: latest, timings: &newTimings},
+	}}
+	result := b.analysisTestTimingRegression()
+	if result.Runs != 1 {
+		t.Fatalf("duplicate-only group run count = %d", result.Runs)
+	}
+	if len(result.Comparisons) != 1 || result.Comparisons[0].Baseline.RunID != "" || result.Comparisons[0].Unknown == "" {
+		t.Fatalf("duplicate-only comparison = %#v", result.Comparisons)
+	}
+}
+
+func TestTimingComparisonExcludesContradictoryRunIdentity(t *testing.T) {
+	t.Parallel()
+	older := regressionFixtureRun("/validation/first", "ccccccccccccccccccccccccccccccc4", time.Unix(6100, 0))
+	sideA := regressionFixtureRun("/validation/second", "ccccccccccccccccccccccccccccccc5", time.Unix(6200, 0))
+	sideB := sideA
+	sideB.Status = qualitygate.StatusFail
+	oldTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 100}})
+	newTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 1000}})
+	oldTimings.ValidationRunID = older.ValidationRunID
+	newTimings.ValidationRunID = sideA.ValidationRunID
+	b := evidenceExportBuilder{validationRuns: []collectedValidationRun{
+		{run: older, timings: &oldTimings},
+		{run: sideA, timings: &newTimings},
+		{run: sideB, timings: &newTimings},
+	}}
+	result := b.analysisTestTimingRegression()
+	if result.Status != evidenceAnalysisStatusPartial {
+		t.Fatalf("contradictory identity did not degrade the analysis status: %s", result.Status)
+	}
+	if len(result.IdentityConflicts) != 1 || result.IdentityConflicts[0] != sideA.ValidationRunID {
+		t.Fatalf("identity conflicts = %v", result.IdentityConflicts)
+	}
+	if result.Runs != 1 {
+		t.Fatalf("contradictory copies counted as comparable runs: %d", result.Runs)
+	}
+	for _, comparison := range result.Comparisons {
+		if comparison.Latest.RunID == sideA.ValidationRunID || comparison.Baseline.RunID == sideA.ValidationRunID {
+			t.Fatalf("contradictory identity fed a comparison side: %#v", comparison)
+		}
+	}
+}
+
+func TestTimingComparisonTreatsContradictoryTimingsAsIdentityConflict(t *testing.T) {
+	t.Parallel()
+	older := regressionFixtureRun("/validation/first", "ccccccccccccccccccccccccccccccc6", time.Unix(6100, 0))
+	latest := regressionFixtureRun("/validation/second", "ccccccccccccccccccccccccccccccc7", time.Unix(6200, 0))
+	oldTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 100}})
+	firstTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 100}})
+	divergedTimings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 500}})
+	oldTimings.ValidationRunID = older.ValidationRunID
+	firstTimings.ValidationRunID = latest.ValidationRunID
+	divergedTimings.ValidationRunID = latest.ValidationRunID
+	b := evidenceExportBuilder{validationRuns: []collectedValidationRun{
+		{run: older, timings: &oldTimings},
+		{run: latest, timings: &firstTimings},
+		{run: latest, timings: &divergedTimings},
+	}}
+	result := b.analysisTestTimingRegression()
+	if len(result.IdentityConflicts) != 1 || result.IdentityConflicts[0] != latest.ValidationRunID {
+		t.Fatalf("identity conflicts = %v", result.IdentityConflicts)
+	}
+	for _, comparison := range result.Comparisons {
+		if comparison.Latest.RunID == latest.ValidationRunID {
+			t.Fatalf("contradictory timings fed a comparison side: %#v", comparison)
+		}
+	}
+}
+
 func TestExportEvidenceExposesTestTimingsAndRegressionCandidates(t *testing.T) {
 	t.Parallel()
 	fixture := newEvidenceExportFixture(t)

@@ -375,32 +375,6 @@ func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeFailure(t *testing.T
 	}
 }
 
-func TestStdinReadyControlEventStaysTypedJSONLine(t *testing.T) {
-	t.Parallel()
-	var stderr bytes.Buffer
-	if err := emitStdinReadyControlEvent(&stderr); err != nil {
-		t.Fatal(err)
-	}
-	data := stderr.Bytes()
-	if err := validateStructuredJSONLines(data); err != nil {
-		t.Fatalf("stdin_ready control eventがstderr境界の構造契約を満たしません: %v: %q", err, stderr.String())
-	}
-	rendered := stderr.String()
-	if !strings.HasSuffix(rendered, "\n") || strings.Count(strings.TrimRight(rendered, "\n"), "\n") != 0 {
-		t.Fatalf("stdin_ready control eventが単一行ではありません: %q", rendered)
-	}
-	var event struct {
-		Type  string `json:"type"`
-		Event string `json:"event"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(rendered)), &event); err != nil {
-		t.Fatalf("stdin_ready control eventがJSON objectとして解析できません: %v: %q", err, rendered)
-	}
-	if event.Type != "control" || event.Event != "stdin_ready" {
-		t.Fatalf("stdin_ready control eventの契約が守られていません: %#v", event)
-	}
-}
-
 func TestDispatchWithholdsTypedWarningWhenExecuteFailsAfterWarning(t *testing.T) {
 	cfg := newCanonicalAppConfig(t)
 	st, err := state.NewStateStore(cfg)

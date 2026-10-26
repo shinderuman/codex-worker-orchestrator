@@ -86,15 +86,19 @@ func startQualityGate(form string, st *state.StateStore, stdout, diagnostics io.
 }
 
 func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStartIdentity, error) {
-	goArgs, ok := qualityGateForms[form]
-	if !ok {
-		return qualityGateStartIdentity{}, machinecli.UsageErrorf("%s", qualityGateCommandUsage)
-	}
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return qualityGateStartIdentity{}, fmt.Errorf("quality gateの作業dirを取得できません: %w", err)
 	}
-	workingDir, err = filepath.EvalSymlinks(workingDir)
+	return prepareQualityGateStartAt(form, st, workingDir)
+}
+
+func prepareQualityGateStartAt(form string, st *state.StateStore, workingDir string) (qualityGateStartIdentity, error) {
+	goArgs, ok := qualityGateForms[form]
+	if !ok {
+		return qualityGateStartIdentity{}, machinecli.UsageErrorf("%s", qualityGateCommandUsage)
+	}
+	workingDir, err := filepath.EvalSymlinks(workingDir)
 	if err != nil {
 		return qualityGateStartIdentity{}, fmt.Errorf("quality gateの作業dirを解決できません: %w", err)
 	}
@@ -129,8 +133,16 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.Run
 	if err != nil {
 		return qualitygate.RunRecord{}, err
 	}
-	toolchain := qualitygate.CaptureToolchain(identity.WorkingDir, identity.GoArgs, qualityGateEnv())
+	required, err := qualitygate.RequiredGoVersion(identity.Repository)
+	if err != nil {
+		return qualitygate.RunRecord{}, err
+	}
+	execution, toolchain, err := newQualityGateExecution(identity, required)
+	if err != nil {
+		return qualitygate.RunRecord{}, err
+	}
 	return qualitygate.RunRecord{
+		Execution:                     execution,
 		ValidationRunID:               runID,
 		Form:                          identity.Form,
 		Repository:                    identity.Repository,
@@ -152,9 +164,13 @@ func launchQualityGateRunnerProcess(_ *state.StateStore, record qualitygate.RunR
 	if err != nil {
 		return nil, fmt.Errorf("glm-worker executableを解決できません: %w", err)
 	}
+	required := ""
+	if record.Toolchain != nil {
+		required = record.Toolchain.RequiredGoVersion
+	}
 	child := exec.Command(executable, "--quality-gate", qualityGateActionInternal, record.ValidationRunID)
 	child.Dir = record.WorkingDir
-	child.Env = qualityGateEnv()
+	child.Env = qualityGateEnv(required)
 	child.Stdout = io.Discard
 	child.Stderr = io.Discard
 	if err := child.Start(); err != nil {
@@ -171,7 +187,10 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 	var gateLog []byte
 	runErr := verifyQualityGateSource(record)
 	if runErr == nil {
-		gateLog, runErr = runQualityGateProcess(record, goArgs)
+		runErr = verifyQualityGateToolchain(record, goArgs)
+	}
+	if runErr == nil {
+		gateLog, runErr = runQualityGateExecution(st, &record, goArgs)
 		if sourceErr := verifyQualityGateSource(record); sourceErr != nil {
 			runErr = sourceErr
 		}
@@ -185,6 +204,21 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 	}
 	if final.Status != qualitygate.StatusPass {
 		return qualityGateErrorFromRecord(final)
+	}
+	return nil
+}
+
+func verifyQualityGateToolchain(record qualitygate.RunRecord, goArgs []string) error {
+	if record.Execution != nil && record.Execution.Backend == qualitygate.BackendDockerARM64 {
+		record.Toolchain = record.Execution.HostToolchain
+	}
+	if record.Toolchain == nil || record.Toolchain.RequiredGoVersion == "" {
+		return fmt.Errorf("quality gate run %sが要求Go versionを記録していません", record.ValidationRunID)
+	}
+	observed := qualitygate.CaptureToolchain(record.WorkingDir, goArgs, qualityGateEnv(record.Toolchain.RequiredGoVersion))
+	observed.RequiredGoVersion = record.Toolchain.RequiredGoVersion
+	if !observed.MatchesRequiredGoVersion() {
+		return fmt.Errorf("quality gate実行環境のGo toolchainが契約version go%sと一致しません: observed=%q", record.Toolchain.RequiredGoVersion, observed.GoVersion)
 	}
 	return nil
 }
@@ -235,10 +269,14 @@ func beginQualityGateRun(st *state.StateStore, runID string) (qualitygate.RunRec
 }
 
 func runQualityGateProcess(record qualitygate.RunRecord, goArgs []string) ([]byte, error) {
+	required := ""
+	if record.Toolchain != nil {
+		required = record.Toolchain.RequiredGoVersion
+	}
 	var gateLog bytes.Buffer
 	gate := exec.Command("go", goArgs...)
 	gate.Dir = record.WorkingDir
-	gate.Env = qualityGateEnv()
+	gate.Env = qualityGateEnv(required)
 	gate.Stdout = &gateLog
 	gate.Stderr = &gateLog
 	err := gate.Run()
@@ -252,7 +290,18 @@ func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, 
 	}
 	defer func() { _ = lock.Close() }()
 
+	gateLog, runErr = verifyCompletedQualityExecution(&record, gateLog, runErr)
 	status, exitCode, exitSource := qualityGateProcessOutcome(runErr)
+	timingsPath, timingsErr := writeQualityGateTestTimingsRecord(st, record, gateLog)
+	if timingsErr != nil {
+		gateLog = append(gateLog, []byte("\n"+timingsErr.Error()+"\n")...)
+		status = qualitygate.StatusFail
+		if exitCode == 0 {
+			exitCode = 1
+			exitSource = state.ValidationExitSourceWrapper
+		}
+		timingsPath = ""
+	}
 	logPath, logErr := writeQualityGateRunLog(st, record.ValidationRunID, gateLog)
 	if logErr != nil {
 		status = qualitygate.StatusFail
@@ -261,10 +310,6 @@ func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, 
 			exitSource = state.ValidationExitSourceWrapper
 		}
 		logPath = ""
-	}
-	timingsPath, timingsErr := writeQualityGateTestTimingsRecord(st, record, gateLog)
-	if timingsErr != nil {
-		return qualitygate.RunRecord{}, timingsErr
 	}
 	record.TestTimings = timingsPath
 	if record.Toolchain != nil {
@@ -287,6 +332,10 @@ func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, 
 func qualityGateProcessOutcome(runErr error) (string, int, string) {
 	if runErr == nil {
 		return qualitygate.StatusPass, 0, state.ValidationExitSourceTarget
+	}
+	var target *qualitygate.TargetExitError
+	if errors.As(runErr, &target) {
+		return qualitygate.StatusFail, target.ExitCode(), state.ValidationExitSourceTarget
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(runErr, &exitErr) {
@@ -353,4 +402,18 @@ func waitQualityGateRun(st *state.StateStore, runID string) (qualitygate.RunReco
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func verifyCompletedQualityExecution(record *qualitygate.RunRecord, log []byte, runErr error) ([]byte, error) {
+	if runErr != nil || record.Execution == nil {
+		return log, runErr
+	}
+	if record.Toolchain != nil {
+		record.Toolchain.TestCache = qualitygate.TestCacheObservation(log)
+	}
+	err := qualitygate.VerifyExecution(*record)
+	if err != nil {
+		log = append(log, []byte("\n"+err.Error()+"\n")...)
+	}
+	return log, err
 }

@@ -37,6 +37,8 @@ CLIのcurrent command / usageは`glm-worker --help`を参照してください�
 
 repositoryでの作業規則は[`AGENTS.md`](AGENTS.md)と[`IMPLEMENTATION_RULES.md`](IMPLEMENTATION_RULES.md)を参照してください。task schedule、individual task requirement、runtime state、schema、internal architectureはREADMEへ複製せず、それぞれのcanonical repository sourceとlive commandを正とします。
 
+ローカルLinux ARM64でのGo診断は[専用の実行入口](docs/linux-go-tests.md)を参照してください。正規Quality Gateの証拠とは区別します。
+
 ## License
 
 [MIT License](LICENSE)

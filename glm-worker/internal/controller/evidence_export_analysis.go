@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"path/filepath"
@@ -172,11 +173,12 @@ type EvidenceAnalysisInstructions struct {
 }
 
 type EvidenceAnalysisTestTimingRegression struct {
-	Status      string                                 `json:"status"`
-	Basis       string                                 `json:"basis"`
-	Runs        int                                    `json:"runs"`
-	Conditions  EvidenceAnalysisTestTimingConditions   `json:"conditions"`
-	Comparisons []EvidenceAnalysisTestTimingComparison `json:"comparisons,omitempty"`
+	Status            string                                 `json:"status"`
+	Basis             string                                 `json:"basis"`
+	Runs              int                                    `json:"runs"`
+	Conditions        EvidenceAnalysisTestTimingConditions   `json:"conditions"`
+	Comparisons       []EvidenceAnalysisTestTimingComparison `json:"comparisons,omitempty"`
+	IdentityConflicts []string                               `json:"identity_conflicts,omitempty"`
 }
 
 type EvidenceAnalysisTestTimingConditions struct {
@@ -805,23 +807,28 @@ func (b *evidenceExportBuilder) analysisTestTimingRegression() EvidenceAnalysisT
 			Uncaptured:     "machine load, CPU model, and cache warmth are not captured; runs without recorded toolchain conditions never form pairs",
 		},
 	}
-	groups := collectTestTimingGroups(b.validationRuns)
+	groups, conflicts := collectTestTimingGroups(b.validationRuns)
+	regression.IdentityConflicts = conflicts
 	for _, runs := range groups {
 		regression.Runs += len(runs)
 	}
-	if regression.Runs == 0 {
+	if regression.Runs == 0 && len(conflicts) == 0 {
 		return regression
 	}
 	regression.Status = evidenceAnalysisStatusCollected
+	if len(conflicts) > 0 {
+		regression.Status = evidenceAnalysisStatusPartial
+	}
 	for _, key := range sortedTestTimingGroupKeys(groups) {
 		regression.Comparisons = append(regression.Comparisons, testTimingComparison(key.form, key.workingDir, groups[key]))
 	}
 	return regression
 }
 
-func collectTestTimingGroups(validationRuns []collectedValidationRun) map[testTimingGroupKey][]collectedValidationRun {
+func collectTestTimingGroups(validationRuns []collectedValidationRun) (map[testTimingGroupKey][]collectedValidationRun, []string) {
+	converged, conflicts := convergeValidationRunIdentities(validationRuns)
 	groups := map[testTimingGroupKey][]collectedValidationRun{}
-	for _, collected := range validationRuns {
+	for _, collected := range converged {
 		if collected.timings == nil {
 			continue
 		}
@@ -829,7 +836,94 @@ func collectTestTimingGroups(validationRuns []collectedValidationRun) map[testTi
 		key := testTimingGroupKey{form: collected.run.Form, workingDir: module}
 		groups[key] = append(groups[key], collected)
 	}
-	return groups
+	return groups, sortedConflictedRunIDs(conflicts)
+}
+
+func convergeValidationRunIdentities(runs []collectedValidationRun) ([]collectedValidationRun, map[string]struct{}) {
+	conflicts := map[string]struct{}{}
+	byID := map[string][]collectedValidationRun{}
+	var order []string
+	unidentified := []collectedValidationRun{}
+	for _, run := range runs {
+		id := run.run.ValidationRunID
+		if id == "" {
+			unidentified = append(unidentified, run)
+			continue
+		}
+		if _, seen := byID[id]; !seen {
+			order = append(order, id)
+		}
+		byID[id] = append(byID[id], run)
+	}
+	converged := make([]collectedValidationRun, 0, len(runs))
+	for _, id := range order {
+		copies := byID[id]
+		merged, ok := mergeValidationRunCopies(copies)
+		if !ok {
+			conflicts[id] = struct{}{}
+			continue
+		}
+		converged = append(converged, merged)
+	}
+	return append(converged, unidentified...), conflicts
+}
+
+func mergeValidationRunCopies(copies []collectedValidationRun) (collectedValidationRun, bool) {
+	merged := copies[0]
+	for _, copy := range copies[1:] {
+		if !mergeValidationRunCopy(&merged, copy) {
+			return collectedValidationRun{}, false
+		}
+	}
+	return merged, true
+}
+
+func mergeValidationRunCopy(merged *collectedValidationRun, copy collectedValidationRun) bool {
+	if !sameRunRecordEncoding(merged.run, copy.run) {
+		return false
+	}
+	if copy.timings == nil {
+		return true
+	}
+	if merged.timings == nil {
+		merged.timings = copy.timings
+		merged.timingsEntry = copy.timingsEntry
+		return true
+	}
+	return sameTestTimingsEncoding(*merged.timings, *copy.timings)
+}
+
+func sameRunRecordEncoding(left, right qualitygate.RunRecord) bool {
+	encodedLeft, err := qualitygate.Encode(left)
+	if err != nil {
+		return false
+	}
+	encodedRight, err := qualitygate.Encode(right)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(encodedLeft, encodedRight)
+}
+
+func sameTestTimingsEncoding(left, right qualitygate.TestTimings) bool {
+	encodedLeft, err := qualitygate.EncodeTestTimings(left)
+	if err != nil {
+		return false
+	}
+	encodedRight, err := qualitygate.EncodeTestTimings(right)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(encodedLeft, encodedRight)
+}
+
+func sortedConflictedRunIDs(conflicts map[string]struct{}) []string {
+	ids := make([]string, 0, len(conflicts))
+	for id := range conflicts {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func testTimingModule(run qualitygate.RunRecord) string {
@@ -896,6 +990,9 @@ func testTimingComparison(form, workingDir string, runs []collectedValidationRun
 
 func nearestComparableTimingRun(runs []collectedValidationRun, latest int, latestConditions *qualitygate.RunToolchain) (collectedValidationRun, bool) {
 	for index := latest - 1; index >= 0; index-- {
+		if runs[index].run.ValidationRunID == runs[latest].run.ValidationRunID {
+			continue
+		}
 		if conditions := testTimingConditions(runs[index]); conditions == nil || *conditions != *latestConditions {
 			continue
 		}

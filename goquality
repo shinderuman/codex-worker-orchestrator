@@ -3,22 +3,106 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel)
 GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' "$repo_root/quality-tools.yml")
 export GOTOOLCHAIN="go$GO_VERSION"
-export GOCACHE="${TMPDIR:-/tmp}/codex-worker-orchestrator-go-$GO_VERSION"
 
-if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <vet|build>" >&2
-  exit 2
+resolved_go_version=$(go env GOVERSION)
+resolved_go_version=${resolved_go_version#go}
+if [ "$resolved_go_version" != "$GO_VERSION" ]; then
+  echo "goquality: resolved go toolchain $resolved_go_version does not match contract $GO_VERSION" >&2
+  exit 1
 fi
 
-case "$1" in
-  vet)
-    exec go -C "$repo_root/glm-worker" vet ./...
-    ;;
-  build)
-    exec go -C "$repo_root/glm-worker" build ./...
-    ;;
-  *)
-    echo "usage: $0 <vet|build>" >&2
-    exit 2
-    ;;
-esac
+if [ "$#" -ge 1 ] && [ "$1" = test-linux ]; then
+  shift
+  exec go -C "$repo_root/glm-worker" run ./cmd/goquality "$repo_root" "$@"
+fi
+
+usage() {
+  echo "usage: $0 <vet|build> | test <go test args...> | test-linux [go test args...]" >&2
+  exit 2
+}
+
+argv_json() {
+  python3 -c 'import json, sys
+sys.stdout.write(json.dumps(sys.argv[1:]))' "$@"
+}
+
+source_snapshot() {
+  untracked_list=$(mktemp "${TMPDIR:-/tmp}/goquality-untracked.XXXXXX") || exit 1
+  git -C "$repo_root" rev-parse --verify HEAD || exit 1
+  git -C "$repo_root" ls-files -s || exit 1
+  git -C "$repo_root" diff HEAD || exit 1
+  git -C "$repo_root" ls-files -o --exclude-standard >"$untracked_list" || exit 1
+  while IFS= read -r untracked_path; do
+    [ -n "$untracked_path" ] || continue
+    printf 'untracked %s\n' "$untracked_path"
+    cksum "$repo_root/$untracked_path" || exit 1
+  done <"$untracked_list"
+  rm -f "$untracked_list"
+}
+
+source_snapshot_digest() {
+  snapshot_file=$(mktemp "${TMPDIR:-/tmp}/goquality-snapshot.XXXXXX") || return 1
+  if ! source_snapshot >"$snapshot_file"; then
+    rm -f "$snapshot_file"
+    return 1
+  fi
+  snapshot_cksum=$(cksum "$snapshot_file") || {
+    rm -f "$snapshot_file"
+    return 1
+  }
+  rm -f "$snapshot_file"
+  printf '%s\n' "${snapshot_cksum%% *}"
+}
+
+if [ "$#" -eq 1 ]; then
+  case "$1" in
+    vet)
+      export GOCACHE="${TMPDIR:-/tmp}/codex-worker-orchestrator-go-$GO_VERSION"
+      exec go -C "$repo_root/glm-worker" vet ./...
+      ;;
+    build)
+      export GOCACHE="${TMPDIR:-/tmp}/codex-worker-orchestrator-go-$GO_VERSION"
+      exec go -C "$repo_root/glm-worker" build ./...
+      ;;
+    *)
+      usage
+      ;;
+  esac
+fi
+
+if [ "$#" -ge 2 ] && [ "$1" = test ]; then
+  shift
+  head_oid=$(git -C "$repo_root" rev-parse --verify HEAD)
+  status_output=$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)
+  worktree_dirty=false
+  if [ -n "$status_output" ]; then
+    worktree_dirty=true
+  fi
+  start_digest=$(source_snapshot_digest) || {
+    echo "goquality: source snapshotを取得できません" >&2
+    exit 1
+  }
+  recorded_argv=$(argv_json "$@")
+  recorded_cache=$(python3 -c 'import json, sys
+sys.stdout.write(json.dumps(sys.argv[1]))' "$(go env GOCACHE)")
+  go_os=$(go env GOOS)
+  go_arch=$(go env GOARCH)
+  set +e
+  go -C "$repo_root/glm-worker" test "$@"
+  test_status=$?
+  set -e
+  end_digest=$(source_snapshot_digest) || {
+    echo "goquality: 終了時のsource snapshotを取得できません" >&2
+    exit 1
+  }
+  source_changed=false
+  final_status=$test_status
+  if [ "$start_digest" != "$end_digest" ]; then
+    source_changed=true
+    final_status=1
+  fi
+  printf 'goquality-diagnostic %s\n' "{\"form\":\"diagnostic-go-test\",\"go_version\":\"$resolved_go_version\",\"required_go_version\":\"$GO_VERSION\",\"goos\":\"$go_os\",\"goarch\":\"$go_arch\",\"go_cache\":$recorded_cache,\"head\":\"$head_oid\",\"source_digest\":\"$start_digest\",\"worktree_dirty\":$worktree_dirty,\"source_changed\":$source_changed,\"module\":\"glm-worker\",\"argv\":$recorded_argv,\"child_exit\":$test_status,\"exit\":$final_status}" >&2
+  exit $final_status
+fi
+
+usage

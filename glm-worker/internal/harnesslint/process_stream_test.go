@@ -10,11 +10,13 @@ import (
 func TestProcessStreamBoundaryAllowsDeclaredOwnerAndRejectsRogueReference(t *testing.T) {
 	root := t.TempDir()
 	allowed := "glm-worker/cmd/harnesslint/main.go"
+	newOwner := "glm-worker/internal/goqualitycmd/command.go"
 	rogue := "glm-worker/internal/rogue/rogue.go"
 	writeProcessStreamFixture(t, root, allowed, "package main\nimport \"os\"\nfunc main() { _, _ = os.Stdout.Write(nil); _, _ = os.Stderr.Write(nil) }\n")
+	writeProcessStreamFixture(t, root, newOwner, "package goqualitycmd\nimport \"os\"\nfunc run() { _, _ = os.Stdout.Write(nil); _, _ = os.Stderr.Write(nil) }\n")
 	writeProcessStreamFixture(t, root, rogue, "package rogue\nimport \"os\"\nvar _ = os.Stdout\n")
 
-	violations, err := processStreamViolations(root, []string{allowed, rogue})
+	violations, err := processStreamViolations(root, []string{allowed, newOwner, rogue})
 	if err != nil {
 		t.Fatal(err)
 	}

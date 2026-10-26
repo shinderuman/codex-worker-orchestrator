@@ -19,6 +19,10 @@
 
 `go vet` / `go build`相当はrepositoryの固定`goquality`入口、その他capabilityを必要としないrepository gateは既存のsandbox-safe入口を使う。Go version、cache path、managed quality tool pathを親Codexがtaskごとに合成しない。
 
+診断用の`go test`(focused package・`-run`・`-race`等、正規finalize-check外の局所検証)も同じ`goquality test <go test args...>`入口を使う。入口が規定Go versionに解決できないときは検証として実行せず失敗として扱う。入口は正規gateと同じGo version固定とcache選択(ambient継承)を使い、`goquality-diagnostic`行(実go version・OS/arch・cache実値・head・source digest(内容束縛)・argv・exit/source変化)を診断証拠としてtask logへ残し、正規finalize-checkのvalidation証拠やmachine gateのPASSと混同しない。直接`go test`を規定外versionで実行した結果を検証成立として報告しない。
+
+Mac上で共通のGoテストを局所検証する場合、repositoryが`goquality test-linux`を提供しローカルDocker ARM64を利用可能なら、その入口でLinux診断を実行できる。source転送・実Go/platform・cache・準備時間を記録し、Docker診断のPASSは正規validationへ昇格しない。macOS専用の検証はnativeの`goquality test`を使う。Docker未導入時は自動installせず、正規finalize-checkは引き続き既存の品質契約に従う。
+
 GLM workflow内のmachine-fix / check-only順序、workerから直接実行を拒否するtool群、installer smoke等の既知procedureはproduction command/wrapperを正とし、本instructionへ複製しない。
 
 ## fail closed

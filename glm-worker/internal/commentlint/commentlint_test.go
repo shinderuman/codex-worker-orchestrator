@@ -42,6 +42,8 @@ func TestClassifyQualityFiles(t *testing.T) {
 		ok   bool
 	}{
 		{"a.go", "go", true},
+		{"tools/go-test.Dockerfile", "hash", true},
+		{"other/Dockerfile", "unclassified", true},
 		{"a.sh", "shell", true},
 		{"a.toml", "hash", true},
 		{".golangci.yml", "hash", true},

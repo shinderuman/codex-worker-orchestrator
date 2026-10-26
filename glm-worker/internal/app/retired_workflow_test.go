@@ -56,6 +56,9 @@ func prepareCompletionQualityCorpus(t *testing.T, root string) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if path == "quality-tools.yml" {
+			data = nativeQualityFixtureTools(data)
+		}
 		if strings.HasSuffix(path, ".go") {
 			data = append([]byte("//go:build ignore\n\n"), data...)
 		}
@@ -249,4 +252,15 @@ func interruptedCompletionWorkflowFixture(t *testing.T) (config.AppConfig, *cont
 		t.Fatalf("completion journal missing: %v; interruption=%v", err, interruption)
 	}
 	return cfg, store, controller.ExecutionOperationResult{Head: head, TransitionID: head.PendingTransitionID}, policy
+}
+
+func nativeQualityFixtureTools(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "go-test-macos-backend:") {
+			filtered = append(filtered, line)
+		}
+	}
+	return []byte(strings.Join(filtered, "\n"))
 }

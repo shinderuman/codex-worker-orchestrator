@@ -174,6 +174,7 @@ func TestQualityGateStatusIsMachineReadableByRunID(t *testing.T) {
 }
 
 func TestQualityGateConcurrentSameSnapshotAttachesAndStreamsRunID(t *testing.T) {
+	enterQualityGateGitWorkingDir(t)
 	cfg, st := newQualityGateEnv(t)
 	previous := launchQualityGateRunner
 	defer func() { launchQualityGateRunner = previous }()
@@ -201,7 +202,12 @@ func TestQualityGateConcurrentSameSnapshotAttachesAndStreamsRunID(t *testing.T) 
 		firstErr <- dispatchMachineOutput(Command{Mode: ModeQualityGate, Payload: "go-test"}, cfg, defaultRunnerFactory, &firstOutput, firstDiagnostics)
 	}()
 
-	record := <-started
+	var record qualitygate.RunRecord
+	select {
+	case record = <-started:
+	case err := <-firstErr:
+		t.Fatalf("quality gate did not launch: %v", err)
+	}
 	<-firstDiagnostics.wrote
 	if !strings.Contains(firstDiagnostics.String(), record.ValidationRunID) || !strings.Contains(firstDiagnostics.String(), `"attached":false`) {
 		t.Fatalf("first start event = %s", firstDiagnostics.String())
@@ -213,7 +219,12 @@ func TestQualityGateConcurrentSameSnapshotAttachesAndStreamsRunID(t *testing.T) 
 	go func() {
 		secondErr <- startQualityGate("go-test", st, &secondOutput, secondDiagnostics)
 	}()
-	<-secondDiagnostics.wrote
+	select {
+	case <-secondDiagnostics.wrote:
+	case err := <-secondErr:
+		close(release)
+		t.Fatalf("quality gate did not attach: %v", err)
+	}
 	if launches.Load() != 1 {
 		t.Fatalf("same snapshot launched %d runners", launches.Load())
 	}

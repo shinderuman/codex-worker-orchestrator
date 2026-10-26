@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
@@ -45,7 +47,8 @@ func writeQualityGateGoShim(t *testing.T, failFlagPath string) (string, string) 
 	body := "#!/bin/sh\n" +
 		"log_file='" + invocationLog + "'\n" +
 		"if [ \"$1\" = env ]; then\n" +
-		"  printf 'goflags:%s\\n' \"$GOFLAGS\" >>\"$log_file.env\"\n" +
+		"  printf 'goflags:%s\\n' \"$GOFLAGS\" >\"$log_file.env\"\n" +
+		"  printf 'gotoolchain:%s\\n' \"$GOTOOLCHAIN\" >>\"$log_file.env\"\n" +
 		"  printf '%s\\n' '{\"GOVERSION\":\"go1.25.4\",\"GOOS\":\"darwin\",\"GOARCH\":\"arm64\",\"GOCACHE\":\"/fixture/cache\",\"GOFLAGS\":\"\"}'\n" +
 		"  exit 0\n" +
 		"fi\n" +
@@ -111,12 +114,13 @@ func qualityGateInvocationLines(t *testing.T, path string) []string {
 func TestQualityGateEnvScrubsSessionTransport(t *testing.T) {
 	t.Setenv(executionunit.DispositionEnv, executionunit.ExecutionUnitSingle)
 	t.Setenv("GOFLAGS", "-exec=/bin/sh")
+	t.Setenv("GOTOOLCHAIN", "go9.9.9")
 	t.Setenv(state.SessionRotationClaimIDEnv, "21d4da2f-2834-4e1f-9939-184290652f51")
 	t.Setenv(state.ParentActionCodexThreadIDEnv, "01a0a889-bf94-7892-bdd8-97df5e7a2e52")
 	t.Setenv(state.ParentActionCodexSessionIDEnv, "01a0a889-bf94-7892-bdd8-97df5e7a2e52")
 	t.Setenv("GLM_WORKER_HOME", "/keep-this")
 
-	env := qualityGateEnv()
+	env := qualityGateEnv("1.25.4")
 	keptOther := false
 	for _, entry := range env {
 		if qualityGateSessionTransportEnv(entry) {
@@ -125,12 +129,193 @@ func TestQualityGateEnvScrubsSessionTransport(t *testing.T) {
 		if strings.HasPrefix(entry, "GOFLAGS=") && entry != "GOFLAGS=" {
 			t.Fatalf("GOFLAGSが空で再設定されていません: %s", entry)
 		}
+		if strings.HasPrefix(entry, "GOTOOLCHAIN=") && entry != "GOTOOLCHAIN=go1.25.4" {
+			t.Fatalf("GOTOOLCHAINが契約versionへ固定されていません: %s", entry)
+		}
 		if entry == "GLM_WORKER_HOME=/keep-this" {
 			keptOther = true
 		}
 	}
 	if !keptOther {
 		t.Fatal("session transport以外のenvが失われています")
+	}
+	if !slices.Contains(env, "GOTOOLCHAIN=go1.25.4") {
+		t.Fatal("GOTOOLCHAIN=go1.25.4がsubprocess envへ含まれていません")
+	}
+	unpinned := qualityGateEnv("")
+	if slices.Contains(unpinned, "GOTOOLCHAIN=go9.9.9") {
+		t.Fatal("外部GOTOOLCHAINが未固定時にもsubprocess envへ残っています")
+	}
+	if slices.Contains(unpinned, "GOTOOLCHAIN=go1.25.4") {
+		t.Fatal("要求がないのにGOTOOLCHAINが注入されています")
+	}
+}
+
+func TestQualityGateRejectsToolchainDriftBeforeRun(t *testing.T) {
+	useInlineQualityGateRunner(t)
+	enterQualityGateGitWorkingDir(t)
+	shimDir := t.TempDir()
+	shim := "#!/bin/sh\n" +
+		"if [ \"$1\" = env ]; then\n" +
+		"  printf '%s\\n' '{\"GOVERSION\":\"go1.26.1\",\"GOOS\":\"darwin\",\"GOARCH\":\"arm64\",\"GOCACHE\":\"/fixture/cache\",\"GOFLAGS\":\"\"}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"printf '%s\\n' 'go shim: must not execute'\n" +
+		"exit 0\n"
+	if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GOTOOLCHAIN", "go1.26.1")
+	_, st := newQualityGateEnv(t)
+
+	var out bytes.Buffer
+	err := runQualityGate("go-test", st, &out)
+	if err == nil {
+		t.Fatal("契約外toolchainでの実行がerrorになりませんでした")
+	}
+	if !strings.Contains(err.Error(), "go1.25.4") || !strings.Contains(err.Error(), "go1.26.1") {
+		t.Fatalf("errorが要求versionと観測versionを区別していません: %v", err)
+	}
+	entries, readErr := os.ReadDir(st.Path(qualitygate.RunDirectory))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && qualitygate.ValidRunID(entry.Name()) {
+			t.Fatalf("契約外toolchainでrun recordが作成されました: %s", entry.Name())
+		}
+	}
+}
+
+func TestQualityGateChildRejectsToolchainDriftAsWrapperFailure(t *testing.T) {
+	useInlineQualityGateRunner(t)
+	enterQualityGateGitWorkingDir(t)
+	shimDir := t.TempDir()
+	shim := "#!/bin/sh\n" +
+		"if [ \"$1\" = env ]; then\n" +
+		"  printf '%s\\n' '{\"GOVERSION\":\"go1.26.1\",\"GOOS\":\"darwin\",\"GOARCH\":\"arm64\",\"GOCACHE\":\"/fixture/cache\",\"GOFLAGS\":\"\"}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"printf '%s\\n' 'go shim: must not execute'\n" +
+		"exit 0\n"
+	if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GOTOOLCHAIN", "go1.26.1")
+	_, st := newQualityGateEnv(t)
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := previous
+	snapshot, err := state.CaptureGitSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := strings.Repeat("9", 32)
+	started := time.Now().Add(-time.Second).UTC()
+	record := qualitygate.RunRecord{
+		ValidationRunID: runID,
+		Form:            "go-test",
+		Repository:      repo,
+		WorkingDir:      repo,
+		Head:            snapshot.Head,
+		IndexDigest:     snapshot.IndexDigest,
+		WorktreeDigest:  snapshot.WorktreeDigest,
+		StartedAt:       started,
+		Status:          qualitygate.StatusRunning,
+		Toolchain: &qualitygate.RunToolchain{
+			GoVersion:           "go1.25.4",
+			RequiredGoVersion:   "1.25.4",
+			GOOS:                "darwin",
+			GOARCH:              "arm64",
+			GoCache:             "/fixture/cache",
+			Parallelism:         8,
+			Command:             "go test -json -timeout=45m ./...",
+			GoFlags:             "",
+			EnvironmentRecorded: true,
+			TestCache:           "unknown",
+		},
+	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		t.Fatal(err)
+	}
+	err = executeQualityGateRun(st, runID)
+	if err == nil {
+		t.Fatal("契約外toolchainでのchild実行がerrorになりませんでした")
+	}
+	var gateFail *QualityGateError
+	if !errors.As(err, &gateFail) {
+		t.Fatalf("QualityGateError以外が返りました: %v", err)
+	}
+	final, readErr := qualitygate.Read(st, runID)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if final.Status != qualitygate.StatusFail || final.ExitSource != state.ValidationExitSourceWrapper || final.ExitCode != 1 {
+		t.Fatalf("toolchain drift result = %#v", final)
+	}
+	if final.Log == "" {
+		t.Fatal("toolchain drift lost its log evidence")
+	}
+	logData, logErr := os.ReadFile(final.Log)
+	if logErr != nil || !strings.Contains(string(logData), "go1.25.4") {
+		t.Fatalf("toolchain drift log = %s %v", logData, logErr)
+	}
+}
+
+func TestQualityGateChildRejectsRecordWithoutRequiredGoVersion(t *testing.T) {
+	useInlineQualityGateRunner(t)
+	enterQualityGateGitWorkingDir(t)
+	_, st := newQualityGateEnv(t)
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := previous
+	snapshot, err := state.CaptureGitSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := strings.Repeat("8", 32)
+	record := qualitygate.RunRecord{
+		ValidationRunID: runID,
+		Form:            "go-test",
+		Repository:      repo,
+		WorkingDir:      repo,
+		Head:            snapshot.Head,
+		IndexDigest:     snapshot.IndexDigest,
+		WorktreeDigest:  snapshot.WorktreeDigest,
+		StartedAt:       time.Now().Add(-time.Second).UTC(),
+		Status:          qualitygate.StatusRunning,
+	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		t.Fatal(err)
+	}
+	err = executeQualityGateRun(st, runID)
+	if err == nil {
+		t.Fatal("要求versionを記録しないrecordが実行されました")
+	}
+	final, readErr := qualitygate.Read(st, runID)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if final.Status != qualitygate.StatusFail || final.ExitSource != state.ValidationExitSourceWrapper || final.ExitCode != 1 {
+		t.Fatalf("要求version欠落recordの結果 = %#v", final)
+	}
+	logData, logErr := os.ReadFile(final.Log)
+	if logErr != nil || !strings.Contains(string(logData), "要求Go versionを記録していません") {
+		t.Fatalf("要求version欠落のlog = %s %v", logData, logErr)
+	}
+	if final.TestTimings == "" {
+		t.Fatal("要求version欠落でtimings証跡が失われました")
+	}
+	if timings := readPersistedTestTimings(t, final.TestTimings); timings.CountTests() != 0 {
+		t.Fatalf("test未実行なのにtimingsが記録されました: %#v", timings.Tests)
 	}
 }
 
@@ -204,6 +389,7 @@ func TestQualityGateExtraArgvFailsClosedBeforeProcess(t *testing.T) {
 }
 
 func TestQualityGateRunsFixedArgv(t *testing.T) {
+	enterQualityGateGitWorkingDir(t)
 	cases := []struct {
 		form      string
 		wantArgv  string
@@ -218,6 +404,7 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 			shimDir, invocationLog := writeQualityGateGoShim(t, filepath.Join(t.TempDir(), "absent-flag"))
 			t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			t.Setenv("GOFLAGS", "-exec=/bin/sh")
+			t.Setenv("GOTOOLCHAIN", "go9.9.9")
 			t.Setenv(executionunit.DispositionEnv, executionunit.ExecutionUnitSingle)
 			t.Setenv(state.SessionRotationClaimIDEnv, "21d4da2f-2834-4e1f-9939-184290652f51")
 			t.Setenv(state.ParentActionCodexThreadIDEnv, "01a0a889-bf94-7892-bdd8-97df5e7a2e52")
@@ -259,8 +446,8 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 				t.Fatalf("go呼出記録が想定と異なります: %v", lines)
 			}
 			envLog, err := os.ReadFile(invocationLog + ".env")
-			if err != nil || string(envLog) != "goflags:\n" {
-				t.Fatalf("toolchain query did not use scrubbed execution environment: %s %v", envLog, err)
+			if err != nil || !strings.Contains(string(envLog), "goflags:\n") || !strings.Contains(string(envLog), "gotoolchain:go1.25.4\n") {
+				t.Fatalf("toolchain query did not use the pinned execution environment: %s %v", envLog, err)
 			}
 			if lines[0] != "argv:"+tc.wantArgv {
 				t.Fatalf("固定argvが起動されていません: %s", lines[0])
@@ -294,7 +481,14 @@ func TestQualityGateRejectsSourceMutationDespiteTargetSuccess(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = os.Chdir(previousDir) })
 			shimDir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte("#!/bin/sh\nprintf 'changed during validation\\n' > untracked-input.txt\nexit 0\n"), 0o755); err != nil {
+			shim := "#!/bin/sh\n" +
+				"if [ \"$1\" = env ]; then\n" +
+				"  printf '%s\\n' '{\"GOVERSION\":\"go1.25.4\",\"GOOS\":\"darwin\",\"GOARCH\":\"arm64\",\"GOCACHE\":\"/fixture/cache\",\"GOFLAGS\":\"\"}'\n" +
+				"  exit 0\n" +
+				"fi\n" +
+				"printf 'changed during validation\\n' > untracked-input.txt\n" +
+				"exit 0\n"
+			if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -327,6 +521,7 @@ func TestQualityGateRejectsSourceMutationDespiteTargetSuccess(t *testing.T) {
 }
 
 func TestQualityGateFailureIsStructuredProcessError(t *testing.T) {
+	enterQualityGateGitWorkingDir(t)
 	useInlineQualityGateRunner(t)
 	failFlagPath := filepath.Join(t.TempDir(), "fail-flag")
 	if err := os.WriteFile(failFlagPath, []byte("1"), 0o600); err != nil {

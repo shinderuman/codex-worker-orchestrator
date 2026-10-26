@@ -79,6 +79,7 @@ func TestParentSourceImportPreservesAttemptAndEvidenceAcrossRecovery(t *testing.
 	repo := f.store.Identity().PrimaryRoot
 	writeSuspensionTestFile(t, repo, "result.txt", "revised task result\n")
 	writeSuspensionTestFile(t, repo, "parent-review-fix.txt", "new reviewed source\n")
+	runControllerGit(t, repo, "add", "result.txt", "parent-review-fix.txt")
 	snapshot, err := CaptureWorkspaceSnapshot(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -756,5 +757,72 @@ func TestParentSourceImportPreservesExistingTaskIndexLineage(t *testing.T) {
 		if len(revision.AttemptSeals) != len(prior.AttemptSeals) || len(revision.Finalizations) != len(prior.Finalizations) {
 			t.Fatalf("source revision dropped prior Task index records: %#v", revision)
 		}
+	}
+}
+
+func TestParentSourceBeforeTreeMatchesStagedIndexDigest(t *testing.T) {
+	t.Parallel()
+	repo, _ := newControllerLinkedWorktree(t)
+	head := controllerGitOutput(t, repo, "rev-parse", "HEAD")
+	baseTree := controllerGitOutput(t, repo, "rev-parse", "HEAD^{tree}")
+
+	writeSuspensionTestFile(t, repo, "staged-parent-edit.txt", "staged parent edit\n")
+	runControllerGit(t, repo, "add", "staged-parent-edit.txt")
+	writeSuspensionTestFile(t, repo, "unstaged-lane-edit.txt", "unstaged lane edit\n")
+
+	snapshot, err := CaptureWorkspaceSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexTree := controllerGitOutput(t, repo, "write-tree")
+	worktreeTree, err := captureParentSourceTree(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if indexTree == baseTree || indexTree == worktreeTree {
+		t.Fatal("fixture must keep the staged index tree distinct from the baseline and worktree trees")
+	}
+
+	roots := []GitObjectArchiveRoot{
+		{Type: gitCommitObjectType, OID: head},
+		{Type: gitTreeObjectType, OID: indexTree},
+		{Type: gitTreeObjectType, OID: worktreeTree},
+	}
+	got, err := parentSourceBeforeTreeRoot(repo, roots, head, snapshot.IndexDigest)
+	if err != nil {
+		t.Fatalf("reentry with a staged index was rejected: %v", err)
+	}
+	if got != worktreeTree {
+		t.Fatalf("before worktree tree = %s want %s", got, worktreeTree)
+	}
+
+	swapped := []GitObjectArchiveRoot{
+		{Type: gitTreeObjectType, OID: worktreeTree},
+		{Type: gitCommitObjectType, OID: head},
+		{Type: gitTreeObjectType, OID: indexTree},
+	}
+	if got, err = parentSourceBeforeTreeRoot(repo, swapped, head, snapshot.IndexDigest); err != nil || got != worktreeTree {
+		t.Fatalf("archive root order changed the staged index identity: %s %v", got, err)
+	}
+
+	if _, err = parentSourceBeforeTreeRoot(repo, roots, head, strings.Repeat("0", 64)); err == nil || !strings.Contains(err.Error(), "does not match the source snapshot") {
+		t.Fatalf("index tree not bound to the source snapshot digest was not rejected: %v", err)
+	}
+	if _, err = parentSourceBeforeTreeRoot(repo, roots[1:], head, snapshot.IndexDigest); err == nil || !strings.Contains(err.Error(), "lacks protected roots") {
+		t.Fatalf("archive without the protected head root was not rejected: %v", err)
+	}
+
+	runControllerGit(t, repo, "add", "unstaged-lane-edit.txt")
+	cleanSnapshot, err := CaptureWorkspaceSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanIndexTree := controllerGitOutput(t, repo, "write-tree")
+	singleRoots := []GitObjectArchiveRoot{
+		{Type: gitCommitObjectType, OID: head},
+		{Type: gitTreeObjectType, OID: cleanIndexTree},
+	}
+	if got, err = parentSourceBeforeTreeRoot(repo, singleRoots, head, cleanSnapshot.IndexDigest); err != nil || got != cleanIndexTree {
+		t.Fatalf("deduplicated single-tree archive was rejected: %s %v", got, err)
 	}
 }

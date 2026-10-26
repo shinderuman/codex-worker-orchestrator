@@ -19,6 +19,10 @@ execution_termination.reasonとruntime_disposition.reasonを必要なmachine-dec
 generic placeholderや自由JSONによるauthority補完へ戻さず、stale generation/改変command/不明slotを拒否する。
 ````
 
+### 2026-10-27 親CodexによるDocker移行との重複整理
+
+`macos-go-test-performance.md`で直接PTY raw/READY経路とその専用test・instructionを撤去する。下記の過去Resolved referencesにあるPTY実装は撤去前の参照として保持する。このTaskで再導入・再実装しない。token-bound stagingと内部framed stdinは現役契約として維持し、本Taskの残範囲はprompt輸送の統一、現役呼出元の完全性と独立したtyped staging閉包とする。
+
 ## Resolved references
 
 - 「Bundle生成の見直し」: `IMPLEMENTATION_TASKS/dogfood-bundle-three-task-audit.md`。三つのBundleから収録内容と生成時間を再監査するTask。依存の扱いは `Fulfilled dependencies`、現在の実行順はPlanを参照する。

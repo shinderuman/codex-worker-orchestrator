@@ -4,10 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,7 +19,9 @@ import (
 )
 
 type RunToolchain struct {
+	Backend             string `json:"backend,omitempty"`
 	GoVersion           string `json:"go_version,omitempty"`
+	RequiredGoVersion   string `json:"required_go_version,omitempty"`
 	GOOS                string `json:"goos,omitempty"`
 	GOARCH              string `json:"goarch,omitempty"`
 	GoCache             string `json:"go_cache,omitempty"`
@@ -29,6 +33,7 @@ type RunToolchain struct {
 }
 
 type RunRecord struct {
+	Execution                     *Execution    `json:"execution,omitempty"`
 	ValidationRunID               string        `json:"validation_run_id"`
 	Form                          string        `json:"form"`
 	Repository                    string        `json:"repository"`
@@ -59,14 +64,18 @@ const (
 	StatusPass        = "pass"
 	StatusFail        = "fail"
 	StatusInterrupted = "interrupted"
+
+	QualityToolsFile = "quality-tools.yml"
 )
 
+var requiredGoVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
 func (t RunToolchain) Recorded() bool {
-	return t.GoVersion != "" && t.GOOS != "" && t.GOARCH != "" && t.GoCache != "" && t.Parallelism > 0 && t.Command != "" && t.EnvironmentRecorded && t.TestCache == "executed"
+	return t.GoVersion != "" && t.GOOS != "" && t.GOARCH != "" && t.GoCache != "" && t.Parallelism > 0 && t.Command != "" && t.EnvironmentRecorded && t.TestCache == testCacheExecuted
 }
 
 func CaptureToolchain(workingDir string, goArgs, executionEnv []string) *RunToolchain {
-	t := &RunToolchain{Parallelism: runtime.NumCPU(), Command: "go " + strings.Join(goArgs, " "), TestCache: "unknown"}
+	t := &RunToolchain{Backend: BackendNative, Parallelism: runtime.NumCPU(), Command: "go " + strings.Join(goArgs, " "), TestCache: "unknown"}
 	if value := environmentValue(executionEnv, "GOMAXPROCS"); value != "" {
 		n, err := strconv.Atoi(value)
 		if err != nil || n <= 0 {
@@ -91,6 +100,42 @@ func CaptureToolchain(workingDir string, goArgs, executionEnv []string) *RunTool
 	return t
 }
 
+func ResolveGoVersionContract(repository string) (string, bool, error) {
+	data, err := os.ReadFile(filepath.Join(repository, QualityToolsFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", true, fmt.Errorf("quality tool契約を読み取れません: %w", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		key, value, ok := strings.Cut(line, ": ")
+		if !ok || key != "go" {
+			continue
+		}
+		if !requiredGoVersionPattern.MatchString(value) {
+			return "", true, fmt.Errorf("quality tool契約のgo値がversionとして解釈できません: %q", value)
+		}
+		return value, true, nil
+	}
+	return "", true, fmt.Errorf("quality tool契約がgo versionを宣言していません: %s", QualityToolsFile)
+}
+
+func RequiredGoVersion(repository string) (string, error) {
+	version, declared, err := ResolveGoVersionContract(repository)
+	if err != nil {
+		return "", err
+	}
+	if !declared {
+		return "", fmt.Errorf("quality tool契約のGo versionを取得できません: %sが存在しません", QualityToolsFile)
+	}
+	return version, nil
+}
+
+func (t *RunToolchain) MatchesRequiredGoVersion() bool {
+	return t != nil && t.EnvironmentRecorded && t.RequiredGoVersion != "" && t.GoVersion == "go"+t.RequiredGoVersion
+}
+
 func TestCacheObservation(log []byte) string {
 	mask := 0
 	for _, line := range strings.Split(string(log), "\n") {
@@ -100,7 +145,7 @@ func TestCacheObservation(log []byte) string {
 	case 1:
 		return "cached"
 	case 2:
-		return "executed"
+		return testCacheExecuted
 	case 3:
 		return "mixed"
 	default:
@@ -185,6 +230,9 @@ func Read(st *state.StateStore, runID string) (RunRecord, error) {
 }
 
 func VerifyTerminalPass(record RunRecord) error {
+	if err := VerifyExecution(record); err != nil {
+		return err
+	}
 	if record.Status != StatusPass || record.CompletedAt == nil || record.ExitCode != 0 || record.ExitSource != state.ValidationExitSourceTarget {
 		return fmt.Errorf("quality gate run did not complete with target-process PASS")
 	}

@@ -441,7 +441,7 @@ func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
 	if err := st.Write("task.id", taskID); err != nil {
 		t.Fatal(err)
 	}
-	identity, err := prepareQualityGateStart("go-test", st)
+	identity, err := prepareQualityGateStartAt("go-test", st, initGitRepo(t))
 	if err != nil {
 		t.Fatal(err)
 	}

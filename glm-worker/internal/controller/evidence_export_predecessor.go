@@ -121,6 +121,9 @@ func (b *evidenceExportBuilder) collectPredecessorGateRun(module *state.StateSto
 	if b.addPredecessorFile(module.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.RunLog)), prefix+"/"+qualitygate.RunLog) {
 		collected.logEntry = prefix + "/" + qualitygate.RunLog
 	}
+	if record.Execution != nil && record.Execution.NativeSupplement != nil && record.Execution.NativeSupplement.Log != "" {
+		b.addPredecessorFile(module.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.NativeSupplementLog)), prefix+"/"+qualitygate.NativeSupplementLog)
+	}
 	timingsPath := module.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.TestTimingsFile))
 	if info, err := os.Lstat(timingsPath); err == nil && info.Mode().IsRegular() {
 		timings, timingsErr := readGateRunTimings(timingsPath, runID, record.Form)

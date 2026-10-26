@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -54,6 +55,7 @@ type gitAuthorityGuard struct {
 	denyPath      string
 	attemptLog    string
 	metadataPaths []string
+	goToolchain   string
 	before        gitAuthoritySnapshot
 }
 
@@ -93,6 +95,13 @@ func prepareGitAuthorityGuard(repoRoot string) (*gitAuthorityGuard, error) {
 	guard := &gitAuthorityGuard{repoRoot: repoRoot, realGit: realGit, before: before}
 	if !before.active {
 		return guard, nil
+	}
+	required, declared, err := qualitygate.ResolveGoVersionContract(repoRoot)
+	if err != nil {
+		return nil, &GitAuthorityGuardError{Stage: "resolve-go-toolchain", Cause: err}
+	}
+	if declared {
+		guard.goToolchain = "go" + required
 	}
 	metadataPaths, err := resolveGitAuthorityMetadataPaths(realGit, repoRoot)
 	if err != nil {

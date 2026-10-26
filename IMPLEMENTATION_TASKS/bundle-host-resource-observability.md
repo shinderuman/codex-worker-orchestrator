@@ -21,6 +21,10 @@ none
 
 Dogfood Bundleから、ローカル/CIでテスト・Worker・Reviewer等の実行が遅くなったときに、CPU使用率、メモリ使用量・圧迫、スワップ使用量の時間変化を、実際の実行区間と対応付けて検証できるようにする。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - 現行の実行・Quality Gate・Bundle export経路を確認し、既存のtelemetry / evidenceのownerへ統合する。別個の監視daemon、常駐service、独自のTask state DBは増設しない。
