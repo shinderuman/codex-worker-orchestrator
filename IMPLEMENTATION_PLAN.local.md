@@ -15,6 +15,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/completion-required-validation-closure.md`](IMPLEMENTATION_TASKS/completion-required-validation-closure.md)
 - [`IMPLEMENTATION_TASKS/analysis-model-call-event-classification.md`](IMPLEMENTATION_TASKS/analysis-model-call-event-classification.md)
 - [`IMPLEMENTATION_TASKS/git-subprocess-redundancy-reduction.md`](IMPLEMENTATION_TASKS/git-subprocess-redundancy-reduction.md)
+- [`IMPLEMENTATION_TASKS/external-review-findings-remediation.md`](IMPLEMENTATION_TASKS/external-review-findings-remediation.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
