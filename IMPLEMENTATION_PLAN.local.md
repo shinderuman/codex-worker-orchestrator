@@ -13,6 +13,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## NEXT（優先順）
 
 
+- [`IMPLEMENTATION_TASKS/worker-go-test-docker-routing.md`](IMPLEMENTATION_TASKS/worker-go-test-docker-routing.md)
 - [`IMPLEMENTATION_TASKS/analysis-model-call-event-classification.md`](IMPLEMENTATION_TASKS/analysis-model-call-event-classification.md)
 - [`IMPLEMENTATION_TASKS/git-subprocess-redundancy-reduction.md`](IMPLEMENTATION_TASKS/git-subprocess-redundancy-reduction.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md)
