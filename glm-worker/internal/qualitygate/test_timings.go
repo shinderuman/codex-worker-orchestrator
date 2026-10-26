@@ -176,7 +176,7 @@ func validateTestTimings(timings TestTimings) error {
 	if !ValidRunID(timings.ValidationRunID) {
 		return fmt.Errorf("test timings run identity is invalid")
 	}
-	if timings.Form != "go-test" && timings.Form != "go-test-race" {
+	if timings.Form != formGoTest && timings.Form != formGoTestRace {
 		return fmt.Errorf("test timings form is missing")
 	}
 	if err := validateTestTimingCoverage(timings.Coverage, len(timings.Tests)); err != nil {

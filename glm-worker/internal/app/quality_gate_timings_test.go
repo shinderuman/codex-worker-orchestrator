@@ -223,7 +223,7 @@ func TestQualityGateTimingsWriteFailureFinalizesRecord(t *testing.T) {
 				Status:          qualitygate.StatusRunning,
 			}
 
-			final, err := completeQualityGateRun(st, record, []byte("gate output\n"), tc.runErr)
+			final, err := completeQualityGateRun(st, record, []byte("gate output\n"), tc.runErr, nil)
 			if err != nil {
 				t.Fatalf("timings書込失敗がrecord確定前にerrorへ逃げました: %v", err)
 			}
@@ -268,7 +268,7 @@ func TestQualityGateTimingsWriteFailureSurvivesReconcile(t *testing.T) {
 		StartedAt:       time.Now().Add(-time.Second).UTC(),
 		Status:          qualitygate.StatusRunning,
 	}
-	final, err := completeQualityGateRun(st, record, []byte("gate output\n"), nil)
+	final, err := completeQualityGateRun(st, record, []byte("gate output\n"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
