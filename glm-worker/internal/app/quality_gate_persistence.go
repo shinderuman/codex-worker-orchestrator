@@ -228,6 +228,24 @@ func writeQualityGateTestTimingsRecord(st *state.StateStore, record qualitygate.
 	return path, nil
 }
 
+func writeQualityGateResourceSamplesRecord(st *state.StateStore, record qualitygate.RunRecord, resources *qualitygate.ResourceSamples) string {
+	if resources == nil {
+		return ""
+	}
+	data, err := qualitygate.EncodeResourceSamples(*resources)
+	if err != nil {
+		return ""
+	}
+	path := st.Path(filepath.Join(qualitygate.RunDirectory, record.ValidationRunID, qualitygate.ResourceSamplesFile))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return ""
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return ""
+	}
+	return path
+}
+
 func failQualityGateLaunch(st *state.StateStore, record qualitygate.RunRecord, launchErr error) error {
 	completed := time.Now().UTC()
 	record.Status = qualitygate.StatusFail

@@ -54,6 +54,7 @@ type RunRecord struct {
 	DurationMS                    int64         `json:"duration_ms,omitempty"`
 	Log                           string        `json:"log,omitempty"`
 	TestTimings                   string        `json:"test_timings,omitempty"`
+	ResourceSamples               string        `json:"resource_samples,omitempty"`
 }
 
 const (

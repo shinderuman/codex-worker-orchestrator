@@ -433,7 +433,7 @@ func validationRunEvidenceFiles(directory string, record *qualitygate.RunRecord)
 	if directory == evidenceExportValidationSmokeDirectory {
 		return []string{qualitygate.RunFile, evidenceExportValidationSmokeLog}
 	}
-	files := []string{qualitygate.RunFile, qualitygate.RunLog, qualitygate.TestTimingsFile}
+	files := []string{qualitygate.RunFile, qualitygate.RunLog, qualitygate.TestTimingsFile, qualitygate.ResourceSamplesFile}
 	if record.Execution != nil && record.Execution.NativeSupplement != nil && record.Execution.NativeSupplement.Log != "" {
 		files = append(files, qualitygate.NativeSupplementLog)
 	}
