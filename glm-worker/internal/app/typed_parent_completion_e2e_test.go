@@ -87,6 +87,7 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 	launchQualityGateRunner = func(st *state.StateStore, record qualitygate.RunRecord) (qualityGateRunnerWait, error) {
 		return func() error { return executeQualityGateRun(st, record.ValidationRunID) }, nil
 	}
+	startQualityGateResourceSampler = newDeterministicQualityGateResourceSampler
 	runCompletionInstaller = func(root, sourceOID string, output io.Writer) (controller.InstalledRuntimeIdentity, error) {
 		if flag := os.Getenv("GLM_TYPED_TEST_INSTALL_FAILURE"); flag != "" {
 			if _, err := os.Stat(flag); err == nil {

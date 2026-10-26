@@ -179,11 +179,19 @@ func launchQualityGateRunnerProcess(_ *state.StateStore, record qualitygate.RunR
 	return child.Wait, nil
 }
 
+func defaultQualityGateResourceSampler(record qualitygate.RunRecord) qualityGateResourceSampler {
+	return qualitygate.StartResourceSampler(qualitygate.ResourceSamplerConfig{
+		ValidationRunID: record.ValidationRunID,
+		Form:            record.Form,
+	})
+}
+
 func executeQualityGateRun(st *state.StateStore, runID string) error {
 	record, goArgs, active, err := beginQualityGateRun(st, runID)
 	if err != nil || !active {
 		return err
 	}
+	sampler := startQualityGateResourceSampler(record)
 	var gateLog []byte
 	runErr := verifyQualityGateSource(record)
 	if runErr == nil {
@@ -198,7 +206,8 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 	if runErr != nil {
 		gateLog = append(gateLog, []byte("\n"+runErr.Error()+"\n")...)
 	}
-	final, err := completeQualityGateRun(st, record, gateLog, runErr)
+	resources := sampler.Stop()
+	final, err := completeQualityGateRun(st, record, gateLog, runErr, &resources)
 	if err != nil {
 		return err
 	}
@@ -283,7 +292,7 @@ func runQualityGateProcess(record qualitygate.RunRecord, goArgs []string) ([]byt
 	return gateLog.Bytes(), err
 }
 
-func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, gateLog []byte, runErr error) (qualitygate.RunRecord, error) {
+func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, gateLog []byte, runErr error, resources *qualitygate.ResourceSamples) (qualitygate.RunRecord, error) {
 	lock, err := acquireQualityGateRunStateLock(st, record.ValidationRunID)
 	if err != nil {
 		return qualitygate.RunRecord{}, err
@@ -312,6 +321,7 @@ func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, 
 		logPath = ""
 	}
 	record.TestTimings = timingsPath
+	record.ResourceSamples = writeQualityGateResourceSamplesRecord(st, record, resources)
 	if record.Toolchain != nil {
 		record.Toolchain.TestCache = qualitygate.TestCacheObservation(gateLog)
 	}

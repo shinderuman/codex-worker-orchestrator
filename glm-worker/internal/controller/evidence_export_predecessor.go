@@ -137,8 +137,28 @@ func (b *evidenceExportBuilder) collectPredecessorGateRun(module *state.StateSto
 			collected.timings = timings
 		}
 	}
+	collected.resourcesEntry, collected.resources = b.collectPredecessorRunResources(module, runID, record.Form, prefix)
 	b.validationRuns = append(b.validationRuns, collected)
 	return nil
+}
+
+func (b *evidenceExportBuilder) collectPredecessorRunResources(module *state.StateStore, runID, form, prefix string) (string, *qualitygate.ResourceSamples) {
+	path := module.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.ResourceSamplesFile))
+	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+		return "", nil
+	}
+	resources, err := readGateRunResources(path, runID, form)
+	if err != nil {
+		b.entries = append(b.entries, EvidenceExportEntry{
+			Path:       prefix + "/" + qualitygate.ResourceSamplesFile,
+			Unreadable: err.Error(), Basis: evidenceExportBasisRepositoryWorkspace,
+		})
+		return "", nil
+	}
+	if !b.addPredecessorFile(path, prefix+"/"+qualitygate.ResourceSamplesFile) {
+		return "", nil
+	}
+	return prefix + "/" + qualitygate.ResourceSamplesFile, resources
 }
 
 func (b *evidenceExportBuilder) addPredecessorFile(sourcePath, entryPath string) bool {

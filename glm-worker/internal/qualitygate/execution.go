@@ -59,6 +59,9 @@ const platformDarwin = "darwin"
 const platformARM64 = "arm64"
 const testCacheExecuted = "executed"
 
+const formGoTest = "go-test"
+const formGoTestRace = "go-test-race"
+
 func ResolveBackend(repository, hostOS, hostArch string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(repository, QualityToolsFile))
 	if err != nil {
@@ -95,8 +98,8 @@ func ResolveBackend(repository, hostOS, hostArch string) (string, error) {
 func GoTestArguments(form string) []string {
 	args := []string{"test"}
 	switch form {
-	case "go-test":
-	case "go-test-race":
+	case formGoTest:
+	case formGoTestRace:
 		args = append(args, "-race")
 	default:
 		return nil
