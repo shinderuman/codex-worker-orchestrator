@@ -53,12 +53,33 @@ GLMは絶対的に保守的に判断する
 
 ## Amendments
 
+2026-10-27 ユーザー原文:
+
+````text
+順にマージしろ、1403が先頭になるようにしろ
+[https://github.com/shinderuman/codex-worker-orchestrator/pull/1403](https://github.com/shinderuman/codex-worker-orchestrator/pull/1403)
+[https://github.com/shinderuman/codex-worker-orchestrator/pull/1402](https://github.com/shinderuman/codex-worker-orchestrator/pull/1402)
+[https://github.com/shinderuman/codex-worker-orchestrator/pull/1400](https://github.com/shinderuman/codex-worker-orchestrator/pull/1400)
+````
+
+2026-10-27 ユーザー原文:
+
+````text
+いやなんでActiveに持っていってねえんだよ
+````
+
+2026-10-27 ユーザー原文:
+
+````text
+1402に1403でやる予定だったものも混ぜてしまえ
+````
+
 ## Resolved references
 
 - 「今回Dockerを使うようにした」は本repositoryで導入したMacの正規Go full/race検証用Docker backendを指す。
 - 「GLMがMac側でテスト」はWorkerの作業中に行う局所Goテストを指す。正規Quality GateのDocker化とは異なり、現行の局所テストにはMacネイティブ実行経路が残っている。
 - 2026-10-27のDogfood Bundle `62b91ba5-aea3-44f0-9a9c-0f126f057e69.zip`で、GLMによるMac上の長時間Goテストとsandbox制約に起因する失敗が確認された。具体的な原因と改善対象はCodexが一次証拠と現在の実装から確定する。
-- 「先頭」は現行ACTIVEを変更せず、`IMPLEMENTATION_PLAN.local.md`のNEXT先頭を意味する。
+- 「先頭」は本Taskを`IMPLEMENTATION_PLAN.local.md`のACTIVEへ昇格する指示。NEXT先頭という以前の解釈を訂正する。
 
 ## Purpose
 
@@ -79,7 +100,7 @@ status: not-applicable
 
 - GLMへの自然言語の指示や自主判断だけにDocker使用を依存させない。
 - Docker強制を理由に必要な検証を省略したり、Mac native実行を暗黙に許容したりしない。
-- このTaskの起票だけで現行ACTIVEを切り替えない。Web GPTが設計・実装方式をTask本文で決めない。
+- Web GPTが方針・設計・実装方式をTask本文で決めない。
 
 ## Acceptance criteria
 
