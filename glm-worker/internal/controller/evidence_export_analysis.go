@@ -80,22 +80,23 @@ type EvidenceAnalysisGuardian struct {
 }
 
 type EvidenceAnalysisValidationRun struct {
-	RunID         string    `json:"run_id,omitempty"`
-	Form          string    `json:"form"`
-	GateClass     string    `json:"gate_class,omitempty"`
-	Result        string    `json:"result"`
-	Attempt       string    `json:"attempt,omitempty"`
-	SnapshotID    string    `json:"snapshot_id,omitempty"`
-	Log           string    `json:"log,omitempty"`
-	TestTimings   string    `json:"test_timings,omitempty"`
-	Tests         int       `json:"tests,omitempty"`
-	SlowestTestMS int64     `json:"slowest_test_ms,omitempty"`
-	Binding       string    `json:"binding,omitempty"`
-	ExitCode      int       `json:"exit_code,omitempty"`
-	DurationMS    int64     `json:"duration_ms,omitempty"`
-	Timestamp     time.Time `json:"timestamp"`
-	Basis         string    `json:"basis"`
-	Occurrences   int       `json:"occurrences,omitempty"`
+	RunID           string    `json:"run_id,omitempty"`
+	Form            string    `json:"form"`
+	GateClass       string    `json:"gate_class,omitempty"`
+	Result          string    `json:"result"`
+	Attempt         string    `json:"attempt,omitempty"`
+	SnapshotID      string    `json:"snapshot_id,omitempty"`
+	Log             string    `json:"log,omitempty"`
+	TestTimings     string    `json:"test_timings,omitempty"`
+	Tests           int       `json:"tests,omitempty"`
+	SlowestTestMS   int64     `json:"slowest_test_ms,omitempty"`
+	ResourceSamples string    `json:"resource_samples,omitempty"`
+	Binding         string    `json:"binding,omitempty"`
+	ExitCode        int       `json:"exit_code,omitempty"`
+	DurationMS      int64     `json:"duration_ms,omitempty"`
+	Timestamp       time.Time `json:"timestamp"`
+	Basis           string    `json:"basis"`
+	Occurrences     int       `json:"occurrences,omitempty"`
 }
 
 type EvidenceAnalysisRetries struct {
@@ -562,6 +563,9 @@ func (b *evidenceExportBuilder) analysisValidationRuns() (canonical []EvidenceAn
 			run.Tests = collected.timings.CountTests()
 			run.SlowestTestMS = collected.timings.SlowestTestMS()
 		}
+		if collected.resources != nil {
+			run.ResourceSamples = collected.resourcesEntry
+		}
 		canonical = append(canonical, run)
 	}
 	for _, record := range b.taskEvents() {
@@ -882,15 +886,35 @@ func mergeValidationRunCopy(merged *collectedValidationRun, copy collectedValida
 	if !sameRunRecordEncoding(merged.run, copy.run) {
 		return false
 	}
-	if copy.timings == nil {
+	if copy.timings != nil {
+		if merged.timings == nil {
+			merged.timings = copy.timings
+			merged.timingsEntry = copy.timingsEntry
+		} else if !sameTestTimingsEncoding(*merged.timings, *copy.timings) {
+			return false
+		}
+	}
+	if copy.resources == nil {
 		return true
 	}
-	if merged.timings == nil {
-		merged.timings = copy.timings
-		merged.timingsEntry = copy.timingsEntry
+	if merged.resources == nil {
+		merged.resources = copy.resources
+		merged.resourcesEntry = copy.resourcesEntry
 		return true
 	}
-	return sameTestTimingsEncoding(*merged.timings, *copy.timings)
+	return sameResourceSamplesEncoding(merged.resources, copy.resources)
+}
+
+func sameResourceSamplesEncoding(left, right *qualitygate.ResourceSamples) bool {
+	encodedLeft, err := qualitygate.EncodeResourceSamples(*left)
+	if err != nil {
+		return false
+	}
+	encodedRight, err := qualitygate.EncodeResourceSamples(*right)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(encodedLeft, encodedRight)
 }
 
 func sameRunRecordEncoding(left, right qualitygate.RunRecord) bool {

@@ -15,10 +15,15 @@ import (
 
 func writeEvidenceGateTimings(t *testing.T, fixture *evidenceExportFixture, record qualitygate.RunRecord, timings qualitygate.TestTimings) {
 	t.Helper()
-	writeEvidenceGateTimingsContent(t, fixture, record.ValidationRunID, mustEncodeTestTimings(t, record.ValidationRunID, timings))
+	writeEvidenceGateRunFileContent(t, fixture, record.ValidationRunID, qualitygate.TestTimingsFile, mustEncodeTestTimings(t, record.ValidationRunID, timings))
 }
 
 func writeEvidenceGateTimingsContent(t *testing.T, fixture *evidenceExportFixture, runID, content string) {
+	t.Helper()
+	writeEvidenceGateRunFileContent(t, fixture, runID, qualitygate.TestTimingsFile, content)
+}
+
+func writeEvidenceGateRunFileContent(t *testing.T, fixture *evidenceExportFixture, runID, file, content string) {
 	t.Helper()
 	canonical, err := canonicalPath(fixture.repo)
 	if err != nil {
@@ -29,7 +34,7 @@ func writeEvidenceGateTimingsContent(t *testing.T, fixture *evidenceExportFixtur
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(runDir, qualitygate.TestTimingsFile), []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(runDir, file), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -93,10 +93,15 @@ func newQualityGateEnv(t *testing.T) (config.AppConfig, *state.StateStore) {
 func useInlineQualityGateRunner(t *testing.T) {
 	t.Helper()
 	previous := launchQualityGateRunner
+	previousSampler := startQualityGateResourceSampler
 	launchQualityGateRunner = func(st *state.StateStore, record qualitygate.RunRecord) (qualityGateRunnerWait, error) {
 		return func() error { return executeQualityGateRun(st, record.ValidationRunID) }, nil
 	}
-	t.Cleanup(func() { launchQualityGateRunner = previous })
+	startQualityGateResourceSampler = newDeterministicQualityGateResourceSampler
+	t.Cleanup(func() {
+		launchQualityGateRunner = previous
+		startQualityGateResourceSampler = previousSampler
+	})
 }
 
 func qualityGateInvocationLines(t *testing.T, path string) []string {

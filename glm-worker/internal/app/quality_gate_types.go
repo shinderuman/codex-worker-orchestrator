@@ -39,6 +39,10 @@ type qualityGateRunnerWait func() error
 
 type qualityGateRunnerLauncher func(*state.StateStore, qualitygate.RunRecord) (qualityGateRunnerWait, error)
 
+type qualityGateResourceSampler interface {
+	Stop() qualitygate.ResourceSamples
+}
+
 type qualityGateStartIdentity struct {
 	Form       string
 	GoArgs     []string
@@ -59,6 +63,8 @@ var qualityGateForms = map[string][]string{
 }
 
 var launchQualityGateRunner qualityGateRunnerLauncher = launchQualityGateRunnerProcess
+
+var startQualityGateResourceSampler = defaultQualityGateResourceSampler
 
 func qualityGateFormProducesTestTimings(form string) bool {
 	_, ok := qualityGateForms[form]

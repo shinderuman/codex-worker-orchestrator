@@ -86,7 +86,7 @@ func TestQualityGateLogWriteFailureKeepsTargetExitSource(t *testing.T) {
 				Status:          qualitygate.StatusRunning,
 			}
 
-			final, err := completeQualityGateRun(st, record, []byte("gate output\n"), tc.runErr)
+			final, err := completeQualityGateRun(st, record, []byte("gate output\n"), tc.runErr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
