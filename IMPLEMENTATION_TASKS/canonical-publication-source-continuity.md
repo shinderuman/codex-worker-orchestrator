@@ -80,6 +80,14 @@ ErrNotExist、他のread error、成功した空taskID、成功したTaskIDを�
 accept/no-go/completion resolutionが読取失敗時にopen reviewやcompletion stateを変更しないことを既存ownerで保護する。
 ````
 
+### 2026-10-27 必須検証欠落の再発防止Taskとの責務境界
+
+親Codexによる範囲の明確化:
+
+````text
+full/race等の必須検証集合がWorker宣言から欠落して未達のまま公開・完了した問題は、completion-required-validation-closure.mdで扱う。同Taskは検証集合の完全性と、未完了・復旧中の同一Task identity維持を担当する。本Taskはその正規ownerを再利用し、candidate/remote/source lineage、promoteと外部変更の識別、controller/runtime再入の整合に残る不備を扱う。未達阻止の要求は維持し、同じ検証義務判定や復旧状態を二重実装しない。
+````
+
 ## Purpose
 
 Controllerのaccepted candidate、terminal Task/Plan、primaryの既知base/index、remote upstream、真の外部変更を同一source authorityで扱う。
