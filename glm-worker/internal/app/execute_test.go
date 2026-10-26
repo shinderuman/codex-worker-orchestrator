@@ -19,6 +19,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -177,6 +178,12 @@ func initGitRepo(t *testing.T) string {
 	dir := t.TempDir()
 	if out, err := exec.Command("git", "init", "--quiet", dir).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, qualitygate.QualityToolsFile), []byte("go: 1.25.4\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", dir, "add", qualitygate.QualityToolsFile).CombinedOutput(); err != nil {
+		t.Fatalf("git add quality tool contract: %v: %s", err, out)
 	}
 	if out, err := exec.Command(
 		"git", "-C", dir,

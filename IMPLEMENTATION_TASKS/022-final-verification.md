@@ -143,6 +143,10 @@ IMPLEMENTATION_HISTORY.mdは通常taskの完了ledgerではなく、将来task�
 Original instructionの「Plan/Task/History final consistency」は、current Rules/Plan/Task authorityの整合と、残存するexceptional History recordが実際のtracked task参照と一致していることの確認として解釈する。過去taskの完了chronologyをHistoryから再読するfinal gateにはしない。
 ````
 
+### 2026-10-27 親CodexによるDocker移行との重複整理
+
+Original instructionのPTY integrationは撤去前の要求として保持する。`macos-go-test-performance.md`で現役利用者のない直接PTY raw/READYを撤去するため、全体verificationでは正規token-bound staging・framed pipeのpayload完全性、session継続・停止復旧・multi-repoを検証し、PTYを検証のために再導入しない。full/raceはsourceで宣言する正規backendとMac固有補完を一続きの品質契約として検証する。
+
 ## Purpose
 
 局所PASSを全体contract完了と誤認せずrelease可能性を確認する。

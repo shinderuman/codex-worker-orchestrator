@@ -119,6 +119,7 @@ func interruptedExitError(t *testing.T) error {
 }
 
 func TestQualityGateValidationEventCarriesTargetExitSource(t *testing.T) {
+	enterQualityGateGitWorkingDir(t)
 	useInlineQualityGateRunner(t)
 	failFlagPath := filepath.Join(t.TempDir(), "fail-flag")
 	shimDir, _ := writeQualityGateGoShim(t, failFlagPath)

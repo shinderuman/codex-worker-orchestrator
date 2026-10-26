@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/shadoweval"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+var shadowDecisionTestMu sync.Mutex
 
 func TestParseCommandShadowEval(t *testing.T) {
 	t.Parallel()
@@ -74,6 +77,7 @@ func newShadowEvalState(t *testing.T) (*state.StateStore, string, []byte) {
 
 func fakeShadowDecision(t *testing.T, raw json.RawMessage, callErr error) {
 	t.Helper()
+	shadowDecisionTestMu.Lock()
 	original := shadowDecisionCaller
 	shadowDecisionCaller = func(_ *runner.ClaudeRunner, prompt string, _ string) (shadoweval.CallMetrics, json.RawMessage, []string, error) {
 		metrics := shadoweval.CallMetrics{
@@ -85,7 +89,10 @@ func fakeShadowDecision(t *testing.T, raw json.RawMessage, callErr error) {
 		}
 		return metrics, raw, []string{"ANTHROPIC_AUTH_TOKEN"}, nil
 	}
-	t.Cleanup(func() { shadowDecisionCaller = original })
+	t.Cleanup(func() {
+		shadowDecisionCaller = original
+		shadowDecisionTestMu.Unlock()
+	})
 }
 
 func runShadowEval(t *testing.T, st *state.StateStore, taskID string, referencePath string) (map[string]any, error) {

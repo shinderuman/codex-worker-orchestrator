@@ -23,6 +23,9 @@ func gitAuthorityClaudeWrapperScript(g *gitAuthorityGuard, claudeBin string) str
 	configValues := []string{"", "https://", "http://", "ssh://", "git://", "git@"}
 	result := "#!/bin/sh\n"
 	result += "PATH=" + shellSingleQuote(g.tempDir) + ":\"$PATH\"\nexport PATH\n"
+	if g.goToolchain != "" {
+		result += "GOTOOLCHAIN=" + shellSingleQuote(g.goToolchain) + "\nexport GOTOOLCHAIN\n"
+	}
 	result += "GLM_WORKER_GIT_TEMP_ROOT=" + shellSingleQuote(g.workerTempDir) + "\nexport GLM_WORKER_GIT_TEMP_ROOT\n"
 	result += "CLAUDE_CODE_TMPDIR=" + shellSingleQuote(g.workerTempDir) + "\nexport CLAUDE_CODE_TMPDIR\n"
 	result += "TMPDIR=" + shellSingleQuote(g.workerTempDir) + "\nexport TMPDIR\n"

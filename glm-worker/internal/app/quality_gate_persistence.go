@@ -289,15 +289,19 @@ func qualityGateProcessAlive(pid int) bool {
 	return process.Signal(syscall.Signal(0)) == nil
 }
 
-func qualityGateEnv() []string {
-	env := make([]string, 0, len(os.Environ()))
+func qualityGateEnv(requiredGoVersion string) []string {
+	env := make([]string, 0, len(os.Environ())+1)
 	for _, entry := range os.Environ() {
-		if strings.HasPrefix(entry, "GOFLAGS=") || qualityGateSessionTransportEnv(entry) {
+		if strings.HasPrefix(entry, "GOFLAGS=") || strings.HasPrefix(entry, "GOTOOLCHAIN=") || qualityGateSessionTransportEnv(entry) {
 			continue
 		}
 		env = append(env, entry)
 	}
-	return append(env, "GOFLAGS=")
+	env = append(env, "GOFLAGS=")
+	if requiredGoVersion != "" {
+		env = append(env, "GOTOOLCHAIN=go"+requiredGoVersion)
+	}
+	return env
 }
 
 func qualityGateSessionTransportEnv(entry string) bool {

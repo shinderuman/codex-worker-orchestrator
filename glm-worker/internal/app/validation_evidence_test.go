@@ -12,6 +12,7 @@ import (
 )
 
 func TestQualityGateRecordsTaskValidationEvidence(t *testing.T) {
+	enterQualityGateGitWorkingDir(t)
 	useInlineQualityGateRunner(t)
 	shimDir, _ := writeQualityGateGoShim(t, filepath.Join(t.TempDir(), "absent-flag"))
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))

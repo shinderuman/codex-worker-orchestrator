@@ -8,13 +8,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/macos-go-test-performance.md`](IMPLEMENTATION_TASKS/macos-go-test-performance.md)
+- [`IMPLEMENTATION_TASKS/bundle-host-resource-observability.md`](IMPLEMENTATION_TASKS/bundle-host-resource-observability.md)
 
 ## NEXT（優先順）
 
 
-- [`IMPLEMENTATION_TASKS/bundle-host-resource-observability.md`](IMPLEMENTATION_TASKS/bundle-host-resource-observability.md)
+
 - [`IMPLEMENTATION_TASKS/analysis-model-call-event-classification.md`](IMPLEMENTATION_TASKS/analysis-model-call-event-classification.md)
+- [`IMPLEMENTATION_TASKS/git-subprocess-redundancy-reduction.md`](IMPLEMENTATION_TASKS/git-subprocess-redundancy-reduction.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)

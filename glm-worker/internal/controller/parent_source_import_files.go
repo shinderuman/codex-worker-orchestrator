@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func (s *Store) parentSourceBeforeTree(op ExecutionOperation) (string, error) {
@@ -22,7 +24,7 @@ func (s *Store) parentSourceBeforeTree(op ExecutionOperation) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			return parentSourceBeforeTreeRoot(roots, op.Source.Snapshot.Head, op.Source.Attempt.BaselineTrees.IndexTree)
+			return parentSourceBeforeTreeRoot(op.Workspace.Root, roots, op.Source.Snapshot.Head, op.Source.Snapshot.IndexDigest)
 		}
 	}
 	return "", fmt.Errorf("source import before archive is missing")
@@ -47,25 +49,72 @@ func (s *Store) operationTaskSourceRevision(op ExecutionOperation) (EvidenceObje
 	return EvidenceObjectRef{}, fmt.Errorf("source import lacks its task source revision")
 }
 
-func parentSourceBeforeTreeRoot(roots []GitObjectArchiveRoot, head, index string) (string, error) {
-	worktree := index
-	hasHead, hasIndex := false, false
+func parentSourceBeforeTreeRoot(repo string, roots []GitObjectArchiveRoot, head, indexDigest string) (string, error) {
+	hasHead := false
+	trees := make([]string, 0, 2)
 	for _, root := range roots {
 		switch {
 		case root.Type == gitCommitObjectType && root.OID == head:
 			hasHead = true
-		case root.Type == gitTreeObjectType && root.OID == index:
-			hasIndex = true
-		case root.Type == gitTreeObjectType && worktree == index:
-			worktree = root.OID
+		case root.Type == gitTreeObjectType:
+			trees = append(trees, root.OID)
 		default:
 			return "", fmt.Errorf("source import retention roots differ")
 		}
 	}
-	if !hasHead || !hasIndex {
+	if !hasHead || len(trees) == 0 || len(trees) > 2 {
 		return "", fmt.Errorf("source import retention lacks protected roots")
 	}
-	return worktree, nil
+	indexTree, err := sourceImportIndexRoot(repo, trees, indexDigest)
+	if err != nil {
+		return "", err
+	}
+	for _, tree := range trees {
+		if tree != indexTree {
+			return tree, nil
+		}
+	}
+	return indexTree, nil
+}
+
+func sourceImportIndexRoot(repo string, trees []string, indexDigest string) (string, error) {
+	if indexDigest == "" {
+		return "", fmt.Errorf("source import retention index digest is missing")
+	}
+	match := ""
+	for _, tree := range trees {
+		matches, err := sourceImportIndexTreeMatches(repo, tree, indexDigest)
+		if err != nil {
+			return "", err
+		}
+		if matches {
+			if match != "" {
+				return "", fmt.Errorf("source import retention index tree is ambiguous")
+			}
+			match = tree
+		}
+	}
+	if match == "" {
+		return "", fmt.Errorf("source import retention index tree does not match the source snapshot")
+	}
+	return match, nil
+}
+
+func sourceImportIndexTreeMatches(repo, tree, indexDigest string) (bool, error) {
+	tempDir, err := os.MkdirTemp("", "parent-source-index-*")
+	if err != nil {
+		return false, fmt.Errorf("source import index verification temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+	index := filepath.Join(tempDir, "index")
+	if _, err := suspensionGit(repo, index, nil, "read-tree", tree); err != nil {
+		return false, err
+	}
+	listing, err := suspensionGit(repo, index, nil, "ls-files", "-s")
+	if err != nil {
+		return false, err
+	}
+	return state.DigestIndexListing(listing) == indexDigest, nil
 }
 
 func (s *Store) applyParentSourceFiles(op ExecutionOperation) error {

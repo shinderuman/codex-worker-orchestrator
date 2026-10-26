@@ -250,10 +250,7 @@ func (c *attemptRuntimeEvidence) captureRepositoryValidationRun(module *state.St
 	if !validationRunBindsToWindow(*record, c.taskID, c.workspace, c.seal.StartedAt, c.seal.SealedAt) {
 		return nil
 	}
-	files := []string{qualitygate.RunFile, qualitygate.RunLog, qualitygate.TestTimingsFile}
-	if directory == evidenceExportValidationSmokeDirectory {
-		files = []string{qualitygate.RunFile, evidenceExportValidationSmokeLog}
-	}
+	files := validationRunEvidenceFiles(directory, record)
 	for _, file := range files {
 		path := module.Path(filepath.Join(directory, runID, file))
 		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
@@ -430,4 +427,15 @@ func (s *Store) requireNoModelRuntimeEvidence(attemptID string) error {
 		}
 	}
 	return nil
+}
+
+func validationRunEvidenceFiles(directory string, record *qualitygate.RunRecord) []string {
+	if directory == evidenceExportValidationSmokeDirectory {
+		return []string{qualitygate.RunFile, evidenceExportValidationSmokeLog}
+	}
+	files := []string{qualitygate.RunFile, qualitygate.RunLog, qualitygate.TestTimingsFile}
+	if record.Execution != nil && record.Execution.NativeSupplement != nil && record.Execution.NativeSupplement.Log != "" {
+		files = append(files, qualitygate.NativeSupplementLog)
+	}
+	return files
 }

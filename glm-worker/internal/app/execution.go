@@ -10,14 +10,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
-
-type stdinReadyControlEvent struct {
-	Type  string `json:"type"`
-	Event string `json:"event"`
-}
 
 type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
@@ -48,17 +42,6 @@ var waitForZaiSelfResume = func(target time.Time, controller *runner.StopControl
 	}
 }
 
-func emitStdinReadyControlEvent(w io.Writer) error {
-	line, err := taskview.MarshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
-	if err != nil {
-		return fmt.Errorf("stdin ready control event encode failed: %w", err)
-	}
-	if _, err := w.Write(line); err != nil {
-		return fmt.Errorf("stdin ready control event write failed: %w", err)
-	}
-	return nil
-}
-
 func run(
 	args []string,
 	loadConfig func() (config.AppConfig, error),
@@ -72,17 +55,8 @@ func run(
 		return err
 	}
 	if cmd.StdinBytes > 0 {
-		restore, rawApplied, err := enterStdinRawMode(stdin)
+		payload, err := readStdinPayload(stdin, cmd.StdinBytes, cmd.SHA256)
 		if err != nil {
-			return err
-		}
-		if rawApplied {
-			if markerErr := emitStdinReadyControlEvent(stderr); markerErr != nil {
-				return errors.Join(markerErr, restore())
-			}
-		}
-		payload, readErr := readStdinPayload(stdin, cmd.StdinBytes, cmd.SHA256)
-		if err := errors.Join(readErr, restore()); err != nil {
 			return err
 		}
 		cmd.Payload = payload

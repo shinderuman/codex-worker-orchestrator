@@ -167,6 +167,9 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 	if c.addValidationLog(store.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.RunLog)), c.validationEntry("quality-gate/"+runID+"/"+qualitygate.RunLog), evidenceExportSourceGateRun, basis) {
 		logEntry = c.validationEntry("quality-gate/" + runID + "/" + qualitygate.RunLog)
 	}
+	if record.Execution != nil && record.Execution.NativeSupplement != nil && record.Execution.NativeSupplement.Log != "" {
+		c.addValidationLog(store.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.NativeSupplementLog)), c.validationEntry("quality-gate/"+runID+"/"+qualitygate.NativeSupplementLog), evidenceExportSourceGateRun, basis)
+	}
 	timingsEntry, timings := c.collectGateRunTimings(store, runID, record.Form, basis)
 	c.builder.validationRuns = append(c.builder.validationRuns, collectedValidationRun{
 		run: record, logEntry: logEntry, timingsEntry: timingsEntry, timings: timings, basis: basis, binding: c.gateRunBinding(record, storeBinding),

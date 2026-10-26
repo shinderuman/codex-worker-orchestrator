@@ -68,7 +68,15 @@ type shellLexState struct {
 const (
 	statusFail  = "fail"
 	sourceShell = "shell"
+	sourceHash  = "hash"
 )
+
+var sourceExtensionKinds = map[string]string{
+	".go": "go", ".mod": "go", ".sh": sourceShell,
+	".toml": sourceHash, ".rules": sourceHash, ".yml": sourceHash, ".yaml": sourceHash,
+	".gitignore": "gitignore",
+	".md":        "", ".json": "", ".txt": "", ".sum": "",
+}
 
 func Run(root string, fix bool) (Report, error) {
 	paths, err := trackedAndUntracked(root)
@@ -157,7 +165,7 @@ func scan(kind, path string, data []byte) []finding {
 		return scanGo(path, data)
 	case sourceShell:
 		return scanShell(path, data)
-	case "hash":
+	case sourceHash:
 		return scanHash(path, data)
 	case "gitignore":
 		return scanGitignore(path, data)
@@ -234,17 +242,11 @@ func walkFiles(root string) ([]string, error) {
 func classify(path string) (string, bool) {
 	base := filepath.Base(path)
 	extension := strings.ToLower(filepath.Ext(path))
-	switch extension {
-	case ".go", ".mod":
-		return "go", true
-	case ".sh":
-		return sourceShell, true
-	case ".toml", ".rules", ".yml", ".yaml":
-		return "hash", true
-	case ".gitignore":
-		return "gitignore", true
-	case ".md", ".json", ".txt", ".sum":
-		return "", false
+	if kind, ok := sourceExtensionKinds[extension]; ok {
+		return kind, kind != ""
+	}
+	if path == "tools/go-test.Dockerfile" {
+		return sourceHash, true
 	}
 	if nonSourcePath(path, base) {
 		return "", false
