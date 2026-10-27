@@ -71,6 +71,41 @@ func TestGitAuthorityProxyKeepsDenialWhenAttemptLogCannotBeWritten(t *testing.T)
 	}
 }
 
+func TestGitAuthorityProxyAllowsSymbolicRefQueryOnly(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	if output, err := exec.Command(realGit, "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	workerTemp := t.TempDir()
+	attemptLog := filepath.Join(t.TempDir(), "blocked-attempts")
+	if err := os.WriteFile(attemptLog, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	proxy := writeGitAuthorityTestScript(t, gitAuthorityProxyScript(realGit, attemptLog, repo, workerTemp))
+	if output, err := exec.Command(proxy, "-C", repo, "symbolic-ref", "-q", "HEAD").CombinedOutput(); err != nil {
+		t.Fatalf("symbolic-ref queryが拒否されました: %v: %s", err, output)
+	}
+	for _, args := range [][]string{
+		{"-C", repo, "symbolic-ref", "HEAD", "refs/heads/other"},
+		{"-C", repo, "symbolic-ref", "-d", "HEAD"},
+		{"-C", repo, "symbolic-ref", "--delete", "HEAD"},
+	} {
+		output, err := exec.Command(proxy, args...).CombinedOutput()
+		assertGitAuthorityExit97(t, err, output)
+		if got := strings.TrimSpace(string(output)); got != mutationDenialJSON {
+			t.Fatalf("denial = %q args = %#v", got, args)
+		}
+	}
+}
+
 func TestGitAuthorityTransportDenialIsActionableWithoutAttemptLog(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {

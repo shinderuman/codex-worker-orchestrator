@@ -102,9 +102,9 @@ func TestClaudeRunnerWriteRunUsesExplicitWorkerToolSurface(t *testing.T) {
 	if !containsArgument(arguments, "--disallowedTools") {
 		t.Fatalf("write capability run is missing scoped lint deny rules: %#v", arguments)
 	}
-	for _, rule := range workerLintDisallowedTools {
+	for _, rule := range workerDisallowedBashRules(false) {
 		if !containsArgument(arguments, rule) {
-			t.Fatalf("write capability run is missing lint deny rule %q: %#v", rule, arguments)
+			t.Fatalf("write capability run is missing worker deny rule %q: %#v", rule, arguments)
 		}
 	}
 	for _, blocked := range readOnlyDisallowedTools {

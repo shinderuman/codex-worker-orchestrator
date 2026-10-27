@@ -16,18 +16,14 @@ import (
 )
 
 func sourceArchive(ctx context.Context, root, temporary string, snapshot state.GitSnapshot) (string, string, error) {
-	indexTree, err := output(ctx, root, "git", "write-tree")
-	if err != nil {
-		return "", "", err
-	}
 	clone := filepath.Join(temporary, "git-copy")
-	if _, err := output(ctx, root, "git", "clone", "--quiet", "--no-hardlinks", "--dissociate", "--no-checkout", root, clone); err != nil {
+	if _, err := output(ctx, temporary, "git", "clone", "--quiet", "--no-hardlinks", "--dissociate", "--no-checkout", root, clone); err != nil {
 		return "", "", err
 	}
 	if _, err := output(ctx, clone, "git", "update-ref", "--no-deref", "HEAD", snapshot.Head); err != nil {
 		return "", "", err
 	}
-	if _, err := output(ctx, clone, "git", "read-tree", strings.TrimSpace(string(indexTree))); err != nil {
+	if err := copyRepositoryIndex(ctx, root, clone); err != nil {
 		return "", "", err
 	}
 	paths, err := output(ctx, root, "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z")
@@ -50,6 +46,22 @@ func sourceArchive(ctx context.Context, root, temporary string, snapshot state.G
 		}
 	}
 	return path, hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func copyRepositoryIndex(ctx context.Context, root, clone string) error {
+	data, err := output(ctx, root, "git", "rev-parse", "--git-path", "index")
+	if err != nil {
+		return err
+	}
+	index := strings.TrimSpace(string(data))
+	if !filepath.IsAbs(index) {
+		index = filepath.Join(root, index)
+	}
+	body, err := os.ReadFile(index)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(clone, ".git", "index"), body, 0o600)
 }
 
 func writeArchive(writer *tar.Writer, root, clone string, paths []byte) error {

@@ -290,6 +290,30 @@ if [ -e "$GIT_INDEX_FILE" ] || [ -L "$GIT_INDEX_FILE" ]; then return 1; fi
 index=$(git_guard_normalize_path "$GIT_INDEX_FILE" /) || return 1
 [ "$(git_guard_path_scope "$index")" = temp ]
 }
+git_guard_symbolic_ref_read_only() {
+seen=0
+expect=0
+names=0
+for arg do
+  if [ "$seen" -eq 0 ]; then
+    if [ "$expect" -eq 1 ]; then expect=0; continue; fi
+    case "$arg" in
+      -C|-c|--git-dir|--work-tree|--namespace|--config-env) expect=1 ;;
+      --git-dir=*|--work-tree=*|--namespace=*|--config-env=*) ;;
+      -*) ;;
+      symbolic-ref) seen=1 ;;
+      *) return 1 ;;
+    esac
+    continue
+  fi
+  case "$arg" in
+    -q|--short) ;;
+    -*) return 1 ;;
+    *) names=$((names + 1)) ;;
+  esac
+done
+[ "$seen" -eq 1 ] && [ "$names" -le 1 ]
+}
 git_guard_read_only() {
   command_name=$(git_guard_command_name "$@")
   case "$command_name" in
@@ -297,6 +321,7 @@ git_guard_read_only() {
     branch) git_guard_branch_read_only "$@"; return ;;
     config) git_guard_config_read_only "$@"; return ;;
     remote) git_guard_remote_read_only "$@"; return ;;
+    symbolic-ref) git_guard_symbolic_ref_read_only "$@"; return ;;
     *) return 1 ;;
   esac
 }

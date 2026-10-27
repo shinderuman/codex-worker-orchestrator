@@ -49,13 +49,17 @@ type gitAuthoritySnapshot struct {
 type gitAuthorityGuard struct {
 	repoRoot      string
 	realGit       string
+	realGo        string
 	tempDir       string
 	workerTempDir string
 	proxyPath     string
+	goProxyPath   string
 	denyPath      string
 	attemptLog    string
 	metadataPaths []string
 	goToolchain   string
+	dockerPolicy  bool
+	dockerSocket  string
 	before        gitAuthoritySnapshot
 }
 
@@ -103,6 +107,10 @@ func prepareGitAuthorityGuard(repoRoot string) (*gitAuthorityGuard, error) {
 	if declared {
 		guard.goToolchain = "go" + required
 	}
+	if err := guard.resolveGoTestDockerPolicy(repoRoot); err != nil {
+		guard.cleanup()
+		return nil, err
+	}
 	metadataPaths, err := resolveGitAuthorityMetadataPaths(realGit, repoRoot)
 	if err != nil {
 		return nil, &GitAuthorityGuardError{Stage: "resolve-metadata", Cause: err}
@@ -113,6 +121,26 @@ func prepareGitAuthorityGuard(repoRoot string) (*gitAuthorityGuard, error) {
 		return nil, err
 	}
 	return guard, nil
+}
+
+func (g *gitAuthorityGuard) resolveGoTestDockerPolicy(repoRoot string) error {
+	active, err := qualitygate.DockerBackendActive(repoRoot)
+	if err != nil {
+		return &GitAuthorityGuardError{Stage: "resolve-go-test-backend", Cause: err}
+	}
+	if !active {
+		return nil
+	}
+	g.dockerPolicy = true
+	g.dockerSocket = resolveDockerDaemonSocket()
+	if realGo, err := exec.LookPath("go"); err == nil {
+		absolute, err := filepath.Abs(realGo)
+		if err != nil {
+			return &GitAuthorityGuardError{Stage: "resolve-go-test-backend", Cause: err}
+		}
+		g.realGo = absolute
+	}
+	return nil
 }
 
 func (g *gitAuthorityGuard) prepareProxy() error {
@@ -134,6 +162,12 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, g.workerTempDir)
 	if err := os.WriteFile(g.proxyPath, []byte(proxy), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
+	}
+	if g.dockerPolicy && g.realGo != "" {
+		g.goProxyPath = filepath.Join(tempDir, "go")
+		if err := os.WriteFile(g.goProxyPath, []byte(goTestProxyScript(g.realGo)), 0o700); err != nil {
+			return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
+		}
 	}
 	deny := gitAuthorityDenyTransportScript(g.attemptLog)
 	if err := os.WriteFile(g.denyPath, []byte(deny), 0o700); err != nil {

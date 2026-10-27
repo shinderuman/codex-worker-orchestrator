@@ -21,7 +21,7 @@
 
 診断用の`go test`(focused package・`-run`・`-race`等、正規finalize-check外の局所検証)も同じ`goquality test <go test args...>`入口を使う。入口が規定Go versionに解決できないときは検証として実行せず失敗として扱う。入口は正規gateと同じGo version固定とcache選択(ambient継承)を使い、`goquality-diagnostic`行(実go version・OS/arch・cache実値・head・source digest(内容束縛)・argv・exit/source変化)を診断証拠としてtask logへ残し、正規finalize-checkのvalidation証拠やmachine gateのPASSと混同しない。直接`go test`を規定外versionで実行した結果を検証成立として報告しない。
 
-Mac上で共通のGoテストを局所検証する場合、repositoryが`goquality test-linux`を提供しローカルDocker ARM64を利用可能なら、その入口でLinux診断を実行できる。source転送・実Go/platform・cache・準備時間を記録し、Docker診断のPASSは正規validationへ昇格しない。macOS専用の検証はnativeの`goquality test`を使う。Docker未導入時は自動installせず、正規finalize-checkは引き続き既存の品質契約に従う。
+Mac上で共通のGoテストを局所検証する場合、repositoryの`goquality test`入口は`quality-tools.yml`のDocker backend契約(`go-test-macos-backend: docker-linux-arm64`)によりDarwin ARM64ではLinux ARM64 Docker診断へ機械的にroutingされ、Mac native実行の選択肢を持たない。backend判定は正規gateと同じGo側契約解決に従い、契約値の表記差・重複・unsupportedでは対象platformでnativeへ流れず失敗する。同じ契約が有効なGLM worker sessionでは`go test`直接実行(相対・絶対path・`-C`形式・versioned go実行形式を含む)をBash deny ruleとPATH上の`go` proxyが拒否し、sandboxは解決済みの選択endpointのUnix socket接続だけを例外として許可する(endpoint未解決・tcp/remoteでは許可なしで失敗)。Docker利用不能時は入口が失敗となり、nativeへの自動fallbackも検証省略もしない。source転送・実Go/platform・cache・準備時間を記録し、Docker診断のPASSは正規validationへ昇格しない。darwin build tag専用の検証はworkerのDocker診断では実行されず、正規finalize-checkのDarwin補完など親側検証に帰属する。Docker未導入時は自動installせず、正規finalize-checkは引き続き既存の品質契約に従う。
 
 GLM workflow内のmachine-fix / check-only順序、workerから直接実行を拒否するtool群、installer smoke等の既知procedureはproduction command/wrapperを正とし、本instructionへ複製しない。
 

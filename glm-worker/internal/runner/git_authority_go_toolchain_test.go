@@ -5,10 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func writeGoContractRepo(t *testing.T, goVersion string) string {
@@ -30,10 +32,12 @@ func writeGoContractRepo(t *testing.T, goVersion string) string {
 func TestGitAuthorityGuardFailsClosedOnUnusableGoContract(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
-		repo func(t *testing.T) string
+		name           string
+		repo           func(t *testing.T) string
+		stage          string
+		targetHostOnly bool
 	}{
-		{name: "malformed-version", repo: func(t *testing.T) string { return writeGoContractRepo(t, "latest") }},
+		{name: "malformed-version", repo: func(t *testing.T) string { return writeGoContractRepo(t, "latest") }, stage: "resolve-go-toolchain"},
 		{name: "contract-entry-missing", repo: func(t *testing.T) string {
 			repo := t.TempDir()
 			if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {
@@ -43,7 +47,7 @@ func TestGitAuthorityGuardFailsClosedOnUnusableGoContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			return repo
-		}},
+		}, stage: "resolve-go-toolchain"},
 		{name: "unreadable-contract", repo: func(t *testing.T) string {
 			repo := t.TempDir()
 			if output, err := exec.Command("git", "init", repo).CombinedOutput(); err != nil {
@@ -53,16 +57,29 @@ func TestGitAuthorityGuardFailsClosedOnUnusableGoContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			return repo
-		}},
+		}, stage: "resolve-go-toolchain"},
+		{name: "unsupported-test-backend", repo: func(t *testing.T) string {
+			repo := writeGoContractRepo(t, "1.25.4")
+			if err := os.WriteFile(filepath.Join(repo, "quality-tools.yml"), []byte("namespace: probe\ngo: 1.25.4\ngo-test-macos-backend: docker-linux-amd64\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return repo
+		}, stage: "resolve-go-test-backend", targetHostOnly: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := prepareGitAuthorityGuard(tc.repo(t))
+			if tc.targetHostOnly && (runtime.GOOS != "darwin" || runtime.GOARCH != "arm64") {
+				if err != nil {
+					t.Fatalf("非対象hostでDocker backend契約により新たな準備失敗が発生しました: %v", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatal("契約repoの壊れたquality-tools.ymlでguardが準備されました")
 			}
 			var guardErr *GitAuthorityGuardError
-			if !errors.As(err, &guardErr) || guardErr.Stage != "resolve-go-toolchain" {
+			if !errors.As(err, &guardErr) || guardErr.Stage != tc.stage {
 				t.Fatalf("guard error = %#v", err)
 			}
 		})
@@ -140,5 +157,45 @@ func TestGitAuthorityClaudeWrapperSkipsPinWithoutGoContract(t *testing.T) {
 	script := gitAuthorityClaudeWrapperScript(guard, "/bin/true")
 	if strings.Contains(script, "GOTOOLCHAIN") {
 		t.Fatalf("wrapper script pins a toolchain without a go contract: %s", script)
+	}
+}
+
+func TestGitAuthorityClaudeWrapperExportsDockerHostOnlyWithResolvedSocket(t *testing.T) {
+	t.Parallel()
+	guard := &gitAuthorityGuard{before: gitAuthoritySnapshot{active: true}, dockerSocket: "/Users/worker/.docker/run/docker.sock"}
+	script := gitAuthorityClaudeWrapperScript(guard, "/bin/true")
+	if !strings.Contains(script, "DOCKER_HOST='unix:///Users/worker/.docker/run/docker.sock'") {
+		t.Fatalf("wrapper script does not export the resolved Docker endpoint: %s", script)
+	}
+	guard.dockerSocket = ""
+	script = gitAuthorityClaudeWrapperScript(guard, "/bin/true")
+	if strings.Contains(script, "DOCKER_HOST") {
+		t.Fatalf("wrapper script exports DOCKER_HOST without a resolved socket: %s", script)
+	}
+}
+
+func TestWorkerGoTestDenyWiringFollowsDockerPolicyGuard(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixtureはUnix系環境向け")
+	}
+	root := newGitAuthorityRepo(t)
+	writeGitAuthorityFile(t, root, "quality-tools.yml", "namespace: probe\ngo: 1.25.4\ngo-test-macos-backend: docker-linux-arm64\n")
+	argsPath := filepath.Join(t.TempDir(), "worker-args")
+	t.Setenv("GLM_ARGS_FILE", argsPath)
+	guarded, _ := newGitAuthorityProductionRunner(t, root, "printf '%s\\n' \"$@\" >\"$GLM_ARGS_FILE\"", map[string]string{"GLM_ARGS_FILE": argsPath})
+	output := filepath.Join(t.TempDir(), "out.log")
+	if _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "go test deny wiring", output); err != nil {
+		t.Fatal(err)
+	}
+	arguments := readLines(t, argsPath)
+	hasGoTestDeny := false
+	for _, argument := range arguments {
+		if argument == "Bash(go test*)" {
+			hasGoTestDeny = true
+		}
+	}
+	wantDeny := runtime.GOOS == "darwin" && runtime.GOARCH == "arm64"
+	if hasGoTestDeny != wantDeny {
+		t.Fatalf("Go test deny = %v want %v (host %s/%s)", hasGoTestDeny, wantDeny, runtime.GOOS, runtime.GOARCH)
 	}
 }

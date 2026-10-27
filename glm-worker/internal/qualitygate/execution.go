@@ -3,10 +3,12 @@ package qualitygate
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -93,6 +95,20 @@ func ResolveBackend(repository, hostOS, hostArch string) (string, error) {
 		return "", fmt.Errorf("正規Docker gateにはDarwin ARM64 hostが必要です")
 	}
 	return BackendDockerARM64, nil
+}
+
+func DockerBackendActive(repository string) (bool, error) {
+	if runtime.GOOS != platformDarwin || runtime.GOARCH != platformARM64 {
+		return false, nil
+	}
+	if _, err := os.Stat(filepath.Join(repository, QualityToolsFile)); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	backend, err := ResolveBackend(repository, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return false, err
+	}
+	return backend == BackendDockerARM64, nil
 }
 
 func GoTestArguments(form string) []string {

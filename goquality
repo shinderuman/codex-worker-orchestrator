@@ -11,13 +11,26 @@ if [ "$resolved_go_version" != "$GO_VERSION" ]; then
   exit 1
 fi
 
-if [ "$#" -ge 1 ] && [ "$1" = test-linux ]; then
-  shift
-  exec go -C "$repo_root/glm-worker" run ./cmd/goquality "$repo_root" "$@"
+if [ "$#" -ge 1 ] && [ "$1" = test ] && [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+  GOCACHE="${TMPDIR:-/tmp}/codex-worker-orchestrator-go-$GO_VERSION"
+  export GOCACHE
+  backend=$(go -C "$repo_root/glm-worker" run ./cmd/goquality --backend "$repo_root") || backend=
+  case "$backend" in
+    docker-linux-arm64)
+      shift
+      exec go -C "$repo_root/glm-worker" run ./cmd/goquality "$repo_root" "$@"
+      ;;
+    native)
+      ;;
+    *)
+      echo "goquality: go test backend契約を解決できません (backend=$backend)" >&2
+      exit 1
+      ;;
+  esac
 fi
 
 usage() {
-  echo "usage: $0 <vet|build> | test <go test args...> | test-linux [go test args...]" >&2
+  echo "usage: $0 <vet|build> | test [go test args...]" >&2
   exit 2
 }
 

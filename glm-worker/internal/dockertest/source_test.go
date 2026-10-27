@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -108,6 +109,64 @@ func extractFixtureArchive(t *testing.T, path, destination string) {
 		if err := os.WriteFile(target, body, os.FileMode(header.Mode)); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestSourceArchiveRunsNoMutatingGitAgainstProtectedRoot(t *testing.T) {
+	root := sourceFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "dirty.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "git-invocations")
+	recorder := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$PWD|$*\" >>\"" + logPath + "\"\n" +
+		"exec \"" + realGit + "\" \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(recorder), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	snapshot, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := sourceArchive(context.Background(), root, t.TempDir(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutationsOutsideRoot := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		dir, argString, ok := strings.Cut(line, "|")
+		if !ok {
+			t.Fatalf("git呼び出し記録が不正です: %q", line)
+		}
+		fields := strings.Fields(argString)
+		if len(fields) > 1 && fields[0] == "-C" {
+			dir, fields = fields[1], fields[2:]
+		}
+		if len(fields) == 0 {
+			t.Fatalf("git呼び出しにsubcommandがありません: %q", line)
+		}
+		if dir == root {
+			switch fields[0] {
+			case "clone", "write-tree", "read-tree", "update-ref":
+				t.Fatalf("保護対象rootでgit %sが実行されました: %q", fields[0], line)
+			}
+			continue
+		}
+		mutationsOutsideRoot[fields[0]] = true
+	}
+	if !mutationsOutsideRoot["clone"] || !mutationsOutsideRoot["update-ref"] {
+		t.Fatalf("退避先でのsource構築git呼び出しが観測されません: %v", mutationsOutsideRoot)
 	}
 }
 

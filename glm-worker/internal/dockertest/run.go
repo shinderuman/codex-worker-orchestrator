@@ -313,6 +313,10 @@ func buildImage(ctx context.Context, root, temporary, version, lintVersion strin
 	if err := os.Mkdir(buildContext, 0o700); err != nil {
 		return "", err
 	}
+	buildxConfig := filepath.Join(temporary, "buildx")
+	if err := os.Mkdir(buildxConfig, 0o700); err != nil {
+		return "", err
+	}
 	for _, name := range []string{qualitygate.QualityToolsFile, "install-quality-tools.sh"} {
 		data, err := os.ReadFile(filepath.Join(root, name))
 		if err != nil {
@@ -324,6 +328,7 @@ func buildImage(ctx context.Context, root, temporary, version, lintVersion strin
 	}
 	tag := "codex-worker-orchestrator-go-test:go" + version + "-lint" + lintVersion + "-arm64"
 	command := exec.CommandContext(ctx, "docker", "build", "--quiet", "--platform", "linux/arm64", "--build-arg", "GO_VERSION="+version, "--build-arg", "LINT_GO_VERSION="+lintVersion, "--file", filepath.Join(root, "tools", "go-test.Dockerfile"), "--tag", tag, buildContext)
+	command.Env = append(os.Environ(), "BUILDX_CONFIG="+buildxConfig)
 	command.Stdout, command.Stderr = stderr, stderr
 	if err := command.Run(); err != nil {
 		return "", err

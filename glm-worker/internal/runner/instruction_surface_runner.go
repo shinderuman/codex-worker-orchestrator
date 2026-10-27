@@ -47,6 +47,7 @@ func (r *InstructionSurfaceGuardRunner) Run(
 		copyBase := *r.base
 		copyBase.config.ClaudeBin = wrappedClaude
 		copyBase.bashSandbox = gitGuard.bashSandboxPolicy()
+		copyBase.goTestDockerPolicy = gitGuard.dockerPolicy
 		callBase = &copyBase
 	}
 	callBase.instructionSurfaceDigest = instructionBefore.digest

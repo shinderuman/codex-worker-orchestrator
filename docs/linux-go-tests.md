@@ -7,13 +7,13 @@
 局所診断はrepository rootから次を使う。
 
 ```sh
-./goquality test-linux -json -timeout=45m -count=1 ./internal/app
-./goquality test-linux -json -timeout=45m -count=1 -run '^TestTypedParentCompletionWorkflowThroughProductionBoundary$' ./internal/app
+./goquality test -json -timeout=45m -count=1 ./internal/app
+./goquality test -json -timeout=45m -count=1 -run '^TestTypedParentCompletionWorkflowThroughProductionBoundary$' ./internal/app
 ```
 
-対象指定を省くと`./...`を実行する。source転送とDocker実行ownerは正規Gateと共用するが、診断PASSは正規validationへ流用しない。`goquality-linux-diagnostic`とcontainer内の`goquality-diagnostic`行を実行証拠として保存する。
+対象指定を省くと`./...`を実行する。`quality-tools.yml`の`go-test-macos-backend: docker-linux-arm64`契約があるDarwin ARM64 hostでは、この入口はMac native実行の選択肢を持たずLinux ARM64 Docker診断へ機械的にroutingされる。backend判定は正規gateと同じGo側契約解決(`goquality --backend <repository>`が`qualitygate.DockerBackendActive`へ委譲)に従い、契約値の表記差・重複・unsupportedでは対象platformでnativeへ流れず失敗する。同じ契約が有効なGLM worker sessionでは`go test`直接実行(相対・絶対path・`-C`形式・versioned go実行形式を含む)をBash deny ruleとPATH上の`go` proxyが拒否し、sandboxは解決済みの選択endpointのUnix socket接続だけを例外として許可する。Docker利用不能時は入口が失敗となり、Mac nativeへの迂回や検証省略をしない。source転送とDocker実行ownerは正規Gateと共用するが、診断PASSは正規validationへ流用しない。`goquality-linux-diagnostic`とcontainer内の`goquality-diagnostic`行を実行証拠として保存する。
 
-sourceは未コミット変更とindexを含むarchiveとしてcontainerのnative filesystemへ転送し、SHA-256を照合する。Mac directoryのbind mountは使わない。標準initと非root userを使い、実行containerとhost一時sourceは終了時に削除する。toolchain imageとGo build cache volumeは再利用する。
+sourceは未コミット変更とindexを含むarchiveとしてcontainerのnative filesystemへ転送し、SHA-256を照合する。source構築のgit操作は退避先cloneだけで行い、保護対象worktreeでは読み取り操作しか使わないため、git authority proxy配下のGLM worker sessionでも同じ入口が成立する。Mac directoryのbind mountは使わない。標準initと非root userを使い、実行containerとhost一時sourceは終了時に削除する。toolchain imageとGo build cache volumeは再利用する。
 
 Docker本体は自動installしない。local Unix socketのnative Linux ARM64 engineが必要。ignored inputがある作業領域は転送対象との相違を隠さず拒否する。正規Gateのcandidate checkoutは制御用staging等から分離する。submoduleとrepository外symlinkも明示的に拒否する。
 

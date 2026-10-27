@@ -31,6 +31,7 @@ type ClaudeRunner struct {
 	state              *state.StateStore
 	stop               *StopController
 	bashSandbox        *gitBashSandboxPolicy
+	goTestDockerPolicy bool
 	validationAttempts map[string]int
 	decisionTimeout    time.Duration
 	probeTimeout       time.Duration
@@ -118,13 +119,28 @@ const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
 
 var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
 
-var workerLintDisallowedTools = []string{
+var workerLintDisallowedBashRules = []string{
 	"Bash(*harnesslint*)",
 	"Bash(*commentlint*)",
 	"Bash(*gofmt*)",
 	"Bash(*golangci-lint*)",
 	"Bash(*shellcheck*)",
 	"Bash(*shfmt*)",
+}
+
+var workerGoTestDisallowedBashRules = []string{
+	"Bash(go test*)",
+	"Bash(* go test*)",
+	"Bash(go -C* test*)",
+	"Bash(* go -C* test*)",
+	"Bash(*/go test*)",
+	"Bash(*/go -C* test*)",
+	"Bash(go1.* test*)",
+	"Bash(* go1.* test*)",
+	"Bash(go1.* -C* test*)",
+	"Bash(* go1.* -C* test*)",
+	"Bash(*/go1.* test*)",
+	"Bash(*/go1.* -C* test*)",
 }
 
 var (
@@ -155,6 +171,13 @@ var essentialSettingEnvKeys = []string{
 var osEssentialEnvKeys = []string{
 	"PATH", "HOME", "TMPDIR", "SHELL", "USER", "LOGNAME",
 	"LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM",
+}
+
+func workerDisallowedBashRules(goTestDockerPolicy bool) []string {
+	if !goTestDockerPolicy {
+		return workerLintDisallowedBashRules
+	}
+	return append(append([]string(nil), workerLintDisallowedBashRules...), workerGoTestDisallowedBashRules...)
 }
 
 func (e *StructuredOutputError) Error() string {
@@ -372,7 +395,7 @@ func (r *ClaudeRunner) buildRunArgs(
 	case readOnly:
 		disallowedTools = readOnlyDisallowedTools
 	case role == state.WorkerRole:
-		disallowedTools = workerLintDisallowedTools
+		disallowedTools = workerDisallowedBashRules(r.goTestDockerPolicy)
 	}
 	if len(disallowedTools) > 0 {
 		args = append(args, "--disallowedTools")
