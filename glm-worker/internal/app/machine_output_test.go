@@ -315,7 +315,6 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 }
 
 func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeSuccess(t *testing.T) {
-	t.Parallel()
 	cfg, _, _, countPath := newInstallSmokeEnv(t)
 
 	var stdout, stderr bytes.Buffer
@@ -342,7 +341,6 @@ func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeSuccess(t *testing.T
 }
 
 func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeFailure(t *testing.T) {
-	t.Parallel()
 	cfg, _, failFlagPath, countPath := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)

@@ -173,7 +173,6 @@ func assertFailClosedStateUnchanged(t *testing.T, cfg config.AppConfig, before m
 }
 
 func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
-	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
@@ -243,7 +242,6 @@ func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
 }
 
 func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
-	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingSolReviewState(t, cfg)
 	payload := stdinTestPayload()
@@ -288,7 +286,6 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 }
 
 func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
-	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := "NUL先頭\x00中間\x00末尾\n2行目 `backtick` $HOME \"double\" 'single' 日本語\x00"

@@ -27,6 +27,7 @@ type EvidenceAnalysisIndex struct {
 	Retries                   EvidenceAnalysisRetries              `json:"retries"`
 	Workflow                  EvidenceAnalysisWorkflow             `json:"workflow"`
 	TestTimingRegression      EvidenceAnalysisTestTimingRegression `json:"test_timing_regression"`
+	TaskResources             EvidenceAnalysisTaskResources        `json:"task_resources"`
 	ModelCalls                EvidenceAnalysisModelCalls           `json:"model_calls"`
 	ReviewRounds              EvidenceAnalysisReviewRounds         `json:"review_rounds"`
 	Git                       *EvidenceAnalysisGit                 `json:"git,omitempty"`
@@ -80,23 +81,24 @@ type EvidenceAnalysisGuardian struct {
 }
 
 type EvidenceAnalysisValidationRun struct {
-	RunID           string    `json:"run_id,omitempty"`
-	Form            string    `json:"form"`
-	GateClass       string    `json:"gate_class,omitempty"`
-	Result          string    `json:"result"`
-	Attempt         string    `json:"attempt,omitempty"`
-	SnapshotID      string    `json:"snapshot_id,omitempty"`
-	Log             string    `json:"log,omitempty"`
-	TestTimings     string    `json:"test_timings,omitempty"`
-	Tests           int       `json:"tests,omitempty"`
-	SlowestTestMS   int64     `json:"slowest_test_ms,omitempty"`
-	ResourceSamples string    `json:"resource_samples,omitempty"`
-	Binding         string    `json:"binding,omitempty"`
-	ExitCode        int       `json:"exit_code,omitempty"`
-	DurationMS      int64     `json:"duration_ms,omitempty"`
-	Timestamp       time.Time `json:"timestamp"`
-	Basis           string    `json:"basis"`
-	Occurrences     int       `json:"occurrences,omitempty"`
+	RunID                string    `json:"run_id,omitempty"`
+	Form                 string    `json:"form"`
+	GateClass            string    `json:"gate_class,omitempty"`
+	Result               string    `json:"result"`
+	Attempt              string    `json:"attempt,omitempty"`
+	SnapshotID           string    `json:"snapshot_id,omitempty"`
+	Log                  string    `json:"log,omitempty"`
+	TestTimings          string    `json:"test_timings,omitempty"`
+	Tests                int       `json:"tests,omitempty"`
+	SlowestTestMS        int64     `json:"slowest_test_ms,omitempty"`
+	ResourceSamples      string    `json:"resource_samples,omitempty"`
+	ResourceSamplesError string    `json:"resource_samples_error,omitempty"`
+	Binding              string    `json:"binding,omitempty"`
+	ExitCode             int       `json:"exit_code,omitempty"`
+	DurationMS           int64     `json:"duration_ms,omitempty"`
+	Timestamp            time.Time `json:"timestamp"`
+	Basis                string    `json:"basis"`
+	Occurrences          int       `json:"occurrences,omitempty"`
 }
 
 type EvidenceAnalysisRetries struct {
@@ -268,6 +270,7 @@ func (b *evidenceExportBuilder) buildAnalysisIndex(live EvidenceExportRuntimeSec
 		Instructions:              b.analysisInstructions(),
 		CanonicalValidationRuns:   canonicalRuns,
 		ObservedValidationActions: observedActions,
+		TaskResources:             b.analysisTaskResources(),
 		ModelCalls:                b.analysisModelCalls(),
 		ReviewRounds:              b.analysisReviewRounds(),
 		Git:                       analysisGit(git),
@@ -556,7 +559,8 @@ func (b *evidenceExportBuilder) analysisValidationRuns() (canonical []EvidenceAn
 			SnapshotID: state.ValidationSnapshotID(collected.run.Head, collected.run.IndexDigest, collected.run.WorktreeDigest),
 			Log:        collected.logEntry, Binding: collected.binding, ExitCode: collected.run.ExitCode,
 			DurationMS: collected.run.DurationMS, Timestamp: collected.run.StartedAt,
-			Basis: collected.basis,
+			Basis:                collected.basis,
+			ResourceSamplesError: collected.run.ResourceSamplesError,
 		}
 		if collected.timings != nil {
 			run.TestTimings = collected.timingsEntry

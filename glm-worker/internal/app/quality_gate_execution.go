@@ -179,10 +179,11 @@ func launchQualityGateRunnerProcess(_ *state.StateStore, record qualitygate.RunR
 	return child.Wait, nil
 }
 
-func defaultQualityGateResourceSampler(record qualitygate.RunRecord) qualityGateResourceSampler {
+func defaultQualityGateResourceSampler(record qualitygate.RunRecord, publish func(qualitygate.ResourceSamples)) qualityGateResourceSampler {
 	return qualitygate.StartResourceSampler(qualitygate.ResourceSamplerConfig{
 		ValidationRunID: record.ValidationRunID,
 		Form:            record.Form,
+		AsyncFirst:      true, Publish: publish,
 	})
 }
 
@@ -191,7 +192,10 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 	if err != nil || !active {
 		return err
 	}
-	sampler := startQualityGateResourceSampler(record)
+	resourceRecord := record
+	sampler := startQualityGateResourceSampler(resourceRecord, func(resources qualitygate.ResourceSamples) {
+		_, _ = writeQualityGateResourceSamplesRecord(st, resourceRecord, &resources)
+	})
 	var gateLog []byte
 	runErr := verifyQualityGateSource(record)
 	if runErr == nil {
@@ -311,6 +315,11 @@ func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, 
 		}
 		timingsPath = ""
 	}
+	resourcesPath, resourcesErr := writeQualityGateResourceSamplesRecord(st, record, resources)
+	if resourcesErr != nil {
+		record.ResourceSamplesError = resourcesErr.Error()
+		gateLog = append(gateLog, []byte("\nresource samples: "+resourcesErr.Error()+"\n")...)
+	}
 	logPath, logErr := writeQualityGateRunLog(st, record.ValidationRunID, gateLog)
 	if logErr != nil {
 		status = qualitygate.StatusFail
@@ -320,8 +329,7 @@ func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, 
 		}
 		logPath = ""
 	}
-	record.TestTimings = timingsPath
-	record.ResourceSamples = writeQualityGateResourceSamplesRecord(st, record, resources)
+	record.TestTimings, record.ResourceSamples = timingsPath, resourcesPath
 	if record.Toolchain != nil {
 		record.Toolchain.TestCache = qualitygate.TestCacheObservation(gateLog)
 	}

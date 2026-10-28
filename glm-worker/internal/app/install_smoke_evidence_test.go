@@ -84,7 +84,6 @@ func TestInstallSmokeFailureSharesEvidenceLocatorBetweenRecordAndError(t *testin
 }
 
 func TestInstallSmokeFailureEvidenceIdentifiesAssertionWithoutRerun(t *testing.T) {
-	t.Parallel()
 	cfg, _, failFlagPath, countPath := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -235,7 +234,6 @@ func TestInstallSmokeEvidenceDropsSecretStraddlingCaptureBoundary(t *testing.T) 
 }
 
 func TestInstallSmokeFailureWithoutEvidenceSaveStaysFailed(t *testing.T) {
-	t.Parallel()
 	cfg, st, failFlagPath, _ := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
 		t.Fatal(err)

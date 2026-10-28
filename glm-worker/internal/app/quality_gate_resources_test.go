@@ -18,7 +18,7 @@ func (s *fixtureQualityGateResourceSampler) Stop() qualitygate.ResourceSamples {
 	return s.document
 }
 
-func newDeterministicQualityGateResourceSampler(record qualitygate.RunRecord) qualityGateResourceSampler {
+func newDeterministicQualityGateResourceSampler(record qualitygate.RunRecord, _ func(qualitygate.ResourceSamples)) qualityGateResourceSampler {
 	started := time.Now().UTC()
 	host := qualitygate.ResourceSampleHost{
 		GOOS: "fixture", GOARCH: "fixture", LogicalCPUs: 1, TotalMemoryBytes: 1 << 30,
@@ -128,5 +128,8 @@ func TestQualityGateResourceSamplesWriteFailureKeepsRunOutcome(t *testing.T) {
 	}
 	if final.ResourceSamples != "" {
 		t.Fatalf("failed write reported a path: %q", final.ResourceSamples)
+	}
+	if final.ResourceSamplesError == "" {
+		t.Fatal("resource write failure lost its diagnostic")
 	}
 }

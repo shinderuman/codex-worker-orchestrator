@@ -386,7 +386,6 @@ func TestExecutePropagatesWorkerFailure(t *testing.T) {
 }
 
 func TestRunUsesInjectedDependencies(t *testing.T) {
-	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},

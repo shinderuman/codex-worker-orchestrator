@@ -3,9 +3,12 @@ package qualitygate
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type CPUSample struct {
@@ -50,28 +53,47 @@ type ResourceSampleHost struct {
 }
 
 type ResourceSampleCoverage struct {
-	Status       string    `json:"status"`
-	Source       string    `json:"source,omitempty"`
-	IntervalMS   int64     `json:"interval_ms"`
-	SampleBound  int       `json:"sample_bound"`
-	StartedAt    time.Time `json:"started_at"`
-	EndedAt      time.Time `json:"ended_at,omitempty"`
-	EndBasis     string    `json:"end_basis,omitempty"`
-	Truncated    bool      `json:"truncated,omitempty"`
-	CPUState     string    `json:"cpu_state"`
-	MemoryState  string    `json:"memory_state"`
-	SwapState    string    `json:"swap_state"`
-	ProblemTicks int       `json:"problem_ticks,omitempty"`
-	Problems     []string  `json:"problems,omitempty"`
+	Status             string    `json:"status"`
+	ExecutionState     string    `json:"execution_state,omitempty"`
+	SynchronousSamples int       `json:"synchronous_samples"`
+	SynchronousWaitMS  int64     `json:"synchronous_wait_ms"`
+	SamplingDurationMS int64     `json:"sampling_duration_ms"`
+	Source             string    `json:"source,omitempty"`
+	IntervalMS         int64     `json:"interval_ms"`
+	SampleBound        int       `json:"sample_bound"`
+	StartedAt          time.Time `json:"started_at"`
+	EndedAt            time.Time `json:"ended_at,omitempty"`
+	EndBasis           string    `json:"end_basis,omitempty"`
+	Truncated          bool      `json:"truncated,omitempty"`
+	CPUState           string    `json:"cpu_state"`
+	MemoryState        string    `json:"memory_state"`
+	SwapState          string    `json:"swap_state"`
+	ProblemTicks       int       `json:"problem_ticks,omitempty"`
+	Problems           []string  `json:"problems,omitempty"`
+}
+
+type ResourceExecutionIdentity struct {
+	TaskID             string `json:"task_id"`
+	CallID             string `json:"call_id"`
+	SessionID          string `json:"session_id"`
+	Role               string `json:"role"`
+	Phase              string `json:"phase"`
+	AttemptID          string `json:"attempt_id,omitempty"`
+	TaskPath           string `json:"task_path,omitempty"`
+	TaskContractDigest string `json:"task_contract_digest,omitempty"`
+	Repository         string `json:"repository"`
+	RuntimeRevision    string `json:"runtime_revision,omitempty"`
+	RuntimeModified    *bool  `json:"runtime_modified,omitempty"`
 }
 
 type ResourceSamples struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	ValidationRunID string                 `json:"validation_run_id"`
-	Form            string                 `json:"form"`
-	Host            ResourceSampleHost     `json:"host"`
-	Coverage        ResourceSampleCoverage `json:"coverage"`
-	Samples         []HostResourceSample   `json:"samples,omitempty"`
+	SchemaVersion   int                        `json:"schema_version"`
+	ValidationRunID string                     `json:"validation_run_id"`
+	Form            string                     `json:"form"`
+	Execution       *ResourceExecutionIdentity `json:"execution,omitempty"`
+	Host            ResourceSampleHost         `json:"host"`
+	Coverage        ResourceSampleCoverage     `json:"coverage"`
+	Samples         []HostResourceSample       `json:"samples,omitempty"`
 }
 
 type cpuPercentReading struct {
@@ -102,6 +124,7 @@ type hostResourceSource struct {
 	supported bool
 	reason    string
 	host      ResourceSampleHost
+	cancel    func()
 	read      func() hostResourceReading
 }
 
@@ -111,6 +134,9 @@ type ResourceSamplerConfig struct {
 	Interval        time.Duration
 	SampleBound     int
 	Source          *hostResourceSource
+	AsyncFirst      bool
+	Execution       *ResourceExecutionIdentity
+	Publish         func(ResourceSamples)
 }
 
 type resourceDomainCounters struct {
@@ -119,25 +145,32 @@ type resourceDomainCounters struct {
 }
 
 type ResourceSampler struct {
-	mu           sync.Mutex
-	runID        string
-	form         string
-	interval     time.Duration
-	bound        int
-	source       *hostResourceSource
-	started      time.Time
-	samples      []HostResourceSample
-	prevTicks    *cpuTicksReading
-	prevAt       time.Time
-	cpu          resourceDomainCounters
-	memory       resourceDomainCounters
-	swap         resourceDomainCounters
-	problemTicks int
-	problems     map[string]int
-	ordered      []string
-	stopped      bool
-	document     ResourceSamples
-	done         chan struct{}
+	mu                 sync.Mutex
+	publishMu          sync.Mutex
+	publish            func(ResourceSamples)
+	execution          *ResourceExecutionIdentity
+	synchronousSamples int
+	synchronousWaitMS  int64
+	samplingDurationMS int64
+	runID              string
+	form               string
+	interval           time.Duration
+	bound              int
+	source             *hostResourceSource
+	started            time.Time
+	samplingEnded      time.Time
+	samples            []HostResourceSample
+	prevTicks          *cpuTicksReading
+	prevAt             time.Time
+	cpu                resourceDomainCounters
+	memory             resourceDomainCounters
+	swap               resourceDomainCounters
+	problemTicks       int
+	problems           map[string]int
+	ordered            []string
+	stopped            bool
+	document           ResourceSamples
+	done               chan struct{}
 }
 
 const (
@@ -158,7 +191,8 @@ const (
 	ResourceStateMissing     = "missing"
 	ResourceStateUnsupported = "unsupported"
 
-	ResourceSampleEndBasis = "sampler-stopped-at-run-completion"
+	ResourceExecutionTruncated = "truncated"
+	ResourceSampleEndBasis     = "sampler-stopped-at-run-completion"
 )
 
 func StartResourceSampler(config ResourceSamplerConfig) *ResourceSampler {
@@ -175,20 +209,37 @@ func StartResourceSampler(config ResourceSamplerConfig) *ResourceSampler {
 	if bound <= 0 {
 		bound = ResourceSampleDefaultBound
 	}
-	source.host.TimeBasis = "sample.at stamps are host wall-clock UTC; elapsed_ms counts from coverage.started_at; the quality gate run window lives in run.json beside this file"
+	source.host.TimeBasis = "sample.at stamps are host wall-clock UTC; elapsed_ms counts from coverage.started_at; execution windows are identified by execution or by the quality gate run.json"
 	sampler := &ResourceSampler{
 		runID: config.ValidationRunID, form: config.Form,
 		interval: interval, bound: bound, source: source,
 		problems: map[string]int{}, done: make(chan struct{}),
+		publish: config.Publish, execution: config.Execution,
 	}
 	if !source.supported {
 		sampler.stopped = true
 		sampler.document = sampler.unsupportedDocument(source.reason)
+		sampler.notify()
 		return sampler
 	}
+	if source.reason != "" {
+		sampler.recordReadingProblems([]string{"inventory: " + source.reason})
+	}
 	sampler.started = time.Now().UTC()
-	sampler.collect()
-	go sampler.loop()
+	if config.AsyncFirst {
+		sampler.notify()
+		go func() {
+			if sampler.collect() {
+				sampler.loop()
+			}
+		}()
+	} else {
+		started := time.Now()
+		sampler.collect()
+		sampler.synchronousSamples = 1
+		sampler.synchronousWaitMS = time.Since(started).Milliseconds()
+		go sampler.loop()
+	}
 	return sampler
 }
 
@@ -216,14 +267,20 @@ func (s *ResourceSampler) collect() bool {
 	s.mu.Unlock()
 	at := time.Now().UTC()
 	reading := s.source.read()
+	duration := time.Since(at).Milliseconds()
 	s.mu.Lock()
+	defer s.notifyRunning()
 	defer s.mu.Unlock()
 	if s.stopped {
 		return false
 	}
+	s.samplingDurationMS += duration
 	sample := HostResourceSample{At: at, ElapsedMS: s.nextElapsed(at)}
 	s.recordReading(&sample, reading, at)
 	s.samples = append(s.samples, sample)
+	if len(s.samples) == s.bound {
+		s.samplingEnded = time.Now().UTC()
+	}
 	return len(s.samples) < s.bound
 }
 
@@ -245,8 +302,12 @@ func (s *ResourceSampler) recordReading(sample *HostResourceSample, reading host
 		s.memory.measured++
 	}
 	if reading.swap != nil {
-		sample.Swap = reading.swap
-		s.swap.measured++
+		if reading.swap.UsedBytes > reading.swap.TotalBytes || reading.swap.FreeBytes > reading.swap.TotalBytes {
+			reading.problems = append(reading.problems, fmt.Sprintf("swap: invalid reading: %+v", *reading.swap))
+		} else {
+			sample.Swap = reading.swap
+			s.swap.measured++
+		}
 	}
 	if len(reading.problems) > 0 {
 		s.recordReadingProblems(reading.problems)
@@ -261,17 +322,24 @@ func (s *ResourceSampler) recordSampleCPU(sample *HostResourceSample, reading *h
 			SystemPercent: reading.cpuPercent.system, IdlePercent: reading.cpuPercent.idle,
 			WindowMS: reading.cpuPercent.windowMS,
 		}
-		s.cpu.measured++
 	case reading.cpuTicks != nil:
 		cpu, problem := s.cpuDeltaSample(reading.cpuTicks, at)
 		if problem != "" {
 			reading.problems = append(reading.problems, problem)
 		} else if cpu != nil {
 			sample.CPU = cpu
-			s.cpu.measured++
 		}
 		s.prevTicks, s.prevAt = reading.cpuTicks, at
 	}
+	if sample.CPU == nil {
+		return
+	}
+	if !validCPUSample(*sample.CPU) || sample.CPU.WindowMS < 0 {
+		reading.problems = append(reading.problems, fmt.Sprintf("cpu: invalid reading: %+v", *sample.CPU))
+		sample.CPU = nil
+		return
+	}
+	s.cpu.measured++
 }
 
 func (s *ResourceSampler) recordReadingProblems(problems []string) {
@@ -327,15 +395,77 @@ func cpuTicksAdvance(previous, current *cpuTicksReading) bool {
 }
 
 func (s *ResourceSampler) Stop() ResourceSamples {
+	return s.StopWithState("completed")
+}
+
+func (s *ResourceSampler) StopWithState(executionState string) ResourceSamples {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.stopped {
-		return s.document
+		document := s.document
+		s.mu.Unlock()
+		return document
 	}
 	s.stopped = true
 	close(s.done)
+	if s.source.cancel != nil {
+		s.source.cancel()
+	}
 	s.document = s.finalize(time.Now().UTC())
-	return s.document
+	s.document.Coverage.ExecutionState = executionState
+	document := s.document
+	s.mu.Unlock()
+	if s.publish != nil {
+		s.publish(document)
+	}
+	return document
+}
+
+func (s *ResourceSampler) Snapshot() ResourceSamples {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.snapshotLocked()
+}
+
+func (s *ResourceSampler) snapshotLocked() ResourceSamples {
+	if s.stopped {
+		return s.document
+	}
+	document := s.finalize(time.Time{})
+	document.Coverage.ExecutionState = "running"
+	if !document.Coverage.Truncated {
+		document.Coverage.EndBasis = ""
+	}
+	if document.Coverage.Truncated {
+		document.Coverage.ExecutionState = ResourceExecutionTruncated
+	}
+	return document
+}
+
+func (s *ResourceSampler) notifyRunning() {
+	if s.publish == nil {
+		return
+	}
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
+	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		return
+	}
+	document := s.snapshotLocked()
+	s.mu.Unlock()
+	s.publish(document)
+}
+
+func (s *ResourceSampler) notify() {
+	if s.publish == nil {
+		return
+	}
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
+	s.publish(s.Snapshot())
 }
 
 func (s *ResourceSampler) finalize(ended time.Time) ResourceSamples {
@@ -344,10 +474,16 @@ func (s *ResourceSampler) finalize(ended time.Time) ResourceSamples {
 		IntervalMS: s.interval.Milliseconds(), SampleBound: s.bound,
 		StartedAt: s.started, EndedAt: ended, EndBasis: ResourceSampleEndBasis,
 		CPUState: resourceDomainState(s.cpu), MemoryState: resourceDomainState(s.memory), SwapState: resourceDomainState(s.swap),
-		ProblemTicks: s.problemTicks,
+		ProblemTicks:       s.problemTicks,
+		SynchronousSamples: s.synchronousSamples, SynchronousWaitMS: s.synchronousWaitMS,
+		SamplingDurationMS: s.samplingDurationMS,
 	}
 	coverage.Problems = boundedProblems(s.ordered)
 	coverage.Truncated = len(s.samples) >= s.bound
+	if coverage.Truncated {
+		coverage.EndedAt = s.samplingEnded
+		coverage.EndBasis = "sample-bound-reached"
+	}
 	switch {
 	case s.cpu.measured == 0 && s.memory.measured == 0 && s.swap.measured == 0:
 		coverage.Status = ResourceCoverageFailed
@@ -357,7 +493,7 @@ func (s *ResourceSampler) finalize(ended time.Time) ResourceSamples {
 	}
 	return ResourceSamples{
 		SchemaVersion: ResourceSamplesSchemaVersion, ValidationRunID: s.runID, Form: s.form,
-		Host: s.source.host, Coverage: coverage, Samples: s.samples,
+		Execution: s.execution, Host: s.source.host, Coverage: coverage, Samples: append([]HostResourceSample(nil), s.samples...),
 	}
 }
 
@@ -365,9 +501,9 @@ func (s *ResourceSampler) unsupportedDocument(reason string) ResourceSamples {
 	unsupported := ResourceStateUnsupported
 	return ResourceSamples{
 		SchemaVersion: ResourceSamplesSchemaVersion, ValidationRunID: s.runID, Form: s.form,
-		Host: s.source.host,
+		Execution: s.execution, Host: s.source.host,
 		Coverage: ResourceSampleCoverage{
-			Status: ResourceCoverageUnsupported, Source: s.source.label,
+			Status: ResourceCoverageUnsupported, Source: s.source.label, ExecutionState: "unsupported",
 			IntervalMS:  s.interval.Milliseconds(),
 			SampleBound: s.bound,
 			CPUState:    unsupported, MemoryState: unsupported, SwapState: unsupported,
@@ -428,23 +564,48 @@ func validateResourceSamples(samples ResourceSamples) error {
 	if !ValidRunID(samples.ValidationRunID) {
 		return fmt.Errorf("resource samples run identity is invalid")
 	}
-	if samples.Form != formGoTest && samples.Form != formGoTestRace {
+	if samples.Form == "task-call" {
+		if err := validateResourceExecution(samples); err != nil {
+			return err
+		}
+	} else if samples.Execution != nil {
+		return fmt.Errorf("gate resources carry task-call identity")
+	}
+	if samples.Form != formGoTest && samples.Form != formGoTestRace && samples.Form != "task-call" {
 		return fmt.Errorf("resource samples form is missing")
 	}
 	if err := validateResourceCoverage(samples.Coverage, len(samples.Samples)); err != nil {
 		return err
 	}
 	previous := int64(-1)
-	for _, sample := range samples.Samples {
+	for index, sample := range samples.Samples {
 		if err := validateResourceSampleRow(sample, previous); err != nil {
-			return err
+			return fmt.Errorf("resource sample %d: %w", index, err)
 		}
 		previous = sample.ElapsedMS
 	}
 	return nil
 }
 
+func validateResourceExecution(samples ResourceSamples) error {
+	e := samples.Execution
+	if samples.Coverage.ExecutionState == "" {
+		return fmt.Errorf("task resources lack execution coverage")
+	}
+	if e == nil || !state.ValidGeneratedUUID(e.TaskID) || !state.ValidGeneratedUUID(e.CallID) ||
+		strings.ReplaceAll(e.CallID, "-", "") != samples.ValidationRunID || e.SessionID == "" ||
+		e.Role == "" || e.Phase == "" || e.Repository == "" {
+		return fmt.Errorf("task resource execution identity is invalid")
+	}
+	return nil
+}
+
 func validateResourceCoverage(coverage ResourceSampleCoverage, rows int) error {
+	switch coverage.ExecutionState {
+	case "", "running", "completed", "interrupted", ResourceExecutionTruncated, "unsupported":
+	default:
+		return fmt.Errorf("resource execution state is invalid")
+	}
 	if !validResourceCoverageStatus(coverage.Status) {
 		return fmt.Errorf("resource samples coverage status %q is unsupported", coverage.Status)
 	}
@@ -509,20 +670,20 @@ func validateResourceSampleRow(sample HostResourceSample, previous int64) error 
 	case sample.ElapsedMS < 0 || sample.ElapsedMS <= previous:
 		return fmt.Errorf("resource sample elapsed %d is not increasing", sample.ElapsedMS)
 	case sample.CPU != nil && !validCPUSample(*sample.CPU):
-		return fmt.Errorf("resource sample cpu percentages are invalid")
+		return fmt.Errorf("resource sample cpu percentages are invalid: %+v", *sample.CPU)
 	case sample.CPU != nil && sample.CPU.WindowMS < 0:
 		return fmt.Errorf("resource sample cpu window is negative")
 	case sample.Swap != nil && sample.Swap.UsedBytes > sample.Swap.TotalBytes:
-		return fmt.Errorf("resource sample swap usage exceeds its total")
+		return fmt.Errorf("resource sample swap usage exceeds its total: %+v", *sample.Swap)
 	case sample.Swap != nil && sample.Swap.FreeBytes > sample.Swap.TotalBytes:
-		return fmt.Errorf("resource sample swap free exceeds its total")
+		return fmt.Errorf("resource sample swap free exceeds its total: %+v", *sample.Swap)
 	}
 	return nil
 }
 
 func validCPUSample(cpu CPUSample) bool {
 	for _, percent := range []float64{cpu.BusyPercent, cpu.UserPercent, cpu.SystemPercent, cpu.IdlePercent} {
-		if percent < 0 || percent > 100 {
+		if math.IsNaN(percent) || math.IsInf(percent, 0) || percent < 0 || percent > 100 {
 			return false
 		}
 	}

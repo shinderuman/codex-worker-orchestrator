@@ -286,6 +286,8 @@ func (r *ClaudeRunner) runSession(
 	} else {
 		result.CallID = callID
 	}
+	stopResources := r.observeTaskResources(taskID, callID, sessionID, role, phase, result.Runtime)
+	defer stopResources()
 	versionScope := r.beginClaudeVersionScope(sessionID)
 	ingester, stderrPath, runErr, err := r.executeRunCommand(
 		role, phase, model, taskID, sessionID, callID, ready, args, inputs, outputPath, deadline, admit,
