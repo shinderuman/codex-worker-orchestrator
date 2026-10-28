@@ -50,6 +50,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`](IMPLEMENTATION_TASKS/repo-search-result-context-budget.md)
 - [`IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`](IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md)
 - [`IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`](IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md)
+- [`IMPLEMENTATION_TASKS/post-publication-parent-reverification-containment.md`](IMPLEMENTATION_TASKS/post-publication-parent-reverification-containment.md)
 - [`IMPLEMENTATION_TASKS/repository-review-artifact-cleanup.md`](IMPLEMENTATION_TASKS/repository-review-artifact-cleanup.md)
 - [`IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`](IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md)
 - [`IMPLEMENTATION_TASKS/022-final-verification.md`](IMPLEMENTATION_TASKS/022-final-verification.md)
