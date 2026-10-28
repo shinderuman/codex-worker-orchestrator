@@ -1,6 +1,9 @@
 package controller
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func (s *Store) PromoteAcceptedCandidate(input PublicationInput) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
@@ -168,5 +171,30 @@ func (s *Store) validateCompletionPromotion(c AcceptedCandidate) error {
 	if err := validateCandidatePromotion(c); err != nil {
 		return err
 	}
-	return s.requireCompletedCandidateInstall(c)
+	if err := s.requireCompletedCandidateInstall(c); err != nil {
+		return err
+	}
+	outstanding, err := s.outstandingFinalValidations(c)
+	if err != nil {
+		return err
+	}
+	if len(outstanding) != 0 {
+		return fmt.Errorf("candidate has outstanding final validations: %s", strings.Join(finalValidationFormNames(outstanding), ", "))
+	}
+	probes, err := s.outstandingSmokeProbes(c)
+	if err != nil {
+		return err
+	}
+	if len(probes) != 0 {
+		return fmt.Errorf("candidate has outstanding post-install smoke probes: %s", strings.Join(smokeProbeIDs(probes), ", "))
+	}
+	return nil
+}
+
+func finalValidationFormNames(requests []FinalValidationRequest) []string {
+	forms := make([]string, 0, len(requests))
+	for _, request := range requests {
+		forms = append(forms, request.Form)
+	}
+	return forms
 }

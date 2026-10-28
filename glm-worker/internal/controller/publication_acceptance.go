@@ -100,7 +100,7 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 	if strings.TrimSpace(input.Message) == "" || admission.Lease.InFlightCallID != "" {
 		return ExecutionOperation{}, fmt.Errorf("candidate acceptance requires message and quiescent execution")
 	}
-	requiredValidations, err := s.inheritRequiredValidations(admission, input.RequiredValidationForms)
+	requiredValidations, requiredProbes, err := s.resolveAdoptedValidations(admission, input)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -124,14 +124,14 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 	record.SourceWorkspaceID = admission.Workspace.ID
 	record.TargetExecutionTaskRef = admission.Attempt.SemanticTaskRef
 	record.TargetRootTaskRef = admission.Attempt.RootTaskRef
-	candidate, err := s.buildAcceptedCandidate(admission, input, record, tree, requiredValidations)
+	candidate, err := s.buildAcceptedCandidate(admission, input, record, tree, requiredValidations, requiredProbes)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
 	return s.assembleCandidateAcceptance(admission, input, record, captured, candidate)
 }
 
-func (s *Store) buildAcceptedCandidate(admission Admission, input CandidateAcceptanceInput, record TransitionRecord, implementationTree string, requiredValidations []FinalValidationRequest) (AcceptedCandidate, error) {
+func (s *Store) buildAcceptedCandidate(admission Admission, input CandidateAcceptanceInput, record TransitionRecord, implementationTree string, requiredValidations []FinalValidationRequest, requiredProbes []SmokeProbeDeclaration) (AcceptedCandidate, error) {
 	files, finalTree, err := s.finalizeCandidateTree(admission, implementationTree)
 	if err != nil {
 		return AcceptedCandidate{}, err
@@ -143,7 +143,7 @@ func (s *Store) buildAcceptedCandidate(admission Admission, input CandidateAccep
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
-	candidate := AcceptedCandidate{SchemaVersion: controllerSchemaVersion, AttemptID: admission.Attempt.AttemptID, TaskRef: admission.Attempt.SemanticTaskRef, RootTaskRef: admission.Attempt.RootTaskRef, EpisodeID: admission.Head.ActiveEpisodeID, EpisodeRevision: admission.Head.ActiveEpisodeRevision, ProjectSnapshotID: admission.Head.ProjectSnapshotID, ControllerGeneration: record.CommittedGeneration, TransitionID: record.TransitionID, BaseOID: admission.Head.IntegrationTip, CommitOID: commit, TreeOID: finalTree, ImplementationTree: implementationTree, SnapshotID: admission.Snapshot.ID, Message: input.Message, State: candidatePrepared, TerminalFiles: files, RequiredValidations: requiredValidations, EvidenceValid: true, Evidence: input.Evidence, Policy: input.Policy, CreatedAt: record.CreatedAt}
+	candidate := AcceptedCandidate{SchemaVersion: controllerSchemaVersion, AttemptID: admission.Attempt.AttemptID, TaskRef: admission.Attempt.SemanticTaskRef, RootTaskRef: admission.Attempt.RootTaskRef, EpisodeID: admission.Head.ActiveEpisodeID, EpisodeRevision: admission.Head.ActiveEpisodeRevision, ProjectSnapshotID: admission.Head.ProjectSnapshotID, ControllerGeneration: record.CommittedGeneration, TransitionID: record.TransitionID, BaseOID: admission.Head.IntegrationTip, CommitOID: commit, TreeOID: finalTree, ImplementationTree: implementationTree, SnapshotID: admission.Snapshot.ID, Message: input.Message, State: candidatePrepared, TerminalFiles: files, RequiredValidations: requiredValidations, RequiredSmokeProbes: requiredProbes, EvidenceValid: true, Evidence: input.Evidence, Policy: input.Policy, CreatedAt: record.CreatedAt}
 	if err := s.validateCandidateEvidence(candidate, input.Evidence); err != nil {
 		return AcceptedCandidate{}, err
 	}

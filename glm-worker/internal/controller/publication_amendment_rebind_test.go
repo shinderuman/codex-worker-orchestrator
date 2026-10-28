@@ -59,7 +59,7 @@ func acceptedAmendmentLane(t *testing.T) (findingAcceptanceFixture, PublicationP
 	t.Helper()
 	f, p := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, f, "result.txt", "task result\n")
-	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(),
 		Message: "task result", Policy: p,
 		Evidence: publicationTestEvidence(t, f.store, source, p),
 	})
@@ -293,7 +293,7 @@ func TestApprovedTaskAmendmentRebindPreservesExecutionAuthority(t *testing.T) {
 	source := publicationTestEdit(t, f, "child.txt", "child task result\n")
 	f.source = source
 	seedFinalValidationNoneObligation(t, f.store, source)
-	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(),
 		Message: "child task result", Policy: p,
 		Evidence: publicationTestEvidence(t, f.store, source, p),
 	})

@@ -250,7 +250,7 @@ func (h *lifecycleHarness) retireLifecycleTask(t *testing.T, admission Admission
 	t.Helper()
 	seedFinalValidationNoneObligation(t, h.store, admission)
 	evidence := publicationTestEvidence(t, h.store, admission, h.policy)
-	accepted, err := h.store.AcceptExecutionCandidate(admission, CandidateAcceptanceInput{Message: message, Policy: h.policy, Evidence: evidence})
+	accepted, err := h.store.AcceptExecutionCandidate(admission, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: message, Policy: h.policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -177,7 +177,7 @@ func completedRetiredWorkflowFixture(t *testing.T) (config.AppConfig, controller
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, true)
 	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
-	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "completed runtime result", Policy: policy, Evidence: evidence})
+	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "completed runtime result", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)
 	}

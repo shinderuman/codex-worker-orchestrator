@@ -26,7 +26,7 @@ func primaryPromotionFixture(t *testing.T) (findingAcceptanceFixture, Publicatio
 		t.Fatal(err)
 	}
 	writeSuspensionTestFile(t, primary, "IMPLEMENTATION_PLAN.local.md", string(plan)+"\n")
-	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "lane result", Policy: policy, Evidence: publicationTestEvidence(t, f.store, source, policy)})
+	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "lane result", Policy: policy, Evidence: publicationTestEvidence(t, f.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

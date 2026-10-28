@@ -15,16 +15,18 @@ import (
 const (
 	controllerPublicationAction = "controller-publication"
 
-	publicationCommandTemplatePrefix    = "COMMAND_TEMPLATE: "
-	publicationMessagePrefix            = "MESSAGE: "
-	publicationRequireInstallPrefix     = "REQUIRE_INSTALL: "
-	publicationFailureDispositionPrefix = "FAILURE_DISPOSITION: "
+	publicationCommandTemplatePrefix     = "COMMAND_TEMPLATE: "
+	publicationMessagePrefix             = "MESSAGE: "
+	publicationRequireInstallPrefix      = "REQUIRE_INSTALL: "
+	publicationFailureDispositionPrefix  = "FAILURE_DISPOSITION: "
+	publicationRequiredValidationsPrefix = "REQUIRED_VALIDATIONS: "
 )
 
 var publicationSemanticLabels = map[string]string{
-	"MESSAGE":             controller.CompletionSlotMessage,
-	"REQUIRE_INSTALL":     controller.CompletionSlotRequireInstall,
-	"FAILURE_DISPOSITION": controller.CompletionSlotFailureDisposition,
+	"MESSAGE":              controller.CompletionSlotMessage,
+	"REQUIRE_INSTALL":      controller.CompletionSlotRequireInstall,
+	"FAILURE_DISPOSITION":  controller.CompletionSlotFailureDisposition,
+	"REQUIRED_VALIDATIONS": controller.CompletionSlotRequiredValidations,
 }
 
 func publicationStagedTemplate(cfg config.AppConfig, selected string) (parentaction.StagedTemplate, error) {
@@ -52,6 +54,9 @@ func publicationStagedTemplate(cfg config.AppConfig, selected string) (parentact
 		case controller.CompletionSlotFailureDisposition:
 			payload.WriteString(publicationFailureDispositionPrefix + parentaction.PublicationFailureDispositionPlaceholder + "\n")
 			slots = append(slots, parentaction.PreparedSlot{Name: semantic, Placeholder: parentaction.PublicationFailureDispositionPlaceholder, Choices: []string{completionRetry, completionReenter}})
+		case controller.CompletionSlotRequiredValidations:
+			payload.WriteString(publicationRequiredValidationsPrefix + parentaction.PublicationRequiredValidationsPlaceholder + "\n")
+			slots = append(slots, parentaction.PreparedSlot{Name: parentaction.PublicationRequiredValidationsSlotName, Placeholder: parentaction.PublicationRequiredValidationsPlaceholder})
 		default:
 			return parentaction.StagedTemplate{}, fmt.Errorf("controller publication operation declares unknown semantic slot %q", semantic)
 		}
@@ -114,6 +119,8 @@ func applyPublicationSemanticValue(command map[string]json.RawMessage, name, val
 		return err
 	case controller.CompletionSlotRequireInstall:
 		return applyPublicationInstallObligation(command, value)
+	case controller.CompletionSlotRequiredValidations:
+		return applyPublicationRequiredValidations(command, value)
 	case controller.CompletionSlotFailureDisposition:
 		if value != completionRetry && value != completionReenter {
 			return fmt.Errorf("completion failure disposition must be retry or reenter")
@@ -138,6 +145,18 @@ func applyPublicationInstallObligation(command map[string]json.RawMessage, value
 	encoded, err := json.Marshal(policy)
 	command["policy"] = encoded
 	return err
+}
+
+func applyPublicationRequiredValidations(command map[string]json.RawMessage, value string) error {
+	if strings.Contains(value, parentaction.PublicationRequiredValidationsPlaceholder) {
+		return fmt.Errorf("publication staged required validation declaration was not supplied")
+	}
+	var declaration controller.RequiredValidationDeclaration
+	if err := json.Unmarshal([]byte(value), &declaration); err != nil {
+		return fmt.Errorf("publication required validation declaration is not valid JSON: %w", err)
+	}
+	command["required_validations"] = json.RawMessage(value)
+	return nil
 }
 
 func validatePreparedCompletionBinding(cfg config.AppConfig, payload, _ []byte) error {

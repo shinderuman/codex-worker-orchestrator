@@ -2,6 +2,8 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -97,8 +99,16 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 
 		command := exec.Command("git", "rev-parse", "HEAD")
 		command.Dir, command.Stdout, command.Stderr = root, output, output
-		err := command.Run()
-		return controller.InstalledRuntimeIdentity{SourceOID: sourceOID, BinaryPath: filepath.Join(root, "test-native-installer"), BinarySHA256: strings.Repeat("a", 64)}, err
+		if err := command.Run(); err != nil {
+			return controller.InstalledRuntimeIdentity{}, err
+		}
+		binary := filepath.Join(os.Getenv("GLM_WORKER_HOME"), "typed-installed-worker")
+		data := []byte("#!/bin/sh\nexit 0\n")
+		if err := os.WriteFile(binary, data, 0o755); err != nil {
+			return controller.InstalledRuntimeIdentity{}, err
+		}
+		sum := sha256.Sum256(data)
+		return controller.InstalledRuntimeIdentity{SourceOID: sourceOID, BinaryPath: binary, BinarySHA256: hex.EncodeToString(sum[:])}, nil
 	}
 	if err := Run(os.Args[separator+1:]); err != nil {
 		_ = WriteProcessError(os.Stderr, err)
@@ -273,6 +283,11 @@ func typedSemanticSlotValues(t *testing.T, parameters map[string]string, require
 	case "complete":
 		semantic["message"] = "typed completion accepted"
 		semantic["require_install"] = fmt.Sprintf("%t", requireInstall)
+		if requireInstall {
+			semantic["required_validations"] = `{"forms":[{"form":"go-test","working_dir":"glm-worker"}],"probes":[{"probe_id":"typed-worker-path","verifies":"the deployed worker path executes the declared probe argv","argv":["/bin/sh","-c","exit 0"]}]}`
+		} else {
+			semantic["required_validations"] = `{"forms":[]}`
+		}
 	case "install-completion", "resolve-validation-failure":
 		semantic["failure_disposition"] = "retry"
 	case "promote", "publish", "recover":

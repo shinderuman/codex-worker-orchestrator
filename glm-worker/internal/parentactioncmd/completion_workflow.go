@@ -118,7 +118,7 @@ func runCompletionStep(cfg config.AppConfig, operation controller.ParentCompleti
 		return false, fmt.Errorf("completion requires a parent disposition at %s", operation.Operation)
 	}
 	switch operation.Operation {
-	case controller.PublicationOperationPromote, controller.PublicationOperationPublish, controller.PublicationOperationRecover, controller.PublicationOperationInstall:
+	case controller.PublicationOperationPromote, controller.PublicationOperationPublish, controller.PublicationOperationRecover, controller.PublicationOperationInstall, controller.PublicationOperationPostInstallSmoke:
 	default:
 		return false, fmt.Errorf("completion requires a parent disposition at %s", operation.Operation)
 	}

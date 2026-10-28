@@ -339,7 +339,7 @@ func retiredInstallRequiredMetadataFixture(t *testing.T) (findingAcceptanceFixtu
 	install := storeRetiredInstallEvidence(t, fixture.store, base)
 	refs := append(storePublicationTestEvidence(t, fixture.store, base), install)
 	seedFinalValidationNoneObligation(t, fixture.store, source)
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "install required result", Policy: policy, Evidence: refs})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "install required result", Policy: policy, Evidence: refs})
 	if err != nil {
 		t.Fatal(err)
 	}

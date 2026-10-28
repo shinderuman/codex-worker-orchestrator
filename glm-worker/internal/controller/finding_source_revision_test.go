@@ -73,7 +73,7 @@ func TestFindingDispositionAfterSourceRevisionBindsCurrentAuthority(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted, err := fixture.store.AcceptExecutionCandidate(sealed, CandidateAcceptanceInput{Message: "post-disposition result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, sealed, policy)})
+	accepted, err := fixture.store.AcceptExecutionCandidate(sealed, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "post-disposition result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, sealed, policy)})
 	if err != nil {
 		t.Fatalf("same-Task candidate acceptance rejected the dispositioned finding: %v", err)
 	}

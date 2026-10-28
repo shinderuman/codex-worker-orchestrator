@@ -44,6 +44,10 @@ type RunRecord struct {
 	WorktreeDigestExcludingParent string        `json:"worktree_digest_excluding_parent,omitempty"`
 	IgnoredInputsAbsent           *bool         `json:"ignored_inputs_absent,omitempty"`
 	TaskID                        string        `json:"task_id,omitempty"`
+	ProbeID                       string        `json:"probe_id,omitempty"`
+	ArgvDigest                    string        `json:"argv_digest,omitempty"`
+	TaskAuthorityDigest           string        `json:"task_authority_digest,omitempty"`
+	InstallEvidenceDigest         string        `json:"install_evidence_digest,omitempty"`
 	Toolchain                     *RunToolchain `json:"toolchain,omitempty"`
 	StartedAt                     time.Time     `json:"started_at"`
 	CompletedAt                   *time.Time    `json:"completed_at,omitempty"`

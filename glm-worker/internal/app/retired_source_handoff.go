@@ -25,7 +25,7 @@ func applyRetiredSourceSyncHandoff(cfg config.AppConfig, output *parentHandoffOu
 		return
 	}
 	if requiresSource {
-		action = "adopt-source"
+		action = controller.PublicationOperationAdoptSource
 	}
 	command, err := json.Marshal(controllerPublicationCommand{Action: action, ExpectedGeneration: head.ControllerGeneration, Policy: *head.PublicationPolicy, SourceOID: authority.Snapshot.HeadOID})
 	if err == nil {

@@ -41,7 +41,7 @@ func userTaskTransitionFixture(t *testing.T) (config.AppConfig, *controller.Stor
 	if err := runtime.Write("repo-root", source.Workspace.Root); err != nil {
 		t.Fatal(err)
 	}
-	accepted, err = store.AcceptExecutionCandidate(source, controller.CandidateAcceptanceInput{Message: "saved implementation", Policy: policy, Evidence: canonicalWorkflowEvidence(t, cfg, store, source, policy)})
+	accepted, err = store.AcceptExecutionCandidate(source, controller.CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "saved implementation", Policy: policy, Evidence: canonicalWorkflowEvidence(t, cfg, store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

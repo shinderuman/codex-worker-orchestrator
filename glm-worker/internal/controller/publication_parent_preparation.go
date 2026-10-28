@@ -70,7 +70,7 @@ func (s *Store) AcceptParentCompletion(admission Admission, input CandidateAccep
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	required, err := s.inheritRequiredValidations(admission, input.RequiredValidationForms)
+	required, requiredProbes, err := s.resolveAdoptedValidations(admission, input)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -87,7 +87,7 @@ func (s *Store) AcceptParentCompletion(admission Admission, input CandidateAccep
 		artifact     any
 	}{
 		{candidateEvidenceKindReview, candidateEvidencePass, reviewProof},
-		{candidateEvidenceKindValidationObligation, candidateEvidenceDeclared, CandidateValidationObligation{Required: required, NotRequired: len(required) == 0}},
+		{candidateEvidenceKindValidationObligation, candidateEvidenceDeclared, CandidateValidationObligation{Required: required, Probes: requiredProbes, NotRequired: len(required) == 0 && len(requiredProbes) == 0}},
 	}
 	if input.Policy.RequireInstall {
 		proofs = append(proofs, struct {

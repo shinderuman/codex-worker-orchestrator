@@ -48,13 +48,15 @@ const (
 	observationWorkingDirPlaceholder = "__GLM_OBSERVATION_WORKING_DIR__"
 	observationDeadlinePlaceholder   = "__GLM_OBSERVATION_DEADLINE_MS__"
 
-	PublicationMessagePlaceholder            = "__GLM_PUBLICATION_MESSAGE__"
-	PublicationRequireInstallPlaceholder     = "__GLM_PUBLICATION_REQUIRE_INSTALL__"
-	RuntimeDispositionReasonPlaceholder      = "__GLM_RUNTIME_DISPOSITION_REASON__"
-	PublicationFailureDispositionPlaceholder = "__GLM_PUBLICATION_FAILURE_DISPOSITION__"
+	PublicationMessagePlaceholder             = "__GLM_PUBLICATION_MESSAGE__"
+	PublicationRequireInstallPlaceholder      = "__GLM_PUBLICATION_REQUIRE_INSTALL__"
+	RuntimeDispositionReasonPlaceholder       = "__GLM_RUNTIME_DISPOSITION_REASON__"
+	PublicationFailureDispositionPlaceholder  = "__GLM_PUBLICATION_FAILURE_DISPOSITION__"
+	PublicationRequiredValidationsPlaceholder = "__GLM_PUBLICATION_REQUIRED_VALIDATIONS__"
 
-	PublicationMessageSlotName        = "message"
-	PublicationRequireInstallSlotName = "require_install"
+	PublicationMessageSlotName             = "message"
+	PublicationRequireInstallSlotName      = "require_install"
+	PublicationRequiredValidationsSlotName = "required_validations"
 )
 
 const observationExecuteTemplate = "OPERATION: " + observationOperationPlaceholder + "\n" +
@@ -202,7 +204,7 @@ func payloadComplete(payload []byte) bool {
 	if len(payload) == 0 {
 		return false
 	}
-	for _, marker := range []string{placeholder, decisionPlaceholder, executionUnitPlaceholder, observationOperationPlaceholder, observationReferencePlaceholder, observationWorkingDirPlaceholder, observationDeadlinePlaceholder, PublicationMessagePlaceholder, PublicationRequireInstallPlaceholder, RuntimeDispositionReasonPlaceholder, PublicationFailureDispositionPlaceholder} {
+	for _, marker := range []string{placeholder, decisionPlaceholder, executionUnitPlaceholder, observationOperationPlaceholder, observationReferencePlaceholder, observationWorkingDirPlaceholder, observationDeadlinePlaceholder, PublicationMessagePlaceholder, PublicationRequireInstallPlaceholder, RuntimeDispositionReasonPlaceholder, PublicationFailureDispositionPlaceholder, PublicationRequiredValidationsPlaceholder} {
 		if bytes.Contains(payload, []byte(marker)) {
 			return false
 		}

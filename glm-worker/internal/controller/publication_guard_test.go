@@ -37,7 +37,7 @@ func TestPublicationGuardAuthorizesOnlyExactPendingPromotionRefUpdate(t *testing
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "candidate.txt", "candidate\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(),
 		Message:  "candidate",
 		Policy:   policy,
 		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
@@ -95,7 +95,7 @@ func TestPublicationGuardAuthorizesOnlyExactPendingRemotePublication(t *testing.
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "candidate.txt", "candidate\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(),
 		Message:  "candidate",
 		Policy:   policy,
 		Evidence: publicationTestEvidence(t, fixture.store, source, policy),

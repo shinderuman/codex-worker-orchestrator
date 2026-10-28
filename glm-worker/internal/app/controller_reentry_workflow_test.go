@@ -119,7 +119,7 @@ func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
 	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
-	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "reentry corpus result", Policy: policy, Evidence: evidence})
+	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "reentry corpus result", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)
 	}

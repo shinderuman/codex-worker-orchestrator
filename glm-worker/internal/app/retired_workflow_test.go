@@ -218,7 +218,7 @@ func promotedWorkflowFixture(t *testing.T) (config.AppConfig, *controller.Store,
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, true)
 	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
-	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "root result", Policy: policy, Evidence: evidence})
+	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "root result", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,18 +9,18 @@ import (
 )
 
 type controllerPublicationCommand struct {
-	Action                  string                            `json:"action"`
-	ExpectedGeneration      uint64                            `json:"expected_generation"`
-	SourceOID               string                            `json:"source_oid,omitempty"`
-	CandidateID             string                            `json:"candidate_id,omitempty"`
-	TransitionID            string                            `json:"transition_id,omitempty"`
-	Policy                  controller.PublicationPolicy      `json:"policy"`
-	Message                 string                            `json:"message,omitempty"`
-	Evidence                []controller.EvidenceObjectRef    `json:"evidence,omitempty"`
-	RequiredValidationForms []string                          `json:"required_validation_forms,omitempty"`
-	EvidenceRecord          *controller.CandidateEvidence     `json:"evidence_record,omitempty"`
-	ArtifactJSON            json.RawMessage                   `json:"artifact_json,omitempty"`
-	Amendment               *controller.TaskAmendmentApproval `json:"amendment,omitempty"`
+	Action              string                                    `json:"action"`
+	ExpectedGeneration  uint64                                    `json:"expected_generation"`
+	SourceOID           string                                    `json:"source_oid,omitempty"`
+	CandidateID         string                                    `json:"candidate_id,omitempty"`
+	TransitionID        string                                    `json:"transition_id,omitempty"`
+	Policy              controller.PublicationPolicy              `json:"policy"`
+	Message             string                                    `json:"message,omitempty"`
+	Evidence            []controller.EvidenceObjectRef            `json:"evidence,omitempty"`
+	RequiredValidations *controller.RequiredValidationDeclaration `json:"required_validations,omitempty"`
+	EvidenceRecord      *controller.CandidateEvidence             `json:"evidence_record,omitempty"`
+	ArtifactJSON        json.RawMessage                           `json:"artifact_json,omitempty"`
+	Amendment           *controller.TaskAmendmentApproval         `json:"amendment,omitempty"`
 }
 
 func executeControllerPublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
@@ -50,8 +50,8 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 		return executeUnsealedCompletionReentry(cfg, store, command)
 	case "store-evidence":
 		return storePublicationCommandEvidence(store, command.EvidenceRecord, command.ArtifactJSON)
-	case "install-completion":
-		return executeParentCompletionInstall(cfg, store, input, command)
+	case "install-completion", "post-install-smoke":
+		return executeParentCompletionDeployment(cfg, store, input, command)
 	case "promote":
 		return store.PromoteAcceptedCandidate(input)
 	case "publish":
@@ -62,13 +62,25 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 		return store.RevalidateAcceptedCandidate(input, command.Evidence)
 	case "reenter":
 		return store.ReenterAcceptedCandidate(input)
-	case "adopt-source":
-		return store.AdoptRetiredExternalSource(controller.RetiredSourceAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy, SourceOID: command.SourceOID})
-	case "adopt":
-		return store.AdoptExternalAdvancement(controller.ExternalAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy})
+	case controller.PublicationOperationAdoptSource, "adopt":
+		return executeExternalAdvancement(store, command)
 	default:
 		return executeMutablePublication(cfg, store, command)
 	}
+}
+
+func executeParentCompletionDeployment(cfg config.AppConfig, store *controller.Store, input controller.PublicationInput, command controllerPublicationCommand) (any, error) {
+	if command.Action == "post-install-smoke" {
+		return executeParentCompletionPostInstallSmoke(cfg, store, input, command)
+	}
+	return executeParentCompletionInstall(cfg, store, input, command)
+}
+
+func executeExternalAdvancement(store *controller.Store, command controllerPublicationCommand) (any, error) {
+	if command.Action == controller.PublicationOperationAdoptSource {
+		return store.AdoptRetiredExternalSource(controller.RetiredSourceAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy, SourceOID: command.SourceOID})
+	}
+	return store.AdoptExternalAdvancement(controller.ExternalAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy})
 }
 
 func executeMutablePublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
@@ -82,12 +94,12 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 	}
 	switch command.Action {
 	case "complete":
-		return store.AcceptParentCompletion(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy})
+		return store.AcceptParentCompletion(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, RequiredValidations: command.RequiredValidations})
 	case "preview":
 		tree, err := store.PreviewCandidateTree(admission, command.Policy)
 		return map[string]string{"tree_oid": tree, "base_oid": admission.Head.IntegrationTip, "attempt_id": admission.Attempt.AttemptID, "snapshot_id": admission.Snapshot.ID}, err
 	case "accept":
-		return store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, Evidence: command.Evidence, RequiredValidationForms: command.RequiredValidationForms})
+		return store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, Evidence: command.Evidence, RequiredValidations: command.RequiredValidations})
 	default:
 		return store.AdoptMutableExternalAdvancement(admission, command.Policy)
 	}

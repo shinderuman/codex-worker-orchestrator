@@ -12,7 +12,7 @@ func TestTerminalCandidateRejectsInvalidSuccessorBeforeAcceptance(t *testing.T) 
 	if _, err := f.store.PreviewCandidateTree(f.source, policy); err == nil || !strings.Contains(err.Error(), "External feasibility") {
 		t.Fatalf("invalid successor preview: %v", err)
 	}
-	if _, err := f.store.AcceptExecutionCandidate(f.source, CandidateAcceptanceInput{Message: "invalid terminal metadata", Policy: policy}); err == nil || !strings.Contains(err.Error(), "External feasibility") {
+	if _, err := f.store.AcceptExecutionCandidate(f.source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "invalid terminal metadata", Policy: policy}); err == nil || !strings.Contains(err.Error(), "External feasibility") {
 		t.Fatalf("invalid successor acceptance: %v", err)
 	}
 	after, err := f.store.LoadHead()

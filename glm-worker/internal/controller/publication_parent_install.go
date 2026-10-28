@@ -39,6 +39,11 @@ func (s *Store) requireCompletedCandidateInstall(candidate AcceptedCandidate) er
 			return err
 		}
 		if kind == candidateEvidenceKindInstall {
+			if len(candidate.RequiredSmokeProbes) != 0 {
+				if _, err := s.PostInstallSmokeDeployment(candidate); err != nil {
+					return errors.Join(errCandidateInstallPending, err)
+				}
+			}
 			return nil
 		}
 	}

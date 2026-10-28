@@ -53,7 +53,7 @@ func TestCandidateEvidenceJSONEnablesAcceptanceWithImmutableArtifacts(t *testing
 			t.Fatal("unsuccessful evidence accepted")
 		}
 	}
-	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "verified candidate", Policy: policy, Evidence: refs}); err != nil {
+	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "verified candidate", Policy: policy, Evidence: refs}); err != nil {
 		t.Fatal(err)
 	}
 }

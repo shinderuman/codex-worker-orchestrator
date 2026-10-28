@@ -42,7 +42,10 @@ func TestFinalCandidateConsumesActualQualityGateDispatchEvidence(t *testing.T) {
 	if err := runtime.Write(state.FinalValidationObligationKey, `{"Form":"go-test","WorkingDir":"."}`); err != nil {
 		t.Fatal(err)
 	}
-	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "final source", Policy: policy, Evidence: evidence})
+	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{
+		Message: "final source", Policy: policy, Evidence: evidence,
+		RequiredValidations: &controller.RequiredValidationDeclaration{Forms: []controller.FinalValidationRequest{{Form: "go-test", WorkingDir: "."}}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -176,7 +176,7 @@ func TestIntegratedLifecyclePublicationRaceAdoptsSafely(t *testing.T) {
 
 	evidence := publicationTestEvidence(t, harness.store, blocker, harness.policy)
 	seedFinalValidationNoneObligation(t, harness.store, blocker)
-	accepted, err := harness.store.AcceptExecutionCandidate(blocker, CandidateAcceptanceInput{Message: "raced result\n", Policy: harness.policy, Evidence: evidence})
+	accepted, err := harness.store.AcceptExecutionCandidate(blocker, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "raced result\n", Policy: harness.policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)
 	}

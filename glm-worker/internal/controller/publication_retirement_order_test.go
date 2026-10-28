@@ -10,7 +10,7 @@ func TestPublicationRejectsUnpromotedCandidate(t *testing.T) {
 	t.Parallel()
 	f, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, f, "result.txt", "reviewed implementation\n")
-	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "result", Policy: policy, Evidence: publicationTestEvidence(t, f.store, source, policy)})
+	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "result", Policy: policy, Evidence: publicationTestEvidence(t, f.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

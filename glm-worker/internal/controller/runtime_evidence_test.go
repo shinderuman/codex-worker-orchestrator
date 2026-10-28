@@ -374,7 +374,7 @@ func TestAcceptedCandidateBundlePreservesBoundRuntimeEvidence(t *testing.T) {
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "accepted.txt", "accepted runtime result\n")
 	runtime := bindRuntimeEvidenceFixture(t, fixture.store, source)
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "accept runtime result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "accept runtime result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

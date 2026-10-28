@@ -51,62 +51,39 @@ func AcceptedCandidateValidationRequest(cfg config.AppConfig, form string) (Fina
 	return FinalValidationRequest{}, CandidateValidationFormAbsent, nil
 }
 
-func (s *Store) inheritRequiredValidations(admission Admission, additionalForms []string) ([]FinalValidationRequest, error) {
+func (s *Store) resolveAdoptedValidations(admission Admission, input CandidateAcceptanceInput) ([]FinalValidationRequest, []SmokeProbeDeclaration, error) {
+	declaration := input.RequiredValidations
+	if declaration == nil {
+		return nil, nil, fmt.Errorf("the required validation set is undetermined: declare the complete set to adopt the candidate")
+	}
 	declared, err := s.declaredFinalValidation(admission)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if declared == nil {
-		if len(additionalForms) == 0 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("candidate has no declared final validation obligation to extend")
-	}
-	root, err := filepath.EvalSymlinks(admission.Workspace.Root)
+	forms, err := normalizeRequiredValidations(declaration.Forms)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	module, err := filepath.EvalSymlinks(filepath.Join(root, declared.WorkingDir))
+	if declared != nil && !declaredFormCovered(forms, *declared) {
+		return nil, nil, fmt.Errorf("declared validation set drops the Runtime obligation %s@%s", declared.Form, declared.WorkingDir)
+	}
+	probes, err := normalizeSmokeProbes(declaration.Probes)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	relative, err := filepath.Rel(root, module)
-	if err != nil || !validFinalValidationWorkingDir(relative) {
-		return nil, fmt.Errorf("declared validation module resolves outside the execution workspace")
+	if len(probes) != 0 && !input.Policy.RequireInstall {
+		return nil, nil, fmt.Errorf("declared post-install smoke probes require verification deployment policy")
 	}
-	declared.WorkingDir = filepath.ToSlash(relative)
-	additional, err := normalizeRequiredValidationForms(additionalForms)
-	if err != nil {
-		return nil, err
-	}
-	requests := []FinalValidationRequest{*declared}
-	for _, form := range additional {
-		if form == declared.Form {
-			continue
-		}
-		requests = append(requests, FinalValidationRequest{Form: form, WorkingDir: declared.WorkingDir})
-	}
-	return normalizeRequiredValidations(requests)
+	return forms, probes, nil
 }
 
-func normalizeRequiredValidationForms(forms []string) ([]string, error) {
-	if len(forms) == 0 {
-		return nil, nil
-	}
-	seen := make(map[string]bool, len(forms))
-	normalized := make([]string, 0, len(forms))
-	for _, form := range forms {
-		if form != "go-test" && form != "go-test-race" {
-			return nil, fmt.Errorf("required final validation form %q is not a known quality gate form", form)
+func declaredFormCovered(forms []FinalValidationRequest, declared FinalValidationRequest) bool {
+	for _, request := range forms {
+		if request.Form == declared.Form && filepath.Clean(request.WorkingDir) == filepath.Clean(declared.WorkingDir) {
+			return true
 		}
-		if seen[form] {
-			continue
-		}
-		seen[form] = true
-		normalized = append(normalized, form)
 	}
-	sort.Strings(normalized)
-	return normalized, nil
+	return false
 }
 
 func (s *Store) declaredFinalValidation(admission Admission) (*FinalValidationRequest, error) {

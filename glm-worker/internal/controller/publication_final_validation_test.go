@@ -25,12 +25,25 @@ func seedDeclaredFinalValidation(t *testing.T, store *Store, source Admission, f
 	}
 }
 
-func acceptFinalValidationSource(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, source Admission, additions []string) (ExecutionOperationResult, AcceptedCandidate) {
+func declaredNoValidations() *RequiredValidationDeclaration {
+	return &RequiredValidationDeclaration{}
+}
+
+func acceptFinalValidationSource(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, source Admission, forms []FinalValidationRequest) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
+	if forms == nil {
+		declared, err := fixture.store.taskDeclaredFinalValidation(source.Attempt.SemanticTaskRef)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if declared != nil {
+			forms = []FinalValidationRequest{*declared}
+		}
+	}
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
 		Message: "final validation source", Policy: policy,
-		Evidence:                publicationTestEvidence(t, fixture.store, source, policy),
-		RequiredValidationForms: additions,
+		Evidence:            publicationTestEvidence(t, fixture.store, source, policy),
+		RequiredValidations: &RequiredValidationDeclaration{Forms: forms},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +151,7 @@ func publishFinalValidationCompletion(t *testing.T, fixture findingAcceptanceFix
 
 func assertFinalValidationRefused(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, runtime *state.StateStore, err error, form string) {
 	t.Helper()
-	if err == nil || (!strings.Contains(err.Error(), "final validation "+form) && !strings.Contains(err.Error(), "no validation run store is bound")) {
+	if err == nil || (!strings.Contains(err.Error(), "final validation "+form) && !strings.Contains(err.Error(), "outstanding final validations: "+form) && !strings.Contains(err.Error(), "no validation run store is bound")) {
 		t.Fatalf("publication must refuse without a current terminal PASS run for %s: %v", form, err)
 	}
 	remote, remoteErr := observePublicationRemote(fixture.store.identity.PrimaryRoot, policy)
@@ -338,7 +351,7 @@ func TestPublicationRefusesFailedCurrentFinalValidationRun(t *testing.T) {
 	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusFail, nil)
 	runtime, err := publishFinalValidationCompletion(t, fixture, promoted, candidate)
-	if err == nil || !strings.Contains(err.Error(), "is not a terminal PASS") {
+	if err == nil || !strings.Contains(err.Error(), "outstanding final validations: go-test") {
 		t.Fatalf("publication must refuse a failed final validation run: %v", err)
 	}
 	if runtime.TaskStatus() == state.TaskStatusComplete {
@@ -357,7 +370,7 @@ func TestPublicationRefusesFinalValidationRunWithoutLogEvidence(t *testing.T) {
 		record.Log = filepath.Join(t.TempDir(), "missing-gate.log")
 	})
 	runtime, err := publishFinalValidationCompletion(t, fixture, promoted, candidate)
-	if err == nil || !strings.Contains(err.Error(), "is not a terminal PASS") {
+	if err == nil || !strings.Contains(err.Error(), "outstanding final validations: go-test") {
 		t.Fatalf("publication must refuse final validation without log evidence: %v", err)
 	}
 	if runtime.TaskStatus() == state.TaskStatusComplete {
@@ -416,14 +429,21 @@ func TestPublicationRefusesWrongModuleFinalValidationRun(t *testing.T) {
 	assertFinalValidationRefused(t, fixture, policy, runtime, err, "go-test")
 }
 
-func TestCandidateAcceptanceInheritsDeclaredValidationObligation(t *testing.T) {
+func TestCandidateAcceptanceRequiresCompleteSetDeclaration(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "forms.txt", "accepted forms\n")
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
-		Message: "inherit only", Policy: policy,
+	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+		Message: "undetermined set", Policy: policy,
 		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
+	}); err == nil || !strings.Contains(err.Error(), "undetermined") {
+		t.Fatalf("adoption without an explicit complete set must fail closed: %v", err)
+	}
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+		Message: "declared set", Policy: policy,
+		Evidence:            publicationTestEvidence(t, fixture.store, source, policy),
+		RequiredValidations: &RequiredValidationDeclaration{Forms: []FinalValidationRequest{{Form: "go-test", WorkingDir: "."}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -433,7 +453,7 @@ func TestCandidateAcceptanceInheritsDeclaredValidationObligation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(candidate.RequiredValidations, []FinalValidationRequest{{Form: "go-test", WorkingDir: "."}}) {
-		t.Fatalf("declared obligation was not inherited without caller input: %#v", candidate.RequiredValidations)
+		t.Fatalf("declared complete set was not adopted: %#v", candidate.RequiredValidations)
 	}
 }
 
@@ -444,8 +464,11 @@ func TestCandidateAcceptanceExtendsDeclaredValidationObligation(t *testing.T) {
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
 	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
 		Message: "add form", Policy: policy,
-		Evidence:                publicationTestEvidence(t, fixture.store, source, policy),
-		RequiredValidationForms: []string{"go-test-race", "go-test"},
+		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
+		RequiredValidations: &RequiredValidationDeclaration{Forms: []FinalValidationRequest{
+			{Form: "go-test", WorkingDir: "."},
+			{Form: "go-test-race", WorkingDir: "."},
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -455,7 +478,21 @@ func TestCandidateAcceptanceExtendsDeclaredValidationObligation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(candidate.RequiredValidations, []FinalValidationRequest{{Form: "go-test", WorkingDir: "."}, {Form: "go-test-race", WorkingDir: "."}}) {
-		t.Fatalf("caller additions must extend, not replace, the declared obligation: %#v", candidate.RequiredValidations)
+		t.Fatalf("the parent-declared complete set must keep both required forms: %#v", candidate.RequiredValidations)
+	}
+}
+
+func TestCandidateAcceptanceRejectsDeclarationDroppingWorkerObligation(t *testing.T) {
+	t.Parallel()
+	fixture, policy := newPublicationTestFixture(t)
+	source := publicationTestEdit(t, fixture, "dropped.txt", "dropped obligation\n")
+	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
+	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+		Message: "shrink the set", Policy: policy,
+		Evidence:            publicationTestEvidence(t, fixture.store, source, policy),
+		RequiredValidations: &RequiredValidationDeclaration{Forms: []FinalValidationRequest{{Form: "go-test-race", WorkingDir: "."}}},
+	}); err == nil || !strings.Contains(err.Error(), "drops the Runtime obligation") {
+		t.Fatalf("a declared set dropping the worker obligation must be rejected: %v", err)
 	}
 }
 
@@ -470,36 +507,42 @@ func TestCandidateAcceptanceFailsClosedWithoutObligationRecord(t *testing.T) {
 	}
 	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
 		Message: "missing record", Policy: policy,
-		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
+		Evidence:            publicationTestEvidence(t, fixture.store, source, policy),
+		RequiredValidations: declaredNoValidations(),
 	}); err == nil || !strings.Contains(err.Error(), "final validation obligation record is missing") {
 		t.Fatalf("missing obligation record must fail closed at acceptance: %v", err)
 	}
 }
 
-func TestCandidateAcceptanceRejectsUndeclaredValidationForms(t *testing.T) {
+func TestCandidateAcceptanceAllowsParentDeclaredFormsWithoutWorkerObligation(t *testing.T) {
 	t.Parallel()
-	fixture, policy := newPublicationTestFixture(t)
-	source := publicationTestEdit(t, fixture, "undeclared.txt", "no declared obligation\n")
-	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
-		Message: "invented obligation", Policy: policy,
-		Evidence:                publicationTestEvidence(t, fixture.store, source, policy),
-		RequiredValidationForms: []string{"go-test"},
-	}); err == nil || !strings.Contains(err.Error(), "no declared final validation obligation to extend") {
-		t.Fatalf("validation forms without a worker declaration must be rejected: %v", err)
-	}
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
-		Message: "unobligated", Policy: policy,
-		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidate, err := fixture.store.LoadAcceptedCandidate(*accepted.CandidateRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(candidate.RequiredValidations) != 0 {
-		t.Fatalf("undeclared unextended candidate must stay unobligated: %#v", candidate.RequiredValidations)
+	for _, tc := range []struct {
+		name  string
+		forms []FinalValidationRequest
+	}{
+		{name: "parent-declared", forms: []FinalValidationRequest{{Form: "go-test", WorkingDir: "."}}},
+		{name: "explicit-none"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fixture, policy := newPublicationTestFixture(t)
+			source := publicationTestEdit(t, fixture, "undeclared.txt", "no worker obligation\n")
+			accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+				Message: tc.name, Policy: policy,
+				Evidence:            publicationTestEvidence(t, fixture.store, source, policy),
+				RequiredValidations: &RequiredValidationDeclaration{Forms: tc.forms},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := fixture.store.LoadAcceptedCandidate(*accepted.CandidateRef)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(candidate.RequiredValidations, tc.forms) {
+				t.Fatalf("parent declaration changed: got=%#v want=%#v", candidate.RequiredValidations, tc.forms)
+			}
+		})
 	}
 }
 
@@ -510,8 +553,11 @@ func TestCandidateAcceptanceRejectsUnknownValidationForm(t *testing.T) {
 	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
 	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
 		Message: "unknown form", Policy: policy,
-		Evidence:                publicationTestEvidence(t, fixture.store, source, policy),
-		RequiredValidationForms: []string{"lint"},
+		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
+		RequiredValidations: &RequiredValidationDeclaration{Forms: []FinalValidationRequest{
+			{Form: "go-test", WorkingDir: "."},
+			{Form: "lint", WorkingDir: "."},
+		}},
 	}); err == nil || !strings.Contains(err.Error(), "not a known quality gate form") {
 		t.Fatalf("unknown validation form accepted: %v", err)
 	}

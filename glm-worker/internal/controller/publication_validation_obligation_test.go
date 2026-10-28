@@ -30,7 +30,11 @@ func TestValidationObligationNeverClaimsSuccessfulValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	proofs := publicationTestEvidence(t, fixture.store, source, policy)
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "declared validation", Policy: policy, Evidence: []EvidenceObjectRef{proofs[0], declaration}})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+		Message: "declared validation", Policy: policy,
+		Evidence:            []EvidenceObjectRef{proofs[0], declaration},
+		RequiredValidations: &RequiredValidationDeclaration{Forms: []FinalValidationRequest{{Form: "go-test", WorkingDir: "."}}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +65,11 @@ func TestValidationObligationMustMatchTheBoundRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	proofs := publicationTestEvidence(t, fixture.store, source, policy)
-	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "mismatched obligation", Policy: policy, Evidence: []EvidenceObjectRef{proofs[0], ref}}); err == nil {
+	if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+		Message: "mismatched obligation", Policy: policy,
+		Evidence:            []EvidenceObjectRef{proofs[0], ref},
+		RequiredValidations: &RequiredValidationDeclaration{Forms: []FinalValidationRequest{{Form: "go-test", WorkingDir: "."}}},
+	}); err == nil {
 		t.Fatal("a declaration removed the Runtime validation obligation")
 	}
 }
@@ -89,7 +97,7 @@ func TestInstallObligationRequiresRealEvidenceBeforePromotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	proofs := publicationTestEvidence(t, fixture.store, source, policy)
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "installation obligation", Policy: policy, Evidence: []EvidenceObjectRef{proofs[0], proofs[1], obligation}})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "installation obligation", Policy: policy, Evidence: []EvidenceObjectRef{proofs[0], proofs[1], obligation}})
 	if err != nil {
 		t.Fatal(err)
 	}

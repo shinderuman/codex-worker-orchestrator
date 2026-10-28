@@ -78,7 +78,7 @@ func incidentCorpusFixture(t *testing.T) (config.AppConfig, controller.Admission
 func terminateIncidentTask(t *testing.T, cfg config.AppConfig, admission controller.Admission, store *controller.Store, policy controller.PublicationPolicy, runtime *state.StateStore) {
 	t.Helper()
 	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
-	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: "terminated corpus result", Policy: policy, Evidence: evidence})
+	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "terminated corpus result", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func terminateIncidentTask(t *testing.T, cfg config.AppConfig, admission control
 	if err := runtime.Write("repo-root", source.Workspace.Root); err != nil {
 		t.Fatal(err)
 	}
-	accepted, err = store.AcceptExecutionCandidate(source, controller.CandidateAcceptanceInput{Message: "saved implementation", Policy: policy, Evidence: canonicalWorkflowEvidence(t, cfg, store, source, policy)})
+	accepted, err = store.AcceptExecutionCandidate(source, controller.CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "saved implementation", Policy: policy, Evidence: canonicalWorkflowEvidence(t, cfg, store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func publishedIncidentFixture(t *testing.T, binary string) publishedIncident {
 	}
 	acceptCanonicalWorkflowReview(t, successor, successor.cfg, successorState, "completed fixture dispatch")
 	source := canonicalWorkflowAdmission(t, successor.cfg, store)
-	accepted := canonicalCLIPublication(t, binary, successor.cfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: source.Head.ControllerGeneration, Message: "successor result", Policy: policy, Evidence: canonicalWorkflowEvidence(t, successor.cfg, store, source, policy)})
+	accepted := canonicalCLIPublication(t, binary, successor.cfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: source.Head.ControllerGeneration, Message: "successor result", Policy: policy, RequiredValidations: declaredNoValidations(), Evidence: canonicalWorkflowEvidence(t, successor.cfg, store, source, policy)})
 	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
 	if err != nil {
 		t.Fatal(err)

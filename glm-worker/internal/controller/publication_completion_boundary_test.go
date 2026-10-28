@@ -9,7 +9,7 @@ func TestCompletionPublicationRefusesPublishedImplementationWithoutRewritingRefs
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "implementation\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "implementation", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "implementation", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

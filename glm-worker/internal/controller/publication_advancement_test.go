@@ -57,7 +57,7 @@ func TestCandidateReentryRetiresOnlyUnobservedLocalHistory(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "accepted.txt", "owned\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "accepted result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "accepted result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestPublicationRaceAbortRecoveryNeverReportsSuccess(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "candidate.txt", "candidate\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "candidate", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "candidate", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

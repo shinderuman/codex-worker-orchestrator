@@ -199,7 +199,7 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	}
 	completeCanonicalWorkflowReview(t, blockerRunner, blockerCfg, blockerState)
 	blockedSource := canonicalWorkflowAdmission(t, blockerCfg, store)
-	accepted := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: blockedSource.Head.ControllerGeneration, Message: "F11 result", Policy: policy, Evidence: canonicalWorkflowEvidence(t, blockerCfg, store, blockedSource, policy)})
+	accepted := canonicalCLIPublication(t, binary, blockerCfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: blockedSource.Head.ControllerGeneration, Message: "F11 result", Policy: policy, RequiredValidations: declaredNoValidations(), Evidence: canonicalWorkflowEvidence(t, blockerCfg, store, blockedSource, policy)})
 	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
 	if err != nil {
 		t.Fatal(err)

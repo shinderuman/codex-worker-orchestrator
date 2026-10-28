@@ -19,20 +19,22 @@ type ParentCompletionOperation struct {
 	AllowedOperations []string                    `json:"allowed_operations,omitempty"`
 	SemanticSlots     []string                    `json:"semantic_slots,omitempty"`
 	FinalValidation   *FinalValidationRequest     `json:"final_validation,omitempty"`
+	SmokeProbeIDs     []string                    `json:"smoke_probe_ids,omitempty"`
 	Reason            string                      `json:"reason,omitempty"`
 }
 
 type PublicationParentCommand struct {
-	Action             string                  `json:"action"`
-	ExpectedGeneration uint64                  `json:"expected_generation"`
-	SourceOID          string                  `json:"source_oid,omitempty"`
-	CandidateID        string                  `json:"candidate_id,omitempty"`
-	TransitionID       string                  `json:"transition_id,omitempty"`
-	Policy             *PublicationPolicy      `json:"policy,omitempty"`
-	Evidence           []EvidenceObjectRef     `json:"evidence,omitempty"`
-	EvidenceRecord     *CandidateEvidence      `json:"evidence_record,omitempty"`
-	FinalValidation    *FinalValidationRequest `json:"final_validation,omitempty"`
-	FailureDisposition string                  `json:"failure_disposition,omitempty"`
+	Action              string                         `json:"action"`
+	ExpectedGeneration  uint64                         `json:"expected_generation"`
+	SourceOID           string                         `json:"source_oid,omitempty"`
+	CandidateID         string                         `json:"candidate_id,omitempty"`
+	TransitionID        string                         `json:"transition_id,omitempty"`
+	Policy              *PublicationPolicy             `json:"policy,omitempty"`
+	Evidence            []EvidenceObjectRef            `json:"evidence,omitempty"`
+	EvidenceRecord      *CandidateEvidence             `json:"evidence_record,omitempty"`
+	FinalValidation     *FinalValidationRequest        `json:"final_validation,omitempty"`
+	RequiredValidations *RequiredValidationDeclaration `json:"required_validations,omitempty"`
+	FailureDisposition  string                         `json:"failure_disposition,omitempty"`
 }
 
 type CompletionExecutionCommand struct {
@@ -63,10 +65,12 @@ const (
 	PublicationOperationSuccessorStart    = "successor-start"
 	PublicationOperationValidationFailure = "resolve-validation-failure"
 	PublicationOperationInstall           = "install-completion"
+	PublicationOperationPostInstallSmoke  = "post-install-smoke"
 
-	CompletionSlotMessage            = "message"
-	CompletionSlotRequireInstall     = "require_install"
-	CompletionSlotFailureDisposition = "failure_disposition"
+	CompletionSlotMessage             = "message"
+	CompletionSlotRequireInstall      = "require_install"
+	CompletionSlotFailureDisposition  = "failure_disposition"
+	CompletionSlotRequiredValidations = "required_validations"
 )
 
 func noneCompletionOperation(reason string) ParentCompletionOperation {
@@ -200,7 +204,24 @@ func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead,
 		operation.SemanticSlots = []string{CompletionSlotFailureDisposition}
 		return operation, nil
 	}
+	probes, err := s.outstandingSmokeProbes(candidate)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	if len(probes) != 0 {
+		operation := s.projectCandidateOperation(head, candidate, PublicationOperationPostInstallSmoke)
+		operation.SmokeProbeIDs = smokeProbeIDs(probes)
+		return operation, nil
+	}
 	return s.projectCandidateOperation(head, candidate, PublicationOperationPromote), nil
+}
+
+func smokeProbeIDs(probes []SmokeProbeDeclaration) []string {
+	ids := make([]string, 0, len(probes))
+	for _, probe := range probes {
+		ids = append(ids, probe.ProbeID)
+	}
+	return ids
 }
 
 func (*Store) projectCandidateOperation(head RepositoryControllerHead, candidate AcceptedCandidate, action string) ParentCompletionOperation {
@@ -241,7 +262,7 @@ func (s *Store) projectAcceptanceOperation(head RepositoryControllerHead) (Paren
 	}
 	return ParentCompletionOperation{Surface: PublicationOperationSurface, Operation: PublicationOperationAccept,
 		Command:       &PublicationParentCommand{Action: PublicationOperationAccept, ExpectedGeneration: head.ControllerGeneration, Policy: &policy},
-		SemanticSlots: []string{CompletionSlotMessage, CompletionSlotRequireInstall}, AllowedOperations: []string{PublicationOperationAccept, PublicationOperationReopen}}, nil
+		SemanticSlots: []string{CompletionSlotMessage, CompletionSlotRequireInstall, CompletionSlotRequiredValidations}, AllowedOperations: []string{PublicationOperationAccept, PublicationOperationReopen}}, nil
 }
 
 func (*Store) projectUnsealedReopen(generation uint64) ParentCompletionOperation {
@@ -347,17 +368,9 @@ func (s *Store) outstandingFinalValidations(c AcceptedCandidate) ([]FinalValidat
 	if err != nil {
 		return nil, err
 	}
-	outstanding := make([]FinalValidationRequest, 0, len(requests))
-	for _, request := range requests {
-		ready, err := s.finalValidationSatisfied(c, request, source)
-		if err != nil {
-			return nil, err
-		}
-		if !ready {
-			outstanding = append(outstanding, request)
-		}
-	}
-	return outstanding, nil
+	return outstandingObligations(requests, func(request FinalValidationRequest) (bool, error) {
+		return s.finalValidationSatisfied(c, request, source)
+	})
 }
 
 func (s *Store) finalValidationSatisfied(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource) (bool, error) {

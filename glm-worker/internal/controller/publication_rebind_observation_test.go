@@ -12,7 +12,7 @@ func rebindObservationLane(t *testing.T) (findingAcceptanceFixture, PublicationP
 	t.Helper()
 	f, p := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, f, "initial.txt", "preserved implementation\n")
-	initial, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "initial", Policy: p, Evidence: publicationTestEvidence(t, f.store, source, p)})
+	initial, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "initial", Policy: p, Evidence: publicationTestEvidence(t, f.store, source, p)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func rebindObservationLane(t *testing.T) (findingAcceptanceFixture, PublicationP
 	f.source = *lane.Admission
 	source = publicationTestEdit(t, f, "result.txt", "complete task implementation\n")
 	f.source = source
-	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "complete", Policy: p, Evidence: publicationTestEvidence(t, f.store, source, p)})
+	accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "complete", Policy: p, Evidence: publicationTestEvidence(t, f.store, source, p)})
 	if err != nil {
 		t.Fatal(err)
 	}

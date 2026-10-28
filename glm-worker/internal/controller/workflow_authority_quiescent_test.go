@@ -9,7 +9,7 @@ func TestWorkflowAuthorityTaskReadsSealedAcceptedController(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "result.txt", "sealed accepted result\n")
-	_, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+	_, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(),
 		Message: "sealed accepted result", Policy: policy,
 		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
 	})

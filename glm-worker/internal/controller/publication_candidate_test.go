@@ -11,7 +11,7 @@ func TestCandidateAcceptancePromotionPublicationAndPortableEvidence(t *testing.T
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "accepted.txt", "accepted task result\n")
 	evidence := publicationTestEvidence(t, fixture.store, source, policy)
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "accept root result\n", Policy: policy, Evidence: evidence})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "accept root result\n", Policy: policy, Evidence: evidence})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestCandidateAcceptanceRejectsMissingOrStaleEvidenceBeforeLeaseRevocation(t
 	changedFixture.source = source
 	source = publicationTestEdit(t, changedFixture, "accepted.txt", "new state\n")
 	for _, refs := range [][]EvidenceObjectRef{nil, evidence} {
-		if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "candidate", Policy: policy, Evidence: refs}); err == nil {
+		if _, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "candidate", Policy: policy, Evidence: refs}); err == nil {
 			t.Fatal("incomplete or stale evidence accepted")
 		}
 	}
@@ -83,7 +83,7 @@ func TestCandidatePromotionWhenLocalRefAlreadyMatchesTarget(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "accepted.txt", "accepted task result\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(),
 		Message: "accept root result\n", Policy: policy,
 		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
 	})
@@ -175,7 +175,7 @@ func TestUnpublishedCandidateRebindInvalidatesEvidenceAndPreservesSupersededLine
 		t.Run(map[bool]string{false: "prepared", true: "local-only"}[promote], func(t *testing.T) {
 			fixture, policy := newPublicationTestFixture(t)
 			source := publicationTestEdit(t, fixture, "candidate.txt", "task result\n")
-			accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "task result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+			accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "task result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 			if err != nil {
 				t.Fatal(err)
 			}

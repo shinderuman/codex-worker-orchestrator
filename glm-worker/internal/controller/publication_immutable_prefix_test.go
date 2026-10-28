@@ -6,7 +6,7 @@ func TestRemoteRewritePreservesObservedPublicationAndFailsClosed(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "published.txt", "published result\n")
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "published result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "published result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

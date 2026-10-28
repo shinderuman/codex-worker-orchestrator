@@ -16,6 +16,7 @@ type CompletionReadiness struct {
 	LintRef                *EvidenceObjectRef             `json:"lint_ref,omitempty"`
 	BundleCheckRef         *EvidenceObjectRef             `json:"bundle_check_ref"`
 	FinalValidations       []FinalValidationEvidence      `json:"final_validations,omitempty"`
+	SmokeProbes            []SmokeProbeEvidence           `json:"smoke_probes,omitempty"`
 	RuntimeTaskID          string                         `json:"runtime_task_id,omitempty"`
 	RuntimeCompletion      *state.ParentCompletionOutcome `json:"runtime_completion,omitempty"`
 	OperationDigest        string                         `json:"operation_digest"`
@@ -38,6 +39,10 @@ func (s *Store) prepareCompletionReadiness(op ExecutionOperation) (EvidenceObjec
 		return EvidenceObjectRef{}, err
 	}
 	finalValidations, err := s.collectFinalValidationEvidence(candidate)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	smokeProbes, err := s.collectSmokeProbeEvidence(candidate)
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
@@ -66,7 +71,7 @@ func (s *Store) prepareCompletionReadiness(op ExecutionOperation) (EvidenceObjec
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
-	ready := CompletionReadiness{SchemaVersion: controllerSchemaVersion, SuccessorRuntimeTaskID: successorID, LintRequired: lintRef != nil, LintRef: lintRef, BundleCheckRef: &bundleCheckRef, FinalValidations: finalValidations, RuntimeTaskID: runtimeTaskID, RuntimeCompletion: outcome, OperationDigest: op.Transition.OperationDigest, FinalOID: op.Terminal.Record.CandidateOID}
+	ready := CompletionReadiness{SchemaVersion: controllerSchemaVersion, SuccessorRuntimeTaskID: successorID, LintRequired: lintRef != nil, LintRef: lintRef, BundleCheckRef: &bundleCheckRef, FinalValidations: finalValidations, SmokeProbes: smokeProbes, RuntimeTaskID: runtimeTaskID, RuntimeCompletion: outcome, OperationDigest: op.Transition.OperationDigest, FinalOID: op.Terminal.Record.CandidateOID}
 	return s.putEvidenceJSON("completion-readiness", op.Transition.TransitionID, ready)
 }
 
@@ -142,6 +147,9 @@ func (s *Store) validateCompletionReadiness(op ExecutionOperation, phase Transit
 		return ready, err
 	}
 	if err := s.verifyFinalValidationEvidence(candidate, ready.FinalValidations); err != nil {
+		return ready, err
+	}
+	if err := s.verifySmokeProbeEvidence(candidate, ready.SmokeProbes); err != nil {
 		return ready, err
 	}
 	if err := s.reverifyCompletionRuntime(op, candidate, ready); err != nil {

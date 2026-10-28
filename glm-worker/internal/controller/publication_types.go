@@ -45,6 +45,7 @@ type AcceptedCandidate struct {
 	ImplementationTree   string                   `json:"implementation_tree,omitempty"`
 	TerminalFiles        []TerminalMetadataFile   `json:"terminal_files,omitempty"`
 	RequiredValidations  []FinalValidationRequest `json:"required_validations,omitempty"`
+	RequiredSmokeProbes  []SmokeProbeDeclaration  `json:"required_smoke_probes,omitempty"`
 	BundleCheckRef       *EvidenceObjectRef       `json:"bundle_check_ref,omitempty"`
 	DescendantTip        string                   `json:"descendant_tip,omitempty"`
 	DescendantEvidence   []EvidenceObjectRef      `json:"descendant_evidence,omitempty"`
@@ -57,11 +58,22 @@ type AcceptedCandidate struct {
 	CreatedAt            time.Time                `json:"created_at"`
 }
 
+type SmokeProbeDeclaration struct {
+	ProbeID  string   `json:"probe_id"`
+	Verifies string   `json:"verifies"`
+	Argv     []string `json:"argv"`
+}
+
+type RequiredValidationDeclaration struct {
+	Forms  []FinalValidationRequest `json:"forms"`
+	Probes []SmokeProbeDeclaration  `json:"probes,omitempty"`
+}
+
 type CandidateAcceptanceInput struct {
-	Message                 string              `json:"message"`
-	Policy                  PublicationPolicy   `json:"policy"`
-	Evidence                []EvidenceObjectRef `json:"evidence"`
-	RequiredValidationForms []string            `json:"required_validation_forms"`
+	Message             string                         `json:"message"`
+	Policy              PublicationPolicy              `json:"policy"`
+	Evidence            []EvidenceObjectRef            `json:"evidence"`
+	RequiredValidations *RequiredValidationDeclaration `json:"required_validations"`
 }
 
 type PublicationInput struct {

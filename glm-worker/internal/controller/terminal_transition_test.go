@@ -13,7 +13,7 @@ import (
 func promoteTerminalTestSource(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, source Admission) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
 	seedFinalValidationNoneObligation(t, fixture.store, source)
-	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "terminal source result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+	accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "terminal source result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 	if err != nil {
 		t.Fatal(err)
 	}

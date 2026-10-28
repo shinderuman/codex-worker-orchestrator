@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -209,13 +210,14 @@ func cadenceAcceptCandidate(t *testing.T, cfg config.AppConfig, policy controlle
 		ref := cadencePublication(t, cfg, controllerPublicationCommand{Action: "store-evidence", ExpectedGeneration: head.ControllerGeneration, EvidenceRecord: &record, ArtifactJSON: artifact}).(controller.EvidenceObjectRef)
 		refs = append(refs, ref)
 	}
-	accepted := cadencePublication(t, cfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: head.ControllerGeneration, Policy: policy, Message: "cadence result", Evidence: refs}).(controller.ExecutionOperationResult)
+	declaration := &controller.RequiredValidationDeclaration{Forms: []controller.FinalValidationRequest{{Form: "go-test", WorkingDir: "glm-worker"}}}
+	accepted := cadencePublication(t, cfg, controllerPublicationCommand{Action: "accept", ExpectedGeneration: head.ControllerGeneration, Policy: policy, Message: "cadence result", Evidence: refs, RequiredValidations: declaration}).(controller.ExecutionOperationResult)
 	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidate.RequiredValidations) != 1 || candidate.RequiredValidations[0].Form != "go-test" || candidate.RequiredValidations[0].WorkingDir != "glm-worker" {
-		t.Fatalf("worker obligation was not inherited: %#v", candidate.RequiredValidations)
+	if !reflect.DeepEqual(candidate.RequiredValidations, declaration.Forms) {
+		t.Fatalf("worker obligation was not adopted from the declared set: %#v", candidate.RequiredValidations)
 	}
 	return candidate, accepted.Head.ControllerGeneration
 }

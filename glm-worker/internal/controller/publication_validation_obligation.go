@@ -8,6 +8,7 @@ import (
 
 type CandidateValidationObligation struct {
 	Required    []FinalValidationRequest `json:"required"`
+	Probes      []SmokeProbeDeclaration  `json:"probes,omitempty"`
 	NotRequired bool                     `json:"not_required"`
 }
 
@@ -45,11 +46,14 @@ func (s *Store) validateCandidateValidationObligation(candidate AcceptedCandidat
 	if err := json.Unmarshal(data, &declaration); err != nil {
 		return err
 	}
-	if declaration.NotRequired != (len(candidate.RequiredValidations) == 0) {
+	if declaration.NotRequired != (len(candidate.RequiredValidations) == 0 && len(candidate.RequiredSmokeProbes) == 0) {
 		return fmt.Errorf("candidate validation obligation has no explicit requirement disposition")
 	}
 	if !reflect.DeepEqual(declaration.Required, candidate.RequiredValidations) {
 		return fmt.Errorf("candidate validation obligation differs from the Runtime declaration")
+	}
+	if !reflect.DeepEqual(declaration.Probes, candidate.RequiredSmokeProbes) {
+		return fmt.Errorf("candidate validation obligation differs from the declared post-install smoke probes")
 	}
 	return nil
 }

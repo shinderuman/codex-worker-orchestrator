@@ -72,7 +72,7 @@ func TestParentCompletionProjectionRetainsPublicationAcrossTasks(t *testing.T) {
 			writeSuspensionTestFile(t, primary, "IMPLEMENTATION_PLAN.local.md", string(plan)+"\n")
 		}
 		source := publicationTestEdit(t, fixture, "result.txt", strings.Repeat("reviewed result\n", sequence+1))
-		accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{Message: "task result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
+		accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "task result", Policy: policy, Evidence: publicationTestEvidence(t, fixture.store, source, policy)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,8 +161,11 @@ func TestParentCompletionProjectionSuppliesFixedBindingAndSemanticSlots(t *testi
 			if operation.Command.ExpectedGeneration != source.Head.ControllerGeneration || operation.Command.Policy.Remote != policy.Remote || operation.Command.Policy.LocalRef != policy.LocalRef || operation.Command.Policy.RemoteRef != policy.RemoteRef {
 				t.Fatalf("completion machine binding: %#v", operation.Command)
 			}
-			if len(operation.SemanticSlots) != 2 || operation.SemanticSlots[0] != CompletionSlotMessage || operation.SemanticSlots[1] != CompletionSlotRequireInstall {
+			if len(operation.SemanticSlots) != 3 || operation.SemanticSlots[0] != CompletionSlotMessage || operation.SemanticSlots[1] != CompletionSlotRequireInstall || operation.SemanticSlots[2] != CompletionSlotRequiredValidations {
 				t.Fatalf("semantic inputs: %#v", operation.SemanticSlots)
+			}
+			if operation.Command.RequiredValidations != nil {
+				t.Fatalf("completion machine prefilled the parent-determined validation set: %#v", operation.Command.RequiredValidations)
 			}
 			if len(operation.Command.Evidence) != 0 || operation.Command.EvidenceRecord != nil {
 				t.Fatalf("completion asks the parent to rebuild evidence: %#v", operation.Command)
@@ -269,7 +272,7 @@ func TestParentCompletionProjectionRejectsRuntimeOnlyCandidateAuthority(t *testi
 	if _, err := fixture.store.ProjectParentCompletionOperation(PublicationOperationAccept); err == nil {
 		t.Fatal("Runtime reopen-only finding was overridden by Controller completion")
 	}
-	if _, err := fixture.store.AcceptParentCompletion(source, CandidateAcceptanceInput{Message: "must reject"}); err == nil || !strings.Contains(err.Error(), "runtime-only") {
+	if _, err := fixture.store.AcceptParentCompletion(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "must reject"}); err == nil || !strings.Contains(err.Error(), "runtime-only") {
 		t.Fatalf("candidate owner did not enforce Runtime authority: %v", err)
 	}
 
