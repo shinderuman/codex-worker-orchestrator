@@ -636,7 +636,7 @@ func (b *evidenceExportBuilder) analysisRetries(canonical, observed []EvidenceAn
 			retries.ValidationReruns = append(retries.ValidationReruns, run)
 		}
 	}
-	for _, call := range b.telemetryCalls() {
+	for _, call := range workflowModelCalls(b.telemetryCalls()) {
 		if call.Resumed {
 			retries.ResumedModelCalls++
 		}
@@ -646,7 +646,7 @@ func (b *evidenceExportBuilder) analysisRetries(canonical, observed []EvidenceAn
 
 func (b *evidenceExportBuilder) analysisModelCalls() EvidenceAnalysisModelCalls {
 	calls := EvidenceAnalysisModelCalls{Status: evidenceAnalysisStatusAbsent, Basis: evidenceAnalysisBasisTelemetry}
-	logs := b.telemetryCalls()
+	logs := workflowModelCalls(b.telemetryCalls())
 	if len(logs) == 0 {
 		return calls
 	}
@@ -656,9 +656,7 @@ func (b *evidenceExportBuilder) analysisModelCalls() EvidenceAnalysisModelCalls 
 	calls.BySession = map[string]int{}
 	for _, log := range logs {
 		calls.ByRole[string(log.Role)]++
-		if log.SessionID != "" {
-			calls.BySession[log.SessionID]++
-		}
+		calls.BySession[log.SessionID]++
 	}
 	return calls
 }
