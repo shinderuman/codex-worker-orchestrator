@@ -36,8 +36,8 @@ status: not-applicable
 
 - 親Codexのみが追加AI callなしで評価・採否・priority判断を行い、GLMへ委譲しない。原則は既存evidenceの再評価。2026-09の総合レビューのcoverage確認に必要な範囲のみ、親によるsource読取・既存test・一時fixtureを許すが、新しいproduction変更・本番model実行はしない。
 - 前回locator以後のCodex/GLM telemetry、parent usage、review/fix/validation、停止・復旧、未Task化Findingを既存のbounded projectionで比較。期間、cohort、データ欠落、source locatorを明示し、Direct Codexとの比較可能性とQuality Deltaを区別する。
-- 12観点（正常taskの親介入、機械化の費用対効果、状態正本・重複、境界整合、中断・再実行・並行実行、証拠scope、要求保存、テスト証明力、source/runtime整合、権限・データ境界、rule増殖・廃止、実消費の帰属）と `Review.md` のF1〜F16・改善2件について**既存Taskへのcoverageと未解決差分**を確認する。既に完了した総合レビューを初めからやり直さない。
-- Session rotationは回数・trigger・親turn/token/tool output・bootstrap再投影・cache/read attribution・rotation有無の比較可能性を確認。publication往復、rotation再読、A/B比較粒度の詳細再評価は、それぞれ `publication-sequence-roundtrip-evaluation.md`、`parent-session-rotation-cost-evaluation.md`、`codex-usage-comparability-evaluation.md` のownerを尊重し、結果と新deltaのみ取り込む。
+- 12観点（正常taskの親介入、機械化の費用対効果、状態正本・重複、境界整合、中断・再実行・並行実行、証拠scope、要求保存と契約の乖離、テスト証明力、source/runtime整合、権限・データ境界、rule増殖・廃止、実消費の帰属）と `Review.md` のF1〜F16・改善2件について**既存Taskへのcoverageと未解決差分**を確認する。既に完了した総合レビューを初めからやり直さない。
+- Session rotationとparent finalizationの重複消費を確認し、rotation回数・trigger・親turn/token/tool output・bootstrap再投影・cache/read attribution・rotation有無の比較可能性を示す。publication往復、rotation再読、A/B比較粒度の詳細再評価は、それぞれ `publication-sequence-roundtrip-evaluation.md`、`parent-session-rotation-cost-evaluation.md`、`codex-usage-comparability-evaluation.md` のownerを尊重し、結果と新deltaのみ取り込む。
 - 2026-10のC2は補助reviewの実効範囲・policy owner・対象coverageを既存cohortのQuality Delta、親負担、call費用に照らし、harnessへの責務移管・pilot終了・現状維持を採否する。未観測を「Findingなし」としない。通常reviewを維持し、`106-review-call-reduction.md` のBLOCKEDを解除しない。
 - 新規FindingをGo/No-Go判定し、Goなら022前の独立Taskに配置、既存ownerとの重複はlosslessに統合する。NEXT/BLOCKED全体を再優先付けし、Lintと `--project-state` で整合を確認する。
 - 任意secretの汎用検出器・全state DB統合は不採用。汎用設定framework、旧path alias、二重policy、補助review callの無条件増設を先行しない。review回数削減・impact test選択は既存BLOCKED条件、System-Oneは適用されるshadow契約を維持する。
@@ -47,7 +47,7 @@ status: not-applicable
 
 - raw log、巨大JSON/JSONL、prompt/response全文やtracked Markdown全体を親contextへ再投影しない。差分と未解決authorityだけ読む。
 - generic semantic checker、LLM監視、旧schema互換、無根拠のfallbackを追加しない。後方互換性禁止など現行規則を守る。
-- unknownな使用量・Quality Delta、対象未観測、比較不能なcohortを改善・削減達成と扱わない。GLM token節約のためにCodex消費を増やさない。
+- unknownな使用量・Quality Delta、対象未観測、比較不能なcohortを改善・削減達成と扱わない。GLM token節約のためにCodex/Sol消費を増やさない。
 - test/review/Sol gateの省略や品質低下をtoken削減と扱わず、production実装や他TaskのBLOCKED解除を独断で始めない。
 
 ## Acceptance criteria
