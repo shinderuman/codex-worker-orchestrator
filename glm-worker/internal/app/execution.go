@@ -110,15 +110,19 @@ func executeStateBacked(
 		return executeStateCommand(cmd, cfg, st, stdout)
 	}
 
-	lock, err := acquireWorkflowLock(cfg)
+	recorder := newWorkflowStageRecorder(st)
+	defer recorder.FlushOrArchive()
+	lock, err := acquireWorkflowLockTimed(recorder, cfg)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	if err := admitParentCommand(cmd, st); err != nil {
+	if err := recorder.Measure(state.StageParentAdmission, func() error {
+		return admitParentCommand(cmd, st)
+	}); err != nil {
 		return err
 	}
-	if _, err := controller.Activate(cfg); err != nil {
+	if _, err := controllerActivateTimed(recorder, cfg); err != nil {
 		return err
 	}
 
@@ -126,10 +130,33 @@ func executeStateBacked(
 	case dispatchLockedMutation:
 		return executeLockedMutation(cmd, cfg, st, stdout)
 	case dispatchWorkflow:
-		return executeWorkflow(cmd, cfg, st, rf, stdout)
+		return executeWorkflow(cmd, cfg, st, rf, stdout, recorder)
 	default:
 		return fmt.Errorf("unsupported state-backed dispatch owner: %d", owner)
 	}
+}
+
+func newWorkflowStageRecorder(st *state.StateStore) *state.StageRecorder {
+	recorder := state.NewStageRecorder(st)
+	recorder.RecordParentDispatch(time.Now().UTC())
+	return recorder
+}
+
+func acquireWorkflowLockTimed(recorder *state.StageRecorder, cfg config.AppConfig) (*RepoLock, error) {
+	var lock *RepoLock
+	err := recorder.Measure(state.StageWorkflowLock, func() error {
+		acquired, lockErr := acquireWorkflowLock(cfg)
+		lock = acquired
+		return lockErr
+	})
+	return lock, err
+}
+
+func controllerActivateTimed(recorder *state.StageRecorder, cfg config.AppConfig) (controller.Admission, error) {
+	span := recorder.Span(state.StageControllerActivate)
+	admission, err := controller.Activate(cfg)
+	span.End(err)
+	return admission, err
 }
 
 func retainedCanonicalWorkflowMode(mode CommandMode) bool {
@@ -143,19 +170,23 @@ func executeRetainedCanonicalWorkflow(
 	stdout io.Writer,
 ) error {
 	attached := state.AttachStateStore(cfg)
-	lock, err := acquireWorkflowLock(cfg)
+	recorder := newWorkflowStageRecorder(attached)
+	defer recorder.FlushOrArchive()
+	lock, err := acquireWorkflowLockTimed(recorder, cfg)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
 
-	if err := admitParentCommand(cmd, attached); err != nil {
+	if err := recorder.Measure(state.StageParentAdmission, func() error {
+		return admitParentCommand(cmd, attached)
+	}); err != nil {
 		return err
 	}
 	if cmd.Mode == ModeAccept && attached.TaskStatus() == state.TaskStatusNone {
 		return parentAccept(attached, stdout)
 	}
-	cfg, err = activateWorkflowConfig(cmd, cfg)
+	cfg, err = activateWorkflowConfigTimed(recorder, cmd, cfg)
 	if err != nil {
 		return err
 	}
@@ -163,10 +194,11 @@ func executeRetainedCanonicalWorkflow(
 	if err != nil {
 		return err
 	}
+	recorder.RebindStore(st)
 	if cmd.Mode == ModeAccept {
 		return acceptRetainedCanonicalWorkflow(cfg, st, stdout)
 	}
-	return executeWorkflow(cmd, cfg, st, rf, stdout)
+	return executeWorkflow(cmd, cfg, st, rf, stdout, recorder)
 }
 
 func acceptRetainedCanonicalWorkflow(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
@@ -215,8 +247,17 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 	return cfg, err
 }
 
-func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer) error {
-	if err := preflightQualityToolchain(cfg, st); err != nil {
+func activateWorkflowConfigTimed(recorder *state.StageRecorder, cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
+	span := recorder.Span(state.StageControllerActivate)
+	bound, err := activateWorkflowConfig(cmd, cfg)
+	span.End(err)
+	return bound, err
+}
+
+func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer, recorder *state.StageRecorder) error {
+	if err := recorder.Measure(state.StageQualityPreflight, func() error {
+		return preflightQualityToolchain(cfg, st)
+	}); err != nil {
 		return err
 	}
 	controller := runner.NewStopController()
@@ -229,6 +270,10 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	r := rf(cfg, st, controller)
 	wf := workflow.NewWorkflow(cfg, st, r, stdout)
 	wf.AttachStopController(controller)
+	wf.AttachStageRecorder(recorder)
+	if cmd.Mode != ModeNewTask {
+		recorder.BindCurrentTask()
+	}
 
 	return executeWorkflowWithZaiSelfResume(cmd, wf, st, controller)
 }

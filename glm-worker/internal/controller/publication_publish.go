@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"strings"
 )
 
@@ -72,8 +73,15 @@ func (s *Store) pushAndObserveCandidate(op ExecutionOperation, c AcceptedCandida
 	if err := s.guardCompletionPush(op, PublicationPushGuardInput{RemoteName: c.Policy.Remote, LocalRef: c.Policy.LocalRef, LocalOID: c.CommitOID, RemoteRef: c.Policy.RemoteRef, RemoteOID: remote}); err != nil {
 		return "", s.failCompletionPushGuard(op, err, remote)
 	}
+	recorder := state.NewStageRecorder(state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, c.TaskRef)))
+	recorder.BindCurrentTask()
+	defer recorder.FlushOrArchive()
+	pushSpan := recorder.Span("publication-git-push")
 	output, pushErr := runGitBinary(s.identity.PrimaryRoot, nil, "push", "--porcelain", c.Policy.Remote, c.Policy.LocalRef+":"+c.Policy.RemoteRef)
+	pushSpan.End(pushErr)
+	observeSpan := recorder.Span("publication-remote-observe")
 	observed, err := observePublicationRemote(s.identity.PrimaryRoot, c.Policy)
+	observeSpan.End(err)
 	if err != nil {
 		return "", fmt.Errorf("publication result is unresolved: %w", err)
 	}

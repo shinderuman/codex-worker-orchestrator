@@ -47,6 +47,8 @@ type Workflow struct {
 
 	stop *runner.StopController
 
+	startup *state.StageRecorder
+
 	pendingSnapshot *state.SnapshotDiagnostic
 
 	currentResumeSource string
@@ -144,6 +146,17 @@ func (w *Workflow) AttachStopController(stop *runner.StopController) {
 	w.stop = stop
 }
 
+func (w *Workflow) AttachStageRecorder(recorder *state.StageRecorder) {
+	w.startup = recorder
+}
+
+func (w *Workflow) beginStartupSpan(stage string) state.StageSpan {
+	if w.startup == nil {
+		return state.StageSpan{}
+	}
+	return w.startup.Span(stage)
+}
+
 func (w *Workflow) stopRequested() bool {
 	return w.stop != nil && w.stop.StopRequested()
 }
@@ -186,7 +199,7 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 			return err
 		}
 
-		decl, err := w.gateExternalFeasibility("worker-new", false)
+		decl, err := w.gateExternalFeasibilityTimed("worker-new", false)
 		if err != nil {
 			return err
 		}
@@ -221,21 +234,10 @@ func (w *Workflow) validateNewTaskStart() error {
 func (w *Workflow) initializeNewTask(request string) (string, error) {
 	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
 	threadID := os.Getenv(state.ParentActionCodexThreadIDEnv)
-	if err := w.initializeNewTaskState(threadID, claimID); err != nil {
+	if err := w.measureTaskInit(threadID, claimID); err != nil {
 		return "", err
 	}
-	if w.canonicalAdmission != nil {
-		if err := w.bindCanonicalWorkflowAttempt(*w.canonicalAdmission); err != nil {
-			return "", err
-		}
-	}
-	if err := w.persistParentActionCodexIdentity(); err != nil {
-		return "", err
-	}
-	if err := state.CaptureGitBaseline(w.config, w.state); err != nil {
-		return "", err
-	}
-	if err := w.captureQualitySurfaceBaseline(); err != nil {
+	if err := w.measureGitQualityBaseline(); err != nil {
 		return "", err
 	}
 	w.recordBaselineRound()
@@ -246,23 +248,65 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 		return "", err
 	}
 
-	if _, err := w.pinRepositoryHarnessActivation(); err != nil {
-		return "", w.failClosedRepositoryHarness("worker-new", repositoryHarnessGuardSurface.unavailableOutcome(), "repository harness適用境界を評価できません", err)
+	return w.measureHarnessTaskResolution()
+}
+
+func (w *Workflow) measureTaskInit(threadID, claimID string) error {
+	span := w.beginStartupSpan(state.StageTaskInit)
+	taskID, err := w.initializeNewTaskState(threadID, claimID)
+	if err == nil {
+		w.startup.BindTaskID(taskID)
 	}
-	activeTaskPath, err := w.resolveAndPinActiveTask()
-	if err != nil {
-		return "", w.failClosedActiveTaskResolution("worker-new", err)
+	if err == nil && w.canonicalAdmission != nil {
+		err = w.bindCanonicalWorkflowAttempt(*w.canonicalAdmission)
+	}
+	if err == nil {
+		err = w.persistParentActionCodexIdentity()
+	}
+	span.End(err)
+	return err
+}
+
+func (w *Workflow) measureGitQualityBaseline() error {
+	span := w.beginStartupSpan(state.StageGitQualityBaseline)
+	err := state.CaptureGitBaseline(w.config, w.state)
+	if err == nil {
+		err = w.captureQualitySurfaceBaseline()
+	}
+	span.End(err)
+	return err
+}
+
+func (w *Workflow) measureHarnessTaskResolution() (string, error) {
+	span := w.beginStartupSpan(state.StageHarnessTaskResolution)
+	_, pinErr := w.pinRepositoryHarnessActivation()
+	stageErr := pinErr
+	activeTaskPath := ""
+	if pinErr == nil {
+		activeTaskPath, stageErr = w.resolveAndPinActiveTask()
+	}
+	span.End(stageErr)
+	if pinErr != nil {
+		return "", w.failClosedRepositoryHarness("worker-new", repositoryHarnessGuardSurface.unavailableOutcome(), "repository harness適用境界を評価できません", pinErr)
+	}
+	if stageErr != nil {
+		return "", w.failClosedActiveTaskResolution("worker-new", stageErr)
 	}
 	return activeTaskPath, nil
 }
 
-func (w *Workflow) initializeNewTaskState(threadID, claimID string) error {
+func (w *Workflow) gateExternalFeasibilityTimed(phase string, keepTaskStatus bool) (externalFeasibility, error) {
+	span := w.beginStartupSpan(state.StageExternalFeasibility)
+	decl, err := w.gateExternalFeasibility(phase, keepTaskStatus)
+	span.End(err)
+	return decl, err
+}
+
+func (w *Workflow) initializeNewTaskState(threadID, claimID string) (string, error) {
 	if claimID == "" {
-		_, err := w.state.StartNewTask()
-		return err
+		return w.state.StartNewTask()
 	}
-	_, err := w.state.StartSessionRotationTask(threadID, claimID)
-	return err
+	return w.state.StartSessionRotationTask(threadID, claimID)
 }
 
 func (w *Workflow) ExecuteDecision(decision string) error {
@@ -281,7 +325,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			return err
 		}
 
-		decl, err := w.gateExternalFeasibility("worker-decision", true)
+		decl, err := w.gateExternalFeasibilityTimed("worker-decision", true)
 		if err != nil {
 			return err
 		}

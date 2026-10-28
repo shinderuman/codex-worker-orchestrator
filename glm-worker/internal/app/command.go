@@ -58,6 +58,7 @@ const (
 	ModeStatus
 	ModeHandoff
 	ModeTimeline
+	ModeStageTimeline
 	ModeConvergence
 	ModeStats
 	ModeVerifyCodexWake
@@ -124,6 +125,9 @@ var commandParsers = map[string]commandParser{
 	"--handoff": parentHandoffCommand,
 	"--timeline": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeTimeline, "usage: glm-worker --timeline [task-id]")
+	},
+	"--stage-timeline": func(args []string) (Command, error) {
+		return optionalPayloadCommand(args, ModeStageTimeline, "usage: glm-worker --stage-timeline [task-id]")
 	},
 	"--convergence": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeConvergence, "usage: glm-worker --convergence [task-id]")

@@ -135,6 +135,7 @@ func (c *attemptRuntimeEvidence) captureStateFiles() error {
 	}
 	files := []struct{ path, kind, logical string }{
 		{c.runtime.ModelCallLogPath(c.taskID), "telemetry", c.logicalName("telemetry.jsonl")},
+		{c.runtime.TaskStageLogPath(c.taskID), "runtime-state", c.logicalName("execution-stages.jsonl")},
 		{c.runtime.TaskEventLogPath(c.taskID), "task-events", c.logicalName("events.jsonl")},
 		{c.runtime.TaskLiveStatusPath(c.taskID), "task-events", c.logicalName("live.json")},
 		{c.runtime.RoundLogPath(c.taskID), "review-rounds", c.logicalName("rounds.jsonl")},
