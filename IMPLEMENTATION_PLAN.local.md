@@ -12,10 +12,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-
-
-- [`IMPLEMENTATION_TASKS/initial-glm-startup-latency-remediation.md`](IMPLEMENTATION_TASKS/initial-glm-startup-latency-remediation.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md)
+- [`IMPLEMENTATION_TASKS/initial-glm-startup-latency-remediation.md`](IMPLEMENTATION_TASKS/initial-glm-startup-latency-remediation.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
