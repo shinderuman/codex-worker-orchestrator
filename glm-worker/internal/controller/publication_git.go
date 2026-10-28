@@ -5,7 +5,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 )
+
+var refFormatChecks struct {
+	sync.Mutex
+	validated map[string]struct{}
+}
 
 func validatePublicationPolicy(repo string, policy PublicationPolicy) error {
 	if policy.Remote == "" || strings.HasPrefix(policy.Remote, "-") || strings.ContainsAny(policy.Remote, "/\\ \t\r\n") {
@@ -15,12 +21,32 @@ func validatePublicationPolicy(repo string, policy PublicationPolicy) error {
 		if !strings.HasPrefix(ref, "refs/heads/") {
 			return fmt.Errorf("publication requires explicit branch refs")
 		}
-		if _, err := runGitBinary(repo, nil, "check-ref-format", ref); err != nil {
+		if err := checkRefFormat(repo, ref); err != nil {
 			return err
 		}
 	}
 	_, err := runGitBinary(repo, nil, "remote", "get-url", policy.Remote)
 	return err
+}
+
+func checkRefFormat(repo, ref string) error {
+	refFormatChecks.Lock()
+	_, valid := refFormatChecks.validated[ref]
+	refFormatChecks.Unlock()
+	if valid {
+		return nil
+	}
+	_, err := runGitBinary(repo, nil, "check-ref-format", ref)
+	if err != nil {
+		return err
+	}
+	refFormatChecks.Lock()
+	if refFormatChecks.validated == nil {
+		refFormatChecks.validated = make(map[string]struct{})
+	}
+	refFormatChecks.validated[ref] = struct{}{}
+	refFormatChecks.Unlock()
+	return nil
 }
 
 func observePublicationRemote(repo string, policy PublicationPolicy) (string, error) {
