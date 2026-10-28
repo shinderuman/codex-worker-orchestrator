@@ -7,8 +7,7 @@
 ````text
 https://github.com/shinderuman/codex-worker-orchestrator/issues/1424?utm_source=chatgpt.com
 
-お前はこのIssueをどうするつもりなの？なんでまたルールを破るの？
-FindingはIMPLEMENTATION_PLANのPRを作るルールだろうが
+FindingはIMPLEMENTATION_PLANのPRを作るルールだろ
 ````
 
 ## Amendments
