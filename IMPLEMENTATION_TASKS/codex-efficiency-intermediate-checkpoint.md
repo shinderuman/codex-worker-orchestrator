@@ -9,7 +9,9 @@ post-105-codex-efficiency-reevaluation.mdを定期的にやってほしいんだ
 そして再評価したあとにタスクの優先度つけ直しをしてほしい
 ```
 
-## Amendments / historical authority
+## Amendments
+
+### Historical authority
 
 [改訂前の全文（ユーザー原文・日付別Amendment）](https://github.com/shinderuman/codex-worker-orchestrator/blob/c888488bfda8159c48571ba87f3c9b706c2aeedf/IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md)をimmutable sourceとし、以下は実行時に必要な要求の整理であって原文の置換ではない。
 
