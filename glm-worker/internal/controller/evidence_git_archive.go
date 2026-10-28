@@ -357,11 +357,11 @@ func verifyGitObjectPack(envelope gitObjectArchiveEnvelope) error {
 		return fmt.Errorf("index git object archive pack: %w", err)
 	}
 	for _, root := range envelope.Roots {
-		if _, err := runGitBinaryWithGitDir(repo, nil, "cat-file", "-e", root.OID); err != nil {
-			return fmt.Errorf("git object archive root %s is missing", root.OID)
-		}
 		typeBytes, err := runGitBinaryWithGitDir(repo, nil, "cat-file", "-t", root.OID)
 		if err != nil {
+			if _, probeErr := runGitBinaryWithGitDir(repo, nil, "cat-file", "-e", root.OID); probeErr != nil {
+				return fmt.Errorf("git object archive root %s is missing", root.OID)
+			}
 			return fmt.Errorf("read git object archive root %s: %w", root.OID, err)
 		}
 		if strings.TrimSpace(string(typeBytes)) != root.Type {
