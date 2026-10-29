@@ -8,6 +8,12 @@
 
 Umbrella #1348の終了条件。#1346 F01/#1356 F01/#1376 P04/#1377 R03/#1382 T01/#1383 U01〜U03/今回#1392 V01〜V05では、合成回帰テストPASSと例外的な公開成功は通常の初回Worker→Reviewer完遂とは異なる。
 
+### 2026-10-29 Dogfood #1432 — レビュー専用委譲違反を正常E2Eと区別
+
+- Bundle `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b.zip` の親生transcriptに、08:47:50ZユーザーがGLMを**独立reviewer限定**とした後、親が09:14:48ZにGLM `worker-decision`を誤起動し、09:27:01Zユーザー訂正→09:27:12Z STOP、出力した`cmd/precallrepro`を隔離した経過が残る。
+- 最終Taskの修正・調査はユーザー特例のCodex直接実装。後続のGLM Reviewer 2回を含めても、正常Worker→Reviewerの無人E2E成功証拠ではない。**実装者ロールと親の明示された委譲範囲をsource-boundに対応付け、人手訂正・例外的State調整・拒否したWorker成果を成功件数から除外する。**
+- 現時点で機械的に防止できる独立Repository role-admission欠陥が実証されたわけではない。本Taskの既存No-Go/正常E2E識別の証拠として扱い、仕様未確定の第二role policy frameworkを追加しない。
+
 ## Amendments
 
 none
