@@ -6,7 +6,11 @@
 
 ## Resolved references
 
-閉鎖済み#320以降も普通のglm-parent-action facadeが審査された複数の現物（#1341 C07、#1346 F07、#1347 J06、#1356 F05）。一方、複合shell/直接書込/本install/remote Pushは権限審査の必要性が異なる。\n- 2026-10-29 Dogfood Audit [#1423](https://github.com/shinderuman/codex-worker-orchestrator/issues/1423) / raw Bundle `12ae3721-8dbe-4ac9-8d40-a8490d28f17c.zip`: Guardian raw transcript `bound/transcripts/guardian/01a183ae-54b1-74d3-8570-a935d3b0a851` に37回の自動審査（allow 36 / deny 1）。約89.239秒の審査処理時間合計・3,279,786 model total tokens（cache input 2,986,496を含む）。これらの呼出の大部分はユーザー承認に基づくCodex直接実装の作業であり、GLM通常Worker全体のGuardian負荷へ機械的に一般化しない。\n- 同Bundleの2026-10-28T18:35:44Zで正規`controller-publication`が`origin/main`の具体的なPush許可なしと判定されDeny、親Codexが許可を質問、18:37:09Zにユーザーが許可、18:37:18Zに同じ正規完了操作がAllowとなった。Deny→ユーザー回答まで約85秒。**人間入力待ちが一度でも発生した時点で無人Workflow継続性は未達**。元Taskの完了指示にはorigin/mainを文字列で明記していないため、外部審査が権限契約上誤判定だったことまでは未証明。\n- 既存Audit [#1399](https://github.com/shinderuman/codex-worker-orchestrator/issues/1399)の約53分の承認待ち、[#1420](https://github.com/shinderuman/codex-worker-orchestrator/issues/1420)のPublication審査2回拒否も比較対象。単なる件数でなく、ユーザー呼出を生んだ正規作業と、実際に保護すべき不可逆操作を区別する。\n
+閉鎖済み#320以降も普通のglm-parent-action facadeが審査された複数の現物（#1341 C07、#1346 F07、#1347 J06、#1356 F05）。一方、複合shell/直接書込/本install/remote Pushは権限審査の必要性が異なる。
+- 2026-10-29 Dogfood Audit [#1423](https://github.com/shinderuman/codex-worker-orchestrator/issues/1423) / raw Bundle `12ae3721-8dbe-4ac9-8d40-a8490d28f17c.zip`: Guardian raw transcript `bound/transcripts/guardian/01a183ae-54b1-74d3-8570-a935d3b0a851` に37回の自動審査（allow 36 / deny 1）。約89.239秒の審査処理時間合計・3,279,786 model total tokens（cache input 2,986,496を含む）。これらの呼出の大部分はユーザー承認に基づくCodex直接実装の作業であり、GLM通常Worker全体のGuardian負荷へ機械的に一般化しない。
+- 同Bundleの2026-10-28T18:35:44Zで正規`controller-publication`が`origin/main`の具体的なPush許可なしと判定されDeny、親Codexが許可を質問、18:37:09Zにユーザーが許可、18:37:18Zに同じ正規完了操作がAllowとなった。Deny→ユーザー回答まで約85秒。**人間入力待ちが一度でも発生した時点で無人Workflow継続性は未達**。元Taskの完了指示にはorigin/mainを文字列で明記していないため、外部審査が権限契約上誤判定だったことまでは未証明。
+- 既存Audit [#1399](https://github.com/shinderuman/codex-worker-orchestrator/issues/1399)の約53分の承認待ち、[#1420](https://github.com/shinderuman/codex-worker-orchestrator/issues/1420)のPublication審査2回拒否も比較対象。単なる件数でなく、ユーザー呼出を生んだ正規作業と、実際に保護すべき不可逆操作を区別する。
+
 
 ## Amendments
 
