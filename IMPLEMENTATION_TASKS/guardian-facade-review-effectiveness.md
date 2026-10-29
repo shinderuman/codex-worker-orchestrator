@@ -12,6 +12,15 @@
 - 既存Audit [#1399](https://github.com/shinderuman/codex-worker-orchestrator/issues/1399)の約53分の承認待ち、[#1420](https://github.com/shinderuman/codex-worker-orchestrator/issues/1420)のPublication審査2回拒否も比較対象。単なる件数でなく、ユーザー呼出を生んだ正規作業と、実際に保護すべき不可逆操作を区別する。
 
 
+
+### 後続Dogfood監査（2026-10-29）— All-Allowの実コストと人間待ちを分離
+
+- Audit source: Bundle `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b.zip`, Task `initial-glm-startup-latency-remediation.md`, bound raw Guardian transcripts `01a18698-cc4d-7b32-ab0b-39149a6897eb` / `01a186e2-d8ce-71b3-9a6a-c2f32842aab1`。同一transcriptがattempt/bound双方にある場合は重複計上しない。
+- 33件の審査結果は **Allow 33 / Deny 0**。Guardian thread累積モデル処理量は total **2,389,924 tokens**（input 2,385,244、うちcached input 1,927,296、output 4,680）。cacheはinputの内数として扱い、課金額に読み替えない。今回の審査に起因する追加ユーザー承認待ちは観測されていない。
+- このTaskはユーザー承認に基づく親Codexの直接調査・実装を含み、GLM通常Workerのみの審査費用ではない。GLMをreviewerだけに限定するユーザー指示後に親がWorkerを一度起動した誤委譲は別のparent decision/user-intervention事象であり、GuardianのDenyとして数えない。
+- 今回のAll-Allowは**モデル審査コストが発生した事実**を示すが、各判断が不要・危険操作を素通りさせたとは証明しない。前回#1423のPublication Deny→人間承認待ちや#1428の有益なDenyと並べ、正規Facade審査・実変更・危険防止・人間停止の有無を個別にsource-boundで分類する。
+- 本Taskの採否は未確定。既存の「無人継続性」「審査コストと安全便益の分離」「repository controlと外部Guardian policyの責務分離」を維持し、PlanのACTIVE/NEXT順序は変更しない。
+
 ## Amendments
 
 ### 2026-10-29 自動レビューの実効性・無人実行阻害（ユーザー追加指示）
