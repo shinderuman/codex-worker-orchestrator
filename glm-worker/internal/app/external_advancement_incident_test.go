@@ -13,6 +13,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
@@ -306,7 +307,7 @@ func startIncidentSuccessorThroughCLI(t *testing.T, cfg config.AppConfig, binary
 	writeAppTestFile(t, filepath.Join(home, "claude"), "settings.json", `{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic"}}`)
 	provider := filepath.Join(t.TempDir(), "claude")
 	script := "#!/bin/sh\nif [ \"$1\" = --help ]; then echo --json-schema; exit 0; fi\nprintf '%s\\n' '" + terminalPayloadFakeResultJSON() + "'\n"
-	if err := os.WriteFile(provider, []byte(script), 0o755); err != nil {
+	if err := execfile.Write(provider, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	shim := t.TempDir()

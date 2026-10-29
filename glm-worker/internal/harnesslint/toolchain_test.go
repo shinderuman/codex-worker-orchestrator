@@ -2,12 +2,13 @@ package harnesslint
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 type versionRunner struct {
@@ -191,7 +192,7 @@ func TestPreflightQualityToolsStopsHungVersionCommandWithinBound(t *testing.T) {
 	t.Cleanup(func() { versionCommandTimeout = previous })
 	binDir := t.TempDir()
 	script := filepath.Join(binDir, "go")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec /bin/sleep 30\n"), 0o755); err != nil {
+	if err := execfile.Write(script, []byte("#!/bin/sh\nexec /bin/sleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)

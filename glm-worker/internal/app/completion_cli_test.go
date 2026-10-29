@@ -12,6 +12,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationguard"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationguardcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -60,7 +61,7 @@ func installCompletionGuard(t *testing.T, cfg config.AppConfig) {
 	hooks := t.TempDir()
 	guard := filepath.Join(hooks, "glm-publication-guard")
 	script := "#!/bin/sh\nGLM_COMPLETION_GUARD_TEST_PROCESS=1 exec '" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' -test.run '^TestCompletionGuardCLIProcess$' -- \"$@\"\n"
-	if err := os.WriteFile(guard, []byte(script), 0o755); err != nil {
+	if err := execfile.Write(guard, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"pre-push", "reference-transaction"} {
@@ -68,7 +69,7 @@ func installCompletionGuard(t *testing.T, cfg config.AppConfig) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(hooks, name), data, 0o755); err != nil {
+		if err := execfile.Write(filepath.Join(hooks, name), data, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -105,7 +106,7 @@ func TestCompletionCLIRecoversProcessDeathAndPublishedACKWithCanonicalGitGuard(t
 	log := filepath.Join(t.TempDir(), "push-count")
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
 	hook := "#!/bin/sh\nset -eu\nprintf x >> " + quote(log) + "\nchmod 0500 " + quote(storeDir) + "\n"
-	if err := os.WriteFile(filepath.Join(remote, "hooks", "post-receive"), []byte(hook), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(remote, "hooks", "post-receive"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(storeDir, 0o700) })

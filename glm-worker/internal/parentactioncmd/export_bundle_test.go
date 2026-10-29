@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 const exportBundleWorkerJSON = `{"action":"export-task-bundle","export":{"target":{"kind":"task-id","task":{"task_path":"IMPLEMENTATION_TASKS/root.md"},"attempt_id":"0123456789abcdef","runtime_task_id":"runtime-task-1","selection_basis":"live-runtime-binding","live":true},"archive_path":"/exports/attempt.zip","manifest_digest":"digest-1","attempt_section":"absent","runtime_section":"collected","coverage":"partial","authority_changed_during_export":false,"controller_generation_before":1,"controller_generation_after":1}}`
@@ -156,7 +157,7 @@ func writeExportBundleWorkerStub(t *testing.T, stdoutPayload string, exitCode in
 		"cat > \"$EXPORT_BUNDLE_CAPTURE/stdin\"\n" +
 		"printf '%s' " + shellQuote(stdoutPayload) + "\n" +
 		"exit " + strconv.Itoa(exitCode) + "\n"
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

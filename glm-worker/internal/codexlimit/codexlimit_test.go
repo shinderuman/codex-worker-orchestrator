@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 const initializeResponseLine = `{"id":1,"result":{"userAgent":"glm-worker/0.149.1","codexHome":"/tmp","platformFamily":"unix","platformOs":"macos"}}`
@@ -24,7 +26,7 @@ const secondaryFiveHourRateLimits = `{"id":2,"result":{"rateLimits":{"limitId":"
 func writeFakeCodex(t *testing.T, script string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "codex-fake")
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

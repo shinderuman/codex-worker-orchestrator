@@ -8,14 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
-	"time"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 type multiRepoEnv struct {
@@ -341,7 +341,7 @@ func buildMultiRepoWorkerBinary(t *testing.T) (string, error) {
 		return "", multiRepoWorkerBuild.err
 	}
 	binary := filepath.Join(t.TempDir(), "glm-worker")
-	if err := os.WriteFile(binary, multiRepoWorkerBuild.data, 0o700); err != nil {
+	if err := execfile.Write(binary, multiRepoWorkerBuild.data, 0o700); err != nil {
 		return "", err
 	}
 	return binary, nil
@@ -400,7 +400,7 @@ func writeMultiRepoQualityToolStubs(t *testing.T, dir string) {
 		"codex-worker-orchestrator-shfmt-3.13.0":        "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'v3.13.0'; fi\nexit 0\n",
 	}
 	for name, body := range tools {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+		if err := execfile.Write(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -412,7 +412,7 @@ func writeMultiRepoStubClaude(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	stub := filepath.Join(dir, "claude")
-	if err := os.WriteFile(stub, []byte(multiRepoStubClaude), 0o755); err != nil {
+	if err := execfile.Write(stub, []byte(multiRepoStubClaude), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return stub

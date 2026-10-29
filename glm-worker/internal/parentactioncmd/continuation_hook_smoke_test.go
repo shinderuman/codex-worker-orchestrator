@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestContinuationStopHookSmoke(t *testing.T) {
@@ -145,7 +147,7 @@ func continuationHookBin(t *testing.T, withAction bool) (string, string) {
 	calls := filepath.Join(bin, "calls")
 	if withAction {
 		stub := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOOK_CALLS\"\n"
-		if err := os.WriteFile(filepath.Join(bin, "glm-parent-action"), []byte(stub), 0o755); err != nil {
+		if err := execfile.Write(filepath.Join(bin, "glm-parent-action"), []byte(stub), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

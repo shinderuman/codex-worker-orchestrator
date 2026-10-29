@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -66,7 +67,7 @@ func TestInstructionSurfaceRunnerRejectsCredentialArtifactBeforeSuccess(t *testi
 	t.Setenv("TEST_ARTIFACT", artifact)
 	t.Setenv("TEST_RESULT_JSON", string(resultJSON))
 	claudeBin := filepath.Join(t.TempDir(), "fake-claude")
-	if err := os.WriteFile(claudeBin, []byte("#!/bin/sh\nprintf '%s' \"$ANTHROPIC_AUTH_TOKEN\" >\"$TEST_ARTIFACT\"\nprintf '%s\\n' \"$TEST_RESULT_JSON\"\n"), 0o700); err != nil {
+	if err := execfile.Write(claudeBin, []byte("#!/bin/sh\nprintf '%s' \"$ANTHROPIC_AUTH_TOKEN\" >\"$TEST_ARTIFACT\"\nprintf '%s\\n' \"$TEST_RESULT_JSON\"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	cfg.ClaudeBin = claudeBin

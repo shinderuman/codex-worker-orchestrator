@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -265,8 +266,10 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 		return fmt.Errorf("隔離入力fileを読めません: %w", err)
 	}
 	defer func() { _ = src.Close() }()
+	syscall.ForkLock.RLock()
 	dst, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
+		syscall.ForkLock.RUnlock()
 		return fmt.Errorf("隔離入力のcopy先を作れません: %w", err)
 	}
 	committed := false
@@ -275,6 +278,7 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 		if !committed {
 			_ = os.Remove(destination)
 		}
+		syscall.ForkLock.RUnlock()
 	}()
 	written, err := io.Copy(dst, io.LimitReader(src, remaining))
 	if err != nil {

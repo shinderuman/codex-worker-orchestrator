@@ -15,6 +15,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactioncmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
@@ -65,7 +66,7 @@ func typedCompletionWorkerBinary(t *testing.T) string {
 	}
 	path := filepath.Join(t.TempDir(), "glm-worker")
 	script := "#!/bin/sh\nexec '" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' -test.run=^TestTypedCompletionWorkerProcess$ -- \"$@\"\n"
-	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+	if err := execfile.Write(path, []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_TYPED_COMPLETION_TEST_WORKER", "1")
@@ -104,7 +105,7 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 		}
 		binary := filepath.Join(os.Getenv("GLM_WORKER_HOME"), "typed-installed-worker")
 		data := []byte("#!/bin/sh\nexit 0\n")
-		if err := os.WriteFile(binary, data, 0o755); err != nil {
+		if err := execfile.Write(binary, data, 0o755); err != nil {
 			return controller.InstalledRuntimeIdentity{}, err
 		}
 		sum := sha256.Sum256(data)
@@ -218,7 +219,7 @@ func interruptTypedPublication(t *testing.T, cfg config.AppConfig, parameters ma
 		t.Fatal(err)
 	}
 	hooks := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	primary := store.Identity().PrimaryRoot
@@ -515,7 +516,7 @@ func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool
 			t.Fatal(err)
 		}
 		forward := "#!/bin/sh\ncase \"$1\" in test|vet|build) ;; *) exec '" + strings.ReplaceAll(realGo, "'", "'\"'\"'") + "' \"$@\";; esac\n"
-		if err := os.WriteFile(shimPath, []byte(forward+strings.TrimPrefix(string(shimBody), "#!/bin/sh\n")), 0755); err != nil {
+		if err := execfile.Write(shimPath, []byte(forward+strings.TrimPrefix(string(shimBody), "#!/bin/sh\n")), 0755); err != nil {
 			t.Fatal(err)
 		}
 		t.Setenv("QUALITY_TOOLS_BIN_DIR", tools)

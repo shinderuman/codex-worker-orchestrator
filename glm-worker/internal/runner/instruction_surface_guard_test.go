@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -138,7 +139,7 @@ func TestInstructionSurfaceGuardRunnerRestoresMutationAndDropsSession(t *testing
 	writeInstructionGuardFile(t, promptDir, "WORKER.md", "system")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s' 'mutated' >\"$GLM_REPO/AGENTS.local.md\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\"}'\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_REPO", root)
@@ -181,7 +182,7 @@ func TestInstructionSurfaceGuardRunnerMismatchSkipsModelCall(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "model-call-marker")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s\\n' marker-created >\"" + markerPath + "\"\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 

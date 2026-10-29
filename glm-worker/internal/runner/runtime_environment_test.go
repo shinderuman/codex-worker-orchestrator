@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -26,7 +27,7 @@ func TestRunRecordsRuntimeEnvironmentPerCall(t *testing.T) {
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	script := "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"ok\\n\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n"
-	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,7 +187,7 @@ func TestRunObservesConditionsPerCallNotAsBundleTimeSnapshot(t *testing.T) {
 
 	commandPath := first.Runtime.ClaudeBinResolved
 	replacement := "#!/bin/sh\n# binary rebuilt mid-task with different content length\n" + fakeClaudeScriptBody()
-	if err := os.WriteFile(commandPath, []byte(replacement), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(replacement), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(claudeConfigDir, "settings.json"), []byte(`{"env":{"ANTHROPIC_AUTH_TOKEN":"secret","ANTHROPIC_BASE_URL":"https://changed.internal"}}`), 0o600); err != nil {
@@ -302,7 +303,7 @@ func newRuntimeEnvironmentFixture(t *testing.T, settingsJSON string) (string, *s
 		}
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
-	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"+fakeClaudeScriptBody()), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte("#!/bin/sh\n"+fakeClaudeScriptBody()), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	st := newTestStateStore(t)
@@ -329,7 +330,7 @@ func TestRunRecordsRuntimeEnvironmentWithoutSettings(t *testing.T) {
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	script := "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"ok\\n\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n"
-	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 

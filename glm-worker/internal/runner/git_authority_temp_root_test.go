@@ -1,10 +1,11 @@
 package runner
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestGitAuthorityClaudeWrapperOwnsProcessTempRoot(t *testing.T) {
@@ -54,7 +55,7 @@ else
   [ "$code" -eq 97 ] || exit 24
 fi
 `
-	if err := os.WriteFile(probe, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(probe, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	wrapped, err := guard.prepareClaudeWrapper(probe)

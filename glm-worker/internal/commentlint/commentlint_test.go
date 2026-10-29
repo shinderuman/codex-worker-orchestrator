@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestScanGoAllowsOnlyBuildConstraint(t *testing.T) {
@@ -68,12 +70,17 @@ func TestRunFixIsSafeAndIdempotent(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init")
 	writeFile(t, filepath.Join(root, "a.go"), "package p\n// prose\nvar x = 1 // tail\n")
+	probe := filepath.Join(root, "probe.sh")
+	writeFile(t, probe, "#!/bin/sh\n# remove\nprintf runnable\n")
 	report, err := Run(root, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Status != "pass" || report.Fixed != 2 {
+	if report.Status != "pass" || report.Fixed != 3 {
 		t.Fatalf("report = %+v", report)
+	}
+	if output, err := exec.Command(probe).Output(); err != nil || string(output) != "runnable" {
+		t.Fatalf("fixed script = %q, %v", output, err)
 	}
 	second, err := Run(root, true)
 	if err != nil {
@@ -135,7 +142,7 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+	if err := execfile.Write(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

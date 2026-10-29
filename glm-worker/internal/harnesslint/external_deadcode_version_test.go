@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestDeadcodeVersionUsesBinaryModuleMetadata(t *testing.T) {
@@ -20,7 +22,7 @@ func TestDeadcodeVersionUsesBinaryModuleMetadata(t *testing.T) {
 printf '%s: go1.25.4\n' "$3"
 printf '\tmod\tgolang.org/x/tools\tv0.49.0\n'
 `
-	if err := os.WriteFile(goPath, []byte(goStub), 0o755); err != nil {
+	if err := execfile.Write(goPath, []byte(goStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

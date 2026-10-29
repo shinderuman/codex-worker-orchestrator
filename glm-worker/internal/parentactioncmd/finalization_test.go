@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestFinalizationCheckReturnsCurrentValidationAndGitSummary(t *testing.T) {
@@ -95,7 +96,7 @@ case "$1" in
   *) exit 9 ;;
 esac
 `
-	if err := os.WriteFile(worker, []byte(body), 0o700); err != nil {
+	if err := execfile.Write(worker, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -252,7 +253,7 @@ func runFinalizationGit(t *testing.T, repo string, args ...string) {
 func writeFinalizationWorker(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "glm-worker")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
+	if err := execfile.Write(path, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

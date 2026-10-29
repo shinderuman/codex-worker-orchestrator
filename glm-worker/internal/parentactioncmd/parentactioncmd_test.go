@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -124,7 +125,7 @@ func TestRunPrepareStagedActionIsNotUsageRejected(t *testing.T) {
 func TestRunReportsInfrastructureGitFailureReason(t *testing.T) {
 	binDir := t.TempDir()
 	fakeGit := "#!/bin/sh\nexit 97\n"
-	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)
@@ -390,7 +391,7 @@ func writeParentActionWorkerStubWithCheck(t *testing.T, cfg config.AppConfig, ch
 	marker := filepath.Join(root, "invoked")
 	script := "#!/bin/sh\n" + check + " || exit 3\ntouch \"$GLM_STUB_MARKER\"\n"
 	stubPath := filepath.Join(binDir, "glm-worker")
-	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+	if err := execfile.Write(stubPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

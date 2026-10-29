@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -73,7 +74,7 @@ func TestRunRecordsParentActionAttemptLedgerOnFailure(t *testing.T) {
 	t.Setenv("GLM_WORKER_HOME", home)
 	binDir := t.TempDir()
 	fakeGit := "#!/bin/sh\nexit 97\n"
-	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)

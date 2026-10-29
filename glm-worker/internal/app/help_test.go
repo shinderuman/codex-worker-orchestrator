@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +12,8 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
@@ -142,7 +143,7 @@ func writeAppTestFile(t *testing.T, root string, relativePath string, content st
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := execfile.Write(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

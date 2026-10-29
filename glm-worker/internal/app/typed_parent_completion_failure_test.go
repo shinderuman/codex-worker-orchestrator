@@ -10,6 +10,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -41,7 +42,7 @@ func typedCompletionFailureFixture(t *testing.T, native bool) typedCompletionFai
 			t.Fatal(err)
 		}
 		failure := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = test ] && [ -f '%s' ]; then\ncat <<'EVENTS'\n%s\nEVENTS\nexit 3\nfi\n", flag, qualityGateShimFailEvents)
-		if err := os.WriteFile(path, []byte(failure+strings.TrimPrefix(string(body), "#!/bin/sh\n")), 0755); err != nil {
+		if err := execfile.Write(path, []byte(failure+strings.TrimPrefix(string(body), "#!/bin/sh\n")), 0755); err != nil {
 			t.Fatal(err)
 		}
 	}

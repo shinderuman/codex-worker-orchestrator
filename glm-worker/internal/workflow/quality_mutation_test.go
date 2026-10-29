@@ -11,6 +11,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -453,7 +454,7 @@ func newQualityMutationFixture(t *testing.T) (string, config.AppConfig, *control
 
 func writeQualityMutationFixtureFile(t *testing.T, repo, name, content string, mode os.FileMode) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(repo, name), []byte(content), mode); err != nil {
+	if err := execfile.Write(filepath.Join(repo, name), []byte(content), mode); err != nil {
 		t.Fatal(err)
 	}
 }

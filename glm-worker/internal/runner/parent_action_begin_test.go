@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -23,7 +24,7 @@ func TestParentActionBeginRecoverySurvivesPreCallGuardRejection(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "model-call-marker")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s\\n' model-called >\"" + markerPath + "\"\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,7 +82,7 @@ func TestParentActionBeginRecoverySurvivesRunnerSetupFailure(t *testing.T) {
 	writeInstructionGuardFile(t, root, "AGENTS.local.md", "accepted")
 	promptDir := t.TempDir()
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
-	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,7 +132,7 @@ func TestParentActionBeginRecordIsCommittedBeforeModelInvocation(t *testing.T) {
 	markerPath := filepath.Join(t.TempDir(), "begin-state-marker")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nif [ -e \"$BEGIN_PATH\" ]; then\n  printf '%s\\n' present >\"" + markerPath + "\"\nelse\n  printf '%s\\n' absent >\"" + markerPath + "\"\nfi\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\"}'\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 

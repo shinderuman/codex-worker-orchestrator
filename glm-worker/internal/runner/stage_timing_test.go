@@ -34,7 +34,7 @@ func TestRunSessionRecordsRunnerSetupAndClaudeProcessStages(t *testing.T) {
 		t.Fatalf("runner-setup stage = %#v", setup)
 	}
 	process, ok := stages[state.StageClaudeProcess]
-	if !ok || process.Outcome != state.StageOutcomeCompleted || process.WallDurationMS <= 0 {
+	if !ok || process.Outcome != state.StageOutcomeCompleted || process.WallDurationMS < 0 || !process.CompletedAt.After(process.StartedAt) {
 		t.Fatalf("claude-process stage = %#v", process)
 	}
 	if process.Stage.ClockOrigin != state.ClockOriginWorker {

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestQualityWiringRequiresReviewerGate(t *testing.T) {
@@ -26,7 +28,7 @@ func writeQualityFile(t *testing.T, root, path, content string) {
 	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(absolute, []byte(content), 0o755); err != nil {
+	if err := execfile.Write(absolute, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

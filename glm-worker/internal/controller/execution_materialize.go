@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 const executionWorkspaceIdentityFile = "controller-workspace.json"
@@ -246,7 +248,7 @@ func materializeExecutionEntry(repo string, entry workspaceTreeEntry) error {
 	if entry.mode == "100755" {
 		mode = 0o755
 	}
-	return os.WriteFile(path, data, mode)
+	return execfile.Write(path, data, mode)
 }
 
 func resolveExecutionWorkspaceNonce(workspace WorkspaceIdentity) (WorkspaceIdentity, error) {

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -160,17 +161,17 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, g.workerTempDir)
-	if err := os.WriteFile(g.proxyPath, []byte(proxy), 0o700); err != nil {
+	if err := execfile.Write(g.proxyPath, []byte(proxy), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	if g.dockerPolicy && g.realGo != "" {
 		g.goProxyPath = filepath.Join(tempDir, "go")
-		if err := os.WriteFile(g.goProxyPath, []byte(goTestProxyScript(g.realGo)), 0o700); err != nil {
+		if err := execfile.Write(g.goProxyPath, []byte(goTestProxyScript(g.realGo)), 0o700); err != nil {
 			return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 		}
 	}
 	deny := gitAuthorityDenyTransportScript(g.attemptLog)
-	if err := os.WriteFile(g.denyPath, []byte(deny), 0o700); err != nil {
+	if err := execfile.Write(g.denyPath, []byte(deny), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	return nil

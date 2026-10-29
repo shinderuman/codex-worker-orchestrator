@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func (g *gitAuthorityGuard) prepareClaudeWrapper(claudeBin string) (string, error) {
@@ -13,7 +15,7 @@ func (g *gitAuthorityGuard) prepareClaudeWrapper(claudeBin string) (string, erro
 	}
 	path := filepath.Join(g.tempDir, "claude-with-git-authority-guard")
 	content := gitAuthorityClaudeWrapperScript(g, claudeBin)
-	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(content), 0o700); err != nil {
 		return "", &GitAuthorityGuardError{Stage: "prepare-claude-wrapper", Cause: err}
 	}
 	return path, nil

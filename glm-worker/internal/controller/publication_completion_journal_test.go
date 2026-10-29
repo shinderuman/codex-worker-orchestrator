@@ -2,14 +2,16 @@ package controller
 
 import (
 	"errors"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestPublicationCompletesTaskInOneJournal(t *testing.T) {
@@ -75,7 +77,7 @@ func TestCompletionRecoversPublishedTaskWithoutAnotherPush(t *testing.T) {
 	pushLog := filepath.Join(t.TempDir(), "pushes")
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 	hook := "#!/bin/sh\nset -eu\nprintf x >> " + quote(pushLog) + "\nchmod 0500 " + quote(runtime.Path(".")) + "\n"
-	if err := os.WriteFile(filepath.Join(remote, "hooks", "post-receive"), []byte(hook), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(remote, "hooks", "post-receive"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(runtime.Path("."), 0o700) })
@@ -228,7 +230,7 @@ func TestCompletionRemoteRejectionRestoresUnpublishedPreparation(t *testing.T) {
 	promoted, implementation := promoteTerminalTestSource(t, fixture, policy, source)
 	remote := controllerGitOutput(t, fixture.store.identity.PrimaryRoot, "remote", "get-url", policy.Remote)
 	hook := filepath.Join(remote, "hooks", "pre-receive")
-	if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+	if err := execfile.Write(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	before, err := CaptureWorkspaceSnapshot(fixture.store.identity.PrimaryRoot)
@@ -309,11 +311,11 @@ func TestCompletionLostPushResponseObservesWithoutAnotherPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	remote := controllerGitOutput(t, fixture.store.identity.PrimaryRoot, "remote", "get-url", policy.Remote)
-	if err := os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(remote, "hooks", "pre-receive"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	hooks := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	controllerGitOutput(t, fixture.store.identity.PrimaryRoot, "config", "core.hooksPath", hooks)

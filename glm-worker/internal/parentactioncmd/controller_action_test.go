@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
 
@@ -18,7 +19,7 @@ func TestControllerParentTransportPreservesPayloadAndRejectsReplay(t *testing.T)
 			cfg := newControllerActionTestConfig(t, true)
 			bin := t.TempDir()
 			stub := "#!/bin/sh\n[ \"$1\" = --authority ] || exit 2\n[ \"$2\" = " + action + " ] || exit 3\ncat\n"
-			if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
+			if err := execfile.Write(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -64,7 +65,7 @@ func TestPublicationStagedTransportRejectsUnadmittedEvidenceTemplate(t *testing.
 	cfg := newControllerActionTestConfig(t, true)
 	bin := t.TempDir()
 	stub := "#!/bin/sh\n[ \"$1\" = --authority ] || exit 2\n[ \"$2\" = controller-publication ] || exit 3\ncat\n"
-	if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -105,7 +106,7 @@ func TestPublicationStagedTransportRejectsUnsuppliedSlot(t *testing.T) {
 func TestControllerParentTransportKeepsStageAfterRejectedCommand(t *testing.T) {
 	cfg := newControllerActionTestConfig(t, false)
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte("#!/bin/sh\nexit 7\n"), 0700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "glm-worker"), []byte("#!/bin/sh\nexit 7\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
