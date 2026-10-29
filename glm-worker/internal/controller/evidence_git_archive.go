@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 )
@@ -384,7 +384,13 @@ func runGitBinaryWithGitDir(gitDir string, stdin []byte, args ...string) ([]byte
 }
 
 func runGitCommand(stdin []byte, args ...string) ([]byte, error) {
-	command := exec.Command("git", args...)
+	command := gitexec.Command("git", ".", args...)
+	if len(args) >= 2 && (args[0] == "-C" || args[0] == "--git-dir") {
+		command = gitexec.Command("git", args[1], args[2:]...)
+		if args[0] == "--git-dir" {
+			command.Args = append(command.Args[:1], args...)
+		}
+	}
 	if stdin != nil {
 		command.Stdin = bytes.NewReader(stdin)
 	}

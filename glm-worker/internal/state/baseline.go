@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 )
 
 type GitBaselineEvidence struct {
@@ -97,7 +98,7 @@ func clearUnavailableGitBaseline(state *StateStore) error {
 }
 
 func captureGitBaselineHead(repoRoot string) (head string, unborn bool, repository bool, err error) {
-	probe := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-dir")
+	probe := gitexec.Command("git", repoRoot, "rev-parse", "--git-dir")
 	if _, probeErr := probe.Output(); probeErr == nil {
 		head, unborn, err := resolveRepoHead(repoRoot)
 		return head, unborn, true, err
@@ -128,17 +129,17 @@ func removeGitBaseline(state *StateStore) error {
 }
 
 func ResolveGitHeadAuthority(gitPath, repoRoot string) (GitHeadAuthority, error) {
-	if _, err := exec.Command(gitPath, "-C", repoRoot, "rev-parse", "--git-dir").Output(); err != nil {
+	if _, err := gitexec.Command(gitPath, repoRoot, "rev-parse", "--git-dir").Output(); err != nil {
 		return GitHeadAuthority{}, fmt.Errorf("git rev-parse --git-dir: %w", err)
 	}
 
-	headOutput, headErr := exec.Command(gitPath, "-C", repoRoot, "rev-parse", "--verify", "-q", "HEAD^{commit}").Output()
+	headOutput, headErr := gitexec.Command(gitPath, repoRoot, "rev-parse", "--verify", "-q", "HEAD^{commit}").Output()
 	if headErr == nil {
 		head := strings.TrimSpace(string(headOutput))
 		if head == "" {
 			return GitHeadAuthority{}, fmt.Errorf("git rev-parse HEAD returned empty commit")
 		}
-		symbolicOutput, symbolicErr := exec.Command(gitPath, "-C", repoRoot, "symbolic-ref", "-q", "HEAD").Output()
+		symbolicOutput, symbolicErr := gitexec.Command(gitPath, repoRoot, "symbolic-ref", "-q", "HEAD").Output()
 		if symbolicErr == nil {
 			return GitHeadAuthority{Head: head, SymbolicHead: strings.TrimSpace(string(symbolicOutput))}, nil
 		}
@@ -151,7 +152,7 @@ func ResolveGitHeadAuthority(gitPath, repoRoot string) (GitHeadAuthority, error)
 		return GitHeadAuthority{}, fmt.Errorf("git rev-parse --verify HEAD^{commit}: %w", headErr)
 	}
 
-	target, err := exec.Command(gitPath, "-C", repoRoot, "symbolic-ref", "-q", "HEAD").Output()
+	target, err := gitexec.Command(gitPath, repoRoot, "symbolic-ref", "-q", "HEAD").Output()
 	if err != nil {
 		return GitHeadAuthority{}, fmt.Errorf("HEAD does not peel to a commit and is not a valid symbolic ref: %w", err)
 	}
@@ -160,7 +161,7 @@ func ResolveGitHeadAuthority(gitPath, repoRoot string) (GitHeadAuthority, error)
 		return GitHeadAuthority{}, fmt.Errorf("HEAD symbolic target %q is not under refs/heads", ref)
 	}
 
-	refs, err := exec.Command(gitPath, "-C", repoRoot, "for-each-ref", "--format=%(refname)", ref).Output()
+	refs, err := gitexec.Command(gitPath, repoRoot, "for-each-ref", "--format=%(refname)", ref).Output()
 	if err != nil {
 		return GitHeadAuthority{}, fmt.Errorf("ref lookup %s failed: %w", ref, err)
 	}
