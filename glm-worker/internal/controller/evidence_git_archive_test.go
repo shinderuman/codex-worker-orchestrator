@@ -31,7 +31,7 @@ func TestGitArchiveCacheBindsAllVerificationClaims(t *testing.T) {
 	if _, err := store.VerifyGitObjectArchive(ref); err != nil {
 		t.Fatal(err)
 	}
-	for _, claim := range []string{"root", "type", "format"} {
+	for _, claim := range []string{"root", "type", "format", "version", "pack-digest"} {
 		t.Run(claim, func(t *testing.T) {
 			envelope := original
 			envelope.Roots = append([]GitObjectArchiveRoot(nil), original.Roots...)
@@ -42,6 +42,10 @@ func TestGitArchiveCacheBindsAllVerificationClaims(t *testing.T) {
 				envelope.Roots[0].Type = "tree"
 			case "format":
 				envelope.ObjectFormat = "unsupported"
+			case "version":
+				envelope.SchemaVersion++
+			case "pack-digest":
+				envelope.PackDigest = strings.Repeat("0", 64)
 			}
 			payload, err := json.Marshal(envelope)
 			if err != nil {
@@ -55,6 +59,48 @@ func TestGitArchiveCacheBindsAllVerificationClaims(t *testing.T) {
 				t.Fatal("cached pack accepted invalid archive claims")
 			}
 		})
+	}
+}
+
+func TestGitArchiveCachePreservesContentAndReferenceChecks(t *testing.T) {
+	t.Parallel()
+	source, _ := newControllerLinkedWorktree(t)
+	store := newEvidenceTestStore(t)
+	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
+	ref, expected, err := store.CaptureGitObjectArchive(source, "reference:git", []string{commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots, err := store.VerifyGitObjectArchive(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots[0].OID = "changed-by-caller"
+	for _, claim := range []string{"kind", "media-type", "length"} {
+		t.Run(claim, func(t *testing.T) {
+			changed := ref
+			switch claim {
+			case "kind":
+				changed.Kind = "runtime-artifact"
+			case "media-type":
+				changed.MediaType = "application/json"
+			case "length":
+				changed.Length++
+			}
+			if _, err := store.VerifyGitObjectArchive(changed); err == nil {
+				t.Fatal("verified archive bypassed changed reference checks")
+			}
+		})
+	}
+	roots, err = store.VerifyGitObjectArchive(ref)
+	if err != nil || !reflect.DeepEqual(roots, expected) {
+		t.Fatalf("returned roots changed verified archive authority: %v", err)
+	}
+	if err := os.Remove(store.evidenceObjectPath(ref.Digest)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.VerifyGitObjectArchive(ref); err == nil {
+		t.Fatal("verified archive bypassed missing content")
 	}
 }
 
@@ -162,6 +208,9 @@ func TestGitObjectArchiveCorruptionFailsLoudly(t *testing.T) {
 	commit := controllerGitOutput(t, source, "rev-parse", "HEAD")
 	ref, _, err := store.CaptureGitObjectArchive(source, "attempt-corrupt:git", []string{commit})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.VerifyGitObjectArchive(ref); err != nil {
 		t.Fatal(err)
 	}
 	data, err := store.LoadEvidenceObject(ref)

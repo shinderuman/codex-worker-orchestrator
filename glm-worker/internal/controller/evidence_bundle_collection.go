@@ -3,7 +3,7 @@ package controller
 import "errors"
 
 func newEvidenceBundleCollector(store *Store) *evidenceBundleCollector {
-	return &evidenceBundleCollector{store: store, refs: map[string]EvidenceObjectRef{}}
+	return &evidenceBundleCollector{store: store, refs: map[string]EvidenceObjectRef{}, expanded: map[string]bool{}}
 }
 
 func (c *evidenceBundleCollector) addRef(ref EvidenceObjectRef) error {
@@ -33,24 +33,34 @@ func (c *evidenceBundleCollector) addAttemptSeal(ref EvidenceObjectRef) error {
 	if err := c.addRef(ref); err != nil {
 		return err
 	}
+	key := evidenceRefKey(ref)
+	if c.expanded[key] {
+		return nil
+	}
 	seal, err := c.store.LoadAttemptSeal(ref)
 	if err != nil {
-		return err
-	}
-	if _, err := c.store.VerifyGitObjectArchive(seal.GitObjectArchive); err != nil {
 		return err
 	}
 	if err := c.addRef(seal.GitObjectArchive); err != nil {
 		return err
 	}
-	return c.addRefs(seal.EvidenceRefs)
+	if err := c.addRefs(seal.EvidenceRefs); err != nil {
+		return err
+	}
+	c.expanded[key] = true
+	return nil
 }
 
 func (c *evidenceBundleCollector) addFinalization(ref EvidenceObjectRef) error {
 	current := ref
+	var chain []string
 	for {
 		if err := c.addRef(current); err != nil {
 			return err
+		}
+		key := evidenceRefKey(current)
+		if c.expanded[key] {
+			break
 		}
 		record, err := c.store.LoadAttemptFinalization(current)
 		if err != nil {
@@ -62,11 +72,16 @@ func (c *evidenceBundleCollector) addFinalization(ref EvidenceObjectRef) error {
 		if err := c.addRefs(record.EvidenceRefs); err != nil {
 			return err
 		}
+		chain = append(chain, key)
 		if record.PreviousFinalization == nil {
-			return nil
+			break
 		}
 		current = *record.PreviousFinalization
 	}
+	for _, key := range chain {
+		c.expanded[key] = true
+	}
+	return nil
 }
 
 func (c *evidenceBundleCollector) addAttemptFinalizations(taskRoot, sealRef EvidenceObjectRef) error {
