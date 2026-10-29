@@ -21,6 +21,12 @@ none
 - 関連する現行実装の調査入口: `glm-worker/internal/parentactioncmd/terminal_envelope.go`（実処理成功後に別command `--handoff` を起動し、失敗をwrapper errorへ変換）、`glm-worker/internal/parentevidence/support.go`（`CaptureReadScope` / `ValidateReadScope` がTask ID・status・lease epochを比較）。現行sourceでの原因確定前に、read-scope race・retire時状態変更・read-side副作用のいずれかに断定しない。
 - 既存のterminal/handoff正常系とfail-closed境界は保護対象。親向け差分digestの同一性、serialized output budget、Publication stageの親往復削減、成功後の根拠なき再調査とは異なる。既存ownerにexact failure topologyが包含されると実証できた場合だけ同一ownerで重複実装を避ける。
 
+### 2026-10-29 Dogfood #1432 — 3件目の同一Publication後handoff failure
+
+- Bundle `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b.zip` の`bound/transcripts/parent/01a18667-b18f-7303-9e3f-01c2f560dee9/0`にはAttempt Seal後のPublication結果まで収録される（bound 2,098 events、attempt 1,962 events）。`controller-publication 6237694f2ff0ac7d258eec793767a6ab`は2026-10-29T09:52:21Zから約1,108.8秒、正規completion/finalize/race/install/promote/publish後に `parent evidence scope changed during projection; request fresh evidence` を返し、親向けwrapperが失敗。
+- 一次terminal recordで`final_oid=remote_oid=4977476613bc195f9c59702f6b268e3b7106aa59`、`next-task-not-started`。親は続けて`glm-worker --handoff recovery`を起動し`consistent=true`、Git/Task/配置を照合して復旧。二重PushやNEXT起動は観測されない。
+- 同一failure topologyは前Audit #1423、#1428で既に確認済み。このTaskはなおNEXT・未実装なので**修正後のrecurrenceではない**。異なるPublisher rootを捏造せず、本TaskのPublication成功後のcanonical handoff取得と親の無駄な再照会削減を検証する3番目の実例として使う。元の管理Finding #1424はTask登録PR MergeでClose済みであり、Issue管理状態を実装完了と誤読しない。
+
 ## Purpose
 
 Publicationの実処理が正常に完了した直後、同じ正規commandから返すべきterminalとpost-transition handoffの整合が崩れ、成功済み操作を失敗と誤認させて親Codexに不要な復旧探索を強制する問題を、一次証拠に基づき診断・修正する。不可逆のremote Publishを再実行させず、正規Task終端まで一貫したmachine resultを返す。
