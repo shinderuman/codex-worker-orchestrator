@@ -15,6 +15,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 
 
+- [`IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md`](IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
