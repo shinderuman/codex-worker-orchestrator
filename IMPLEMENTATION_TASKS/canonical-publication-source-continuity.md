@@ -38,6 +38,10 @@ Reviewは外部の参考情報とし、実装要求は本Taskの親Codex判断�
 
 ## Amendments
 
+2026-10-29 追加の責務整理: 以下の中間評価由来のparent-only完了とGit hook環境の問題は、それぞれ`parent-only-task-completion.md`と`git-hook-worktree-environment-isolation.md`へ独立起票した。本Taskではその実装を重複して行わず、既存Publication source continuityとの接続だけを維持する。以下の観測原文は保持する。
+
+2026-10-29 中間評価で確認した同一完了責務の追加要求: parent-only評価Taskを、実施していないGLM Worker/Reviewerの成功証拠を作らずに正規完了できる境界を定義する。現行`parentCompletionReview`はaccepted Runtimeと独立Reviewerを必須とし、未開始runtimeのhandoffはcompletion_admitted:falseとなる。親評価の要求・source・実成果・採否・必要validationに基づく完了と、通常GLM TaskのReview要件を区別し、既存guardを迂回しない。また2026-10-29の親metadata commitはpre-commitで`parent continuation metadata guard unavailable: git ls-files: exit status 128`となった一方、同じcheckoutでguard単独実行は成功した。Git hook実行環境とlane/primary参照の差を診断し、原因確定後に同ownerで修正する。現時点で環境差を根本原因と断定しない。
+
 ### 2026-10-25 External Reviewから同一責務へ統合: materialization-runtime-reentry-recovery
 
 親CodexによるExternal Review採否の具体化指示（2026-10-25）:

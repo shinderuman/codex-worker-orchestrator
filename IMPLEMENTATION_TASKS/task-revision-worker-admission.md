@@ -10,7 +10,7 @@
 
 ## Amendments
 
-none
+2026-10-29 親Codex追加要求: 初回モデル呼出前にprimaryのTask改訂を検出して拒否した場合も、作成済みlane/leaseと未開始runtimeをcanonical handoffが扱えること。sync-task-authority成功後、task.id/runtime binding未生成を破損した実行中runtimeと区別し、追加モデル呼出や別復旧操作の副作用に依存せず正規の次操作を提示する。起動→改訂拒否→sync→handoffまでを同一実経路で検証し、Controllerだけ同期してhandoffがconsistent:falseのまま残る状態を解消する。根拠は2026-10-29中間評価の会話・tool結果と`review-evidence/codex-efficiency-checkpoint-2026-10-29.md`。
 
 ## Purpose
 
