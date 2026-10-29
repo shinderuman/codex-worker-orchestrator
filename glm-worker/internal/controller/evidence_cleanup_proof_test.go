@@ -1,9 +1,68 @@
 package controller
 
 import (
+	"os"
 	"testing"
 	"time"
 )
+
+func TestCleanupDurabilityProofRevalidatesRequiredObjects(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{"seal", "archive"} {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+			store, sealRef, _, _ := newCleanupProofFixture(t, true)
+			seal, err := store.LoadAttemptSeal(sealRef)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := store.ProveCleanupDurability(sealRef)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, err := store.ProveCleanupDurability(sealRef)
+			if err != nil || before.EvidenceGraphDigest != after.EvidenceGraphDigest {
+				t.Fatalf("unchanged evidence proof differs: %v", err)
+			}
+			ref := sealRef
+			if target == "archive" {
+				ref = seal.GitObjectArchive
+			}
+			if err := os.Remove(store.evidenceObjectPath(ref.Digest)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.ProveCleanupDurability(sealRef); err == nil {
+				t.Fatal("new proof accepted missing required evidence")
+			}
+		})
+	}
+}
+
+func TestEvidenceGraphRechecksSharedSealAuthority(t *testing.T) {
+	t.Parallel()
+	store, repo := newEvidenceTestStoreWithRepo(t)
+	sealRef, seal := storeCleanupProofSeal(t, store, repo, "")
+	walker := evidenceGraphWalker{store: store, refs: map[string]EvidenceObjectRef{}}
+	if _, err := walker.walkAttemptSeal(sealRef); err != nil {
+		t.Fatal(err)
+	}
+	if err := walker.walkIndexEvidence([]EvidenceObjectRef{sealRef}, nil, func(AttemptSeal) bool { return false }); err == nil {
+		t.Fatal("shared seal bypassed index subject authority")
+	}
+	ledger := EvidenceLedgerRecord{
+		AttemptSealsAdded:    []EvidenceObjectRef{sealRef},
+		ControllerGeneration: seal.ControllerGeneration + 1,
+		TransitionID:         seal.SealingTransitionID,
+	}
+	if err := walker.validateLedgerAttemptSealsAdded(ledger); err == nil {
+		t.Fatal("shared seal bypassed ledger generation authority")
+	}
+	changed := sealRef
+	changed.MediaType = "text/plain"
+	if _, err := walker.walkAttemptSeal(changed); err == nil {
+		t.Fatal("shared seal accepted conflicting reference metadata")
+	}
+}
 
 func TestCleanupDurabilityProofRequiresTaskAndEpisodeReachability(t *testing.T) {
 	t.Parallel()

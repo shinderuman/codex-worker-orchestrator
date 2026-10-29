@@ -126,7 +126,7 @@ func TestRootPromotionRecoversExactPartialSourceAndRejectsForeignMutation(t *tes
 	}
 	for _, entry := range entries {
 		if entry.path == "lane-only.txt" {
-			if err := applyParentSourceEntry(f.store.identity.PrimaryRoot, workspaceTreeEntry{}, entry); err != nil {
+			if err := applySourceTreeEntries(f.store.identity.PrimaryRoot, nil, []workspaceTreeEntry{entry}); err != nil {
 				t.Fatal(err)
 			}
 		}

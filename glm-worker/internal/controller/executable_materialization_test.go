@@ -24,11 +24,14 @@ func TestImportedAndMaterializedExecutablesRun(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			entry := workspaceTreeEntry{path: name, mode: "100755", oid: oid}
 			path := filepath.Join(repo, name)
-			var err error
+			blobs, err := readWorkspaceBlobs(repo, []workspaceTreeEntry{entry})
+			if err != nil {
+				t.Fatal(err)
+			}
 			if name == "imported.sh" {
-				err = writeParentSourceEntry(repo, path, entry)
+				err = writeParentSourceEntry(path, entry, blobs)
 			} else {
-				err = materializeExecutionEntry(repo, entry)
+				err = materializeExecutionEntry(repo, entry, blobs)
 			}
 			if err != nil {
 				t.Fatal(err)

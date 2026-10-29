@@ -88,6 +88,8 @@ accept/no-go/completion resolutionが読取失敗時にopen reviewやcompletion 
 full/race等の必須検証集合がWorker宣言から欠落して未達のまま公開・完了した問題は、completion-required-validation-closure.mdで扱う。同Taskは検証集合の完全性と、未完了・復旧中の同一Task identity維持を担当する。本Taskはその正規ownerを再利用し、candidate/remote/source lineage、promoteと外部変更の識別、controller/runtime再入の整合に残る不備を扱う。未達阻止の要求は維持し、同じ検証義務判定や復旧状態を二重実装しない。
 ````
 
+- 長時間処理の調査からの引継ぎ: Task `22dd61fb-68bb-4c99-bb4d-0289fe879924` のGo/race/installは2組あるが、source snapshotは `3e817c...` と `9dc191...` で異なる。成功済み検証の単純skipを採らず、source連続性と最終candidateの必須検証を維持したうえで再実行の必要性を判断する。正本は同Taskのvalidation記録とcontroller candidate、分析入口はTask `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b` artifact `codex-direct/startup-remediation-audit.md`。別source・未検証を同一成功として扱う退行を拒否する。
+
 ## Purpose
 
 Controllerのaccepted candidate、terminal Task/Plan、primaryの既知base/index、remote upstream、真の外部変更を同一source authorityで扱う。

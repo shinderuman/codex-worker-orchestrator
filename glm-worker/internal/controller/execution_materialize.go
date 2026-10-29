@@ -163,8 +163,9 @@ func materializeExecutionTrees(workspace WorkspaceIdentity, rebound ReboundSuspe
 	if err := verifyLaneMaterializationPaths(workspace.Root, entries); err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		if err := materializeExecutionEntry(workspace.Root, entry); err != nil {
+	for start := 0; start < len(entries); start += workspaceBlobBatchSize {
+		batch := entries[start:min(start+workspaceBlobBatchSize, len(entries))]
+		if err := materializeExecutionBatch(workspace.Root, batch); err != nil {
 			return err
 		}
 	}
@@ -181,6 +182,19 @@ func materializeExecutionTrees(workspace WorkspaceIdentity, rebound ReboundSuspe
 	}
 	_, err = runGitBinary(workspace.Root, nil, "read-tree", rebound.Current.IndexTree)
 	return err
+}
+
+func materializeExecutionBatch(repo string, entries []workspaceTreeEntry) error {
+	blobs, err := readWorkspaceBlobs(repo, entries)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := materializeExecutionEntry(repo, entry, blobs); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func verifyLaneMaterializationPaths(root string, entries []workspaceTreeEntry) error {
@@ -212,7 +226,7 @@ func verifyLaneMaterializationPaths(root string, entries []workspaceTreeEntry) e
 	})
 }
 
-func materializeExecutionEntry(repo string, entry workspaceTreeEntry) error {
+func materializeExecutionEntry(repo string, entry workspaceTreeEntry, blobs workspaceBlobs) error {
 	path, err := suspensionWorktreePath(repo, entry.path)
 	if err != nil {
 		return err
@@ -220,7 +234,7 @@ func materializeExecutionEntry(repo string, entry workspaceTreeEntry) error {
 	if entry.mode == "160000" {
 		return os.MkdirAll(path, 0o755)
 	}
-	data, err := runGitBinary(repo, nil, "cat-file", "blob", entry.oid)
+	data, err := blobs.content(entry)
 	if err != nil {
 		return err
 	}

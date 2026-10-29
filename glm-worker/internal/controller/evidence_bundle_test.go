@@ -218,6 +218,9 @@ func TestBundleFailsLoudlyWhenRequiredHistoricalEvidenceIsMissing(t *testing.T) 
 	publishBundleAuthority(t, store, 1, "snapshot-1", nil, nil,
 		[]EvidenceSubjectHead{{SubjectID: taskEvidenceSubjectID(seal.SemanticTaskRef), RevisionRef: taskRef}}, nil,
 	)
+	if _, err := store.BuildAttemptEvidenceBundle(sealRef); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(store.evidenceObjectPath(seal.GitObjectArchive.Digest)); err != nil {
 		t.Fatal(err)
 	}

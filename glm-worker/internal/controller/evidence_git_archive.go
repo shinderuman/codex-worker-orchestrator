@@ -23,6 +23,11 @@ type gitObjectArchiveEnvelope struct {
 	Pack          []byte                 `json:"pack"`
 }
 
+type gitObjectArchiveVerification struct {
+	objectFormat string
+	roots        []GitObjectArchiveRoot
+}
+
 const gitCommitObjectType = "commit"
 const gitTreeObjectType = "tree"
 
@@ -48,37 +53,27 @@ func (s *Store) captureGitObjectArchiveReusing(repoPath, logicalIdentity string,
 	if err != nil {
 		return EvidenceObjectRef{}, nil, err
 	}
-	envelope, err := s.loadGitObjectArchiveEnvelope(*canonical)
+	verified, err := s.verifyGitObjectArchive(*canonical)
 	if err != nil {
 		return EvidenceObjectRef{}, nil, err
 	}
-	if envelope.ObjectFormat != objectFormat || !sameGitObjectArchiveRoots(envelope.Roots, roots) {
+	if verified.objectFormat != objectFormat || !sameGitObjectArchiveRoots(verified.roots, roots) {
 		return s.CaptureGitObjectArchive(repoPath, logicalIdentity, rootOIDs)
-	}
-	if err := s.verifyGitObjectArchivePack(*canonical, envelope); err != nil {
-		return EvidenceObjectRef{}, nil, err
 	}
 	return *canonical, append([]GitObjectArchiveRoot(nil), roots...), nil
 }
 
-func (s *Store) verifyGitObjectArchivePack(ref EvidenceObjectRef, envelope gitObjectArchiveEnvelope) error {
-	if err := s.verifyGitObjectPackCached(envelope); err != nil {
-		return gitArchiveIntegrityError(ref, err.Error())
-	}
-	return nil
-}
-
-func (s *Store) loadGitObjectArchiveEnvelope(ref EvidenceObjectRef) (gitObjectArchiveEnvelope, error) {
+func (s *Store) loadGitObjectArchiveData(ref EvidenceObjectRef) ([]byte, error) {
 	if err := validateTypedEvidenceRef(ref, "git-object-archive"); err != nil {
-		return gitObjectArchiveEnvelope{}, err
+		return nil, err
 	}
 	if ref.MediaType != gitObjectArchiveMediaType {
-		return gitObjectArchiveEnvelope{}, gitArchiveIntegrityError(ref, "git object archive media type is unsupported")
+		return nil, gitArchiveIntegrityError(ref, "git object archive media type is unsupported")
 	}
-	data, err := s.LoadEvidenceObject(ref)
-	if err != nil {
-		return gitObjectArchiveEnvelope{}, err
-	}
+	return s.LoadEvidenceObject(ref)
+}
+
+func decodeGitObjectArchiveEnvelope(ref EvidenceObjectRef, data []byte) (gitObjectArchiveEnvelope, error) {
 	var envelope gitObjectArchiveEnvelope
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return gitObjectArchiveEnvelope{}, gitArchiveIntegrityError(ref, "git object archive envelope is invalid")
@@ -152,39 +147,36 @@ func buildGitObjectArchiveEnvelope(repoPath string, rootOIDs []string) ([]byte, 
 }
 
 func (s *Store) VerifyGitObjectArchive(ref EvidenceObjectRef) ([]GitObjectArchiveRoot, error) {
-	envelope, err := s.loadGitObjectArchiveEnvelope(ref)
+	verified, err := s.verifyGitObjectArchive(ref)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.verifyGitObjectArchivePack(ref, envelope); err != nil {
-		return nil, err
-	}
-	return append([]GitObjectArchiveRoot(nil), envelope.Roots...), nil
+	return append([]GitObjectArchiveRoot(nil), verified.roots...), nil
 }
 
-func (s *Store) verifyGitObjectPackCached(envelope gitObjectArchiveEnvelope) error {
+func (s *Store) verifyGitObjectArchive(ref EvidenceObjectRef) (gitObjectArchiveVerification, error) {
+	data, err := s.loadGitObjectArchiveData(ref)
+	if err != nil {
+		return gitObjectArchiveVerification{}, err
+	}
 	s.archiveVerification.Lock()
 	defer s.archiveVerification.Unlock()
 	if s.archiveVerified == nil {
-		s.archiveVerified = make(map[string]struct{})
+		s.archiveVerified = make(map[string]gitObjectArchiveVerification)
 	}
-	identity, err := json.Marshal(struct {
-		ObjectFormat string                 `json:"object_format"`
-		PackDigest   string                 `json:"pack_digest"`
-		Roots        []GitObjectArchiveRoot `json:"roots"`
-	}{envelope.ObjectFormat, envelope.PackDigest, envelope.Roots})
+	if verified, cached := s.archiveVerified[ref.Digest]; cached {
+		return verified, nil
+	}
+	envelope, err := decodeGitObjectArchiveEnvelope(ref, data)
 	if err != nil {
-		return err
-	}
-	key := string(identity)
-	if _, cached := s.archiveVerified[key]; cached {
-		return nil
+		return gitObjectArchiveVerification{}, err
 	}
 	if err := verifyGitObjectPack(envelope); err != nil {
-		return err
+		return gitObjectArchiveVerification{}, gitArchiveIntegrityError(ref, err.Error())
 	}
-	s.archiveVerified[key] = struct{}{}
-	return nil
+	verified := gitObjectArchiveVerification{objectFormat: envelope.ObjectFormat, roots: envelope.Roots}
+	s.archiveVerified[ref.Digest] = verified
+	return verified, nil
 }
 
 func collectGitObjectClosure(repoPath string, rootOIDs []string) ([]GitObjectArchiveRoot, []string, string, error) {
