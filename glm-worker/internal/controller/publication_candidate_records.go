@@ -8,10 +8,12 @@ import (
 )
 
 const (
-	candidateEvidencePass           = "pass"
-	candidateEvidenceKindReview     = "review"
-	candidateEvidenceKindValidation = "validation"
-	candidateEvidenceKindInstall    = "install"
+	candidateEvidencePass             = "pass"
+	candidateEvidenceAccepted         = "accepted"
+	candidateEvidenceKindReview       = "review"
+	candidateEvidenceKindValidation   = "validation"
+	candidateEvidenceKindInstall      = "install"
+	candidateEvidenceKindParentAccept = "parent-acceptance"
 
 	evidenceKindCandidateEvidence = "candidate-evidence"
 )
@@ -23,6 +25,12 @@ func validateCandidateEvidenceMetadata(record CandidateEvidence, repository stri
 	if record.Kind == candidateEvidenceKindValidationObligation || record.Kind == candidateEvidenceKindInstallObligation {
 		if record.Result != candidateEvidenceDeclared {
 			return fmt.Errorf("an obligation must be declared, never reported as successful execution")
+		}
+		return nil
+	}
+	if record.Kind == candidateEvidenceKindParentAccept {
+		if record.Result != candidateEvidenceAccepted {
+			return fmt.Errorf("parent acceptance evidence must record the acceptance decision, not an execution result")
 		}
 		return nil
 	}
@@ -156,11 +164,21 @@ func (s *Store) validateCandidateEvidence(candidate AcceptedCandidate, refs []Ev
 		}
 		seen[kind] = true
 	}
-	installPending := candidate.State == candidatePrepared && seen[candidateEvidenceKindInstallObligation]
-	if !seen[candidateEvidenceKindReview] || (!seen[candidateEvidenceKindValidation] && !seen[candidateEvidenceKindValidationObligation]) || (candidate.Policy.RequireInstall && !seen[candidateEvidenceKindInstall] && !installPending) {
+	if seen[candidateEvidenceKindParentAccept] && seen[candidateEvidenceKindReview] {
+		return fmt.Errorf("candidate carries both parent acceptance and independent review authority")
+	}
+	if !candidateEvidenceComplete(candidate, seen) {
 		return fmt.Errorf("candidate review/validation/install evidence requires re-entry")
 	}
 	return nil
+}
+
+func candidateEvidenceComplete(candidate AcceptedCandidate, seen map[string]bool) bool {
+	installPending := candidate.State == candidatePrepared && seen[candidateEvidenceKindInstallObligation]
+	accepted := seen[candidateEvidenceKindReview] || seen[candidateEvidenceKindParentAccept]
+	validated := seen[candidateEvidenceKindValidation] || seen[candidateEvidenceKindValidationObligation]
+	installed := seen[candidateEvidenceKindInstall] || installPending || !candidate.Policy.RequireInstall
+	return accepted && validated && installed
 }
 
 func acceptedCandidateID(c AcceptedCandidate) string {
@@ -199,6 +217,9 @@ func (s *Store) validateCandidateEvidenceRecord(candidate AcceptedCandidate, ref
 	}
 	if validate := s.obligationValidation(record.Kind); validate != nil {
 		return record.Kind, validate(candidate, record.Artifact)
+	}
+	if record.Kind == candidateEvidenceKindParentAccept {
+		return record.Kind, s.validateParentAcceptanceArtifact(candidate, record.Artifact)
 	}
 	if record.Kind != candidateEvidenceKindReview && record.Kind != candidateEvidenceKindValidation && record.Kind != candidateEvidenceKindInstall {
 		return "", fmt.Errorf("invalid candidate evidence kind")

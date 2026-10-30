@@ -224,7 +224,7 @@ func applyExecutionTerminationHandoff(cfg config.AppConfig, output *parentHandof
 func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffOutput, head controller.RepositoryControllerHead) {
 	action := canonicalQuiescentAction(cfg, head, output.TaskID)
 	if action == canonicalStartAction {
-		authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+		resolved, err := quiescentStartHandoffAction(cfg, head, action)
 		if err != nil {
 			output.Consistent = false
 			message := err.Error()
@@ -233,9 +233,7 @@ func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffO
 			output.RequiredAction = nil
 			return
 		}
-		if authority.ProjectSnapshotID != head.ProjectSnapshotID || authority.Snapshot.HeadOID != head.IntegrationTip {
-			action = controllerPublicationSurface
-		}
+		action = resolved
 	}
 	output.RequiredAction = &action
 	output.AllowedActions = []string{action, "controller-evidence"}
@@ -251,6 +249,20 @@ func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffO
 	if action == controllerPublicationSurface && output.ParentRequest != nil {
 		output.ParentRequest.TaskAttribution.LegalNextAction = action
 	}
+}
+
+func quiescentStartHandoffAction(cfg config.AppConfig, head controller.RepositoryControllerHead, action string) (string, error) {
+	authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	if err != nil {
+		return "", err
+	}
+	if authority.ProjectSnapshotID != head.ProjectSnapshotID || authority.Snapshot.HeadOID != head.IntegrationTip {
+		return controllerPublicationSurface, nil
+	}
+	if authority.ExecutionMode == controller.ExecutionAuthorityParentOnly {
+		return controllerExecutionSurface, nil
+	}
+	return action, nil
 }
 
 func canonicalParentAction(action string) string {

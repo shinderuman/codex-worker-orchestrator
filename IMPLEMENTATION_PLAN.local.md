@@ -8,13 +8,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/parent-only-task-completion.md`](IMPLEMENTATION_TASKS/parent-only-task-completion.md)
+- [`IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md`](IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md)
 
 ## NEXT（優先順）
 
 
 
-- [`IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md`](IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md)
+
 - [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
 - [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md)

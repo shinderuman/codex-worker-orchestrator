@@ -27,6 +27,7 @@ func applyParentCompletionOperationHandoff(cfg config.AppConfig, output *parentH
 		}
 		return
 	}
+	applyParentOnlyOperationHandoff(output, operation)
 	switch operation.Surface {
 	case controller.PublicationOperationSurface:
 		applyPublicationOperationHandoff(output, operation)
@@ -36,6 +37,34 @@ func applyParentCompletionOperationHandoff(cfg config.AppConfig, output *parentH
 		applyCompletionExecutionHandoff(output, operation)
 
 	}
+}
+
+func applyParentOnlyOperationHandoff(output *parentHandoffOutput, operation controller.ParentCompletionOperation) {
+	if operation.Mode != controller.ParentCompletionModeParentOnly || output.RequiredAction == nil {
+		return
+	}
+	if operation.Surface != controllerPublicationSurface || *output.RequiredAction == controllerPublicationSurface {
+		return
+	}
+	action := controllerPublicationSurface
+	output.RequiredAction = &action
+	output.AllowedActions = replaceParentAction(output.AllowedActions, canonicalStartAction, controllerPublicationSurface)
+}
+
+func replaceParentAction(actions []string, unwanted, replacement string) []string {
+	projected := make([]string, 0, len(actions)+1)
+	for _, action := range actions {
+		if action == unwanted {
+			continue
+		}
+		if !containsParentAction(projected, action) {
+			projected = append(projected, action)
+		}
+	}
+	if !containsParentAction(projected, replacement) {
+		projected = append(projected, replacement)
+	}
+	return projected
 }
 
 func failParentCompletionHandoff(output *parentHandoffOutput, err error) {

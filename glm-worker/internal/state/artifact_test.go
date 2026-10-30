@@ -3,10 +3,32 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
+
+func TestExplicitArtifactNamespaceKeepsRuntimeAbsent(t *testing.T) {
+	store, err := NewStateStore(config.AppConfig{StateBase: t.TempDir(), RepoHash: "controller-artifact-test", RepoRoot: "/repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PrepareArtifactDir(); err == nil {
+		t.Fatal("Runtime artifact preparation accepted a missing task ID")
+	}
+	dir, err := store.PrepareArtifactDirForTask("controller-" + strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil || info.Mode().Perm() != 0o700 || store.Exists("task.id") {
+		t.Fatalf("explicit artifact namespace changed Runtime or permissions: %v", err)
+	}
+	if _, err := store.PrepareArtifactDirForTask("../../outside"); err == nil {
+		t.Fatal("explicit artifact namespace accepted path traversal")
+	}
+}
 
 func TestArtifactDirIsTaskScopedAndSecured(t *testing.T) {
 	store, err := NewStateStore(config.AppConfig{

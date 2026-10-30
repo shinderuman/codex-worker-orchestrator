@@ -14,6 +14,7 @@ import (
 type ParentCompletionOperation struct {
 	Surface           string                      `json:"surface"`
 	Operation         string                      `json:"operation"`
+	Mode              string                      `json:"mode,omitempty"`
 	Command           *PublicationParentCommand   `json:"command,omitempty"`
 	Execution         *CompletionExecutionCommand `json:"execution,omitempty"`
 	AllowedOperations []string                    `json:"allowed_operations,omitempty"`
@@ -52,20 +53,23 @@ const (
 	ExecutionOperationSurface   = "controller-execution"
 	SuccessorStartSurface       = "start"
 
-	PublicationOperationObserved          = "observed"
-	PublicationOperationReopen            = "reopen-unsealed"
-	PublicationOperationNone              = "none"
-	PublicationOperationRecover           = "recover"
-	PublicationOperationAdopt             = "adopt"
-	PublicationOperationAdoptSource       = "adopt-source"
-	PublicationOperationAccept            = "complete"
-	PublicationOperationFinalValidation   = "final-validation"
-	PublicationOperationPromote           = "promote"
-	PublicationOperationPublish           = "publish"
-	PublicationOperationSuccessorStart    = "successor-start"
-	PublicationOperationValidationFailure = "resolve-validation-failure"
-	PublicationOperationInstall           = "install-completion"
-	PublicationOperationPostInstallSmoke  = "post-install-smoke"
+	PublicationOperationObserved              = "observed"
+	PublicationOperationReopen                = "reopen-unsealed"
+	PublicationOperationNone                  = "none"
+	PublicationOperationRecover               = "recover"
+	PublicationOperationAdopt                 = "adopt"
+	PublicationOperationAdoptSource           = "adopt-source"
+	PublicationOperationAccept                = "complete"
+	PublicationOperationParentOnlyMaterialize = "materialize-parent-only"
+	PublicationOperationFinalValidation       = "final-validation"
+	PublicationOperationPromote               = "promote"
+	PublicationOperationPublish               = "publish"
+	PublicationOperationSuccessorStart        = "successor-start"
+	PublicationOperationValidationFailure     = "resolve-validation-failure"
+	PublicationOperationInstall               = "install-completion"
+	PublicationOperationPostInstallSmoke      = "post-install-smoke"
+
+	ParentCompletionModeParentOnly = "parent-only"
 
 	CompletionSlotMessage             = "message"
 	CompletionSlotRequireInstall      = "require_install"
@@ -88,6 +92,10 @@ func (s *Store) ProjectParentCompletion() (ParentCompletionOperation, error) {
 	if head.PendingTransitionID != "" {
 		return s.projectTransitionRecovery(head)
 	}
+	return s.projectActiveCompletion(head)
+}
+
+func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCompletionOperation, error) {
 	if operation, ok, err := s.projectExternalAdvancement(head); err != nil || ok {
 		return operation, err
 	}
@@ -100,6 +108,9 @@ func (s *Store) ProjectParentCompletion() (ParentCompletionOperation, error) {
 	}
 	if head.AcceptedCandidateRef != nil {
 		return s.projectAcceptedCandidateOperation(head)
+	}
+	if operation, selected, err := s.projectParentOnlyCompletionOperation(head); err != nil || selected {
+		return operation, err
 	}
 	if operation, selected, err := s.projectCompletionSuccessor(head); selected || err != nil {
 		return operation, err
@@ -235,6 +246,63 @@ func (*Store) projectCandidateOperation(head RepositoryControllerHead, candidate
 			SourceOID:          candidate.CommitOID,
 		},
 	}
+}
+
+func (s *Store) projectParentOnlyCompletionOperation(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
+	if head.LiveAttemptID != "" || head.LiveLeaseID != "" || head.ExecutionTaskRef != nil {
+		return s.projectLiveParentOnlyCompletion(head)
+	}
+	if head.AcceptedCandidateRef != nil {
+		return ParentCompletionOperation{}, false, nil
+	}
+	return s.projectQuiescentParentOnlyMaterialization(head)
+}
+
+func (s *Store) projectLiveParentOnlyCompletion(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
+	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil {
+		return ParentCompletionOperation{}, false, nil
+	}
+	attempt, live, err := s.parentOnlyLiveExecution(head)
+	if err != nil || !live {
+		return ParentCompletionOperation{}, false, err
+	}
+	runtime, _, err := s.boundAttemptRuntime(Admission{Attempt: attempt})
+	if err != nil {
+		return ParentCompletionOperation{}, false, err
+	}
+	if runtime != nil {
+		return ParentCompletionOperation{}, false, fmt.Errorf("parent-only execution %s must not carry a Runtime", attempt.AttemptID)
+	}
+	policy, err := s.parentCompletionPolicy(head)
+	if err != nil {
+		return ParentCompletionOperation{}, false, err
+	}
+	return ParentCompletionOperation{Surface: PublicationOperationSurface, Mode: ParentCompletionModeParentOnly, Operation: PublicationOperationAccept,
+		Command:           &PublicationParentCommand{Action: PublicationOperationAccept, ExpectedGeneration: head.ControllerGeneration, Policy: &policy},
+		SemanticSlots:     []string{CompletionSlotMessage, CompletionSlotRequireInstall, CompletionSlotRequiredValidations},
+		AllowedOperations: []string{PublicationOperationAccept}}, true, nil
+}
+
+func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
+	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
+		return ParentCompletionOperation{}, false, nil
+	}
+	quiescentRetired := retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil)
+	if !IsPristine(head) && !quiescentRetired {
+		return ParentCompletionOperation{}, false, nil
+	}
+	authority, err := s.parentOnlySuccessorAuthority(head)
+	if err != nil {
+		if IsPristine(head) {
+			return ParentCompletionOperation{}, false, nil
+		}
+		return ParentCompletionOperation{}, false, err
+	}
+	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
+		return ParentCompletionOperation{}, false, nil
+	}
+	return ParentCompletionOperation{Surface: ExecutionOperationSurface, Mode: ParentCompletionModeParentOnly, Operation: PublicationOperationParentOnlyMaterialize,
+		Execution: &CompletionExecutionCommand{Action: PublicationOperationParentOnlyMaterialize, ExpectedGeneration: head.ControllerGeneration}}, true, nil
 }
 
 func (s *Store) projectAcceptanceOperation(head RepositoryControllerHead) (ParentCompletionOperation, error) {

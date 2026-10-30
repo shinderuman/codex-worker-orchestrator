@@ -110,6 +110,8 @@ func executeControllerExecutionAction(cfg config.AppConfig, store *controller.St
 		return executeControllerSuspend(cfg, store, command)
 	case "materialize":
 		return executeControllerMaterialize(cfg, store, command)
+	case controller.PublicationOperationParentOnlyMaterialize:
+		return store.AdmitParentOnlyExecution(controller.ParentOnlyMaterializeInput{ExpectedGeneration: command.ExpectedGeneration})
 	case "cleanup":
 		return executeControllerCleanup(store, command)
 	case "gc-suspension":
@@ -210,6 +212,9 @@ func executeControllerMaterialize(cfg config.AppConfig, store *controller.Store,
 	result, err := store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: command.ExpectedGeneration, EpisodeID: command.EpisodeID, EpisodeRevision: command.EpisodeRevision, SuspensionID: command.SuspensionID})
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
+	}
+	if result.Admission != nil && result.Admission.Attempt.ExecutionAuthority == controller.ExecutionAuthorityParentOnly {
+		return result, nil
 	}
 	if err := reenterMaterializedRuntimeCompletion(cfg, result); err != nil {
 		return controller.ExecutionOperationResult{}, err

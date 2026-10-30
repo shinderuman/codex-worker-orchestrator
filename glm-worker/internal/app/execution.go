@@ -235,6 +235,9 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 	if err != nil {
 		return cfg, err
 	}
+	if err := rejectLiveParentOnlyExecution(store); err != nil {
+		return cfg, err
+	}
 	if cmd.Mode == ModeNewTask && !controller.IsPristine(head) && head.LiveLeaseID == "" && head.ExecutionTaskRef == nil {
 		materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: head.ControllerGeneration})
 		if err != nil {
@@ -245,6 +248,17 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 	}
 	_, err = controller.Activate(cfg)
 	return cfg, err
+}
+
+func rejectLiveParentOnlyExecution(store *controller.Store) error {
+	live, err := store.LiveParentOnlyExecution()
+	if err != nil {
+		return err
+	}
+	if live {
+		return fmt.Errorf("parent-only execution completes through the parent completion path; Runtime start is rejected")
+	}
+	return nil
 }
 
 func activateWorkflowConfigTimed(recorder *state.StageRecorder, cmd Command, cfg config.AppConfig) (config.AppConfig, error) {

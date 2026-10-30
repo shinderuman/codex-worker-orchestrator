@@ -60,6 +60,9 @@ func (s *Store) planExecutionMaterialization(input MaterializeExecutionInput) (E
 		attempt.PredecessorAttemptID = suspended.AttemptID
 		attempt.ResumedFromSealID = seal.LogicalIdentity
 	}
+	if err := s.bindMaterializedExecutionAuthority(task, suspended, &attempt, &lease); err != nil {
+		return ExecutionOperation{}, head, err
+	}
 	record, err := executionTransition(head, executionMaterialize)
 	if err != nil {
 		return ExecutionOperation{}, head, err
@@ -79,6 +82,26 @@ func (s *Store) planExecutionMaterialization(input MaterializeExecutionInput) (E
 		return ExecutionOperation{}, head, err
 	}
 	return op, head, nil
+}
+
+func (s *Store) bindMaterializedExecutionAuthority(task SemanticTaskRef, suspended *SuspensionSnapshot, attempt *AttemptRecord, lease *ExecutionLease) error {
+	mode, err := s.committedTaskExecutionMode(task.TaskPath)
+	if err != nil || mode != ExecutionAuthorityParentOnly {
+		return err
+	}
+	if suspended == nil {
+		return fmt.Errorf("parent-only designated task %s must not materialize a Runtime execution", task.TaskPath)
+	}
+	previous, err := s.loadAttempt(suspended.AttemptID)
+	if err != nil {
+		return err
+	}
+	if previous.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return fmt.Errorf("parent-only reentry requires a previously parent-only attempt")
+	}
+	attempt.ExecutionAuthority = ExecutionAuthorityParentOnly
+	lease.Purpose = parentOnlyExecutionPurpose
+	return nil
 }
 
 func (s *Store) materializationAuthority(input MaterializeExecutionInput) (RepositoryControllerHead, BlockerEpisodeRevision, SemanticTaskRef, error) {
