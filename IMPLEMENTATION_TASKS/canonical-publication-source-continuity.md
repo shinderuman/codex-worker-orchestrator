@@ -36,6 +36,8 @@ Reviewは外部の参考情報とし、実装要求は本Taskの親Codex判断�
 - `glm-worker/internal/state/parent_review_state.go:parentReviewResolutionState`
 - `glm-worker/internal/state/parent_review_state.go:resolveParentReviewStateWithCompletion`
 
+- 追加指示の「今回のFinding」: Dogfood Bundle `a7e5e47e-e8ed-4ce4-9e58-0226578059a8`の実経路。既存のaccepted candidateを保持したまま親が`git pull --ff-only`でprimaryをfast-forwardし、candidateのsource/base権限と現在のGit/remoteが不一致になった。親は古いsourceのまま候補採用とfull Go/race/installを進め、Promoteで初めて`local ref is outside candidate promotion authority`を受けた。既存の正規rebindが見つかるまで不要な探索とユーザー介入を生み、rebind後にReview・Validationのやり直しが必要になった。対象はPullそのものの禁止ではなく、**Pull後に不整合の候補で高コスト処理へ入れてしまう前段admissionの欠落**である。
+
 ## Amendments
 
 2026-10-29 追加の責務整理: 以下の中間評価由来のparent-only完了とGit hook環境の問題は、それぞれ`parent-only-task-completion.md`と`git-hook-worktree-environment-isolation.md`へ独立起票した。本Taskではその実装を重複して行わず、既存Publication source continuityとの接続だけを維持する。以下の観測原文は保持する。
@@ -94,6 +96,15 @@ full/race等の必須検証集合がWorker宣言から欠落して未達のま�
 
 - 長時間処理の調査からの引継ぎ: Task `22dd61fb-68bb-4c99-bb4d-0289fe879924` のGo/race/installは2組あるが、source snapshotは `3e817c...` と `9dc191...` で異なる。成功済み検証の単純skipを採らず、source連続性と最終candidateの必須検証を維持したうえで再実行の必要性を判断する。正本は同Taskのvalidation記録とcontroller candidate、分析入口はTask `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b` artifact `codex-direct/startup-remediation-audit.md`。別source・未検証を同一成功として扱う退行を拒否する。
 
+### 2026-10-29 Pull後の古いCandidateを最終検証前に扱う（ユーザー追加指示）
+
+ユーザー指示（原文）:
+
+````text
+順序を直すだけじゃなくて今回のFindingも確実に解消するようにしたほうがいいんじゃないか
+既存の文章で同様の問題を解消しようとしているなら問題ない
+````
+
 ## Purpose
 
 Controllerのaccepted candidate、terminal Task/Plan、primaryの既知base/index、remote upstream、真の外部変更を同一source authorityで扱う。
@@ -128,6 +139,9 @@ External Reviewで確認した同一責務の具体条件（parent-review-task-i
 - ErrNotExist、他のread error、成功した空taskID、成功したTaskIDを順に区別し、非ErrNotExistを元のerrorとして伝播する。
 - accept/no-go/completion resolutionが読取失敗時にopen reviewやcompletion stateを変更しないことを既存ownerで保護する。
 
+- 正当な`git pull --ff-only`等でprimary/local refが前進した場合、accepted/prepared candidate・Controller head・active Task/Planのsource binding・remoteとの関係を、**古い候補のaccept/completionおよび高コストな最終Go/race validation・install/smokeより前**に正規ownerで判定する。Task本文が変わらないMetadataだけのfast-forwardでも一致と決めつけない。stale sourceを認めてPromoteまで進めるのではなく、合法なrebind/authority同期をtyped next actionとして提示・実行可能にする（真に権限不足/衝突なら理由付きfail-closed）。推測でsourceをadoptしたり、Pull自体を禁止したりしない。
+- rebindが必要な場合は元のcandidate/Review/Validation証拠を無条件に流用せず、rebindで更新したsource・candidate identityへReviewと必要なValidationを再束縛する。逆に候補がcurrent sourceと一致する通常経路では、追加の検証・モデル呼出を無意味に発生させない。既存`publication_rebind.go`とcanonical controller completion/projectionを再利用し、親CodexがCLIを探索して復旧できることを唯一のadmissionとしない。
+
 ## Must not
 
 Remote Push後の未達を通常復旧にしない。Complete後の再開APIは追加しない。外部変更をown candidateとして認めず、Guard/独立Reviewを弱めない。
@@ -135,6 +149,8 @@ Remote Push後の未達を通常復旧にしない。Complete後の再開APIは�
 - 対象外の外部指摘を一括実装しない。current schema拒否、Git/Task/source authority、独立Reviewを弱めない。
 - 第二state DB、専用daemon、旧schema/旧protocol互換fallbackを追加しない。
 - 根本原因・永続状態/公開API/architectureの未確定判断は実装前にSolへ戻す。
+
+- primaryのfast-forwardによるsource不一致をPromoteで初めて見つける設計を、後段が正しく拒否したからという理由で正常扱いしない。古いsourceに対してfull Go/race/installを実行してから拒否・rebindする循環を残さない。
 
 ## Acceptance criteria
 
@@ -153,6 +169,9 @@ Remote Push後の未達を通常復旧にしない。Complete後の再開APIは�
 
 - task.idのdirectory/I/O失敗がerrorとして返り、open reviewは解消されない。
 - 不存在/空IDの既定挙動と正常accept/no-goが維持される。
+
+- **正規入口E2Eで今回のPull事故を回帰テスト化する**。未公開候補を保持している間にMetadataだけがfast-forwardする合法な`git pull --ff-only`を発生させ、(1) stale candidateのaccept/completionまたは最終Go/race/install着手**前**に不一致を検出し、(2) 正規rebind/authority同期への合法な操作が投影され、(3) 古いsourceのReview/Validationを新sourceへ黙って流用せず、(4) fresh Reviewer・必要なValidation・installと単一Publicationで正常収束し、(5) 不一致時はremoteを変更しないことを実証する。今回のようなPromote時だけの拒否はAcceptance未達とする。
+- Pullなし・同一sourceの通常成功、真正外部remote進行、衝突や権限不明の拒否、rebind中断・再入を別々に検証する。時系列のsource-bound evidenceで、Pull後の不要なfull/race/install先行と親の手探り復旧が再発しないことを示す。削減効果は実測wall/tool/model roundtripで検証し、推測による時間短縮値で代用しない。
 
 ## Historical invariants
 
