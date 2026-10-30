@@ -19,7 +19,7 @@ type Store struct {
 	dir                 string
 	identity            RepositoryIdentity
 	archiveVerification sync.Mutex
-	archiveVerified     map[string]struct{}
+	archiveVerified     map[string]gitObjectArchiveVerification
 }
 
 const controllerSchemaVersion = 1

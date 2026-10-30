@@ -7,7 +7,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
+
+func TestCopiedModuleExecutableRuns(t *testing.T) {
+	t.Parallel()
+	source := filepath.Join(t.TempDir(), "source.sh")
+	destination := filepath.Join(t.TempDir(), "copied.sh")
+	if err := execfile.Write(source, []byte("#!/bin/sh\nprintf copied\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copier := &moduleTreeCopier{}
+	if err := copier.copyFile(destination, source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(destination).Output(); err != nil || string(output) != "copied" {
+		t.Fatalf("copied executable = %q, %v", output, err)
+	}
+}
 
 func TestModuleTreeCopierEnforcesByteBudgetDuringCopy(t *testing.T) {
 	sourceDir := t.TempDir()

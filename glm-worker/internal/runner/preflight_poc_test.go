@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 type claudePreflightFeature struct {
@@ -220,7 +222,7 @@ case "$1" in
 	;;
 esac
 `
-	if err := os.WriteFile(binPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(binPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CLAUDE_PREFLIGHT_RECORD", recordPath)

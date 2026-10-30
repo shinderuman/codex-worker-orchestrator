@@ -44,6 +44,9 @@ func (s *Store) bootstrapWithoutLiveLease(task SemanticTaskRef, workspace Worksp
 	if !authority.Task.Equal(task) {
 		return Admission{}, fmt.Errorf("requested bootstrap task does not match committed repository authority")
 	}
+	if authority.ExecutionMode == ExecutionAuthorityParentOnly {
+		return Admission{}, fmt.Errorf("parent-only designated task %s must not bootstrap a Runtime execution", authority.Task.TaskPath)
+	}
 	if snapshot.Head != authority.Snapshot.HeadOID {
 		return Admission{}, fmt.Errorf("bootstrap workspace HEAD does not match committed project snapshot")
 	}

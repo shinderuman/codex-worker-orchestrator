@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestResolveGitHeadAuthorityClassifiesSupportedStates(t *testing.T) {
@@ -59,7 +60,7 @@ func TestResolveGitHeadAuthorityRejectsUnexpectedRevParseFailure(t *testing.T) {
 		"  if [ \"$arg\" = 'HEAD^{commit}' ]; then exit 2; fi\n" +
 		"done\n" +
 		"exec \"" + realGit + "\" \"$@\"\n"
-	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(wrapper, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ResolveGitHeadAuthority(wrapper, repository); err == nil {

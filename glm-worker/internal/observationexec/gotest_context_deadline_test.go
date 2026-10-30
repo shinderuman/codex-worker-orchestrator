@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestIsolatedGoModuleCacheContextHonorsDeadline(t *testing.T) {
@@ -15,7 +17,7 @@ func TestIsolatedGoModuleCacheContextHonorsDeadline(t *testing.T) {
 	}
 	binDir := t.TempDir()
 	goPath := filepath.Join(binDir, "go")
-	if err := os.WriteFile(goPath, []byte("#!/bin/sh\nsleep 5\nprintf '/tmp/unused-cache\\n'\n"), 0o755); err != nil {
+	if err := execfile.Write(goPath, []byte("#!/bin/sh\nsleep 5\nprintf '/tmp/unused-cache\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	originalPath := os.Getenv("PATH")

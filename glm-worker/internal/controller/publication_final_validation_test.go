@@ -32,7 +32,7 @@ func declaredNoValidations() *RequiredValidationDeclaration {
 func acceptFinalValidationSource(t *testing.T, fixture findingAcceptanceFixture, policy PublicationPolicy, source Admission, forms []FinalValidationRequest) (ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
 	if forms == nil {
-		declared, err := fixture.store.taskDeclaredFinalValidation(source.Attempt.SemanticTaskRef)
+		declared, err := fixture.store.taskDeclaredFinalValidationFor(source.Attempt.SemanticTaskRef, false)
 		if err != nil {
 			t.Fatal(err)
 		}

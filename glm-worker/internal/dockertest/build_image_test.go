@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestImageBuildKeepsClientWritesInsideExecutionTemporaryDirectory(t *testing.T) {
@@ -30,7 +32,7 @@ fi
 if [ "$1" = image ]; then printf 'sha256:fixture\n'; exit 0; fi
 exit 99
 `
-			if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o700); err != nil {
+			if err := execfile.Write(filepath.Join(bin, "docker"), []byte(script), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			ambient := filepath.Join(t.TempDir(), "host-buildx")

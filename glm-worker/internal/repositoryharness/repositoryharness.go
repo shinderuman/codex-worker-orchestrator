@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 )
 
 type Decision struct {
@@ -107,7 +108,7 @@ func markerTracked(root string) (bool, error) {
 	if !inside {
 		return false, nil
 	}
-	output, err := exec.Command("git", "-C", root, "ls-files", "--", MarkerPath).Output()
+	output, err := gitexec.Command("git", root, "ls-files", "--", MarkerPath).Output()
 	if err != nil {
 		return false, fmt.Errorf("git ls-files: %w", err)
 	}

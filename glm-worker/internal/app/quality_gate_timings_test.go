@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -45,7 +46,7 @@ func writeTestTimingsGoShim(t *testing.T, exitCode int) string {
 	if exitCode < 0 || exitCode > 9 {
 		t.Fatalf("unsupported shim exit code %d", exitCode)
 	}
-	if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(body), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(shimDir, "go"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return shimDir
@@ -158,7 +159,7 @@ func TestQualityGatePlainOutputRunPersistsEmptyTimings(t *testing.T) {
 		"  exit 0\n" +
 		"fi\n" +
 		"printf '%s\\n' 'go shim: plain log output'\n"
-	if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(plainShim), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(shimDir, "go"), []byte(plainShim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))

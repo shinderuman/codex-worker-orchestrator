@@ -16,6 +16,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactioncmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
@@ -101,7 +102,7 @@ func cadenceWorkflowFixture(t *testing.T, binary string) (config.AppConfig, stri
 	}
 	forward := "#!/bin/sh\ncase \"$1\" in test|vet|build) ;; *) exec '" + strings.ReplaceAll(realGo, "'", "'\"'\"'") + "' \"$@\";; esac\n"
 	forward += "if [ \"$1\" = test ] && [ -f '" + failFlag + ".plain' ]; then\n  printf 'argv:%s\\n' \"$*\" >>'" + log + "'\n  printf '%s\\n' 'ok example.com/fixture 0.25s'\n  exit 0\nfi\n"
-	if err := os.WriteFile(shimPath, []byte(forward+strings.TrimPrefix(string(shimBody), "#!/bin/sh\n")), 0o755); err != nil {
+	if err := execfile.Write(shimPath, []byte(forward+strings.TrimPrefix(string(shimBody), "#!/bin/sh\n")), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	binaryDir := t.TempDir()

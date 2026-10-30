@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestDockerTargetFailureRetainsExitProvenance(t *testing.T) {
@@ -20,7 +22,7 @@ func TestDockerTargetFailureRetainsExitProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nprintf 'target failure\n'\nexit 7\n"), 0700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nprintf 'target failure\n'\nexit 7\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -46,7 +48,7 @@ func TestDockerSuccessfulTargetCannotHideSourceDrift(t *testing.T) {
 	bin := t.TempDir()
 	t.Setenv("DOCKER_TEST_SOURCE", root)
 	body := "#!/bin/sh\nprintf changed > \"$DOCKER_TEST_SOURCE/dirty.txt\"\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(body), 0700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "docker"), []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -83,7 +85,7 @@ func TestCanonicalTargetExitRequiresAttestation(t *testing.T) {
 if [ "$5" = cat ]; then printf '%s\n' "$MOCK_TARGET_EXIT"; exit 0; fi
 exit "$MOCK_PROXY_EXIT"
 `
-			if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
+			if err := execfile.Write(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))

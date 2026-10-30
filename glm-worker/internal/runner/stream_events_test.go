@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -35,7 +36,7 @@ func writeStreamFixtureClaude(t *testing.T, output string) string {
 	}
 	commandPath := filepath.Join(dir, "fake-claude")
 	script := "#!/bin/sh\ncat \"" + fixturePath + "\"\n"
-	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return commandPath

@@ -70,6 +70,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
+	attempt := beginParentActionAttempt()
 	if len(args) == 0 {
 		return fmt.Errorf("%s", usage)
 	}
@@ -80,20 +81,32 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	cfg, err = controller.WorkflowConfig(cfg)
+	restoreAttemptEnv := attempt.exportEnv()
+	defer restoreAttemptEnv()
+	boundCfg, actionErr := runAdmittedAction(cfg, args, stdout, stderr)
+	attempt.recordExit(boundCfg, args[0], actionErr)
+	return actionErr
+}
+
+func runAdmittedAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) (config.AppConfig, error) {
+	cfg, err := controller.WorkflowConfig(cfg)
 	if err != nil {
-		return err
+		return cfg, err
 	}
 	if usesLiveParentContinuation(args) {
 		cfg, err = controller.ParentContinuationConfig(cfg)
 		if err != nil {
-			return err
+			return cfg, err
 		}
 	}
 	if args[0] == actionPrepare {
-		return prepare(cfg, args, stdout)
+		return cfg, prepare(cfg, args, stdout)
 	}
-	return executeWithTerminalEnvelope(cfg, args, stdout, stderr)
+	state.AttachStateStore(cfg).RecordParentActionAttempt(state.ParentActionAttemptRecord{
+		AttemptID: os.Getenv(state.ParentActionAttemptIDEnv), Action: args[0], Outcome: "started",
+		EnteredAt: attemptEnteredAt(),
+	})
+	return cfg, executeWithTerminalEnvelope(cfg, args, stdout, stderr)
 }
 
 func usesLiveParentContinuation(args []string) bool {
@@ -504,6 +517,7 @@ func runResolvedWorker(worker, workingDir string, args []string, stdin io.Reader
 	command := exec.Command(worker, args...)
 	command.Dir = workingDir
 	command.Env = append(os.Environ(), extraEnv...)
+	command.Env = append(command.Env, state.WorkerProcessLaunchEnv+"="+time.Now().UTC().Format(time.RFC3339Nano))
 	command.Stdin = stdin
 	command.Stdout = stdout
 	command.Stderr = stderr

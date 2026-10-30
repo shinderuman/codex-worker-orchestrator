@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -126,7 +127,7 @@ func TestSourceArchiveRunsNoMutatingGitAgainstProtectedRoot(t *testing.T) {
 	recorder := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$PWD|$*\" >>\"" + logPath + "\"\n" +
 		"exec \"" + realGit + "\" \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(recorder), 0o700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "git"), []byte(recorder), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))

@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"hash"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -144,7 +144,7 @@ func captureSnapshotHead(repoRoot string) (string, error) {
 }
 
 func captureSnapshotIndexDigest(repoRoot string) (string, error) {
-	output, err := exec.Command("git", "-C", repoRoot, "ls-files", "-s").Output()
+	output, err := gitexec.Command("git", repoRoot, "ls-files", "-s").Output()
 	if err != nil {
 		return "", fmt.Errorf("git ls-files: %w", err)
 	}
@@ -198,7 +198,7 @@ func captureWorktreeDigestVariant(repoRoot string, excludePathspecs []string) (s
 }
 
 func gitSnapshotOutput(repoRoot string, args []string) ([]byte, error) {
-	output, err := exec.Command("git", append([]string{"-C", repoRoot}, args...)...).Output()
+	output, err := gitexec.Command("git", repoRoot, args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w", args[0], err)
 	}

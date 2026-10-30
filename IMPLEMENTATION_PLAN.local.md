@@ -8,27 +8,31 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/initial-glm-startup-stage-timing.md`](IMPLEMENTATION_TASKS/initial-glm-startup-stage-timing.md)
+- [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/temporary-executable-etxtbsy.md`](IMPLEMENTATION_TASKS/temporary-executable-etxtbsy.md)
-- [`IMPLEMENTATION_TASKS/initial-glm-startup-latency-remediation.md`](IMPLEMENTATION_TASKS/initial-glm-startup-latency-remediation.md)
-- [`IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md)
-- [`IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`](IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md)
-- [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
+
+
+
+- [`IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md`](IMPLEMENTATION_TASKS/zai-self-resume-clock-hook-race.md)
+- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
+- [`IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md)
+- [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
 - [`IMPLEMENTATION_TASKS/validation-failure-retry-admission.md`](IMPLEMENTATION_TASKS/validation-failure-retry-admission.md)
+- [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
+- [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
+- [`IMPLEMENTATION_TASKS/app-analysis-responsibility-owner.md`](IMPLEMENTATION_TASKS/app-analysis-responsibility-owner.md)
 - [`IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md`](IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md)
 - [`IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`](IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-serialized-output-budget.md`](IMPLEMENTATION_TASKS/parent-evidence-serialized-output-budget.md)
-- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
 - [`IMPLEMENTATION_TASKS/finding-source-revision-disposition.md`](IMPLEMENTATION_TASKS/finding-source-revision-disposition.md)
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
 - [`IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md`](IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md)
 - [`IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md`](IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md)
-- [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
+- [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md`](IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-redesign.md`](IMPLEMENTATION_TASKS/self-referential-test-redesign.md)

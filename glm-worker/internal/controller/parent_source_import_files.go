@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -147,14 +148,37 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 	for _, entry := range before {
 		previous[entry.path] = entry
 	}
-	for _, entry := range after {
-		if err := applyParentSourceEntry(repo, previous[entry.path], entry); err != nil {
+	for start := 0; start < len(after); start += workspaceBlobBatchSize {
+		batch := after[start:min(start+workspaceBlobBatchSize, len(after))]
+		prior := make([]workspaceTreeEntry, len(batch))
+		for index, entry := range batch {
+			prior[index] = previous[entry.path]
+			delete(previous, entry.path)
+		}
+		if err := applySourceEntryBatch(repo, prior, batch); err != nil {
 			return err
 		}
-		delete(previous, entry.path)
 	}
+	remaining := make([]workspaceTreeEntry, 0, len(previous))
 	for _, entry := range previous {
-		if err := applyParentSourceEntry(repo, entry, workspaceTreeEntry{}); err != nil {
+		remaining = append(remaining, entry)
+	}
+	for start := 0; start < len(remaining); start += workspaceBlobBatchSize {
+		batch := remaining[start:min(start+workspaceBlobBatchSize, len(remaining))]
+		if err := applySourceEntryBatch(repo, batch, make([]workspaceTreeEntry, len(batch))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applySourceEntryBatch(repo string, before, after []workspaceTreeEntry) error {
+	blobs, err := readWorkspaceBlobs(repo, before, after)
+	if err != nil {
+		return err
+	}
+	for index, entry := range after {
+		if err := applyParentSourceEntry(repo, before[index], entry, blobs); err != nil {
 			return err
 		}
 	}
@@ -169,7 +193,7 @@ func sourceImportTreeEntries(repo, tree string) ([]workspaceTreeEntry, error) {
 	return parseWorkspaceEntries(data, false)
 }
 
-func sourceImportEntryMatches(repo, path string, entry workspaceTreeEntry) (bool, error) {
+func sourceImportEntryMatches(path string, entry workspaceTreeEntry, blobs workspaceBlobs) (bool, error) {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return entry.path == "", nil
@@ -184,11 +208,11 @@ func sourceImportEntryMatches(repo, path string, entry workspaceTreeEntry) (bool
 	if err != nil {
 		return false, err
 	}
-	data, err := runGitBinary(repo, nil, "cat-file", "blob", entry.oid)
+	data, err := blobs.content(entry)
 	return mode == entry.mode && bytes.Equal(actual, data), err
 }
 
-func applyParentSourceEntry(repo string, before, after workspaceTreeEntry) error {
+func applyParentSourceEntry(repo string, before, after workspaceTreeEntry, blobs workspaceBlobs) error {
 	relative := after.path
 	if relative == "" {
 		relative = before.path
@@ -197,11 +221,11 @@ func applyParentSourceEntry(repo string, before, after workspaceTreeEntry) error
 	if err != nil {
 		return err
 	}
-	matched, err := sourceImportEntryMatches(repo, path, after)
+	matched, err := sourceImportEntryMatches(path, after, blobs)
 	if err != nil || matched {
 		return err
 	}
-	matched, err = sourceImportEntryMatches(repo, path, before)
+	matched, err = sourceImportEntryMatches(path, before, blobs)
 	if err != nil {
 		return err
 	}
@@ -214,37 +238,20 @@ func applyParentSourceEntry(repo string, before, after workspaceTreeEntry) error
 	if after.mode != "100644" && after.mode != "100755" {
 		return fmt.Errorf("parent source update requires a regular file: %q", relative)
 	}
-	return writeParentSourceEntry(repo, path, after)
+	return writeParentSourceEntry(path, after, blobs)
 }
 
-func writeParentSourceEntry(repo, path string, entry workspaceTreeEntry) error {
-	data, err := runGitBinary(repo, nil, "cat-file", "blob", entry.oid)
+func writeParentSourceEntry(path string, entry workspaceTreeEntry, blobs workspaceBlobs) error {
+	data, err := blobs.content(entry)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".parent-source-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer func() { _ = os.Remove(name) }()
 	mode := os.FileMode(0o644)
 	if entry.mode == "100755" {
 		mode = 0o755
 	}
-	if err := tmp.Chmod(mode); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	return execfile.Write(path, data, mode)
 }

@@ -40,6 +40,10 @@ Reviewは外部の参考情報とし、実装要求は本Taskの親Codex判断�
 
 ## Amendments
 
+2026-10-29 追加の責務整理: 以下の中間評価由来のparent-only完了とGit hook環境の問題は、それぞれ`parent-only-task-completion.md`と`git-hook-worktree-environment-isolation.md`へ独立起票した。本Taskではその実装を重複して行わず、既存Publication source continuityとの接続だけを維持する。以下の観測原文は保持する。
+
+2026-10-29 中間評価で確認した同一完了責務の追加要求: parent-only評価Taskを、実施していないGLM Worker/Reviewerの成功証拠を作らずに正規完了できる境界を定義する。現行`parentCompletionReview`はaccepted Runtimeと独立Reviewerを必須とし、未開始runtimeのhandoffはcompletion_admitted:falseとなる。親評価の要求・source・実成果・採否・必要validationに基づく完了と、通常GLM TaskのReview要件を区別し、既存guardを迂回しない。また2026-10-29の親metadata commitはpre-commitで`parent continuation metadata guard unavailable: git ls-files: exit status 128`となった一方、同じcheckoutでguard単独実行は成功した。Git hook実行環境とlane/primary参照の差を診断し、原因確定後に同ownerで修正する。現時点で環境差を根本原因と断定しない。
+
 ### 2026-10-25 External Reviewから同一責務へ統合: materialization-runtime-reentry-recovery
 
 親CodexによるExternal Review採否の具体化指示（2026-10-25）:
@@ -89,6 +93,8 @@ accept/no-go/completion resolutionが読取失敗時にopen reviewやcompletion 
 ````text
 full/race等の必須検証集合がWorker宣言から欠落して未達のまま公開・完了した問題は、completion-required-validation-closure.mdで扱う。同Taskは検証集合の完全性と、未完了・復旧中の同一Task identity維持を担当する。本Taskはその正規ownerを再利用し、candidate/remote/source lineage、promoteと外部変更の識別、controller/runtime再入の整合に残る不備を扱う。未達阻止の要求は維持し、同じ検証義務判定や復旧状態を二重実装しない。
 ````
+
+- 長時間処理の調査からの引継ぎ: Task `22dd61fb-68bb-4c99-bb4d-0289fe879924` のGo/race/installは2組あるが、source snapshotは `3e817c...` と `9dc191...` で異なる。成功済み検証の単純skipを採らず、source連続性と最終candidateの必須検証を維持したうえで再実行の必要性を判断する。正本は同Taskのvalidation記録とcontroller candidate、分析入口はTask `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b` artifact `codex-direct/startup-remediation-audit.md`。別source・未検証を同一成功として扱う退行を拒否する。
 
 ### 2026-10-29 Pull後の古いCandidateを最終検証前に扱う（ユーザー追加指示）
 

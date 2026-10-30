@@ -20,6 +20,10 @@ func (s *StateStore) PrepareArtifactDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return s.PrepareArtifactDirForTask(taskID)
+}
+
+func (s *StateStore) PrepareArtifactDirForTask(taskID string) (string, error) {
 	if err := validateArtifactTaskID(taskID); err != nil {
 		return "", err
 	}

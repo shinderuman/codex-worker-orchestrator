@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexlimit"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 const codexLimitFiveHourPrimaryScript = "#!/bin/sh\n" +
@@ -39,7 +39,7 @@ const codexLimitNoFiveHourScript = "#!/bin/sh\n" +
 func writeCodexLimitFake(t *testing.T, script string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "codex-fake")
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

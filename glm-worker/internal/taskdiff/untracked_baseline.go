@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -255,11 +256,8 @@ func materializeUntrackedBaselineEntry(path string, entry state.UntrackedBaselin
 	}
 	switch entry.Kind {
 	case state.UntrackedBaselineKindFile:
-		if err := os.WriteFile(path, entry.Content, os.FileMode(entry.Mode)); err != nil {
+		if err := execfile.Write(path, entry.Content, os.FileMode(entry.Mode)); err != nil {
 			return fmt.Errorf("materialize pre-existing untracked file %s: %w", entry.Path, err)
-		}
-		if err := os.Chmod(path, os.FileMode(entry.Mode)); err != nil {
-			return fmt.Errorf("restore pre-existing untracked mode %s: %w", entry.Path, err)
 		}
 	case state.UntrackedBaselineKindSymlink:
 		if err := os.Symlink(string(entry.Content), path); err != nil {

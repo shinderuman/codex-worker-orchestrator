@@ -12,6 +12,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -24,7 +25,7 @@ func sealAppInstallProof(t *testing.T, store *controller.Store, c controller.Acc
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "deployed-worker")
 	data := []byte("#!/bin/sh\nprintf '%s\\n' '" + payload + "'\n")
-	if err := os.WriteFile(binary, data, 0o755); err != nil {
+	if err := execfile.Write(binary, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(data)
@@ -251,7 +252,7 @@ func TestPostInstallSmokeRefusesReplacedRuntimeBeforeProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(deployment.BinaryPath, []byte("replacement"), 0o755); err != nil {
+	if err := execfile.Write(deployment.BinaryPath, []byte("replacement"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := executeParentCompletionPostInstallSmoke(cfg, store, controller.PublicationInput{ExpectedGeneration: generation, CandidateID: candidate.CandidateID}, controllerPublicationCommand{SourceOID: candidate.CommitOID}); err == nil || !strings.Contains(err.Error(), "no longer matches") {

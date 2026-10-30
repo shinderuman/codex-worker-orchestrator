@@ -15,6 +15,7 @@ type CommittedTaskAuthority struct {
 	Task              SemanticTaskRef
 	ProjectSnapshotID string
 	Snapshot          ProjectSnapshot
+	ExecutionMode     string
 }
 
 func ResolveCommittedTaskAuthority(repoRoot string) (CommittedTaskAuthority, error) {
@@ -57,6 +58,10 @@ func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (Committ
 	if !ok {
 		return CommittedTaskAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", project.RootTaskPath)
 	}
+	authority, err := committedTaskExecutionMode(project)
+	if err != nil {
+		return CommittedTaskAuthority{}, err
+	}
 	snapshot := ProjectSnapshot{
 		SchemaVersion:       controllerSchemaVersion,
 		RepositoryIdentity:  repositoryID,
@@ -71,7 +76,39 @@ func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (Committ
 		Tasks:               append([]SemanticTaskRef(nil), refs...),
 	}
 	snapshot.SnapshotID = projectSnapshotID(snapshot)
-	return CommittedTaskAuthority{Task: root, ProjectSnapshotID: snapshot.SnapshotID, Snapshot: snapshot}, nil
+	return CommittedTaskAuthority{Task: root, ProjectSnapshotID: snapshot.SnapshotID, Snapshot: snapshot, ExecutionMode: authority.Mode}, nil
+}
+
+func committedTaskExecutionMode(project repositoryprojectcommit.Project) (taskcontract.ExecutionAuthority, error) {
+	for _, task := range project.Tasks {
+		if task.Path != project.RootTaskPath {
+			continue
+		}
+		authority, err := taskcontract.ParseExecutionAuthority(task.Content)
+		if err != nil {
+			return taskcontract.ExecutionAuthority{}, fmt.Errorf("committed root task %s: %w", task.Path, err)
+		}
+		return authority, nil
+	}
+	return taskcontract.ExecutionAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", project.RootTaskPath)
+}
+
+func (s *Store) committedTaskExecutionMode(path string) (string, error) {
+	project, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, "HEAD")
+	if err != nil {
+		return "", err
+	}
+	for _, task := range project.Tasks {
+		if task.Path != path {
+			continue
+		}
+		authority, err := taskcontract.ParseExecutionAuthority(task.Content)
+		if err != nil {
+			return "", fmt.Errorf("committed task %s: %w", path, err)
+		}
+		return authority.Mode, nil
+	}
+	return "", fmt.Errorf("committed task %s is missing from the corpus at HEAD", path)
 }
 
 func findTaskRef(refs []SemanticTaskRef, path string) (SemanticTaskRef, bool) {

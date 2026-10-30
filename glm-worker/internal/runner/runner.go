@@ -107,6 +107,18 @@ type runInputs struct {
 	contextWindow contextWindowConfig
 }
 
+type preparedSessionCall struct {
+	result        RunResult
+	taskID        string
+	sessionID     string
+	callID        string
+	ready         bool
+	stopResources func()
+	versionScope  claudeVersionScope
+	inputs        runInputs
+	args          []string
+}
+
 const isolationPolicyVersion = "claude-isolation-2"
 
 const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
@@ -271,13 +283,51 @@ func (r *ClaudeRunner) runSession(
 	deadline time.Time,
 	admit func() error,
 ) (RunResult, error) {
+	recorder := state.NewStageRecorder(r.state)
+	defer recorder.FlushOrArchive()
+	recorder.BindCurrentTask()
+	prepared, err := r.prepareSessionCall(recorder, role, phase, model, readOnly, effort, prompt)
+	if err != nil {
+		return prepared.result, err
+	}
+	defer prepared.stopResources()
+	ingester, stderrPath, runErr, err := r.executeRunCommand(
+		recorder, role, phase, model, prepared.taskID, prepared.sessionID, prepared.callID, prepared.ready,
+		prepared.args, prepared.inputs, outputPath, deadline, admit,
+	)
+	if err != nil {
+		return prepared.result, err
+	}
+	return r.finishRun(role, outputPath, stderrPath, ingester, prepared.result, runErr, prepared.versionScope)
+}
+
+func (r *ClaudeRunner) prepareSessionCall(
+	recorder *state.StageRecorder,
+	role state.SessionRole,
+	phase, model string,
+	readOnly bool,
+	effort, prompt string,
+) (preparedSessionCall, error) {
+	span := recorder.Span(state.StageRunnerSetup)
+	prepared, err := r.assembleSessionCall(role, phase, model, readOnly, effort, prompt)
+	recorder.BindModelCallID(prepared.callID)
+	span.End(err)
+	return prepared, err
+}
+
+func (r *ClaudeRunner) assembleSessionCall(
+	role state.SessionRole,
+	phase, model string,
+	readOnly bool,
+	effort, prompt string,
+) (preparedSessionCall, error) {
 	result, taskID, sessionID, ready, err := r.prepareRunSession(role, phase, model)
 	if err != nil {
-		return result, err
+		return preparedSessionCall{result: result}, err
 	}
 	inputs, err := r.prepareRunInputs(role, phase, model, &result)
 	if err != nil {
-		return result, err
+		return preparedSessionCall{result: result}, err
 	}
 	args := r.buildRunArgs(role, taskID, sessionID, ready, model, readOnly, effort, prompt, inputs)
 	callID, callIDErr := state.NewUUID()
@@ -287,15 +337,18 @@ func (r *ClaudeRunner) runSession(
 		result.CallID = callID
 	}
 	stopResources := r.observeTaskResources(taskID, callID, sessionID, role, phase, result.Runtime)
-	defer stopResources()
 	versionScope := r.beginClaudeVersionScope(sessionID)
-	ingester, stderrPath, runErr, err := r.executeRunCommand(
-		role, phase, model, taskID, sessionID, callID, ready, args, inputs, outputPath, deadline, admit,
-	)
-	if err != nil {
-		return result, err
-	}
-	return r.finishRun(role, outputPath, stderrPath, ingester, result, runErr, versionScope)
+	return preparedSessionCall{
+		result:        result,
+		taskID:        taskID,
+		sessionID:     sessionID,
+		callID:        callID,
+		ready:         ready,
+		stopResources: stopResources,
+		versionScope:  versionScope,
+		inputs:        inputs,
+		args:          args,
+	}, nil
 }
 
 func (r *ClaudeRunner) prepareRunSession(role state.SessionRole, phase, model string) (RunResult, string, string, bool, error) {
@@ -407,6 +460,7 @@ func (r *ClaudeRunner) buildRunArgs(
 }
 
 func (r *ClaudeRunner) executeRunCommand(
+	recorder *state.StageRecorder,
 	role state.SessionRole,
 	phase, model, taskID, sessionID, callID string,
 	ready bool,
@@ -448,11 +502,13 @@ func (r *ClaudeRunner) executeRunCommand(
 		}
 	}
 	var runErr error
+	processSpan := recorder.Span(state.StageClaudeProcess)
 	if deadline.IsZero() {
 		runErr = r.runCommand(command)
 	} else {
 		runErr = r.runProbeCommand(command, deadline)
 	}
+	processSpan.End(runErr)
 	ingester.flush()
 	if closeErr := stderr.Close(); runErr == nil && closeErr != nil {
 		runErr = closeErr

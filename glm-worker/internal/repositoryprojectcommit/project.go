@@ -2,7 +2,7 @@ package repositoryprojectcommit
 
 import (
 	"fmt"
-	"os/exec"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -165,13 +165,12 @@ func scheduleEntries(schedule taskcontract.PlanSchedule) []string {
 }
 
 func readObject(root, revision, path string) ([]byte, error) {
-	command := exec.Command("git", "-C", root, "show", revision+":"+filepath.ToSlash(path))
+	command := gitexec.Command("git", root, "show", revision+":"+filepath.ToSlash(path))
 	return command.Output()
 }
 
 func gitOutput(root string, args ...string) (string, error) {
-	commandArgs := append([]string{"-C", root}, args...)
-	command := exec.Command("git", commandArgs...)
+	command := gitexec.Command("git", root, args...)
 	output, err := command.Output()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)

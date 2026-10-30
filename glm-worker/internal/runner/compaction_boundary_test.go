@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -103,7 +104,7 @@ func TestClaudeRunnerRequirementMarkersSurviveCompactBoundaryAndResume(t *testin
 	argumentsPath := filepath.Join(dir, "args")
 	commandPath := filepath.Join(dir, "fake-claude")
 	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" >%q\ncat %q\n", argumentsPath, fixturePath)
-	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_ARGS_FILE", argumentsPath)

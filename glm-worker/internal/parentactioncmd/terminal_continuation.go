@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -61,7 +62,7 @@ func encodeTerminalProjectionFallback(stdout io.Writer, failure parentActionTerm
 
 func persistParentActionTerminalContinuation(cfg config.AppConfig, terminalJSON json.RawMessage) (parentActionTerminalContinuation, error) {
 	st := state.AttachStateStore(cfg)
-	dir, err := st.PrepareArtifactDir()
+	dir, err := terminalContinuationArtifactDir(cfg, st, terminalJSON)
 	if err != nil {
 		return parentActionTerminalContinuation{}, err
 	}
@@ -83,6 +84,43 @@ func persistParentActionTerminalContinuation(cfg config.AppConfig, terminalJSON 
 		Bytes:   len(terminalJSON),
 		SHA256:  digestHex,
 	}, nil
+}
+
+func terminalContinuationArtifactDir(cfg config.AppConfig, st *state.StateStore, terminalJSON json.RawMessage) (string, error) {
+	if st.Exists("task.id") {
+		return st.PrepareArtifactDir()
+	}
+	var terminal struct {
+		TransitionID string `json:"transition_id"`
+	}
+	if err := json.Unmarshal(terminalJSON, &terminal); err != nil || terminal.TransitionID == "" {
+		return st.PrepareArtifactDir()
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return "", err
+	}
+	record, _, err := store.LoadTransition(terminal.TransitionID)
+	if err != nil {
+		return "", err
+	}
+	task, snapshotID := record.SourceExecutionTaskRef, record.ProjectSnapshotOld
+	if task.Empty() {
+		task, snapshotID = record.TargetExecutionTaskRef, record.ProjectSnapshotNew
+	}
+	snapshot, err := store.LoadProjectSnapshot(snapshotID)
+	if err != nil {
+		return "", err
+	}
+	authority, err := controller.ResolveCommittedTaskAuthorityAt(store.Identity().PrimaryRoot, snapshot.HeadOID)
+	if err != nil {
+		return "", err
+	}
+	if !authority.Task.Equal(task) || authority.ExecutionMode != controller.ExecutionAuthorityParentOnly {
+		return "", fmt.Errorf("terminal continuation requires a bound parent-only operation")
+	}
+	identity := sha256.Sum256([]byte(task.TaskPath + "\x00" + task.ContractDigest))
+	return st.PrepareArtifactDirForTask("controller-" + hex.EncodeToString(identity[:]))
 }
 
 func writeTerminalContinuationAtomic(path string, data []byte) error {

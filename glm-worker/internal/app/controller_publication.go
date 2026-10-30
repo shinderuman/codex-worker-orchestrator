@@ -23,6 +23,8 @@ type controllerPublicationCommand struct {
 	Amendment           *controller.TaskAmendmentApproval         `json:"amendment,omitempty"`
 }
 
+const publicationActionPreview = "preview"
+
 func executeControllerPublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
 	if len(command.ArtifactJSON) != 0 && command.Action != "store-evidence" {
 		return nil, fmt.Errorf("candidate evidence artifact is restricted to store-evidence")
@@ -85,17 +87,20 @@ func executeExternalAdvancement(store *controller.Store, command controllerPubli
 
 func executeMutablePublication(cfg config.AppConfig, store *controller.Store, command controllerPublicationCommand) (any, error) {
 
-	if command.Action != "preview" && command.Action != "accept" && command.Action != "adopt-mutable" && command.Action != "complete" {
+	if !mutablePublicationAction(command.Action) {
 		return nil, fmt.Errorf("unsupported controller publication action %q", command.Action)
 	}
 	admission, err := currentControllerSemanticAdmission(cfg, store)
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectParentOnlyPublicationAction(admission, command); err != nil {
+		return nil, err
+	}
 	switch command.Action {
-	case "complete":
+	case controller.PublicationOperationAccept:
 		return store.AcceptParentCompletion(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, RequiredValidations: command.RequiredValidations})
-	case "preview":
+	case publicationActionPreview:
 		tree, err := store.PreviewCandidateTree(admission, command.Policy)
 		return map[string]string{"tree_oid": tree, "base_oid": admission.Head.IntegrationTip, "attempt_id": admission.Attempt.AttemptID, "snapshot_id": admission.Snapshot.ID}, err
 	case "accept":
@@ -103,6 +108,25 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 	default:
 		return store.AdoptMutableExternalAdvancement(admission, command.Policy)
 	}
+}
+
+func mutablePublicationAction(action string) bool {
+	switch action {
+	case publicationActionPreview, "accept", "adopt-mutable", controller.PublicationOperationAccept:
+		return true
+	default:
+		return false
+	}
+}
+
+func rejectParentOnlyPublicationAction(admission controller.Admission, command controllerPublicationCommand) error {
+	if admission.Attempt.ExecutionAuthority != controller.ExecutionAuthorityParentOnly {
+		return nil
+	}
+	if command.Action == controller.PublicationOperationAccept || command.Action == publicationActionPreview {
+		return nil
+	}
+	return fmt.Errorf("parent-only execution admits only the complete action, not %q", command.Action)
 }
 
 func storePublicationCommandEvidence(store *controller.Store, record *controller.CandidateEvidence, artifact json.RawMessage) (any, error) {

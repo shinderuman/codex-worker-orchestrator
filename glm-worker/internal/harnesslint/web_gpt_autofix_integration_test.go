@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 type webGPTAutofixResult struct {
@@ -400,7 +402,7 @@ func writeWebGPTAutofixFile(t *testing.T, root, path, content string, mode os.Fi
 	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(absolute, []byte(content), mode); err != nil {
+	if err := execfile.Write(absolute, []byte(content), mode); err != nil {
 		t.Fatal(err)
 	}
 }

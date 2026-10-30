@@ -60,7 +60,7 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	}
 
 	repoRoot := st.ReadOr("repo-root", "")
-	repoRoot = quiescentSnapshotRoot(cfg, repoRoot)
+	repoRoot = canonicalSnapshotRoot(cfg, repoRoot)
 	if repoRoot == "" && st.TaskStatus() == state.TaskStatusNone {
 		var err error
 		repoRoot, err = freshRepositoryAuthorityRoot(cfg)
@@ -93,17 +93,33 @@ func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
 	return cfg.RepoRoot, nil
 }
 
-func quiescentSnapshotRoot(cfg config.AppConfig, repoRoot string) string {
-	if exists, err := controller.Exists(cfg); err == nil && exists {
-		store, err := controller.Open(cfg)
-		if err == nil {
-			head, err := store.LoadHead()
-			if err == nil && head.Status == controller.ControllerStatusActive && head.LiveLeaseID == "" && head.LiveAttemptID == "" {
-				repoRoot = store.Identity().PrimaryRoot
-			}
-		}
+func canonicalSnapshotRoot(cfg config.AppConfig, repoRoot string) string {
+	if exists, err := controller.Exists(cfg); err != nil || !exists {
+		return repoRoot
 	}
-	return repoRoot
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return repoRoot
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return repoRoot
+	}
+	if head.Status == controller.ControllerStatusActive && head.LiveLeaseID == "" && head.LiveAttemptID == "" {
+		return store.Identity().PrimaryRoot
+	}
+	return parentOnlySnapshotRoot(store, repoRoot)
+}
+
+func parentOnlySnapshotRoot(store *controller.Store, repoRoot string) string {
+	if parentOnly, err := store.LiveParentOnlyExecution(); err != nil || !parentOnly {
+		return repoRoot
+	}
+	report, err := store.ProjectStatus()
+	if err != nil || report.Live == nil || report.LiveError != "" {
+		return repoRoot
+	}
+	return report.Live.WorkspaceRoot
 }
 
 func BuildPostCompletionRequest(repoRoot, completedTask string) (Request, error) {
@@ -391,7 +407,7 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		return Request{}, canonical, err
 	}
 	status := st.TaskStatus()
-	lifecycleTask, err := canonicalLifecycleTask(st, task, quiescent)
+	lifecycleTask, err := canonicalExecutionLifecycleTask(cfg, st, task, quiescent)
 	if err != nil {
 		return Request{}, true, err
 	}
@@ -416,6 +432,29 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		Continuation:       policy.Continuation,
 		TaskAttribution:    attribution,
 	}, true, nil
+}
+
+func canonicalExecutionLifecycleTask(cfg config.AppConfig, st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
+	parentOnly, err := liveParentOnlyExecution(cfg)
+	if err != nil {
+		return "", err
+	}
+	if parentOnly {
+		return task.TaskPath, nil
+	}
+	return canonicalLifecycleTask(st, task, quiescent)
+}
+
+func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
+	exists, err := controller.Exists(cfg)
+	if err != nil || !exists {
+		return false, err
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false, err
+	}
+	return store.LiveParentOnlyExecution()
 }
 
 func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {

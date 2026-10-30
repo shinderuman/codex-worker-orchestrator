@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -75,7 +76,7 @@ if [ "${1:-}" = "--handoff" ] && [ "${2:-}" = "recovery" ]; then
 fi
 exit 2
 `
-	if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte(script), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "glm-worker"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))

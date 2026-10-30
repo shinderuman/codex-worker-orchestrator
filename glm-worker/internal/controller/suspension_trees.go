@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -218,13 +218,15 @@ func normalizeParentPaths(repo, index, base string) (string, error) {
 }
 
 func suspensionGit(repo, index string, input []byte, args ...string) ([]byte, error) {
-	command := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	for _, value := range os.Environ() {
+	command := gitexec.Command("git", repo, args...)
+	filtered := make([]string, 0, len(command.Env)+1)
+	for _, value := range command.Env {
 		if !strings.HasPrefix(value, "GIT_INDEX_FILE=") {
-			command.Env = append(command.Env, value)
+			filtered = append(filtered, value)
 		}
 	}
-	command.Env = append(command.Env, "GIT_INDEX_FILE="+index)
+	filtered = append(filtered, "GIT_INDEX_FILE="+index)
+	command.Env = filtered
 	command.Stdin = bytes.NewReader(input)
 	var diagnostic bytes.Buffer
 	command.Stderr = &diagnostic

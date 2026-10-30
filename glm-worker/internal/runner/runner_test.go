@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -66,7 +67,7 @@ func newRunnerSessionFixture(t *testing.T) runnerSessionFixture {
 	argumentsPath := filepath.Join(t.TempDir(), "args")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_FILE\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\\n\",\"duration_ms\":1200,\"duration_api_ms\":900,\"num_turns\":2,\"usage\":{\"input_tokens\":11,\"cache_creation_input_tokens\":12,\"cache_read_input_tokens\":13,\"output_tokens\":14},\"modelUsage\":{\"glm-5.3\":{\"inputTokens\":11,\"cacheCreationInputTokens\":12,\"cacheReadInputTokens\":13,\"outputTokens\":14}}}'\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_ARGS_FILE", argumentsPath)
@@ -246,7 +247,7 @@ func TestClaudeRunnerPreservesErrorResultAndUsage(t *testing.T) {
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"error\",\"is_error\":true,\"result\":\"API Error: Request rejected (429) [1308][Usage limit reached for 5 hour.]\",\"usage\":{\"input_tokens\":5,\"output_tokens\":6}}'\nprintf '%s\\n' 'stderr diagnostic' >&2\nexit 1\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	st := newTestStateStore(t)
@@ -286,7 +287,7 @@ func TestClaudeRunnerRejectsInvalidJSONWithoutMarkingSessionReady(t *testing.T) 
 		t.Fatal(err)
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
-	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf '%s\\n' 'not json'\n"), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte("#!/bin/sh\nprintf '%s\\n' 'not json'\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	st := newTestStateStore(t)

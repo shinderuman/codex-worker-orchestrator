@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func writeGoProxyFixture(t *testing.T) (string, string) {
@@ -15,11 +17,11 @@ func writeGoProxyFixture(t *testing.T) (string, string) {
 	argvLog := filepath.Join(t.TempDir(), "argv")
 	script := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$*\" >>\"" + argvLog + "\"\n"
-	if err := os.WriteFile(realGo, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(realGo, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	proxyPath := filepath.Join(t.TempDir(), "go")
-	if err := os.WriteFile(proxyPath, []byte(goTestProxyScript(realGo)), 0o700); err != nil {
+	if err := execfile.Write(proxyPath, []byte(goTestProxyScript(realGo)), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return proxyPath, argvLog
@@ -102,7 +104,7 @@ func TestResolveDockerDaemonSocketPrefersLocalUnixEndpoint(t *testing.T) {
 			bin := t.TempDir()
 			if tc.fakeDocker != "" {
 				fake := "#!/bin/sh\nprintf '%s' '" + strings.TrimRight(tc.fakeDocker, "\n") + "'\n"
-				if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(fake), 0o700); err != nil {
+				if err := execfile.Write(filepath.Join(bin, "docker"), []byte(fake), 0o700); err != nil {
 					t.Fatal(err)
 				}
 			}

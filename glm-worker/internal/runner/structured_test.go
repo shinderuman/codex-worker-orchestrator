@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -18,7 +19,7 @@ func writeStructuredFakeClaude(t *testing.T, resultEvent string, exitCode int) s
 	t.Helper()
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	script := "#!/bin/sh\nprintf '%s\\n' '" + strings.ReplaceAll(resultEvent, "'", "'\\''") + "'\nexit " + strconv.Itoa(exitCode) + "\n"
-	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return commandPath
@@ -56,7 +57,7 @@ func TestClaudeRunnerPassesRoleSchema(t *testing.T) {
 	argumentsPath := filepath.Join(t.TempDir(), "args")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_FILE\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"}}'\n"
-	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_ARGS_FILE", argumentsPath)

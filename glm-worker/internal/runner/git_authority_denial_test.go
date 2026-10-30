@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 const mutationDenialJSON = `{"error":{"kind":"containment_denial","owner":"git-authority-guard","reason":"git_mutation_blocked","next_action":"continue_source_edits_or_read_only_git_parent_owns_git_mutation"}}`
@@ -134,7 +136,7 @@ func assertGitAuthorityExit97(t *testing.T, err error, output []byte) {
 func writeGitAuthorityTestScript(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "guard")
-	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(content), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

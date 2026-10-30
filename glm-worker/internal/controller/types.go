@@ -72,6 +72,7 @@ type AttemptRecord struct {
 	BaselineArchive           EvidenceObjectRef `json:"baseline_archive"`
 	BaselineTrees             ExecutionTrees    `json:"baseline_trees"`
 	WorkspaceSnapshotID       string            `json:"workspace_snapshot_id"`
+	ExecutionAuthority        string            `json:"execution_authority,omitempty"`
 	StartControllerGeneration uint64            `json:"start_controller_generation"`
 	PublicationAnchorAtStart  string            `json:"publication_anchor_at_start,omitempty"`
 	AttemptState              AttemptState      `json:"attempt_state"`

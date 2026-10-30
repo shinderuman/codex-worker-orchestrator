@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestMain(m *testing.M) {
@@ -33,7 +35,7 @@ if [ "${1:-}" = version ] && [ "${2:-}" = -m ]; then
 fi
 exec ` + "'" + strings.ReplaceAll(realGo, "'", "'\"'\"'") + "'" + ` "$@"
 `
-	if err := os.WriteFile(filepath.Join(wrapperDir, "go"), []byte(goWrapper), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(wrapperDir, "go"), []byte(goWrapper), 0o755); err != nil {
 		_ = os.RemoveAll(wrapperDir)
 		panic(err)
 	}
