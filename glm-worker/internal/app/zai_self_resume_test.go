@@ -58,28 +58,10 @@ func setZaiSelfResumeReset(t *testing.T, st *state.StateStore, limitErr *runner.
 	limitErr.Limit.ResetAtRFC3339 = value
 }
 
-func replaceZaiSelfResumeWait(t *testing.T, fn func(time.Time, *runner.StopController) bool) {
-	t.Helper()
-	previous := waitForZaiSelfResume
-	waitForZaiSelfResume = fn
-	t.Cleanup(func() { waitForZaiSelfResume = previous })
-}
-
-func replaceZaiSelfResumeNow(t *testing.T, fn func() time.Time) {
-	t.Helper()
-	previous := zaiSelfResumeNow
-	zaiSelfResumeNow = fn
-	t.Cleanup(func() { zaiSelfResumeNow = previous })
-}
-
 func TestExecuteZaiSelfResumeLoopRepeatsFiveHourStops(t *testing.T) {
 	st, limitErr := prepareZaiSelfResumeStop(t)
 	controller := runner.NewStopController()
 	waits := 0
-	replaceZaiSelfResumeWait(t, func(_ time.Time, _ *runner.StopController) bool {
-		waits++
-		return false
-	})
 
 	resumes := 0
 	err := executeZaiSelfResumeLoop(
@@ -92,6 +74,11 @@ func TestExecuteZaiSelfResumeLoopRepeatsFiveHourStops(t *testing.T) {
 				return limitErr
 			}
 			return nil
+		},
+		zaiSelfResumeNow,
+		func(_ time.Time, _ *runner.StopController) bool {
+			waits++
+			return false
 		},
 	)
 	if err != nil {
@@ -107,17 +94,8 @@ func TestExecuteZaiSelfResumeLoopDoesNotStackTenSecondsAfterLongCLIBackoff(t *te
 	controller := runner.NewStopController()
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	setZaiSelfResumeReset(t, st, &limitErr, now.Add(-5*time.Second))
-	replaceZaiSelfResumeNow(t, func() time.Time { return now })
 
 	var waitTargets []time.Time
-	replaceZaiSelfResumeWait(t, func(target time.Time, _ *runner.StopController) bool {
-		waitTargets = append(waitTargets, target)
-		if target.After(now) {
-			now = target
-		}
-		return false
-	})
-
 	resumes := 0
 	err := executeZaiSelfResumeLoop(
 		st,
@@ -130,6 +108,14 @@ func TestExecuteZaiSelfResumeLoopDoesNotStackTenSecondsAfterLongCLIBackoff(t *te
 				return limitErr
 			}
 			return nil
+		},
+		func() time.Time { return now },
+		func(target time.Time, _ *runner.StopController) bool {
+			waitTargets = append(waitTargets, target)
+			if target.After(now) {
+				now = target
+			}
+			return false
 		},
 	)
 	if err != nil {
@@ -153,7 +139,6 @@ func TestExecuteZaiSelfResumeLoopBoundsPostResetRetriesByWallClock(t *testing.T)
 	controller := runner.NewStopController()
 	now := time.Date(2026, 10, 3, 12, 2, 1, 0, time.UTC)
 	setZaiSelfResumeReset(t, st, &limitErr, time.Date(2026, 10, 3, 11, 59, 55, 0, time.UTC))
-	replaceZaiSelfResumeNow(t, func() time.Time { return now })
 
 	resumes := 0
 	err := executeZaiSelfResumeLoop(
@@ -164,6 +149,8 @@ func TestExecuteZaiSelfResumeLoopBoundsPostResetRetriesByWallClock(t *testing.T)
 			resumes++
 			return nil
 		},
+		func() time.Time { return now },
+		waitForZaiSelfResume,
 	)
 	if err == nil || !strings.Contains(err.Error(), "post-reset retry window exhausted") {
 		t.Fatalf("retry-window error = %v", err)
@@ -178,17 +165,8 @@ func TestExecuteZaiSelfResumeLoopUsesNewFutureBoundary(t *testing.T) {
 	controller := runner.NewStopController()
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	setZaiSelfResumeReset(t, st, &limitErr, now.Add(-5*time.Second))
-	replaceZaiSelfResumeNow(t, func() time.Time { return now })
 
 	var waitTargets []time.Time
-	replaceZaiSelfResumeWait(t, func(target time.Time, _ *runner.StopController) bool {
-		waitTargets = append(waitTargets, target)
-		if target.After(now) {
-			now = target
-		}
-		return false
-	})
-
 	resumes := 0
 	err := executeZaiSelfResumeLoop(
 		st,
@@ -202,6 +180,14 @@ func TestExecuteZaiSelfResumeLoopUsesNewFutureBoundary(t *testing.T) {
 				return limitErr
 			}
 			return nil
+		},
+		func() time.Time { return now },
+		func(target time.Time, _ *runner.StopController) bool {
+			waitTargets = append(waitTargets, target)
+			if target.After(now) {
+				now = target
+			}
+			return false
 		},
 	)
 	if err != nil {
@@ -221,9 +207,10 @@ func TestExecuteZaiSelfResumeLoopUsesNewFutureBoundary(t *testing.T) {
 func TestWaitForZaiFiveHourSelfResumeInterruptKeepsDurableStop(t *testing.T) {
 	st, limitErr := prepareZaiSelfResumeStop(t)
 	controller := runner.NewStopController()
-	replaceZaiSelfResumeWait(t, func(_ time.Time, _ *runner.StopController) bool { return true })
 
-	err := waitForZaiFiveHourSelfResume(st, controller, limitErr)
+	err := waitForZaiFiveHourSelfResume(st, controller, limitErr, zaiSelfResumeNow, func(_ time.Time, _ *runner.StopController) bool {
+		return true
+	})
 	var interrupted *runner.InterruptedCallError
 	if !errors.As(err, &interrupted) {
 		t.Fatalf("wait error = %v, want InterruptedCallError", err)
@@ -249,12 +236,11 @@ func TestWaitForZaiFiveHourSelfResumePastBoundaryDoesNotAddFixedDelay(t *testing
 	setZaiSelfResumeReset(t, st, &limitErr, stale)
 	controller := runner.NewStopController()
 	waitCalled := false
-	replaceZaiSelfResumeWait(t, func(_ time.Time, _ *runner.StopController) bool {
+
+	if err := waitForZaiFiveHourSelfResume(st, controller, limitErr, zaiSelfResumeNow, func(_ time.Time, _ *runner.StopController) bool {
 		waitCalled = true
 		return false
-	})
-
-	if err := waitForZaiFiveHourSelfResume(st, controller, limitErr); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if waitCalled {
@@ -265,7 +251,8 @@ func TestWaitForZaiFiveHourSelfResumePastBoundaryDoesNotAddFixedDelay(t *testing
 func TestWaitForZaiFiveHourSelfResumeFailsClosedWhenWakeBindingChanges(t *testing.T) {
 	st, limitErr := prepareZaiSelfResumeStop(t)
 	controller := runner.NewStopController()
-	replaceZaiSelfResumeWait(t, func(_ time.Time, _ *runner.StopController) bool {
+
+	err := waitForZaiFiveHourSelfResume(st, controller, limitErr, zaiSelfResumeNow, func(_ time.Time, _ *runner.StopController) bool {
 		checkpoint, err := st.LoadResumeCheckpoint()
 		if err != nil {
 			t.Fatal(err)
@@ -276,8 +263,6 @@ func TestWaitForZaiFiveHourSelfResumeFailsClosedWhenWakeBindingChanges(t *testin
 		}
 		return false
 	})
-
-	err := waitForZaiFiveHourSelfResume(st, controller, limitErr)
 	if err == nil || !strings.Contains(err.Error(), "five-hour self-resume wake validation failed") || !strings.Contains(err.Error(), "reset boundary changed") {
 		t.Fatalf("wake binding error = %v", err)
 	}
