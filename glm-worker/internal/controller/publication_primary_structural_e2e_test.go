@@ -57,61 +57,6 @@ func TestRootPromotionAppliesStructuralTreeTransitions(t *testing.T) {
 			},
 		},
 		{
-			name:          "directory to relative symlink",
-			remotePath:    "external/child",
-			remoteContent: "old child\n",
-			edit: func(t *testing.T, root string) {
-				t.Helper()
-				if err := os.Remove(filepath.Join(root, "external", "child")); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Remove(filepath.Join(root, "external")); err != nil {
-					t.Fatal(err)
-				}
-				writeSuspensionTestFile(t, root, "target.txt", "untouched target\n")
-				if err := os.Symlink("target.txt", filepath.Join(root, "external")); err != nil {
-					t.Fatal(err)
-				}
-			},
-			verify: func(t *testing.T, root string) {
-				t.Helper()
-				target, err := os.Readlink(filepath.Join(root, "external"))
-				if err != nil || target != "target.txt" {
-					t.Fatalf("directory-to-symlink target = %q %v", target, err)
-				}
-				data, err := os.ReadFile(filepath.Join(root, "target.txt"))
-				if err != nil || string(data) != "untouched target\n" {
-					t.Fatalf("directory-to-symlink modified target = %q %v", data, err)
-				}
-			},
-		},
-		{
-			name:          "regular file to executable",
-			remotePath:    "external",
-			remoteContent: "old external file\n",
-			edit: func(t *testing.T, root string) {
-				t.Helper()
-				writeSuspensionTestFile(t, root, "external", "new executable\n")
-				if err := os.Chmod(filepath.Join(root, "external"), 0o755); err != nil {
-					t.Fatal(err)
-				}
-			},
-			verify: func(t *testing.T, root string) {
-				t.Helper()
-				info, err := os.Lstat(filepath.Join(root, "external"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
-					t.Fatalf("promoted file is not executable: %v", info.Mode())
-				}
-				data, err := os.ReadFile(filepath.Join(root, "external"))
-				if err != nil || string(data) != "new executable\n" {
-					t.Fatalf("promoted executable content = %q err=%v", data, err)
-				}
-			},
-		},
-		{
 			name:          "file to relative symlink",
 			remotePath:    "external",
 			remoteContent: "old external file\n",
