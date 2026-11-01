@@ -163,6 +163,10 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 			return err
 		}
 	}
+	return applySourceTreeAddedEntries(repo, previous, before, after)
+}
+
+func applySourceTreeAddedEntries(repo string, previous map[string]workspaceTreeEntry, before, after []workspaceTreeEntry) error {
 	for start := 0; start < len(after); start += workspaceBlobBatchSize {
 		batch := after[start:min(start+workspaceBlobBatchSize, len(after))]
 		prior := make([]workspaceTreeEntry, len(batch))
