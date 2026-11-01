@@ -92,22 +92,51 @@ func RetirePlanTask(plan, target, successor string) (string, error) {
 		return "", err
 	}
 	lines := strings.Split(plan, "\n")
+	result := make([]string, 0, len(lines))
 	section := planScheduleSection("")
-	for index, line := range lines {
+	for _, line := range lines {
 		if strings.HasPrefix(line, "## ") {
 			section = retirementPlanSection(line)
+		} else if section != "" && strings.TrimSpace(line) != "" {
+			updated, err := retirementPlanLine(line, section, target, successor)
+			if err != nil {
+				return "", err
+			}
+			if updated == "" {
+				// Removed schedule entries are removed as lines, not replaced by blanks.
+				continue
+			}
+			line = updated
+		}
+		// A retired last NEXT or BLOCKED entry can leave two separator blanks.
+		// Normalize only schedule sections; unrelated Markdown is preserved.
+		if section != "" && line == "" && len(result) != 0 && result[len(result)-1] == "" {
 			continue
 		}
-		if section == "" || strings.TrimSpace(line) == "" {
-			continue
-		}
-		updated, err := retirementPlanLine(line, section, target, successor)
-		if err != nil {
-			return "", err
-		}
-		lines[index] = updated
+		result = append(result, line)
 	}
-	return strings.Join(lines, "\n"), nil
+	updated := strings.Join(result, "\n")
+	if err := validateTerminalScheduleRetirementResult(updated, target, successor); err != nil {
+		return "", err
+	}
+	return updated, nil
+}
+
+func validateTerminalScheduleRetirementResult(plan, target, successor string) error {
+	schedule := ParsePlanSchedule(plan)
+	active, err := schedule.ValidateComplete()
+	if err != nil {
+		return err
+	}
+	for _, path := range append(append([]string{active}, schedule.Next...), schedule.Blocked...) {
+		if path == target || (successor != "" && path == successor && active != successor) {
+			return fmt.Errorf("terminal schedule retirement retained a retired or duplicated entry")
+		}
+	}
+	if successor != "" && active != successor {
+		return fmt.Errorf("terminal schedule retirement did not promote the successor")
+	}
+	return nil
 }
 
 func retirementPlanSection(line string) planScheduleSection {

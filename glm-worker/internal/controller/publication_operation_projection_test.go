@@ -277,3 +277,30 @@ func TestParentCompletionProjectionRejectsRuntimeOnlyCandidateAuthority(t *testi
 	}
 
 }
+
+func TestPromotedCandidateReentryIsAdmittedThroughTypedProjection(t *testing.T) {
+	fixture, _, accepted, candidate := primaryPromotionFixture(t)
+	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := fixture.store.ProjectParentCompletionOperation(PublicationOperationReenter)
+	if err != nil || command.Command == nil || command.Command.Action != PublicationOperationReenter ||
+		command.Command.ExpectedGeneration != promoted.Head.ControllerGeneration ||
+		command.Command.CandidateID != candidate.CandidateID {
+		t.Fatalf("promoted candidate has no legal typed reentry: %#v, %v", command, err)
+	}
+	if _, err := fixture.store.ReenterAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: command.Command.ExpectedGeneration, CandidateID: command.Command.CandidateID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.ProjectParentCompletionOperation(PublicationOperationReenter); err == nil {
+		t.Fatal("invalidated candidate was offered a second reentry")
+	}
+	if _, err := fixture.store.ProjectParentCompletionOperation("invalid-reentry"); err == nil {
+		t.Fatal("unrecognized publication command was admitted")
+	}
+}

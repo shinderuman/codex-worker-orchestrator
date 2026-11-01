@@ -9,6 +9,7 @@ type PublicationAdvancementRequired struct {
 	ControllerGeneration uint64
 	RemoteOID            string
 	Action               string
+	Reason               string
 }
 
 type CompletionFailure struct {
@@ -21,6 +22,12 @@ type CompletionFailure struct {
 }
 
 func (e *PublicationAdvancementRequired) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("publication transition %s was not applied; candidate reentry unavailable at controller generation %d for remote %s: %s", e.TransitionID, e.ControllerGeneration, e.RemoteOID, e.Reason)
+	}
+	if e.Action == PublicationOperationReenter {
+		return fmt.Sprintf("publication transition %s was not applied; run glm-parent-action prepare controller-publication --operation reenter at controller generation %d for remote %s", e.TransitionID, e.ControllerGeneration, e.RemoteOID)
+	}
 	return fmt.Sprintf("publication transition %s was not applied; %s at controller generation %d for remote %s", e.TransitionID, e.Action, e.ControllerGeneration, e.RemoteOID)
 }
 
@@ -43,14 +50,20 @@ func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryCon
 		return ExecutionOperationResult{}, fmt.Errorf("aborted publication no longer owns controller")
 	}
 	action := publicationAbortAction(op)
+	reason := ""
 	if op.Terminal != nil && phase.Completion != nil && phase.Completion.AbortRemoteOID == op.Source.Head.IntegrationTip {
-		action = "reenter-accepted-candidate"
+		// Only advertise a command admitted by the same staged CLI the parent executes.
+		if _, err := s.ProjectParentCompletionOperation(PublicationOperationReenter); err != nil {
+			action, reason = "", err.Error()
+		} else {
+			action = PublicationOperationReenter
+		}
 	}
 	remote := phase.Observed[op.Transition.Effects[0].Key()]
 	if op.Terminal != nil && phase.Completion != nil {
 		remote = phase.Completion.AbortRemoteOID
 	}
-	return ExecutionOperationResult{}, &PublicationAdvancementRequired{TransitionID: op.Transition.TransitionID, ControllerGeneration: head.ControllerGeneration, RemoteOID: remote, Action: action}
+	return ExecutionOperationResult{}, &PublicationAdvancementRequired{TransitionID: op.Transition.TransitionID, ControllerGeneration: head.ControllerGeneration, RemoteOID: remote, Action: action, Reason: reason}
 }
 
 func (s *Store) abortCompletionPrepare(op ExecutionOperation, phase TransitionState, remote string) error {

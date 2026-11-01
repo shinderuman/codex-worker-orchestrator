@@ -66,6 +66,7 @@ const (
 	PublicationOperationFinalValidation       = "final-validation"
 	PublicationOperationPromote               = "promote"
 	PublicationOperationPublish               = "publish"
+	PublicationOperationReenter               = "reenter"
 	PublicationOperationSuccessorStart        = "successor-start"
 	PublicationOperationValidationFailure     = "resolve-validation-failure"
 	PublicationOperationInstall               = "install-completion"
@@ -198,7 +199,11 @@ func (s *Store) projectAcceptedCandidateOperation(head RepositoryControllerHead)
 	case candidatePrepared:
 		return s.projectPreparedCandidateOperation(head, candidate)
 	case candidatePromoted:
-		return s.projectCandidateOperation(head, candidate, PublicationOperationPublish), nil
+		operation := s.projectCandidateOperation(head, candidate, PublicationOperationPublish)
+		if _, _, err := s.candidateReentrySource(head, candidate); err == nil {
+			operation.AllowedOperations = []string{PublicationOperationPublish, PublicationOperationReenter}
+		}
+		return operation, nil
 	default:
 		return ParentCompletionOperation{Operation: PublicationOperationObserved}, nil
 	}
@@ -423,6 +428,24 @@ func (s *Store) ProjectParentCompletionOperation(requested string) (ParentComple
 	}
 	if requested == PublicationOperationReopen && operation.Operation == PublicationOperationAccept {
 		return s.projectUnsealedReopen(operation.Command.ExpectedGeneration), nil
+	}
+	if requested == PublicationOperationReenter && operation.Operation == PublicationOperationPublish &&
+		slices.Contains(operation.AllowedOperations, PublicationOperationReenter) {
+		head, err := s.LoadHead()
+		if err != nil {
+			return ParentCompletionOperation{}, err
+		}
+		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+		if err != nil {
+			return ParentCompletionOperation{}, err
+		}
+		if !candidate.EvidenceValid || candidate.State != candidatePromoted {
+			return ParentCompletionOperation{}, fmt.Errorf("candidate reentry requires a promoted, accepted source")
+		}
+		if _, _, err := s.candidateReentrySource(head, candidate); err != nil {
+			return ParentCompletionOperation{}, fmt.Errorf("candidate reentry preflight: %w", err)
+		}
+		return s.projectCandidateOperation(head, candidate, PublicationOperationReenter), nil
 	}
 	return ParentCompletionOperation{}, fmt.Errorf("completion operation %s is not admitted at %s", requested, operation.Operation)
 }
