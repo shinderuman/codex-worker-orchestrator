@@ -79,9 +79,6 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	return projection
 }
 
-// A parent-only smoke task.id has no model parent-review-state.json. Only
-// suppress that specific missing-file condition; malformed review/checkpoint
-// evidence and unrelated lifecycle errors must still fail closed.
 func parentOnlyMissingReviewState(st *state.StateStore, planErr error) bool {
 	var inconsistency *state.LifecycleInconsistencyError
 	if !errors.As(planErr, &inconsistency) ||
