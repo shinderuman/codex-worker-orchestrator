@@ -32,7 +32,7 @@ func TestWorkspaceProcessCostAcrossMaterializationAndSourceImport(t *testing.T) 
 			return materializeExecutionTrees(WorkspaceIdentity{Root: lane}, ReboundSuspension{Current: ExecutionTrees{IndexTree: tree, WorktreeTree: tree}})
 		}},
 		{name: "source-import", run: func(lane string) error {
-			return applySourceTreeEntries(lane, entries, entries)
+			return applySourceTreeEntries(lane, nil, entries)
 		}},
 	}
 	for _, operation := range operations {
