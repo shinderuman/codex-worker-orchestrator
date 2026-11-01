@@ -31,6 +31,11 @@ func (s *Store) applyExecutionMaterialization(op ExecutionOperation) error {
 	if err := s.writeMaterializedExecutionRecords(attempt, lease); err != nil {
 		return err
 	}
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if err := s.bindParentOnlySmokeTaskID(attempt); err != nil {
+			return err
+		}
+	}
 	return s.commitMaterializedExecution(op, workspace, attempt, lease)
 }
 
