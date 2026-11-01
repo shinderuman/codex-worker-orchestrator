@@ -119,19 +119,23 @@ func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
 	case "Parallel", "Helper", "SkipNow":
 		return len(call.Args) == 0
 	case "Skip", "Skipf", "Log", "Logf":
-		for _, argument := range call.Args {
-			if _, literal := argument.(*ast.BasicLit); literal {
-				continue
-			}
-			if constant, ok := argument.(*ast.Ident); ok && (constant.Name == "true" || constant.Name == "false" || constant.Name == "nil") {
-				continue
-			}
-			return false
-		}
-		return true
+		return literalOnlyTestCallArgs(call.Args)
 	default:
 		return false
 	}
+}
+
+func literalOnlyTestCallArgs(args []ast.Expr) bool {
+	for _, argument := range args {
+		if _, literal := argument.(*ast.BasicLit); literal {
+			continue
+		}
+		constant, ok := argument.(*ast.Ident)
+		if !ok || (constant.Name != "true" && constant.Name != "false" && constant.Name != cleanCutoverNilIdentifier) {
+			return false
+		}
+	}
+	return true
 }
 
 func testSizeViolations(set *token.FileSet, file *ast.File, path string) []Violation {
