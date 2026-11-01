@@ -3,6 +3,7 @@ package harnesslint
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -10,6 +11,35 @@ type fakeRunner struct{}
 
 func (fakeRunner) run(_ string, _ string, _ ...string) (commandResult, error) {
 	return commandResult{}, nil
+}
+
+func TestRunFixCompactsPlanSpacingAndIsIdempotent(t *testing.T) {
+	root := fixtureRoot(t)
+	path := implementationPlanPath
+	original := "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n"
+	writeFixture(t, root, path, original)
+	report, err := run(root, true, fakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Fixed != 1 {
+		t.Fatalf("fixed = %d, want one Plan file", report.Fixed)
+	}
+	data, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := strings.ReplaceAll(original, "\n\n\n- [second]", "\n- [second]")
+	if string(data) != expected {
+		t.Fatalf("unexpected fixed Plan: %q", data)
+	}
+	second, err := run(root, true, fakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Fixed != 0 {
+		t.Fatalf("second fixed = %d", second.Fixed)
+	}
 }
 
 func TestRunFixFormatsGoAndIsIdempotent(t *testing.T) {
