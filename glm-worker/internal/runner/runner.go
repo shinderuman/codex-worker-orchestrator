@@ -153,6 +153,20 @@ var workerGoTestDisallowedBashRules = []string{
 	"Bash(* go1.* -C* test*)",
 	"Bash(*/go1.* test*)",
 	"Bash(*/go1.* -C* test*)",
+	"Bash(go --C* test*)",
+	"Bash(* go --C* test*)",
+	"Bash(*/go --C* test*)",
+	"Bash(go1.* --C* test*)",
+	"Bash(* go1.* --C* test*)",
+	"Bash(*/go1.* --C* test*)",
+}
+
+var workerDockerDisallowedBashRules = []string{
+	"Bash(docker run*)",
+	"Bash(docker exec*)",
+	"Bash(docker cp*)",
+	"Bash(docker build*)",
+	"Bash(docker compose*)",
 }
 
 var (
@@ -189,7 +203,7 @@ func workerDisallowedBashRules(goTestDockerPolicy bool) []string {
 	if !goTestDockerPolicy {
 		return workerLintDisallowedBashRules
 	}
-	return append(append([]string(nil), workerLintDisallowedBashRules...), workerGoTestDisallowedBashRules...)
+	return append(append(append([]string(nil), workerLintDisallowedBashRules...), workerGoTestDisallowedBashRules...), workerDockerDisallowedBashRules...)
 }
 
 func (e *StructuredOutputError) Error() string {
