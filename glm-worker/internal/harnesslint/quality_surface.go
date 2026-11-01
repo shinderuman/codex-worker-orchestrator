@@ -300,12 +300,13 @@ func qualityWiringSelectorCallKey(call *ast.CallExpr, workflowReceiver, importNa
 	if !ok {
 		return "", false
 	}
-	prefix := base.Name
-	if workflowReceiver != "" && base.Name == workflowReceiver {
+	var prefix string
+	switch {
+	case workflowReceiver != "" && base.Name == workflowReceiver:
 		prefix = "workflow"
-	} else if importName != "" && base.Name == importName {
+	case importName != "" && base.Name == importName:
 		prefix = harnesslintName
-	} else {
+	default:
 		return "", false
 	}
 	args := make([]string, 0, len(call.Args))
@@ -402,33 +403,45 @@ func qualityWiringRequiredGoTokens(path string, data []byte) (map[string]bool, e
 	if err != nil {
 		return nil, err
 	}
-	harnessImport := qualityWiringHarnesslintImport(file)
 	found := map[string]bool{
 		"harnesslint.Run(root, true)": false,
 		"captureQualitySurfaceDigest": false,
 	}
+	harnessImport := qualityWiringHarnesslintImport(file)
 	ast.Inspect(file, func(node ast.Node) bool {
-		switch current := node.(type) {
-		case *ast.FuncDecl:
-			if current.Recv == nil && current.Name.Name == "captureQualitySurfaceDigest" {
-				found["captureQualitySurfaceDigest"] = true
-			}
-			if current.Recv == nil && current.Name.Name == "runRepositoryQualityGate" && current.Body != nil {
-				ast.Inspect(current.Body, func(child ast.Node) bool {
-					if call, ok := child.(*ast.CallExpr); ok && qualityWiringIsHarnessRun(call, harnessImport) {
-						found["harnesslint.Run(root, true)"] = true
-					}
-					return true
-				})
-			}
-		case *ast.CallExpr:
-			if identifier, ok := current.Fun.(*ast.Ident); ok && identifier.Name == "captureQualitySurfaceDigest" {
-				found["captureQualitySurfaceDigest"] = true
-			}
+		if qualityWiringHasDigestEvidence(node) {
+			found["captureQualitySurfaceDigest"] = true
+		}
+		if function, ok := node.(*ast.FuncDecl); ok && function.Recv == nil &&
+			function.Name.Name == "runRepositoryQualityGate" && function.Body != nil {
+			found["harnesslint.Run(root, true)"] = qualityWiringBodyCallsHarnessRun(function.Body, harnessImport)
 		}
 		return true
 	})
 	return found, nil
+}
+
+func qualityWiringHasDigestEvidence(node ast.Node) bool {
+	switch current := node.(type) {
+	case *ast.FuncDecl:
+		return current.Recv == nil && current.Name.Name == "captureQualitySurfaceDigest"
+	case *ast.CallExpr:
+		identifier, ok := current.Fun.(*ast.Ident)
+		return ok && identifier.Name == "captureQualitySurfaceDigest"
+	default:
+		return false
+	}
+}
+
+func qualityWiringBodyCallsHarnessRun(body *ast.BlockStmt, harnessImport string) bool {
+	found := false
+	ast.Inspect(body, func(node ast.Node) bool {
+		if call, ok := node.(*ast.CallExpr); ok && qualityWiringIsHarnessRun(call, harnessImport) {
+			found = true
+		}
+		return true
+	})
+	return found
 }
 
 func qualityWiringIsHarnessRun(call *ast.CallExpr, harnessImport string) bool {
