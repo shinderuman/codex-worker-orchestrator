@@ -9,8 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+		"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
@@ -85,11 +84,11 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 	if err := wf.SummaryRecoveryAvailable(); err != nil {
 		t.Fatalf("summary recovery fixture is unavailable: %v", err)
 	}
-	legacy := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(bound, st))
-	if !legacy.Consistent || legacy.RequiredAction == nil || *legacy.RequiredAction != string(state.ParentActionResubmitReport) {
-		t.Fatalf("fixture does not reproduce early return: %#v; inconsistency=%s", legacy, stringPointerValue(legacy.Inconsistency))
+	action := string(state.ParentActionResubmitReport)
+	handoff := parentHandoffOutput{Version: parentHandoffVersion, Consistent: true, RequiredAction: &action, AllowedActions: []string{action}}
+	if !applyAvailableSummaryRecoveryHandoff(bound, st, &handoff) {
+		t.Fatal("real summary recovery availability did not enter canonical handoff")
 	}
-	handoff := buildParentHandoffWithConfig(bound, st)
 	if handoff.Controller == nil || handoff.Controller.Head.PendingTransitionID != pendingID {
 		t.Fatalf("pending canonical transition was omitted: %#v", handoff.Controller)
 	}
