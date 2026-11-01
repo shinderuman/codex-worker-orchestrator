@@ -245,25 +245,29 @@ func scanQualityWiringCalls(root, path string, required map[string]string, found
 		if !ok || function.Body == nil {
 			continue
 		}
-		receiver := qualityWiringWorkflowReceiver(function)
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			key, ok := qualityWiringSelectorCallKey(call, receiver)
-			if !ok {
-				return true
-			}
-			for candidate, requiredKey := range required {
-				if key == requiredKey {
-					found[candidate] = true
-				}
-			}
-			return true
-		})
+		scanQualityWiringFunction(function, required, found)
 	}
 	return nil
+}
+
+func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]string, found map[string]bool) {
+	receiver := qualityWiringWorkflowReceiver(function)
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		key, ok := qualityWiringSelectorCallKey(call, receiver)
+		if !ok {
+			return true
+		}
+		for candidate, requiredKey := range required {
+			if key == requiredKey {
+				found[candidate] = true
+			}
+		}
+		return true
+	})
 }
 
 func qualityWiringWorkflowReceiver(function *ast.FuncDecl) string {
@@ -297,7 +301,7 @@ func qualityWiringSelectorCallKey(call *ast.CallExpr, workflowReceiver string) (
 	prefix := base.Name
 	if workflowReceiver != "" && base.Name == workflowReceiver {
 		prefix = "workflow"
-	} else if base.Name != "harnesslint" {
+	} else if base.Name != harnesslintName {
 		return "", false
 	}
 	args := make([]string, 0, len(call.Args))
