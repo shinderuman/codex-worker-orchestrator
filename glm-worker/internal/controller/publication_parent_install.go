@@ -140,7 +140,15 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	if smoke.Log != filepath.ToSlash(filepath.Join("install-smoke-runs", smokeID, "smoke.log")) {
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate smoke log locator is invalid")
 	}
-	smokeLog, err := os.ReadFile(runtime.Path(filepath.FromSlash(smoke.Log)))
+	logPath := runtime.Path(filepath.FromSlash(smoke.Log))
+	logInfo, err := os.Lstat(logPath)
+	if err != nil {
+		return qualitygate.RunRecord{}, nil, err
+	}
+	if !logInfo.Mode().IsRegular() {
+		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate smoke log is not a regular file")
+	}
+	smokeLog, err := os.ReadFile(logPath)
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
