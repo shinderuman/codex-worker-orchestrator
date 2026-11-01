@@ -64,7 +64,7 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 				}
 				corrupt := executeParentHandoff(t, cfg)
 				if corrupt.Consistent || corrupt.Inconsistency == nil {
-					t.Fatalf("parent-only smoke identity masked corrupt review evidence: %#v", corrupt)
+					t.Fatalf("corrupt review accepted: %#v", corrupt)
 				}
 				if err := os.Remove(reviewState); err != nil {
 					t.Fatal(err)
