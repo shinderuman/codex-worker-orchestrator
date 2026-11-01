@@ -41,6 +41,22 @@ func TestEnvironmentWorktreeScope(t *testing.T) {
 	}
 }
 
+func TestWithoutLocalEnvironmentStripsGitLocationVariables(t *testing.T) {
+	inherited := []string{"GIT_DIR=.git", "GIT_WORK_TREE=.", "GIT_INDEX_FILE=.git/alternate", "PATH=" + os.Getenv("PATH"), "KEEP=value"}
+	stripped, err := WithoutLocalEnvironment(inherited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range stripped {
+		if strings.HasPrefix(item, "GIT_DIR=") || strings.HasPrefix(item, "GIT_WORK_TREE=") || strings.HasPrefix(item, "GIT_INDEX_FILE=") {
+			t.Fatalf("Git位置変数が残っています: %s", item)
+		}
+	}
+	if !reflect.DeepEqual(stripped, inherited[len(inherited)-2:]) {
+		t.Fatalf("無関係な環境変数が変化しました: %v", stripped)
+	}
+}
+
 func TestCommandPreservesAlternateIndexAndIsolatesForeignWorktree(t *testing.T) {
 	root := t.TempDir()
 	runGit := func(dir string, args ...string) {

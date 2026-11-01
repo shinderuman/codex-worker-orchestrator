@@ -45,6 +45,10 @@ func environment(origin, target string, inherited []string) ([]string, error) {
 	if source == destination {
 		return append([]string(nil), inherited...), nil
 	}
+	return WithoutLocalEnvironment(inherited)
+}
+
+func WithoutLocalEnvironment(inherited []string) ([]string, error) {
 	names, err := localVariables()
 	if err != nil {
 		return nil, err
