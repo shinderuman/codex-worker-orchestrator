@@ -127,6 +127,13 @@ func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
 
 func literalOnlyTestCallArgs(args []ast.Expr) bool {
 	for _, argument := range args {
+		for {
+			parenthesized, ok := argument.(*ast.ParenExpr)
+			if !ok {
+				break
+			}
+			argument = parenthesized.X
+		}
 		if _, literal := argument.(*ast.BasicLit); literal {
 			continue
 		}
