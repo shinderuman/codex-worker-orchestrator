@@ -200,7 +200,8 @@ func qualityGateStableFailureLog(record qualitygate.RunRecord) bool {
 	for _, unstable := range []string{
 		"test timed out", "signal: killed", "connection refused", "connection reset",
 		"network is unreachable", "temporary failure", "resource temporarily unavailable",
-		"server misbehaving",
+		"server misbehaving", "i/o timeout", "context deadline exceeded",
+		"tls handshake timeout", "connection timed out", "no such host",
 		"no space left on device", "etxtbsy",
 	} {
 		if strings.Contains(text, unstable) {
