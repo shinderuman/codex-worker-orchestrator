@@ -33,7 +33,7 @@ func TestAcceptedCandidateValidationLookupUsesRealControllerStateBase(t *testing
 			}
 			request, lookup, err := AcceptedCandidateValidationRequest(fixture.store.config, tc.request)
 			if err != nil || lookup != tc.lookup {
-				t.Fatalf("real Controller lookup = %#v %s %v", request, lookup, err)
+				t.Fatalf("real Controller lookup = %#v %v %v", request, lookup, err)
 			}
 			if lookup == CandidateValidationDeclared && request.WorkingDir != "." {
 				t.Fatalf("candidate validation declaration changed: %#v", request)
