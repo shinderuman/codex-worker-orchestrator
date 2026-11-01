@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -80,6 +81,38 @@ func TestRecoverUnstartedMilestoneRebindsCrashedStartupIntoLegalStop(t *testing.
 	}
 	if err := recoveryWorkflow(cfg, st).RecoverUnstartedMilestone(); err == nil {
 		t.Fatal("startup recovery replaced a stopped runtime")
+	}
+}
+
+func TestRecoverUnstartedMilestoneRejectsEmptyRequestWithoutCorruptingError(t *testing.T) {
+	t.Parallel()
+	cfg, _, st, _ := crashUnstartedMilestoneStartup(t)
+	if err := st.Write("last-request", ""); err != nil {
+		t.Fatal(err)
+	}
+	err := recoveryWorkflow(cfg, st).RecoverUnstartedMilestone()
+	if err == nil || !strings.Contains(err.Error(), "empty last-request") || strings.Contains(err.Error(), "%!w") {
+		t.Fatalf("empty recovery request error = %v", err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, state.ErrNoResumeCheckpoint) {
+		t.Fatalf("invalid recovery created checkpoint: %v", err)
+	}
+}
+
+func TestRecoverUnstartedMilestonePreservesUnreadableCheckpointFailure(t *testing.T) {
+	t.Parallel()
+	cfg, _, st, _ := crashUnstartedMilestoneStartup(t)
+	// A malformed saved checkpoint must not be treated as an absent checkpoint.
+	if err := st.Write("resume.json", "{invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); err == nil || errors.Is(err, state.ErrNoResumeCheckpoint) {
+		t.Fatalf("fixture checkpoint unexpectedly readable/absent: %v", err)
+	}
+	// The runtime check is the owner of this rejection, independent of parent admission.
+	err := recoveryWorkflow(cfg, st).verifyUnstartedMilestoneRuntime()
+	if err == nil || !strings.Contains(err.Error(), "cannot read resume checkpoint") || strings.Contains(err.Error(), "%!w") {
+		t.Fatalf("unreadable checkpoint error = %v", err)
 	}
 }
 
