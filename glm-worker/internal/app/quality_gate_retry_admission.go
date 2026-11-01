@@ -167,6 +167,10 @@ func qualityGateDockerImageUnchanged(candidate, previous qualitygate.RunRecord) 
 		return false
 	}
 	tag := "codex-worker-orchestrator-go-test:go" + version + "-lint" + lintVersion + "-arm64"
+	return qualityGateDockerRuntimeUnchanged(tag, previous.Execution.Docker)
+}
+
+func qualityGateDockerRuntimeUnchanged(tag string, previous *qualitygate.DockerExecution) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, "docker", "image", "inspect", tag, "--format", "{{.Id}}").Output()
