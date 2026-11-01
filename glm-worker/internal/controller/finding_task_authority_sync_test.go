@@ -150,6 +150,23 @@ func TestFindingDispositionAfterTaskAuthoritySyncsBindsCurrentAuthority(t *testi
 	if accepted.CandidateRef == nil {
 		t.Fatalf("candidate acceptance produced no candidate: %#v", accepted)
 	}
+	candidate, err := fixture.store.LoadAcceptedCandidate(*accepted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: accepted.Head.ControllerGeneration,
+		CandidateID: candidate.CandidateID,
+	})
+	if err != nil {
+		t.Fatalf("post-sync accepted candidate could not promote: %v", err)
+	}
+	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: promoted.Head.ControllerGeneration,
+		CandidateID: candidate.CandidateID,
+	}); err != nil {
+		t.Fatalf("post-sync accepted candidate could not publish: %v", err)
+	}
 }
 
 func TestFindingDispositionAfterTaskAuthoritySyncRejectsBrokenContinuity(t *testing.T) {
