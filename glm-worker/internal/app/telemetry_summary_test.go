@@ -53,7 +53,7 @@ func TestTelemetryCompactSummaryUnifiedAcrossCommands(t *testing.T) {
 				t.Fatalf("同一queryのcompact summaryがcommand間で diverge しました: %q vs %q", statsOut.String(), outliersOut.String())
 			}
 			decoded := decodeSingleLineJSON(t, statsOut.String())
-			if decoded["version"].(float64) != telemetryCompactSummaryVersion {
+			if decoded["version"].(float64) != 1 {
 				t.Fatalf("version = %#v", decoded["version"])
 			}
 		})
@@ -100,7 +100,7 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 		t.Fatalf("current cohort = %#v", currentCohort)
 	}
 	currentOutliers, _ := currentCohort["outliers"].(map[string]any)
-	if currentOutliers["status"] != telemetryCompactOutliersEvaluated ||
+	if currentOutliers["status"] != "evaluated" ||
 		currentOutliers["outlier_calls"].(float64) != 0 || currentOutliers["truncated_calls"].(float64) != 0 {
 		t.Fatalf("current cohort outliers = %#v", currentOutliers)
 	}
@@ -161,8 +161,8 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 	}
 
 	bounds, _ := decoded["bounds"].(map[string]any)
-	if bounds["top_outlier_calls"].(float64) != telemetryCompactTopOutlierCalls ||
-		bounds["top_outlier_tasks"].(float64) != telemetryCompactTopOutlierTasks {
+	if bounds["top_outlier_calls"].(float64) != 10 ||
+		bounds["top_outlier_tasks"].(float64) != 10 {
 		t.Fatalf("bounds = %#v", bounds)
 	}
 }
@@ -323,7 +323,7 @@ func TestTelemetryCompactSummaryCurrentScope(t *testing.T) {
 		t.Fatalf("current cohort = %#v", cohort)
 	}
 	outliers, _ := cohort["outliers"].(map[string]any)
-	if outliers["status"] != telemetryCompactOutliersEvaluated {
+	if outliers["status"] != "evaluated" {
 		t.Fatalf("current scope outliers = %#v", outliers)
 	}
 	stats, _ := decoded["stats"].(map[string]any)
@@ -375,7 +375,7 @@ func TestTelemetryCompactSummaryCurrentScopeWithoutCurrentSchemaRecords(t *testi
 			t.Fatalf("空cohort records = %#v", records)
 		}
 		outliers, _ := cohort["outliers"].(map[string]any)
-		if outliers["status"] != telemetryCompactOutliersEvaluated ||
+		if outliers["status"] != "evaluated" ||
 			outliers["eligible_groups"].(float64) != 0 ||
 			outliers["outlier_calls"].(float64) != 0 || outliers["outlier_tasks"].(float64) != 0 ||
 			outliers["truncated_calls"].(float64) != 0 || outliers["truncated_tasks"].(float64) != 0 {
@@ -501,7 +501,7 @@ func TestTelemetryCompactSummaryBoundedOnLargeFixture(t *testing.T) {
 		t.Fatalf("outlier_calls = %#v", outliers)
 	}
 	topCalls, _ := outliers["top_calls"].([]any)
-	if len(topCalls) != telemetryCompactTopOutlierCalls || outliers["truncated_calls"].(float64) != 5 {
+	if len(topCalls) != 10 || outliers["truncated_calls"].(float64) != 5 {
 		t.Fatalf("top_calls/truncated = %#v", outliers)
 	}
 }
