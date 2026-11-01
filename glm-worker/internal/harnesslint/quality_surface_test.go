@@ -38,7 +38,7 @@ func TestQualityWiringPackageAllowsResponsibilitySplit(t *testing.T) {
 	workflowPath := "glm-worker/internal/workflow/workflow.go"
 	reviewPath := "glm-worker/internal/workflow/review_flow.go"
 	writeQualityFile(t, root, workflowPath, "package workflow\nfunc (w *Workflow) start() { w.captureQualitySurfaceBaseline(); w.verifyQualitySurfaceBaseline(workerPhase) }\n")
-	writeQualityFile(t, root, reviewPath, "package workflow\nfunc (handler *Workflow) review() { handler.qualityGate(handler.config.RepoRoot); harnesslint.IsViolation(qualityReport) }\n")
+	writeQualityFile(t, root, reviewPath, "package workflow\nimport \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc (handler *Workflow) review() { handler.qualityGate(handler.config.RepoRoot); harnesslint.IsViolation(qualityReport) }\n")
 	present := map[string]bool{workflowPath: true, reviewPath: true}
 	violations, err := qualityWiringPackageViolations(root, present, "glm-worker/internal/workflow/", []string{
 		"w.captureQualitySurfaceBaseline()",
@@ -121,4 +121,44 @@ func TestQualityWiringRecognizesCanonicalImportAlias(t *testing.T) {
 		}
 	}
 	t.Fatalf("forbidden check escaped detection through an import alias: %+v", violations)
+}
+
+func TestQualityWiringPackageDoesNotAcceptUnboundOrWrongImport(t *testing.T) {
+	const workflowPath = "glm-worker/internal/workflow/workflow.go"
+	const reviewPath = "glm-worker/internal/workflow/review_flow.go"
+	for _, tc := range []struct {
+		name, importLine, call string
+		valid bool
+	}{
+		{"unbound", "", "harnesslint.IsViolation(qualityReport)", false},
+		{"wrong-import", "import \"example.invalid/harnesslint\"", "harnesslint.IsViolation(qualityReport)", false},
+		{"canonical-alias", "import quality \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"", "quality.IsViolation(qualityReport)", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeQualityFile(t, root, workflowPath, "package workflow\nfunc (w *Workflow) start() { w.captureQualitySurfaceBaseline(); w.verifyQualitySurfaceBaseline(workerPhase) }\n")
+			writeQualityFile(t, root, reviewPath, "package workflow\n"+tc.importLine+"\nfunc (w *Workflow) review() { w.qualityGate(w.config.RepoRoot); "+tc.call+" }\n")
+			present := map[string]bool{workflowPath: true, reviewPath: true}
+			violations, err := qualityWiringPackageViolations(root, present, "glm-worker/internal/workflow/", []string{
+				"w.captureQualitySurfaceBaseline()",
+				"w.verifyQualitySurfaceBaseline(workerPhase)",
+				"w.qualityGate(w.config.RepoRoot)",
+				"harnesslint.IsViolation(qualityReport)",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.valid && len(violations) != 0 {
+				t.Fatalf("canonical quality wiring alias rejected: %+v", violations)
+			}
+			if !tc.valid {
+				for _, violation := range violations {
+					if strings.Contains(violation.Message, "harnesslint.IsViolation") {
+						return
+					}
+				}
+				t.Fatalf("unbound package satisfied quality wiring: %+v", violations)
+			}
+		})
+	}
 }

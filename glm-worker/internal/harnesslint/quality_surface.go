@@ -223,7 +223,7 @@ func qualityWiringRequiredCalls(tokens []string) (map[string]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("quality-wiring token is not a call: %q", candidate)
 		}
-		key, ok := qualityWiringSelectorCallKey(call, "w")
+		key, ok := qualityWiringSelectorCallKey(call, "w", harnesslintName)
 		if !ok {
 			return nil, fmt.Errorf("quality-wiring token is not a selector call: %q", candidate)
 		}
@@ -241,24 +241,25 @@ func scanQualityWiringCalls(root, path string, required map[string]string, found
 	if err != nil {
 		return fmt.Errorf("parse quality wiring %s: %w", path, err)
 	}
+	importName := qualityWiringHarnesslintImport(file)
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok || function.Body == nil {
 			continue
 		}
-		scanQualityWiringFunction(function, required, found)
+		scanQualityWiringFunction(function, required, found, importName)
 	}
 	return nil
 }
 
-func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]string, found map[string]bool) {
+func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]string, found map[string]bool, importName string) {
 	receiver := qualityWiringWorkflowReceiver(function)
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		key, ok := qualityWiringSelectorCallKey(call, receiver)
+		key, ok := qualityWiringSelectorCallKey(call, receiver, importName)
 		if !ok {
 			return true
 		}
@@ -290,7 +291,7 @@ func qualityWiringWorkflowReceiver(function *ast.FuncDecl) string {
 	return decl.Names[0].Name
 }
 
-func qualityWiringSelectorCallKey(call *ast.CallExpr, workflowReceiver string) (string, bool) {
+func qualityWiringSelectorCallKey(call *ast.CallExpr, workflowReceiver, importName string) (string, bool) {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return "", false
@@ -302,7 +303,9 @@ func qualityWiringSelectorCallKey(call *ast.CallExpr, workflowReceiver string) (
 	prefix := base.Name
 	if workflowReceiver != "" && base.Name == workflowReceiver {
 		prefix = "workflow"
-	} else if base.Name != harnesslintName {
+	} else if importName != "" && base.Name == importName {
+		prefix = harnesslintName
+	} else {
 		return "", false
 	}
 	args := make([]string, 0, len(call.Args))
