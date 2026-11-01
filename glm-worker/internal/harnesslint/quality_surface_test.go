@@ -57,7 +57,7 @@ func TestQualityWiringPackageAllowsResponsibilitySplit(t *testing.T) {
 func TestQualityWiringAcceptsSingleFixAndValidationPass(t *testing.T) {
 	root := t.TempDir()
 	check := qualityWiringChecks()[0]
-	writeQualityFile(t, root, check.path, "package workflow\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
+	writeQualityFile(t, root, check.path, "package workflow\nimport "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
 
 	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestQualityWiringAcceptsSingleFixAndValidationPass(t *testing.T) {
 func TestQualityWiringRejectsDuplicateValidationPass(t *testing.T) {
 	root := t.TempDir()
 	check := qualityWiringChecks()[0]
-	writeQualityFile(t, root, check.path, "package workflow\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); harnesslint.Check(root); captureQualitySurfaceDigest(root) }\n")
+	writeQualityFile(t, root, check.path, "package workflow\nimport "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); harnesslint.Check(root); captureQualitySurfaceDigest(root) }\n")
 
 	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
 	if err != nil {
@@ -83,4 +83,42 @@ func TestQualityWiringRejectsDuplicateValidationPass(t *testing.T) {
 		}
 	}
 	t.Fatalf("duplicate validation pass was not rejected: %+v", violations)
+}
+
+func TestQualityWiringRejectsUnboundHarnesslintCall(t *testing.T) {
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	writeQualityFile(t, root, check.path, "package workflow\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
+	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range violations {
+		if strings.Contains(v.Message, "required quality-gate wiring is missing: harnesslint.Run") {
+			return
+		}
+	}
+	t.Fatalf("unbound package impersonation bypassed the quality gate: %+v", violations)
+}
+
+func TestQualityWiringRecognizesCanonicalImportAlias(t *testing.T) {
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	const source = "package workflow\nimport gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc runRepositoryQualityGate(root string) { gate.Run(root, true); captureQualitySurfaceDigest(root) }\n"
+	writeQualityFile(t, root, check.path, source)
+	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
+	if err != nil || len(violations) != 0 {
+		t.Fatalf("equivalent harnesslint import alias was rejected: %+v err=%v", violations, err)
+	}
+	writeQualityFile(t, root, check.path, strings.Replace(source, "gate.Run(root, true);", "gate.Run(root, true); gate.Check(root);", 1))
+	violations, err = qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range violations {
+		if strings.Contains(v.Message, "forbidden quality-gate wiring is present") {
+			return
+		}
+	}
+	t.Fatalf("forbidden check escaped detection through an import alias: %+v", violations)
 }

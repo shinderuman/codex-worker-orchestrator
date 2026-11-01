@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strconv"
 	"strings"
 )
 
@@ -398,6 +399,7 @@ func qualityWiringRequiredGoTokens(path string, data []byte) (map[string]bool, e
 	if err != nil {
 		return nil, err
 	}
+	harnessImport := qualityWiringHarnesslintImport(file)
 	found := map[string]bool{
 		"harnesslint.Run(root, true)": false,
 		"captureQualitySurfaceDigest": false,
@@ -410,7 +412,7 @@ func qualityWiringRequiredGoTokens(path string, data []byte) (map[string]bool, e
 			}
 			if current.Recv == nil && current.Name.Name == "runRepositoryQualityGate" && current.Body != nil {
 				ast.Inspect(current.Body, func(child ast.Node) bool {
-					if call, ok := child.(*ast.CallExpr); ok && qualityWiringIsHarnessRun(call) {
+					if call, ok := child.(*ast.CallExpr); ok && qualityWiringIsHarnessRun(call, harnessImport) {
 						found["harnesslint.Run(root, true)"] = true
 					}
 					return true
@@ -426,13 +428,13 @@ func qualityWiringRequiredGoTokens(path string, data []byte) (map[string]bool, e
 	return found, nil
 }
 
-func qualityWiringIsHarnessRun(call *ast.CallExpr) bool {
+func qualityWiringIsHarnessRun(call *ast.CallExpr, harnessImport string) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || selector.Sel.Name != "Run" || len(call.Args) != 2 {
 		return false
 	}
 	pkg, ok := selector.X.(*ast.Ident)
-	if !ok || pkg.Name != harnesslintName {
+	if !ok || harnessImport == "" || pkg.Name != harnessImport {
 		return false
 	}
 	root, ok := call.Args[0].(*ast.Ident)
@@ -469,9 +471,10 @@ func qualityWiringForbiddenGo(path string, data []byte) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	importName := qualityWiringHarnesslintImport(file)
 	found := false
 	ast.Inspect(file, func(node ast.Node) bool {
-		if qualityWiringIsHarnessCheck(node) {
+		if qualityWiringIsHarnessCheck(node, importName) {
 			found = true
 		}
 		return true
@@ -482,7 +485,7 @@ func qualityWiringForbiddenGo(path string, data []byte) ([]string, error) {
 	return nil, nil
 }
 
-func qualityWiringIsHarnessCheck(node ast.Node) bool {
+func qualityWiringIsHarnessCheck(node ast.Node, importName string) bool {
 	call, ok := node.(*ast.CallExpr)
 	if !ok {
 		return false
@@ -492,7 +495,23 @@ func qualityWiringIsHarnessCheck(node ast.Node) bool {
 		return false
 	}
 	pkg, ok := selector.X.(*ast.Ident)
-	return ok && pkg.Name == "harnesslint"
+	return ok && importName != "" && pkg.Name == importName
+}
+
+func qualityWiringHarnesslintImport(file *ast.File) string {
+	for _, imported := range file.Imports {
+		path, err := strconv.Unquote(imported.Path.Value)
+		if err != nil || path != "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint" {
+			continue
+		}
+		if imported.Name == nil {
+			return harnesslintName
+		}
+		if imported.Name.Name != "_" && imported.Name.Name != "." {
+			return imported.Name.Name
+		}
+	}
+	return ""
 }
 
 func qualityWiringOrderViolations(check qualityWiringCheck, data []byte) ([]Violation, error) {
