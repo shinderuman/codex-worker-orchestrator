@@ -24,7 +24,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/gitexec-and-git-archive-command-boundary.md`](IMPLEMENTATION_TASKS/gitexec-and-git-archive-command-boundary.md)
 - [`IMPLEMENTATION_TASKS/observationexec-copyfile-forklock-scope.md`](IMPLEMENTATION_TASKS/observationexec-copyfile-forklock-scope.md)
 - [`IMPLEMENTATION_TASKS/workspace-process-cost-test-lane-isolation.md`](IMPLEMENTATION_TASKS/workspace-process-cost-test-lane-isolation.md)
-- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
 - [`IMPLEMENTATION_TASKS/validation-failure-retry-admission.md`](IMPLEMENTATION_TASKS/validation-failure-retry-admission.md)

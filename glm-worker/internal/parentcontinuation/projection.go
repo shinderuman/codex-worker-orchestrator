@@ -460,8 +460,14 @@ func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
 func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
 	binding, err := st.LoadControllerRuntimeBinding()
 	if err != nil {
-		if quiescent && errors.Is(err, os.ErrNotExist) {
-			return task.TaskPath, nil
+		if errors.Is(err, os.ErrNotExist) {
+			unstarted, checkErr := st.UnstartedTaskRuntime()
+			if checkErr != nil {
+				return "", checkErr
+			}
+			if quiescent || unstarted {
+				return task.TaskPath, nil
+			}
 		}
 		return "", err
 	}

@@ -481,6 +481,15 @@ func TestTaskAuthoritySyncGuardBlocksFreshStartUntilSynced(t *testing.T) {
 	if head, err := store.LoadHead(); err != nil || head.ExecutionTaskRef.ContractDigest != revisedDigest {
 		t.Fatalf("fresh lane sync did not rebind the revised contract: %#v err=%v", head, err)
 	}
+	handoff := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
+	if !handoff.Consistent || handoff.Controller == nil ||
+		handoff.RequiredAction == nil || *handoff.RequiredAction != canonicalStartAction {
+		t.Fatalf("unstarted runtime after Task sync has no legal start handoff: %#v", handoff)
+	}
+	if handoff.Controller.Head.ExecutionTaskRef == nil ||
+		handoff.Controller.Head.ExecutionTaskRef.ContractDigest != revisedDigest {
+		t.Fatalf("synchronized handoff lost its Task revision: %#v", handoff.Controller.Head)
+	}
 	scripted, err = dispatchFreshStart()
 	var interrupted *runner.InterruptedCallError
 	if !errors.As(err, &interrupted) || len(scripted.prompts) != 1 {

@@ -30,9 +30,17 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		return
 	}
 	canonicalizeParentAction(output)
-	if !applyTaskAuthoritySyncHandoff(cfg, output, report) &&
-		(report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "") {
-		applyCanonicalQuiescentHandoff(cfg, output, report.Head)
+	syncRequired := applyTaskAuthoritySyncHandoff(cfg, output, report)
+	if !syncRequired {
+		if report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "" {
+			applyCanonicalQuiescentHandoff(cfg, output, report.Head)
+		} else if report.Head.LiveAttemptID != "" && report.Head.AcceptedCandidateRef == nil &&
+			output.RequiredAction != nil && *output.RequiredAction == string(state.ParentActionNone) &&
+			output.TaskID == nil && output.TaskStatus == nil {
+			action := canonicalStartAction
+			output.RequiredAction = &action
+			output.AllowedActions = []string{action, "controller-evidence"}
+		}
 	}
 	applyParentCompletionOperationHandoff(cfg, output)
 	if output.ParentRequest != nil && output.RequiredAction != nil {
