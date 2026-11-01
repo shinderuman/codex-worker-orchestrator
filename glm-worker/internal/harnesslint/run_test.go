@@ -3,6 +3,7 @@ package harnesslint
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -15,7 +16,8 @@ func (fakeRunner) run(_ string, _ string, _ ...string) (commandResult, error) {
 func TestRunFixCompactsPlanSpacingAndIsIdempotent(t *testing.T) {
 	root := fixtureRoot(t)
 	path := implementationPlanPath
-	writeFixture(t, root, path, "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n")
+	original := "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n"
+	writeFixture(t, root, path, original)
 	report, err := run(root, true, fakeRunner{})
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +29,8 @@ func TestRunFixCompactsPlanSpacingAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n- [second](IMPLEMENTATION_TASKS/second.md)\n" {
+	expected := strings.ReplaceAll(original, "\n\n\n- [second]", "\n- [second]")
+	if string(data) != expected {
 		t.Fatalf("unexpected fixed Plan: %q", data)
 	}
 	second, err := run(root, true, fakeRunner{})

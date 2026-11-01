@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,7 +31,8 @@ func (runner *deterministicSequenceRunner) run(dir, name string, args ...string)
 func TestDeterministicAutofixCompactsPlanSpacing(t *testing.T) {
 	root := fixtureRoot(t)
 	path := implementationPlanPath
-	writeFixture(t, root, path, "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n")
+	original := "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n"
+	writeFixture(t, root, path, original)
 	report, err := runDeterministicAutofix(root, root, fakeRunner{})
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +45,8 @@ func TestDeterministicAutofixCompactsPlanSpacing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n- [second](IMPLEMENTATION_TASKS/second.md)\n" {
+	expected := strings.ReplaceAll(original, "\n\n\n- [second]", "\n- [second]")
+	if string(data) != expected {
 		t.Fatalf("unexpected deterministic Plan: %q", data)
 	}
 }
