@@ -20,6 +20,7 @@ func qualityGateFailedRetryFixture(t *testing.T) (*state.StateStore, qualitygate
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
+	ignoredAbsent := true
 	previous := qualitygate.RunRecord{
 		ValidationRunID: strings.Repeat("a", 32),
 		Form:            "go-test", Repository: workdir, WorkingDir: workdir,
@@ -28,7 +29,7 @@ func qualityGateFailedRetryFixture(t *testing.T) (*state.StateStore, qualitygate
 		StartedAt: now.Add(-time.Minute), CompletedAt: &now,
 		Status: qualitygate.StatusFail, ExitCode: 1,
 		ExitSource: state.ValidationExitSourceTarget, InvocationDigest: "same-argv-env-tool-timeout",
-		Log: log,
+		IgnoredInputsAbsent: &ignoredAbsent, Log: log,
 	}
 	if err := writeQualityGateRun(st, previous); err != nil {
 		t.Fatal(err)
@@ -86,6 +87,11 @@ func TestQualityGateFailureRequiresStableTerminalEvidence(t *testing.T) {
 		{"interrupted", func(r *qualitygate.RunRecord) { r.Status = qualitygate.StatusInterrupted }},
 		{"missing invocation", func(r *qualitygate.RunRecord) { r.InvocationDigest = "" }},
 		{"missing log", func(r *qualitygate.RunRecord) { r.Log = "" }},
+		{"ignored input evidence absent", func(r *qualitygate.RunRecord) { r.IgnoredInputsAbsent = nil }},
+		{"ignored inputs present", func(r *qualitygate.RunRecord) {
+			absent := false
+			r.IgnoredInputsAbsent = &absent
+		}},
 		{"timeout diagnosis", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "panic: test timed out") }},
 		{"network diagnosis", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "connection reset by peer") }},
 		{"transient DNS", func(r *qualitygate.RunRecord) {
@@ -214,5 +220,23 @@ func TestQualityGateRetrySelectsLatestMatchingInvocation(t *testing.T) {
 	found, repeated, err := repeatedFailedQualityGateRun(st, candidate)
 	if err != nil || !repeated || found.ValidationRunID != previous.ValidationRunID {
 		t.Fatalf("different newer invocation hid unchanged failure: %#v repeated=%t err=%v", found, repeated, err)
+	}
+}
+
+func TestQualityGateRetryRequiresCleanIgnoredInputBoundary(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"present", "unverified"} {
+		t.Run(mode, func(t *testing.T) {
+			st, _, next := qualityGateFailedRetryFixture(t)
+			if mode == "present" {
+				absent := false
+				next.IgnoredInputsAbsent = &absent
+			} else {
+				next.IgnoredInputsAbsent = nil
+			}
+			if _, repeated, err := repeatedFailedQualityGateRun(st, next); err != nil || repeated {
+				t.Fatalf("unproven ignored source was skipped: repeated=%t err=%v", repeated, err)
+			}
+		})
 	}
 }

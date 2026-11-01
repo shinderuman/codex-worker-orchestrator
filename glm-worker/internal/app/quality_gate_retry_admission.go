@@ -138,6 +138,8 @@ func sameQualityGateRecordSource(previous, candidate qualitygate.RunRecord) bool
 
 func reusableFailedQualityGateRecord(previous, candidate qualitygate.RunRecord) bool {
 	return previous.Status == qualitygate.StatusFail &&
+		previous.IgnoredInputsAbsent != nil && *previous.IgnoredInputsAbsent &&
+		candidate.IgnoredInputsAbsent != nil && *candidate.IgnoredInputsAbsent &&
 		previous.CompletedAt != nil && previous.ExitCode > 0 &&
 		previous.ExitSource == state.ValidationExitSourceTarget &&
 		previous.InvocationDigest != "" &&
