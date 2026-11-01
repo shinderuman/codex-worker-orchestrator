@@ -22,7 +22,7 @@ func TestRootPromotionDirectoryToRelativeSymlinkPreservesTarget(t *testing.T) {
 	})
 	if _, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: accepted.Head.ControllerGeneration,
-		CandidateID: candidate.CandidateID,
+		CandidateID:        candidate.CandidateID,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestRootPromotionRegularFileToExecutablePreservesMode(t *testing.T) {
 	})
 	if _, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: accepted.Head.ControllerGeneration,
-		CandidateID: candidate.CandidateID,
+		CandidateID:        candidate.CandidateID,
 	}); err != nil {
 		t.Fatal(err)
 	}
