@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -53,7 +54,7 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 		SessionRotation: &state.SessionRotationProjection{State: state.SessionRotationProjectionUnavailable},
 	}
 	plan, planErr := st.ParentActionPlan()
-	if planErr != nil && boundParentOnlySmokeIdentity(cfg, st) {
+	if parentOnlyMissingReviewState(st, planErr) && boundParentOnlySmokeIdentity(cfg, st) {
 		plan, planErr = state.ParentActionPlan{RequiredAction: state.ParentActionComplete, AllowedActions: []state.ParentAction{state.ParentActionComplete}}, nil
 	}
 	if planErr != nil {
@@ -76,6 +77,19 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
 	return projection
+}
+
+// A parent-only smoke task.id has no model parent-review-state.json. Only
+// suppress that specific missing-file condition; malformed review/checkpoint
+// evidence and unrelated lifecycle errors must still fail closed.
+func parentOnlyMissingReviewState(st *state.StateStore, planErr error) bool {
+	var inconsistency *state.LifecycleInconsistencyError
+	if !errors.As(planErr, &inconsistency) ||
+		!strings.HasPrefix(inconsistency.Detail, "parent review state is unreadable: ") {
+		return false
+	}
+	_, err := os.Stat(st.Path("parent-review-state.json"))
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func boundParentOnlySmokeIdentity(cfg config.AppConfig, st *state.StateStore) bool {
