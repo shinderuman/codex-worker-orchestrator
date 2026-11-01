@@ -179,21 +179,9 @@ func installSmokeWorkflowWiringCheck() qualityWiringCheck {
 }
 
 func qualityWiringPackageViolations(root string, present map[string]bool, prefix string, tokens []string) ([]Violation, error) {
-	required := make(map[string]string, len(tokens))
-	for _, candidate := range tokens {
-		call, err := parser.ParseExpr(candidate)
-		if err != nil {
-			return nil, err
-		}
-		expression, ok := call.(*ast.CallExpr)
-		if !ok {
-			return nil, fmt.Errorf("quality-wiring token is not a call: %q", candidate)
-		}
-		key, ok := qualityWiringSelectorCallKey(expression)
-		if !ok {
-			return nil, fmt.Errorf("quality-wiring token is not a selector call: %q", candidate)
-		}
-		required[candidate] = key
+	required, err := qualityWiringRequiredCalls(tokens)
+	if err != nil {
+		return nil, err
 	}
 	found := make(map[string]bool, len(required))
 	packageFound := false
@@ -202,30 +190,9 @@ func qualityWiringPackageViolations(root string, present map[string]bool, prefix
 			continue
 		}
 		packageFound = true
-		data, err := readRegularFile(root, path)
-		if err != nil {
+		if err := scanQualityWiringCalls(root, path, required, found); err != nil {
 			return nil, err
 		}
-		file, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
-		if err != nil {
-			return nil, fmt.Errorf("parse quality wiring %s: %w", path, err)
-		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			key, ok := qualityWiringSelectorCallKey(call)
-			if !ok {
-				return true
-			}
-			for candidate, requiredKey := range required {
-				if key == requiredKey {
-					found[candidate] = true
-				}
-			}
-			return true
-		})
 	}
 	path := strings.TrimSuffix(prefix, "/")
 	if !packageFound {
@@ -242,6 +209,54 @@ func qualityWiringPackageViolations(root string, present map[string]bool, prefix
 		})
 	}
 	return violations, nil
+}
+
+func qualityWiringRequiredCalls(tokens []string) (map[string]string, error) {
+	required := make(map[string]string, len(tokens))
+	for _, candidate := range tokens {
+		expr, err := parser.ParseExpr(candidate)
+		if err != nil {
+			return nil, err
+		}
+		call, ok := expr.(*ast.CallExpr)
+		if !ok {
+			return nil, fmt.Errorf("quality-wiring token is not a call: %q", candidate)
+		}
+		key, ok := qualityWiringSelectorCallKey(call)
+		if !ok {
+			return nil, fmt.Errorf("quality-wiring token is not a selector call: %q", candidate)
+		}
+		required[candidate] = key
+	}
+	return required, nil
+}
+
+func scanQualityWiringCalls(root, path string, required map[string]string, found map[string]bool) error {
+	data, err := readRegularFile(root, path)
+	if err != nil {
+		return err
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
+	if err != nil {
+		return fmt.Errorf("parse quality wiring %s: %w", path, err)
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		key, ok := qualityWiringSelectorCallKey(call)
+		if !ok {
+			return true
+		}
+		for candidate, requiredKey := range required {
+			if key == requiredKey {
+				found[candidate] = true
+			}
+		}
+		return true
+	})
+	return nil
 }
 
 func qualityWiringSelectorCallKey(call *ast.CallExpr) (string, bool) {
