@@ -46,6 +46,7 @@ type RunRecord struct {
 	TaskID                        string        `json:"task_id,omitempty"`
 	ProbeID                       string        `json:"probe_id,omitempty"`
 	ArgvDigest                    string        `json:"argv_digest,omitempty"`
+	InvocationDigest              string        `json:"invocation_digest,omitempty"`
 	TaskAuthorityDigest           string        `json:"task_authority_digest,omitempty"`
 	InstallEvidenceDigest         string        `json:"install_evidence_digest,omitempty"`
 	Toolchain                     *RunToolchain `json:"toolchain,omitempty"`

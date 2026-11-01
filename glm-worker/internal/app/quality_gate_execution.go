@@ -66,6 +66,18 @@ func startQualityGate(form string, st *state.StateStore, stdout, diagnostics io.
 		_ = lock.Close()
 		return err
 	}
+	record.InvocationDigest, err = qualityGateInvocationDigest(record, identity.GoArgs)
+	if err != nil {
+		_ = lock.Close()
+		return err
+	}
+	if failed, repeat, err := repeatedFailedQualityGateRun(st, record); err != nil {
+		_ = lock.Close()
+		return err
+	} else if repeat {
+		_ = lock.Close()
+		return fmt.Errorf("same source, executable, toolchain, arguments, timeout and environment have already produced a Go failure; change the source/tool or supply new diagnostic evidence before retry: %w", qualityGateErrorFromRecord(failed))
+	}
 	if err := writeQualityGateRun(st, record); err != nil {
 		_ = lock.Close()
 		return err
