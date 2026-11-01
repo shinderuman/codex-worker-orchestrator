@@ -37,6 +37,9 @@ func PrepareFinalValidationWorkspace(cfg config.AppConfig, form string) (string,
 	if err != nil || c == nil {
 		return "", nil, err
 	}
+	if err := s.requireCurrentCandidateSource(*c); err != nil {
+		return "", nil, err
+	}
 	for _, request := range c.RequiredValidations {
 		if request.Form != form {
 			continue

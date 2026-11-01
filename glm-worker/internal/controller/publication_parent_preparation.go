@@ -81,6 +81,9 @@ func (s *Store) AcceptParentCompletion(admission Admission, input CandidateAccep
 	if admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
 		return s.acceptParentOnlyCompletion(admission, input)
 	}
+	if err := s.requireCurrentAdmissionSource(admission.Head); err != nil {
+		return ExecutionOperationResult{}, err
+	}
 	_, outcome, reviewer, err := s.parentCompletionReview(admission)
 	if err != nil {
 		return ExecutionOperationResult{}, err

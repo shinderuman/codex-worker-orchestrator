@@ -141,6 +141,12 @@ func (w *Workflow) completedGuardWorkerResult(checkpoint state.ResumeCheckpoint,
 }
 
 func (w *Workflow) prepareStoppedResultReuse(checkpoint state.ResumeCheckpoint) (bool, error) {
+	if checkpoint.SummaryRecovered {
+		if err := w.verifyRecoveredSummary(checkpoint); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 	switch checkpoint.StopKind {
 	case state.ResumeStopGuardRecoverable, state.ResumeStopQualityGate:
 	default:

@@ -2,11 +2,15 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -16,6 +20,9 @@ func TestParentHandoffResultFormatStopIncludesResubmitReport(t *testing.T) {
 		t.Run(projection, func(t *testing.T) {
 			cfg := newAppConfig(t)
 			st := startParentHandoffTask(t, cfg)
+			if err := st.Write(state.ResultCorrectionStateFile, `{"version":2,"resubmissions":0,"terminal":{"reason":"repeated_violation"}}`); err != nil {
+				t.Fatal(err)
+			}
 			if err := st.EnterStop(state.ResumeCheckpoint{
 				Stage: state.ResumeStageWorker, Phase: "worker-new-result-correct",
 				Role: state.WorkerRole, Model: "worker", ReadOnly: true,
@@ -49,6 +56,131 @@ func TestParentHandoffResultFormatStopIncludesResubmitReport(t *testing.T) {
 			}
 			if _, admitted, err := st.AdmitParentAction(state.ParentActionResume); err != nil || admitted {
 				t.Fatalf("resume admission = %v, err = %v", admitted, err)
+			}
+		})
+	}
+}
+
+func TestParentHandoffExhaustedReportDoesNotAdvertiseUnexecutableResubmission(t *testing.T) {
+	t.Parallel()
+	for _, projection := range []string{"", "recovery"} {
+		t.Run(projection, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			st := startParentHandoffTask(t, cfg)
+			if err := st.Write(state.ResultCorrectionStateFile, `{"version":2,"resubmissions":1,"terminal":{"reason":"repeated_violation"}}`); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.EnterStop(state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Role: state.WorkerRole, Model: "worker", Phase: "worker-new-result-correct", ReadOnly: true, StopKind: state.ResumeStopResultFormat, ResultCorrection: true}); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			if err := Execute(Command{Mode: ModeHandoff, Payload: projection}, cfg, nil, &output, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			var result parentHandoffRecoveryOutput
+			if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Consistent || result.RequiredAction != nil || len(result.AllowedActions) != 0 || result.Inconsistency == nil {
+				t.Fatalf("exhausted report still advertised an executable action: %+v", result)
+			}
+		})
+	}
+}
+
+func TestParentHandoffAdvertisesResubmissionWhenSummaryRecoveryIsAvailable(t *testing.T) {
+	t.Parallel()
+	for _, projection := range []string{"", "recovery"} {
+		t.Run(projection, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			st := startParentHandoffTask(t, cfg)
+			const sessionID = "app-summary-session"
+			const phase = "worker-new-result-correct"
+			if err := st.Write("worker.id", sessionID); err != nil {
+				t.Fatal(err)
+			}
+			taskID, err := st.TaskID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dirty, err := state.CaptureStopDirtyFiles(cfg.RepoRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := json.Marshal(packet.Result{
+				Status:              packet.StatusImplemented,
+				Risk:                packet.RiskLow,
+				Summary:             strings.Repeat("x", packet.MaxFieldBytes+1),
+				RequirementCoverage: "covered",
+				Tests:               "pass",
+				Unverified:          "none",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest := sha256.Sum256(body)
+			record, err := json.Marshal(map[string]any{
+				"version":    2,
+				"task_id":    taskID,
+				"role":       "worker",
+				"session_id": sessionID,
+				"snapshot": state.SnapshotDigest{
+					Head: snapshot.Head, IndexDigest: snapshot.IndexDigest,
+					WorktreeDigest: snapshot.WorktreeDigest, WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
+				},
+				"attempts":      1,
+				"resubmissions": 1,
+				"terminal":      map[string]any{"reason": "repeated_violation"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Write(state.ResultCorrectionStateFile, string(record)); err != nil {
+				t.Fatal(err)
+			}
+			st.RecordModelCallLog(state.ModelCallLog{
+				CallID: "app-summary-source-call", CallType: state.CallTypeTask, TaskID: taskID,
+				SessionID: sessionID, Role: state.WorkerRole, Phase: phase,
+				Outcome: "invalid_packet", ResumeSource: "result-format-recovery", ReadOnly: true,
+				Response: string(body), ResponseSHA256: hex.EncodeToString(digest[:]),
+			})
+			if err := st.EnterStop(state.ResumeCheckpoint{
+				Stage: state.ResumeStageWorker, Phase: phase, Role: state.WorkerRole, Model: "worker",
+				ReadOnly: true, StopKind: state.ResumeStopResultFormat, ResultCorrection: true,
+				StopGitSnapshot: &snapshot, StopDirtyFiles: dirty,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			handoff := func(t *testing.T, consistent bool) parentHandoffRecoveryOutput {
+				t.Helper()
+				var output bytes.Buffer
+				if err := Execute(Command{Mode: ModeHandoff, Payload: projection}, cfg, nil, &output, io.Discard); err != nil {
+					t.Fatal(err)
+				}
+				var result parentHandoffRecoveryOutput
+				if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				if result.Consistent != consistent {
+					t.Fatalf("handoff consistency = %v want %v: %+v", result.Consistent, consistent, result)
+				}
+				return result
+			}
+			advertised := handoff(t, true)
+			action := string(state.ParentActionResubmitReport)
+			if advertised.RequiredAction == nil || *advertised.RequiredAction != action || !reflect.DeepEqual(advertised.AllowedActions, []string{action}) {
+				t.Fatalf("model-free summary recovery was not advertised: %+v", advertised)
+			}
+			if err := st.Write("worker.id", "another-session"); err != nil {
+				t.Fatal(err)
+			}
+			refused := handoff(t, false)
+			if refused.RequiredAction != nil || refused.Inconsistency == nil || !strings.Contains(*refused.Inconsistency, "summary recovery") {
+				t.Fatalf("broken recovery evidence still advertised resubmission: %+v", refused)
 			}
 		})
 	}

@@ -183,6 +183,9 @@ func (s *Store) CandidatePostInstallSmokeWorkspace(input PublicationInput) (Acce
 	if err != nil {
 		return candidate, "", nil, err
 	}
+	if err := s.requireCurrentCandidateSource(candidate); err != nil {
+		return candidate, "", nil, err
+	}
 	if candidate.State != candidatePrepared || !candidate.EvidenceValid {
 		return candidate, "", nil, fmt.Errorf("post-install smoke requires a prepared obligated source")
 	}

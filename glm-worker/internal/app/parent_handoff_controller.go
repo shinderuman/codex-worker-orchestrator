@@ -23,6 +23,9 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		if applyExternalAdvancementSyncHandoff(cfg, output, report) {
 			return
 		}
+		if applyLiveAdvancementHandoff(cfg, output, report) {
+			return
+		}
 		applyExecutionTerminationHandoff(cfg, output)
 		return
 	}
@@ -121,6 +124,32 @@ func observedTaskAttribution(output *parentHandoffOutput) *repositoryproject.Tas
 		return nil
 	}
 	return &output.ParentRequest.TaskAttribution
+}
+
+func applyLiveAdvancementHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
+	if report.Head.LiveLeaseID == "" {
+		return false
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false
+	}
+	operation, err := store.ProjectParentCompletion()
+	if err != nil || operation.Operation != controller.PublicationOperationAdoptMutable || operation.Command == nil {
+		return false
+	}
+	command, err := json.Marshal(operation.Command)
+	if err != nil {
+		return false
+	}
+	action := controllerPublicationSurface
+	output.Consistent = true
+	output.Inconsistency = nil
+	output.ParentRequest = nil
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action}
+	output.RequiredActionParameters = map[string]string{"controller_command_json": string(command)}
+	return true
 }
 
 func externalAdvancementExplainsAttribution(attribution repositoryproject.TaskAttribution, authority controller.CommittedTaskAuthority) bool {
@@ -252,7 +281,11 @@ func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffO
 }
 
 func quiescentStartHandoffAction(cfg config.AppConfig, head controller.RepositoryControllerHead, action string) (string, error) {
-	authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return "", err
+	}
+	authority, err := controller.ResolveCommittedTaskAuthority(store.Identity().PrimaryRoot)
 	if err != nil {
 		return "", err
 	}

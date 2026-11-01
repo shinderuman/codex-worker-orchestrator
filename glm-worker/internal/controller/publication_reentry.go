@@ -15,6 +15,9 @@ func (s *Store) ReenterAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if c.ImplementationRef != nil {
 		return ExecutionOperationResult{}, fmt.Errorf("completion candidate cannot reenter execution")
 	}
+	if err := s.requireCurrentCandidateSource(c); err != nil {
+		return ExecutionOperationResult{}, err
+	}
 	snapshot, remote, err := s.candidateReentrySource(head, c)
 	if err != nil {
 		return ExecutionOperationResult{}, err

@@ -28,6 +28,7 @@ import (
 type typedCompletionRunner struct {
 	canonicalWorkflowRunner
 	sourceChange bool
+	workerRounds int
 }
 
 func typedCompletionScenarios() []struct {
@@ -456,6 +457,8 @@ func (r *typedCompletionRunner) Run(role state.SessionRole, phase, model string,
 		return result, err
 	}
 	if role == state.WorkerRole && r.sourceChange {
+		r.workerRounds++
+		writeAppTestFile(r.t, r.cfg.RepoRoot, r.path, fmt.Sprintf("worker round %d\n", r.workerRounds))
 		value.SetParentValidationRequest(&packet.ParentValidationRequest{Form: packet.ParentValidationGoTest, WorkingDir: "glm-worker"})
 	}
 	if role == state.ReviewerRole && !r.sourceChange {
@@ -469,7 +472,7 @@ func (r *typedCompletionRunner) Run(role state.SessionRole, phase, model string,
 
 func typedCompletionWorkflowFixture(t *testing.T, binary string, sourceChange bool) (config.AppConfig, *state.StateStore, string) {
 	t.Helper()
-	cfg, runtime, shim := typedCompletionReviewFixture(t, binary, sourceChange)
+	cfg, runtime, shim, _, _ := typedCompletionReviewFixture(t, binary, sourceChange)
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
@@ -479,9 +482,9 @@ func typedCompletionWorkflowFixture(t *testing.T, binary string, sourceChange bo
 	return cfg, runtime, shim
 }
 
-func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool) (config.AppConfig, *state.StateStore, string) {
+func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool) (config.AppConfig, *state.StateStore, string, controller.PublicationPolicy, *typedCompletionRunner) {
 	t.Helper()
-	cfg, task, _, _ := newCanonicalWorkflowCorpus(t)
+	cfg, task, _, policy := newCanonicalWorkflowCorpus(t)
 	cfg.TelemetryContent = true
 	body, err := os.ReadFile(filepath.Join(cfg.RepoRoot, task))
 	if err != nil {
@@ -562,7 +565,7 @@ func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool
 	if err := printParentEvidence(Command{EvidenceManifest: manifest}, cfg, runtime, &proof); err != nil {
 		t.Fatal(err)
 	}
-	return cfg, runtime, goShim
+	return cfg, runtime, goShim, policy, scripted
 }
 
 func stringPointerValue(value *string) string {

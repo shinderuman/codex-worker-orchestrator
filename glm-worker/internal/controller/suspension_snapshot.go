@@ -27,16 +27,20 @@ type SuspensionSnapshot struct {
 }
 
 func (s *Store) captureSuspensionLocked(admission Admission) (SuspensionSnapshot, error) {
-	workspace, err := ResolveWorkspaceIdentity(admission.Workspace.Root, s.identity)
-	if err != nil {
-		return SuspensionSnapshot{}, err
-	}
-	if workspace != admission.Workspace {
-		return SuspensionSnapshot{}, fmt.Errorf("suspension workspace identity is inconsistent")
-	}
 	current, err := s.AdmitMutation(admission.MutationAuthority(), admission.Workspace, admission.Snapshot)
 	if err != nil {
 		return SuspensionSnapshot{}, err
+	}
+	return s.captureAdmittedSuspensionLocked(current)
+}
+
+func (s *Store) captureAdmittedSuspensionLocked(current Admission) (SuspensionSnapshot, error) {
+	workspace, err := ResolveWorkspaceIdentity(current.Workspace.Root, s.identity)
+	if err != nil {
+		return SuspensionSnapshot{}, err
+	}
+	if workspace != current.Workspace {
+		return SuspensionSnapshot{}, fmt.Errorf("suspension workspace identity is inconsistent")
 	}
 	if current.Lease.InFlightCallID != "" {
 		return SuspensionSnapshot{}, fmt.Errorf("suspension requires quiescent execution")
@@ -59,7 +63,7 @@ func (s *Store) captureSuspensionLocked(admission Admission) (SuspensionSnapshot
 	if err != nil {
 		return SuspensionSnapshot{}, err
 	}
-	if observed != admission.Snapshot {
+	if observed != current.Snapshot {
 		return SuspensionSnapshot{}, fmt.Errorf("workspace changed during suspension capture")
 	}
 	result := SuspensionSnapshot{

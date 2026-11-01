@@ -100,6 +100,9 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 	if strings.TrimSpace(input.Message) == "" || admission.Lease.InFlightCallID != "" {
 		return ExecutionOperation{}, fmt.Errorf("candidate acceptance requires message and quiescent execution")
 	}
+	if err := s.requireCurrentAdmissionSource(admission.Head); err != nil {
+		return ExecutionOperation{}, err
+	}
 	requiredValidations, requiredProbes, err := s.resolveAdoptedValidations(admission, input)
 	if err != nil {
 		return ExecutionOperation{}, err

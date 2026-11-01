@@ -205,26 +205,31 @@ func (s *Store) freshMaterializationTrees(head RepositoryControllerHead, task Se
 }
 
 func (s *Store) hasSuspendedExecution(head RepositoryControllerHead, task SemanticTaskRef) (bool, error) {
+	_, suspended, err := s.suspendedExecutionSnapshot(head, task)
+	return suspended, err
+}
+
+func (s *Store) suspendedExecutionSnapshot(head RepositoryControllerHead, task SemanticTaskRef) (*SuspensionSnapshot, bool, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dir, "suspensions"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return nil, false, nil
 		}
-		return false, err
+		return nil, false, err
 	}
 	for _, entry := range entries {
 		var snapshot SuspensionSnapshot
 		if err := readJSON(filepath.Join(s.dir, "suspensions", entry.Name()), &snapshot); err != nil {
-			return false, err
+			return nil, false, err
 		}
 		if snapshot.SemanticTaskRef.TaskPath == task.TaskPath {
 			terminated, err := s.suspensionExecutionTerminated(head, snapshot)
 			if err != nil || !terminated {
-				return !terminated, err
+				return &snapshot, !terminated, err
 			}
 		}
 	}
-	return false, nil
+	return nil, false, nil
 }
 
 func executionLaneName(identity RepositoryIdentity) string {

@@ -55,6 +55,9 @@ func (s *Store) CandidateInstallWorkspace(input PublicationInput) (AcceptedCandi
 	if err != nil {
 		return candidate, "", nil, err
 	}
+	if err := s.requireCurrentCandidateSource(candidate); err != nil {
+		return candidate, "", nil, err
+	}
 	if candidate.State != candidatePrepared || !candidate.EvidenceValid || !candidate.Policy.RequireInstall {
 		return candidate, "", nil, fmt.Errorf("candidate installation requires a prepared obligated source")
 	}

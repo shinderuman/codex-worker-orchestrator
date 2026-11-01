@@ -59,6 +59,8 @@ const (
 	PublicationOperationRecover               = "recover"
 	PublicationOperationAdopt                 = "adopt"
 	PublicationOperationAdoptSource           = "adopt-source"
+	PublicationOperationAdoptMutable          = "adopt-mutable"
+	PublicationOperationRebind                = "rebind"
 	PublicationOperationAccept                = "complete"
 	PublicationOperationParentOnlyMaterialize = "materialize-parent-only"
 	PublicationOperationFinalValidation       = "final-validation"
@@ -104,12 +106,27 @@ func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCo
 		return ParentCompletionOperation{}, err
 	}
 	if awaiting {
-		return s.projectAcceptanceOperation(head)
+		return s.projectAwaitingAcceptance(head)
 	}
 	if head.AcceptedCandidateRef != nil {
 		return s.projectAcceptedCandidateOperation(head)
 	}
+	return s.projectQuiescentCompletion(head)
+}
+
+func (s *Store) projectAwaitingAcceptance(head RepositoryControllerHead) (ParentCompletionOperation, error) {
+	operation, advanced, err := s.projectAdmissionSourceAdvancement(head)
+	if err != nil || advanced {
+		return operation, err
+	}
+	return s.projectAcceptanceOperation(head)
+}
+
+func (s *Store) projectQuiescentCompletion(head RepositoryControllerHead) (ParentCompletionOperation, error) {
 	if operation, selected, err := s.projectParentOnlyCompletionOperation(head); err != nil || selected {
+		return operation, err
+	}
+	if operation, selected, err := s.projectSuspendedExecutionMaterialization(head); err != nil || selected {
 		return operation, err
 	}
 	if operation, selected, err := s.projectCompletionSuccessor(head); selected || err != nil {
@@ -170,6 +187,9 @@ func (s *Store) projectAcceptedCandidateOperation(head RepositoryControllerHead)
 	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 	if err != nil {
 		return ParentCompletionOperation{}, err
+	}
+	if operation, advanced, err := s.projectCandidateSourceAdvancement(head, candidate); err != nil || advanced {
+		return operation, err
 	}
 	if (candidate.State == candidatePrepared || candidate.State == candidatePromoted) && !candidate.EvidenceValid {
 		return s.projectCompletionMaterialization(head, candidate)
@@ -303,6 +323,65 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 	}
 	return ParentCompletionOperation{Surface: ExecutionOperationSurface, Mode: ParentCompletionModeParentOnly, Operation: PublicationOperationParentOnlyMaterialize,
 		Execution: &CompletionExecutionCommand{Action: PublicationOperationParentOnlyMaterialize, ExpectedGeneration: head.ControllerGeneration}}, true, nil
+}
+
+func (s *Store) projectAdmissionSourceAdvancement(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
+	attempt, err := s.loadAttempt(head.LiveAttemptID)
+	if err != nil {
+		return ParentCompletionOperation{}, false, err
+	}
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return ParentCompletionOperation{}, false, nil
+	}
+	continuity, tip, err := s.admissionSourceContinuity(head)
+	if err != nil {
+		return ParentCompletionOperation{}, false, err
+	}
+	if continuity != publicationSourceAdvanced {
+		return ParentCompletionOperation{}, false, nil
+	}
+	policy, err := s.parentCompletionPolicy(head)
+	if err != nil {
+		return ParentCompletionOperation{}, false, err
+	}
+	return ParentCompletionOperation{
+		Surface:   PublicationOperationSurface,
+		Operation: PublicationOperationAdoptMutable,
+		Command: &PublicationParentCommand{
+			Action:             PublicationOperationAdoptMutable,
+			ExpectedGeneration: head.ControllerGeneration,
+			Policy:             &policy,
+		},
+		Reason: fmt.Sprintf("primary advanced to %s beyond the execution source %s", tip, head.IntegrationTip),
+	}, true, nil
+}
+
+func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead, candidate AcceptedCandidate) (ParentCompletionOperation, bool, error) {
+	if candidate.State != candidatePrepared && candidate.State != candidatePromoted {
+		return ParentCompletionOperation{}, false, nil
+	}
+	continuity, tip, err := s.candidateSourceContinuity(candidate)
+	if err != nil {
+		return ParentCompletionOperation{}, false, err
+	}
+	switch continuity {
+	case publicationSourceContinuous:
+		return ParentCompletionOperation{}, false, nil
+	case publicationSourceAdvanced:
+		return ParentCompletionOperation{
+			Surface:   PublicationOperationSurface,
+			Operation: PublicationOperationRebind,
+			Command: &PublicationParentCommand{
+				Action:             PublicationOperationRebind,
+				ExpectedGeneration: head.ControllerGeneration,
+				CandidateID:        candidate.CandidateID,
+				SourceOID:          tip,
+			},
+			Reason: fmt.Sprintf("primary advanced to %s beyond the candidate base %s", tip, candidate.BaseOID),
+		}, true, nil
+	default:
+		return ParentCompletionOperation{}, false, fmt.Errorf("publication local ref %s is outside candidate promotion authority and is not a fast-forward of the candidate base; resolve the primary divergence before publication", tip)
+	}
 }
 
 func (s *Store) projectAcceptanceOperation(head RepositoryControllerHead) (ParentCompletionOperation, error) {

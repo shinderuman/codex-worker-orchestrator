@@ -125,11 +125,14 @@ func (s *StateStore) CurrentParentCompletionOutcome() (*ParentCompletionOutcome,
 
 func (s *StateStore) CurrentParentReview() (*ParentReviewOpenState, error) {
 	taskID, err := s.Read("task.id")
-	if errors.Is(err, os.ErrNotExist) || taskID == "" {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if taskID == "" {
+		return nil, nil
 	}
 	state, err := s.loadParentReviewState()
 	if err != nil {
@@ -281,11 +284,14 @@ func parentCompletionOutcome(terminal, risk string) (*ParentCompletionOutcome, e
 
 func (s *StateStore) parentReviewResolutionState() (ParentReviewState, bool, error) {
 	taskID, taskErr := s.Read("task.id")
-	if errors.Is(taskErr, os.ErrNotExist) || taskID == "" {
+	if errors.Is(taskErr, os.ErrNotExist) {
 		return ParentReviewState{}, false, nil
 	}
 	if taskErr != nil {
 		return ParentReviewState{}, false, taskErr
+	}
+	if taskID == "" {
+		return ParentReviewState{}, false, nil
 	}
 	state, err := s.loadParentReviewState()
 	if err != nil {

@@ -90,6 +90,13 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 	if !mutablePublicationAction(command.Action) {
 		return nil, fmt.Errorf("unsupported controller publication action %q", command.Action)
 	}
+	if command.Action == controller.PublicationOperationAdoptMutable {
+		admission, err := store.LiveMutableAdvancementAdmission(command.Policy)
+		if err != nil {
+			return nil, err
+		}
+		return store.AdoptMutableExternalAdvancement(admission, command.Policy)
+	}
 	admission, err := currentControllerSemanticAdmission(cfg, store)
 	if err != nil {
 		return nil, err
@@ -103,10 +110,8 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 	case publicationActionPreview:
 		tree, err := store.PreviewCandidateTree(admission, command.Policy)
 		return map[string]string{"tree_oid": tree, "base_oid": admission.Head.IntegrationTip, "attempt_id": admission.Attempt.AttemptID, "snapshot_id": admission.Snapshot.ID}, err
-	case "accept":
-		return store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, Evidence: command.Evidence, RequiredValidations: command.RequiredValidations})
 	default:
-		return store.AdoptMutableExternalAdvancement(admission, command.Policy)
+		return store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{Message: command.Message, Policy: command.Policy, Evidence: command.Evidence, RequiredValidations: command.RequiredValidations})
 	}
 }
 
