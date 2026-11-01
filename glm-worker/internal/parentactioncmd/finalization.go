@@ -93,6 +93,15 @@ func runFinalizationCheck(cfg config.AppConfig, validationDir, form string, stdo
 	if err != nil {
 		return err
 	}
+	_, lookup, err := acceptedCandidateValidationRequest(cfg, form)
+	if err != nil {
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form,
+			Failure: &finalizationFailure{Stage: "routing", Reason: "accepted_candidate_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}})
+	}
+	if lookup == controller.CandidateValidationFormAbsent {
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form,
+			Failure: undeclaredFinalizationForm(form)})
+	}
 	candidateRoot, release, err := controller.PrepareFinalValidationWorkspace(cfg, form)
 	if err != nil {
 		return err
@@ -167,11 +176,7 @@ func finalizationRoutingDecision(cfg config.AppConfig, callerDir, form string) (
 		return nil, &finalizationFailure{Stage: "routing", Reason: "accepted_candidate_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
 	}
 	if lookup == controller.CandidateValidationFormAbsent {
-		return nil, &finalizationFailure{
-			Stage:  "routing",
-			Reason: "form_not_declared_by_accepted_candidate",
-			Detail: "accepted candidate declares no " + form + " final validation obligation",
-		}
+		return nil, undeclaredFinalizationForm(form)
 	}
 	if lookup == controller.CandidateValidationDeclared {
 		selected, failure := finalizationVerifiedCandidateDir(cfg.RepoRoot, request.WorkingDir)
@@ -194,6 +199,14 @@ func finalizationRoutingDecision(cfg config.AppConfig, callerDir, form string) (
 		Stage:  "routing",
 		Reason: "no_module_root_working_directory",
 		Detail: compactFinalizationDiagnostic("caller working directory has no " + finalizationGoModFile + ": " + callerDir),
+	}
+}
+
+func undeclaredFinalizationForm(form string) *finalizationFailure {
+	return &finalizationFailure{
+		Stage: "routing",
+		Reason: "form_not_declared_by_accepted_candidate",
+		Detail: "accepted candidate declares no " + form + " final validation obligation",
 	}
 }
 
