@@ -105,8 +105,24 @@ func TestParentOnlyInstallSmokeBindsCandidateWithoutModelRuntime(t *testing.T) {
 	if err != nil || record.TaskID != f.candidate.AttemptID || !strings.Contains(string(log), "passed") {
 		t.Fatalf("parent-only smoke evidence: record=%#v log=%q err=%v", record, log, err)
 	}
-	if _, err := f.fixture.store.RecordParentCompletionInstall(f.input, f.root, f.smoke.ValidationRunID, f.installed, []byte("installer passed")); err != nil {
+	before, err := f.fixture.store.ProjectParentCompletion()
+	if err != nil || before.Operation != PublicationOperationInstall {
+		t.Fatalf("uninstalled parent-only candidate did not require installation: %#v err=%v", before, err)
+	}
+	installed, err := f.fixture.store.RecordParentCompletionInstall(f.input, f.root, f.smoke.ValidationRunID, f.installed, []byte("installer passed"))
+	if err != nil {
 		t.Fatalf("parent-only installed candidate was rejected: %v", err)
+	}
+	updated, err := f.fixture.store.LoadAcceptedCandidate(*installed.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.fixture.store.requireCompletedCandidateInstall(updated); err != nil {
+		t.Fatalf("source-bound parent-only install evidence was not accepted: %v", err)
+	}
+	next, err := f.fixture.store.ProjectParentCompletion()
+	if err != nil || next.Operation != PublicationOperationPromote || next.Command == nil || next.Command.CandidateID != updated.CandidateID {
+		t.Fatalf("completed parent-only installation projected a redundant install: %#v err=%v", next, err)
 	}
 	if f.runtime.Exists("controller-runtime-binding.json") {
 		t.Fatal("parent-only install synthesized a model Runtime binding")
