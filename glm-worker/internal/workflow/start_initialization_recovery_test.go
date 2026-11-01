@@ -102,14 +102,12 @@ func TestRecoverUnstartedMilestoneRejectsEmptyRequestWithoutCorruptingError(t *t
 func TestRecoverUnstartedMilestonePreservesUnreadableCheckpointFailure(t *testing.T) {
 	t.Parallel()
 	cfg, _, st, _ := crashUnstartedMilestoneStartup(t)
-	// A malformed saved checkpoint must not be treated as an absent checkpoint.
 	if err := st.Write("resume-state.json", "{invalid"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil || errors.Is(err, state.ErrNoResumeCheckpoint) {
 		t.Fatalf("fixture checkpoint unexpectedly readable/absent: %v", err)
 	}
-	// Isolate the checkpoint rejection while providing the admitted idle attempt.
 	w := recoveryWorkflow(cfg, st)
 	w.canonicalAdmission = &controller.Admission{}
 	err := w.verifyUnstartedMilestoneRuntime()
