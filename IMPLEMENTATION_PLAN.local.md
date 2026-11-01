@@ -8,9 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
+- [`IMPLEMENTATION_TASKS/external-review-findings-1401-1441.md`](IMPLEMENTATION_TASKS/external-review-findings-1401-1441.md)
 
 ## NEXT（優先順）
+
+- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
 
 
 
