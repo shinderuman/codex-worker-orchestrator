@@ -81,8 +81,8 @@ func TestRetireTerminalMetadataNormalizesPlanWithNextBoundaryAndDependencies(t *
 		}
 		plan += "\n## BLOCKED\n\n" + link(blocked) + "\n"
 		tasks := map[string][]byte{
-			root: []byte("# root\n\n## Dependencies\n\nnone\n"),
-			first: []byte("# first\n\n## Dependencies\n\nnone\n"),
+			root:    []byte("# root\n\n## Dependencies\n\nnone\n"),
+			first:   []byte("# first\n\n## Dependencies\n\nnone\n"),
 			blocked: []byte("# blocked\n\n## Dependencies\n\n- `" + root + "`\n"),
 		}
 		if len(next) == 2 {

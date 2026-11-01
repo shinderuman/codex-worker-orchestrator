@@ -188,7 +188,7 @@ func validateTerminalScheduleRetirement(plan, target, successor string) error {
 			count++
 		}
 	}
-	if count != 1 || (active == target && successor == "") || (active != target && successor != "") {
+	if count != 1 || (active == target && (len(schedule.Next) == 0 || schedule.Next[0] != successor)) || (active != target && successor != "") {
 		return fmt.Errorf("terminal schedule retirement is not mechanically determined")
 	}
 	return nil
