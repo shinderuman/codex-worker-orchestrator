@@ -1,6 +1,8 @@
 package harnesslint
 
 import (
+	"bytes"
+	"go/format"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -264,11 +266,14 @@ func qualityWiringSelectorCallKey(call *ast.CallExpr) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	receiver, ok := selector.X.(*ast.Ident)
-	if !ok {
+	if _, ok := selector.X.(*ast.Ident); !ok {
 		return "", false
 	}
-	return fmt.Sprintf("%s.%s/%d", receiver.Name, selector.Sel.Name, len(call.Args)), true
+	var normalized bytes.Buffer
+	if err := format.Node(&normalized, token.NewFileSet(), call); err != nil {
+		return "", false
+	}
+	return normalized.String(), true
 }
 
 func qualityWiringCheckViolations(root string, present map[string]bool, check qualityWiringCheck) ([]Violation, error) {
