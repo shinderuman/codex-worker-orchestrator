@@ -70,7 +70,7 @@ func emptyTestEntrypointViolations(set *token.FileSet, file *ast.File, path stri
 	var violations []Violation
 	for _, decl := range file.Decls {
 		function, ok := decl.(*ast.FuncDecl)
-		if !ok || !isGoTestEntrypoint(function.Name.Name) || function.Body == nil || len(function.Body.List) != 0 {
+		if !ok || !isGoTestEntrypoint(function.Name.Name) || function.Body == nil || !inertGoTestEntrypoint(function) {
 			continue
 		}
 		position := set.Position(function.Pos())
@@ -80,6 +80,35 @@ func emptyTestEntrypointViolations(set *token.FileSet, file *ast.File, path stri
 		})
 	}
 	return violations
+}
+
+func inertGoTestEntrypoint(function *ast.FuncDecl) bool {
+	if len(function.Body.List) == 0 {
+		return true
+	}
+	if function.Type.Params == nil || len(function.Type.Params.List) != 1 || len(function.Type.Params.List[0].Names) != 1 {
+		return false
+	}
+	receiver := function.Type.Params.List[0].Names[0].Name
+	for _, statement := range function.Body.List {
+		expression, ok := statement.(*ast.ExprStmt)
+		if !ok {
+			return false
+		}
+		call, ok := expression.X.(*ast.CallExpr)
+		if !ok || len(call.Args) != 0 {
+			return false
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || (selector.Sel.Name != "Parallel" && selector.Sel.Name != "Helper") {
+			return false
+		}
+		base, ok := selector.X.(*ast.Ident)
+		if !ok || base.Name != receiver {
+			return false
+		}
+	}
+	return true
 }
 
 func testSizeViolations(set *token.FileSet, file *ast.File, path string) []Violation {

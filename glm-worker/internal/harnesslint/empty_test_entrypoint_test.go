@@ -24,6 +24,20 @@ func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *te
 			wantViolation: true,
 		},
 		{
+			name:          "parallel-only entrypoint is inert",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Parallel() }\n",
+			wantViolation: true,
+		},
+		{
+			name:          "helper and parallel without assertions are inert",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Helper(); t.Parallel() }\n",
+			wantViolation: true,
+		},
+		{
+			name:   "parallel before real verification is permitted",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Parallel(); if 2+2 != 4 { t.Fatal(\"wrong\") } }\n",
+		},
+		{
 			name:   "behavioral negative case",
 			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { if 2 + 2 != 4 { t.Fatal(\"unexpected result\") } }\n",
 		},
