@@ -42,7 +42,7 @@ func TestAttemptSealValidationRecordsFilterForeignTaskAndWindowInBothStores(t *t
 				}
 				record := qualitygate.RunRecord{
 					ValidationRunID: runID, TaskID: "foreign-task",
-					StartedAt: start.Add(10 * time.Second),
+					StartedAt:  start.Add(10 * time.Second),
 					Repository: fixture.store.Identity().PrimaryRoot,
 					WorkingDir: fixture.store.Identity().PrimaryRoot,
 				}
