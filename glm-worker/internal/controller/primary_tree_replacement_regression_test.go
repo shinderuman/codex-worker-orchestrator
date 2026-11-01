@@ -97,6 +97,9 @@ func TestSourceTreeWriterDirectoryToFileDoesNotDeleteForeignContent(t *testing.T
 	if err != nil || string(data) != "new-file\n" {
 		t.Fatalf("directory to file result: %q %v", data, err)
 	}
+	if err := applySourceTreeEntries(repo, oldEntries, newEntries); err != nil {
+		t.Fatalf("directory-to-file retry rejected already-applied target: %v", err)
+	}
 }
 
 func TestSourceTreeWriterReplacesFileWithSymlinkWithoutFollowingTarget(t *testing.T) {
