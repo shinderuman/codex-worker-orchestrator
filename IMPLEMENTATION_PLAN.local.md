@@ -8,15 +8,22 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/external-review-findings-1401-1441.md`](IMPLEMENTATION_TASKS/external-review-findings-1401-1441.md)
+- [`IMPLEMENTATION_TASKS/goquality-untracked-directory-backend-continuity.md`](IMPLEMENTATION_TASKS/goquality-untracked-directory-backend-continuity.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
-
-
-
+- [`IMPLEMENTATION_TASKS/parent-only-install-smoke-evidence.md`](IMPLEMENTATION_TASKS/parent-only-install-smoke-evidence.md)
+- [`IMPLEMENTATION_TASKS/install-smoke-probe-readiness.md`](IMPLEMENTATION_TASKS/install-smoke-probe-readiness.md)
+- [`IMPLEMENTATION_TASKS/execution-authority-reentry-successor-projection.md`](IMPLEMENTATION_TASKS/execution-authority-reentry-successor-projection.md)
+- [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md)
+- [`IMPLEMENTATION_TASKS/parent-handoff-summary-recovery-ordering.md`](IMPLEMENTATION_TASKS/parent-handoff-summary-recovery-ordering.md)
+- [`IMPLEMENTATION_TASKS/stage-timeline-open-attempt-gap-classification.md`](IMPLEMENTATION_TASKS/stage-timeline-open-attempt-gap-classification.md)
+- [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
+- [`IMPLEMENTATION_TASKS/gitexec-and-git-archive-command-boundary.md`](IMPLEMENTATION_TASKS/gitexec-and-git-archive-command-boundary.md)
+- [`IMPLEMENTATION_TASKS/observationexec-copyfile-forklock-scope.md`](IMPLEMENTATION_TASKS/observationexec-copyfile-forklock-scope.md)
+- [`IMPLEMENTATION_TASKS/workspace-process-cost-test-lane-isolation.md`](IMPLEMENTATION_TASKS/workspace-process-cost-test-lane-isolation.md)
+- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
 - [`IMPLEMENTATION_TASKS/validation-failure-retry-admission.md`](IMPLEMENTATION_TASKS/validation-failure-retry-admission.md)

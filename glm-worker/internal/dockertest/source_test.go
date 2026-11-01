@@ -100,6 +100,12 @@ func extractFixtureArchive(t *testing.T, path, destination string) {
 			}
 			continue
 		}
+		if header.Typeflag == tar.TypeSymlink {
+			if err := os.Symlink(header.Linkname, target); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +179,7 @@ func TestSourceArchiveRunsNoMutatingGitAgainstProtectedRoot(t *testing.T) {
 
 func TestSourceArchiveRejectsExternalSymlink(t *testing.T) {
 	root := sourceFixture(t)
-	if err := os.Symlink(t.TempDir(), filepath.Join(root, "external")); err != nil {
+	if err := os.Symlink("../outside-target", filepath.Join(root, "external")); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := state.CaptureGitSnapshot(root)
@@ -183,6 +189,113 @@ func TestSourceArchiveRejectsExternalSymlink(t *testing.T) {
 	_, _, err = sourceArchive(context.Background(), root, t.TempDir(), snapshot)
 	if err == nil || !strings.Contains(err.Error(), "repository外") {
 		t.Fatalf("外部symlinkを拒否しませんでした: %v", err)
+	}
+}
+
+func TestSourceArchiveRejectsAbsoluteSymlinkInsideRepository(t *testing.T) {
+	root := sourceFixture(t)
+	if err := os.Symlink(filepath.Join(root, "staged.txt"), filepath.Join(root, "absolute-link")); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = sourceArchive(context.Background(), root, t.TempDir(), snapshot)
+	if err == nil || !strings.Contains(err.Error(), "絶対path") {
+		t.Fatalf("repo内絶対path symlinkを拒否しませんでした: %v", err)
+	}
+}
+
+func TestSourceArchivePreservesRelativeSymlink(t *testing.T) {
+	root := sourceFixture(t)
+	if err := os.Symlink("staged.txt", filepath.Join(root, "relative-link")); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, _, err := sourceArchive(context.Background(), root, t.TempDir(), snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := t.TempDir()
+	extractFixtureArchive(t, archive, restored)
+	link, err := os.Readlink(filepath.Join(restored, "relative-link"))
+	if err != nil || link != "staged.txt" {
+		t.Fatalf("相対symlinkが保存されていません: %q %v", link, err)
+	}
+	if _, err := os.Stat(filepath.Join(restored, "relative-link")); err != nil {
+		t.Fatalf("相対symlinkの参照先が復元されていません: %v", err)
+	}
+}
+
+func TestSourceArchivePreservesSplitIndexStagedState(t *testing.T) {
+	root := sourceFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "staged.txt"), []byte("split staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := output(context.Background(), root, "git", "add", "staged.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := output(context.Background(), root, "git", "update-index", "--split-index"); err != nil {
+		t.Fatal(err)
+	}
+	shared, err := filepath.Glob(filepath.Join(root, ".git", "sharedindex.*"))
+	if err != nil || len(shared) == 0 {
+		t.Fatalf("split indexのshared indexが作成されていません: %v %v", shared, err)
+	}
+	before, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, _, err := sourceArchive(context.Background(), root, t.TempDir(), before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := t.TempDir()
+	extractFixtureArchive(t, archive, restored)
+	after, err := state.CaptureGitSnapshot(restored)
+	if err != nil {
+		t.Fatalf("復元先でGit indexを読めません: %v", err)
+	}
+	if before.Head != after.Head || before.IndexDigest != after.IndexDigest || before.WorktreeDigest != after.WorktreeDigest {
+		t.Fatalf("split indexのstaged状態が保存されていません: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestSourceArchiveIgnoresGitLocationEnvironment(t *testing.T) {
+	root := sourceFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "dirty.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := sourceFixture(t)
+	if err := os.WriteFile(filepath.Join(other, "foreign.txt"), []byte("foreign\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := output(context.Background(), other, "git", "add", "foreign.txt"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+	archive, _, err := sourceArchive(context.Background(), root, t.TempDir(), snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := t.TempDir()
+	extractFixtureArchive(t, archive, restored)
+	after, err := state.CaptureGitSnapshot(restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Head != after.Head || snapshot.IndexDigest != after.IndexDigest || snapshot.WorktreeDigest != after.WorktreeDigest {
+		t.Fatalf("Git位置環境変数の汚染がsource転送へ影響しました: before=%+v after=%+v", snapshot, after)
 	}
 }
 
