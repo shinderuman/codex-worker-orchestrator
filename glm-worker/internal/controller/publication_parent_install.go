@@ -126,7 +126,15 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	if runtime == nil || !qualitygate.ValidRunID(smokeID) {
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate install smoke identity is unavailable")
 	}
-	data, err := os.ReadFile(runtime.Path(filepath.Join("install-smoke-runs", smokeID, qualitygate.RunFile)))
+	recordPath := runtime.Path(filepath.Join("install-smoke-runs", smokeID, qualitygate.RunFile))
+	info, err := os.Lstat(recordPath)
+	if err != nil {
+		return qualitygate.RunRecord{}, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate smoke record must be a regular file")
+	}
+	data, err := os.ReadFile(recordPath)
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
