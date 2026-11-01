@@ -55,4 +55,4 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/worker-docker-test-owner-isolation.md` 完了後に実装。Docker sandbox ownerの変更と同時に無関係なsource転送修正を混入させない。
+- `IMPLEMENTATION_TASKS/worker-docker-test-owner-isolation.md`
