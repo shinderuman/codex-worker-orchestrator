@@ -22,7 +22,7 @@ func qualityGateFailedRetryFixture(t *testing.T) (*state.StateStore, qualitygate
 	now := time.Now().UTC()
 	previous := qualitygate.RunRecord{
 		ValidationRunID: strings.Repeat("a", 32),
-		Form: "go-test", Repository: workdir, WorkingDir: workdir,
+		Form:            "go-test", Repository: workdir, WorkingDir: workdir,
 		Head: "HEAD-1", IndexDigest: "index-1", WorktreeDigest: "tree-1",
 		WorktreeDigestExcludingParent: "tree-1", TaskID: "task-1",
 		StartedAt: now.Add(-time.Minute), CompletedAt: &now,
@@ -56,7 +56,7 @@ func TestQualityGateIdenticalTargetFailureIsNotRepeated(t *testing.T) {
 func TestQualityGateFailureAdmitsChangedOrUnstableEvidence(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
+		name   string
 		modify func(*qualitygate.RunRecord)
 	}{
 		{"source revision", func(r *qualitygate.RunRecord) { r.Head = "HEAD-2" }},
@@ -79,7 +79,7 @@ func TestQualityGateFailureAdmitsChangedOrUnstableEvidence(t *testing.T) {
 func TestQualityGateFailureRequiresStableTerminalEvidence(t *testing.T) {
 	t.Parallel()
 	for _, outcome := range []struct {
-		name string
+		name   string
 		change func(*qualitygate.RunRecord)
 	}{
 		{"wrapper failure", func(r *qualitygate.RunRecord) { r.ExitSource = state.ValidationExitSourceWrapper }},
