@@ -89,6 +89,19 @@ func repeatedFailedQualityGateRun(st *state.StateStore, candidate qualitygate.Ru
 	if err != nil {
 		return qualitygate.RunRecord{}, false, err
 	}
+	latest, found, err := latestMatchingQualityGateRun(st, candidate, entries)
+	if err != nil || !found {
+		return qualitygate.RunRecord{}, false, err
+	}
+	if !reusableFailedQualityGateRecord(latest, candidate) ||
+		!qualityGateDockerImageUnchanged(candidate, latest) ||
+		!qualityGateStableFailureLog(latest) {
+		return qualitygate.RunRecord{}, false, nil
+	}
+	return latest, true, nil
+}
+
+func latestMatchingQualityGateRun(st *state.StateStore, candidate qualitygate.RunRecord, entries []os.DirEntry) (qualitygate.RunRecord, bool, error) {
 	var latest qualitygate.RunRecord
 	found := false
 	for _, entry := range entries {
@@ -106,16 +119,7 @@ func repeatedFailedQualityGateRun(st *state.StateStore, candidate qualitygate.Ru
 			latest, found = previous, true
 		}
 	}
-	if !found || !reusableFailedQualityGateRecord(latest, candidate) {
-		return qualitygate.RunRecord{}, false, nil
-	}
-	if !qualityGateDockerImageUnchanged(candidate, latest) {
-		return qualitygate.RunRecord{}, false, nil
-	}
-	if !qualityGateStableFailureLog(latest) {
-		return qualitygate.RunRecord{}, false, nil
-	}
-	return latest, true, nil
+	return latest, found, nil
 }
 
 func sameQualityGateRecordSource(previous, candidate qualitygate.RunRecord) bool {
