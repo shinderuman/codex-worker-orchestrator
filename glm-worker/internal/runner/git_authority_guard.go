@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
@@ -60,8 +61,17 @@ type gitAuthorityGuard struct {
 	metadataPaths []string
 	goToolchain   string
 	dockerPolicy  bool
-	dockerSocket  string
-	before        gitAuthoritySnapshot
+
+	dockerTestStagingDir      string
+	dockerTestResponseDir     string
+	dockerTestRun             dockerTestRunFunc
+	dockerTestScanInterval    time.Duration
+	dockerTestRequestTimeout  time.Duration
+	dockerTestMaxRequestBytes int
+	dockerTestMaxOutputBytes  int
+	dockerTestMaxRequests     int
+
+	before gitAuthoritySnapshot
 }
 
 const (
@@ -133,7 +143,6 @@ func (g *gitAuthorityGuard) resolveGoTestDockerPolicy(repoRoot string) error {
 		return nil
 	}
 	g.dockerPolicy = true
-	g.dockerSocket = resolveDockerDaemonSocket()
 	if realGo, err := exec.LookPath("go"); err == nil {
 		absolute, err := filepath.Abs(realGo)
 		if err != nil {
@@ -170,11 +179,28 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 			return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 		}
 	}
+	if g.dockerPolicy {
+		if err := g.prepareDockerTestBoundary(tempDir); err != nil {
+			return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
+		}
+	}
 	deny := gitAuthorityDenyTransportScript(g.attemptLog)
 	if err := execfile.Write(g.denyPath, []byte(deny), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	return nil
+}
+
+func (g *gitAuthorityGuard) prepareDockerTestBoundary(tempDir string) error {
+	g.dockerTestStagingDir = filepath.Join(g.workerTempDir, dockerTestStagingDirName)
+	if err := os.Mkdir(g.dockerTestStagingDir, 0o700); err != nil {
+		return err
+	}
+	g.dockerTestResponseDir = filepath.Join(tempDir, dockerTestResponseDirName)
+	if err := os.Mkdir(g.dockerTestResponseDir, 0o700); err != nil {
+		return err
+	}
+	return execfile.Write(filepath.Join(tempDir, "docker"), []byte(dockerCLIDenyScript(g.attemptLog)), 0o700)
 }
 
 func (g *gitAuthorityGuard) verify() error {
