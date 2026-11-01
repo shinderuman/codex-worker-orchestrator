@@ -48,9 +48,10 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/task-revision-worker-admission.md`
-
+none
 
 ## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/task-revision-worker-admission.md`
 
 - `IMPLEMENTATION_TASKS/canonical-publication-source-continuity.md`

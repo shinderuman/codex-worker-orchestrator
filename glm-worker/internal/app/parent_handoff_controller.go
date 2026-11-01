@@ -30,22 +30,28 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		return
 	}
 	canonicalizeParentAction(output)
-	syncRequired := applyTaskAuthoritySyncHandoff(cfg, output, report)
-	if !syncRequired {
-		if report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "" {
-			applyCanonicalQuiescentHandoff(cfg, output, report.Head)
-		} else if report.Head.LiveAttemptID != "" && report.Head.AcceptedCandidateRef == nil &&
-			output.RequiredAction != nil && *output.RequiredAction == string(state.ParentActionNone) &&
-			output.TaskID == nil && output.TaskStatus == nil {
-			action := canonicalStartAction
-			output.RequiredAction = &action
-			output.AllowedActions = []string{action, "controller-evidence"}
-		}
+	if !applyTaskAuthoritySyncHandoff(cfg, output, report) {
+		applyPostSyncHandoff(cfg, output, report.Head)
 	}
 	applyParentCompletionOperationHandoff(cfg, output)
 	if output.ParentRequest != nil && output.RequiredAction != nil {
 		output.ParentRequest.Continuation.RequiredAction = *output.RequiredAction
 	}
+}
+
+func applyPostSyncHandoff(cfg config.AppConfig, output *parentHandoffOutput, head controller.RepositoryControllerHead) {
+	if head.PendingTransitionID != "" || head.LiveLeaseID == "" {
+		applyCanonicalQuiescentHandoff(cfg, output, head)
+		return
+	}
+	if head.LiveAttemptID == "" || head.AcceptedCandidateRef != nil ||
+		output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionNone) ||
+		output.TaskID != nil || output.TaskStatus != nil {
+		return
+	}
+	action := canonicalStartAction
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action, "controller-evidence"}
 }
 
 func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
