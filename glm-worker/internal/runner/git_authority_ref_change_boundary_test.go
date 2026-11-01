@@ -39,11 +39,11 @@ func TestGitAuthorityRefChangesPreserveDeletionWithoutUnrelatedChurn(t *testing.
 	mainRef := "refs/heads/main"
 	before := gitAuthoritySnapshot{
 		symbolicHead: mainRef,
-		refs: []GitRefState{{Name: mainRef, ObjectID: "old-oid"}},
+		refs:         []GitRefState{{Name: mainRef, ObjectID: "old-oid"}},
 	}
 	after := gitAuthoritySnapshot{
 		symbolicHead: mainRef,
-		refs: []GitRefState{{Name: "refs/heads/unrelated", ObjectID: "unrelated-oid"}},
+		refs:         []GitRefState{{Name: "refs/heads/unrelated", ObjectID: "unrelated-oid"}},
 	}
 	changes, truncated := gitAuthorityRefChanges(before, after)
 	if truncated || len(changes) != 1 || changes[0].Name != mainRef ||
