@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
@@ -69,8 +70,13 @@ func TestCanonicalTargetExitRequiresAttestation(t *testing.T) {
 		name, marker string
 		proxy, want  int
 		target       bool
+		wantFailure  string
 	}{
-		{"success", "0", 0, 0, false}, {"target failure", "7", 7, 7, true}, {"proxy mismatch", "0", 1, 1, false}, {"invalid evidence", "unknown", 0, 1, false},
+		{"success", "0", 0, 0, false, ""},
+		{"target failure", "7", 7, 7, true, ""},
+		{"proxy mismatch", "0", 1, 1, false, "proxy=1 target=0"},
+		{"nil proxy mismatch", "7", 0, 1, false, "proxy=0 target=7"},
+		{"invalid evidence", "unknown", 0, 1, false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := sourceFixture(t)
@@ -95,6 +101,9 @@ exit "$MOCK_PROXY_EXIT"
 			var target *qualitygate.TargetExitError
 			if code != tc.want || errors.As(err, &target) != tc.target || (err == nil) != (tc.name == "success") {
 				t.Fatalf("code=%d target=%v error=%v", code, target, err)
+			}
+			if tc.wantFailure != "" && (err == nil || !strings.Contains(err.Error(), tc.wantFailure) || strings.Contains(err.Error(), "%!w")) {
+				t.Fatalf("終了値不一致の診断textが不正です: %v", err)
 			}
 		})
 	}
