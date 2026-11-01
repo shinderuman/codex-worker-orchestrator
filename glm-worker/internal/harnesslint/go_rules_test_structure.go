@@ -91,24 +91,28 @@ func inertGoTestEntrypoint(function *ast.FuncDecl) bool {
 	}
 	receiver := function.Type.Params.List[0].Names[0].Name
 	for _, statement := range function.Body.List {
-		expression, ok := statement.(*ast.ExprStmt)
-		if !ok {
-			return false
-		}
-		call, ok := expression.X.(*ast.CallExpr)
-		if !ok || len(call.Args) != 0 {
-			return false
-		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || (selector.Sel.Name != "Parallel" && selector.Sel.Name != "Helper") {
-			return false
-		}
-		base, ok := selector.X.(*ast.Ident)
-		if !ok || base.Name != receiver {
+		if !inertTestSetupStatement(statement, receiver) {
 			return false
 		}
 	}
 	return true
+}
+
+func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
+	expression, ok := statement.(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	call, ok := expression.X.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || (selector.Sel.Name != "Parallel" && selector.Sel.Name != "Helper") {
+		return false
+	}
+	base, ok := selector.X.(*ast.Ident)
+	return ok && base.Name == receiver
 }
 
 func testSizeViolations(set *token.FileSet, file *ast.File, path string) []Violation {
