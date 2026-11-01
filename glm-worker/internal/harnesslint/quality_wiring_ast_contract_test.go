@@ -26,7 +26,7 @@ func TestQualityWiringPackageRejectsCommentAndStringPins(t *testing.T) {
 		},
 		{
 			name:    "whitespace and same-call argument do not affect semantic call",
-			content: "package workflow\nfunc example() { w.qualityGate(\n   root\n ) }\n",
+			content: "package workflow\nfunc example() { w.qualityGate(\n   root,\n ) }\n",
 			want:    false,
 		},
 		{
