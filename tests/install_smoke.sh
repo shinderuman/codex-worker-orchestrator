@@ -379,31 +379,6 @@ func main() {
 	signal.Notify(signals, syscall.SIGTERM)
 	<-signals
 }
-EOF_HOLD_LOCK'
-package main
-
-import (
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-)
-
-func main() {
-	file, err := os.OpenFile(os.Args[1], os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	fmt.Println("locked")
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGTERM)
-	<-signals
-}
 EOF_HOLD_LOCK
 (
 	cd "$tmp"
