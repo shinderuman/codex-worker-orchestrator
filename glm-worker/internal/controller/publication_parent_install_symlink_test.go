@@ -8,8 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 )
 
-// A valid log locator must not allow the smoke reader to follow a symlink
-// outside the task-scoped evidence directory.
 func TestParentOnlyInstallSmokeRejectsSymlinkedLog(t *testing.T) {
 	t.Parallel()
 	f := newParentOnlyInstallSmokeFixture(t)

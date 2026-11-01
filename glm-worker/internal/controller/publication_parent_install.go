@@ -127,14 +127,7 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate install smoke identity is unavailable")
 	}
 	recordPath := runtime.Path(filepath.Join("install-smoke-runs", smokeID, qualitygate.RunFile))
-	info, err := os.Lstat(recordPath)
-	if err != nil {
-		return qualitygate.RunRecord{}, nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate smoke record must be a regular file")
-	}
-	data, err := os.ReadFile(recordPath)
+	data, err := readRegularCandidateSmokeFile(recordPath)
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
@@ -148,19 +141,22 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	if smoke.Log != filepath.ToSlash(filepath.Join("install-smoke-runs", smokeID, "smoke.log")) {
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate smoke log locator is invalid")
 	}
-	logPath := runtime.Path(filepath.FromSlash(smoke.Log))
-	logInfo, err := os.Lstat(logPath)
-	if err != nil {
-		return qualitygate.RunRecord{}, nil, err
-	}
-	if !logInfo.Mode().IsRegular() {
-		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate smoke log is not a regular file")
-	}
-	smokeLog, err := os.ReadFile(logPath)
+	smokeLog, err := readRegularCandidateSmokeFile(runtime.Path(filepath.FromSlash(smoke.Log)))
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
 	return smoke, smokeLog, nil
+}
+
+func readRegularCandidateSmokeFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("candidate smoke evidence must be a regular file")
+	}
+	return os.ReadFile(path)
 }
 
 func (s *Store) candidateInstallSmokeRuntime(candidate AcceptedCandidate, attempt AttemptRecord) (*state.StateStore, string, error) {
