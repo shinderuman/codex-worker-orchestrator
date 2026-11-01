@@ -79,8 +79,11 @@ func (s *Store) validateRetiredSourceAdvancement(op ExecutionOperation) error {
 	}
 
 	descendant, err := isPublicationDescendant(s.identity.PrimaryRoot, p.OldTip, p.NewTip)
-	if err != nil || !descendant || p.OldTip == p.NewTip {
-		return fmt.Errorf("external source is not a fast-forward: %w", err)
+	if err != nil {
+		return fmt.Errorf("inspect external source fast-forward history: %w", err)
+	}
+	if !descendant || p.OldTip == p.NewTip {
+		return fmt.Errorf("external source is not a fast-forward")
 	}
 	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, p.NewTip)
 	if err != nil {
@@ -123,12 +126,18 @@ func (s *Store) validateRetiredSourceBoundary(policy PublicationPolicy, source s
 		return fmt.Errorf("external source adoption requires a clean primary worktree")
 	}
 	branch, err := gitTrimmed(s.identity.PrimaryRoot, "symbolic-ref", "--quiet", "HEAD")
-	if err != nil || branch != policy.LocalRef {
-		return fmt.Errorf("external source adoption requires the configured primary branch: %w", err)
+	if err != nil {
+		return fmt.Errorf("read external source primary branch: %w", err)
+	}
+	if branch != policy.LocalRef {
+		return fmt.Errorf("external source adoption requires the configured primary branch")
 	}
 	local, exists, err := readExecutionRef(s.identity.PrimaryRoot, policy.LocalRef)
-	if err != nil || !exists || local != source {
-		return fmt.Errorf("external source local commit differs: %w", err)
+	if err != nil {
+		return fmt.Errorf("read external source local commit: %w", err)
+	}
+	if !exists || local != source {
+		return fmt.Errorf("external source local commit differs")
 	}
 	remote, err := observePublicationRemote(s.identity.PrimaryRoot, policy)
 	if err != nil {
