@@ -85,7 +85,7 @@ func parentOnlyMissingReviewState(st *state.StateStore, planErr error) bool {
 		!strings.HasPrefix(inconsistency.Detail, "parent review state is unreadable: ") {
 		return false
 	}
-	_, err := os.Stat(st.Path("parent-review-state.json"))
+	_, err := os.Lstat(st.Path("parent-review-state.json"))
 	return errors.Is(err, os.ErrNotExist)
 }
 

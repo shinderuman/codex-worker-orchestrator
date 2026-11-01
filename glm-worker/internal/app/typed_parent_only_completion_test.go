@@ -69,6 +69,16 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 				if err := os.Remove(reviewState); err != nil {
 					t.Fatal(err)
 				}
+				if err := os.Symlink(filepath.Join(t.TempDir(), "missing-review"), reviewState); err != nil {
+					t.Fatal(err)
+				}
+				dangling := executeParentHandoff(t, cfg)
+				if dangling.Consistent || dangling.Inconsistency == nil {
+					t.Fatalf("dangling review link accepted: %#v", dangling)
+				}
+				if err := os.Remove(reviewState); err != nil {
+					t.Fatal(err)
+				}
 			}
 			head, err := store.LoadHead()
 			if err != nil || head.AcceptedCandidateRef == nil {
