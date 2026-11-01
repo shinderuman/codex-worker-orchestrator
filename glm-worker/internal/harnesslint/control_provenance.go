@@ -104,8 +104,6 @@ func validateControlProvenanceRegistry(root string, registry controlProvenanceRe
 	return violations, nil
 }
 
-// validateKnownMachineControlRegistrations verifies required navigation locators.
-// A locatable test symbol does not establish that its body verifies behavior.
 func validateKnownMachineControlRegistrations(root string, controls []controlProvenanceControl) []Violation {
 	known := []knownMachineControl{
 		{
