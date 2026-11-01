@@ -69,8 +69,8 @@ func TestApplyTotalBudgetRejectsNonStrippableValidationMetadata(t *testing.T) {
 	for i := range output.Parts[0].Validations {
 		output.Parts[0].Validations[i] = Validation{
 			ValidationRunID: fmt.Sprintf("%064d", i),
-			WorkingDir: strings.Repeat("長いパス/", 45),
-			Form: "go-test", Status: "pass",
+			WorkingDir:      strings.Repeat("長いパス/", 45),
+			Form:            "go-test", Status: "pass",
 		}
 	}
 	if outputSize(output) <= MaxOutputBytes {
