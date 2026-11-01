@@ -174,7 +174,7 @@ func qualityGateDockerRuntimeUnchanged(tag string, previous *qualitygate.DockerE
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, "docker", "image", "inspect", tag, "--format", "{{.Id}}").Output()
-	if err != nil || strings.TrimSpace(string(output)) != previous.Execution.Docker.ImageID {
+	if err != nil || strings.TrimSpace(string(output)) != previous.ImageID {
 		return false
 	}
 	output, err = exec.CommandContext(ctx, "docker", "info", "--format", "{{.NCPU}} {{.MemTotal}}").Output()
@@ -184,7 +184,7 @@ func qualityGateDockerRuntimeUnchanged(tag string, previous *qualitygate.DockerE
 	var cpus int
 	var memory int64
 	n, err := fmt.Sscan(string(output), &cpus, &memory)
-	return err == nil && n == 2 && cpus == previous.Execution.Docker.CPUs && memory == previous.Execution.Docker.MemoryBytes
+	return err == nil && n == 2 && cpus == previous.CPUs && memory == previous.MemoryBytes
 }
 
 func qualityGateStableFailureLog(record qualitygate.RunRecord) bool {
