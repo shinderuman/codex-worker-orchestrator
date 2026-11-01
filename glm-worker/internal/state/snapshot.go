@@ -178,7 +178,7 @@ func ParentExcludePathspecs() []string {
 }
 
 func captureWorktreeDigestVariant(repoRoot string, excludePathspecs []string) (string, error) {
-	diffArgs := []string{"diff", "--binary", "--no-ext-diff"}
+	diffArgs := []string{"diff", "--binary", "--no-ext-diff", "--no-textconv"}
 	untrackedArgs := []string{"ls-files", "-z", "--others", "--exclude-standard"}
 	if len(excludePathspecs) > 0 {
 		diffArgs = append(diffArgs, "--")
