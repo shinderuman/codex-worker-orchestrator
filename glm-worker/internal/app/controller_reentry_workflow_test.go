@@ -161,14 +161,18 @@ func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.
 	return cfg, store, accepted, candidate, runtime
 }
 
-func retiredWorkflowCorpus(t *testing.T, completionQuality bool) (config.AppConfig, controller.Admission, *controller.Store, controller.PublicationPolicy) {
+func retiredWorkflowCorpus(t *testing.T, completionQuality bool, appendedPlanSections ...string) (config.AppConfig, controller.Admission, *controller.Store, controller.PublicationPolicy) {
 	t.Helper()
 	cfg := newCanonicalAppConfig(t)
 	cfg.StateBase = filepath.Join(t.TempDir(), "sessions")
 	repo := cfg.RepoRoot
 	writeAppTestFile(t, repo, "IMPLEMENTATION_RULES.md", "# rules\n")
 	writeAppTestFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
-	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/successor.md`\n")
+	plan := "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/successor.md`\n"
+	for _, addition := range appendedPlanSections {
+		plan += addition
+	}
+	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", plan)
 	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/successor.md", "# successor\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
 	if completionQuality {
 		prepareCompletionQualityCorpus(t, repo)
