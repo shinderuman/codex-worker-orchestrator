@@ -128,3 +128,58 @@ func TestQualityGateFingerprintChangesWithExecutionEnvironment(t *testing.T) {
 		t.Fatalf("environment change did not affect digest: %v", err)
 	}
 }
+
+func TestQualityGateRetrySkipsCorruptHistoricalRecord(t *testing.T) {
+	t.Parallel()
+	st, previous, next := qualityGateFailedRetryFixture(t)
+	corrupt := st.Path(qualitygate.RunRelativePath(strings.Repeat("c", 32)))
+	if err := os.MkdirAll(filepath.Dir(corrupt), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(corrupt, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	found, repeated, err := repeatedFailedQualityGateRun(st, next)
+	if err != nil || !repeated || found.ValidationRunID != previous.ValidationRunID {
+		t.Fatalf("corrupt unrelated history blocked valid repeat evidence: %#v repeated=%t err=%v", found, repeated, err)
+	}
+}
+
+func TestQualityGateDockerRetryRequiresSameEffectiveResources(t *testing.T) {
+	dir := t.TempDir()
+	script := `#!/bin/sh
+case "$1" in
+ image) printf 'sha256:expected\\n';;
+ info) printf '4 1000000\\n';;
+ *) exit 1;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, qualitygate.QualityToolsFile), []byte("lint-go: 1.25.4\\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidate := qualitygate.RunRecord{
+		Repository: repo, Toolchain: &qualitygate.RunToolchain{RequiredGoVersion: "1.25.4"},
+		Execution: &qualitygate.Execution{Backend: qualitygate.BackendDockerARM64},
+	}
+	previous := qualitygate.RunRecord{Execution: &qualitygate.Execution{
+		Backend: qualitygate.BackendDockerARM64,
+		Docker: &qualitygate.DockerExecution{ImageID: "sha256:expected", CPUs: 4, MemoryBytes: 1000000},
+	}}
+	if !qualityGateDockerImageUnchanged(candidate, previous) {
+		t.Fatal("unchanged Docker image and effective resources should match")
+	}
+	previous.Execution.Docker.CPUs = 5
+	if qualityGateDockerImageUnchanged(candidate, previous) {
+		t.Fatal("changed Docker CPU count must admit a new run")
+	}
+	previous.Execution.Docker.CPUs = 4
+	previous.Execution.Docker.MemoryBytes = 2000000
+	if qualityGateDockerImageUnchanged(candidate, previous) {
+		t.Fatal("changed Docker memory must admit a new run")
+	}
+}

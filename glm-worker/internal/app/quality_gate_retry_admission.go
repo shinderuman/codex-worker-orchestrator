@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -110,7 +112,7 @@ func latestMatchingQualityGateRun(st *state.StateStore, candidate qualitygate.Ru
 		}
 		previous, err := readQualityGateRun(st, entry.Name())
 		if err != nil {
-			return qualitygate.RunRecord{}, false, err
+			continue
 		}
 		if !sameQualityGateRecordSource(previous, candidate) {
 			continue
@@ -146,7 +148,7 @@ func qualityGateDockerImageUnchanged(candidate, previous qualitygate.RunRecord) 
 	if qualityGateBackend(candidate) == qualitygate.BackendNative {
 		return true
 	}
-	if previous.Execution == nil || previous.Execution.Docker == nil || previous.Execution.Docker.ImageID == "" {
+	if candidate.Toolchain == nil || previous.Execution == nil || previous.Execution.Docker == nil || previous.Execution.Docker.ImageID == "" || previous.Execution.Docker.CPUs < 1 || previous.Execution.Docker.MemoryBytes < 1 {
 		return false
 	}
 	version := candidate.Toolchain.RequiredGoVersion
@@ -165,8 +167,20 @@ func qualityGateDockerImageUnchanged(candidate, previous qualitygate.RunRecord) 
 		return false
 	}
 	tag := "codex-worker-orchestrator-go-test:go" + version + "-lint" + lintVersion + "-arm64"
-	output, err := exec.Command("docker", "image", "inspect", tag, "--format", "{{.Id}}").Output()
-	return err == nil && strings.TrimSpace(string(output)) == previous.Execution.Docker.ImageID
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "docker", "image", "inspect", tag, "--format", "{{.Id}}").Output()
+	if err != nil || strings.TrimSpace(string(output)) != previous.Execution.Docker.ImageID {
+		return false
+	}
+	output, err = exec.CommandContext(ctx, "docker", "info", "--format", "{{.NCPU}} {{.MemTotal}}").Output()
+	if err != nil {
+		return false
+	}
+	var cpus int
+	var memory int64
+	n, err := fmt.Sscan(string(output), &cpus, &memory)
+	return err == nil && n == 2 && cpus == previous.Execution.Docker.CPUs && memory == previous.Execution.Docker.MemoryBytes
 }
 
 func qualityGateStableFailureLog(record qualitygate.RunRecord) bool {
