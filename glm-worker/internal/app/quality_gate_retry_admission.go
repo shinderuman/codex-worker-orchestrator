@@ -114,7 +114,8 @@ func latestMatchingQualityGateRun(st *state.StateStore, candidate qualitygate.Ru
 		if err != nil {
 			continue
 		}
-		if !sameQualityGateRecordSource(previous, candidate) {
+		if !sameQualityGateRecordSource(previous, candidate) ||
+			previous.InvocationDigest != candidate.InvocationDigest {
 			continue
 		}
 		if !found || latest.StartedAt.Before(previous.StartedAt) {
@@ -199,6 +200,7 @@ func qualityGateStableFailureLog(record qualitygate.RunRecord) bool {
 	for _, unstable := range []string{
 		"test timed out", "signal: killed", "connection refused", "connection reset",
 		"network is unreachable", "temporary failure", "resource temporarily unavailable",
+		"server misbehaving",
 		"no space left on device", "etxtbsy",
 	} {
 		if strings.Contains(text, unstable) {

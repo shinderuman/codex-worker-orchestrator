@@ -88,6 +88,7 @@ func TestQualityGateFailureRequiresStableTerminalEvidence(t *testing.T) {
 		{"missing log", func(r *qualitygate.RunRecord) { r.Log = "" }},
 		{"timeout diagnosis", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "panic: test timed out") }},
 		{"network diagnosis", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "connection reset by peer") }},
+		{"transient DNS", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "lookup example.com: server misbehaving") }},
 	} {
 		t.Run(outcome.name, func(t *testing.T) {
 			st, previous, next := qualityGateFailedRetryFixture(t)
@@ -181,5 +182,23 @@ esac
 	previous.Execution.Docker.MemoryBytes = 2000000
 	if qualityGateDockerImageUnchanged(candidate, previous) {
 		t.Fatal("changed Docker memory must admit a new run")
+	}
+}
+
+func TestQualityGateRetrySelectsLatestMatchingInvocation(t *testing.T) {
+	t.Parallel()
+	st, previous, candidate := qualityGateFailedRetryFixture(t)
+	other := previous
+	other.ValidationRunID = strings.Repeat("c", 32)
+	other.StartedAt = previous.StartedAt.Add(30 * time.Second)
+	other.InvocationDigest = "different-tool-or-timeout"
+	other.Status = qualitygate.StatusPass
+	other.ExitCode = 0
+	if err := writeQualityGateRun(st, other); err != nil {
+		t.Fatal(err)
+	}
+	found, repeated, err := repeatedFailedQualityGateRun(st, candidate)
+	if err != nil || !repeated || found.ValidationRunID != previous.ValidationRunID {
+		t.Fatalf("different newer invocation hid unchanged failure: %#v repeated=%t err=%v", found, repeated, err)
 	}
 }
