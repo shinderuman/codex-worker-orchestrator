@@ -152,7 +152,8 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 		if _, remains := next[entry.path]; remains {
 			continue
 		}
-		if sourceTreeReplacementDirectoryPresent(repo, entry.path, after) {
+		if sourceTreeReplacementDirectoryPresent(repo, entry.path, after) ||
+			sourceTreeAncestorReplacementPresent(repo, entry.path, after) {
 			continue
 		}
 		removed = append(removed, entry)
@@ -196,6 +197,17 @@ func sourceTreeReplacementDirectoryPresent(repo, path string, after []workspaceT
 	}
 	info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(path)))
 	return err == nil && info.IsDir()
+}
+
+func sourceTreeAncestorReplacementPresent(repo, path string, after []workspaceTreeEntry) bool {
+	for _, entry := range after {
+		if !strings.HasPrefix(path, entry.path+"/") {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(entry.path)))
+		return err == nil && !info.IsDir()
+	}
+	return false
 }
 
 func removeSourceTreeReplacedDirectory(repo, path string, before []workspaceTreeEntry) error {
