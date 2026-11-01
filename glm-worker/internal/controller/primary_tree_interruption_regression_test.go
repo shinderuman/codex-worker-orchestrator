@@ -35,7 +35,6 @@ func TestSourceTreeWriterResumesAfterFileToDirectoryRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate interruption immediately after removing the old leaf.
 	if err := os.Remove(filepath.Join(repo, "replaced")); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +79,6 @@ func TestSourceTreeWriterResumesAfterDirectoryChildrenRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate interruption after the last old child was deleted.
 	if err := os.Remove(filepath.Join(repo, "replaced", "child")); err != nil {
 		t.Fatal(err)
 	}
