@@ -93,12 +93,26 @@ func boundParentOnlySmokeIdentity(cfg config.AppConfig, st *state.StateStore) bo
 	if err != nil {
 		return false
 	}
-	live, err := store.LiveParentOnlyExecution()
-	if err != nil || !live {
+	head, err := store.LoadHead()
+	if err != nil {
 		return false
 	}
-	head, err := store.LoadHead()
-	return err == nil && head.LiveAttemptID == taskID
+	live, err := store.LiveParentOnlyExecution()
+	if err != nil {
+		return false
+	}
+	if live {
+		return head.LiveAttemptID == taskID
+	}
+	if head.AcceptedCandidateRef == nil || head.ExecutionTaskRef == nil {
+		return false
+	}
+	authority, err := controller.ResolveCommittedTaskAuthority(store.Identity().PrimaryRoot)
+	if err != nil || authority.ExecutionMode != controller.ExecutionAuthorityParentOnly {
+		return false
+	}
+	candidate, err := store.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	return err == nil && candidate.AttemptID == taskID && candidate.TaskRef.Equal(*head.ExecutionTaskRef)
 }
 
 func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
