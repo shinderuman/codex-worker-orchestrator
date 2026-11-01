@@ -20,7 +20,7 @@ func TestParentOnlyInstallSmokeReentryUsesSuccessorAttempt(t *testing.T) {
 	}
 	materialized, err := f.fixture.store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: projected.Execution.ExpectedGeneration,
-		SuspensionID: projected.Execution.SuspensionID,
+		SuspensionID:       projected.Execution.SuspensionID,
 	})
 	if err != nil || materialized.Admission == nil {
 		t.Fatalf("parent-only successor materialization: %#v err=%v", materialized, err)
