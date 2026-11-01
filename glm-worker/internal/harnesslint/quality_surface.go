@@ -2,9 +2,9 @@ package harnesslint
 
 import (
 	"bytes"
-	"go/format"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"strings"
