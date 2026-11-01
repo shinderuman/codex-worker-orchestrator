@@ -424,7 +424,6 @@ test "$export_concurrent_archive" = "$export_archive_path"
 export_zip_dir=$(dirname "$export_archive_path")
 export_zip_count=$(find "$export_zip_dir" -type f -name '*.zip' | wc -l | tr -d ' ')
 test "$export_zip_count" = 1
-# A failing stage must also reap the actual lock holder, not a go run wrapper.
 if (
 	trap 'cleanup_export_processes' 0
 	"$tmp/hold-workflow-lock" "$export_workflow_lock" >"$tmp/export-lock-failure.out" 2>"$tmp/export-lock-failure.stderr" &
