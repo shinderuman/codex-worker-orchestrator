@@ -17,10 +17,7 @@ func TestPostInstallSmokeMissingRunDirectoryIsOutstanding(t *testing.T) {
 	source := publicationTestEdit(t, fixture, "smoke-not-started.txt", "smoke input\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	_, candidate := acceptProbedCandidate(t, fixture, policy, source, []SmokeProbeDeclaration{dockerRoutingProbe()})
-	module, err := fixture.store.finalValidationRunStore(candidate.TaskRef)
-	if err != nil {
-		t.Fatal(err)
-	}
+	module := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.identity, candidate.TaskRef))
 	runDir := module.Path(qualitygate.RunDirectory)
 	if err := os.RemoveAll(runDir); err != nil {
 		t.Fatal(err)
