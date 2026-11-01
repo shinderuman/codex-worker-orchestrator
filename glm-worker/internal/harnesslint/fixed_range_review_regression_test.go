@@ -8,6 +8,7 @@ func TestQualityWiringForbiddenCheckUsesSyntax(t *testing.T) {
 		forbiddenTokens: []string{"harnesslint.Check(root)"},
 	}
 	forbidden, err := qualityWiringForbiddenCalls(check, []byte(`package workflow
+import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 func run(repoRoot string) { harnesslint.Check(repoRoot) }
 `))
 	if err != nil {
