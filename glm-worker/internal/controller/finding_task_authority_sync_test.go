@@ -156,14 +156,14 @@ func TestFindingDispositionAfterTaskAuthoritySyncsBindsCurrentAuthority(t *testi
 	}
 	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: accepted.Head.ControllerGeneration,
-		CandidateID: candidate.CandidateID,
+		CandidateID:        candidate.CandidateID,
 	})
 	if err != nil {
 		t.Fatalf("post-sync accepted candidate could not promote: %v", err)
 	}
 	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: promoted.Head.ControllerGeneration,
-		CandidateID: candidate.CandidateID,
+		CandidateID:        candidate.CandidateID,
 	}); err != nil {
 		t.Fatalf("post-sync accepted candidate could not publish: %v", err)
 	}
