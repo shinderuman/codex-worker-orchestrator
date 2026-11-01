@@ -293,7 +293,7 @@ func (s *Store) validatePrimaryPromotionEntries(current string, before, after []
 	oldByPath, newByPath, currentByPath := sourceImportEntryMap(before), sourceImportEntryMap(after), sourceImportEntryMap(actual)
 	paths := append(append(append([]workspaceTreeEntry(nil), before...), after...), actual...)
 	for _, entry := range paths {
-		if err := s.validatePrimaryPromotionEntry(entry.path, oldByPath[entry.path], newByPath[entry.path], currentByPath[entry.path]); err != nil {
+		if err := validatePrimaryPromotionEntry(entry.path, oldByPath[entry.path], newByPath[entry.path], currentByPath[entry.path]); err != nil {
 			return err
 		}
 	}
@@ -308,7 +308,7 @@ func sourceImportEntryMap(entries []workspaceTreeEntry) map[string]workspaceTree
 	return result
 }
 
-func (s *Store) validatePrimaryPromotionEntry(path string, before, after, current workspaceTreeEntry) error {
+func validatePrimaryPromotionEntry(path string, before, after, current workspaceTreeEntry) error {
 	if current != before && current != after {
 		return fmt.Errorf("unattributed primary source mutation at %q", path)
 	}
