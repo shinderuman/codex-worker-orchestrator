@@ -33,6 +33,7 @@ type GoTestOutcome struct {
 }
 
 type moduleTreeCopier struct {
+	ctx      context.Context
 	files    int64
 	bytes    int64
 	maxBytes int64
@@ -75,16 +76,19 @@ func RunIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	return runIsolatedGoTest(ctx, input)
 }
 
-func prepareIsolatedGoTestRoot(tempRoot string, moduleDir string) error {
-	if err := copyModuleTree(filepath.Join(tempRoot, "input"), moduleDir); err != nil {
+func prepareIsolatedGoTestRoot(ctx context.Context, tempRoot string, moduleDir string) error {
+	if err := copyModuleTree(ctx, filepath.Join(tempRoot, "input"), moduleDir); err != nil {
 		return err
 	}
 	for _, bounded := range []string{filepath.Join(tempRoot, "tmp"), filepath.Join(tempRoot, "cache"), filepath.Join(tempRoot, "home")} {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(bounded, 0o700); err != nil {
 			return fmt.Errorf("隔離実行のbounded dirを作成できません: %w", err)
 		}
 	}
-	return nil
+	return ctx.Err()
 }
 
 func (b *boundedTailBuffer) Write(p []byte) (int, error) {
@@ -198,7 +202,10 @@ func goTestWrapperFailure(started time.Time, reason string) GoTestOutcome {
 	return GoTestOutcome{Status: StatusFail, ExitCode: 1, ExitSource: exitSourceWrapper, Detail: boundedDetail(reason), DurationMS: time.Since(started).Milliseconds()}
 }
 
-func copyModuleTree(destination string, source string) error {
+func copyModuleTree(ctx context.Context, destination string, source string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	info, err := os.Lstat(source)
 	if err != nil {
 		return fmt.Errorf("隔離入力のmodule dirを確認できません: %w", err)
@@ -206,11 +213,14 @@ func copyModuleTree(destination string, source string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("隔離入力のmodule dir %sがdirectoryではありません", source)
 	}
-	copier := &moduleTreeCopier{files: 1, maxBytes: copyMaxBytes}
+	copier := &moduleTreeCopier{ctx: ctx, files: 1, maxBytes: copyMaxBytes}
 	return copier.copyDir(destination, source)
 }
 
 func (c *moduleTreeCopier) copyDir(destination string, source string) error {
+	if err := c.cancelled(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		return fmt.Errorf("隔離入力dirを作成できません: %w", err)
 	}
@@ -219,6 +229,9 @@ func (c *moduleTreeCopier) copyDir(destination string, source string) error {
 		return fmt.Errorf("隔離入力dirを読めません: %w", err)
 	}
 	for _, entry := range entries {
+		if err := c.cancelled(); err != nil {
+			return err
+		}
 		if entry.Name() == copySkipGit && entry.IsDir() {
 			continue
 		}
@@ -226,10 +239,13 @@ func (c *moduleTreeCopier) copyDir(destination string, source string) error {
 			return err
 		}
 	}
-	return nil
+	return c.cancelled()
 }
 
 func (c *moduleTreeCopier) copyEntry(destination string, source string, name string) error {
+	if err := c.cancelled(); err != nil {
+		return err
+	}
 	sourcePath := filepath.Join(source, name)
 	destinationPath := filepath.Join(destination, name)
 	info, err := os.Lstat(sourcePath)
@@ -249,6 +265,9 @@ func (c *moduleTreeCopier) copyEntry(destination string, source string, name str
 }
 
 func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.FileMode) error {
+	if err := c.cancelled(); err != nil {
+		return err
+	}
 	c.files++
 	if c.files > copyMaxFiles {
 		return fmt.Errorf("隔離入力のfile数が上限(%d)を超えました", copyMaxFiles)
@@ -280,7 +299,11 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 		}
 		syscall.ForkLock.RUnlock()
 	}()
-	written, err := io.Copy(dst, io.LimitReader(src, remaining))
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	written, err := io.Copy(dst, contextCopyReader{ctx: ctx, reader: io.LimitReader(src, remaining)})
 	if err != nil {
 		return fmt.Errorf("隔離入力fileをcopyできません: %w", err)
 	}
@@ -295,9 +318,31 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 	if err := dst.Close(); err != nil {
 		return fmt.Errorf("隔離入力fileを保存できません: %w", err)
 	}
+	if err := c.cancelled(); err != nil {
+		return err
+	}
 	c.bytes += written
 	committed = true
 	return nil
+}
+
+func (c *moduleTreeCopier) cancelled() error {
+	if c.ctx != nil {
+		return c.ctx.Err()
+	}
+	return nil
+}
+
+type contextCopyReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextCopyReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }
 
 func writeGoTestLog(artifactDir string, executionID string, data []byte, total int64, truncated bool) (string, error) {
