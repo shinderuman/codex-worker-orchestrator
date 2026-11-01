@@ -1,6 +1,7 @@
 package harnesslint
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
 
@@ -13,6 +14,9 @@ type markdownFence struct {
 }
 
 const markdownDerivedStateRule = "markdown-derived-state"
+
+var planExtraBlankLines = regexp.MustCompile(`\n(?:[ \t]*\n){2,}`)
+var planSeparatedTaskItems = regexp.MustCompile(`(?m)(^- \[[^\n]*\n)[ \t]*\n(- \[)`)
 
 var readmePinnedVersionPattern = regexp.MustCompile(`^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
 
@@ -38,8 +42,8 @@ func markdownDerivedStatePathViolations(root, path string) ([]Violation, error) 
 	}
 	headings := markdownLevelTwoHeadings(data)
 	switch {
-	case path == "IMPLEMENTATION_PLAN.local.md":
-		return markdownPlanDerivedStateViolations(path, headings), nil
+	case path == implementationPlanPath:
+		return append(markdownPlanDerivedStateViolations(path, headings), markdownPlanSpacingViolations(path, data)...), nil
 	case strings.HasPrefix(path, "IMPLEMENTATION_TASKS/"):
 		return markdownTaskDerivedStateViolations(path, data, headings), nil
 	case path == "README.md":
@@ -47,6 +51,52 @@ func markdownDerivedStatePathViolations(root, path string) ([]Violation, error) 
 	default:
 		return nil, nil
 	}
+}
+
+
+func markdownPlanSpacingViolations(path string, data []byte) []Violation {
+	normalized := compactPlanSpacing(data)
+	if bytes.Equal(data, normalized) {
+		return nil
+	}
+	offset := 0
+	for offset < len(normalized) && data[offset] == normalized[offset] {
+		offset++
+	}
+	return []Violation{{
+		Rule:    "markdown-plan-spacing",
+		Path:    path,
+		Line:    bytes.Count(data[:offset], []byte("\n")) + 1,
+		Column:  1,
+		Message: "Plan contains redundant blank lines",
+		Fixable: true,
+	}}
+}
+
+func compactPlanSpacing(data []byte) []byte {
+	result := planExtraBlankLines.ReplaceAll(data, []byte("\n\n"))
+	for {
+		next := planSeparatedTaskItems.ReplaceAll(result, []byte("$1$2"))
+		if bytes.Equal(next, result) {
+			return result
+		}
+		result = next
+	}
+}
+
+func fixPlanSpacing(root string, paths []string) error {
+	if !containsPath(paths, implementationPlanPath) {
+		return nil
+	}
+	data, err := readRegularFile(root, implementationPlanPath)
+	if err != nil {
+		return err
+	}
+	normalized := compactPlanSpacing(data)
+	if bytes.Equal(data, normalized) {
+		return nil
+	}
+	return writeRegularFile(root, implementationPlanPath, normalized)
 }
 
 func markdownPlanDerivedStateViolations(path string, headings map[string]int) []Violation {

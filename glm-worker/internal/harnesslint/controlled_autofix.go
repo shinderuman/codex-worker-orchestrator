@@ -163,6 +163,9 @@ func (state *deterministicAutofixState) convergedReport(next map[string][32]byte
 }
 
 func runDeterministicAutofixPass(root string, paths []string, runner commandRunner) error {
+	if err := fixPlanSpacing(root, paths); err != nil {
+		return err
+	}
 	if err := fixGoFormatting(root, paths); err != nil {
 		return err
 	}

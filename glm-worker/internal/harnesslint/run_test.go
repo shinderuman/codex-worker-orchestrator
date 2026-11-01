@@ -12,6 +12,34 @@ func (fakeRunner) run(_ string, _ string, _ ...string) (commandResult, error) {
 	return commandResult{}, nil
 }
 
+
+func TestRunFixCompactsPlanSpacingAndIsIdempotent(t *testing.T) {
+	root := fixtureRoot(t)
+	path := implementationPlanPath
+	writeFixture(t, root, path, "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n")
+	report, err := run(root, true, fakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Fixed != 1 {
+		t.Fatalf("fixed = %d, want one Plan file", report.Fixed)
+	}
+	data, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n- [second](IMPLEMENTATION_TASKS/second.md)\n" {
+		t.Fatalf("unexpected fixed Plan: %q", data)
+	}
+	second, err := run(root, true, fakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Fixed != 0 {
+		t.Fatalf("second fixed = %d", second.Fixed)
+	}
+}
+
 func TestRunFixFormatsGoAndIsIdempotent(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixture(t, root, "glm-worker/internal/x/x.go", "package x\nfunc X( ){println(\"x\")}\n")
