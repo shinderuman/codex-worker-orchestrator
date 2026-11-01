@@ -167,6 +167,16 @@ func TestParentOnlyInstallSmokeRejectsMissingOrStaleStoreTaskID(t *testing.T) {
 	}
 }
 
+func TestParentOnlyInstallSmokeRejectsOldTaskContract(t *testing.T) {
+	t.Parallel()
+	f := newParentOnlyInstallSmokeFixture(t)
+	candidate := f.candidate
+	candidate.TaskRef.ContractDigest = "old-contract"
+	if _, _, err := f.fixture.store.readCandidateInstallSmoke(candidate, f.root, f.runID); err == nil {
+		t.Fatal("old Task contract reused a current attempt's smoke evidence")
+	}
+}
+
 func TestParentOnlyInstallSmokeReadIsStableAcrossRetry(t *testing.T) {
 	t.Parallel()
 	f := newParentOnlyInstallSmokeFixture(t)

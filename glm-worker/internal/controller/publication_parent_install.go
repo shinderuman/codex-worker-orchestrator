@@ -122,6 +122,9 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	var runtime *state.StateStore
 	var taskID string
 	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if !attempt.SemanticTaskRef.Equal(candidate.TaskRef) {
+			return qualitygate.RunRecord{}, nil, fmt.Errorf("parent-only install smoke Task contract does not match candidate")
+		}
 		runtime = state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
 		taskID, err = runtime.Read("task.id")
 		if err != nil || taskID == "" || taskID != attempt.AttemptID {
