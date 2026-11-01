@@ -37,26 +37,36 @@ func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]wor
 
 func pruneSuspensionReplacedDescendants(repo string, paths map[string]workspaceTreeEntry) error {
 	for path := range paths {
-		for index := strings.LastIndex(path, "/"); index >= 0; {
-			ancestor := path[:index]
-			if _, present := paths[ancestor]; present {
-				absolute, err := suspensionWorktreePath(repo, ancestor)
-				if err != nil {
-					return err
-				}
-				info, err := os.Lstat(absolute)
-				if err != nil && !errors.Is(err, os.ErrNotExist) {
-					return err
-				}
-				if err == nil && info.Mode().IsRegular() {
-					delete(paths, path)
-					break
-				}
-			}
-			index = strings.LastIndex(ancestor, "/")
+		replaced, err := suspensionReplacedFileAncestor(repo, path, paths)
+		if err != nil {
+			return err
+		}
+		if replaced {
+			delete(paths, path)
 		}
 	}
 	return nil
+}
+
+func suspensionReplacedFileAncestor(repo, path string, paths map[string]workspaceTreeEntry) (bool, error) {
+	for index := strings.LastIndex(path, "/"); index >= 0; {
+		ancestor := path[:index]
+		if _, present := paths[ancestor]; present {
+			absolute, err := suspensionWorktreePath(repo, ancestor)
+			if err != nil {
+				return false, err
+			}
+			info, err := os.Lstat(absolute)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, err
+			}
+			if err == nil && info.Mode().IsRegular() {
+				return true, nil
+			}
+		}
+		index = strings.LastIndex(ancestor, "/")
+	}
+	return false, nil
 }
 
 func captureSuspensionEntries(repo string, entries []workspaceTreeEntry) ([]workspaceTreeEntry, error) {
