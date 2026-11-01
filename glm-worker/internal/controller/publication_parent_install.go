@@ -119,22 +119,9 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
-	var runtime *state.StateStore
-	var taskID string
-	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
-		if !attempt.SemanticTaskRef.Equal(candidate.TaskRef) {
-			return qualitygate.RunRecord{}, nil, fmt.Errorf("parent-only install smoke Task contract does not match candidate")
-		}
-		runtime = state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
-		taskID, err = runtime.Read("task.id")
-		if err != nil || taskID == "" || taskID != attempt.AttemptID {
-			return qualitygate.RunRecord{}, nil, fmt.Errorf("parent-only install smoke task identity does not match attempt %s: %v", attempt.AttemptID, err)
-		}
-	} else {
-		runtime, taskID, err = s.boundAttemptRuntime(Admission{Attempt: attempt})
-		if err != nil {
-			return qualitygate.RunRecord{}, nil, err
-		}
+	runtime, taskID, err := s.candidateInstallSmokeRuntime(candidate, attempt)
+	if err != nil {
+		return qualitygate.RunRecord{}, nil, err
 	}
 	if runtime == nil || !qualitygate.ValidRunID(smokeID) {
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate install smoke identity is unavailable")
@@ -158,6 +145,24 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 		return qualitygate.RunRecord{}, nil, err
 	}
 	return smoke, smokeLog, nil
+}
+
+func (s *Store) candidateInstallSmokeRuntime(candidate AcceptedCandidate, attempt AttemptRecord) (*state.StateStore, string, error) {
+	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return s.boundAttemptRuntime(Admission{Attempt: attempt})
+	}
+	if !attempt.SemanticTaskRef.Equal(candidate.TaskRef) {
+		return nil, "", fmt.Errorf("parent-only install smoke Task contract does not match candidate")
+	}
+	runtime := state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
+	taskID, err := runtime.Read("task.id")
+	if err != nil {
+		return nil, "", fmt.Errorf("read parent-only install smoke task identity: %w", err)
+	}
+	if taskID == "" || taskID != attempt.AttemptID {
+		return nil, "", fmt.Errorf("parent-only install smoke task identity does not match attempt %s", attempt.AttemptID)
+	}
+	return runtime, taskID, nil
 }
 
 func candidateInstallSmokeMatches(smoke qualitygate.RunRecord, runID, taskID, root string) bool {

@@ -271,8 +271,12 @@ func (s *Store) verifyCommittedParentOnlyExecution(op ExecutionOperation, head R
 		return fmt.Errorf("committed parent-only execution attempt lost its execution authority")
 	}
 	runtime := state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
-	if taskID, err := runtime.Read("task.id"); err != nil || taskID != attempt.AttemptID {
-		return fmt.Errorf("committed parent-only smoke identity does not match attempt %s: %v", attempt.AttemptID, err)
+	taskID, err := runtime.Read("task.id")
+	if err != nil {
+		return fmt.Errorf("read committed parent-only smoke identity: %w", err)
+	}
+	if taskID != attempt.AttemptID {
+		return fmt.Errorf("committed parent-only smoke identity does not match attempt %s", attempt.AttemptID)
 	}
 	lease, err := s.loadLease(head.LiveLeaseID)
 	if err != nil {
