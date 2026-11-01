@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type findingSourceAuthority struct {
@@ -157,7 +158,7 @@ func (s *Store) findingSourceProgressionBridgesToObservation(finding FindingReco
 		if !findingProgressionStepMatchesAuthority(step, before, workspace) {
 			return false, nil
 		}
-		if findingAuthorityProgressionAnchors(step, finding) {
+		if findingAuthorityProgressionAnchors(step, finding, before) {
 			return true, nil
 		}
 		if step.sourceGeneration < finding.SourceControllerGeneration {
@@ -175,12 +176,14 @@ func findingSourceObservationReachable(finding FindingRecord, before findingSour
 		before.Generation > finding.SourceControllerGeneration
 }
 
-func findingAuthorityProgressionAnchors(step findingAuthorityProgressionStep, finding FindingRecord) bool {
-	return step.fromTransition &&
-		step.sourceGeneration == finding.SourceControllerGeneration &&
-		step.anchor.task.Equal(finding.SourceSemanticTaskRef) &&
-		step.anchor.project == finding.ProjectSnapshotID &&
-		step.anchor.workspace == finding.SourceWorkspaceSnapshotID
+func findingAuthorityProgressionAnchors(step findingAuthorityProgressionStep, finding FindingRecord, before findingSourceAuthority) bool {
+	if step.anchor == nil || step.sourceGeneration != finding.SourceControllerGeneration ||
+		!step.anchor.task.Equal(finding.SourceSemanticTaskRef) ||
+		step.anchor.workspace != finding.SourceWorkspaceSnapshotID ||
+		before.Project != finding.ProjectSnapshotID {
+		return false
+	}
+	return !step.fromTransition || step.anchor.project == before.Project
 }
 
 func (s *Store) nextFindingAuthorityProgression(progressions map[uint64][]findingAuthorityProgressionStep, generation uint64) (findingAuthorityProgressionStep, bool, error) {
@@ -212,6 +215,13 @@ func (s *Store) findingAuthorityProgressions(attemptID string) (map[uint64][]fin
 		return nil, err
 	}
 	for _, entry := range entries {
+		regular, err := findingAuthorityJSONEntry(entry)
+		if err != nil {
+			return nil, err
+		}
+		if !regular {
+			continue
+		}
 		var record TransitionRecord
 		if err := readJSON(filepath.Join(s.dir, "transitions", entry.Name()), &record); err != nil {
 			return nil, err
@@ -242,6 +252,13 @@ func (s *Store) appendFindingMutationProgressions(attemptID string, progressions
 		return err
 	}
 	for _, entry := range mutations {
+		regular, err := findingAuthorityJSONEntry(entry)
+		if err != nil {
+			return err
+		}
+		if !regular {
+			continue
+		}
 		var record MutationRecord
 		if err := readJSON(filepath.Join(s.dir, "mutations", entry.Name()), &record); err != nil {
 			return err
@@ -256,6 +273,17 @@ func (s *Store) appendFindingMutationProgressions(attemptID string, progressions
 		progressions[record.TargetGeneration] = append(progressions[record.TargetGeneration], step)
 	}
 	return nil
+}
+
+func findingAuthorityJSONEntry(entry os.DirEntry) (bool, error) {
+	if !strings.HasSuffix(entry.Name(), ".json") {
+		return false, nil
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return false, err
+	}
+	return info.Mode().IsRegular(), nil
 }
 
 func findingAuthorityProgressionPreserved(record TransitionRecord, attemptID string) bool {
