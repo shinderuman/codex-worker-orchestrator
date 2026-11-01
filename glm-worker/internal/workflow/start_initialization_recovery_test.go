@@ -109,8 +109,10 @@ func TestRecoverUnstartedMilestonePreservesUnreadableCheckpointFailure(t *testin
 	if _, err := st.LoadResumeCheckpoint(); err == nil || errors.Is(err, state.ErrNoResumeCheckpoint) {
 		t.Fatalf("fixture checkpoint unexpectedly readable/absent: %v", err)
 	}
-	// The runtime check is the owner of this rejection, independent of parent admission.
-	err := recoveryWorkflow(cfg, st).verifyUnstartedMilestoneRuntime()
+	// Isolate the checkpoint rejection while providing the admitted idle attempt.
+	w := recoveryWorkflow(cfg, st)
+	w.canonicalAdmission = &controller.Admission{}
+	err := w.verifyUnstartedMilestoneRuntime()
 	if err == nil || !strings.Contains(err.Error(), "cannot read resume checkpoint") || strings.Contains(err.Error(), "%!w") {
 		t.Fatalf("unreadable checkpoint error = %v", err)
 	}
