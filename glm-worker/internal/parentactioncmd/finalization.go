@@ -210,7 +210,7 @@ func finalizationRoutingDecision(cfg config.AppConfig, callerDir, form string) (
 
 func undeclaredFinalizationForm(form string) *finalizationFailure {
 	return &finalizationFailure{
-		Stage: "routing",
+		Stage:  "routing",
 		Reason: "form_not_declared_by_accepted_candidate",
 		Detail: "accepted candidate declares no " + form + " final validation obligation",
 	}
