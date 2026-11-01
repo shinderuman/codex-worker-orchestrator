@@ -149,9 +149,13 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 	next := sourceImportEntryMap(after)
 	removed := make([]workspaceTreeEntry, 0)
 	for _, entry := range before {
-		if _, remains := next[entry.path]; !remains {
-			removed = append(removed, entry)
+		if _, remains := next[entry.path]; remains {
+			continue
 		}
+		if sourceTreeReplacementDirectoryPresent(repo, entry.path, after) {
+			continue
+		}
+		removed = append(removed, entry)
 	}
 	for start := 0; start < len(removed); start += workspaceBlobBatchSize {
 		batch := removed[start:min(start+workspaceBlobBatchSize, len(removed))]
@@ -173,6 +177,21 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 		}
 	}
 	return nil
+}
+
+func sourceTreeReplacementDirectoryPresent(repo, path string, after []workspaceTreeEntry) bool {
+	replaced := false
+	for _, entry := range after {
+		if strings.HasPrefix(entry.path, path+"/") {
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		return false
+	}
+	info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(path)))
+	return err == nil && info.IsDir()
 }
 
 func removeSourceTreeReplacedDirectory(repo, path string, before []workspaceTreeEntry) error {
