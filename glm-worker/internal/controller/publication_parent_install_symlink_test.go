@@ -73,4 +73,11 @@ func TestParentOnlyInstallSmokeRejectsSymlinkedTaskIdentity(t *testing.T) {
 	if _, _, err := f.fixture.store.readCandidateInstallSmoke(f.candidate, f.root, f.runID); err == nil {
 		t.Fatal("external parent-only task identity accepted through symlink")
 	}
+	attempt, err := f.fixture.store.loadAttempt(f.candidate.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.fixture.store.bindParentOnlySmokeTaskID(attempt); err == nil {
+		t.Fatal("parent-only materialization accepted a symlinked task identity")
+	}
 }
