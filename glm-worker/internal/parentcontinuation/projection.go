@@ -457,7 +457,7 @@ func canonicalExecutionLifecycleTask(cfg config.AppConfig, st *state.StateStore,
 	if err != nil {
 		return "", err
 	}
-	if parentOnly {
+	if parentOnly || boundParentOnlySmokeIdentity(cfg, st) {
 		return task.TaskPath, nil
 	}
 	return canonicalLifecycleTask(st, task, quiescent)
