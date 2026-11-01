@@ -9,23 +9,17 @@ import (
 )
 
 type gitBashSandboxPolicy struct {
-	allowWrite       []string
-	denyWrite        []string
-	allowUnixSockets []string
+	allowWrite []string
+	denyWrite  []string
 }
 
 func (g *gitAuthorityGuard) bashSandboxPolicy() *gitBashSandboxPolicy {
 	if g == nil || !g.before.active {
 		return nil
 	}
-	allowUnixSockets := []string(nil)
-	if g.dockerPolicy && g.dockerSocket != "" {
-		allowUnixSockets = append(allowUnixSockets, g.dockerSocket)
-	}
 	return &gitBashSandboxPolicy{
-		allowWrite:       []string{g.workerTempDir},
-		denyWrite:        append([]string(nil), g.metadataPaths...),
-		allowUnixSockets: allowUnixSockets,
+		allowWrite: []string{g.workerTempDir},
+		denyWrite:  append([]string(nil), g.metadataPaths...),
 	}
 }
 
@@ -43,7 +37,7 @@ func (p *gitBashSandboxPolicy) settings() map[string]any {
 		"network": map[string]any{
 			"allowedDomains":      []string{},
 			"strictAllowlist":     true,
-			"allowUnixSockets":    sandboxAbsolutePaths(p.allowUnixSockets),
+			"allowUnixSockets":    []string{},
 			"allowAllUnixSockets": false,
 			"allowLocalBinding":   false,
 		},
