@@ -15,7 +15,7 @@ func TestFindingMutationSourceGenerationAnchorsCurrentProject(t *testing.T) {
 		Generation: finding.SourceControllerGeneration + 1,
 	}
 	step := findingAuthorityProgressionStep{
-		sourceGeneration: finding.SourceControllerGeneration,
+		sourceGeneration:        finding.SourceControllerGeneration,
 		targetWorkspaceSnapshot: "later-snapshot",
 		anchor: &findingAuthorityAnchor{
 			task: finding.SourceSemanticTaskRef, workspace: finding.SourceWorkspaceSnapshotID,
