@@ -81,7 +81,7 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 	}
 	legacy := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(bound, st))
 	if !legacy.Consistent || legacy.RequiredAction == nil || *legacy.RequiredAction != string(state.ParentActionResubmitReport) {
-		t.Fatalf("fixture does not reproduce early return: %#v", legacy)
+		t.Fatalf("fixture does not reproduce early return: %#v; inconsistency=%v", legacy, legacy.Inconsistency)
 	}
 	handoff := buildParentHandoffWithConfig(bound, st)
 	if handoff.Controller == nil || handoff.Controller.Head.PendingTransitionID != pending.TransitionID {
