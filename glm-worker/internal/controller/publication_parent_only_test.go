@@ -288,6 +288,11 @@ func TestParentOnlyCompletionReentryPreservesAuthority(t *testing.T) {
 			if reentered == nil || reentered.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly || reentered.Attempt.PredecessorAttemptID != admission.Attempt.AttemptID {
 				t.Fatalf("parent-only authority was lost: %#v", reentered)
 			}
+			smokeStore := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), reentered.Attempt.SemanticTaskRef))
+			taskID, err := smokeStore.Read("task.id")
+			if err != nil || taskID != reentered.Attempt.AttemptID {
+				t.Fatalf("reentry did not bind the successor smoke identity: %q err=%v", taskID, err)
+			}
 			if fixture.store.ParentOnlySmokeIdentityMatches(admission.Attempt.AttemptID) ||
 				!fixture.store.ParentOnlySmokeIdentityMatches(reentered.Attempt.AttemptID) {
 				t.Fatal("parent-only reentry allowed stale attempt identity")
