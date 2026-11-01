@@ -44,6 +44,16 @@ func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *te
 			wantViolation: true,
 		},
 		{
+			name:          "empty Log is inert",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log() }\n",
+			wantViolation: true,
+		},
+		{
+			name:          "empty Skip is inert",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Skip() }\n",
+			wantViolation: true,
+		},
+		{
 			name:          "static log only does not check behavior",
 			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log(\"verified\") }\n",
 			wantViolation: true,

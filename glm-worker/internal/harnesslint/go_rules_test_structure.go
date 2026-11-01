@@ -119,9 +119,6 @@ func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
 	case "Parallel", "Helper", "SkipNow":
 		return len(call.Args) == 0
 	case "Skip", "Skipf", "Log", "Logf":
-		if len(call.Args) == 0 {
-			return false
-		}
 		for _, argument := range call.Args {
 			if _, literal := argument.(*ast.BasicLit); literal {
 				continue
