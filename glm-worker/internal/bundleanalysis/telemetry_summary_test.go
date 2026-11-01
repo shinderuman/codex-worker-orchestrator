@@ -12,10 +12,10 @@ func TestCompactStatsAttributesOnlyCurrentSchemaCohort(t *testing.T) {
 	filtered := []state.TaskStats{
 		{
 			TaskID: "current", WorkerCalls: 2, ReviewerCalls: 1,
-			InputTokensByAlias: map[string]int64{"opus": 100},
+			InputTokensByAlias:          map[string]int64{"opus": 100},
 			CacheReadInputTokensByAlias: map[string]int64{"opus": 30},
-			OutputTokensByAlias: map[string]int64{"opus": 20},
-			ParentOutcomes: map[string]int{"implemented": 1},
+			OutputTokensByAlias:         map[string]int64{"opus": 20},
+			ParentOutcomes:              map[string]int{"implemented": 1},
 		},
 		{
 			TaskID: "historical", WorkerCalls: 900,
