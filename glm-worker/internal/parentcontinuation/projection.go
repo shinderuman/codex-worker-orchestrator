@@ -53,6 +53,9 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 		SessionRotation: &state.SessionRotationProjection{State: state.SessionRotationProjectionUnavailable},
 	}
 	plan, planErr := st.ParentActionPlan()
+	if planErr != nil && boundParentOnlySmokeIdentity(cfg, st) {
+		plan, planErr = state.ParentActionPlan{RequiredAction: state.ParentActionNone}, nil
+	}
 	if planErr != nil {
 		markInconsistent(&projection, planErr.Error())
 	} else {
@@ -73,6 +76,29 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
 	return projection
+}
+
+func boundParentOnlySmokeIdentity(cfg config.AppConfig, st *state.StateStore) bool {
+	if st.TaskStatus() != state.TaskStatusNone {
+		return false
+	}
+	taskID, err := st.Read("task.id")
+	if err != nil || taskID == "" {
+		return false
+	}
+	if _, err := st.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false
+	}
+	live, err := store.LiveParentOnlyExecution()
+	if err != nil || !live {
+		return false
+	}
+	head, err := store.LoadHead()
+	return err == nil && head.LiveAttemptID == taskID
 }
 
 func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
