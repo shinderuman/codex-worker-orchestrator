@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,45 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func TestQualitySurfaceApprovalTargetsDoNotRetryFailedCollector(t *testing.T) {
+	t.Parallel()
+	st := newStateStoreT(t)
+	w := newWorkflowT(t, st, &scriptedRunner{})
+	readErr := errors.New("first collector read failed")
+	calls := 0
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		calls++
+		if calls == 1 {
+			return nil, readErr
+		}
+		return []string{".golangci.yml"}, nil
+	}
+	targets, outside, err := w.qualitySurfaceApprovalReviewTargets()
+	if !errors.Is(err, readErr) || outside || calls != 1 || !reflect.DeepEqual(targets, qualitySurfaceOwnerReviewTargets()) {
+		t.Fatalf("collector retried/misclassified: targets=%v outside=%v calls=%d err=%v", targets, outside, calls, err)
+	}
+}
+
+func TestQualitySurfaceApprovalTargetsDistinguishNoTargetFromMissingCollector(t *testing.T) {
+	t.Parallel()
+	st := newStateStoreT(t)
+	w := newWorkflowT(t, st, &scriptedRunner{})
+	calls := 0
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		calls++
+		return nil, nil
+	}
+	targets, outside, err := w.qualitySurfaceApprovalReviewTargets()
+	if err != nil || !outside || calls != 1 || !reflect.DeepEqual(targets, qualitySurfaceOwnerReviewTargets()) {
+		t.Fatalf("no target result: targets=%v outside=%v calls=%d err=%v", targets, outside, calls, err)
+	}
+	w.collectChangedPaths = nil
+	_, outside, err = w.qualitySurfaceApprovalReviewTargets()
+	if err == nil || outside {
+		t.Fatalf("missing collector was accepted as outside-Git drift: outside=%v err=%v", outside, err)
+	}
+}
 
 func TestQualityGateFixResultUsesCanonicalViolationTargets(t *testing.T) {
 	t.Parallel()
