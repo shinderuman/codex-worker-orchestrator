@@ -14,7 +14,7 @@ import (
 
 func RunCanonical(ctx context.Context, repository string, goArgs []string, stdout, stderr io.Writer) (toolchain *qualitygate.RunToolchain, evidence *qualitygate.DockerExecution, resultErr error) {
 	started := time.Now()
-	d := diagnostic{Form: "canonical-go-test-linux", Platform: "linux/arm64", Arguments: goArgs, PhasesMS: map[string]int64{}}
+	d := diagnostic{Form: "canonical-go-test-linux", Platform: platformLinuxARM64, Arguments: goArgs, PhasesMS: map[string]int64{}}
 	x := execution{ctx: ctx, detail: &d, stdout: stdout, stderr: stderr}
 	code := 1
 	defer func() {
@@ -74,7 +74,7 @@ func canonicalEvidence(d diagnostic) *qualitygate.DockerExecution {
 func (x *execution) testCanonical(args []string) (int, error) {
 	started := time.Now()
 	script := `go "$@"; result=$?; printf '%s\n' "$result" > /tmp/canonical-go-exit; exit "$result"`
-	command := append([]string{"exec", "--user", "worker", "--workdir", "/workspace/glm-worker", x.container, "sh", "-c", script, "canonical-go"}, args...)
+	command := append([]string{dockerExecCommand, "--user", "worker", "--workdir", "/workspace/glm-worker", x.container, "sh", "-c", script, "canonical-go"}, args...)
 	proxyErr := x.runTestCommand(command)
 	code, targetErr := x.attestTargetExit(proxyErr)
 	x.detail.TestMS = time.Since(started).Milliseconds()
@@ -95,8 +95,8 @@ func (x *execution) attestTargetExit(proxyErr error) (int, error) {
 		return 1, fmt.Errorf("go target終了証拠が不正です")
 	}
 	x.detail.TargetExitCode = &code
-	if exitCode(proxyErr) != code {
-		return 1, fmt.Errorf("docker proxyとGo targetの終了値が一致しません: proxy=%w target=%d", proxyErr, code)
+	if proxy := exitCode(proxyErr); proxy != code {
+		return 1, errors.Join(fmt.Errorf("docker proxyとGo targetの終了値が一致しません: proxy=%d target=%d", proxy, code), proxyErr)
 	}
 	if code == 126 || code == 127 {
 		return 1, fmt.Errorf("container内のGo targetを起動できません: exit %d", code)
