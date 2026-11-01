@@ -337,6 +337,9 @@ func (s *Store) smokeProbeSatisfied(c AcceptedCandidate, probe SmokeProbeDeclara
 		return false, err
 	}
 	record, found, err := latestSmokeProbeRun(module, repoRoot, probe.ProbeID)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
 	if err != nil || !found {
 		return false, err
 	}
