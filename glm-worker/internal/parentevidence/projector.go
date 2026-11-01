@@ -688,17 +688,19 @@ func (p *Projector) commitLocked(stdout io.Writer, reason string) error {
 		}
 	}
 	output := p.output
-	applyTotalBudget(&output)
+	deliverable := applyTotalBudget(&output)
 	p.output = output
 	written, err := WriteMeasuredJSON(stdout, output)
 	if err != nil {
 		return err
 	}
-	if err := p.markReviewProof(output.Parts); err != nil {
-		return err
-	}
-	if err := p.saveSurvivingClaims(output.Parts); err != nil {
-		return err
+	if deliverable {
+		if err := p.markReviewProof(output.Parts); err != nil {
+			return err
+		}
+		if err := p.saveSurvivingClaims(output.Parts); err != nil {
+			return err
+		}
 	}
 	Record(p.st, state.ParentEvidenceRecord{
 		Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
@@ -775,10 +777,32 @@ func (p *Projector) degradeDuplicateParts() error {
 	return nil
 }
 
-func applyTotalBudget(output *Output) {
-	for outputSize(*output) > MaxOutputBytes && stripBody(output) {
+func applyTotalBudget(output *Output) bool {
+	// The emitted JSON includes a trailing newline. Use json.Marshal's
+	// HTML-escaped size as a conservative bound on the actual output.
+	for outputSize(*output)+1 > MaxOutputBytes && stripBody(output) {
+	}
+	if outputSize(*output)+1 > MaxOutputBytes {
+		// Metadata alone can exceed the budget. Do not return a truncated
+		// manifest or claim delivery of any parts that are not emitted.
+		*output = Output{
+			Version: ManifestVersion,
+			Status: StatusError,
+			OwnerCallID: output.OwnerCallID,
+			Reason: "parent evidence metadata exceeds output budget; narrow the manifest and retry",
+			Parts: []Part{{
+				Kind: "manifest",
+				Status: PartError,
+				Reason: "evidence metadata cannot fit within the serialized output budget",
+			}},
+		}
+		if outputSize(*output)+1 > MaxOutputBytes {
+			output.OwnerCallID = ""
+		}
+		return false
 	}
 	output.Status = aggregateStatus(output.Parts)
+	return true
 }
 
 func outputSize(output Output) int {
