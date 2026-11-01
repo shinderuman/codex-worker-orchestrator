@@ -57,7 +57,7 @@ func TestQualityWiringPackageAllowsResponsibilitySplit(t *testing.T) {
 func TestQualityWiringAcceptsSingleFixAndValidationPass(t *testing.T) {
 	root := t.TempDir()
 	check := qualityWiringChecks()[0]
-	writeQualityFile(t, root, check.path, "package workflow\nimport "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
+	writeQualityFile(t, root, check.path, "package workflow\nimport \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
 
 	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
 	if err != nil {
@@ -71,7 +71,7 @@ func TestQualityWiringAcceptsSingleFixAndValidationPass(t *testing.T) {
 func TestQualityWiringRejectsDuplicateValidationPass(t *testing.T) {
 	root := t.TempDir()
 	check := qualityWiringChecks()[0]
-	writeQualityFile(t, root, check.path, "package workflow\nimport "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); harnesslint.Check(root); captureQualitySurfaceDigest(root) }\n")
+	writeQualityFile(t, root, check.path, "package workflow\nimport \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true); harnesslint.Check(root); captureQualitySurfaceDigest(root) }\n")
 
 	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
 	if err != nil {
