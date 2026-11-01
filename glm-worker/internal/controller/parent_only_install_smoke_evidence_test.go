@@ -116,7 +116,7 @@ func TestParentOnlyInstallSmokeBindsCandidateWithoutModelRuntime(t *testing.T) {
 func TestParentOnlyInstallSmokeRejectsWrongEvidenceIdentity(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
+		name   string
 		change func(*qualitygate.RunRecord)
 	}{
 		{"other attempt", func(r *qualitygate.RunRecord) { r.TaskID = "other-attempt" }},
