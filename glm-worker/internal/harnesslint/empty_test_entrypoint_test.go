@@ -9,34 +9,34 @@ import (
 func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
-		source string
+		name          string
+		source        string
 		wantViolation bool
 	}{
 		{
-			name: "empty test",
-			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) {}\n",
+			name:          "empty test",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) {}\n",
 			wantViolation: true,
 		},
 		{
-			name: "comment only is empty",
-			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { /* validates the contract */ }\n",
+			name:          "comment only is empty",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { /* validates the contract */ }\n",
 			wantViolation: true,
 		},
 		{
-			name: "behavioral negative case",
+			name:   "behavioral negative case",
 			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { if 2 + 2 != 4 { t.Fatal(\"unexpected result\") } }\n",
 		},
 		{
-			name: "schema guard with explicit assertion",
+			name:   "schema guard with explicit assertion",
 			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { got := \"schema\"; if got == \"\" { t.Fatal(\"empty schema\") } }\n",
 		},
 		{
-			name: "table driven regression",
+			name:   "table driven regression",
 			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { for _, value := range []int{1, 2} { if value < 1 { t.Fatal(value) } } }\n",
 		},
 		{
-			name: "ordinary non-test function",
+			name:   "ordinary non-test function",
 			source: "package demo\nfunc Helper() {}\n",
 		},
 	}
