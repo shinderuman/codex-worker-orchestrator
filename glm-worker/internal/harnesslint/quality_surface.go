@@ -347,9 +347,22 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 		return nil, err
 	}
 	text := string(data)
+	var requiredGo map[string]bool
+	if strings.HasSuffix(check.path, ".go") {
+		requiredGo, err = qualityWiringRequiredGoTokens(check.path, data)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var violations []Violation
 	for _, token := range check.tokens {
-		if strings.Contains(text, token) {
+		present := strings.Contains(text, token)
+		if requiredGo != nil {
+			if detected, supported := requiredGo[token]; supported {
+				present = detected
+			}
+		}
+		if present {
 			continue
 		}
 		violations = append(violations, Violation{
@@ -373,6 +386,51 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 	}
 	violations = append(violations, orderViolations...)
 	return violations, nil
+}
+
+func qualityWiringRequiredGoTokens(path string, data []byte) (map[string]bool, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
+	if err != nil {
+		return nil, err
+	}
+	found := map[string]bool{
+		"harnesslint.Run(root, true)": false,
+		"captureQualitySurfaceDigest": false,
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch current := node.(type) {
+		case *ast.FuncDecl:
+			if current.Recv == nil && current.Name.Name == "captureQualitySurfaceDigest" {
+				found["captureQualitySurfaceDigest"] = true
+			}
+		case *ast.CallExpr:
+			if qualityWiringIsHarnessRun(current) {
+				found["harnesslint.Run(root, true)"] = true
+			}
+			if identifier, ok := current.Fun.(*ast.Ident); ok && identifier.Name == "captureQualitySurfaceDigest" {
+				found["captureQualitySurfaceDigest"] = true
+			}
+		}
+		return true
+	})
+	return found, nil
+}
+
+func qualityWiringIsHarnessRun(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Run" || len(call.Args) != 2 {
+		return false
+	}
+	pkg, ok := selector.X.(*ast.Ident)
+	if !ok || pkg.Name != "harnesslint" {
+		return false
+	}
+	root, ok := call.Args[0].(*ast.Ident)
+	if !ok || root.Name != "root" {
+		return false
+	}
+	fix, ok := call.Args[1].(*ast.Ident)
+	return ok && fix.Name == "true"
 }
 
 func qualityWiringForbiddenCalls(check qualityWiringCheck, data []byte) ([]string, error) {
