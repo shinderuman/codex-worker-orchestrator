@@ -161,17 +161,28 @@ func TestGitAuthorityClaudeWrapperSkipsPinWithoutGoContract(t *testing.T) {
 	}
 }
 
-func TestGitAuthorityClaudeWrapperExportsDockerHostOnlyWithResolvedSocket(t *testing.T) {
+func TestGitAuthorityClaudeWrapperKeepsDockerEndpointOutOfWorkerEnv(t *testing.T) {
 	t.Parallel()
-	guard := &gitAuthorityGuard{before: gitAuthoritySnapshot{active: true}, dockerSocket: "/Users/worker/.docker/run/docker.sock"}
+	guard := &gitAuthorityGuard{before: gitAuthoritySnapshot{active: true}}
 	script := gitAuthorityClaudeWrapperScript(guard, "/bin/true")
-	if !strings.Contains(script, "DOCKER_HOST='unix:///Users/worker/.docker/run/docker.sock'") {
-		t.Fatalf("wrapper script does not export the resolved Docker endpoint: %s", script)
+	if !strings.Contains(script, "unset DOCKER_HOST\n") {
+		t.Fatalf("wrapper script does not clear DOCKER_HOST: %s", script)
 	}
-	guard.dockerSocket = ""
+	if strings.Contains(script, "GLM_WORKER_DOCKER_TEST_STAGING") {
+		t.Fatalf("Docker policyなしでstaging環境変数をexportしました: %s", script)
+	}
+	guard.dockerPolicy = true
+	guard.dockerTestStagingDir = "/guard/worker/docker-test"
+	guard.dockerTestResponseDir = "/guard/docker-test-responses"
 	script = gitAuthorityClaudeWrapperScript(guard, "/bin/true")
-	if strings.Contains(script, "DOCKER_HOST") {
-		t.Fatalf("wrapper script exports DOCKER_HOST without a resolved socket: %s", script)
+	if !strings.Contains(script, "GLM_WORKER_DOCKER_TEST_STAGING='/guard/worker/docker-test'\nexport GLM_WORKER_DOCKER_TEST_STAGING") {
+		t.Fatalf("wrapper script does not export the staging dir: %s", script)
+	}
+	if !strings.Contains(script, "GLM_WORKER_DOCKER_TEST_RESPONSES='/guard/docker-test-responses'\nexport GLM_WORKER_DOCKER_TEST_RESPONSES") {
+		t.Fatalf("wrapper script does not export the response dir: %s", script)
+	}
+	if strings.Contains(script, "unix://") {
+		t.Fatalf("wrapper script still references a raw Docker endpoint: %s", script)
 	}
 }
 
