@@ -30,7 +30,6 @@ func TestRootPromotionRecoversFileToDirectoryAfterPartialApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := fixture.store.identity.PrimaryRoot
-	// Simulate interruption immediately after removing the accepted old file.
 	if err := os.Remove(filepath.Join(root, "external")); err != nil {
 		t.Fatal(err)
 	}
