@@ -244,6 +244,13 @@ func (s *Store) bindParentOnlySmokeTaskID(attempt AttemptRecord) error {
 	if err := os.MkdirAll(runtime.Path("."), 0o700); err != nil {
 		return fmt.Errorf("prepare parent-only smoke store: %w", err)
 	}
+	if info, err := os.Lstat(runtime.Path("task.id")); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("parent-only smoke identity is not a regular file")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat parent-only smoke identity: %w", err)
+	}
 	if current, err := runtime.Read("task.id"); err == nil && current == attempt.AttemptID {
 		return nil
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
