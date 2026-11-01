@@ -149,8 +149,8 @@ func TestQualityGateDockerRetryRequiresSameEffectiveResources(t *testing.T) {
 	dir := t.TempDir()
 	script := `#!/bin/sh
 case "$1" in
- image) printf 'sha256:expected\\n';;
- info) printf '4 1000000\\n';;
+ image) printf 'sha256:expected\n';;
+ info) printf '4 1000000\n';;
  *) exit 1;;
 esac
 `
@@ -159,7 +159,7 @@ esac
 	}
 	t.Setenv("PATH", dir)
 	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, qualitygate.QualityToolsFile), []byte("lint-go: 1.25.4\\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, qualitygate.QualityToolsFile), []byte("lint-go: 1.25.4\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	candidate := qualitygate.RunRecord{
