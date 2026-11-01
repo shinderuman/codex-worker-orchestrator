@@ -104,15 +104,29 @@ func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
 		return false
 	}
 	call, ok := expression.X.(*ast.CallExpr)
-	if !ok || len(call.Args) != 0 {
+	if !ok {
 		return false
 	}
 	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || (selector.Sel.Name != "Parallel" && selector.Sel.Name != "Helper") {
+	if !ok {
 		return false
 	}
 	base, ok := selector.X.(*ast.Ident)
-	return ok && base.Name == receiver
+	if !ok || base.Name != receiver {
+		return false
+	}
+	switch selector.Sel.Name {
+	case "Parallel", "Helper", "SkipNow":
+		return len(call.Args) == 0
+	case "Skip", "Skipf":
+		if len(call.Args) != 1 {
+			return false
+		}
+		_, literal := call.Args[0].(*ast.BasicLit)
+		return literal
+	default:
+		return false
+	}
 }
 
 func testSizeViolations(set *token.FileSet, file *ast.File, path string) []Violation {

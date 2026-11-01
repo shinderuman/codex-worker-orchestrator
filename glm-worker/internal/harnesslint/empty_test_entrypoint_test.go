@@ -34,6 +34,20 @@ func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *te
 			wantViolation: true,
 		},
 		{
+			name:          "unconditional skip has no coverage",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Skip(\"disabled\") }\n",
+			wantViolation: true,
+		},
+		{
+			name:          "parallel then unconditional skip has no coverage",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Parallel(); t.SkipNow() }\n",
+			wantViolation: true,
+		},
+		{
+			name:   "conditional platform skip preserves actual assertions",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { if special { t.Skip(\"unsupported\") }; if wrong { t.Fatal(\"bad\") } }\n",
+		},
+		{
 			name:   "parallel before real verification is permitted",
 			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Parallel(); if 2+2 != 4 { t.Fatal(\"wrong\") } }\n",
 		},
