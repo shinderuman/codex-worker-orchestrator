@@ -199,11 +199,7 @@ func (s *Store) projectAcceptedCandidateOperation(head RepositoryControllerHead)
 	case candidatePrepared:
 		return s.projectPreparedCandidateOperation(head, candidate)
 	case candidatePromoted:
-		operation := s.projectCandidateOperation(head, candidate, PublicationOperationPublish)
-		if err := s.admitPromotedCandidateReentry(head, candidate); err == nil {
-			operation.AllowedOperations = []string{PublicationOperationPublish, PublicationOperationReenter}
-		}
-		return operation, nil
+		return s.projectCandidateOperation(head, candidate, PublicationOperationPublish), nil
 	default:
 		return ParentCompletionOperation{Operation: PublicationOperationObserved}, nil
 	}
@@ -429,8 +425,7 @@ func (s *Store) ProjectParentCompletionOperation(requested string) (ParentComple
 	if requested == PublicationOperationReopen && operation.Operation == PublicationOperationAccept {
 		return s.projectUnsealedReopen(operation.Command.ExpectedGeneration), nil
 	}
-	if requested == PublicationOperationReenter && operation.Operation == PublicationOperationPublish &&
-		slices.Contains(operation.AllowedOperations, PublicationOperationReenter) {
+	if requested == PublicationOperationReenter && operation.Operation == PublicationOperationPublish {
 		head, err := s.LoadHead()
 		if err != nil {
 			return ParentCompletionOperation{}, err
