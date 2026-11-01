@@ -31,7 +31,7 @@ func Capture(repoRoot string, st *state.StateStore) ([]byte, bool, error) {
 	}
 	defer cleanup()
 
-	diff, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--binary", "--no-ext-diff", "--no-renames", "--")
+	diff, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", "--")
 	if err != nil {
 		return nil, false, fmt.Errorf("capture task diff: %w", err)
 	}
@@ -57,7 +57,7 @@ func ChangedPaths(repoRoot string, st *state.StateStore) ([]string, bool, error)
 	}
 	defer cleanup()
 
-	trackedRaw, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--name-only", "-z", "--no-renames", "--")
+	trackedRaw, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--name-only", "-z", "--no-ext-diff", "--no-textconv", "--no-renames", "--")
 	if err != nil {
 		return nil, false, fmt.Errorf("capture task changed paths: %w", err)
 	}
@@ -128,7 +128,7 @@ func baselineWorktreePathPatch(
 		patch, differs, err := preexistingUntrackedPathPatch(repoRoot, entry, nowTracked)
 		return entry.Path, patch, differs, err
 	}
-	patch, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--no-renames", "--unified=0", "--no-ext-diff", "--no-color", "--", path)
+	patch, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--no-renames", "--unified=0", "--no-ext-diff", "--no-textconv", "--no-color", "--", path)
 	if err != nil {
 		return "", nil, false, fmt.Errorf("capture task baseline diff %s: %w", path, err)
 	}
@@ -387,7 +387,7 @@ func newDirectorySymlinkFilePatch(repoRoot, filePath string) ([]byte, error) {
 			return nil, fmt.Errorf("prepare directory-target symlink patch for %s: git %s: %w: %s", filePath, strings.Join(args, " "), err, strings.TrimSpace(string(stderr)))
 		}
 	}
-	args := []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-renames", "--", filePath}
+	args := []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", "--", filePath}
 	stdout, stderr, err := runGitCommand(tempDir, nil, nil, args...)
 	if err != nil {
 		return nil, fmt.Errorf("capture directory-target symlink patch for %s: %w: %s", filePath, err, strings.TrimSpace(string(stderr)))
