@@ -45,21 +45,21 @@ func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *te
 		},
 		{
 			name:          "static log only does not check behavior",
-			source:        "package demo\\nimport \\"testing\\"\\nfunc TestGuard(t *testing.T) { t.Log(\\"verified\\") }\\n",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log(\"verified\") }\n",
 			wantViolation: true,
 		},
 		{
 			name:          "static formatted log only is inert",
-			source:        "package demo\\nimport \\"testing\\"\\nfunc TestGuard(t *testing.T) { t.Helper(); t.Logf(\\"verified\\") }\\n",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Helper(); t.Logf(\"verified\") }\n",
 			wantViolation: true,
 		},
 		{
 			name:   "log can evaluate runtime behavior",
-			source: "package demo\\nimport \\"testing\\"\\nfunc TestGuard(t *testing.T) { t.Log(observeRuntime()) }\\n",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log(observeRuntime()) }\n",
 		},
 		{
 			name:   "formatted log can evaluate runtime behavior",
-			source: "package demo\\nimport \\"testing\\"\\nfunc TestGuard(t *testing.T) { t.Logf(\\"value %v\\", observeRuntime()) }\\n",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Logf(\"value %v\", observeRuntime()) }\n",
 		},
 		{
 			name:   "conditional platform skip preserves actual assertions",
