@@ -104,6 +104,10 @@ func boundParentOnlySmokeIdentity(cfg config.AppConfig, st *state.StateStore) bo
 	if live {
 		return head.LiveAttemptID == taskID
 	}
+	return acceptedParentOnlySmokeIdentityMatches(store, head, taskID)
+}
+
+func acceptedParentOnlySmokeIdentityMatches(store *controller.Store, head controller.RepositoryControllerHead, taskID string) bool {
 	if head.AcceptedCandidateRef == nil || head.ExecutionTaskRef == nil {
 		return false
 	}
