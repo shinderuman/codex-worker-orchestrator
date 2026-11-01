@@ -28,8 +28,10 @@ func gitAuthorityClaudeWrapperScript(g *gitAuthorityGuard, claudeBin string) str
 	if g.goToolchain != "" {
 		result += "GOTOOLCHAIN=" + shellSingleQuote(g.goToolchain) + "\nexport GOTOOLCHAIN\n"
 	}
-	if g.dockerSocket != "" {
-		result += "DOCKER_HOST=" + shellSingleQuote("unix://"+g.dockerSocket) + "\nexport DOCKER_HOST\n"
+	result += "unset DOCKER_HOST\n"
+	if g.dockerPolicy && g.dockerTestStagingDir != "" {
+		result += "GLM_WORKER_DOCKER_TEST_STAGING=" + shellSingleQuote(g.dockerTestStagingDir) + "\nexport GLM_WORKER_DOCKER_TEST_STAGING\n"
+		result += "GLM_WORKER_DOCKER_TEST_RESPONSES=" + shellSingleQuote(g.dockerTestResponseDir) + "\nexport GLM_WORKER_DOCKER_TEST_RESPONSES\n"
 	}
 	result += "GLM_WORKER_GIT_TEMP_ROOT=" + shellSingleQuote(g.workerTempDir) + "\nexport GLM_WORKER_GIT_TEMP_ROOT\n"
 	result += "CLAUDE_CODE_TMPDIR=" + shellSingleQuote(g.workerTempDir) + "\nexport CLAUDE_CODE_TMPDIR\n"

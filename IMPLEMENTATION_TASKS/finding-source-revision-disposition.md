@@ -19,6 +19,15 @@ findingSourceRevisionTransitionはIMPORT_PARENT_SOURCEだけを認め、SYNC_TAS
 ````
 
 
+### 2026-11-01 External Review #1401の補完要求
+
+親Codexは次の2件を本Taskへ束縛し、External Review照合Taskで重複実装しないと判断した。
+
+- CR-1401-2: https://github.com/shinderuman/codex-worker-orchestrator/pull/1401#discussion_r4381578250 。原文: **Accept mutation steps at the finding's source generation.** A live finding can be recorded at generation G while a bound model call is active. The later `RecordAdmittedMutation` then writes a mutation from G to G+1. The continuity traversal reaches G, but `findingAuthorityProgressionAnchors` rejects the mutation because `step.fromTransition` is false. The finding can then be reported as unreachable. Add a mutation-specific anchor rule. Require the validated mutation step to match the finding's task and workspace, and compare its project with the previously matched authority. Preserve the existing mutation identity, lease, snapshot, and consecutive-generation checks.
+- CR-1401-3: https://github.com/shinderuman/codex-worker-orchestrator/pull/1401#discussion_r4381578261 。原文: **Ignore temporary and non-JSON entries during progression scans.** `ResolveFinding` holds the mutation lock during resolution, so the claimed concurrent partial-file read is not established. However, an interrupted `writeJSONAtomic` can leave a `.controller-*.tmp` file, and both scans attempt to decode every directory entry. That stale file can make finding resolution fail. Filter each entry to regular `.json` files before calling `readJSON`. Keep validation for JSON records.
+
+受理済みmutationでsource generationへ到達する正caseと、異なるTask/workspace/project・不連続generation・無効lease/snapshotの拒否caseを検証する。scanは通常の.json fileだけを対象とし、temporary/non-JSON entryは無視して、正規JSON recordのdecode/validation failureは隠さない。
+
 ## Purpose
 
 Task/Attempt・Project・canonical Finding・source importのimmutable revision chain・generation/Transitionに基づいて同じFindingを正規に解決する。

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,29 @@ func (runner *deterministicSequenceRunner) run(dir, name string, args ...string)
 	}
 	runner.calls++
 	return commandResult{}, nil
+}
+
+func TestDeterministicAutofixCompactsPlanSpacing(t *testing.T) {
+	root := fixtureRoot(t)
+	path := implementationPlanPath
+	original := "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n"
+	writeFixture(t, root, path, original)
+	report, err := runDeterministicAutofix(root, root, fakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Fixed != 1 || report.DeterministicConvergence == nil ||
+		report.DeterministicConvergence.State != DeterministicFixConverged {
+		t.Fatalf("deterministic fix = %+v", report)
+	}
+	data, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := strings.ReplaceAll(original, "\n\n\n- [second]", "\n- [second]")
+	if string(data) != expected {
+		t.Fatalf("unexpected deterministic Plan: %q", data)
+	}
 }
 
 func TestDeterministicAutofixConvergesAfterMultiplePasses(t *testing.T) {
