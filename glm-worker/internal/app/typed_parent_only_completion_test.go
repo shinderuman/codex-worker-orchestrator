@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -371,8 +372,8 @@ func executeParentOnlyControllerAction(t *testing.T, cfg config.AppConfig, paylo
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.AttachStateStore(bound).Exists("task.id") {
-		t.Fatal("parent-only overflow continuation created Runtime task state")
+	if _, err := state.AttachStateStore(bound).LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("parent-only overflow continuation created a model Runtime binding: %v", err)
 	}
 }
 
