@@ -6,17 +6,14 @@ import (
 	"testing"
 )
 
-func TestRootPromotionRecoversDirectoryToFileAfterPartialDeletion(t *testing.T) {
+func TestRootPromotionRecoversFileToDirectoryAfterPartialApply(t *testing.T) {
 	t.Parallel()
 	fixture, policy, accepted, candidate := primaryPromotionFixtureWithTreeEdit(t,
-		"external/child", "old child\n", func(root string) {
-			if err := os.Remove(filepath.Join(root, "external", "child")); err != nil {
-				t.Fatal(err)
-			}
+		"external", "old file\n", func(root string) {
 			if err := os.Remove(filepath.Join(root, "external")); err != nil {
 				t.Fatal(err)
 			}
-			writeSuspensionTestFile(t, root, "external", "accepted file\n")
+			writeSuspensionTestFile(t, root, "external/child", "accepted child\n")
 		})
 	candidate.State = candidatePromoted
 	op, err := fixture.store.planCandidateRevision(accepted.Head, candidate, *accepted.CandidateRef, publicationPromote)
@@ -32,8 +29,22 @@ func TestRootPromotionRecoversDirectoryToFileAfterPartialDeletion(t *testing.T) 
 		t.Fatal(err)
 	}
 	root := fixture.store.identity.PrimaryRoot
-	if err := os.Remove(filepath.Join(root, "external", "child")); err != nil {
+	entries, err := sourceImportTreeEntries(root, candidate.TreeOID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	applied := false
+	for _, entry := range entries {
+		if entry.path != "external/child" {
+			continue
+		}
+		if err := applySourceTreeEntries(root, nil, []workspaceTreeEntry{entry}); err != nil {
+			t.Fatal(err)
+		}
+		applied = true
+	}
+	if !applied {
+		t.Fatal("accepted structural target is missing")
 	}
 	writeSuspensionTestFile(t, root, "external/foreign", "foreign content\n")
 	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); err == nil {
@@ -50,11 +61,11 @@ func TestRootPromotionRecoversDirectoryToFileAfterPartialDeletion(t *testing.T) 
 		t.Fatal(err)
 	}
 	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); err != nil {
-		t.Fatalf("legitimate partial directory replacement failed recovery: %v", err)
+		t.Fatalf("legitimate partial source application failed recovery: %v", err)
 	}
-	content, err := os.ReadFile(filepath.Join(root, "external"))
-	if err != nil || string(content) != "accepted file\n" {
-		t.Fatalf("recovered primary file: %q, %v", content, err)
+	content, err := os.ReadFile(filepath.Join(root, "external", "child"))
+	if err != nil || string(content) != "accepted child\n" {
+		t.Fatalf("recovered primary child: %q, %v", content, err)
 	}
 	if err := fixture.store.verifyPrimaryPublicationTree(candidate); err != nil {
 		t.Fatalf("recovered worktree/index do not match accepted tree: %v", err)
