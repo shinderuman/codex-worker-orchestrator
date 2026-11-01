@@ -21,8 +21,11 @@ func (w *Workflow) RecoverUnstartedMilestone() error {
 		return err
 	}
 	request, err := w.state.Read("last-request")
-	if err != nil || request == "" {
+	if err != nil {
 		return fmt.Errorf("startup recovery request is unavailable: %w", err)
+	}
+	if request == "" {
+		return fmt.Errorf("startup recovery request is unavailable: empty last-request")
 	}
 	checkpoint, err := w.newExecutionMilestoneCheckpoint(request, plan.ActiveTaskPath, "worker-new", w.config.RoutineEffort, false, 1)
 	if err != nil {
@@ -61,8 +64,10 @@ func (w *Workflow) verifyUnstartedMilestoneRuntime() error {
 	if w.state.TaskStatus() != state.TaskStatusActive || w.canonicalAdmission.Lease.InFlightCallID != "" {
 		return fmt.Errorf("startup recovery requires exact active runtime without an in-flight model call")
 	}
-	if _, err := w.state.LoadResumeCheckpoint(); !errors.Is(err, state.ErrNoResumeCheckpoint) {
-		return fmt.Errorf("startup recovery requires absent resume checkpoint: %w", err)
+	if _, err := w.state.LoadResumeCheckpoint(); err == nil {
+		return fmt.Errorf("startup recovery requires absent resume checkpoint")
+	} else if !errors.Is(err, state.ErrNoResumeCheckpoint) {
+		return fmt.Errorf("startup recovery cannot read resume checkpoint: %w", err)
 	}
 	taskID, err := w.state.TaskID()
 	if err != nil {
