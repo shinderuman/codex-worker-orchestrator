@@ -61,7 +61,30 @@ func copyRepositoryIndex(ctx context.Context, root, clone string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(clone, ".git", "index"), body, 0o600)
+	if err := os.WriteFile(filepath.Join(clone, ".git", "index"), body, 0o600); err != nil {
+		return err
+	}
+	return copySharedIndexFiles(filepath.Dir(index), filepath.Join(clone, ".git"))
+}
+
+func copySharedIndexFiles(sourceDir, destinationDir string) error {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "sharedindex.") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(sourceDir, entry.Name()))
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(destinationDir, entry.Name()), body, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeArchive(writer *tar.Writer, root, clone string, paths []byte) error {
@@ -149,9 +172,10 @@ func archiveLink(root, absolute string, mode fs.FileMode, enforceRoot bool) (str
 		return link, nil
 	}
 	target := link
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(filepath.Dir(absolute), target)
+	if filepath.IsAbs(target) {
+		return "", fmt.Errorf("絶対path symlinkは転送できません: %s", absolute)
 	}
+	target = filepath.Join(filepath.Dir(absolute), target)
 	relative, err := filepath.Rel(root, filepath.Clean(target))
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("repository外へのsymlinkは転送できません: %s", absolute)

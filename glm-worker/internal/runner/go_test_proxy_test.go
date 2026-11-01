@@ -45,10 +45,14 @@ func TestGoTestProxyDeniesNativeTestSubcommand(t *testing.T) {
 	t.Parallel()
 	proxyPath, argvLog := writeGoProxyFixture(t)
 	cases := map[string][]string{
-		"plain":      {"test", "./..."},
-		"with-dir":   {"-C", "glm-worker", "test", "-race", "./..."},
-		"focused":    {"test", "-run", "^TestX$", "./internal/app"},
-		"json-count": {"test", "-json", "-count=1", "./..."},
+		"plain":          {"test", "./..."},
+		"with-dir":       {"-C", "glm-worker", "test", "-race", "./..."},
+		"with-dir-long":  {"--C", "glm-worker", "test", "-race", "./..."},
+		"with-dir-eq":    {"-C=glm-worker", "test", "./..."},
+		"with-dir-leq":   {"--C=glm-worker", "test", "./..."},
+		"focused":        {"test", "-run", "^TestX$", "./internal/app"},
+		"json-count":     {"test", "-json", "-count=1", "./..."},
+		"dir-long-focus": {"--C", "glm-worker", "test", "-run", "^TestX$", "./..."},
 	}
 	for name, args := range cases {
 		code, output := runGoProxyCommand(t, proxyPath, args...)
@@ -71,6 +75,7 @@ func TestGoTestProxyPassesNonTestSubcommandsThrough(t *testing.T) {
 		"run":        {"run", "./cmd/goquality"},
 		"version":    {"version"},
 		"dir-vet":    {"-C", "glm-worker", "vet", "./..."},
+		"dir-long":   {"--C", "glm-worker", "env", "GOVERSION"},
 		"tool-flags": {"test2json"},
 	}
 	for name, args := range cases {
@@ -80,38 +85,6 @@ func TestGoTestProxyPassesNonTestSubcommandsThrough(t *testing.T) {
 		}
 	}
 	if data, err := os.ReadFile(argvLog); err != nil || len(data) == 0 {
-		t.Fatalf("許可したsubcommandが実際のtoolchainへ到達しません: %v", err)
-	}
-}
-
-func TestResolveDockerDaemonSocketPrefersLocalUnixEndpoint(t *testing.T) {
-	cases := []struct {
-		name       string
-		dockerHost string
-		fakeDocker string
-		want       string
-	}{
-		{name: "docker-host-unix", dockerHost: "unix:///var/run/docker.sock", want: "/var/run/docker.sock"},
-		{name: "docker-host-user-socket", dockerHost: "unix:///Users/worker/.docker/run/docker.sock", want: "/Users/worker/.docker/run/docker.sock"},
-		{name: "docker-host-tcp", dockerHost: "tcp://127.0.0.1:2375", want: ""},
-		{name: "context-unix", fakeDocker: "unix:///Users/worker/.docker/run/docker.sock\n", want: "/Users/worker/.docker/run/docker.sock"},
-		{name: "context-remote-ssh", fakeDocker: "ssh://remote\n", want: ""},
-		{name: "docker-missing", want: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("DOCKER_HOST", tc.dockerHost)
-			bin := t.TempDir()
-			if tc.fakeDocker != "" {
-				fake := "#!/bin/sh\nprintf '%s' '" + strings.TrimRight(tc.fakeDocker, "\n") + "'\n"
-				if err := execfile.Write(filepath.Join(bin, "docker"), []byte(fake), 0o700); err != nil {
-					t.Fatal(err)
-				}
-			}
-			t.Setenv("PATH", bin)
-			if got := resolveDockerDaemonSocket(); got != tc.want {
-				t.Fatalf("socket = %q want %q", got, tc.want)
-			}
-		})
+		t.Fatalf("許可したsubcommandが実際のtoolchainへ到達しませんでした: %v", err)
 	}
 }

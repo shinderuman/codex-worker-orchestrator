@@ -1,9 +1,6 @@
 package runner
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -17,7 +14,8 @@ go_guard_subcommand() {
       continue
     fi
     case "$arg" in
-      -C) expect=dir ;;
+      -C|--C) expect=dir ;;
+      -C=*|--C=*) ;;
       -*) ;;
       *) printf '%s\n' "$arg"; return ;;
     esac
@@ -35,30 +33,4 @@ func goTestProxyScript(realGo string) string {
 	return strings.NewReplacer(
 		"__REAL_GO__", shellSingleQuote(realGo),
 	).Replace(goTestProxyTemplate)
-}
-
-func resolveDockerDaemonSocket() string {
-	if host := os.Getenv("DOCKER_HOST"); host != "" {
-		return unixSocketEndpointPath(host)
-	}
-	docker, err := exec.LookPath("docker")
-	if err != nil {
-		return ""
-	}
-	data, err := exec.Command(docker, "context", "inspect", "--format", "{{.Endpoints.docker.Host}}").Output()
-	if err != nil {
-		return ""
-	}
-	return unixSocketEndpointPath(strings.TrimSpace(string(data)))
-}
-
-func unixSocketEndpointPath(endpoint string) string {
-	if !strings.HasPrefix(endpoint, "unix://") {
-		return ""
-	}
-	path := filepath.Clean(strings.TrimPrefix(endpoint, "unix://"))
-	if !filepath.IsAbs(path) {
-		return ""
-	}
-	return path
 }

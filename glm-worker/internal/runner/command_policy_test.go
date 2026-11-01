@@ -35,6 +35,11 @@ func TestBuildRunArgsDisallowsMutableWorkerDirectLintCommands(t *testing.T) {
 			t.Fatalf("Docker policy無効なworkerへGo test deny %qが漏れています: %#v", rule, args)
 		}
 	}
+	for _, rule := range workerDockerDisallowedBashRules {
+		if containsArgument(args, rule) {
+			t.Fatalf("Docker policy無効なworkerへDocker deny %qが漏れています: %#v", rule, args)
+		}
+	}
 	if containsArgument(args, "Bash") {
 		t.Fatalf("mutable worker Bash tool was removed instead of narrowly denying commands: %#v", args)
 	}
@@ -55,15 +60,15 @@ func TestBuildRunArgsDeniesGoTestOnlyUnderDockerPolicy(t *testing.T) {
 		runInputs{systemFile: "WORKER.md", schema: "{}"},
 	)
 
-	want := append(slices.Clone(workerLintDisallowedBashRules), workerGoTestDisallowedBashRules...)
+	want := append(append(slices.Clone(workerLintDisallowedBashRules), workerGoTestDisallowedBashRules...), workerDockerDisallowedBashRules...)
 	for _, rule := range want {
 		if !containsArgument(args, rule) {
 			t.Fatalf("worker deny rule %q is missing: %#v", rule, args)
 		}
 	}
-	for _, rule := range []string{"Bash(*/go test*)", "Bash(*/go -C* test*)", "Bash(* go1.* test*)", "Bash(*/go1.* -C* test*)"} {
+	for _, rule := range []string{"Bash(*/go test*)", "Bash(*/go -C* test*)", "Bash(go --C* test*)", "Bash(* go1.* test*)", "Bash(*/go1.* -C* test*)", "Bash(docker run*)", "Bash(docker exec*)"} {
 		if !containsArgument(args, rule) {
-			t.Fatalf("絶対path・versioned実行形式のdeny %qがありません: %#v", rule, args)
+			t.Fatalf("絶対path・versioned・--C・Docker実行形式のdeny %qがありません: %#v", rule, args)
 		}
 	}
 	if containsArgument(args, "Bash") {
