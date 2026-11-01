@@ -53,7 +53,6 @@ func markdownDerivedStatePathViolations(root, path string) ([]Violation, error) 
 	}
 }
 
-
 func markdownPlanSpacingViolations(path string, data []byte) []Violation {
 	normalized := compactPlanSpacing(data)
 	if bytes.Equal(data, normalized) {

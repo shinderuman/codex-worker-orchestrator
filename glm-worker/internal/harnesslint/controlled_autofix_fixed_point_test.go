@@ -27,7 +27,6 @@ func (runner *deterministicSequenceRunner) run(dir, name string, args ...string)
 	return commandResult{}, nil
 }
 
-
 func TestDeterministicAutofixCompactsPlanSpacing(t *testing.T) {
 	root := fixtureRoot(t)
 	path := implementationPlanPath

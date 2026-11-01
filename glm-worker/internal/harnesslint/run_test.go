@@ -12,7 +12,6 @@ func (fakeRunner) run(_ string, _ string, _ ...string) (commandResult, error) {
 	return commandResult{}, nil
 }
 
-
 func TestRunFixCompactsPlanSpacingAndIsIdempotent(t *testing.T) {
 	root := fixtureRoot(t)
 	path := implementationPlanPath

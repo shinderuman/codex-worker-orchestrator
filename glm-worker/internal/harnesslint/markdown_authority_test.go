@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-
 func TestMarkdownPlanSpacingDetectsAndFixesExcessBlankLines(t *testing.T) {
 	root := t.TempDir()
 	path := implementationPlanPath
