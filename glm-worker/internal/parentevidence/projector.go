@@ -780,7 +780,9 @@ func (p *Projector) degradeDuplicateParts() error {
 func applyTotalBudget(output *Output) bool {
 	// The emitted JSON includes a trailing newline. Use json.Marshal's
 	// HTML-escaped size as a conservative bound on the actual output.
+	output.Status = aggregateStatus(output.Parts)
 	for outputSize(*output)+1 > MaxOutputBytes && stripBody(output) {
+		output.Status = aggregateStatus(output.Parts)
 	}
 	if outputSize(*output)+1 > MaxOutputBytes {
 		// Metadata alone can exceed the budget. Do not return a truncated
