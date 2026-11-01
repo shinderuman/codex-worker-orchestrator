@@ -15,7 +15,7 @@ func TestApplyTotalBudgetRejectsOversizedMetadataWithoutPartClaims(t *testing.T)
 	output := Output{Version: ManifestVersion, Status: StatusOK, Parts: make([]Part, 480)}
 	for i := range output.Parts {
 		output.Parts[i] = Part{
-			Kind: "source", Detail: strings.Repeat("metadata", 35),
+			Kind: "source", Surface: "source", Detail: strings.Repeat("metadata", 35),
 			Status: PartProjected, Digest: fmt.Sprintf("%064d", i+1),
 			Locator: fmt.Sprintf("path/%03d", i),
 		}
@@ -41,7 +41,7 @@ func TestApplyTotalBudgetRecomputesStatusAfterBodyStripped(t *testing.T) {
 	output := Output{
 		Version: ManifestVersion, Status: StatusOK,
 		Parts: []Part{{
-			Kind: "source", Status: PartProjected, Digest: "digest", Locator: "file.go:1-1",
+			Kind: "source", Surface: "source", Status: PartProjected, Digest: "digest", Locator: "file.go:1-1",
 			Source: &SourceBody{Question: "source", Path: "file.go", LineStart: 1, LineEnd: 1,
 				Content: strings.Repeat("日本語", MaxOutputBytes/2)},
 		}},
