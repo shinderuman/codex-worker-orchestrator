@@ -49,26 +49,29 @@ func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryCon
 	if head.ControllerGeneration != op.Transition.TargetGeneration || head.PendingTransitionID != "" {
 		return ExecutionOperationResult{}, fmt.Errorf("aborted publication no longer owns controller")
 	}
-	action := publicationAbortAction(op)
-	reason := ""
-	if op.Terminal != nil && phase.Completion != nil && phase.Completion.AbortRemoteOID == op.Source.Head.IntegrationTip {
-		// Keep the abort owner independent of the higher-level publication projection.
-		// The staged operation uses the same candidate and generation guards.
-		if head.AcceptedCandidateRef == nil {
-			action, reason = "", "aborted completion has no accepted candidate"
-		} else if candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef); err != nil {
-			action, reason = "", err.Error()
-		} else if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
-			action, reason = "", err.Error()
-		} else {
-			action = PublicationOperationReenter
-		}
-	}
+	action, reason := s.publicationAbortRecoveryAction(op, head, phase)
 	remote := phase.Observed[op.Transition.Effects[0].Key()]
 	if op.Terminal != nil && phase.Completion != nil {
 		remote = phase.Completion.AbortRemoteOID
 	}
 	return ExecutionOperationResult{}, &PublicationAdvancementRequired{TransitionID: op.Transition.TransitionID, ControllerGeneration: head.ControllerGeneration, RemoteOID: remote, Action: action, Reason: reason}
+}
+
+func (s *Store) publicationAbortRecoveryAction(op ExecutionOperation, head RepositoryControllerHead, phase TransitionState) (string, string) {
+	if op.Terminal == nil || phase.Completion == nil || phase.Completion.AbortRemoteOID != op.Source.Head.IntegrationTip {
+		return publicationAbortAction(op), ""
+	}
+	if head.AcceptedCandidateRef == nil {
+		return "", "aborted completion has no accepted candidate"
+	}
+	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return "", err.Error()
+	}
+	if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
+		return "", err.Error()
+	}
+	return PublicationOperationReenter, ""
 }
 
 func (s *Store) abortCompletionPrepare(op ExecutionOperation, phase TransitionState, remote string) error {

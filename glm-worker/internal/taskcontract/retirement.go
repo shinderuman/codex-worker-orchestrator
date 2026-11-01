@@ -91,35 +91,43 @@ func RetirePlanTask(plan, target, successor string) (string, error) {
 	if err := validateTerminalScheduleRetirement(plan, target, successor); err != nil {
 		return "", err
 	}
-	lines := strings.Split(plan, "\n")
-	result := make([]string, 0, len(lines))
-	section := planScheduleSection("")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "## ") {
-			section = retirementPlanSection(line)
-		} else if section != "" && strings.TrimSpace(line) != "" {
-			updated, err := retirementPlanLine(line, section, target, successor)
-			if err != nil {
-				return "", err
-			}
-			if updated == "" {
-				// Removed schedule entries are removed as lines, not replaced by blanks.
-				continue
-			}
-			line = updated
-		}
-		// A retired last NEXT or BLOCKED entry can leave two separator blanks.
-		// Normalize only schedule sections; unrelated Markdown is preserved.
-		if section != "" && line == "" && len(result) != 0 && result[len(result)-1] == "" {
-			continue
-		}
-		result = append(result, line)
+	result, err := retirePlanScheduleLines(plan, target, successor)
+	if err != nil {
+		return "", err
 	}
 	updated := strings.Join(result, "\n")
 	if err := validateTerminalScheduleRetirementResult(updated, target, successor); err != nil {
 		return "", err
 	}
 	return updated, nil
+}
+
+func retirePlanScheduleLines(plan, target, successor string) ([]string, error) {
+	lines := strings.Split(plan, "\n")
+	result := make([]string, 0, len(lines))
+	section := planScheduleSection("")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") {
+			section = retirementPlanSection(line)
+		}
+		updated, removed, err := retirePlanScheduleLine(line, section, target, successor)
+		if err != nil {
+			return nil, err
+		}
+		if removed || (section != "" && updated == "" && len(result) != 0 && result[len(result)-1] == "") {
+			continue
+		}
+		result = append(result, updated)
+	}
+	return result, nil
+}
+
+func retirePlanScheduleLine(line string, section planScheduleSection, target, successor string) (string, bool, error) {
+	if section == "" || strings.TrimSpace(line) == "" || strings.HasPrefix(line, "## ") {
+		return line, false, nil
+	}
+	updated, err := retirementPlanLine(line, section, target, successor)
+	return updated, updated == "", err
 }
 
 func validateTerminalScheduleRetirementResult(plan, target, successor string) error {
