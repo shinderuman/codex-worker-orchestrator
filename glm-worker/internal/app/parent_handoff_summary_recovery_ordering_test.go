@@ -15,7 +15,13 @@ import (
 )
 
 func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testing.T) {
-	cfg, _, pending, _ := interruptedCompletionWorkflowFixture(t)
+	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
+	interruptCompletionBeforePush(t, cfg, store, promoted, policy, candidate)
+	head, err := store.LoadHead()
+	if err != nil || head.PendingTransitionID == "" {
+		t.Fatalf("missing real pending publication transition: %#v err=%v", head, err)
+	}
+	pendingID := head.PendingTransitionID
 	bound, _ := retiredWorkflowRuntime(t, cfg)
 	st := startParentHandoffTask(t, bound)
 	const sessionID = "pending-controller-summary-recovery"
@@ -84,7 +90,7 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 		t.Fatalf("fixture does not reproduce early return: %#v; inconsistency=%s", legacy, stringPointerValue(legacy.Inconsistency))
 	}
 	handoff := buildParentHandoffWithConfig(bound, st)
-	if handoff.Controller == nil || handoff.Controller.Head.PendingTransitionID != pending.TransitionID {
+	if handoff.Controller == nil || handoff.Controller.Head.PendingTransitionID != pendingID {
 		t.Fatalf("pending canonical transition was omitted: %#v", handoff.Controller)
 	}
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
@@ -94,7 +100,7 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil {
 		t.Fatal(err)
 	}
-	if command.Action != "recover" || command.TransitionID != pending.TransitionID {
+	if command.Action != "recover" || command.TransitionID != pendingID {
 		t.Fatalf("canonical recovery command was replaced by resubmit-report: %#v", command)
 	}
 }
