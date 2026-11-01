@@ -90,7 +90,7 @@ func boundParentOnlySmokeIdentity(cfg config.AppConfig, st *state.StateStore) bo
 		return false
 	}
 	store, err := controller.Open(cfg)
-	return err == nil && store.ParentOnlySmokeIdentityMatches(taskID)
+	return err == nil && store.ParentOnlySmokeStoreWithoutRuntime(taskID)
 }
 
 func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
