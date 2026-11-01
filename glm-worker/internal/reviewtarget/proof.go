@@ -170,7 +170,7 @@ func readRepositoryFile(repoRoot, path string) ([]byte, error) {
 }
 
 func targetDiff(repoRoot, path string) ([]byte, error) {
-	command := exec.Command("git", "-C", repoRoot, "diff", "HEAD", "--no-ext-diff", "--no-renames", "--", path)
+	command := exec.Command("git", "-C", repoRoot, "diff", "HEAD", "--no-ext-diff", "--no-textconv", "--no-renames", "--", path)
 	output, err := command.Output()
 	if err != nil {
 		return nil, &ProofError{
