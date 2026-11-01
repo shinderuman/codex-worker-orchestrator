@@ -1,10 +1,10 @@
 package harnesslint
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"fmt"
 	"strings"
 )
 
