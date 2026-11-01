@@ -311,6 +311,19 @@ func (s *Store) parentOnlyLiveExecution(head RepositoryControllerHead) (AttemptR
 }
 
 func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
+	head, err := s.LoadHead()
+	if err != nil || head.Status != ControllerStatusActive {
+		return false
+	}
+	if head.LiveAttemptID != "" && head.LiveAttemptID != taskID {
+		return false
+	}
+	if head.AcceptedCandidateRef != nil {
+		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+		if err != nil || candidate.AttemptID != taskID {
+			return false
+		}
+	}
 	attempt, err := s.loadAttempt(taskID)
 	if err != nil || attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
 		return false

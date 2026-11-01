@@ -288,6 +288,10 @@ func TestParentOnlyCompletionReentryPreservesAuthority(t *testing.T) {
 			if reentered == nil || reentered.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly || reentered.Attempt.PredecessorAttemptID != admission.Attempt.AttemptID {
 				t.Fatalf("parent-only authority was lost: %#v", reentered)
 			}
+			if fixture.store.ParentOnlySmokeIdentityMatches(admission.Attempt.AttemptID) ||
+				!fixture.store.ParentOnlySmokeIdentityMatches(reentered.Attempt.AttemptID) {
+				t.Fatal("parent-only reentry allowed stale attempt identity")
+			}
 			if route == "parent-source-rebind" {
 				data, err := os.ReadFile(filepath.Join(reentered.Workspace.Root, "evaluation-result.md"))
 				if err != nil || string(data) != "corrected parent evaluation product\n" {
