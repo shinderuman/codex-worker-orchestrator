@@ -91,6 +91,18 @@ func TestQualityGateFailureRequiresStableTerminalEvidence(t *testing.T) {
 		{"transient DNS", func(r *qualitygate.RunRecord) {
 			r.Log = writeUnstableQualityGateLog(t, "lookup example.com: server misbehaving")
 		}},
+		{"DNS lookup failure", func(r *qualitygate.RunRecord) {
+			r.Log = writeUnstableQualityGateLog(t, "lookup example.com: no such host")
+		}},
+		{"network I/O timeout", func(r *qualitygate.RunRecord) {
+			r.Log = writeUnstableQualityGateLog(t, "read tcp: i/o timeout")
+		}},
+		{"execution context deadline", func(r *qualitygate.RunRecord) {
+			r.Log = writeUnstableQualityGateLog(t, "context deadline exceeded")
+		}},
+		{"TLS handshake timeout", func(r *qualitygate.RunRecord) {
+			r.Log = writeUnstableQualityGateLog(t, "net/http: TLS handshake timeout")
+		}},
 	} {
 		t.Run(outcome.name, func(t *testing.T) {
 			st, previous, next := qualityGateFailedRetryFixture(t)
