@@ -54,7 +54,7 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	}
 	plan, planErr := st.ParentActionPlan()
 	if planErr != nil && boundParentOnlySmokeIdentity(cfg, st) {
-		plan, planErr = state.ParentActionPlan{RequiredAction: state.ParentActionNone}, nil
+		plan, planErr = state.ParentActionPlan{RequiredAction: state.ParentActionComplete, AllowedActions: []state.ParentAction{state.ParentActionComplete}}, nil
 	}
 	if planErr != nil {
 		markInconsistent(&projection, planErr.Error())
