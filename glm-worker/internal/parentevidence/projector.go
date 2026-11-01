@@ -499,11 +499,12 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 		part.Reason = err.Error()
 		return p.recordPart(part, state.ParentEvidenceSurfaceDiff)
 	}
-	identity := make([]string, 0, len(files)*2)
-	for _, file := range files {
-		identity = append(identity, file.Path, file.HeadBlob, file.IndexBlob, file.WorktreeSHA)
-	}
-	part.Digest = StringDigest(append([]string{request.Question}, identity...)...)
+	part.Digest, _ = Digest(struct {
+		Question string
+		Paths    []string
+		Files    []DiffFile
+		Patch    string
+	}{request.Question, request.Paths, files, body})
 	diffBody := DiffBody{Question: request.Question, Paths: request.Paths, Files: files}
 	if len(body) > request.BudgetBytes {
 		part.Status = PartRefinement
@@ -523,11 +524,16 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 }
 
 func captureDiff(repoRoot string, paths []string) ([]DiffFile, string, error) {
-	body, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-renames", "--"}, paths...)...)
+	for _, path := range paths {
+		if err := validateExactDiffPath(repoRoot, path); err != nil {
+			return nil, "", err
+		}
+	}
+	body, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-textconv", "--no-renames", "--"}, paths...)...)
 	if err != nil {
 		return nil, "", fmt.Errorf("git diff HEAD: %w", err)
 	}
-	numstat, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--numstat", "--no-renames", "--"}, paths...)...)
+	numstat, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-textconv", "--numstat", "--no-renames", "--"}, paths...)...)
 	if err != nil {
 		return nil, "", fmt.Errorf("git diff HEAD --numstat: %w", err)
 	}
@@ -575,16 +581,48 @@ func diffIndexBlob(repoRoot string, path string) string {
 }
 
 func diffWorktreeSHA(repoRoot string, path string) string {
-	abs, err := joinRoot(repoRoot, path)
+	abs := filepath.Join(repoRoot, filepath.FromSlash(path))
+	info, err := os.Lstat(abs)
 	if err != nil {
 		return ""
 	}
-	content, err := os.ReadFile(abs)
-	if err != nil {
+	var content []byte
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		target, err := os.Readlink(abs)
+		if err != nil {
+			return ""
+		}
+		content = []byte(target)
+	case info.Mode().IsRegular():
+		content, err = os.ReadFile(abs)
+		if err != nil {
+			return ""
+		}
+	default:
 		return ""
 	}
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:])
+	return StringDigest(info.Mode().String(), string(content))
+}
+
+func validateExactDiffPath(repoRoot, path string) error {
+	if !RelativePath(path) || path != filepath.ToSlash(filepath.Clean(path)) ||
+		strings.ContainsAny(path, "*?[]") || strings.HasPrefix(path, ":") {
+		return fmt.Errorf("diff path %q must be an exact repository-relative file path", path)
+	}
+	abs := filepath.Join(repoRoot, filepath.FromSlash(path))
+	if info, err := os.Lstat(abs); err == nil {
+		if info.IsDir() {
+			return fmt.Errorf("diff path %q is a directory; request individual files", path)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect diff path %q: %w", path, err)
+	}
+	kind, err := gitTrimmedOutput(repoRoot, "cat-file", "-t", "HEAD:"+path)
+	if err == nil && kind == "tree" {
+		return fmt.Errorf("diff path %q is a directory in HEAD; request individual files", path)
+	}
+	return nil
 }
 
 func diffNumstat(numstatOutput string, path string) (int, int) {
