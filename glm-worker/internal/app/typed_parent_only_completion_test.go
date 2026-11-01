@@ -53,6 +53,24 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 			}
 			cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, true, failFlag)
 			acceptParentOnlyThroughProductionBoundary(t, cfg)
+			if route == "reenter" {
+				bound, err := controller.WorkflowConfig(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				reviewState := state.AttachStateStore(bound).Path("parent-review-state.json")
+				if err := os.WriteFile(reviewState, []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				corrupt := executeParentHandoff(t, cfg)
+				if corrupt.Consistent || corrupt.Inconsistency == nil ||
+					!strings.Contains(*corrupt.Inconsistency, "parent review state is unreadable") {
+					t.Fatalf("parent-only smoke identity masked corrupt review evidence: %#v", corrupt)
+				}
+				if err := os.Remove(reviewState); err != nil {
+					t.Fatal(err)
+				}
+			}
 			head, err := store.LoadHead()
 			if err != nil || head.AcceptedCandidateRef == nil {
 				t.Fatalf("parent-only candidate missing: %v", err)
