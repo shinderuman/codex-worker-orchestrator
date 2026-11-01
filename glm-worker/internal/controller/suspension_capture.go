@@ -60,7 +60,7 @@ func suspensionReplacedFileAncestor(repo, path string, paths map[string]workspac
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return false, err
 			}
-			if err == nil && info.Mode().IsRegular() {
+			if err == nil && (info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
 				return true, nil
 			}
 		}
