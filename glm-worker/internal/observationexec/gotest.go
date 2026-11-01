@@ -312,7 +312,6 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 	return nil
 }
 
-
 func (c *moduleTreeCopier) copyFileContents(dst *os.File, src *os.File, remaining, limit int64) (int64, error) {
 	ctx := c.ctx
 	if ctx == nil {
