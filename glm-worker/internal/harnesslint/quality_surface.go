@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"fmt"
 	"strings"
 )
 
@@ -178,7 +179,23 @@ func installSmokeWorkflowWiringCheck() qualityWiringCheck {
 }
 
 func qualityWiringPackageViolations(root string, present map[string]bool, prefix string, tokens []string) ([]Violation, error) {
-	found := make(map[string]bool, len(tokens))
+	required := make(map[string]string, len(tokens))
+	for _, candidate := range tokens {
+		call, err := parser.ParseExpr(candidate)
+		if err != nil {
+			return nil, err
+		}
+		expression, ok := call.(*ast.CallExpr)
+		if !ok {
+			return nil, fmt.Errorf("quality-wiring token is not a call: %q", candidate)
+		}
+		key, ok := qualityWiringSelectorCallKey(expression)
+		if !ok {
+			return nil, fmt.Errorf("quality-wiring token is not a selector call: %q", candidate)
+		}
+		required[candidate] = key
+	}
+	found := make(map[string]bool, len(required))
 	packageFound := false
 	for path := range present {
 		if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -189,12 +206,26 @@ func qualityWiringPackageViolations(root string, present map[string]bool, prefix
 		if err != nil {
 			return nil, err
 		}
-		text := string(data)
-		for _, token := range tokens {
-			if strings.Contains(text, token) {
-				found[token] = true
-			}
+		file, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
+		if err != nil {
+			return nil, fmt.Errorf("parse quality wiring %s: %w", path, err)
 		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			key, ok := qualityWiringSelectorCallKey(call)
+			if !ok {
+				return true
+			}
+			for candidate, requiredKey := range required {
+				if key == requiredKey {
+					found[candidate] = true
+				}
+			}
+			return true
+		})
 	}
 	path := strings.TrimSuffix(prefix, "/")
 	if !packageFound {
@@ -211,6 +242,18 @@ func qualityWiringPackageViolations(root string, present map[string]bool, prefix
 		})
 	}
 	return violations, nil
+}
+
+func qualityWiringSelectorCallKey(call *ast.CallExpr) (string, bool) {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	receiver, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%s.%s/%d", receiver.Name, selector.Sel.Name, len(call.Args)), true
 }
 
 func qualityWiringCheckViolations(root string, present map[string]bool, check qualityWiringCheck) ([]Violation, error) {
