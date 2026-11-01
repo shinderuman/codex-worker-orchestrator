@@ -2,10 +2,13 @@ package app
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
@@ -14,6 +17,11 @@ func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
 	initial := executeParentHandoff(t, cfg)
 	if initial.RequiredAction == nil || *initial.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("initial handoff did not offer publication: %#v", initial)
+	}
+	remotePath := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "remote", "get-url", "origin")))
+	refusalHook := filepath.Join(remotePath, "hooks", "pre-receive")
+	if err := execfile.Write(refusalHook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	interruptTypedPublication(t, cfg, initial.RequiredActionParameters, false)
 	store, err := controller.Open(cfg)
@@ -54,6 +62,9 @@ func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
 		t.Fatalf("prepared journal recovery command: %#v %v", prepared, err)
 	}
 	_, _, _ = runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
+	if err := os.Remove(refusalHook); err != nil {
+		t.Fatal(err)
+	}
 	head, err = store.LoadHead()
 	if err != nil || head.PendingTransitionID != "" || head.AcceptedCandidateRef == nil {
 		t.Fatalf("aborted publication did not restore quiescent candidate authority: %v", err)

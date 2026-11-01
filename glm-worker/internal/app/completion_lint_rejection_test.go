@@ -57,7 +57,7 @@ func TestCompletionLintFailurePreservesCandidateAndPermitsSameSourceRetry(t *tes
 func TestCompletionInvalidPlanMetadataRejectedAndReenteredByStagedCLI(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
 	t.Setenv("PATH", filepath.Dir(binary)+string(os.PathListSeparator)+os.Getenv("PATH"))
-	cfg, admission, store, policy := retiredWorkflowCorpus(t, true, "\n## Current boundary\n\ninvalid duplicated state\n")
+	cfg, admission, store, policy := retiredWorkflowCorpus(t, true, "\n## 現在のGit境界\n\ninvalid duplicated state\n")
 	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
 	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{
 		RequiredValidations: declaredNoValidations(),
