@@ -293,6 +293,15 @@ func TestPromotedCandidateReentryIsAdmittedThroughTypedProjection(t *testing.T) 
 		t.Fatalf("promoted candidate has no legal typed reentry: %#v, %v", command, err)
 	}
 	if _, err := fixture.store.ReenterAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: command.Command.ExpectedGeneration - 1, CandidateID: command.Command.CandidateID,
+	}); err == nil {
+		t.Fatal("stale generation was admitted for candidate reentry")
+	}
+	unchanged, err := fixture.store.LoadHead()
+	if err != nil || unchanged.ControllerGeneration != promoted.Head.ControllerGeneration {
+		t.Fatalf("stale candidate reentry changed controller authority: %#v %v", unchanged, err)
+	}
+	if _, err := fixture.store.ReenterAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: command.Command.ExpectedGeneration, CandidateID: command.Command.CandidateID,
 	}); err != nil {
 		t.Fatal(err)
