@@ -408,10 +408,15 @@ func qualityWiringRequiredGoTokens(path string, data []byte) (map[string]bool, e
 			if current.Recv == nil && current.Name.Name == "captureQualitySurfaceDigest" {
 				found["captureQualitySurfaceDigest"] = true
 			}
-		case *ast.CallExpr:
-			if qualityWiringIsHarnessRun(current) {
-				found["harnesslint.Run(root, true)"] = true
+			if current.Recv == nil && current.Name.Name == "runRepositoryQualityGate" && current.Body != nil {
+				ast.Inspect(current.Body, func(child ast.Node) bool {
+					if call, ok := child.(*ast.CallExpr); ok && qualityWiringIsHarnessRun(call) {
+						found["harnesslint.Run(root, true)"] = true
+					}
+					return true
+				})
 			}
+		case *ast.CallExpr:
 			if identifier, ok := current.Fun.(*ast.Ident); ok && identifier.Name == "captureQualitySurfaceDigest" {
 				found["captureQualitySurfaceDigest"] = true
 			}

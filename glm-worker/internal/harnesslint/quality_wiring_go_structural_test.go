@@ -14,7 +14,7 @@ func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
 	}{
 		{
 			name:   "real calls with reformatted arguments",
-			source: "package workflow\nfunc captureQualitySurfaceDigest(root string) {}\nfunc gate() { harnesslint.Run(\n root,\n true,\n) }\n",
+			source: "package workflow\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(\n root,\n true,\n) }\n",
 		},
 		{
 			name:    "comment and string cannot impersonate live quality gate",
@@ -22,13 +22,18 @@ func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
 			missing: "harnesslint.Run(root, true)",
 		},
 		{
+			name:    "decoy helper cannot impersonate canonical quality gate",
+			source:  "package workflow\nfunc captureQualitySurfaceDigest(root string) {}\nfunc decoy() { harnesslint.Run(root, true) }\nfunc runRepositoryQualityGate(root string) {}\n",
+			missing: "harnesslint.Run(root, true)",
+		},
+		{
 			name:    "wrong run mode is not accepted",
-			source:  "package workflow\nfunc captureQualitySurfaceDigest(root string) {}\nfunc gate() { harnesslint.Run(root, false) }\n",
+			source:  "package workflow\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, false) }\n",
 			missing: "harnesslint.Run(root, true)",
 		},
 		{
 			name:    "function name in comment is not implementation",
-			source:  "package workflow\n// captureQualitySurfaceDigest\nfunc gate() { harnesslint.Run(root, true) }\n",
+			source:  "package workflow\n// captureQualitySurfaceDigest\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, true) }\n",
 			missing: "captureQualitySurfaceDigest",
 		},
 	} {
