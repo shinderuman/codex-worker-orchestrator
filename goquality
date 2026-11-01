@@ -18,6 +18,9 @@ if [ "$#" -ge 1 ] && [ "$1" = test ] && [ "$(uname -s)" = Darwin ] && [ "$(uname
   case "$backend" in
     docker-linux-arm64)
       shift
+      if [ -n "${GLM_WORKER_DOCKER_TEST_STAGING:-}" ] && [ -n "${GLM_WORKER_DOCKER_TEST_RESPONSES:-}" ]; then
+        exec go -C "$repo_root/glm-worker" run ./cmd/goquality --staging "$GLM_WORKER_DOCKER_TEST_STAGING" --responses "$GLM_WORKER_DOCKER_TEST_RESPONSES" "$@"
+      fi
       exec go -C "$repo_root/glm-worker" run ./cmd/goquality "$repo_root" "$@"
       ;;
     native)
