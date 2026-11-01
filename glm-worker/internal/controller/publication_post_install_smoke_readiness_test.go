@@ -64,10 +64,31 @@ func TestPostInstallSmokeReadinessReaderMatchesValidationMissingSemantics(t *tes
 	if err := os.RemoveAll(module.Path(qualitygate.RunDirectory)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := latestSmokeProbeRun(module, t.TempDir(), "probe"); !os.IsNotExist(err) {
-		t.Fatalf("raw smoke reader did not preserve the filesystem error: %v", err)
+	if _, found, err := latestSmokeProbeRun(module, t.TempDir(), "probe"); err != nil || found {
+		t.Fatalf("missing smoke run directory must mean no run: found=%v err=%v", found, err)
 	}
 	if _, _, err := latestFinalValidationRun(module, t.TempDir(), "go-test"); !os.IsNotExist(err) {
 		t.Fatalf("raw validation reader did not preserve the filesystem error: %v", err)
+	}
+}
+
+func TestPostInstallSmokeMissingExistingRunRecordFailsClosed(t *testing.T) {
+	t.Parallel()
+	fixture, policy := newPublicationTestFixture(t)
+	policy.RequireInstall = true
+	source := publicationTestEdit(t, fixture, "smoke-missing-record.txt", "smoke record\n")
+	_, candidate := acceptProbedCandidate(t, fixture, policy, source, []SmokeProbeDeclaration{dockerRoutingProbe()})
+	record := seedSmokeProbeRun(t, fixture.store, candidate, dockerRoutingProbe(), qualitygate.StatusPass, nil)
+	module, err := fixture.store.finalValidationRunStore(candidate.TaskRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(module.Path(qualitygate.RunDirectory), record.ValidationRunID, "run.json")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.store.OutstandingSmokeProbes(candidate)
+	if err == nil || !strings.Contains(err.Error(), record.ValidationRunID) {
+		t.Fatalf("missing record in an existing run directory was silently treated as no run: %v", err)
 	}
 }
