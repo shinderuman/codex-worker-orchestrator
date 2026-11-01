@@ -66,7 +66,7 @@ func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
 	if after.RequiredAction == nil || *after.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("aborted candidate lost typed parent handoff: %#v", after)
 	}
-	code, _, diagnostic := runTypedPublicationCLI(t, cfg, after.RequiredActionParameters, map[string]string{}, "--operation", "reenter")
+	code, _, diagnostic = runTypedPublicationCLI(t, cfg, after.RequiredActionParameters, map[string]string{}, "--operation", "reenter")
 	if code != 0 {
 		t.Fatalf("staged reentry was advertised but not executable: %s", diagnostic)
 	}
