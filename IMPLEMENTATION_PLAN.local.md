@@ -31,7 +31,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md`](IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md)
-- [`IMPLEMENTATION_TASKS/self-referential-test-redesign.md`](IMPLEMENTATION_TASKS/self-referential-test-redesign.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md`](IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md`](IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md)
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
