@@ -218,6 +218,9 @@ func (s *Store) applyParentOnlyExecution(op ExecutionOperation) error {
 	if err := s.writeLease(*op.Lease); err != nil {
 		return err
 	}
+	if err := s.bindParentOnlySmokeTaskID(*op.Attempt); err != nil {
+		return err
+	}
 	actual := map[string]string{op.Transition.Effects[0].Key(): parentOnlyMaterializationIdentity(workspace, snapshot)}
 	_, err = s.commitAuthorityTransitionLocked(op.Transition, actual, false, func(next *RepositoryControllerHead) error {
 		next.ProjectSnapshotID = op.Transition.ProjectSnapshotNew
@@ -230,6 +233,23 @@ func (s *Store) applyParentOnlyExecution(op ExecutionOperation) error {
 		return nil
 	})
 	return err
+}
+
+func (s *Store) bindParentOnlySmokeTaskID(attempt AttemptRecord) error {
+	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly || attempt.AttemptID == "" {
+		return fmt.Errorf("parent-only smoke identity requires a bound parent-only attempt")
+	}
+	cfg := WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef)
+	runtime := state.AttachStateStore(cfg)
+	if err := os.MkdirAll(runtime.Path("."), 0o700); err != nil {
+		return fmt.Errorf("prepare parent-only smoke store: %w", err)
+	}
+	if current, err := runtime.Read("task.id"); err == nil && current == attempt.AttemptID {
+		return nil
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read parent-only smoke identity: %w", err)
+	}
+	return runtime.Write("task.id", attempt.AttemptID)
 }
 
 func (s *Store) verifyCommittedParentOnlyExecution(op ExecutionOperation, head RepositoryControllerHead) error {
@@ -249,6 +269,10 @@ func (s *Store) verifyCommittedParentOnlyExecution(op ExecutionOperation, head R
 	}
 	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
 		return fmt.Errorf("committed parent-only execution attempt lost its execution authority")
+	}
+	runtime := state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
+	if taskID, err := runtime.Read("task.id"); err != nil || taskID != attempt.AttemptID {
+		return fmt.Errorf("committed parent-only smoke identity does not match attempt %s: %v", attempt.AttemptID, err)
 	}
 	lease, err := s.loadLease(head.LiveLeaseID)
 	if err != nil {

@@ -119,9 +119,19 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
-	runtime, taskID, err := s.boundAttemptRuntime(Admission{Attempt: attempt})
-	if err != nil {
-		return qualitygate.RunRecord{}, nil, err
+	var runtime *state.StateStore
+	var taskID string
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		runtime = state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
+		taskID, err = runtime.Read("task.id")
+		if err != nil || taskID == "" || taskID != attempt.AttemptID {
+			return qualitygate.RunRecord{}, nil, fmt.Errorf("parent-only install smoke task identity does not match attempt %s: %v", attempt.AttemptID, err)
+		}
+	} else {
+		runtime, taskID, err = s.boundAttemptRuntime(Admission{Attempt: attempt})
+		if err != nil {
+			return qualitygate.RunRecord{}, nil, err
+		}
 	}
 	if runtime == nil || !qualitygate.ValidRunID(smokeID) {
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate install smoke identity is unavailable")
