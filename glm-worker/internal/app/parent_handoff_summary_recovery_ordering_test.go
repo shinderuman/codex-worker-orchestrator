@@ -37,7 +37,7 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 	}
 	packetData, err := json.Marshal(packet.Result{
 		Status: packet.StatusImplemented, Risk: packet.RiskLow,
-		Summary: strings.Repeat("x", packet.MaxFieldBytes+1),
+		Summary:             strings.Repeat("x", packet.MaxFieldBytes+1),
 		RequirementCoverage: "covered", Tests: "pass", Unverified: "none",
 	})
 	if err != nil {
@@ -48,7 +48,7 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 		"version": 2, "task_id": taskID, "role": "worker", "session_id": sessionID,
 		"snapshot": state.SnapshotDigest{
 			Head: snapshot.Head, IndexDigest: snapshot.IndexDigest,
-			WorktreeDigest: snapshot.WorktreeDigest,
+			WorktreeDigest:                snapshot.WorktreeDigest,
 			WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
 		},
 		"attempts": 1, "resubmissions": 1,
