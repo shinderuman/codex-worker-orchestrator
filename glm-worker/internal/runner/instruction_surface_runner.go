@@ -33,6 +33,11 @@ func (r *InstructionSurfaceGuardRunner) Run(
 		return RunResult{}, err
 	}
 	defer gitGuard.cleanup()
+	dockerTests, dockerErr := gitGuard.startDockerTestExecutor()
+	if dockerErr != nil {
+		return RunResult{}, dockerErr
+	}
+	defer dockerTests.stop()
 	providerValues, err := SensitiveArtifactValues(r.base.config)
 	if err != nil {
 		return RunResult{}, errors.New("artifact sensitive admission unavailable: provider-runtime")
