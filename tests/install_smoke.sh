@@ -12,7 +12,28 @@ case "${QUALITY_TOOLS_BIN_DIR:-}" in
 *) source_quality_tools="$source_root/$QUALITY_TOOLS_BIN_DIR" ;;
 esac
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
-trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+export_lock_pid=
+export_writer_pid=
+cleanup_export_processes() {
+	if [ -n "$export_writer_pid" ]; then
+		kill "$export_writer_pid" 2>/dev/null || true
+		wait "$export_writer_pid" 2>/dev/null || true
+		export_writer_pid=
+	fi
+	if [ -n "$export_lock_pid" ]; then
+		kill "$export_lock_pid" 2>/dev/null || true
+		wait "$export_lock_pid" 2>/dev/null || true
+		export_lock_pid=
+	fi
+}
+cleanup_smoke() {
+	cleanup_export_processes
+	rm -rf "$tmp"
+}
+trap 'cleanup_smoke' 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 repo="$tmp/repo"
 home="$tmp/home"
 home_quality_tools="$home/$quality_tools_default"
@@ -332,6 +353,43 @@ import (
 )
 
 func main() {
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && os.Args[1] == "--probe") {
+		fmt.Fprintln(os.Stderr, "usage: hold-workflow-lock [--probe] <lock-path>")
+		os.Exit(2)
+	}
+	file, err := os.OpenFile(os.Args[len(os.Args)-1], os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer file.Close()
+	flags := syscall.LOCK_EX
+	if len(os.Args) == 3 {
+		flags |= syscall.LOCK_NB
+	}
+	if err := syscall.Flock(int(file.Fd()), flags); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println("locked")
+	if len(os.Args) == 3 {
+		return
+	}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM)
+	<-signals
+}
+EOF_HOLD_LOCK'
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
 	file, err := os.OpenFile(os.Args[1], os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -349,8 +407,9 @@ func main() {
 EOF_HOLD_LOCK
 (
 	cd "$tmp"
-	HOME="$home" GOMODCACHE="$go_mod_cache" go run hold-workflow-lock.go "$export_workflow_lock"
-) >"$tmp/export-lock-held.out" 2>"$tmp/export-lock-held.stderr" &
+	HOME="$home" GOMODCACHE="$go_mod_cache" go build -o "$tmp/hold-workflow-lock" hold-workflow-lock.go
+)
+"$tmp/hold-workflow-lock" "$export_workflow_lock" >"$tmp/export-lock-held.out" 2>"$tmp/export-lock-held.stderr" &
 export_lock_pid=$!
 export_lock_ready=0
 for _ in $(seq 1 100); do
@@ -361,6 +420,10 @@ for _ in $(seq 1 100); do
 	sleep 0.1
 done
 test "$export_lock_ready" -eq 1
+if "$tmp/hold-workflow-lock" --probe "$export_workflow_lock" >"$tmp/export-lock-probe-held.out" 2>"$tmp/export-lock-probe-held.stderr"; then
+	printf '%s\n' 'lock helper does not hold the workflow lock' >&2
+	exit 1
+fi
 (
 	while :; do
 		printf '%s\n' '{"version":3,"call_id":"active-writer"}' >>"$export_runtime_dir/telemetry/runtime-task-smoke-1.jsonl"
@@ -369,10 +432,14 @@ test "$export_lock_ready" -eq 1
 ) &
 export_writer_pid=$!
 run_single_export >"$tmp/export-concurrent.json"
-kill "$export_writer_pid" 2>/dev/null || true
-kill "$export_lock_pid" 2>/dev/null || true
-wait "$export_writer_pid" 2>/dev/null || true
-wait "$export_lock_pid" 2>/dev/null || true
+export_lock_holder_pid=$export_lock_pid
+cleanup_export_processes
+if kill -0 "$export_lock_holder_pid" 2>/dev/null; then
+	printf '%s\n' 'normal export left lock helper alive' >&2
+	exit 1
+fi
+"$tmp/hold-workflow-lock" --probe "$export_workflow_lock" >"$tmp/export-lock-probe-released.out"
+grep -q '^locked$' "$tmp/export-lock-probe-released.out"
 grep -q '"runtime_section":"collected"' "$tmp/export-concurrent.json"
 grep -q '"archive_path":"' "$tmp/export-concurrent.json"
 export_concurrent_archive=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-concurrent.json")
@@ -382,6 +449,39 @@ test "$export_concurrent_archive" = "$export_archive_path"
 export_zip_dir=$(dirname "$export_archive_path")
 export_zip_count=$(find "$export_zip_dir" -type f -name '*.zip' | wc -l | tr -d ' ')
 test "$export_zip_count" = 1
+# A failing stage must also reap the actual lock holder, not a go run wrapper.
+if (
+	trap 'cleanup_export_processes' 0
+	"$tmp/hold-workflow-lock" "$export_workflow_lock" >"$tmp/export-lock-failure.out" 2>"$tmp/export-lock-failure.stderr" &
+	export_lock_pid=$!
+	printf '%s\n' "$export_lock_pid" >"$tmp/export-lock-failure.pid"
+	failure_lock_ready=0
+	for _ in $(seq 1 100); do
+		if grep -q '^locked$' "$tmp/export-lock-failure.out" 2>/dev/null; then
+			failure_lock_ready=1
+			break
+		fi
+		sleep 0.1
+	done
+	test "$failure_lock_ready" -eq 1
+	if "$tmp/hold-workflow-lock" --probe "$export_workflow_lock" >/dev/null 2>&1; then
+		exit 2
+	fi
+	printf '%s\n' 'ready' >"$tmp/export-lock-failure.ready"
+	exit 37
+); then
+	printf '%s\n' 'injected smoke failure unexpectedly succeeded' >&2
+	exit 1
+fi
+test -f "$tmp/export-lock-failure.ready"
+export_failure_holder_pid=$(cat "$tmp/export-lock-failure.pid")
+if kill -0 "$export_failure_holder_pid" 2>/dev/null; then
+	printf '%s\n' 'failed export stage left lock helper alive' >&2
+	exit 1
+fi
+"$tmp/hold-workflow-lock" --probe "$export_workflow_lock" >"$tmp/export-lock-probe-failure.out"
+grep -q '^locked$' "$tmp/export-lock-probe-failure.out"
+
 rm -f "$repo/untracked-export.txt"
 git -C "$repo" status --porcelain >"$tmp/export-git-restored"
 if [ -s "$tmp/export-git-restored" ]; then
