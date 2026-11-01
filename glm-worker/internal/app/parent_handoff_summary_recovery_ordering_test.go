@@ -102,4 +102,11 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 	if command.Action != "recover" || command.TransitionID != pendingID {
 		t.Fatalf("canonical recovery command was replaced by resubmit-report: %#v", command)
 	}
+	production := buildParentHandoffWithConfig(bound, st)
+	if production.Controller == nil || production.Controller.Head.PendingTransitionID != pendingID {
+		t.Fatalf("production parent handoff omitted the pending controller transition: %#v", production)
+	}
+	if production.RequiredAction == nil || *production.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("production handoff bypassed canonical recovery: %#v", production)
+	}
 }
