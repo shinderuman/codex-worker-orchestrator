@@ -33,19 +33,27 @@ func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
 	}
 
 	recovery := executeParentHandoff(t, cfg)
-	if recovery.RequiredAction == nil || *recovery.RequiredAction != controllerPublicationSurface {
+	if recovery.RequiredAction == nil || *recovery.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("journal recovery was not handed off: %#v", recovery)
 	}
-	var requested controller.PublicationParentCommand
+	var requested controller.CompletionExecutionCommand
 	if err := json.Unmarshal([]byte(recovery.RequiredActionParameters["controller_command_json"]), &requested); err != nil {
 		t.Fatal(err)
 	}
 	if requested.Action != controller.PublicationOperationRecover {
 		t.Fatalf("pending journal must be recovered first, got %s", requested.Action)
 	}
-	if code, _, _ := runTypedPublicationCLI(t, cfg, recovery.RequiredActionParameters, map[string]string{}); code == 0 {
-		t.Fatal("recovering a rejected push was incorrectly reported as a published completion")
+	code, output, diagnostic := runTypedParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+	if code != 0 {
+		t.Fatalf("prepare journal recovery: %s", diagnostic)
 	}
+	var prepared struct {
+		NextCommand []string `json:"next_command"`
+	}
+	if err := json.Unmarshal([]byte(output), &prepared); err != nil || len(prepared.NextCommand) < 3 {
+		t.Fatalf("prepared journal recovery command: %#v %v", prepared, err)
+	}
+	_, _, _ = runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
 	head, err = store.LoadHead()
 	if err != nil || head.PendingTransitionID != "" || head.AcceptedCandidateRef == nil {
 		t.Fatalf("aborted publication did not restore quiescent candidate authority: %v", err)
