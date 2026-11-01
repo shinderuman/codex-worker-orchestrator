@@ -44,9 +44,9 @@ func captureDiffIdentity(t *testing.T, root string, paths ...string) string {
 	}
 	digest, _ := Digest(struct {
 		Question string
-		Paths []string
-		Files []DiffFile
-		Patch string
+		Paths    []string
+		Files    []DiffFile
+		Patch    string
 	}{"review", paths, files, patch})
 	return digest
 }
