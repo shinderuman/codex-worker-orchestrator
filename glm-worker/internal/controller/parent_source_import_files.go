@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -144,32 +145,62 @@ func (s *Store) applyParentSourceFiles(op ExecutionOperation) error {
 }
 
 func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) error {
-	previous := make(map[string]workspaceTreeEntry, len(before))
+	previous := sourceImportEntryMap(before)
+	next := sourceImportEntryMap(after)
+	removed := make([]workspaceTreeEntry, 0)
 	for _, entry := range before {
-		previous[entry.path] = entry
+		if _, remains := next[entry.path]; !remains {
+			removed = append(removed, entry)
+		}
+	}
+	for start := 0; start < len(removed); start += workspaceBlobBatchSize {
+		batch := removed[start:min(start+workspaceBlobBatchSize, len(removed))]
+		if err := applySourceEntryBatch(repo, batch, make([]workspaceTreeEntry, len(batch))); err != nil {
+			return err
+		}
 	}
 	for start := 0; start < len(after); start += workspaceBlobBatchSize {
 		batch := after[start:min(start+workspaceBlobBatchSize, len(after))]
 		prior := make([]workspaceTreeEntry, len(batch))
 		for index, entry := range batch {
 			prior[index] = previous[entry.path]
-			delete(previous, entry.path)
+			if err := removeSourceTreeReplacedDirectory(repo, entry.path, before); err != nil {
+				return err
+			}
 		}
 		if err := applySourceEntryBatch(repo, prior, batch); err != nil {
 			return err
 		}
 	}
-	remaining := make([]workspaceTreeEntry, 0, len(previous))
-	for _, entry := range previous {
-		remaining = append(remaining, entry)
-	}
-	for start := 0; start < len(remaining); start += workspaceBlobBatchSize {
-		batch := remaining[start:min(start+workspaceBlobBatchSize, len(remaining))]
-		if err := applySourceEntryBatch(repo, batch, make([]workspaceTreeEntry, len(batch))); err != nil {
-			return err
+	return nil
+}
+
+func removeSourceTreeReplacedDirectory(repo, path string, before []workspaceTreeEntry) error {
+	wasDirectory := false
+	for _, entry := range before {
+		if strings.HasPrefix(entry.path, path+"/") {
+			wasDirectory = true
+			break
 		}
 	}
-	return nil
+	if !wasDirectory {
+		return nil
+	}
+	abs, err := suspensionWorktreePath(repo, path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(abs)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	return os.Remove(abs)
 }
 
 func applySourceEntryBatch(repo string, before, after []workspaceTreeEntry) error {
@@ -235,8 +266,8 @@ func applyParentSourceEntry(repo string, before, after workspaceTreeEntry, blobs
 	if after.path == "" {
 		return os.Remove(path)
 	}
-	if after.mode != "100644" && after.mode != "100755" {
-		return fmt.Errorf("parent source update requires a regular file: %q", relative)
+	if after.mode != "100644" && after.mode != "100755" && after.mode != "120000" {
+		return fmt.Errorf("parent source update requires a file or symlink: %q", relative)
 	}
 	return writeParentSourceEntry(path, after, blobs)
 }
@@ -249,9 +280,31 @@ func writeParentSourceEntry(path string, entry workspaceTreeEntry, blobs workspa
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	if entry.mode == "120000" {
+		return replaceParentSourceSymlink(path, string(data))
+	}
 	mode := os.FileMode(0o644)
 	if entry.mode == "100755" {
 		mode = 0o755
 	}
 	return execfile.Write(path, data, mode)
+}
+
+func replaceParentSourceSymlink(path, target string) error {
+	temp, err := os.CreateTemp(filepath.Dir(path), ".source-link-*")
+	if err != nil {
+		return err
+	}
+	name := temp.Name()
+	defer func() { _ = os.Remove(name) }()
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(name); err != nil {
+		return err
+	}
+	if err := os.Symlink(target, name); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
