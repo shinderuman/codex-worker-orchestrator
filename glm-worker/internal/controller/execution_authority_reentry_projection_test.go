@@ -58,9 +58,16 @@ func TestRetiredSuccessorProjectionDeclinesParentOnlyAfterCurrentModeCheck(t *te
 	if err != nil || !selected || next.Operation != PublicationOperationSuccessorStart {
 		t.Fatalf("ordinary retired successor did not start: %#v selected=%t err=%v", next, selected, err)
 	}
+	projected, err := fixture.store.projectQuiescentCompletion(head)
+	if err != nil || projected.Operation != PublicationOperationSuccessorStart {
+		t.Fatalf("canonical quiescent projection did not advance to ordinary successor: %#v err=%v", projected, err)
+	}
 	runControllerGit(t, fixture.repo, "rm", "-q", "IMPLEMENTATION_PLAN.local.md")
 	runControllerGit(t, fixture.repo, "commit", "-q", "-m", "remove committed task authority")
 	if _, selected, err = fixture.store.projectQuiescentParentOnlyMaterialization(head); err == nil || selected {
 		t.Fatalf("unresolvable current authority did not fail closed: selected=%t err=%v", selected, err)
+	}
+	if operation, err := fixture.store.projectQuiescentCompletion(head); err == nil {
+		t.Fatalf("canonical successor projection accepted an unresolvable authority: %#v", operation)
 	}
 }
