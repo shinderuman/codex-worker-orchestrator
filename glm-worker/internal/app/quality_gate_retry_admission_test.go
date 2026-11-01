@@ -88,7 +88,9 @@ func TestQualityGateFailureRequiresStableTerminalEvidence(t *testing.T) {
 		{"missing log", func(r *qualitygate.RunRecord) { r.Log = "" }},
 		{"timeout diagnosis", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "panic: test timed out") }},
 		{"network diagnosis", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "connection reset by peer") }},
-		{"transient DNS", func(r *qualitygate.RunRecord) { r.Log = writeUnstableQualityGateLog(t, "lookup example.com: server misbehaving") }},
+		{"transient DNS", func(r *qualitygate.RunRecord) {
+			r.Log = writeUnstableQualityGateLog(t, "lookup example.com: server misbehaving")
+		}},
 	} {
 		t.Run(outcome.name, func(t *testing.T) {
 			st, previous, next := qualityGateFailedRetryFixture(t)
