@@ -430,6 +430,10 @@ func (s *Store) ProjectParentCompletionOperation(requested string) (ParentComple
 		if err != nil {
 			return ParentCompletionOperation{}, err
 		}
+		if operation.Command == nil || head.AcceptedCandidateRef == nil ||
+			head.ControllerGeneration != operation.Command.ExpectedGeneration || head.PendingTransitionID != "" {
+			return ParentCompletionOperation{}, fmt.Errorf("candidate reentry projection changed since publication admission")
+		}
 		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 		if err != nil {
 			return ParentCompletionOperation{}, err
