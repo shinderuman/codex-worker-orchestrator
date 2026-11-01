@@ -35,6 +35,9 @@ PR #1375 discussion_r4347607640のreview-evidence/workflow-performance-result.md
 
 ## Resolved references
 
+- External Review #1401 discussion_r4381578318に基づき、Review.mdの2対応表から残存する具体TaskをDependenciesへ明示した。過去Taskのfile欠落だけでfulfilledを推定せず、Contract/Acceptanceの全対応完了確認も維持する。
+- External Review #1440 discussion_r4434924625 / discussion_r4434924632は既存directory cleanupで扱う。`review-evidence/codex-efficiency-checkpoint-2026-10-29-request.md`の旧Task名は現行`codex-efficiency-followup-checkpoint.md`への参照として解決し、当時のNEXT記述を現在scheduleの正本として利用しない。要求・必須入力を正規ownerへ移してから既存Contractどおり削除し、historical snapshotを現Planへ書き換えない。
+
 - `Review.md` の「2026-10 再監査」の対応表も対象とする。共通要求source・fixture・診断は `review-evidence/october-2026/` にあり、同じdirectory全体cleanupへ含める。
 
 - `Review.md` の「Findingと実装・評価Taskの対応」に今回の総合レビュー由来16 finding・改善2件・評価3件の要求正本が列挙されている。
@@ -83,6 +86,13 @@ status: not-applicable
 
 ## Dependencies
 
-- `Review.md` の「2026-10 再監査」の実装・評価Task対応がすべて完了していること。
-
-- `Review.md` の「Findingと実装・評価Taskの対応」に列挙された16 finding・改善2件・評価3件がすべて完了していること。
+- `IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`
+- `IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`
+- `IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`
+- `IMPLEMENTATION_TASKS/parent-evidence-serialized-output-budget.md`
+- `IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md`
+- `IMPLEMENTATION_TASKS/task-admission-harness-scope.md`
+- `IMPLEMENTATION_TASKS/task-requirement-reference-closure.md`
+- `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
+- `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`
+- `IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`
