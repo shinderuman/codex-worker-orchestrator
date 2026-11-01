@@ -3,6 +3,7 @@ package harnesslint
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -131,6 +132,9 @@ func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *te
 					found = true
 					if violation.Path != rel || violation.Line <= 0 {
 						t.Fatalf("violation location: %#v", violation)
+					}
+					if !strings.Contains(violation.Message, "TestGuard") || !strings.Contains(violation.Message, "assertions against production behavior") {
+						t.Fatalf("violation diagnostic lacks function and correction: %#v", violation)
 					}
 				}
 			}

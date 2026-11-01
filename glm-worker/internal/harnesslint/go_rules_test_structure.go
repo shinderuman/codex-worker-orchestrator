@@ -76,7 +76,7 @@ func emptyTestEntrypointViolations(set *token.FileSet, file *ast.File, path stri
 		position := set.Position(function.Pos())
 		violations = append(violations, Violation{
 			Rule: "empty-test-entrypoint", Path: path, Line: position.Line, Column: position.Column,
-			Message: "empty test entrypoint does not observe production behavior or establish coverage",
+			Message: function.Name.Name + ": inert test entrypoint; replace static logging/skipping with assertions against production behavior, or remove this test",
 		})
 	}
 	return violations
