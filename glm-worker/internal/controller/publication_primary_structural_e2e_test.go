@@ -87,6 +87,8 @@ func TestRootPromotionAppliesStructuralTreeTransitions(t *testing.T) {
 			fixture, _, accepted, candidate := primaryPromotionFixtureWithTreeEdit(t, tc.remotePath, tc.remoteContent, func(root string) {
 				tc.edit(t, root)
 			})
+			// The primary must own the actual old tree, not just accept a new path.
+			writeSuspensionTestFile(t, fixture.store.identity.PrimaryRoot, tc.remotePath, tc.remoteContent)
 			if _, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
 				ExpectedGeneration: accepted.Head.ControllerGeneration,
 				CandidateID:        candidate.CandidateID,

@@ -20,6 +20,7 @@ func TestRootPromotionDirectoryToRelativeSymlinkPreservesTarget(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	writeSuspensionTestFile(t, fixture.store.identity.PrimaryRoot, "external/child", "old child\n")
 	if _, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: accepted.Head.ControllerGeneration,
 		CandidateID:        candidate.CandidateID,
@@ -48,6 +49,7 @@ func TestRootPromotionRegularFileToExecutablePreservesMode(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	writeSuspensionTestFile(t, fixture.store.identity.PrimaryRoot, "external", "old external file\n")
 	if _, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: accepted.Head.ControllerGeneration,
 		CandidateID:        candidate.CandidateID,

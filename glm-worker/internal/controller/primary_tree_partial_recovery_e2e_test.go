@@ -15,6 +15,7 @@ func TestRootPromotionRecoversFileToDirectoryAfterPartialApply(t *testing.T) {
 			}
 			writeSuspensionTestFile(t, root, "external/child", "accepted child\n")
 		})
+	writeSuspensionTestFile(t, fixture.store.identity.PrimaryRoot, "external", "old file\n")
 	candidate.State = candidatePromoted
 	op, err := fixture.store.planCandidateRevision(accepted.Head, candidate, *accepted.CandidateRef, publicationPromote)
 	if err != nil {
@@ -29,6 +30,10 @@ func TestRootPromotionRecoversFileToDirectoryAfterPartialApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := fixture.store.identity.PrimaryRoot
+	// Simulate interruption immediately after removing the accepted old file.
+	if err := os.Remove(filepath.Join(root, "external")); err != nil {
+		t.Fatal(err)
+	}
 	entries, err := sourceImportTreeEntries(root, candidate.TreeOID)
 	if err != nil {
 		t.Fatal(err)
