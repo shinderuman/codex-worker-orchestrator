@@ -35,7 +35,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`](IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-serialized-output-budget.md`](IMPLEMENTATION_TASKS/parent-evidence-serialized-output-budget.md)
-- [`IMPLEMENTATION_TASKS/finding-source-revision-disposition.md`](IMPLEMENTATION_TASKS/finding-source-revision-disposition.md)
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
 - [`IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md`](IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md)
 - [`IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md`](IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md)
