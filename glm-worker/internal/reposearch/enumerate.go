@@ -2,6 +2,7 @@ package reposearch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,8 @@ type trackedEntry struct {
 }
 
 const enumerationVersion = 1
+
+var ErrUnsupportedIndexFlags = errors.New("repo-search does not support assume-unchanged or skip-worktree index entries")
 
 const (
 	trackedModeRegular    = "100644"
@@ -48,7 +51,7 @@ func excludedPath(rel string, excludeDirs map[string]bool) bool {
 }
 
 func enumerateFiles(ctx context.Context, repoRoot string, excludeDirs map[string]bool) ([]string, error) {
-	entries, err := trackedFileEntries(ctx, repoRoot)
+	entries, err := trackedFileEntries(ctx, repoRoot, excludeDirs)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +79,10 @@ func enumerateFiles(ctx context.Context, repoRoot string, excludeDirs map[string
 	return paths, nil
 }
 
-func trackedFileEntries(ctx context.Context, repoRoot string) ([]trackedEntry, error) {
-	output, err := gitOutput(ctx, repoRoot, "ls-files", "-z", "-s", "--cached")
+func trackedFileEntries(ctx context.Context, repoRoot string, excludeDirs map[string]bool) ([]trackedEntry, error) {
+	// -v adds one index-status byte to the existing --stage enumeration;
+	// it avoids an extra Git process or a full raw-content scan per search.
+	output, err := gitOutput(ctx, repoRoot, "ls-files", "-z", "-v", "-s", "--cached")
 	if err != nil {
 		return nil, fmt.Errorf("git ls-files --cached: %w", err)
 	}
@@ -87,12 +92,22 @@ func trackedFileEntries(ctx context.Context, repoRoot string) ([]trackedEntry, e
 		if entry == "" {
 			continue
 		}
-		mode, sha, path, ok := parseLsFilesStage(entry)
+		if len(entry) < 3 || entry[1] != ' ' {
+			return nil, fmt.Errorf("git ls-files -v --cachedのentryを解析できません: %q", entry)
+		}
+		indexFlag := entry[0]
+		mode, sha, path, ok := parseLsFilesStage(entry[2:])
 		if !ok {
 			return nil, fmt.Errorf("git ls-files --cachedのentryを解析できません: %q", entry)
 		}
 		if mode != trackedModeRegular && mode != trackedModeExecutable {
 			continue
+		}
+		if excludedPath(path, excludeDirs) {
+			continue
+		}
+		if indexFlag != 'H' {
+			return nil, fmt.Errorf("%w: %s (index flag %c)", ErrUnsupportedIndexFlags, path, indexFlag)
 		}
 		if seen[path] {
 			continue
