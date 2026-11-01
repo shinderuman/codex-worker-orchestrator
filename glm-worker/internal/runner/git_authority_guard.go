@@ -237,21 +237,7 @@ func gitAuthorityRefChanges(before, after gitAuthoritySnapshot) ([]GitRefChange,
 	for _, ref := range after.refs {
 		afterByName[ref.Name] = ref
 	}
-	// The authority digest covers only the checked-out symbolic HEAD target,
-	// not unrelated branch, remote, or Codex metadata refs. Keep both sides
-	// when HEAD changes target so rename/deletion evidence is not lost.
-	names := make(map[string]struct{}, 2)
-	if before.symbolicHead != "" {
-		names[before.symbolicHead] = struct{}{}
-	}
-	if after.symbolicHead != "" {
-		names[after.symbolicHead] = struct{}{}
-	}
-	ordered := make([]string, 0, len(names))
-	for name := range names {
-		ordered = append(ordered, name)
-	}
-	sort.Strings(ordered)
+	ordered := gitAuthorityRefTargetNames(before.symbolicHead, after.symbolicHead)
 
 	changes := make([]GitRefChange, 0)
 	truncated := false
@@ -277,6 +263,21 @@ func gitAuthorityRefChanges(before, after gitAuthoritySnapshot) ([]GitRefChange,
 		changes = append(changes, change)
 	}
 	return changes, truncated
+}
+
+func gitAuthorityRefTargetNames(before, after string) []string {
+	names := make(map[string]struct{}, 2)
+	for _, name := range []string{before, after} {
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Strings(ordered)
+	return ordered
 }
 
 func (g *gitAuthorityGuard) cleanup() {
