@@ -27,16 +27,16 @@ func TestStageTimelineGapClassificationPreservesClosedAttemptSemantics(t *testin
 	next := state.ParentActionAttemptRecord{EnteredAt: base.Add(30 * time.Second), ExitedAt: base.Add(40 * time.Second)}
 	open := state.ParentActionAttemptRecord{EnteredAt: base.Add(4 * time.Second)}
 	cases := []struct {
-		name string
-		start time.Time
-		end time.Time
+		name     string
+		start    time.Time
+		end      time.Time
 		attempts []state.ParentActionAttemptRecord
-		want string
+		want     string
 	}{
-		{"gap between completed attempts", base.Add(11*time.Second), base.Add(29*time.Second), []state.ParentActionAttemptRecord{prior, next}, stageTimelineGapParentWait},
-		{"gap with completed predecessor and open attempt", base.Add(11*time.Second), base.Add(29*time.Second), []state.ParentActionAttemptRecord{open, prior, next}, stageTimelineGapParentWait},
-		{"gap contained in closed attempt", base.Add(2*time.Second), base.Add(8*time.Second), []state.ParentActionAttemptRecord{prior, next}, stageTimelineGapInAttempt},
-		{"gap with no ended predecessor", base.Add(11*time.Second), base.Add(29*time.Second), []state.ParentActionAttemptRecord{open, next}, stageTimelineGapUnattributed},
+		{"gap between completed attempts", base.Add(11 * time.Second), base.Add(29 * time.Second), []state.ParentActionAttemptRecord{prior, next}, stageTimelineGapParentWait},
+		{"gap with completed predecessor and open attempt", base.Add(11 * time.Second), base.Add(29 * time.Second), []state.ParentActionAttemptRecord{open, prior, next}, stageTimelineGapParentWait},
+		{"gap contained in closed attempt", base.Add(2 * time.Second), base.Add(8 * time.Second), []state.ParentActionAttemptRecord{prior, next}, stageTimelineGapInAttempt},
+		{"gap with no ended predecessor", base.Add(11 * time.Second), base.Add(29 * time.Second), []state.ParentActionAttemptRecord{open, next}, stageTimelineGapUnattributed},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
