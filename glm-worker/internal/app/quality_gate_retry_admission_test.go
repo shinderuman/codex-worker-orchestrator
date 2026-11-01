@@ -168,7 +168,7 @@ esac
 	}
 	previous := qualitygate.RunRecord{Execution: &qualitygate.Execution{
 		Backend: qualitygate.BackendDockerARM64,
-		Docker: &qualitygate.DockerExecution{ImageID: "sha256:expected", CPUs: 4, MemoryBytes: 1000000},
+		Docker:  &qualitygate.DockerExecution{ImageID: "sha256:expected", CPUs: 4, MemoryBytes: 1000000},
 	}}
 	if !qualityGateDockerImageUnchanged(candidate, previous) {
 		t.Fatal("unchanged Docker image and effective resources should match")
