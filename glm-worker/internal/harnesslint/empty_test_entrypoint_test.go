@@ -75,6 +75,15 @@ func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *te
 			wantViolation: true,
 		},
 		{
+			name:          "parenthesized static log",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log((\"static\")) }\n",
+			wantViolation: true,
+		},
+		{
+			name:   "parenthesized dynamic observation",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log((observeRuntime())) }\n",
+		},
+		{
 			name:   "formatted log with runtime argument remains admissible",
 			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Logf(\"observed: %v\", observeRuntime()) }\n",
 		},
