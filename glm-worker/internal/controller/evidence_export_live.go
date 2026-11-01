@@ -557,12 +557,12 @@ func (c *evidenceLiveCollector) observeGit() (*EvidenceExportGitAudit, error) {
 }
 
 func (c *evidenceLiveCollector) collectGitDiffs() error {
-	staged, err := runGitBinary(c.workspace.Root, nil, "diff", "--cached", "--binary")
+	staged, err := runGitBinary(c.workspace.Root, nil, "diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv")
 	if err != nil {
 		return fmt.Errorf("evidence export staged diff: %w", err)
 	}
 	c.addBytes("live/git/diff-staged.patch", evidenceExportSourceGitDiff, staged, false)
-	unstaged, err := runGitBinary(c.workspace.Root, nil, "diff", "--binary")
+	unstaged, err := runGitBinary(c.workspace.Root, nil, "diff", "--binary", "--no-ext-diff", "--no-textconv")
 	if err != nil {
 		return fmt.Errorf("evidence export unstaged diff: %w", err)
 	}
