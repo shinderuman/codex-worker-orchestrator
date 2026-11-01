@@ -458,32 +458,34 @@ func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
 }
 
 func canonicalLifecycleTask(cfg config.AppConfig, st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
-	binding, err := st.LoadControllerRuntimeBinding()
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			unstarted, checkErr := st.UnstartedTaskRuntime()
-			if checkErr != nil {
-				return "", checkErr
-			}
-			if quiescent {
-				return task.TaskPath, nil
-			}
-			if unstarted {
-				committed, authorityErr := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
-				if authorityErr != nil {
-					return "", authorityErr
-				}
-				if committed.Task.TaskPath == task.TaskPath && !committed.Task.Equal(task) {
-					return task.TaskPath, nil
-				}
-			}
+	binding, bindingErr := st.LoadControllerRuntimeBinding()
+	if bindingErr == nil {
+		if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
+			return "", errors.New("controller runtime binding does not match canonical execution task")
 		}
+		return binding.TaskPath, nil
+	}
+	if !errors.Is(bindingErr, os.ErrNotExist) {
+		return "", bindingErr
+	}
+	if quiescent {
+		return task.TaskPath, nil
+	}
+	unstarted, err := st.UnstartedTaskRuntime()
+	if err != nil {
 		return "", err
 	}
-	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
-		return "", errors.New("controller runtime binding does not match canonical execution task")
+	if !unstarted {
+		return "", bindingErr
 	}
-	return binding.TaskPath, nil
+	committed, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	if err != nil {
+		return "", err
+	}
+	if committed.Task.TaskPath != task.TaskPath || committed.Task.Equal(task) {
+		return "", bindingErr
+	}
+	return task.TaskPath, nil
 }
 
 func retiredRuntimeHandover(cfg config.AppConfig, head *controller.RepositoryControllerHead, lifecycleTask, selectedTask string) (bool, error) {
