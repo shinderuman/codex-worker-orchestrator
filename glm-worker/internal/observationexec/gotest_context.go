@@ -38,7 +38,7 @@ func runIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 		return goTestWrapperFailure(started, fmt.Sprintf("隔離temp rootを作成できません: %v", err))
 	}
 	defer func() { _ = os.RemoveAll(tempRoot) }()
-	if err := ConfinementPreflightContext(executionCtx, tempRoot); err != nil {
+	if err := ConfinementPreflight(executionCtx, tempRoot); err != nil {
 		if stopErr := executionCtx.Err(); stopErr != nil {
 			outcome := goTestContextStopOutcome(stopErr, deadline)
 			outcome.DurationMS = time.Since(started).Milliseconds()
@@ -136,7 +136,7 @@ func runObservationPreflightProcess(ctx context.Context, args []string) ([]byte,
 	}
 }
 
-func ConfinementPreflightContext(ctx context.Context, writeRoot string) error {
+func ConfinementPreflight(ctx context.Context, writeRoot string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

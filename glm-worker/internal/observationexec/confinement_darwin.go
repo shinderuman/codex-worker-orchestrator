@@ -3,7 +3,6 @@
 package observationexec
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -88,10 +87,6 @@ func confinementProfile(writeRoot, hostHome string) string {
 	profile.WriteString(fmt.Sprintf("(allow file-write* (literal %s))\n", seatbeltLiteral("/dev/null")))
 	profile.WriteString(fmt.Sprintf("(allow file-write* (literal %s))\n", seatbeltLiteral("/dev/dtracehelper")))
 	return profile.String()
-}
-
-func ConfinementPreflight(writeRoot string) error {
-	return ConfinementPreflightContext(context.Background(), writeRoot)
 }
 
 func seatbeltLiteral(path string) string {
