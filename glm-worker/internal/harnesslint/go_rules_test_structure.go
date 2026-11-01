@@ -123,9 +123,13 @@ func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
 			return false
 		}
 		for _, argument := range call.Args {
-			if _, literal := argument.(*ast.BasicLit); !literal {
-				return false
+			if _, literal := argument.(*ast.BasicLit); literal {
+				continue
 			}
+			if constant, ok := argument.(*ast.Ident); ok && (constant.Name == "true" || constant.Name == "false" || constant.Name == "nil") {
+				continue
+			}
+			return false
 		}
 		return true
 	default:
