@@ -82,6 +82,17 @@ func TestSourceTreeWriterResumesAfterDirectoryChildrenRemoved(t *testing.T) {
 	if err := os.Remove(filepath.Join(repo, "replaced", "child")); err != nil {
 		t.Fatal(err)
 	}
+	writeSuspensionTestFile(t, repo, "replaced/foreign", "foreign mutation\n")
+	if err := applySourceTreeEntries(repo, before, after); err == nil {
+		t.Fatal("replay accepted a third-party child after partially deleting old tree")
+	}
+	foreign, err := os.ReadFile(filepath.Join(repo, "replaced", "foreign"))
+	if err != nil || string(foreign) != "foreign mutation\n" {
+		t.Fatalf("rejected replay changed foreign child: %q, %v", foreign, err)
+	}
+	if err := os.Remove(filepath.Join(repo, "replaced", "foreign")); err != nil {
+		t.Fatal(err)
+	}
 	if err := applySourceTreeEntries(repo, before, after); err != nil {
 		t.Fatalf("replay after child removal: %v", err)
 	}
