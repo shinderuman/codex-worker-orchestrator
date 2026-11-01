@@ -54,6 +54,20 @@ func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *te
 			wantViolation: true,
 		},
 		{
+			name:          "static log with several arguments is inert",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log(\"verified\", 10, true) }\n",
+			wantViolation: true,
+		},
+		{
+			name:          "formatted skip with literal arguments is inert",
+			source:        "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Skipf(\"disabled in %s\", \"environment\") }\n",
+			wantViolation: true,
+		},
+		{
+			name:   "formatted log with runtime argument remains admissible",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Logf(\"observed: %v\", observeRuntime()) }\n",
+		},
+		{
 			name:   "log can evaluate runtime behavior",
 			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { t.Log(observeRuntime()) }\n",
 		},
