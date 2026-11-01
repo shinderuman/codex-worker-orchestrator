@@ -93,14 +93,8 @@ func runFinalizationCheck(cfg config.AppConfig, validationDir, form string, stdo
 	if err != nil {
 		return err
 	}
-	_, lookup, err := acceptedCandidateValidationRequest(cfg, form)
-	if err != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form,
-			Failure: &finalizationFailure{Stage: "routing", Reason: "accepted_candidate_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}})
-	}
-	if lookup == controller.CandidateValidationFormAbsent {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form,
-			Failure: undeclaredFinalizationForm(form)})
+	if handled, err := rejectUndeclaredFinalizationBeforeCheckout(cfg, form, stdout); handled {
+		return err
 	}
 	candidateRoot, release, err := controller.PrepareFinalValidationWorkspace(cfg, form)
 	if err != nil {
@@ -123,6 +117,18 @@ func runFinalizationCheck(cfg config.AppConfig, validationDir, form string, stdo
 		}
 	}
 	return writeFinalizationOutput(stdout, output)
+}
+
+func rejectUndeclaredFinalizationBeforeCheckout(cfg config.AppConfig, form string, stdout io.Writer) (bool, error) {
+	_, lookup, err := acceptedCandidateValidationRequest(cfg, form)
+	if err != nil {
+		failure := &finalizationFailure{Stage: "routing", Reason: "accepted_candidate_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
+		return true, writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form, Failure: failure})
+	}
+	if lookup == controller.CandidateValidationFormAbsent {
+		return true, writeFinalizationOutput(stdout, finalizationCheckOutput{Status: finalizationStatusBlocked, Form: form, Failure: undeclaredFinalizationForm(form)})
+	}
+	return false, nil
 }
 
 func collectFinalizationCheck(cfg config.AppConfig, validationDir, form string) (finalizationCheckOutput, error) {
