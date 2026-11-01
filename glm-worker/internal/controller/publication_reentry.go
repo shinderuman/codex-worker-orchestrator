@@ -49,6 +49,20 @@ func (s *Store) ReenterAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	return s.recoverExecutionOperationLocked(op)
 }
 
+func (s *Store) admitPromotedCandidateReentry(head RepositoryControllerHead, candidate AcceptedCandidate) error {
+	if head.PendingTransitionID != "" || head.LiveLeaseID != "" || head.AcceptedCandidateRef == nil {
+		return fmt.Errorf("candidate reentry requires quiescent accepted authority")
+	}
+	if !candidate.EvidenceValid || candidate.State != candidatePromoted {
+		return fmt.Errorf("candidate reentry requires a promoted, accepted source")
+	}
+	if err := s.requireCurrentCandidateSource(candidate); err != nil {
+		return err
+	}
+	_, _, err := s.candidateReentrySource(head, candidate)
+	return err
+}
+
 func candidateReentryMetadata(c AcceptedCandidate) []TerminalMetadataFile {
 	if c.State != candidatePromoted || !c.TaskRef.Equal(c.RootTaskRef) {
 		return nil

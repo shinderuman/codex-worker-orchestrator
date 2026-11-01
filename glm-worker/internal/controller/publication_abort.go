@@ -52,8 +52,13 @@ func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryCon
 	action := publicationAbortAction(op)
 	reason := ""
 	if op.Terminal != nil && phase.Completion != nil && phase.Completion.AbortRemoteOID == op.Source.Head.IntegrationTip {
-		// Only advertise a command admitted by the same staged CLI the parent executes.
-		if _, err := s.ProjectParentCompletionOperation(PublicationOperationReenter); err != nil {
+		// Keep the abort owner independent of the higher-level publication projection.
+		// The staged operation uses the same candidate and generation guards.
+		if head.AcceptedCandidateRef == nil {
+			action, reason = "", "aborted completion has no accepted candidate"
+		} else if candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef); err != nil {
+			action, reason = "", err.Error()
+		} else if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
 			action, reason = "", err.Error()
 		} else {
 			action = PublicationOperationReenter

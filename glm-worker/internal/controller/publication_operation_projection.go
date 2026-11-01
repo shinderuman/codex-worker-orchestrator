@@ -200,7 +200,7 @@ func (s *Store) projectAcceptedCandidateOperation(head RepositoryControllerHead)
 		return s.projectPreparedCandidateOperation(head, candidate)
 	case candidatePromoted:
 		operation := s.projectCandidateOperation(head, candidate, PublicationOperationPublish)
-		if _, _, err := s.candidateReentrySource(head, candidate); err == nil {
+		if err := s.admitPromotedCandidateReentry(head, candidate); err == nil {
 			operation.AllowedOperations = []string{PublicationOperationPublish, PublicationOperationReenter}
 		}
 		return operation, nil
@@ -439,10 +439,7 @@ func (s *Store) ProjectParentCompletionOperation(requested string) (ParentComple
 		if err != nil {
 			return ParentCompletionOperation{}, err
 		}
-		if !candidate.EvidenceValid || candidate.State != candidatePromoted {
-			return ParentCompletionOperation{}, fmt.Errorf("candidate reentry requires a promoted, accepted source")
-		}
-		if _, _, err := s.candidateReentrySource(head, candidate); err != nil {
+		if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
 			return ParentCompletionOperation{}, fmt.Errorf("candidate reentry preflight: %w", err)
 		}
 		return s.projectCandidateOperation(head, candidate, PublicationOperationReenter), nil
