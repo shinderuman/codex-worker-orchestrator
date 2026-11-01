@@ -310,8 +310,6 @@ func (s *Store) parentOnlyLiveExecution(head RepositoryControllerHead) (AttemptR
 	return attempt, true, nil
 }
 
-// ParentOnlySmokeIdentityMatches checks the canonical attempt and current Task authority
-// without treating a task-scoped install-smoke identity as a model Runtime.
 func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 	attempt, err := s.loadAttempt(taskID)
 	if err != nil || attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
