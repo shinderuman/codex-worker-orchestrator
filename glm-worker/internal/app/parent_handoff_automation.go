@@ -28,6 +28,7 @@ func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) pa
 	if output.Consistent && output.RequiredAction != nil && *output.RequiredAction == string(state.ParentActionResubmitReport) && (output.ParentRequest == nil || output.ParentRequest.TaskAttribution.Matches) {
 		wf := workflow.NewWorkflow(cfg, st, nil, io.Discard)
 		if wf.SummaryRecoveryAvailable() == nil {
+			applyCanonicalControllerHandoff(cfg, &output)
 			return output
 		}
 	}
