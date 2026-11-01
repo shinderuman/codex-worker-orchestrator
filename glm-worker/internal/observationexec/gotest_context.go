@@ -136,6 +136,21 @@ func runObservationPreflightProcess(ctx context.Context, args []string) ([]byte,
 	}
 }
 
+func ConfinementPreflightContext(ctx context.Context, writeRoot string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	args, err := confinedLaunchArgs(writeRoot, []string{"/usr/bin/true"})
+	if err != nil {
+		return err
+	}
+	output, err := runObservationPreflightProcess(ctx, args)
+	if err != nil {
+		return fmt.Errorf("confinement初期化に失敗したためtargetを起動しません: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 func isolatedGoTestEnvContext(ctx context.Context, tempRoot string) ([]string, error) {
 	allowed := []string{"PATH", "TZ", "LANG", "LC_ALL", "LC_CTYPE"}
 	env := make([]string, 0, len(allowed)+10)

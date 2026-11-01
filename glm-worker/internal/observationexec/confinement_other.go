@@ -2,10 +2,7 @@
 
 package observationexec
 
-import (
-	"context"
-	"fmt"
-)
+import "fmt"
 
 const confinementSupportCondition = "macOSでsandbox-execが利用可能なこと"
 
@@ -17,13 +14,6 @@ func confinedLaunchArgs(_ string, _ []string) ([]string, error) {
 	return nil, ConfinementAdmission()
 }
 
-func ConfinementPreflight(writeRoot string) error {
-	return ConfinementPreflightContext(context.Background(), writeRoot)
-}
-
-func ConfinementPreflightContext(ctx context.Context, _ string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+func ConfinementPreflight(_ string) error {
 	return ConfinementAdmission()
 }
