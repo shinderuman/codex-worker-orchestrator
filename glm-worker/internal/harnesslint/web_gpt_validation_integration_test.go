@@ -46,6 +46,11 @@ const fakeFocusedGo = `#!/bin/sh
 set -eu
 printf 'go %s\n' "$*" >> "$VALIDATION_LOG"
 case "${VALIDATION_MUTATION:-}" in
+	vet-fail)
+		case " $*" in
+			*" vet ./..."*) exit 47 ;;
+		esac
+		;;
 	target-dirty)
 		printf 'mutated\n' >> "$EXPECTED_TARGET_ROOT/fixture.txt"
 		;;
@@ -96,6 +101,36 @@ func TestWebGPTValidationRunsBoundedModes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWebGPTValidationVetFailureDoesNotProceedToBuild(t *testing.T) {
+	fixture := newWebGPTValidationFixture(t)
+	result, output, err := fixture.runWithMutation(t, "build-vet", "", fixture.targetSHA, "vet-fail")
+	if err == nil || result.Result != "fail" || result.Error != "validation_failed" {
+		t.Fatalf("vet error did not fail validation: result=%#v err=%v output=%s", result, err, output)
+	}
+	log, readErr := os.ReadFile(fixture.log)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(log), " vet ./...") || strings.Contains(string(log), " build ./...") {
+		t.Fatalf("vet failure did not stop before build: %s", log)
+	}
+}
+
+func TestWebGPTValidationRejectsMissingControlRootWithoutRunningGate(t *testing.T) {
+	fixture := newWebGPTValidationFixture(t)
+	result, output, err := fixture.runWithMutation(t, "repository-lint", "", fixture.targetSHA, "missing-control-root")
+	if err == nil || result.Result != "rejected" || result.Error != "invalid_control_root" {
+		t.Fatalf("missing control root was admitted: result=%#v err=%v output=%s", result, err, output)
+	}
+	log, readErr := os.ReadFile(fixture.log)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(log) != 0 {
+		t.Fatalf("control root rejection executed a gate: %s", log)
 	}
 }
 
@@ -219,9 +254,13 @@ func (fixture webGPTValidationFixture) runWithMutation(t *testing.T, mode, scope
 	_ = os.Remove(resultPath)
 	command := exec.Command("sh", filepath.Join(fixture.control, "web-gpt-validate.sh"), fixture.branch, expected, fixture.controlSHA, mode, scope, resultPath, "web-gpt-validation-result-1")
 	command.Dir = fixture.target
+	controlRoot := fixture.control
+	if mutation == "missing-control-root" {
+		controlRoot = filepath.Join(fixture.base, "absent-control-root")
+	}
 	command.Env = append(os.Environ(),
 		"PATH="+fixture.bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"WEB_GPT_VALIDATION_CONTROL_ROOT="+fixture.control,
+		"WEB_GPT_VALIDATION_CONTROL_ROOT="+controlRoot,
 		"VALIDATION_LOG="+fixture.log,
 		"VALIDATION_MUTATION="+mutation,
 		"EXPECTED_TARGET_ROOT="+fixture.target,
