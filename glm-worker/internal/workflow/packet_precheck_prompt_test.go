@@ -10,10 +10,10 @@ import (
 func TestRuntimeArtifactContextCarriesOnlyDynamicProjection(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name       string
-		actual     string
+		name        string
+		actual      string
 		instruction string
-		selector   string
+		selector    string
 	}{
 		{
 			name: "worker", actual: withArtifactContext("implementation instruction", "/tmp/artifacts"),
