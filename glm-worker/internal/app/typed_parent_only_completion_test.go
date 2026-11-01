@@ -61,8 +61,12 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 			handoff := executeParentHandoff(t, cfg)
+			commandJSON := handoff.RequiredActionParameters["controller_command_json"]
+			if commandJSON == "" {
+				t.Fatalf("parent-only failed-gate handoff omitted a controller command: %#v", handoff)
+			}
 			var failure controller.PublicationParentCommand
-			if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &failure); err != nil {
+			if err := json.Unmarshal([]byte(commandJSON), &failure); err != nil {
 				t.Fatal(err)
 			}
 			if failure.Action != controller.PublicationOperationValidationFailure {
