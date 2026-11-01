@@ -332,39 +332,27 @@ func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 	return err == nil && authority.ExecutionMode == ExecutionAuthorityParentOnly && attempt.SemanticTaskRef.Equal(authority.Task)
 }
 
-// ParentOnlySmokeStoreWithoutRuntime recognizes an attempt-scoped smoke store
-// during the quiescent handoff or an admitted parent-only reentry. It does not
-// relax the exact current-attempt check used when accepting install evidence.
 func (s *Store) ParentOnlySmokeStoreWithoutRuntime(taskID string) bool {
-	if taskID == "" {
-		return false
+	if s.ParentOnlySmokeIdentityMatches(taskID) {
+		return true
 	}
 	head, err := s.LoadHead()
-	if err != nil || head.Status != ControllerStatusActive {
+	if err != nil || head.Status != ControllerStatusActive || head.LiveAttemptID == "" ||
+		head.LiveAttemptID == taskID || head.AcceptedCandidateRef != nil {
 		return false
 	}
-	attempt, err := s.loadAttempt(taskID)
-	if err != nil || attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+	current, err := s.loadAttempt(head.LiveAttemptID)
+	if err != nil || current.ExecutionAuthority != ExecutionAuthorityParentOnly || current.PredecessorAttemptID != taskID {
+		return false
+	}
+	previous, err := s.loadAttempt(taskID)
+	if err != nil || previous.ExecutionAuthority != ExecutionAuthorityParentOnly ||
+		!previous.SemanticTaskRef.Equal(current.SemanticTaskRef) {
 		return false
 	}
 	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
-	if err != nil || authority.ExecutionMode != ExecutionAuthorityParentOnly || !attempt.SemanticTaskRef.Equal(authority.Task) {
-		return false
-	}
-	if head.LiveAttemptID != "" && head.LiveAttemptID != taskID {
-		current, err := s.loadAttempt(head.LiveAttemptID)
-		if err != nil || current.ExecutionAuthority != ExecutionAuthorityParentOnly ||
-			current.PredecessorAttemptID != taskID || !current.SemanticTaskRef.Equal(attempt.SemanticTaskRef) {
-			return false
-		}
-	}
-	if head.AcceptedCandidateRef != nil {
-		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
-		if err != nil || (candidate.AttemptID != taskID && candidate.AttemptID != head.LiveAttemptID) {
-			return false
-		}
-	}
-	return true
+	return err == nil && authority.ExecutionMode == ExecutionAuthorityParentOnly &&
+		previous.SemanticTaskRef.Equal(authority.Task)
 }
 
 func (s *Store) LiveParentOnlyExecution() (bool, error) {
