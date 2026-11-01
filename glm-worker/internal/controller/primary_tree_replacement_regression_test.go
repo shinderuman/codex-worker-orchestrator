@@ -146,3 +146,60 @@ func TestSourceTreeWriterReplacesFileWithSymlinkWithoutFollowingTarget(t *testin
 		t.Fatalf("symlink target modified: %q %v", data, err)
 	}
 }
+
+func TestSourceTreeWriterReplacesSymlinkWithExecutableWithoutFollowingTarget(t *testing.T) {
+	t.Parallel()
+	repo := newControllerRepo(t)
+	writeSuspensionTestFile(t, repo, "target.txt", "target untouched\n")
+	if err := os.Symlink("target.txt", filepath.Join(repo, "link")); err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, repo, "add", "link", "target.txt")
+	runControllerGit(t, repo, "commit", "-qm", "before")
+	beforeTree, err := gitTrimmed(repo, "rev-parse", "HEAD^{tree}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(repo, "link")); err != nil {
+		t.Fatal(err)
+	}
+	writeSuspensionTestFile(t, repo, "link", "executable replacement\n")
+	if err := os.Chmod(filepath.Join(repo, "link"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, repo, "add", "-A")
+	runControllerGit(t, repo, "commit", "-qm", "after")
+	afterTree, err := gitTrimmed(repo, "rev-parse", "HEAD^{tree}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, repo, "reset", "--hard", "HEAD~1")
+	before, err := sourceImportTreeEntries(repo, beforeTree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := sourceImportTreeEntries(repo, afterTree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := applySourceTreeEntries(repo, before, after); err != nil {
+			t.Fatalf("retry %d: %v", attempt, err)
+		}
+	}
+	info, err := os.Lstat(filepath.Join(repo, "link"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("replacement lost executable mode: %v", info.Mode())
+	}
+	data, err := os.ReadFile(filepath.Join(repo, "link"))
+	if err != nil || string(data) != "executable replacement\n" {
+		t.Fatalf("replacement content: %q %v", data, err)
+	}
+	data, err = os.ReadFile(filepath.Join(repo, "target.txt"))
+	if err != nil || string(data) != "target untouched\n" {
+		t.Fatalf("symlink target was modified: %q %v", data, err)
+	}
+}
