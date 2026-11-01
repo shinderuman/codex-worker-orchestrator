@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+type cancelAfterReadsContext struct {
+	context.Context
+	remaining int
+}
+
 func TestCancelledObservationDoesNotEnterConfinement(t *testing.T) {
 	moduleDir := t.TempDir()
 	artifactDir := t.TempDir()
@@ -82,11 +87,6 @@ func TestCancelledModuleCopyDoesNotCommitInput(t *testing.T) {
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
 		t.Fatalf("cancelled module copy created a destination: %v", err)
 	}
-}
-
-type cancelAfterReadsContext struct {
-	context.Context
-	remaining int
 }
 
 func (c *cancelAfterReadsContext) Err() error {

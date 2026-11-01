@@ -39,6 +39,10 @@ type moduleTreeCopier struct {
 	maxBytes int64
 }
 
+type contextCopyReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
 type isolatedGoTestRun struct {
 	outcome      GoTestOutcome
 	gateLog      []byte
@@ -299,26 +303,8 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 		}
 		syscall.ForkLock.RUnlock()
 	}()
-	ctx := c.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	written, err := io.Copy(dst, contextCopyReader{ctx: ctx, reader: io.LimitReader(src, remaining)})
+	written, err := c.copyFileContents(dst, src, remaining, limit)
 	if err != nil {
-		return fmt.Errorf("隔離入力fileをcopyできません: %w", err)
-	}
-	var extra [1]byte
-	extraN, extraErr := src.Read(extra[:])
-	if extraN > 0 {
-		return fmt.Errorf("隔離入力の合計sizeが上限(%d bytes)を超えました", limit)
-	}
-	if extraErr != nil && !errors.Is(extraErr, io.EOF) {
-		return fmt.Errorf("隔離入力fileのsize境界を確認できません: %w", extraErr)
-	}
-	if err := dst.Close(); err != nil {
-		return fmt.Errorf("隔離入力fileを保存できません: %w", err)
-	}
-	if err := c.cancelled(); err != nil {
 		return err
 	}
 	c.bytes += written
@@ -326,16 +312,38 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 	return nil
 }
 
+
+func (c *moduleTreeCopier) copyFileContents(dst *os.File, src *os.File, remaining, limit int64) (int64, error) {
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	written, err := io.Copy(dst, contextCopyReader{ctx: ctx, reader: io.LimitReader(src, remaining)})
+	if err != nil {
+		return 0, fmt.Errorf("隔離入力fileをcopyできません: %w", err)
+	}
+	var extra [1]byte
+	extraN, extraErr := src.Read(extra[:])
+	if extraN > 0 {
+		return 0, fmt.Errorf("隔離入力の合計sizeが上限(%d bytes)を超えました", limit)
+	}
+	if extraErr != nil && !errors.Is(extraErr, io.EOF) {
+		return 0, fmt.Errorf("隔離入力fileのsize境界を確認できません: %w", extraErr)
+	}
+	if err := dst.Close(); err != nil {
+		return 0, fmt.Errorf("隔離入力fileを保存できません: %w", err)
+	}
+	if err := c.cancelled(); err != nil {
+		return 0, err
+	}
+	return written, nil
+}
+
 func (c *moduleTreeCopier) cancelled() error {
 	if c.ctx != nil {
 		return c.ctx.Err()
 	}
 	return nil
-}
-
-type contextCopyReader struct {
-	ctx    context.Context
-	reader io.Reader
 }
 
 func (r contextCopyReader) Read(p []byte) (int, error) {

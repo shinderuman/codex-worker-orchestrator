@@ -13,4 +13,3 @@ func ConfinementAdmission() error {
 func confinedLaunchArgs(_ string, _ []string) ([]string, error) {
 	return nil, ConfinementAdmission()
 }
-
