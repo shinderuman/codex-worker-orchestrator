@@ -50,7 +50,7 @@ func TestQualityWiringPackageRejectsCommentAndStringPins(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if (len(result) != 0) != !tc.want {
+			if (len(result) != 0) != tc.want {
 				t.Fatalf("missing call violation=%v want=%v: %#v", len(result) != 0, tc.want, result)
 			}
 			if len(result) != 0 && !strings.Contains(result[0].Message, "w.qualityGate") {
