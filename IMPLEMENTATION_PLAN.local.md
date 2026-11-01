@@ -15,7 +15,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/goquality-untracked-directory-backend-continuity.md`](IMPLEMENTATION_TASKS/goquality-untracked-directory-backend-continuity.md)
 - [`IMPLEMENTATION_TASKS/parent-only-install-smoke-evidence.md`](IMPLEMENTATION_TASKS/parent-only-install-smoke-evidence.md)
 - [`IMPLEMENTATION_TASKS/install-smoke-probe-readiness.md`](IMPLEMENTATION_TASKS/install-smoke-probe-readiness.md)
-- [`IMPLEMENTATION_TASKS/execution-authority-reentry-successor-projection.md`](IMPLEMENTATION_TASKS/execution-authority-reentry-successor-projection.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/parent-handoff-summary-recovery-ordering.md`](IMPLEMENTATION_TASKS/parent-handoff-summary-recovery-ordering.md)

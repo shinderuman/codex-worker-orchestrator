@@ -316,6 +316,13 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 		if IsPristine(head) {
 			return ParentCompletionOperation{}, false, nil
 		}
+		current, currentErr := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+		if currentErr != nil {
+			return ParentCompletionOperation{}, false, currentErr
+		}
+		if current.ExecutionMode != ExecutionAuthorityParentOnly {
+			return ParentCompletionOperation{}, false, nil
+		}
 		return ParentCompletionOperation{}, false, err
 	}
 	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
