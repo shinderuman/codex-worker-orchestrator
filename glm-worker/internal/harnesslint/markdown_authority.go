@@ -16,6 +16,7 @@ type markdownFence struct {
 const markdownDerivedStateRule = "markdown-derived-state"
 
 var planExtraBlankLines = regexp.MustCompile(`\n(?:[ \t]*\n){2,}`)
+var planHeadingBlankLines = regexp.MustCompile(`^(?:[ \t]*\n){2,}`)
 var planSeparatedTaskItems = regexp.MustCompile(`(?m)(^- \[[^\n]*\n)[ \t]*\n(- \[)`)
 
 var readmePinnedVersionPattern = regexp.MustCompile(`^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
@@ -90,7 +91,8 @@ func compactPlanSectionSpacing(data []byte, heading string) []byte {
 		end = start + next + 1
 	}
 	original := data[start:end]
-	result := planExtraBlankLines.ReplaceAll(original, []byte("\n\n"))
+	result := planHeadingBlankLines.ReplaceAll(original, []byte("\n"))
+	result = planExtraBlankLines.ReplaceAll(result, []byte("\n\n"))
 	for {
 		next := planSeparatedTaskItems.ReplaceAll(result, []byte("$1$2"))
 		if bytes.Equal(next, result) {

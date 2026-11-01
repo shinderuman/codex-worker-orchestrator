@@ -96,6 +96,31 @@ func TestMarkdownPlanSpacingPreservesOtherSectionsAndQuotedMaterial(t *testing.T
 	}
 }
 
+func TestMarkdownPlanSpacingCompactsHeadingGap(t *testing.T) {
+	root := t.TempDir()
+	path := implementationPlanPath
+	original := "## NEXT（優先順）\n\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n"
+	writeMarkdownAuthorityFixture(t, root, path, original)
+	violations, err := markdownDerivedStatePathViolations(root, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 1 || violations[0].Rule != "markdown-plan-spacing" || !violations[0].Fixable {
+		t.Fatalf("heading spacing violations = %+v", violations)
+	}
+	if err := fixPlanSpacing(root, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n"
+	if string(data) != expected {
+		t.Fatalf("unexpected heading spacing: %q", data)
+	}
+}
+
 func TestMarkdownDerivedStateRejectsPlanCurrentStateSections(t *testing.T) {
 	root := t.TempDir()
 	path := "IMPLEMENTATION_PLAN.local.md"
