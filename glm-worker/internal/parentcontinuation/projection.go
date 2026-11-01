@@ -442,7 +442,7 @@ func canonicalExecutionLifecycleTask(cfg config.AppConfig, st *state.StateStore,
 	if parentOnly {
 		return task.TaskPath, nil
 	}
-	return canonicalLifecycleTask(st, task, quiescent)
+	return canonicalLifecycleTask(cfg, st, task, quiescent)
 }
 
 func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
@@ -457,7 +457,7 @@ func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
 	return store.LiveParentOnlyExecution()
 }
 
-func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
+func canonicalLifecycleTask(cfg config.AppConfig, st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
 	binding, err := st.LoadControllerRuntimeBinding()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -465,8 +465,17 @@ func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRe
 			if checkErr != nil {
 				return "", checkErr
 			}
-			if quiescent || unstarted {
+			if quiescent {
 				return task.TaskPath, nil
+			}
+			if unstarted {
+				committed, authorityErr := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+				if authorityErr != nil {
+					return "", authorityErr
+				}
+				if committed.Task.TaskPath == task.TaskPath && !committed.Task.Equal(task) {
+					return task.TaskPath, nil
+				}
 			}
 		}
 		return "", err
