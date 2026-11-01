@@ -1,0 +1,72 @@
+package harnesslint
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestEmptyEntrypointRuleRejectsInertCoverageButPreservesBehaviorChecks(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		source string
+		wantViolation bool
+	}{
+		{
+			name: "empty test",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) {}\n",
+			wantViolation: true,
+		},
+		{
+			name: "comment only is empty",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { /* validates the contract */ }\n",
+			wantViolation: true,
+		},
+		{
+			name: "behavioral negative case",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { if 2 + 2 != 4 { t.Fatal(\"unexpected result\") } }\n",
+		},
+		{
+			name: "schema guard with explicit assertion",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { got := \"schema\"; if got == \"\" { t.Fatal(\"empty schema\") } }\n",
+		},
+		{
+			name: "table driven regression",
+			source: "package demo\nimport \"testing\"\nfunc TestGuard(t *testing.T) { for _, value := range []int{1, 2} { if value < 1 { t.Fatal(value) } } }\n",
+		},
+		{
+			name: "ordinary non-test function",
+			source: "package demo\nfunc Helper() {}\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			rel := "internal/demo/demo_test.go"
+			abs := filepath.Join(root, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(abs, []byte(tc.source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			violations, err := scanGoRules(root, []string{rel})
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, violation := range violations {
+				if violation.Rule == "empty-test-entrypoint" {
+					found = true
+					if violation.Path != rel || violation.Line <= 0 {
+						t.Fatalf("violation location: %#v", violation)
+					}
+				}
+			}
+			if found != tc.wantViolation {
+				t.Fatalf("empty test violation=%v want=%v, all=%#v", found, tc.wantViolation, violations)
+			}
+		})
+	}
+}
