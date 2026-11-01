@@ -171,6 +171,13 @@ func (s *Store) candidateInstallSmokeRuntime(candidate AcceptedCandidate, attemp
 		return nil, "", fmt.Errorf("parent-only install smoke Task contract does not match candidate")
 	}
 	runtime := state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
+	identityInfo, err := os.Lstat(runtime.Path("task.id"))
+	if err != nil {
+		return nil, "", fmt.Errorf("stat parent-only install smoke task identity: %w", err)
+	}
+	if !identityInfo.Mode().IsRegular() {
+		return nil, "", fmt.Errorf("parent-only install smoke task identity is not a regular file")
+	}
 	taskID, err := runtime.Read("task.id")
 	if err != nil {
 		return nil, "", fmt.Errorf("read parent-only install smoke task identity: %w", err)
