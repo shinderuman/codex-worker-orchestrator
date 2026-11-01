@@ -15,14 +15,13 @@ type trackedEntry struct {
 	path string
 }
 
-const enumerationVersion = 1
-
-var ErrUnsupportedIndexFlags = errors.New("repo-search does not support assume-unchanged or skip-worktree index entries")
-
 const (
-	trackedModeRegular    = "100644"
+	enumerationVersion = 1
+	trackedModeRegular = "100644"
 	trackedModeExecutable = "100755"
 )
+
+var ErrUnsupportedIndexFlags = errors.New("repo-search does not support assume-unchanged or skip-worktree index entries")
 
 var defaultExcludeDirs = []string{".git", ".hg", ".svn", "node_modules", "vendor", "dist", "build", "target", "__pycache__"}
 
@@ -80,42 +79,44 @@ func enumerateFiles(ctx context.Context, repoRoot string, excludeDirs map[string
 }
 
 func trackedFileEntries(ctx context.Context, repoRoot string, excludeDirs map[string]bool) ([]trackedEntry, error) {
-	// -v adds one index-status byte to the existing --stage enumeration;
-	// it avoids an extra Git process or a full raw-content scan per search.
 	output, err := gitOutput(ctx, repoRoot, "ls-files", "-z", "-v", "-s", "--cached")
 	if err != nil {
 		return nil, fmt.Errorf("git ls-files --cached: %w", err)
 	}
 	seen := map[string]bool{}
 	var entries []trackedEntry
-	for _, entry := range strings.Split(string(output), "\x00") {
-		if entry == "" {
+	for _, raw := range strings.Split(string(output), "\x00") {
+		if raw == "" {
 			continue
 		}
-		if len(entry) < 3 || entry[1] != ' ' {
-			return nil, fmt.Errorf("git ls-files -v --cachedのentryを解析できません: %q", entry)
+		entry, include, err := parseTrackedIndexEntry(raw, excludeDirs)
+		if err != nil {
+			return nil, err
 		}
-		indexFlag := entry[0]
-		mode, sha, path, ok := parseLsFilesStage(entry[2:])
-		if !ok {
-			return nil, fmt.Errorf("git ls-files --cachedのentryを解析できません: %q", entry)
-		}
-		if mode != trackedModeRegular && mode != trackedModeExecutable {
+		if !include || seen[entry.path] {
 			continue
 		}
-		if excludedPath(path, excludeDirs) {
-			continue
-		}
-		if indexFlag != 'H' {
-			return nil, fmt.Errorf("%w: %s (index flag %c)", ErrUnsupportedIndexFlags, path, indexFlag)
-		}
-		if seen[path] {
-			continue
-		}
-		seen[path] = true
-		entries = append(entries, trackedEntry{mode: mode, sha: sha, path: path})
+		seen[entry.path] = true
+		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+func parseTrackedIndexEntry(raw string, excludeDirs map[string]bool) (trackedEntry, bool, error) {
+	if len(raw) < 3 || raw[1] != ' ' {
+		return trackedEntry{}, false, fmt.Errorf("git ls-files -v --cachedのentryを解析できません: %q", raw)
+	}
+	mode, sha, path, ok := parseLsFilesStage(raw[2:])
+	if !ok {
+		return trackedEntry{}, false, fmt.Errorf("git ls-files --cachedのentryを解析できません: %q", raw)
+	}
+	if (mode != trackedModeRegular && mode != trackedModeExecutable) || excludedPath(path, excludeDirs) {
+		return trackedEntry{}, false, nil
+	}
+	if raw[0] != 'H' {
+		return trackedEntry{}, false, fmt.Errorf("%w: %s (index flag %c)", ErrUnsupportedIndexFlags, path, raw[0])
+	}
+	return trackedEntry{mode: mode, sha: sha, path: path}, true, nil
 }
 
 func untrackedFilePaths(ctx context.Context, repoRoot string) ([]string, error) {
