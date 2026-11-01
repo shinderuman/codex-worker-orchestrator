@@ -129,6 +129,7 @@ func TestFindingDispositionAfterTaskAuthoritySyncsBindsCurrentAuthority(t *testi
 	if err := runtime.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
 		t.Fatal(err)
 	}
+	seedFinalValidationNoneObligation(t, fixture.store, final)
 	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
 		AttemptID:          final.Attempt.AttemptID,
 		TaskPath:           final.Attempt.SemanticTaskRef.TaskPath,
