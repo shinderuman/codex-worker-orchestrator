@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -62,8 +63,12 @@ type execution struct {
 	stderr    io.Writer
 }
 
-const platformARM64 = "arm64"
-const platformLinux = "linux"
+const (
+	platformARM64      = "arm64"
+	platformLinux      = "linux"
+	platformLinuxARM64 = platformLinux + "/" + platformARM64
+	dockerExecCommand  = "exec"
+)
 
 var errSourceChanged = errors.New("Docker診断中にsourceが変化しました")
 
@@ -72,7 +77,7 @@ func Run(ctx context.Context, repository string, args []string, stdout, stderr i
 	if len(args) == 0 {
 		args = []string{"./..."}
 	}
-	d := diagnostic{Form: "diagnostic-go-test-linux", Platform: "linux/arm64", Arguments: args, PhasesMS: map[string]int64{}}
+	d := diagnostic{Form: "diagnostic-go-test-linux", Platform: platformLinuxARM64, Arguments: args, PhasesMS: map[string]int64{}}
 	x := execution{ctx: ctx, detail: &d, stdout: stdout, stderr: stderr}
 	defer func() {
 		cleanupStarted := time.Now()
@@ -189,7 +194,7 @@ func (x *execution) prepare() error {
 }
 
 func (x *execution) test(args []string) (int, error) {
-	commandArgs := append([]string{"exec", "--user", "worker", "--workdir", "/workspace", x.container, "./goquality", "test"}, args...)
+	commandArgs := append([]string{dockerExecCommand, "--user", "worker", "--workdir", "/workspace", x.container, "./goquality", "test"}, args...)
 	runErr := x.runTestCommand(commandArgs)
 	code := exitCode(runErr)
 	changedErr := x.checkSourceAfterTest()
@@ -261,6 +266,13 @@ func exitCode(err error) int {
 func output(ctx context.Context, directory, name string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, name, args...)
 	command.Dir = directory
+	if name == "git" {
+		env, err := gitexec.WithoutLocalEnvironment(os.Environ())
+		if err != nil {
+			return nil, err
+		}
+		command.Env = env
+	}
 	data, err := command.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("%s %v: %w: %s", name, args, err, strings.TrimSpace(string(data)))
@@ -327,7 +339,7 @@ func buildImage(ctx context.Context, root, temporary, version, lintVersion strin
 		}
 	}
 	tag := "codex-worker-orchestrator-go-test:go" + version + "-lint" + lintVersion + "-arm64"
-	command := exec.CommandContext(ctx, "docker", "build", "--quiet", "--platform", "linux/arm64", "--build-arg", "GO_VERSION="+version, "--build-arg", "LINT_GO_VERSION="+lintVersion, "--file", filepath.Join(root, "tools", "go-test.Dockerfile"), "--tag", tag, buildContext)
+	command := exec.CommandContext(ctx, "docker", "build", "--quiet", "--platform", platformLinuxARM64, "--build-arg", "GO_VERSION="+version, "--build-arg", "LINT_GO_VERSION="+lintVersion, "--file", filepath.Join(root, "tools", "go-test.Dockerfile"), "--tag", tag, buildContext)
 	command.Env = append(os.Environ(), "BUILDX_CONFIG="+buildxConfig)
 	command.Stdout, command.Stderr = stderr, stderr
 	if err := command.Run(); err != nil {
@@ -338,7 +350,7 @@ func buildImage(ctx context.Context, root, temporary, version, lintVersion strin
 }
 
 func createContainer(ctx context.Context, image, cache, version string, cpus int) (string, error) {
-	args := []string{"create", "--init", "--platform", "linux/arm64", "--mount", "type=volume,source=" + cache + ",target=/home/worker/.cache/go-build", "--env", "GOTOOLCHAIN=go" + version, "--env", "GOMAXPROCS=" + strconv.Itoa(cpus), image}
+	args := []string{"create", "--init", "--platform", platformLinuxARM64, "--mount", "type=volume,source=" + cache + ",target=/home/worker/.cache/go-build", "--env", "GOTOOLCHAIN=go" + version, "--env", "GOMAXPROCS=" + strconv.Itoa(cpus), image}
 	data, err := output(ctx, "", "docker", args...)
 	return strings.TrimSpace(string(data)), err
 }
@@ -347,13 +359,13 @@ func populateContainer(ctx context.Context, root, container, archive, digest str
 	for _, args := range [][]string{
 		{"cp", archive, container + ":/tmp/source.tar"},
 		{"start", container},
-		{"exec", container, "sha256sum", "/tmp/source.tar"},
+		{dockerExecCommand, container, "sha256sum", "/tmp/source.tar"},
 	} {
 		data, err := output(ctx, root, "docker", args...)
 		if err != nil {
 			return err
 		}
-		if args[0] == "exec" && (len(strings.Fields(string(data))) == 0 || strings.Fields(string(data))[0] != digest) {
+		if args[0] == dockerExecCommand && (len(strings.Fields(string(data))) == 0 || strings.Fields(string(data))[0] != digest) {
 			return fmt.Errorf("containerへ転送したsource archiveのSHA-256が不一致です")
 		}
 	}

@@ -18,6 +18,9 @@ if [ "$#" -ge 1 ] && [ "$1" = test ] && [ "$(uname -s)" = Darwin ] && [ "$(uname
   case "$backend" in
     docker-linux-arm64)
       shift
+      if [ -n "${GLM_WORKER_DOCKER_TEST_STAGING:-}" ] && [ -n "${GLM_WORKER_DOCKER_TEST_RESPONSES:-}" ]; then
+        exec go -C "$repo_root/glm-worker" run ./cmd/goquality --staging "$GLM_WORKER_DOCKER_TEST_STAGING" --responses "$GLM_WORKER_DOCKER_TEST_RESPONSES" "$@"
+      fi
       exec go -C "$repo_root/glm-worker" run ./cmd/goquality "$repo_root" "$@"
       ;;
     native)
@@ -48,7 +51,13 @@ source_snapshot() {
   while IFS= read -r untracked_path; do
     [ -n "$untracked_path" ] || continue
     printf 'untracked %s\n' "$untracked_path"
-    cksum "$repo_root/$untracked_path" || exit 1
+    if [ -L "$repo_root/$untracked_path" ]; then
+      readlink "$repo_root/$untracked_path" || exit 1
+    elif [ -d "$repo_root/$untracked_path" ]; then
+      printf 'directory\n'
+    else
+      cksum "$repo_root/$untracked_path" || exit 1
+    fi
   done <"$untracked_list"
   rm -f "$untracked_list"
 }
