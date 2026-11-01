@@ -118,7 +118,7 @@ func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
 	switch selector.Sel.Name {
 	case "Parallel", "Helper", "SkipNow":
 		return len(call.Args) == 0
-	case "Skip", "Skipf":
+	case "Skip", "Skipf", "Log", "Logf":
 		if len(call.Args) != 1 {
 			return false
 		}
