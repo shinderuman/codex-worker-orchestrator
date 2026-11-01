@@ -382,10 +382,11 @@ func runGitBinaryWithGitDir(gitDir string, stdin []byte, args ...string) ([]byte
 }
 
 func runGitCommand(target string, gitDir bool, stdin []byte, args ...string) ([]byte, error) {
-	command := gitexec.Command("git", target, args...)
+	newCommand := gitexec.Command
 	if gitDir {
-		command = gitexec.CommandGitDir("git", target, args...)
+		newCommand = gitexec.CommandGitDir
 	}
+	command := newCommand("git", target, args...)
 	if stdin != nil {
 		command.Stdin = bytes.NewReader(stdin)
 	}
