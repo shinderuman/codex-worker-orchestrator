@@ -25,7 +25,7 @@ func TestAcceptedCandidateValidationLookupUsesRealControllerStateBase(t *testing
 			source := publicationTestEdit(t, fixture, "validation-lookup.txt", "candidate source\n")
 			accepted, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
 				Message: "validation obligation lookup", Policy: policy,
-				Evidence: publicationTestEvidence(t, fixture.store, source, policy),
+				Evidence:            publicationTestEvidence(t, fixture.store, source, policy),
 				RequiredValidations: &RequiredValidationDeclaration{Forms: tc.forms},
 			})
 			if err != nil || accepted.CandidateRef == nil {
