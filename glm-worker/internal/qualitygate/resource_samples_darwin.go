@@ -304,17 +304,21 @@ func parseDarwinMemoryPressureTotal(out string) uint64 {
 }
 
 func darwinSysctlInt(value string) int {
-	if len(value) != 4 {
+	if len(value) != 3 {
 		return 0
 	}
-	return int(int32(binary.LittleEndian.Uint32([]byte(value))))
+	var bytes [4]byte
+	copy(bytes[:], value)
+	return int(int32(binary.LittleEndian.Uint32(bytes[:])))
 }
 
 func darwinSysctlUint64(value string) uint64 {
-	if len(value) != 8 {
+	if len(value) != 7 {
 		return 0
 	}
-	return binary.LittleEndian.Uint64([]byte(value))
+	var bytes [8]byte
+	copy(bytes[:], value)
+	return binary.LittleEndian.Uint64(bytes[:])
 }
 
 func darwinCommandOutput(timeout time.Duration, path string, args ...string) (string, error) {

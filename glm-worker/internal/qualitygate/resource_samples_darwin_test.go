@@ -111,16 +111,23 @@ func TestParseDarwinHostInventoryLines(t *testing.T) {
 func TestDarwinSysctlDecoding(t *testing.T) {
 	quad := make([]byte, 8)
 	binary.LittleEndian.PutUint64(quad, 17179869184)
-	if value := darwinSysctlUint64(string(quad)); value != 17179869184 {
-		t.Fatalf("quad sysctl = %d", value)
+	if value := darwinSysctlUint64(string(quad[:7])); value != 17179869184 {
+		t.Fatalf("7-byte sysctl = %d", value)
 	}
 	quadInt := make([]byte, 4)
 	binary.LittleEndian.PutUint32(quadInt, 8)
-	if value := darwinSysctlInt(string(quadInt)); value != 8 {
-		t.Fatalf("int sysctl = %d", value)
+	if value := darwinSysctlInt(string(quadInt[:3])); value != 8 {
+		t.Fatalf("3-byte sysctl = %d", value)
 	}
-	if value := darwinSysctlUint64("short"); value != 0 {
-		t.Fatalf("truncated sysctl = %d", value)
+	for _, bad := range []string{string(quad), "short", ""} {
+		if value := darwinSysctlUint64(bad); value != 0 {
+			t.Fatalf("unsupported memory sysctl length %d decoded %d", len(bad), value)
+		}
+	}
+	for _, bad := range []string{string(quadInt), "short", ""} {
+		if value := darwinSysctlInt(bad); value != 0 {
+			t.Fatalf("unsupported cpu sysctl length %d decoded %d", len(bad), value)
+		}
 	}
 }
 
