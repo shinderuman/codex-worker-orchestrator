@@ -121,21 +121,9 @@ func TestFindingDispositionAfterTaskAuthoritySyncsBindsCurrentAuthority(t *testi
 		t.Fatalf("finding observation record was rewritten: %#v", immutable)
 	}
 
-	runtimeCfg := WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), final.Attempt.SemanticTaskRef)
-	runtime := state.AttachStateStore(runtimeCfg)
-	if _, err := runtime.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
-	if err := runtime.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
-		t.Fatal(err)
-	}
-	seedFinalValidationNoneObligation(t, fixture.store, final)
-	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
-		AttemptID:          final.Attempt.AttemptID,
-		TaskPath:           final.Attempt.SemanticTaskRef.TaskPath,
-		TaskContractDigest: final.Attempt.SemanticTaskRef.ContractDigest,
-	}); err != nil {
-		t.Fatal(err)
+	runtime := acceptedCompletionRuntime(t, fixture.store, final)
+	if runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+		t.Fatal("post-sync accepted Runtime is not awaiting publication")
 	}
 
 	writeSuspensionTestFile(t, final.Workspace.Root, "result.txt", "revised implementation\n")
