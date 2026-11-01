@@ -26,12 +26,22 @@ func TestQualityWiringPackageRejectsCommentAndStringPins(t *testing.T) {
 		},
 		{
 			name:    "whitespace and same-call argument do not affect semantic call",
-			content: "package workflow\nfunc example() { w.qualityGate(\n   w.config.RepoRoot,\n ) }\n",
+			content: "package workflow\nfunc (handler *Workflow) example() { handler.qualityGate(\n   handler.config.RepoRoot,\n ) }\n",
 			want:    false,
 		},
 		{
 			name:    "different method cannot satisfy wiring",
-			content: "package workflow\nfunc example() { w.qualityGateOther(root) }\n",
+			content: "package workflow\nfunc (handler *Workflow) example() { handler.qualityGateOther(root) }\n",
+			want:    true,
+		},
+		{
+			name:    "unrelated receiver cannot impersonate Workflow",
+			content: "package workflow\nfunc example() { w.qualityGate(w.config.RepoRoot) }\n",
+			want:    true,
+		},
+		{
+			name:    "different source binding does not satisfy gate",
+			content: "package workflow\nfunc (handler *Workflow) example() { handler.qualityGate(handler.config.OtherRoot) }\n",
 			want:    true,
 		},
 	} {

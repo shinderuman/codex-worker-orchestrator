@@ -1,10 +1,8 @@
 package harnesslint
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/parser"
 	"go/token"
 	"strings"
@@ -224,7 +222,7 @@ func qualityWiringRequiredCalls(tokens []string) (map[string]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("quality-wiring token is not a call: %q", candidate)
 		}
-		key, ok := qualityWiringSelectorCallKey(call)
+		key, ok := qualityWiringSelectorCallKey(call, "w")
 		if !ok {
 			return nil, fmt.Errorf("quality-wiring token is not a selector call: %q", candidate)
 		}
@@ -242,38 +240,95 @@ func scanQualityWiringCalls(root, path string, required map[string]string, found
 	if err != nil {
 		return fmt.Errorf("parse quality wiring %s: %w", path, err)
 	}
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil {
+			continue
 		}
-		key, ok := qualityWiringSelectorCallKey(call)
-		if !ok {
-			return true
-		}
-		for candidate, requiredKey := range required {
-			if key == requiredKey {
-				found[candidate] = true
+		receiver := qualityWiringWorkflowReceiver(function)
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
 			}
-		}
-		return true
-	})
+			key, ok := qualityWiringSelectorCallKey(call, receiver)
+			if !ok {
+				return true
+			}
+			for candidate, requiredKey := range required {
+				if key == requiredKey {
+					found[candidate] = true
+				}
+			}
+			return true
+		})
+	}
 	return nil
 }
 
-func qualityWiringSelectorCallKey(call *ast.CallExpr) (string, bool) {
+func qualityWiringWorkflowReceiver(function *ast.FuncDecl) string {
+	if function.Recv == nil || len(function.Recv.List) != 1 {
+		return ""
+	}
+	decl := function.Recv.List[0]
+	if len(decl.Names) != 1 {
+		return ""
+	}
+	receiverType := decl.Type
+	if pointer, ok := receiverType.(*ast.StarExpr); ok {
+		receiverType = pointer.X
+	}
+	ident, ok := receiverType.(*ast.Ident)
+	if !ok || ident.Name != "Workflow" {
+		return ""
+	}
+	return decl.Names[0].Name
+}
+
+func qualityWiringSelectorCallKey(call *ast.CallExpr, workflowReceiver string) (string, bool) {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return "", false
 	}
-	if _, ok := selector.X.(*ast.Ident); !ok {
+	base, ok := selector.X.(*ast.Ident)
+	if !ok {
 		return "", false
 	}
-	var normalized bytes.Buffer
-	if err := format.Node(&normalized, token.NewFileSet(), call); err != nil {
+	prefix := base.Name
+	if workflowReceiver != "" && base.Name == workflowReceiver {
+		prefix = "workflow"
+	} else if base.Name != "harnesslint" {
 		return "", false
 	}
-	return normalized.String(), true
+	args := make([]string, 0, len(call.Args))
+	for _, arg := range call.Args {
+		identity, ok := qualityWiringArgumentKey(arg, workflowReceiver)
+		if !ok {
+			return "", false
+		}
+		args = append(args, identity)
+	}
+	return prefix + "." + selector.Sel.Name + "(" + strings.Join(args, ",") + ")", true
+}
+
+func qualityWiringArgumentKey(expression ast.Expr, workflowReceiver string) (string, bool) {
+	switch node := expression.(type) {
+	case *ast.Ident:
+		if workflowReceiver != "" && node.Name == workflowReceiver {
+			return "workflow", true
+		}
+		return node.Name, true
+	case *ast.SelectorExpr:
+		base, ok := qualityWiringArgumentKey(node.X, workflowReceiver)
+		if !ok {
+			return "", false
+		}
+		return base + "." + node.Sel.Name, true
+	case *ast.ParenExpr:
+		return qualityWiringArgumentKey(node.X, workflowReceiver)
+	default:
+		return "", false
+	}
 }
 
 func qualityWiringCheckViolations(root string, present map[string]bool, check qualityWiringCheck) ([]Violation, error) {
