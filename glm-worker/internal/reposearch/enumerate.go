@@ -16,8 +16,8 @@ type trackedEntry struct {
 }
 
 const (
-	enumerationVersion = 1
-	trackedModeRegular = "100644"
+	enumerationVersion    = 1
+	trackedModeRegular    = "100644"
 	trackedModeExecutable = "100755"
 )
 
