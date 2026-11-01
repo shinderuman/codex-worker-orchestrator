@@ -128,7 +128,7 @@ func TestQualityWiringPackageDoesNotAcceptUnboundOrWrongImport(t *testing.T) {
 	const reviewPath = "glm-worker/internal/workflow/review_flow.go"
 	for _, tc := range []struct {
 		name, importLine, call string
-		valid bool
+		valid                  bool
 	}{
 		{"unbound", "", "harnesslint.IsViolation(qualityReport)", false},
 		{"wrong-import", "import \"example.invalid/harnesslint\"", "harnesslint.IsViolation(qualityReport)", false},
