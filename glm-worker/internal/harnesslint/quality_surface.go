@@ -347,22 +347,13 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 		return nil, err
 	}
 	text := string(data)
-	var requiredGo map[string]bool
-	if strings.HasSuffix(check.path, ".go") {
-		requiredGo, err = qualityWiringRequiredGoTokens(check.path, data)
-		if err != nil {
-			return nil, err
-		}
+	requiredGo, err := qualityWiringGoTokensForPath(check.path, data)
+	if err != nil {
+		return nil, err
 	}
 	var violations []Violation
 	for _, token := range check.tokens {
-		present := strings.Contains(text, token)
-		if requiredGo != nil {
-			if detected, supported := requiredGo[token]; supported {
-				present = detected
-			}
-		}
-		if present {
+		if qualityWiringTokenPresent(text, requiredGo, token) {
 			continue
 		}
 		violations = append(violations, Violation{
@@ -386,6 +377,20 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 	}
 	violations = append(violations, orderViolations...)
 	return violations, nil
+}
+
+func qualityWiringGoTokensForPath(path string, data []byte) (map[string]bool, error) {
+	if !strings.HasSuffix(path, ".go") {
+		return nil, nil
+	}
+	return qualityWiringRequiredGoTokens(path, data)
+}
+
+func qualityWiringTokenPresent(text string, detected map[string]bool, token string) bool {
+	if result, ok := detected[token]; ok {
+		return result
+	}
+	return strings.Contains(text, token)
 }
 
 func qualityWiringRequiredGoTokens(path string, data []byte) (map[string]bool, error) {
@@ -422,7 +427,7 @@ func qualityWiringIsHarnessRun(call *ast.CallExpr) bool {
 		return false
 	}
 	pkg, ok := selector.X.(*ast.Ident)
-	if !ok || pkg.Name != "harnesslint" {
+	if !ok || pkg.Name != harnesslintName {
 		return false
 	}
 	root, ok := call.Args[0].(*ast.Ident)
