@@ -63,6 +63,25 @@ func scenarioSelfTestViolations(set *token.FileSet, file *ast.File, path string,
 	return violations
 }
 
+func emptyTestEntrypointViolations(set *token.FileSet, file *ast.File, path string) []Violation {
+	if !strings.HasSuffix(path, "_test.go") {
+		return nil
+	}
+	var violations []Violation
+	for _, decl := range file.Decls {
+		function, ok := decl.(*ast.FuncDecl)
+		if !ok || !isGoTestEntrypoint(function.Name.Name) || function.Body == nil || len(function.Body.List) != 0 {
+			continue
+		}
+		position := set.Position(function.Pos())
+		violations = append(violations, Violation{
+			Rule: "empty-test-entrypoint", Path: path, Line: position.Line, Column: position.Column,
+			Message: "empty test entrypoint does not observe production behavior or establish coverage",
+		})
+	}
+	return violations
+}
+
 func testSizeViolations(set *token.FileSet, file *ast.File, path string) []Violation {
 	if !strings.HasSuffix(path, "_test.go") {
 		return nil
