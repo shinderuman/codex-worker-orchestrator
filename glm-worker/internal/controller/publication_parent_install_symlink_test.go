@@ -55,3 +55,22 @@ func TestParentOnlyInstallSmokeRejectsSymlinkedRecord(t *testing.T) {
 		t.Fatal("external run record accepted via symlink")
 	}
 }
+
+func TestParentOnlyInstallSmokeRejectsSymlinkedTaskIdentity(t *testing.T) {
+	t.Parallel()
+	f := newParentOnlyInstallSmokeFixture(t)
+	identityPath := f.runtime.Path("task.id")
+	external := filepath.Join(t.TempDir(), "foreign-task-id")
+	if err := os.WriteFile(external, []byte(f.candidate.AttemptID), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(identityPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, identityPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.fixture.store.readCandidateInstallSmoke(f.candidate, f.root, f.runID); err == nil {
+		t.Fatal("external parent-only task identity accepted through symlink")
+	}
+}
