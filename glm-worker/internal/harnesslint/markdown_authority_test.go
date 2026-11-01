@@ -78,6 +78,24 @@ func TestMarkdownPlanSpacingDoesNotRewriteOtherMarkdown(t *testing.T) {
 	}
 }
 
+func TestMarkdownPlanSpacingPreservesOtherSectionsAndQuotedMaterial(t *testing.T) {
+	root := t.TempDir()
+	path := implementationPlanPath
+	content := "# Plan\n\n## GOAL\n\n\n\nPreserve user supplied blank lines.\n\n## ACTIVE\n\n- [active](IMPLEMENTATION_TASKS/active.md)\n\n## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n\n- [second](IMPLEMENTATION_TASKS/second.md)\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n- [blocked](IMPLEMENTATION_TASKS/blocked.md)\n"
+	writeMarkdownAuthorityFixture(t, root, path, content)
+	if err := fixPlanSpacing(root, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "# Plan\n\n## GOAL\n\n\n\nPreserve user supplied blank lines.\n\n## ACTIVE\n\n- [active](IMPLEMENTATION_TASKS/active.md)\n\n## NEXT（優先順）\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n- [second](IMPLEMENTATION_TASKS/second.md)\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n- [blocked](IMPLEMENTATION_TASKS/blocked.md)\n"
+	if string(data) != expected {
+		t.Fatalf("Plan spacing changed unrelated section: %q", data)
+	}
+}
+
 func TestMarkdownDerivedStateRejectsPlanCurrentStateSections(t *testing.T) {
 	root := t.TempDir()
 	path := "IMPLEMENTATION_PLAN.local.md"
