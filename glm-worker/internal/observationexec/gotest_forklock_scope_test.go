@@ -12,10 +12,14 @@ import (
 	"time"
 )
 
-func TestModuleCopyBlockedSourceDoesNotHoldGlobalForkLock(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("sh is unavailable")
-	}
+type stalledCopyFixture struct {
+	destination string
+	copyDone    <-chan error
+	release     func()
+}
+
+func newStalledCopyFixture(t *testing.T) stalledCopyFixture {
+	t.Helper()
 	source := filepath.Join(t.TempDir(), "blocked-source")
 	destination := filepath.Join(t.TempDir(), "copied")
 	if err := syscall.Mkfifo(source, 0o600); err != nil {
@@ -25,7 +29,7 @@ func TestModuleCopyBlockedSourceDoesNotHoldGlobalForkLock(t *testing.T) {
 	releaseWriter := make(chan struct{})
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(releaseWriter) }) }
-	defer release()
+	t.Cleanup(release)
 	go func() {
 		writer, err := os.OpenFile(source, os.O_WRONLY, 0)
 		if err != nil {
@@ -48,25 +52,27 @@ func TestModuleCopyBlockedSourceDoesNotHoldGlobalForkLock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("FIFO source did not open")
 	}
-	readyDeadline := time.After(5 * time.Second)
+	deadline := time.After(5 * time.Second)
 	for {
 		if _, err := os.Stat(destination); err == nil {
 			break
 		}
 		select {
 		case err := <-copyDone:
-			t.Fatalf("copy returned before source read stalled: %v", err)
-		case <-readyDeadline:
+			t.Fatalf("copy ended before destination creation: %v", err)
+		case <-deadline:
 			t.Fatal("copy destination was not created")
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
-	lockDone := make(chan struct{})
-	go func() {
-		syscall.ForkLock.Lock()
-		syscall.ForkLock.Unlock()
-		close(lockDone)
-	}()
+	return stalledCopyFixture{destination: destination, copyDone: copyDone, release: release}
+}
+
+func TestModuleCopyBlockedSourceAllowsConcurrentSubprocess(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is unavailable")
+	}
+	fixture := newStalledCopyFixture(t)
 	commandDone := make(chan error, 1)
 	go func() { commandDone <- exec.Command("sh", "-c", "true").Run() }()
 	select {
@@ -75,31 +81,50 @@ func TestModuleCopyBlockedSourceDoesNotHoldGlobalForkLock(t *testing.T) {
 			t.Fatalf("concurrent subprocess failed during source read: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		release()
-		t.Fatal("source read held the global fork lock and blocked subprocess start")
+		fixture.release()
+		t.Fatal("source read blocked subprocess start")
 	}
 	select {
-	case <-lockDone:
-	case <-time.After(5 * time.Second):
-		release()
-		t.Fatal("source read retained ForkLock after destination creation")
-	}
-	select {
-	case err := <-copyDone:
-		t.Fatalf("copy should still wait for source EOF, got %v", err)
+	case err := <-fixture.copyDone:
+		t.Fatalf("copy should still wait for EOF: %v", err)
 	default:
 	}
-	release()
+	fixture.release()
 	select {
-	case err := <-copyDone:
+	case err := <-fixture.copyDone:
 		if err != nil {
-			t.Fatalf("copy failed after release: %v", err)
+			t.Fatalf("copy failed after source EOF: %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("copy did not finish after source EOF")
 	}
-	data, err := os.ReadFile(destination)
+	data, err := os.ReadFile(fixture.destination)
 	if err != nil || string(data) != "source is still open" {
-		t.Fatalf("copied source mismatch: %q err=%v", data, err)
+		t.Fatalf("copied input mismatch: %q err=%v", data, err)
+	}
+}
+
+func TestModuleCopyBlockedSourceReleasesForkLock(t *testing.T) {
+	fixture := newStalledCopyFixture(t)
+	lockAcquired := make(chan struct{}, 1)
+	go func() {
+		syscall.ForkLock.Lock()
+		lockAcquired <- struct{}{}
+		syscall.ForkLock.Unlock()
+	}()
+	select {
+	case <-lockAcquired:
+	case <-time.After(5 * time.Second):
+		fixture.release()
+		t.Fatal("blocked source retained the global ForkLock")
+	}
+	fixture.release()
+	select {
+	case err := <-fixture.copyDone:
+		if err != nil {
+			t.Fatalf("copy failed after source EOF: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("copy did not finish")
 	}
 }
