@@ -341,11 +341,15 @@ func (s *Store) ParentOnlySmokeStoreWithoutRuntime(taskID string) bool {
 		head.LiveAttemptID == taskID || head.AcceptedCandidateRef != nil {
 		return false
 	}
-	current, err := s.loadAttempt(head.LiveAttemptID)
-	if err != nil || current.ExecutionAuthority != ExecutionAuthorityParentOnly || current.PredecessorAttemptID != taskID {
+	return s.parentOnlyPredecessorSmokeIdentityMatches(head.LiveAttemptID, taskID)
+}
+
+func (s *Store) parentOnlyPredecessorSmokeIdentityMatches(currentID, previousID string) bool {
+	current, err := s.loadAttempt(currentID)
+	if err != nil || current.ExecutionAuthority != ExecutionAuthorityParentOnly || current.PredecessorAttemptID != previousID {
 		return false
 	}
-	previous, err := s.loadAttempt(taskID)
+	previous, err := s.loadAttempt(previousID)
 	if err != nil || previous.ExecutionAuthority != ExecutionAuthorityParentOnly ||
 		!previous.SemanticTaskRef.Equal(current.SemanticTaskRef) {
 		return false
