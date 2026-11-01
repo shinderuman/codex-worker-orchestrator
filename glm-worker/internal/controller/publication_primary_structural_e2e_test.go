@@ -16,8 +16,8 @@ func TestRootPromotionAppliesStructuralTreeTransitions(t *testing.T) {
 		verify        func(*testing.T, string)
 	}{
 		{
-			name: "file to directory",
-			remotePath: "external",
+			name:          "file to directory",
+			remotePath:    "external",
 			remoteContent: "old external file\n",
 			edit: func(t *testing.T, root string) {
 				t.Helper()
@@ -35,8 +35,8 @@ func TestRootPromotionAppliesStructuralTreeTransitions(t *testing.T) {
 			},
 		},
 		{
-			name: "directory to file",
-			remotePath: "external/child",
+			name:          "directory to file",
+			remotePath:    "external/child",
 			remoteContent: "old child\n",
 			edit: func(t *testing.T, root string) {
 				t.Helper()
@@ -57,8 +57,8 @@ func TestRootPromotionAppliesStructuralTreeTransitions(t *testing.T) {
 			},
 		},
 		{
-			name: "file to relative symlink",
-			remotePath: "external",
+			name:          "file to relative symlink",
+			remotePath:    "external",
 			remoteContent: "old external file\n",
 			edit: func(t *testing.T, root string) {
 				t.Helper()
@@ -89,7 +89,7 @@ func TestRootPromotionAppliesStructuralTreeTransitions(t *testing.T) {
 			})
 			if _, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
 				ExpectedGeneration: accepted.Head.ControllerGeneration,
-				CandidateID: candidate.CandidateID,
+				CandidateID:        candidate.CandidateID,
 			}); err != nil {
 				t.Fatalf("structural candidate promotion: %v", err)
 			}
