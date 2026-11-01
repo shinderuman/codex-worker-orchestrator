@@ -123,7 +123,10 @@ func TestFindingDispositionAfterTaskAuthoritySyncsBindsCurrentAuthority(t *testi
 
 	runtimeCfg := WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), final.Attempt.SemanticTaskRef)
 	runtime := state.AttachStateStore(runtimeCfg)
-	if err := runtime.Write("task.id", "finding-sync-acceptance"); err != nil {
+	if _, err := runtime.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
