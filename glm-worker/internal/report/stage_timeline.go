@@ -503,7 +503,7 @@ func classifyStageTimelineGap(start, end time.Time, attributed, _ []state.Parent
 		if !start.Before(attempt.EnteredAt) && !end.After(attempt.ExitedAt) {
 			return stageTimelineGapInAttempt
 		}
-		if !attempt.ExitedAt.After(start) {
+		if !attempt.ExitedAt.IsZero() && !attempt.ExitedAt.After(start) {
 			endedBeforeGap = true
 		}
 		if !attempt.EnteredAt.Before(end) {
