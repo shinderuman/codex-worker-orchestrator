@@ -103,7 +103,7 @@ func TestRecoverUnstartedMilestonePreservesUnreadableCheckpointFailure(t *testin
 	t.Parallel()
 	cfg, _, st, _ := crashUnstartedMilestoneStartup(t)
 	// A malformed saved checkpoint must not be treated as an absent checkpoint.
-	if err := st.Write("resume.json", "{invalid"); err != nil {
+	if err := st.Write("resume-state.json", "{invalid"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil || errors.Is(err, state.ErrNoResumeCheckpoint) {
