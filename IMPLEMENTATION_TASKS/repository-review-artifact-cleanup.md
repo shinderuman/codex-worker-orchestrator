@@ -86,7 +86,6 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`
 - `IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-serialized-output-budget.md`
