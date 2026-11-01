@@ -312,10 +312,10 @@ func (s *Store) validatePrimaryPromotionEntry(path string, before, after, curren
 	if current != before && current != after {
 		return fmt.Errorf("unattributed primary source mutation at %q", path)
 	}
-	if _, err := suspensionWorktreePath(s.identity.PrimaryRoot, path); err != nil {
+	if err := validateSuspensionPath(path); err != nil {
 		return err
 	}
-	if before != after && after.path != "" && after.mode != "100644" && after.mode != "100755" {
+	if before != after && after.path != "" && after.mode != "100644" && after.mode != "100755" && after.mode != "120000" {
 		return fmt.Errorf("primary promotion requires a regular output file: %q", path)
 	}
 	return nil
