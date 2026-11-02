@@ -2,8 +2,8 @@ package parentevidence
 
 import (
 	"crypto/sha256"
-	"errors"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
