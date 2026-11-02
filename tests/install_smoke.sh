@@ -367,6 +367,10 @@ func main() {
 		mode |= syscall.LOCK_NB
 	}
 	if err := syscall.Flock(int(file.Fd()), mode); err != nil {
+		if try && (err == syscall.EWOULDBLOCK || err == syscall.EAGAIN) {
+			fmt.Fprintln(os.Stderr, "workflow lock already held")
+			os.Exit(3)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -381,13 +385,29 @@ func main() {
 EOF_HOLD_LOCK
 HOME="$home" GOMODCACHE="$go_mod_cache" go build -o "$tmp/hold-workflow-lock" "$tmp/hold-workflow-lock.go"
 
+if "$tmp/hold-workflow-lock" "$tmp/missing-lock-directory/workflow.lock" --try >"$tmp/export-lock-fault.out" 2>"$tmp/export-lock-fault.stderr"; then
+	printf '%s\n' 'lock probe accepted an inaccessible lock path' >&2
+	exit 1
+else
+	lock_fault_status=$?
+fi
+test "$lock_fault_status" -eq 1
+grep -q 'no such file or directory' "$tmp/export-lock-fault.stderr"
+
 wait_for_export_lock() {
 	lock_output=$1
 	for _ in $(seq 1 100); do
 		if grep -Fxq locked "$lock_output" 2>/dev/null; then
-			if "$tmp/hold-workflow-lock" "$export_workflow_lock" --try >/dev/null 2>&1; then
+			if "$tmp/hold-workflow-lock" "$export_workflow_lock" --try >"$tmp/export-lock-probe.out" 2>"$tmp/export-lock-probe.stderr"; then
 				printf '%s\n' 'lock helper reported readiness without holding the workflow lock' >&2
 				return 1
+			else
+				lock_probe_status=$?
+				if [ "$lock_probe_status" -ne 3 ]; then
+					printf 'lock contention probe failed (exit %s):\n' "$lock_probe_status" >&2
+					cat "$tmp/export-lock-probe.stderr" >&2
+					return 1
+				fi
 			fi
 			return 0
 		fi
