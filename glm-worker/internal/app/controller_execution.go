@@ -74,4 +74,3 @@ func decodeControllerCommand(loadConfig func() (config.AppConfig, error), stdin 
 	}
 	return cfg, store, nil
 }
-
