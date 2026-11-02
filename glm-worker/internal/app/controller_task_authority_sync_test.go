@@ -706,7 +706,7 @@ func TestTaskAuthoritySyncRejectsForeignMilestoneLineage(t *testing.T) {
 }
 
 func TestControllerMaterializationRecoveryReplaysRuntimeCompletion(t *testing.T) {
-	cfg, store, accepted, candidate, _ := sealedCandidateReentryFixture(t)
+	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
 	reentered, err := store.ReenterAcceptedCandidate(controller.PublicationInput{
 		ExpectedGeneration: accepted.Head.ControllerGeneration,
 		CandidateID:        candidate.CandidateID,
@@ -714,22 +714,66 @@ func TestControllerMaterializationRecoveryReplaysRuntimeCompletion(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	materialized, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
-		Action:             "materialize",
+	materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{
 		ExpectedGeneration: reentered.Head.ControllerGeneration,
 		SuspensionID:       reentered.Suspension.SnapshotID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
-		Action: "recover", TransitionID: materialized.TransitionID,
-	})
+	if materialized.Admission == nil || materialized.Admission.Attempt.PredecessorAttemptID == "" {
+		t.Fatalf("materialization did not commit a reentered attempt: %#v", materialized)
+	}
+	if runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("Controller commit unexpectedly completed runtime: %s", runtime.TaskStatus())
+	}
+	originalBinding, err := runtime.LoadControllerRuntimeBinding()
+	if err != nil || originalBinding.AttemptID != materialized.Admission.Attempt.PredecessorAttemptID {
+		t.Fatalf("Controller commit unexpectedly rebound the predecessor runtime: %#v %v", originalBinding, err)
+	}
+
+	payload, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", TransitionID: materialized.TransitionID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovered.TransitionID != materialized.TransitionID ||
-		recovered.Head.ControllerGeneration != materialized.Head.ControllerGeneration {
-		t.Fatalf("materialized recovery changed canonical transition: %#v", recovered)
+	var output bytes.Buffer
+	matched, err := runControllerOperations(
+		[]string{controllerAuthorityFlag, controllerExecutionSurface},
+		func() (config.AppConfig, error) { return cfg, nil },
+		bytes.NewReader(payload), &output,
+	)
+	if err != nil || !matched {
+		t.Fatalf("typed recovery from committed Controller transition failed: matched=%v error=%v", matched, err)
+	}
+	var recovered controller.ExecutionOperationResult
+	if err := json.Unmarshal(output.Bytes(), &recovered); err != nil {
+		t.Fatalf("typed recovery response cannot be decoded: %v", err)
+	}
+	if recovered.TransitionID != materialized.TransitionID || recovered.Head.ControllerGeneration != materialized.Head.ControllerGeneration ||
+		recovered.Admission == nil || recovered.Admission.Attempt.AttemptID != materialized.Admission.Attempt.AttemptID {
+		t.Fatalf("runtime recovery changed the committed transition authority: %#v", recovered)
+	}
+	if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("runtime completion did not reenter the review state: %s", runtime.TaskStatus())
+	}
+	currentBinding, err := runtime.LoadControllerRuntimeBinding()
+	if err != nil || currentBinding != originalBinding {
+		t.Fatalf("runtime completion changed predecessor binding outside canonical reentry: %#v %v", currentBinding, err)
+	}
+	laneCfg := cfg
+	laneCfg.RepoRoot = materialized.Admission.Workspace.Root
+	handoff := buildParentHandoffWithConfig(laneCfg, runtime)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != string(state.ParentActionReview) {
+		t.Fatalf("recovered materialization has no canonical reviewer handoff: %#v", handoff)
+	}
+
+	replayed, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: materialized.TransitionID})
+	if err != nil || replayed.Head.ControllerGeneration != recovered.Head.ControllerGeneration ||
+		runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("idempotent materialization recovery changed the review state: %#v error=%v", replayed, err)
+	}
+	afterHandoff := buildParentHandoffWithConfig(laneCfg, runtime)
+	if !afterHandoff.Consistent || afterHandoff.RequiredAction == nil || *afterHandoff.RequiredAction != string(state.ParentActionReview) {
+		t.Fatalf("replayed materialization lost reviewer handoff: %#v", afterHandoff)
 	}
 }
