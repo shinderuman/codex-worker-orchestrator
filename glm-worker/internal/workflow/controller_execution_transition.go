@@ -10,21 +10,21 @@ import (
 )
 
 type ControllerExecutionCommand struct {
-	RuntimeDisposition	*controller.RuntimeDispositionInput	`json:"runtime_disposition,omitempty"`
-	SourceSnapshotID	string	`json:"source_snapshot_id,omitempty"`
-	CandidateID	string	`json:"candidate_id,omitempty"`
-	Action	string	`json:"action"`
-	ExpectedGeneration	uint64	`json:"expected_generation"`
-	EpisodeID	string	`json:"episode_id,omitempty"`
-	EpisodeRevision	uint64	`json:"episode_revision,omitempty"`
-	SuspensionID	string	`json:"suspension_id,omitempty"`
-	WorkspaceID	string	`json:"workspace_id,omitempty"`
-	SealRef	*controller.EvidenceObjectRef	`json:"seal_ref,omitempty"`
-	TransitionID	string	`json:"transition_id,omitempty"`
-	UserTermination	*controller.UserTaskTransitionInput	`json:"user_termination,omitempty"`
-	ExecutionTermination	*controller.UserExecutionTransitionInput	`json:"execution_termination,omitempty"`
-	RevisedTask	*controller.SemanticTaskRef	`json:"revised_task,omitempty"`
-	AcceptedResultRecovery	*AcceptedResultRuleRecoveryInput	`json:"accepted_result_recovery,omitempty"`
+	RuntimeDisposition     *controller.RuntimeDispositionInput      `json:"runtime_disposition,omitempty"`
+	SourceSnapshotID       string                                   `json:"source_snapshot_id,omitempty"`
+	CandidateID            string                                   `json:"candidate_id,omitempty"`
+	Action                 string                                   `json:"action"`
+	ExpectedGeneration     uint64                                   `json:"expected_generation"`
+	EpisodeID              string                                   `json:"episode_id,omitempty"`
+	EpisodeRevision        uint64                                   `json:"episode_revision,omitempty"`
+	SuspensionID           string                                   `json:"suspension_id,omitempty"`
+	WorkspaceID            string                                   `json:"workspace_id,omitempty"`
+	SealRef                *controller.EvidenceObjectRef            `json:"seal_ref,omitempty"`
+	TransitionID           string                                   `json:"transition_id,omitempty"`
+	UserTermination        *controller.UserTaskTransitionInput      `json:"user_termination,omitempty"`
+	ExecutionTermination   *controller.UserExecutionTransitionInput `json:"execution_termination,omitempty"`
+	RevisedTask            *controller.SemanticTaskRef              `json:"revised_task,omitempty"`
+	AcceptedResultRecovery *AcceptedResultRuleRecoveryInput         `json:"accepted_result_recovery,omitempty"`
 }
 
 func ExecuteControllerExecution(cfg config.AppConfig, store *controller.Store, command ControllerExecutionCommand) (controller.ExecutionOperationResult, error) {
