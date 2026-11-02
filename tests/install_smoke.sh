@@ -400,7 +400,6 @@ wait_for_export_lock() {
 	return 1
 }
 
-# Exercise the same EXIT cleanup after a failure while the actual lock holder is alive.
 if (
 	trap 'stop_export_processes' EXIT
 	trap 'exit 1' HUP INT TERM
