@@ -149,10 +149,6 @@ func executeControllerSemanticObserveLive(
 	return controllerSemanticOutput{Action: command.Action, Finding: &finding}, nil
 }
 
-func controller.CurrentSemanticAdmission(cfg config.AppConfig, store *controller.Store) (controller.Admission, error) {
-	return controller.CurrentSemanticAdmission(cfg, store)
-}
-
 func executeControllerSemanticObserveTerminal(
 	store *controller.Store,
 	command controllerSemanticCommand,
