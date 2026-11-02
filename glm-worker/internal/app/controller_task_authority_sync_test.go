@@ -542,12 +542,26 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 		t.Fatalf("stale runtime binding handoff stayed consistent mid-recovery: %#v", handoff)
 	}
 
-	recovered, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID})
+	recoveryCommand, err := json.Marshal(controllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovered.Head.RootTaskRef == nil || !recovered.Head.RootTaskRef.Equal(revised) {
-		t.Fatalf("recovery lost the revised authority: %#v", recovered.Head)
+	var recoveryOutput bytes.Buffer
+	recognized, err := runControllerOperations(
+		[]string{controllerAuthorityFlag, controllerExecutionSurface},
+		func() (config.AppConfig, error) { return f.cfg, nil },
+		bytes.NewReader(recoveryCommand),
+		&recoveryOutput,
+	)
+	if err != nil || !recognized {
+		t.Fatalf("CLI recovery failed: recognized=%v error=%v", recognized, err)
+	}
+	var recovered controller.ExecutionOperationResult
+	if err := json.Unmarshal(recoveryOutput.Bytes(), &recovered); err != nil {
+		t.Fatalf("CLI recovery did not return a typed result: %v", err)
+	}
+	if recovered.TransitionID != committed.TransitionID || recovered.Head.RootTaskRef == nil || !recovered.Head.RootTaskRef.Equal(revised) {
+		t.Fatalf("CLI recovery lost the revised transition authority: %#v", recovered)
 	}
 	binding, err := f.runtime.LoadControllerRuntimeBinding()
 	if err != nil || binding.TaskContractDigest != revised.ContractDigest {
