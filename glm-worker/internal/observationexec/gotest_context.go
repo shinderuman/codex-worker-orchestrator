@@ -41,10 +41,7 @@ func runIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	defer func() { _ = os.RemoveAll(tempRoot) }()
 	if err := ConfinementPreflight(executionCtx, tempRoot); err != nil {
 		if stopErr := executionCtx.Err(); stopErr != nil {
-			outcome := goTestContextStopOutcome(stopErr, deadline)
-			outcome.Detail = boundedDetail(outcome.Detail + "; preflight: " + err.Error())
-			outcome.DurationMS = time.Since(started).Milliseconds()
-			return outcome
+			return goTestCancelledPreflightOutcome(stopErr, err, started, deadline)
 		}
 		outcome := goTestConfinementFailure(err)
 		outcome.DurationMS = time.Since(started).Milliseconds()
@@ -66,6 +63,13 @@ func runIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	run := runIsolatedGoTestProcessContext(executionCtx, input, tempRoot, deadline)
 	run.outcome.DurationMS = time.Since(started).Milliseconds()
 	return finalizeIsolatedGoTestOutcome(input, run)
+}
+
+func goTestCancelledPreflightOutcome(stopErr, preflightErr error, started time.Time, deadline time.Duration) GoTestOutcome {
+	outcome := goTestContextStopOutcome(stopErr, deadline)
+	outcome.Detail = boundedDetail(outcome.Detail + "; preflight: " + preflightErr.Error())
+	outcome.DurationMS = time.Since(started).Milliseconds()
+	return outcome
 }
 
 func RunIsolatedGoTestContext(ctx context.Context, input GoTestInput) GoTestOutcome {

@@ -39,7 +39,6 @@ func TestObservationPreflightCancellationStopsAndReapsDescendant(t *testing.T) {
 			}
 		}
 	}()
-	// The shell owns its child and waits for it even when SIGTERM interrupts wait.
 	script := "printf '%s' \"$$\" > \"$1\"; /bin/sh -c 'printf \"%s\" \"$$\" > \"$1\"; exec sleep 30' sh \"$2\" & child=$!; trap 'wait \"$child\"; exit 0' TERM; wait \"$child\""
 	started := time.Now()
 	_, err := runObservationPreflightProcess(ctx, []string{"/bin/sh", "-c", script, "sh", parentMarker, childMarker})

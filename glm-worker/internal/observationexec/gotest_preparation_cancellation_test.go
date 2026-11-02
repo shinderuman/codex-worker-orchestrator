@@ -15,6 +15,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
+type controlledCopyReader struct {
+	started chan struct{}
+	resume  <-chan struct{}
+	first   bool
+}
+
 func TestCancelledObservationDoesNotEnterConfinement(t *testing.T) {
 	moduleDir := t.TempDir()
 	artifactDir := t.TempDir()
@@ -86,12 +92,6 @@ func TestCancelledModuleCopyDoesNotCommitInput(t *testing.T) {
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
 		t.Fatalf("cancelled module copy created a destination: %v", err)
 	}
-}
-
-type controlledCopyReader struct {
-	started chan struct{}
-	resume  <-chan struct{}
-	first   bool
 }
 
 func (r *controlledCopyReader) Read(p []byte) (int, error) {
@@ -184,4 +184,3 @@ func TestObservationPreflightNormalAndFailedCommand(t *testing.T) {
 		t.Fatalf("failed preflight output=%q err=%v", output, err)
 	}
 }
-
