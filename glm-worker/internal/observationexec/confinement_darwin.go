@@ -89,19 +89,6 @@ func confinementProfile(writeRoot, hostHome string) string {
 	return profile.String()
 }
 
-func ConfinementPreflight(writeRoot string) error {
-	probe, err := confinedLaunchArgs(writeRoot, []string{"/usr/bin/true"})
-	if err != nil {
-		return err
-	}
-	command := exec.Command(probe[0], probe[1:]...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("confinement初期化に失敗したためtargetを起動しません: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	return nil
-}
-
 func seatbeltLiteral(path string) string {
 	escaped := strings.ReplaceAll(path, `\`, `\\`)
 	escaped = strings.ReplaceAll(escaped, `"`, `\"`)

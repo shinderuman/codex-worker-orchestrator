@@ -2,6 +2,7 @@ package parentactioncmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -105,7 +106,7 @@ func stageObservationPayload(t *testing.T, cfg config.AppConfig, payload string)
 
 func skipObservationExecuteWhenConfinementUnavailable(t *testing.T) {
 	t.Helper()
-	if err := observationexec.ConfinementPreflight(t.TempDir()); err != nil {
+	if err := observationexec.ConfinementPreflight(context.Background(), t.TempDir()); err != nil {
 		t.Skipf("この実行環境ではconfinement初期化が拒否されるため隔離go test実行は親validation環境で実行します: %v", err)
 	}
 }

@@ -30,17 +30,25 @@ func runIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	if err := observationConfinementAdmission(); err != nil {
 		return goTestConfinementFailure(err)
 	}
+	if err := executionCtx.Err(); err != nil {
+		return goTestContextStopOutcome(err, deadline)
+	}
 	tempRoot, err := os.MkdirTemp("", "glm-worker-observation-")
 	if err != nil {
 		return goTestWrapperFailure(started, fmt.Sprintf("隔離temp rootを作成できません: %v", err))
 	}
 	defer func() { _ = os.RemoveAll(tempRoot) }()
-	if err := ConfinementPreflight(tempRoot); err != nil {
+	if err := ConfinementPreflight(executionCtx, tempRoot); err != nil {
+		if stopErr := executionCtx.Err(); stopErr != nil {
+			outcome := goTestContextStopOutcome(stopErr, deadline)
+			outcome.DurationMS = time.Since(started).Milliseconds()
+			return outcome
+		}
 		outcome := goTestConfinementFailure(err)
 		outcome.DurationMS = time.Since(started).Milliseconds()
 		return outcome
 	}
-	if err := prepareIsolatedGoTestRoot(tempRoot, input.ModuleDir); err != nil {
+	if err := prepareIsolatedGoTestRoot(executionCtx, tempRoot, input.ModuleDir); err != nil {
 		if stopErr := executionCtx.Err(); stopErr != nil {
 			outcome := goTestContextStopOutcome(stopErr, deadline)
 			outcome.DurationMS = time.Since(started).Milliseconds()
@@ -80,6 +88,9 @@ func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tem
 	gateLog := &boundedTailBuffer{limit: logMaxBytes}
 	command.Stdout = gateLog
 	command.Stderr = gateLog
+	if err := ctx.Err(); err != nil {
+		return isolatedGoTestRun{outcome: goTestContextStopOutcome(err, deadline)}
+	}
 	if err := command.Start(); err != nil {
 		return capturedIsolatedGoTestRun(goTestStartFailure(err), gateLog)
 	}
@@ -92,6 +103,52 @@ func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tem
 		terminateObservationProcessGroup(command.Process.Pid)
 		return capturedIsolatedGoTestRun(goTestContextStopOutcomeWithRunErr(boundedGoTestWait(waitDone), ctx.Err(), deadline), gateLog)
 	}
+}
+
+func runObservationPreflightProcess(ctx context.Context, args []string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(args) == 0 {
+		return nil, fmt.Errorf("confinement preflight command is empty")
+	}
+	output := &boundedTailBuffer{limit: 4096}
+	command := newObservationProcessGroupCmd(args[0], args[1:]...)
+	command.Stdout = output
+	command.Stderr = output
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := command.Start(); err != nil {
+		return nil, err
+	}
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- command.Wait() }()
+	select {
+	case err := <-waitDone:
+		data, _, _ := output.snapshot()
+		return data, err
+	case <-ctx.Done():
+		terminateObservationProcessGroup(command.Process.Pid)
+		_ = boundedGoTestWait(waitDone)
+		data, _, _ := output.snapshot()
+		return data, ctx.Err()
+	}
+}
+
+func ConfinementPreflight(ctx context.Context, writeRoot string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	args, err := confinedLaunchArgs(writeRoot, []string{"/usr/bin/true"})
+	if err != nil {
+		return err
+	}
+	output, err := runObservationPreflightProcess(ctx, args)
+	if err != nil {
+		return fmt.Errorf("confinement初期化に失敗したためtargetを起動しません: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func isolatedGoTestEnvContext(ctx context.Context, tempRoot string) ([]string, error) {
@@ -127,6 +184,9 @@ func isolatedGoModuleCacheContext(ctx context.Context) (string, error) {
 	command.Env = append(os.Environ(), "GOENV=off")
 	var output bytes.Buffer
 	command.Stdout = &output
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := command.Start(); err != nil {
 		return "", fmt.Errorf("隔離go testのmodule cacheを解決できません: %w", err)
 	}

@@ -109,7 +109,7 @@ func TestRunIsolatedGoTestConfinementUnavailablePreventsTargetStart(t *testing.T
 
 func TestRunIsolatedGoTestConfinementInitFailureIsTypedWithoutTargetStart(t *testing.T) {
 	probeRoot := t.TempDir()
-	preflightErr := ConfinementPreflight(probeRoot)
+	preflightErr := ConfinementPreflight(context.Background(), probeRoot)
 	if preflightErr == nil {
 		t.Skip("この環境ではconfinement初期化が成功するため初期化失敗経路を検証できません")
 	}
@@ -135,7 +135,7 @@ func TestRunIsolatedGoTestConfinementBlocksWritesOutsideAllowedRoots(t *testing.
 	if testing.Short() {
 		t.Skip("隔離go testの実行をskipします")
 	}
-	if err := ConfinementPreflight(t.TempDir()); err != nil {
+	if err := ConfinementPreflight(context.Background(), t.TempDir()); err != nil {
 		t.Skipf("この実行環境ではconfinement初期化が拒否されるため実書込検証は親validation環境で実行します: %v", err)
 	}
 	moduleDir := writeIsolatedModule(t, "package example\n\nimport \"testing\"\n\nfunc TestPlaceholder(t *testing.T) {}\n")
