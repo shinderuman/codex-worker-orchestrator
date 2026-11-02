@@ -138,3 +138,49 @@ func TestObservationPreflightNormalAndFailedCommand(t *testing.T) {
 		t.Fatalf("failed preflight output=%q err=%v", output, err)
 	}
 }
+
+
+func TestObservationPreflightCancellationStopsDescendant(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shell process-group fixture")
+	}
+	dir := t.TempDir()
+	childStarted := filepath.Join(dir, "child-started")
+	childSurvived := filepath.Join(dir, "child-survived")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		limit := time.After(4 * time.Second)
+		for {
+			if _, err := os.Stat(childStarted); err == nil {
+				cancel()
+				return
+			}
+			select {
+			case <-limit:
+				cancel()
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}()
+	script := "(printf launched > \"$1\"; sleep 2; printf survived > \"$2\") & wait"
+	start := time.Now()
+	_, err := runObservationPreflightProcess(ctx, []string{"/bin/sh", "-c", script, "sh", childStarted, childSurvived})
+	<-done
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("preflight child cancellation = %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 12*time.Second {
+		t.Fatalf("preflight descendant cancellation took %s", elapsed)
+	}
+	if _, err := os.Stat(childStarted); err != nil {
+		t.Fatalf("preflight child never started: %v", err)
+	}
+	time.Sleep(2200 * time.Millisecond)
+	if _, err := os.Stat(childSurvived); !os.IsNotExist(err) {
+		t.Fatalf("cancelled preflight descendant survived: %v", err)
+	}
+}
