@@ -166,19 +166,49 @@ func executeControllerMaterialize(cfg config.AppConfig, store *controller.Store,
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	if result.Admission != nil && result.Admission.Attempt.ExecutionAuthority == controller.ExecutionAuthorityParentOnly {
-		return result, nil
-	}
-	if err := reenterMaterializedRuntimeCompletion(cfg, result); err != nil {
-		return result, fmt.Errorf("materialized execution transition %s runtime reentry failed: %w", result.TransitionID, err)
-	}
-	if result.ParentSourceReview {
-		cfg.RepoRoot = result.Admission.Workspace.Root
-		if _, err := executeControllerReentryReview(cfg, store); err != nil {
-			return result, fmt.Errorf("materialized execution transition %s review preparation failed: %w", result.TransitionID, err)
-		}
+	if err := completeMaterializedRuntime(cfg, store, result); err != nil {
+		return result, err
 	}
 	return result, nil
+}
+
+func completeMaterializedRuntime(cfg config.AppConfig, store *controller.Store, result controller.ExecutionOperationResult) error {
+	if result.Admission == nil {
+		return fmt.Errorf("materialized execution transition %s lacks admitted runtime identity", result.TransitionID)
+	}
+	if result.Admission.Attempt.ExecutionAuthority == controller.ExecutionAuthorityParentOnly {
+		return nil
+	}
+	if err := reenterMaterializedRuntimeCompletion(cfg, result); err != nil {
+		return fmt.Errorf("materialized execution transition %s runtime reentry failed: %w", result.TransitionID, err)
+	}
+	if !result.ParentSourceReview {
+		return nil
+	}
+	cfg.RepoRoot = result.Admission.Workspace.Root
+	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		return err
+	}
+	retained, err := state.AttachStateStore(runtimeCfg).ReenteredReviewerStopRetained()
+	if err != nil {
+		return err
+	}
+	if retained {
+		binding, err := state.AttachStateStore(runtimeCfg).LoadControllerRuntimeBinding()
+		if err != nil {
+			return err
+		}
+		attempt := result.Admission.Attempt
+		if binding.AttemptID != attempt.AttemptID || binding.TaskPath != attempt.SemanticTaskRef.TaskPath || binding.TaskContractDigest != attempt.SemanticTaskRef.ContractDigest {
+			return fmt.Errorf("materialized execution transition %s retained review belongs to a different runtime", result.TransitionID)
+		}
+		return nil
+	}
+	if _, err := executeControllerReentryReview(cfg, store); err != nil {
+		return fmt.Errorf("materialized execution transition %s review preparation failed: %w", result.TransitionID, err)
+	}
+	return nil
 }
 
 func executeControllerSuspend(cfg config.AppConfig, store *controller.Store, command ControllerExecutionCommand) (controller.ExecutionOperationResult, error) {

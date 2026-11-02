@@ -689,3 +689,32 @@ func TestTaskAuthoritySyncRejectsForeignMilestoneLineage(t *testing.T) {
 		})
 	}
 }
+
+func TestControllerMaterializationRecoveryReplaysRuntimeCompletion(t *testing.T) {
+	cfg, store, accepted, candidate, _ := sealedCandidateReentryFixture(t)
+	reentered, err := store.ReenterAcceptedCandidate(controller.PublicationInput{
+		ExpectedGeneration: accepted.Head.ControllerGeneration,
+		CandidateID:        candidate.CandidateID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	materialized, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+		Action:             "materialize",
+		ExpectedGeneration: reentered.Head.ControllerGeneration,
+		SuspensionID:       reentered.Suspension.SnapshotID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+		Action: "recover", TransitionID: materialized.TransitionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.TransitionID != materialized.TransitionID ||
+		recovered.Head.ControllerGeneration != materialized.Head.ControllerGeneration {
+		t.Fatalf("materialized recovery changed canonical transition: %#v", recovered)
+	}
+}

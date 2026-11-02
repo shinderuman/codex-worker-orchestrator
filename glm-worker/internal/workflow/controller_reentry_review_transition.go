@@ -46,6 +46,13 @@ func executeControllerExecutionRecovery(cfg config.AppConfig, store *controller.
 	if err != nil {
 		return result, err
 	}
+	record, _, err := store.LoadTransition(transitionID)
+	if err != nil {
+		return result, err
+	}
+	if record.Kind == "MATERIALIZE_EXECUTION" {
+		return result, completeMaterializedRuntime(cfg, store, result)
+	}
 	before, err := store.ReentryReviewRepairEvidence(transitionID)
 	if err != nil {
 		return result, err
