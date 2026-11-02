@@ -2,6 +2,7 @@ package parentevidence
 
 import (
 	"crypto/sha256"
+	"errors"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -12,7 +13,7 @@ import (
 
 func diffWorktreeObject(repoRoot, path string) (string, string, []byte, bool, error) {
 	parent, err := diffOpenParent(repoRoot, path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return "", "", nil, false, nil
 	}
 	if err != nil {
