@@ -231,3 +231,38 @@ func TestDiffTotalBudgetDropsUndeliveredClaim(t *testing.T) {
 		}
 	}
 }
+
+func TestDiffGitEntryRejectsUnmergedAndUnsupportedTypes(t *testing.T) {
+	for _, row := range []string{
+		"100644 abc123 1\tentry\x00",
+		"100644 abc123 2\tentry\x00",
+		"160000 abc123 0\tentry\x00",
+	} {
+		if _, _, err := parseDiffGitEntry([]byte(row), "entry", true); err == nil {
+			t.Fatalf("unsupported index record was accepted: %q", row)
+		}
+	}
+	if _, _, err := parseDiffGitEntry([]byte("040000 tree abc123\tentry\x00"), "entry", false); err == nil {
+		t.Fatal("directory HEAD entry was accepted as a file")
+	}
+}
+
+func TestDiffFailedOutputDoesNotSaveDelivery(t *testing.T) {
+	repoRoot, st := newReviewCoverageStore(t)
+	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte("package review\nvar target = 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	projector := NewProjector(repoRoot, st, "failed-output", Providers{})
+	projector.Project(identityAdmissionManifest("review.go"))
+	part := projector.Output().Parts[0]
+	if part.Status != PartProjected || part.Digest == "" {
+		t.Fatalf("diff fixture not projected: %#v", part)
+	}
+	if err := projector.Commit(failingReviewCoverageWriter{}, "failure must not deliver"); err == nil {
+		t.Fatal("output failure unexpectedly succeeded")
+	}
+	_, delivered, err := st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceDiff, part.Digest)
+	if err != nil || delivered {
+		t.Fatalf("failed output recorded as delivered: %v %v", delivered, err)
+	}
+}
