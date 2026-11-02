@@ -11,7 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// Verify the actual token/preparation/admission route, not only the state API.
 func TestObservationExecuteCommandRejectsEvictedTerminalIdentity(t *testing.T) {
 	cfg,st:=newObservationExecuteTestState(t)
 	original:=dispatchObservationExecutionForAction
@@ -24,7 +23,6 @@ func TestObservationExecuteCommandRejectsEvictedTerminalIdentity(t *testing.T) {
 	payload:=func(deadline int)string {
 		return fmt.Sprintf("OPERATION: shadow-eval\nREFERENCE: -\nWORKING_DIR: -\nDEADLINE_MS: %d\n",deadline)
 	}
-	// First terminal detail is evicted by 17 later completions.
 	for i:=0;i<18;i++{
 		token:=stageObservationPayload(t,cfg,payload(30000+i))
 		var output bytes.Buffer

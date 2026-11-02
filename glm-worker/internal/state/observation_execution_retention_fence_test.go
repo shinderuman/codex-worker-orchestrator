@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// A completed execution may leave the 16-entry display history, but its
-// admission identity must remain fenced for the original decision round.
 func TestObservationReplayFenceSurvivesTerminalRetention(t *testing.T) {
 	for _, status := range []string{
 		ObservationExecutionStatusPass,
@@ -52,8 +50,6 @@ func TestObservationReplayFenceSurvivesTerminalRetention(t *testing.T) {
 				}
 			}
 
-			// Exercise the real Begin/Complete path, not only Append's display
-			// history shortcut, beyond the terminal retention limit.
 			for index := 0; index < observationExecutionsRetention+1; index++ {
 				next := first
 				next.ExecutionID = fmt.Sprintf("replay-later-%d", index)
@@ -91,7 +87,6 @@ func TestObservationReplayFenceSurvivesTerminalRetention(t *testing.T) {
 				t.Fatalf("evicted terminal %s was readmitted with a new execution ID", status)
 			}
 
-			// A different parameter identity is not a replay.
 			other := first
 			other.ExecutionID = "replay-other-params"
 			other.ParamsDigest = "different-digest"
@@ -105,7 +100,6 @@ func TestObservationReplayFenceSurvivesTerminalRetention(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			// The same params are valid again at the next canonical round.
 			if _, err := st.BeginParentDecision(); err != nil {
 				t.Fatal(err)
 			}

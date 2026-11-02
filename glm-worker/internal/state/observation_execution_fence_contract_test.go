@@ -83,7 +83,6 @@ func TestObservationReplayFenceMissingOldAndCorruptStateFailClosed(t *testing.T)
 	round,err:=st.ObservationExecutionRound();if err!=nil{t.Fatal(err)}
 	claim:=observationFenceClaim(t,st,"persisted","params",round)
 	if err:=st.BeginObservationExecution(claim);err!=nil{t.Fatal(err)}
-	// A fresh StateStore attached to the same directory sees the claim.
 	other:=&StateStore{dir:st.dir}
 	if exists,err:=other.HasObservationExecution(claim.Operation,claim.ParamsDigest,round);err!=nil || !exists{
 		t.Fatalf("restart discarded durable fence: %t %v",exists,err)

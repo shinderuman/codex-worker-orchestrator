@@ -45,6 +45,24 @@ type observationExecutionDocument struct {
 	Records []ObservationExecutionRecord `json:"records"`
 }
 
+type ObservationExecutionAdmission struct {
+	TaskID string
+	Round  int
+}
+
+const (
+	observationExecutionsStateFile    = "observation-executions"
+	observationExecutionsRetention    = 16
+	observationReplayFenceLimit       = 1024
+	observationExecutionRecoveryGrace = 10 * time.Second
+
+	ObservationExecutionStatusInFlight      = "in-flight"
+	ObservationExecutionStatusPass          = "pass"
+	ObservationExecutionStatusFail          = "fail"
+	ObservationExecutionStatusIndeterminate = "indeterminate"
+)
+
+
 func (s *StateStore) initObservationDocument(taskID string) error {
 	return s.writeObservationDocument(observationExecutionDocument{
 		TaskID: taskID, Fence: []observationFenceIdentity{}, Records: []ObservationExecutionRecord{},
@@ -53,45 +71,43 @@ func (s *StateStore) initObservationDocument(taskID string) error {
 
 func validateObservationDocument(doc observationExecutionDocument) error {
 	if doc.TaskID == "" || doc.Round < 0 || doc.Fence == nil || doc.Records == nil ||
-		len(doc.Fence) > observationReplayFenceLimit || doc.Round == 0 && len(doc.Fence) > 0 {
+		len(doc.Fence) > observationReplayFenceLimit || doc.Round == 0 && len(doc.Fence) != 0 {
 		return fmt.Errorf("observation current-format document is invalid")
 	}
+	fence, err := validateObservationFence(doc.Fence)
+	if err != nil { return err }
+	return validateObservationDetails(doc, fence)
+}
+
+func validateObservationFence(entries []observationFenceIdentity) (map[string]observationFenceIdentity, error) {
 	ids := map[string]bool{}
 	identities := map[string]bool{}
-	fence := map[string]observationFenceIdentity{}
-	for _, entry := range doc.Fence {
+	fence := make(map[string]observationFenceIdentity, len(entries))
+	for _, entry := range entries {
 		key := entry.Operation + "\x00" + entry.ParamsDigest
 		if entry.ExecutionID == "" || entry.Operation == "" || entry.ParamsDigest == "" ||
 			ids[entry.ExecutionID] || identities[key] {
-			return fmt.Errorf("observation replay fence duplicate or invalid identity")
+			return nil, fmt.Errorf("observation replay fence duplicate or invalid identity")
 		}
 		ids[entry.ExecutionID], identities[key] = true, true
 		fence[entry.ExecutionID] = entry
 	}
+	return fence, nil
+}
+
+func validateObservationDetails(doc observationExecutionDocument, fence map[string]observationFenceIdentity) error {
 	visible := map[string]bool{}
 	terminals := 0
 	for _, record := range doc.Records {
-		if record.ExecutionID == "" || record.TaskID != doc.TaskID || record.Operation == "" ||
-			record.ParamsDigest == "" || record.DecisionRound < 0 || record.DecisionRound > doc.Round ||
-			visible[record.ExecutionID] {
-			return fmt.Errorf("observation record identity is invalid")
-		}
+		if err := validateObservationDetailIdentity(doc, fence, visible, record); err != nil { return err }
 		visible[record.ExecutionID] = true
-		if record.DecisionRound == doc.Round {
-			entry, ok := fence[record.ExecutionID]
-			if !ok || entry.Operation != record.Operation || entry.ParamsDigest != record.ParamsDigest {
-				return fmt.Errorf("observation record is missing replay fence")
-			}
-		}
 		if record.Status == ObservationExecutionStatusInFlight {
 			if record.DecisionRound != doc.Round || validateObservationInFlightRecord(record) != nil {
 				return fmt.Errorf("observation in-flight record is invalid")
 			}
 		} else {
 			terminals++
-			if (record.Status != ObservationExecutionStatusPass &&
-				record.Status != ObservationExecutionStatusFail &&
-				record.Status != ObservationExecutionStatusIndeterminate) || record.CompletedAtRFC3339 == "" {
+			if !validObservationTerminal(record) {
 				return fmt.Errorf("observation terminal record is invalid")
 			}
 		}
@@ -100,6 +116,33 @@ func validateObservationDocument(doc observationExecutionDocument) error {
 		return fmt.Errorf("observation terminal retention overflow")
 	}
 	return nil
+}
+
+func validateObservationDetailIdentity(
+	doc observationExecutionDocument,
+	fence map[string]observationFenceIdentity,
+	visible map[string]bool,
+	record ObservationExecutionRecord,
+) error {
+	if record.ExecutionID == "" || record.TaskID != doc.TaskID ||
+		record.Operation == "" || record.ParamsDigest == "" ||
+		record.DecisionRound < 0 || record.DecisionRound > doc.Round ||
+		visible[record.ExecutionID] {
+		return fmt.Errorf("observation record identity is invalid")
+	}
+	if record.DecisionRound == doc.Round {
+		entry, ok := fence[record.ExecutionID]
+		if !ok || entry.Operation != record.Operation || entry.ParamsDigest != record.ParamsDigest {
+			return fmt.Errorf("observation record is missing replay fence")
+		}
+	}
+	return nil
+}
+
+func validObservationTerminal(record ObservationExecutionRecord) bool {
+	return (record.Status == ObservationExecutionStatusPass ||
+		record.Status == ObservationExecutionStatusFail ||
+		record.Status == ObservationExecutionStatusIndeterminate) && record.CompletedAtRFC3339 != ""
 }
 
 func (s *StateStore) readObservationDocument() (observationExecutionDocument, error) {
@@ -128,8 +171,6 @@ func (s *StateStore) writeObservationDocument(doc observationExecutionDocument) 
 	return s.Write(observationExecutionsStateFile, string(data))
 }
 
-// The first durable Begin in a later canonical round atomically replaces
-// the prior fence. Pending old in-flight work prevents release.
 func (doc *observationExecutionDocument) advanceObservationRound(round int) error {
 	if round < doc.Round || round <= 0 { return fmt.Errorf("stale observation decision round") }
 	if round == doc.Round { return nil }
@@ -162,23 +203,6 @@ func (doc *observationExecutionDocument) reserveObservationIdentity(record Obser
 	doc.Records = append(doc.Records, record)
 	return nil
 }
-
-type ObservationExecutionAdmission struct {
-	TaskID string
-	Round  int
-}
-
-const (
-	observationExecutionsStateFile    = "observation-executions"
-	observationExecutionsRetention    = 16
-	observationReplayFenceLimit       = 1024
-	observationExecutionRecoveryGrace = 10 * time.Second
-
-	ObservationExecutionStatusInFlight      = "in-flight"
-	ObservationExecutionStatusPass          = "pass"
-	ObservationExecutionStatusFail          = "fail"
-	ObservationExecutionStatusIndeterminate = "indeterminate"
-)
 
 func (s *StateStore) ObservationExecuteAdmission() (ObservationExecutionAdmission, error) {
 	if s.TaskStatus() != TaskStatusWaitingDecision || !s.Exists("pending-decision") {
@@ -323,21 +347,28 @@ func (s *StateStore) BeginObservationExecution(record ObservationExecutionRecord
 	return s.writeObservationDocument(doc)
 }
 
-func (s *StateStore) CompleteObservationExecution(record ObservationExecutionRecord)error{
-	taskID,err:=s.TaskID();if err!=nil{return err}
-	if record.TaskID!=taskID{return fmt.Errorf("observation completion task mismatch")}
-	if err:=validateObservationExecutionRecord(record,s.ArtifactDir(taskID));err!=nil{return err}
-	round,err:=s.ObservationExecutionRound();if err!=nil{return err}
-	if round!=record.DecisionRound{return fmt.Errorf("observation completion round changed")}
-	doc,err:=s.readObservationDocument();if err!=nil{return err}
-	if doc.Round!=round{return fmt.Errorf("observation completion fence round mismatch")}
-	for index,existing:=range doc.Records {
-		if existing.ExecutionID!=record.ExecutionID{continue}
-		if existing.Status!=ObservationExecutionStatusInFlight || !sameObservationExecutionIdentity(existing,record){
+func (s *StateStore) CompleteObservationExecution(record ObservationExecutionRecord) error {
+	taskID, err := s.TaskID()
+	if err != nil { return err }
+	if record.TaskID != taskID { return fmt.Errorf("observation completion task mismatch") }
+	if err := validateObservationExecutionRecord(record, s.ArtifactDir(taskID)); err != nil { return err }
+	round, err := s.ObservationExecutionRound()
+	if err != nil { return err }
+	if round != record.DecisionRound { return fmt.Errorf("observation completion round changed") }
+	doc, err := s.readObservationDocument()
+	if err != nil { return err }
+	if doc.Round != round { return fmt.Errorf("observation completion fence round mismatch") }
+	return s.completeObservationInDocument(doc, record)
+}
+
+func (s *StateStore) completeObservationInDocument(doc observationExecutionDocument, record ObservationExecutionRecord) error {
+	for index, existing := range doc.Records {
+		if existing.ExecutionID != record.ExecutionID { continue }
+		if existing.Status != ObservationExecutionStatusInFlight || !sameObservationExecutionIdentity(existing, record) {
 			return fmt.Errorf("observation completion does not match durable in-flight identity")
 		}
-		doc.Records[index]=record
-		if err:=s.writeObservationDocument(doc);err!=nil{return err}
+		doc.Records[index] = record
+		if err := s.writeObservationDocument(doc); err != nil { return err }
 		return s.SecureArtifactDir()
 	}
 	return fmt.Errorf("observation completion lacks durable in-flight identity")
