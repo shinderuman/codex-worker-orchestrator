@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"bytes"
 	"encoding/json"
 	"os"
@@ -26,7 +27,7 @@ func TestExecutionPreparationDoesNotConsumeParentEvidenceLease(t *testing.T) {
 		if err := json.Unmarshal(handoff.Bytes(), &projected); err != nil || projected.RequiredAction == nil || *projected.RequiredAction != controllerExecutionSurface {
 			t.Fatalf("source repair handoff: %v", err)
 		}
-		var command controllerExecutionCommand
+		var command workflow.ControllerExecutionCommand
 		if err := json.Unmarshal([]byte(projected.RequiredActionParameters["controller_command_json"]), &command); err != nil || command.Action != action {
 			t.Fatalf("source repair action: %v", err)
 		}

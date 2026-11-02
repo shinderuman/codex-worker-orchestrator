@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -48,14 +49,14 @@ func TestActiveCompletionPreservesAndDisposesUnfinishedSuccessor(t *testing.T) {
 		t.Fatal("blocked publication mutated successor or remote")
 	}
 	handoff := executeParentHandoff(t, cfg)
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface || json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command) != nil || command.Action != "dispose-runtime" || command.RuntimeDisposition == nil || command.RuntimeDisposition.RuntimeTaskID != id {
 		t.Fatalf("missing exact unfinished Runtime disposition: %#v", handoff)
 	}
 	if handoff.RequiredActionParameters["semantic_slot"] != "runtime_disposition.reason" || command.RuntimeDisposition.Reason != "" || containsParentAction(handoff.AllowedActions, "start") {
 		t.Fatal("Runtime termination lacks explicit approval boundary")
 	}
-	if _, err := executeControllerExecution(cfg, store, command); err == nil {
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, command); err == nil {
 		t.Fatal("termination without reason was admitted")
 	}
 	runTypedRuntimeDispositionCLI(t, cfg, "明示承認: 旧successor実行を未完了のまま終了し証拠を保全する")

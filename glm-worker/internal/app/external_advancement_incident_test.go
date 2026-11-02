@@ -113,7 +113,7 @@ func terminateIncidentTask(t *testing.T, cfg config.AppConfig, admission control
 	if err != nil {
 		t.Fatal(err)
 	}
-	lane, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
+	lane, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func terminateIncidentTask(t *testing.T, cfg config.AppConfig, admission control
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleaned, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: reentered.Head.ControllerGeneration, WorkspaceID: source.Workspace.ID, SealRef: &candidate.SealRef})
+	cleaned, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "cleanup", ExpectedGeneration: reentered.Head.ControllerGeneration, WorkspaceID: source.Workspace.ID, SealRef: &candidate.SealRef})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func terminateIncidentTask(t *testing.T, cfg config.AppConfig, admission control
 		t.Fatal(err)
 	}
 	input := controller.UserTaskTransitionInput{ExpectedGeneration: cleaned.Head.ControllerGeneration, SourceProjectID: cleaned.Head.ProjectSnapshotID, SourceTask: *cleaned.Head.ExecutionTaskRef, SuccessorTask: authority.Task, SuccessorProjectID: authority.ProjectSnapshotID, CleanupTransitionID: cleaned.TransitionID, Reason: "user-directed termination ahead of external successor switch"}
-	result, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: input.ExpectedGeneration, UserTermination: &input})
+	result, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: input.ExpectedGeneration, UserTermination: &input})
 	if err != nil {
 		t.Fatal(err)
 	}

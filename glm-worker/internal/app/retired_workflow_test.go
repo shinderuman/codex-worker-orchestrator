@@ -13,6 +13,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -101,7 +102,7 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	if handoff.ParentRequest != nil && handoff.ParentRequest.CompletionAdmitted {
 		t.Fatal("unpublished Task was reported complete")
 	}
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil {
 		t.Fatal(err)
 	}
