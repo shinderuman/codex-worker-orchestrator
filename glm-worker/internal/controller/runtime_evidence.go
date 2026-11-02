@@ -70,12 +70,14 @@ func (c *attemptRuntimeEvidence) captureInstructionSnapshots() error {
 }
 
 func applyAttemptSealRuntimeCoverage(seal *AttemptSeal, runtimeCaptured bool) {
-	if runtimeCaptured {
+	if runtimeCaptured && len(seal.Missing) == 0 && len(seal.Unreadable) == 0 {
 		seal.Coverage = attemptSealCoverageComplete
 		return
 	}
 	seal.Coverage = attemptSealCoverageIncomplete
-	seal.Missing = append(seal.Missing, attemptSealRuntimeEvidenceMissing)
+	if !runtimeCaptured {
+		seal.Missing = append(seal.Missing, attemptSealRuntimeEvidenceMissing)
+	}
 }
 
 func (s *Store) boundAttemptRuntime(source Admission) (*state.StateStore, string, error) {
@@ -190,6 +192,7 @@ func (c *attemptRuntimeEvidence) captureRuntimeRunDirectory(directory string) er
 func (c *attemptRuntimeEvidence) captureRuntimeValidationRun(directory, runID string) error {
 	record, err := readValidationRunRecord(c.runtime, directory, runID)
 	if err != nil || record == nil {
+		c.markValidationRunRecordUnavailable(directory, runID, err)
 		return nil
 	}
 	if !validationRunBindsToWindow(*record, c.taskID, c.workspace, c.seal.StartedAt, c.seal.SealedAt) {
@@ -246,6 +249,7 @@ func (c *attemptRuntimeEvidence) captureRepositoryRunDirectory(module *state.Sta
 func (c *attemptRuntimeEvidence) captureRepositoryValidationRun(module *state.StateStore, directory, runID string) error {
 	record, err := readValidationRunRecord(module, directory, runID)
 	if err != nil || record == nil {
+		c.markValidationRunRecordUnavailable(directory, runID, err)
 		return nil
 	}
 	if !validationRunBindsToWindow(*record, c.taskID, c.workspace, c.seal.StartedAt, c.seal.SealedAt) {
@@ -270,11 +274,20 @@ func (c *attemptRuntimeEvidence) captureRepositoryValidationRun(module *state.St
 	return nil
 }
 
+func (c *attemptRuntimeEvidence) markValidationRunRecordUnavailable(directory, runID string, err error) {
+	logical := c.logicalName("state/" + directory + "/" + runID + "/" + qualitygate.RunFile)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		c.seal.Missing = append(c.seal.Missing, logical)
+		return
+	}
+	c.seal.Unreadable = append(c.seal.Unreadable, logical)
+}
+
 func readValidationRunRecord(store *state.StateStore, directory, runID string) (*qualitygate.RunRecord, error) {
 	if directory == qualitygate.RunDirectory {
 		record, err := qualitygate.Read(store, runID)
 		if err != nil {
-			return nil, nil
+			return nil, err
 		}
 		return &record, nil
 	}
