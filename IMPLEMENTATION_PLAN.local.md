@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/finding-source-revision-disposition.md`](IMPLEMENTATION_TASKS/finding-source-revision-disposition.md)
+- [`IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md`](IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md)
 
 ## NEXT（優先順）
 
@@ -32,7 +32,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md`](IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-redesign.md`](IMPLEMENTATION_TASKS/self-referential-test-redesign.md)
 - [`IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md`](IMPLEMENTATION_TASKS/self-referential-test-enforcement-owner.md)
-- [`IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md`](IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md)
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
 - [`IMPLEMENTATION_TASKS/git-authority-ref-change-evidence-scope.md`](IMPLEMENTATION_TASKS/git-authority-ref-change-evidence-scope.md)
 - [`IMPLEMENTATION_TASKS/task-admission-harness-scope.md`](IMPLEMENTATION_TASKS/task-admission-harness-scope.md)
