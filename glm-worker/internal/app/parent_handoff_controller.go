@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -80,7 +81,7 @@ func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *pare
 			output.Inconsistency = &message
 			return true
 		}
-		command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+		command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
 		if err != nil {
 			message := err.Error()
 			output.Inconsistency = &message
@@ -93,7 +94,7 @@ func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *pare
 		failParentCompletionHandoff(output, err)
 		return true
 	}
-	command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
 	if err != nil {
 		failParentCompletionHandoff(output, err)
 		return true
@@ -222,7 +223,7 @@ func applyTaskAuthoritySyncHandoff(cfg config.AppConfig, output *parentHandoffOu
 		return true
 	}
 	plan := required.Plan
-	command, err := json.Marshal(controllerExecutionCommand{
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{
 		Action:             "sync-task-authority",
 		ExpectedGeneration: report.Head.ControllerGeneration,
 		SourceSnapshotID:   plan.SourceSnapshotID,
@@ -251,7 +252,7 @@ func applyExecutionTerminationHandoff(cfg config.AppConfig, output *parentHandof
 	if err != nil {
 		return
 	}
-	data, err := json.Marshal(controllerExecutionCommand{Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input})
+	data, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input})
 	if err != nil {
 		return
 	}
@@ -396,7 +397,7 @@ func applyRuntimeDispositionHandoff(cfg config.AppConfig, output *parentHandoffO
 	if err != nil || input == nil {
 		return false
 	}
-	command, err := json.Marshal(controllerExecutionCommand{Action: "dispose-runtime", ExpectedGeneration: report.Head.ControllerGeneration, RuntimeDisposition: input})
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "dispose-runtime", ExpectedGeneration: report.Head.ControllerGeneration, RuntimeDisposition: input})
 	if err != nil {
 		return false
 	}

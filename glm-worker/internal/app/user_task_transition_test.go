@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -20,7 +21,7 @@ func userTaskTransitionFixture(t *testing.T) (config.AppConfig, *controller.Stor
 	if err != nil {
 		t.Fatal(err)
 	}
-	lane, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
+	lane, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func userTaskTransitionFixture(t *testing.T) (config.AppConfig, *controller.Stor
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleaned, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: reentered.Head.ControllerGeneration, WorkspaceID: source.Workspace.ID, SealRef: &candidate.SealRef})
+	cleaned, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "cleanup", ExpectedGeneration: reentered.Head.ControllerGeneration, WorkspaceID: source.Workspace.ID, SealRef: &candidate.SealRef})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,11 +90,11 @@ func userTaskTransitionFixture(t *testing.T) (config.AppConfig, *controller.Stor
 func TestControllerExecutionRecoveryDispatchesFailClosedThroughCLI(t *testing.T) {
 	t.Parallel()
 	cfg, store, accepted, _, _ := sealedCandidateReentryFixture(t)
-	_, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "recover-accepted-result-rule-activation", ExpectedGeneration: accepted.Head.ControllerGeneration})
+	_, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "recover-accepted-result-rule-activation", ExpectedGeneration: accepted.Head.ControllerGeneration})
 	if err == nil || !strings.Contains(err.Error(), "accepted-result recovery requires exact source identity") {
 		t.Fatalf("accepted-result recovery dispatch = %v", err)
 	}
-	_, err = executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "recover-runtime-start", ExpectedGeneration: accepted.Head.ControllerGeneration})
+	_, err = workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "recover-runtime-start", ExpectedGeneration: accepted.Head.ControllerGeneration})
 	if err == nil || strings.Contains(err.Error(), "unsupported controller execution action") {
 		t.Fatalf("runtime-start recovery dispatch = %v", err)
 	}
@@ -121,7 +122,7 @@ func TestUserTaskTransitionValidatesAuthorityAndStartsSuccessor(t *testing.T) {
 		t.Run(change.name, func(t *testing.T) {
 			denied := input
 			change.mutate(&denied)
-			if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: denied.ExpectedGeneration, UserTermination: &denied}); err == nil {
+			if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: denied.ExpectedGeneration, UserTermination: &denied}); err == nil {
 				t.Fatal("invalid termination admitted")
 			}
 			after, err := store.LoadHead()
@@ -134,7 +135,7 @@ func TestUserTaskTransitionValidatesAuthorityAndStartsSuccessor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: input.ExpectedGeneration, UserTermination: &input})
+	result, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "user-terminate-task", ExpectedGeneration: input.ExpectedGeneration, UserTermination: &input})
 	if err != nil {
 		t.Fatal(err)
 	}

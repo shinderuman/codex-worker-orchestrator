@@ -10,8 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-type controllerExecutionCommand = workflow.ControllerExecutionCommand
-
 const (
 	controllerExecutionSurface   = "controller-execution"
 	controllerPublicationSurface = "controller-publication"
@@ -24,7 +22,7 @@ func runControllerOperations(args []string, loadConfig func() (config.AppConfig,
 	var command any
 	switch args[1] {
 	case controllerExecutionSurface:
-		command = &controllerExecutionCommand{}
+		command = &workflow.ControllerExecutionCommand{}
 	case controllerPublicationSurface:
 		command = &controllerPublicationCommand{}
 	default:
@@ -48,17 +46,13 @@ func runControllerOperations(args []string, loadConfig func() (config.AppConfig,
 
 func dispatchControllerOperation(cfg config.AppConfig, store *controller.Store, command any) (any, error) {
 	switch value := command.(type) {
-	case *controllerExecutionCommand:
-		return executeControllerExecution(cfg, store, *value)
+	case *workflow.ControllerExecutionCommand:
+		return workflow.ExecuteControllerExecution(cfg, store, *value)
 	case *controllerPublicationCommand:
 		return executeControllerPublication(cfg, store, *value)
 	default:
 		return nil, fmt.Errorf("unsupported controller command type")
 	}
-}
-
-func executeControllerExecution(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
-	return workflow.ExecuteControllerExecution(cfg, store, command)
 }
 
 func decodeControllerCommand(loadConfig func() (config.AppConfig, error), stdin io.Reader, command any) (config.AppConfig, *controller.Store, error) {

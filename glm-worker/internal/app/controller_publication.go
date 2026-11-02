@@ -97,7 +97,7 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 		}
 		return store.AdoptMutableExternalAdvancement(admission, command.Policy)
 	}
-	admission, err := currentControllerSemanticAdmission(cfg, store)
+	admission, err := controller.CurrentSemanticAdmission(cfg, store)
 	if err != nil {
 		return nil, err
 	}
