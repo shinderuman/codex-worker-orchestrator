@@ -3,11 +3,11 @@ package reposearch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
-	"fmt"
 )
 
 func TestRepoSearchRejectsAssumeUnchangedInsteadOfServingStaleCache(t *testing.T) {
