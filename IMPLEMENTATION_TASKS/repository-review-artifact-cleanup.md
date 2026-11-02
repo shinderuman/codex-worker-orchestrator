@@ -86,7 +86,6 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`
 - `IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md`
 - `IMPLEMENTATION_TASKS/task-admission-harness-scope.md`
@@ -97,4 +96,5 @@ status: not-applicable
 
 ## Fulfilled dependencies
 
+- `IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`
 - `IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`
