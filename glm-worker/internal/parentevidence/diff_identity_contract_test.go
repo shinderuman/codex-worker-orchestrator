@@ -86,7 +86,6 @@ func TestDiffIdentityUntrackedContentAndFileType(t *testing.T) {
 		t.Fatal(err)
 	}
 	link := captureIdentityPart(t, repoRoot, "new.txt")
-	// The original regular file and the symlink carry identical content bytes.
 	if regular.Diff.Files[0].WorktreeSHA != link.Diff.Files[0].WorktreeSHA {
 		t.Fatalf("fixture bytes differ unexpectedly: regular=%#v link=%#v", regular.Diff, link.Diff)
 	}
@@ -131,21 +130,7 @@ func TestDiffIdentityDeliveryAndReviewProofBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	openLocatorIdentityReview(t, repoRoot, st, []string{"review.go:" + reviewtarget.WholeFileDiffLocator})
-	deliver := func() Part {
-		t.Helper()
-		projector := NewProjector(repoRoot, st, "diff-delivery", Providers{})
-		projector.Project(Manifest{
-			Version: ManifestVersion,
-			Reason: "review diff delivery",
-			Diff: []DiffRequest{{Question: "review", Paths: []string{"review.go"}, BudgetBytes: MaxBudgetBytes}},
-		})
-		var output bytes.Buffer
-		if err := projector.Commit(&output, "diff identity test"); err != nil {
-			t.Fatal(err)
-		}
-		return projector.Output().Parts[0]
-	}
-	first := deliver()
+	first := deliverIdentityDiff(t, repoRoot, st)
 	if first.Diff == nil || first.Diff.Body == "" || first.Status != PartProjected {
 		t.Fatalf("initial diff body not delivered: %#v", first)
 	}
@@ -160,18 +145,48 @@ func TestDiffIdentityDeliveryAndReviewProofBinding(t *testing.T) {
 	if binding == nil || binding.Proof == nil || len(binding.Proof.Claims) != 1 || binding.Proof.Claims[0].Digest != first.Digest {
 		t.Fatalf("review proof is not bound to delivered diff: %#v", binding)
 	}
-	replayed := deliver()
+	replayed := deliverIdentityDiff(t, repoRoot, st)
 	if replayed.Digest != first.Digest || replayed.Diff.Body != "" || replayed.Reason != UnchangedReason {
 		t.Fatalf("identical evidence was not deduplicated: %#v", replayed)
+	}
+}
+
+func TestDiffIdentityChangedEvidenceRedelivered(t *testing.T) {
+	repoRoot, st := newReviewCoverageStore(t)
+	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte("package review\nvar target = 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first := deliverIdentityDiff(t, repoRoot, st)
+	if first.Diff == nil || first.Diff.Body == "" {
+		t.Fatalf("initial diff was not delivered: %#v", first)
+	}
+	unchanged := deliverIdentityDiff(t, repoRoot, st)
+	if unchanged.Digest != first.Digest || unchanged.Reason != UnchangedReason || unchanged.Diff.Body != "" {
+		t.Fatalf("unchanged evidence was not deduplicated: %#v", unchanged)
 	}
 	if err := os.WriteFile(filepath.Join(repoRoot, "review.go"), []byte("package review\nvar target = 3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	next := deliver()
+	next := deliverIdentityDiff(t, repoRoot, st)
 	if next.Diff == nil || next.Diff.Body == "" || next.Reason == UnchangedReason {
 		t.Fatalf("changed diff was incorrectly suppressed: %#v", next)
 	}
 	assertChangedDiffIdentity(t, first, next)
+}
+
+func deliverIdentityDiff(t *testing.T, repoRoot string, st *state.StateStore) Part {
+	t.Helper()
+	projector := NewProjector(repoRoot, st, "diff-delivery", Providers{})
+	projector.Project(Manifest{
+		Version: ManifestVersion,
+		Reason: "review diff delivery",
+		Diff: []DiffRequest{{Question: "review", Paths: []string{"review.go"}, BudgetBytes: MaxBudgetBytes}},
+	})
+	var output bytes.Buffer
+	if err := projector.Commit(&output, "diff identity test"); err != nil {
+		t.Fatal(err)
+	}
+	return projector.Output().Parts[0]
 }
 
 func TestDiffIdentityDoesNotFollowIntermediateSymlinkOutsideRepository(t *testing.T) {

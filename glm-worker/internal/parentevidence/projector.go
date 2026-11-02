@@ -501,8 +501,6 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 		return p.recordPart(part, state.ParentEvidenceSurfaceDiff)
 	}
 	diffBody := DiffBody{Question: request.Question, Paths: request.Paths, Files: files, Body: body}
-	// The delivered patch and its per-path metadata share the delivery identity.
-	// A new patch, file type, mode, or worktree content must never match a prior claim.
 	part.Digest, _ = Digest(diffBody)
 	if len(body) > request.BudgetBytes {
 		part.Status = PartRefinement
@@ -584,7 +582,6 @@ func diffWorktreeIdentity(repoRoot, path string) (string, string, error) {
 	abs := filepath.Join(root, filepath.FromSlash(path))
 	info, err := os.Lstat(abs)
 	if os.IsNotExist(err) {
-		// Deletions have no worktree object. HEAD/index and patch carry their identity.
 		return "", "", nil
 	}
 	if err != nil {
@@ -607,8 +604,6 @@ func diffWorktreeIdentity(repoRoot, path string) (string, string, error) {
 		target, err = os.Readlink(abs)
 		content = []byte(target)
 	default:
-		// A directory/pathspec's admissibility is a separate parent-owned decision.
-		// Its tracked child patch is still included in the diff digest.
 		return "", mode, nil
 	}
 	if err != nil {
