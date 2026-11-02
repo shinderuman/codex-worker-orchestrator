@@ -100,6 +100,11 @@ func Evaluate(root string) (Decision, error) {
 	return Decision{Active: true}, nil
 }
 
+// MarkerTracked reports whether the harness marker is tracked, even if absent from the worktree.
+func MarkerTracked(root string) (bool, error) {
+	return markerTracked(root)
+}
+
 func markerTracked(root string) (bool, error) {
 	inside, err := gitWorktreePresent(root)
 	if err != nil {

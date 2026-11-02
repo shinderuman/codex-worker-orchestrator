@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -235,10 +237,41 @@ func requireNormalTaskHarness(cfg config.AppConfig) error {
 	if err != nil {
 		return fmt.Errorf("evaluate normal task repository harness: %w", err)
 	}
-	if !decision.Active {
-		return fmt.Errorf("normal task admission requires active repository harness (%s: %s); canonical non-harness task authority is not defined", repositoryharness.MarkerPath, decision.Reason)
+	if decision.Active {
+		return nil
 	}
-	return nil
+	if decision.Reason == repositoryharness.ReasonAbsent {
+		available, err := existingPlanBackedTaskAuthority(cfg.RepoRoot)
+		if err != nil {
+			return fmt.Errorf("inspect normal task authority: %w", err)
+		}
+		if available {
+			return nil
+		}
+	}
+	return fmt.Errorf("normal task admission requires canonical task authority (%s: %s); non-harness task authority is not defined", repositoryharness.MarkerPath, decision.Reason)
+}
+
+func existingPlanBackedTaskAuthority(root string) (bool, error) {
+	tracked, err := repositoryharness.MarkerTracked(root)
+	if err != nil {
+		return false, err
+	}
+	if tracked {
+		return false, nil
+	}
+	plan, err := os.Lstat(filepath.Join(root, "IMPLEMENTATION_PLAN.local.md"))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !plan.Mode().IsRegular() {
+		return false, nil
+	}
+	_, err = controller.ResolveCommittedTaskAuthority(root)
+	return err == nil, nil
 }
 
 func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
