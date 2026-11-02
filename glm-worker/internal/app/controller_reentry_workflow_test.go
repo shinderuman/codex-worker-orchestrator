@@ -18,19 +18,18 @@ import (
 
 func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID}); err == nil {
-		t.Fatal("stale generation reentered the candidate")
-	}
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"}); err == nil {
-		t.Fatal("foreign candidate reentered the sealed authority")
+	_, staleErr := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID})
+	_, foreignErr := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"})
+	if staleErr == nil || foreignErr == nil {
+		t.Fatalf("stale generation or foreign candidate reentered sealed authority: stale=%v foreign=%v", staleErr, foreignErr)
 	}
 
 	handoff := buildParentHandoffWithConfig(cfg, runtime)
-	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
-		t.Fatalf("sealed unpublished candidate handoff: %#v", handoff)
-	}
-	if !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) || !containsParentAction(handoff.AllowedActions, "controller-evidence") {
-		t.Fatalf("sealed candidate hid publication or reenter operations: %v", handoff.AllowedActions)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface ||
+		!containsParentAction(handoff.AllowedActions, controllerPublicationSurface) ||
+		!containsParentAction(handoff.AllowedActions, controllerExecutionSurface) ||
+		!containsParentAction(handoff.AllowedActions, "controller-evidence") {
+		t.Fatalf("sealed candidate hid its canonical publication/reentry operations: %#v", handoff)
 	}
 
 	reentered, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
@@ -54,11 +53,16 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 
 	materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{
 		ExpectedGeneration: materializeCommand.ExpectedGeneration,
-		EpisodeID: materializeCommand.EpisodeID, EpisodeRevision: materializeCommand.EpisodeRevision,
-		SuspensionID: materializeCommand.SuspensionID,
+		EpisodeID:          materializeCommand.EpisodeID,
+		EpisodeRevision:    materializeCommand.EpisodeRevision,
+		SuspensionID:       materializeCommand.SuspensionID,
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if materialized.Admission == nil || materialized.Admission.Lease.LeaseID == "" ||
+		materialized.Admission.Attempt.PredecessorAttemptID == "" {
+		t.Fatalf("reentered materialization has no canonical predecessor or live lease: %#v", materialized)
 	}
 	if runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("Controller commit unexpectedly completed runtime: %s", runtime.TaskStatus())
@@ -72,13 +76,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 		resumed.Admission == nil || resumed.Admission.Attempt.AttemptID != materialized.Admission.Attempt.AttemptID {
 		t.Fatalf("recovery changed canonical Controller attempt: %#v", resumed)
 	}
-	if materialized.Admission == nil || materialized.Admission.Lease.LeaseID == "" {
-		t.Fatalf("reentered materialization has no live lease: %#v", materialized)
-	}
-	if materialized.Admission.Attempt.PredecessorAttemptID == "" {
-		t.Fatalf("materialized attempt lost its predecessor identity: %#v", materialized.Admission.Attempt)
-	}
-	if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
+		if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("controller reentry left the runtime at %s", runtime.TaskStatus())
 	}
 	open, err := runtime.CurrentParentReview()
