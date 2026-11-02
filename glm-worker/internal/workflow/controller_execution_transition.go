@@ -249,6 +249,10 @@ func reenterMaterializedRuntimeCompletion(cfg config.AppConfig, result controlle
 	if _, err := runtime.ReenterAcceptedCompletionFromController(authority); err != nil {
 		return err
 	}
+	return verifyMaterializedRuntimeBinding(runtime, authority)
+}
+
+func verifyMaterializedRuntimeBinding(runtime *state.StateStore, authority state.ControllerReentryAuthority) error {
 	binding, err := runtime.LoadControllerRuntimeBinding()
 	if err != nil {
 		return err
