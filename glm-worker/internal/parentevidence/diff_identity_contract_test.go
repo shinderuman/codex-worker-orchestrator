@@ -120,7 +120,11 @@ func TestDiffIdentityTrackedDeleteAndRename(t *testing.T) {
 			} else if err := os.Rename(src, filepath.Join(repoRoot, "moved.go")); err != nil {
 				t.Fatal(err)
 			}
-			after := captureIdentityPart(t, repoRoot, "review.go", "moved.go")
+			paths := []string{"review.go"}
+			if mode == "rename" {
+				paths = append(paths, "moved.go")
+			}
+			after := captureIdentityPart(t, repoRoot, paths...)
 			if after.Diff.Body == before.Diff.Body {
 				t.Fatalf("%s did not alter delivered patch", mode)
 			}

@@ -179,9 +179,9 @@ type Providers struct {
 }
 
 type diffCheck struct {
-	paths []string
+	paths    []string
 	question string
-	digest string
+	digest   string
 }
 
 type Projector struct {
