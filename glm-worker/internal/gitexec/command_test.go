@@ -23,11 +23,11 @@ func TestEnvironmentWorktreeScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	inherited := []string{"GIT_INDEX_FILE=.git/alternate", "GIT_DIR=.git", "GIT_WORK_TREE=.", "GIT_OBJECT_DIRECTORY=.git/objects", "GIT_CONFIG_COUNT=1", "PATH=" + os.Getenv("PATH"), "KEEP=value"}
-	same, err := environment(nested, root, inherited)
+	same, err := environment("git", nested, root, inherited)
 	if err != nil || !reflect.DeepEqual(same, inherited) {
 		t.Fatalf("same worktree environment: %v %v", same, err)
 	}
-	clean, err := environment(root, foreign, inherited)
+	clean, err := environment("git", root, foreign, inherited)
 	if err != nil {
 		t.Fatal(err)
 	}

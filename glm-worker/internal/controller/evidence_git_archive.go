@@ -342,7 +342,7 @@ func verifyGitObjectPack(envelope gitObjectArchiveEnvelope) error {
 	defer func() {
 		_ = os.RemoveAll(repo)
 	}()
-	if _, err := runGitBinary("", nil, "init", "--bare", "--quiet", "--object-format="+envelope.ObjectFormat, repo); err != nil {
+	if _, err := runGitBinary(repo, nil, "init", "--bare", "--quiet", "--object-format="+envelope.ObjectFormat, repo); err != nil {
 		return err
 	}
 	if _, err := runGitBinaryWithGitDir(repo, envelope.Pack, "index-pack", "--stdin"); err != nil {
@@ -371,26 +371,22 @@ func verifyGitObjectPack(envelope gitObjectArchiveEnvelope) error {
 }
 
 func runGitBinary(repoPath string, stdin []byte, args ...string) ([]byte, error) {
-	commandArgs := append([]string(nil), args...)
-	if repoPath != "" {
-		commandArgs = append([]string{"-C", repoPath}, commandArgs...)
+	if repoPath == "" {
+		repoPath = "."
 	}
-	return runGitCommand(stdin, commandArgs...)
+	return runGitCommand(repoPath, false, stdin, args...)
 }
 
 func runGitBinaryWithGitDir(gitDir string, stdin []byte, args ...string) ([]byte, error) {
-	commandArgs := append([]string{"--git-dir", gitDir}, args...)
-	return runGitCommand(stdin, commandArgs...)
+	return runGitCommand(gitDir, true, stdin, args...)
 }
 
-func runGitCommand(stdin []byte, args ...string) ([]byte, error) {
-	command := gitexec.Command("git", ".", args...)
-	if len(args) >= 2 && (args[0] == "-C" || args[0] == "--git-dir") {
-		command = gitexec.Command("git", args[1], args[2:]...)
-		if args[0] == "--git-dir" {
-			command.Args = append(command.Args[:1], args...)
-		}
+func runGitCommand(target string, gitDir bool, stdin []byte, args ...string) ([]byte, error) {
+	newCommand := gitexec.Command
+	if gitDir {
+		newCommand = gitexec.CommandGitDir
 	}
+	command := newCommand("git", target, args...)
 	if stdin != nil {
 		command.Stdin = bytes.NewReader(stdin)
 	}

@@ -9,23 +9,49 @@ import (
 	"sync"
 )
 
-var localVariables = sync.OnceValues(func() (map[string]bool, error) {
-	output, err := exec.Command("git", "rev-parse", "--local-env-vars").Output()
+var localVariableCache = struct {
+	sync.RWMutex
+	values map[string]map[string]bool
+}{values: make(map[string]map[string]bool)}
+
+func localVariables(gitPath string) (map[string]bool, error) {
+	localVariableCache.RLock()
+	names, cached := localVariableCache.values[gitPath]
+	localVariableCache.RUnlock()
+	if cached {
+		return names, nil
+	}
+	output, err := exec.Command(gitPath, "rev-parse", "--local-env-vars").Output()
 	if err != nil {
 		return nil, fmt.Errorf("resolve Git local environment: %w", err)
 	}
-	names := make(map[string]bool)
+	names = make(map[string]bool)
 	for _, name := range strings.Fields(string(output)) {
 		names[name] = true
 	}
+	localVariableCache.Lock()
+	if prior, exists := localVariableCache.values[gitPath]; exists {
+		names = prior
+	} else {
+		localVariableCache.values[gitPath] = names
+	}
+	localVariableCache.Unlock()
 	return names, nil
-})
+}
 
 func Command(gitPath, repo string, args ...string) *exec.Cmd {
-	command := exec.Command(gitPath, append([]string{"-C", repo}, args...)...)
+	return commandForTarget(gitPath, repo, append([]string{"-C", repo}, args...)...)
+}
+
+func CommandGitDir(gitPath, gitDir string, args ...string) *exec.Cmd {
+	return commandForTarget(gitPath, gitDir, append([]string{"--git-dir", gitDir}, args...)...)
+}
+
+func commandForTarget(gitPath, target string, args ...string) *exec.Cmd {
+	command := exec.Command(gitPath, args...)
 	origin, err := os.Getwd()
 	if err == nil {
-		command.Env, err = environment(origin, repo, os.Environ())
+		command.Env, err = environment(gitPath, origin, target, os.Environ())
 	}
 	if err != nil {
 		command.Err = err
@@ -33,7 +59,7 @@ func Command(gitPath, repo string, args ...string) *exec.Cmd {
 	return command
 }
 
-func environment(origin, target string, inherited []string) ([]string, error) {
+func environment(gitPath, origin, target string, inherited []string) ([]string, error) {
 	source, err := worktreeRoot(origin)
 	if err != nil {
 		return nil, err
@@ -45,11 +71,15 @@ func environment(origin, target string, inherited []string) ([]string, error) {
 	if source == destination {
 		return append([]string(nil), inherited...), nil
 	}
-	return WithoutLocalEnvironment(inherited)
+	return withoutLocalEnvironment(gitPath, inherited)
 }
 
 func WithoutLocalEnvironment(inherited []string) ([]string, error) {
-	names, err := localVariables()
+	return withoutLocalEnvironment("git", inherited)
+}
+
+func withoutLocalEnvironment(gitPath string, inherited []string) ([]string, error) {
+	names, err := localVariables(gitPath)
 	if err != nil {
 		return nil, err
 	}
