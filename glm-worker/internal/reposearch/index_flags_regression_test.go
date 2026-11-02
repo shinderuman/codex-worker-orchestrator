@@ -1,11 +1,11 @@
 package reposearch
 
 import (
-	"strings"
 	"context"
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
