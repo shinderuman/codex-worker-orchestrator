@@ -248,12 +248,8 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 		}
 	}
 	if cmd.Mode != ModeNewTask {
-		exists, err := controller.Exists(cfg)
-		if err != nil {
+		if err := requireExistingWorkflowController(cfg); err != nil {
 			return cfg, err
-		}
-		if !exists {
-			return cfg, fmt.Errorf("existing workflow requires canonical controller execution authority")
 		}
 	}
 	store, err := controller.Open(cfg)
@@ -277,6 +273,17 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 	}
 	_, err = controller.Activate(cfg)
 	return cfg, err
+}
+
+func requireExistingWorkflowController(cfg config.AppConfig) error {
+	exists, err := controller.Exists(cfg)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("existing workflow requires canonical controller execution authority")
+	}
+	return nil
 }
 
 func rejectLiveParentOnlyExecution(store *controller.Store) error {
