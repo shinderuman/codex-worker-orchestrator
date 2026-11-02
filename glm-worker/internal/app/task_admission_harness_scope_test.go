@@ -16,13 +16,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-func TestNormalTaskAdmissionDoesNotAssumeHarnessInForeignGitRepository(t *testing.T) {
+func TestNormalTaskAdmissionRejectsMalformedOrUntrackedHarnessMarker(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		marker string
 		reason string
 	}{
-		{name: "absent", reason: repositoryharness.ReasonAbsent},
 		{name: "content-mismatch", marker: "mismatch", reason: repositoryharness.ReasonContentMismatch},
 		{name: "untracked", marker: "untracked", reason: repositoryharness.ReasonUntracked},
 		{name: "nonregular", marker: "directory", reason: repositoryharness.ReasonNotRegularFile},
@@ -70,7 +69,7 @@ func TestNormalTaskAdmissionDoesNotAssumeHarnessInForeignGitRepository(t *testin
 	}
 }
 
-func TestNormalTaskAdmissionDoesNotPromotePlanWithoutHarnessOptIn(t *testing.T) {
+func TestCommittedPlanDoesNotActivateRepositoryHarnessWithoutMarker(t *testing.T) {
 	root := t.TempDir()
 	runControllerActivationGit(t, root, "init", "-q")
 	runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
@@ -79,12 +78,15 @@ func TestNormalTaskAdmissionDoesNotPromotePlanWithoutHarnessOptIn(t *testing.T) 
 	writeAppTestFile(t, root, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\nfixture\n\n## Dependencies\n\nnone\n")
 	runControllerActivationGit(t, root, "add", ".")
 	runControllerActivationGit(t, root, "commit", "-qm", "base")
-	cfg := taskAdmissionTestConfig(t, root)
-	if _, err := activateWorkflowConfig(Command{Mode: ModeNewTask}, cfg); err == nil || !strings.Contains(err.Error(), repositoryharness.ReasonAbsent) {
-		t.Fatalf("Plan presence must not imply harness opt-in: %v", err)
+	decision, err := repositoryharness.Evaluate(root)
+	if err != nil || decision.Active || decision.Reason != repositoryharness.ReasonAbsent {
+		t.Fatalf("committed Plan must not imply harness opt-in: decision=%+v err=%v", decision, err)
 	}
-	if exists, err := controller.Exists(cfg); err != nil || exists {
-		t.Fatalf("Plan-only admission unexpectedly created controller: exists=%v err=%v", exists, err)
+	cfg := taskAdmissionTestConfig(t, root)
+	var output bytes.Buffer
+	err = runEntry([]string{"--authority", "controller-activate"}, func() (config.AppConfig, error) { return cfg, nil }, nil, bytes.NewReader(nil), &output, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "requires active repository harness") || output.Len() != 0 {
+		t.Fatalf("explicit project harness activation must remain opt-in: err=%v output=%q", err, output.String())
 	}
 }
 
@@ -169,46 +171,22 @@ func TestNormalTaskAdmissionKeepsCommittedHarnessAuthority(t *testing.T) {
 	}
 }
 
-func TestNormalTaskCLIRejectsUnsupportedScopeBeforeRunner(t *testing.T) {
-	for _, gitRepo := range []bool{false, true} {
-		name := "non-git"
-		want := "non-Git task authority"
-		if gitRepo {
-			name = "git-without-harness"
-			want = repositoryharness.ReasonAbsent
-		}
-		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
-			if gitRepo {
-				runControllerActivationGit(t, root, "init", "-q")
-				runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
-				runControllerActivationGit(t, root, "config", "user.email", "admission@example.invalid")
-			}
-			writeAppTestFile(t, root, "README.md", "foreign project\n")
-			if gitRepo {
-				runControllerActivationGit(t, root, "add", ".")
-				runControllerActivationGit(t, root, "commit", "-qm", "base")
-			}
-			cfg := taskAdmissionTestConfig(t, root)
-			called := false
-			factory := func(_ config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
-				called = true
-				return nil
-			}
-			var stdout, stderr bytes.Buffer
-			err := runEntry([]string{"--task", "request"}, func() (config.AppConfig, error) { return cfg, nil }, factory, bytes.NewReader(nil), &stdout, &stderr)
-			if err == nil || !strings.Contains(err.Error(), want) || called {
-				t.Fatalf("CLI admission result: err=%v runnerFactoryCalled=%v", err, called)
-			}
-			if stdout.Len() != 0 {
-				t.Fatalf("rejected CLI emitted success output: %q", stdout.String())
-			}
-			if gitRepo {
-				if exists, checkErr := controller.Exists(cfg); checkErr != nil || exists {
-					t.Fatalf("CLI rejection created controller: exists=%v err=%v", exists, checkErr)
-				}
-			}
-		})
+func TestNormalTaskCLIRejectsNonGitBeforeRunner(t *testing.T) {
+	root := t.TempDir()
+	writeAppTestFile(t, root, "README.md", "not a Git repository\n")
+	cfg := taskAdmissionTestConfig(t, root)
+	called := false
+	factory := func(_ config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
+		called = true
+		return nil
+	}
+	var stdout, stderr bytes.Buffer
+	err := runEntry([]string{"--task", "request"}, func() (config.AppConfig, error) { return cfg, nil }, factory, bytes.NewReader(nil), &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "non-Git task authority") || called {
+		t.Fatalf("non-Git CLI admission result: err=%v runnerFactoryCalled=%v", err, called)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("rejected CLI emitted success output: %q", stdout.String())
 	}
 }
 
