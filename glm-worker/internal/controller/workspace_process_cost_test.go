@@ -24,24 +24,29 @@ func TestWorkspaceProcessCostAcrossMaterializationAndSourceImport(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	lane := filepath.Join(t.TempDir(), "lane")
-	runControllerGit(t, source, "worktree", "add", "--detach", "--no-checkout", lane, "HEAD")
 	operations := []struct {
 		name string
-		run  func() error
+		run  func(lane string) error
 	}{
-		{name: "materialize", run: func() error {
+		{name: "materialize", run: func(lane string) error {
 			return materializeExecutionTrees(WorkspaceIdentity{Root: lane}, ReboundSuspension{Current: ExecutionTrees{IndexTree: tree, WorktreeTree: tree}})
 		}},
-		{name: "source-import", run: func() error {
-			return applySourceTreeEntries(lane, entries, entries)
+		{name: "source-import", run: func(lane string) error {
+			return applySourceTreeEntries(lane, nil, entries)
 		}},
 	}
 	for _, operation := range operations {
 		t.Run(operation.name, func(t *testing.T) {
+			lane := filepath.Join(t.TempDir(), "lane")
+			runControllerGit(t, source, "worktree", "add", "--detach", "--no-checkout", lane, "HEAD")
+			for _, entry := range entries {
+				if _, err := os.Stat(filepath.Join(lane, entry.path)); !os.IsNotExist(err) {
+					t.Fatalf("new lane is not empty at %q: %v", entry.path, err)
+				}
+			}
 			trace := filepath.Join(t.TempDir(), "git-trace.jsonl")
 			t.Setenv("GIT_TRACE2_EVENT", trace)
-			if err := operation.run(); err != nil {
+			if err := operation.run(lane); err != nil {
 				t.Fatal(err)
 			}
 			starts := workspaceGitProcessCount(t, trace)
