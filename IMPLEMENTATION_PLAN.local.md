@@ -8,13 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/parent-handoff-summary-recovery-ordering.md`](IMPLEMENTATION_TASKS/parent-handoff-summary-recovery-ordering.md)
+- [`IMPLEMENTATION_TASKS/stage-timeline-open-attempt-gap-classification.md`](IMPLEMENTATION_TASKS/stage-timeline-open-attempt-gap-classification.md)
 
 ## NEXT（優先順）
 
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md)
-- [`IMPLEMENTATION_TASKS/stage-timeline-open-attempt-gap-classification.md`](IMPLEMENTATION_TASKS/stage-timeline-open-attempt-gap-classification.md)
 - [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
 - [`IMPLEMENTATION_TASKS/gitexec-and-git-archive-command-boundary.md`](IMPLEMENTATION_TASKS/gitexec-and-git-archive-command-boundary.md)
 - [`IMPLEMENTATION_TASKS/observationexec-copyfile-forklock-scope.md`](IMPLEMENTATION_TASKS/observationexec-copyfile-forklock-scope.md)

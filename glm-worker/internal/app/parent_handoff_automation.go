@@ -25,15 +25,26 @@ func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) pa
 		st = state.AttachStateStore(cfg)
 	}
 	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
-	if output.Consistent && output.RequiredAction != nil && *output.RequiredAction == string(state.ParentActionResubmitReport) && (output.ParentRequest == nil || output.ParentRequest.TaskAttribution.Matches) {
-		wf := workflow.NewWorkflow(cfg, st, nil, io.Discard)
-		if wf.SummaryRecoveryAvailable() == nil {
-			return output
-		}
+	if applyAvailableSummaryRecoveryHandoff(cfg, st, &output) {
+		return output
 	}
 	applyCanonicalControllerHandoff(cfg, &output)
 	applyReportResubmissionAvailability(cfg, st, &output)
 	return output
+}
+
+func applyAvailableSummaryRecoveryHandoff(cfg config.AppConfig, st *state.StateStore, output *parentHandoffOutput) bool {
+	if !output.Consistent || output.RequiredAction == nil ||
+		*output.RequiredAction != string(state.ParentActionResubmitReport) ||
+		(output.ParentRequest != nil && !output.ParentRequest.TaskAttribution.Matches) {
+		return false
+	}
+	wf := workflow.NewWorkflow(cfg, st, nil, io.Discard)
+	if wf.SummaryRecoveryAvailable() != nil {
+		return false
+	}
+	applyCanonicalControllerHandoff(cfg, output)
+	return true
 }
 
 func applyReportResubmissionAvailability(cfg config.AppConfig, st *state.StateStore, output *parentHandoffOutput) {
