@@ -7,12 +7,10 @@ import (
 )
 
 func (s *StateStore) ResolveObservationExecutionIndeterminate(executionID, detail string, completedAt time.Time) error {
-	records, err := s.ObservationExecutions()
-	if err != nil {
-		return err
-	}
-	for index := range records {
-		record := &records[index]
+	doc,err:=s.readObservationDocument()
+	if err!=nil{return err}
+	for index := range doc.Records {
+		record := &doc.Records[index]
 		if record.ExecutionID != executionID {
 			continue
 		}
@@ -23,7 +21,7 @@ func (s *StateStore) ResolveObservationExecutionIndeterminate(executionID, detai
 		record.Detail = strings.TrimSpace(detail)
 		record.ExitSource = "recovery"
 		record.CompletedAtRFC3339 = completedAt.UTC().Format(time.RFC3339Nano)
-		return s.writeObservationExecutions(records)
+		return s.writeObservationDocument(doc)
 	}
 	return fmt.Errorf("observation execution %s has no durable in-flight identity", executionID)
 }
