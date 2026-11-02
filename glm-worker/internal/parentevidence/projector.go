@@ -913,8 +913,8 @@ func (p *Projector) validateDiffSnapshots() error {
 		if err != nil {
 			return fmt.Errorf("diff evidence changed before delivery: %w", err)
 		}
-		digest, err := Digest(DiffBody{Question: check.question, Paths: check.paths, Files: files, Body: patch})
-		if err != nil || digest != check.digest {
+		digest, _ := Digest(DiffBody{Question: check.question, Paths: check.paths, Files: files, Body: patch})
+		if digest != check.digest {
 			return fmt.Errorf("diff evidence changed before delivery; request fresh evidence")
 		}
 	}
