@@ -173,3 +173,17 @@ func TestDiffIdentityDeliveryAndReviewProofBinding(t *testing.T) {
 	}
 	assertChangedDiffIdentity(t, first, next)
 }
+
+func TestDiffIdentityDoesNotFollowIntermediateSymlinkOutsideRepository(t *testing.T) {
+	repoRoot, _ := newReviewCoverageStore(t)
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repoRoot, "external")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := diffWorktreeIdentity(repoRoot, "external/secret.txt"); err == nil {
+		t.Fatal("diff worktree identity crossed repository boundary")
+	}
+}

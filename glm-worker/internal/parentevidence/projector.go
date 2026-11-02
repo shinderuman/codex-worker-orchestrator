@@ -139,14 +139,14 @@ type SearchBody struct {
 }
 
 type DiffFile struct {
-	Path        string `json:"path"`
-	Status      string `json:"status"`
-	HeadBlob    string `json:"head_blob"`
-	IndexBlob   string `json:"index_blob"`
-	WorktreeSHA string `json:"worktree_sha256"`
+	Path         string `json:"path"`
+	Status       string `json:"status"`
+	HeadBlob     string `json:"head_blob"`
+	IndexBlob    string `json:"index_blob"`
+	WorktreeSHA  string `json:"worktree_sha256"`
 	WorktreeMode string `json:"worktree_mode,omitempty"`
-	Additions   int    `json:"additions"`
-	Deletions   int    `json:"deletions"`
+	Additions    int    `json:"additions"`
+	Deletions    int    `json:"deletions"`
 }
 
 type DiffBody struct {
@@ -577,7 +577,11 @@ func diffIndexBlob(repoRoot string, path string) string {
 }
 
 func diffWorktreeIdentity(repoRoot, path string) (string, string, error) {
-	abs := filepath.Join(repoRoot, filepath.FromSlash(path))
+	root, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	abs := filepath.Join(root, filepath.FromSlash(path))
 	info, err := os.Lstat(abs)
 	if os.IsNotExist(err) {
 		// Deletions have no worktree object. HEAD/index and patch carry their identity.
@@ -585,6 +589,13 @@ func diffWorktreeIdentity(repoRoot, path string) (string, string, error) {
 	}
 	if err != nil {
 		return "", "", fmt.Errorf("inspect diff path %q: %w", path, err)
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return "", "", fmt.Errorf("resolve diff path parent %q: %w", path, err)
+	}
+	if parent != root && !strings.HasPrefix(parent, root+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("diff path %q escapes repository boundary", path)
 	}
 	mode := info.Mode().String()
 	var content []byte
