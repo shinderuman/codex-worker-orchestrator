@@ -3,6 +3,7 @@ package workflow
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,8 @@ import (
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
+
+var errQualitySurfaceNoChangedPaths = errors.New("quality surface has no changed paths")
 
 var qualitySurfaceOwnerLocatorPaths = []string{
 	"glm-worker/internal/workflow/quality_gate.go",
@@ -212,7 +215,7 @@ func (w *Workflow) currentQualitySurfaceReviewTargets() ([]string, error) {
 		targets = append(targets, target)
 	}
 	if len(targets) == 0 {
-		return nil, fmt.Errorf("quality surface has no changed paths")
+		return nil, errQualitySurfaceNoChangedPaths
 	}
 	return targets, nil
 }
@@ -234,13 +237,10 @@ func (w *Workflow) qualitySurfaceApprovalReviewTargets() ([]string, bool, error)
 	if targetsErr == nil {
 		return targets, false, nil
 	}
-	if w.collectChangedPaths == nil {
-		return qualitySurfaceOwnerReviewTargets(), false, fmt.Errorf("quality surface changed-path collector is unavailable")
+	if errors.Is(targetsErr, errQualitySurfaceNoChangedPaths) {
+		return qualitySurfaceOwnerReviewTargets(), true, nil
 	}
-	if _, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", "")); err != nil {
-		return qualitySurfaceOwnerReviewTargets(), false, fmt.Errorf("collect quality surface changed paths: %w", err)
-	}
-	return qualitySurfaceOwnerReviewTargets(), true, nil
+	return qualitySurfaceOwnerReviewTargets(), false, targetsErr
 }
 
 func (w *Workflow) qualitySurfaceDriftOutsideGitReason(reason string) string {

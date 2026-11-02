@@ -2,8 +2,11 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -80,6 +83,58 @@ func TestRecoverUnstartedMilestoneRebindsCrashedStartupIntoLegalStop(t *testing.
 	}
 	if err := recoveryWorkflow(cfg, st).RecoverUnstartedMilestone(); err == nil {
 		t.Fatal("startup recovery replaced a stopped runtime")
+	}
+}
+
+func TestRecoverUnstartedMilestoneRejectsEmptyRequestWithoutCorruptingError(t *testing.T) {
+	t.Parallel()
+	cfg, _, st, _ := crashUnstartedMilestoneStartup(t)
+	if err := st.Write("last-request", ""); err != nil {
+		t.Fatal(err)
+	}
+	err := recoveryWorkflow(cfg, st).RecoverUnstartedMilestone()
+	if err == nil || !strings.Contains(err.Error(), "empty last-request") || strings.Contains(err.Error(), "%!w") {
+		t.Fatalf("empty recovery request error = %v", err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, state.ErrNoResumeCheckpoint) {
+		t.Fatalf("invalid recovery created checkpoint: %v", err)
+	}
+}
+
+func TestRecoverUnstartedMilestonePreservesMissingRequestIOFailure(t *testing.T) {
+	t.Parallel()
+	cfg, _, st, _ := crashUnstartedMilestoneStartup(t)
+	if err := st.Remove("last-request"); err != nil {
+		t.Fatal(err)
+	}
+	err := recoveryWorkflow(cfg, st).RecoverUnstartedMilestone()
+	if !errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "%!w") {
+		t.Fatalf("missing last-request I/O provenance = %v", err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, state.ErrNoResumeCheckpoint) {
+		t.Fatalf("failed recovery created checkpoint: %v", err)
+	}
+	if st.TaskStatus() != state.TaskStatusActive {
+		t.Fatalf("failed recovery changed runtime status: %q", st.TaskStatus())
+	}
+}
+
+func TestRecoverUnstartedMilestonePreservesUnreadableCheckpointFailure(t *testing.T) {
+	t.Parallel()
+	cfg, _, st, _ := crashUnstartedMilestoneStartup(t)
+	if err := st.Write("resume-state.json", "{invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); err == nil || errors.Is(err, state.ErrNoResumeCheckpoint) {
+		t.Fatalf("fixture checkpoint unexpectedly readable/absent: %v", err)
+	}
+	w := recoveryWorkflow(cfg, st)
+	w.canonicalAdmission = &controller.Admission{}
+	err := w.verifyUnstartedMilestoneRuntime()
+	var syntaxErr *json.SyntaxError
+	if err == nil || !strings.Contains(err.Error(), "cannot read resume checkpoint") ||
+		strings.Contains(err.Error(), "%!w") || !errors.As(err, &syntaxErr) {
+		t.Fatalf("unreadable checkpoint lost JSON error provenance: %v", err)
 	}
 }
 

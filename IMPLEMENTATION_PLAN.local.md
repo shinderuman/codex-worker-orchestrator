@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/recovery-rejection-error-provenance.md`](IMPLEMENTATION_TASKS/recovery-rejection-error-provenance.md)
+- [`IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md`](IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md)
 
 ## NEXT（優先順）
 
@@ -26,7 +26,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md)
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
 - [`IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md`](IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md)
-- [`IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md`](IMPLEMENTATION_TASKS/validation-evidence-unreadable-seal.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md`](IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md)

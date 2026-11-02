@@ -127,8 +127,11 @@ func (s *Store) validateCompletionFailure(op ExecutionOperation, phase Transitio
 		return fmt.Errorf("completion failure evidence binding differs")
 	}
 	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, failure.RemoteOID, remote)
-	if err != nil || !contains {
-		return fmt.Errorf("completion failure remote proof differs: %w", err)
+	if err != nil {
+		return fmt.Errorf("inspect completion failure remote proof: %w", err)
+	}
+	if !contains {
+		return fmt.Errorf("completion failure remote proof differs")
 	}
 	if completionFailureProvesNoWrite(phase.Completion.WriteIntent, failure, op.Terminal.Policy) {
 		return nil
@@ -159,8 +162,11 @@ func (s *Store) validateCompletionAbortSource(op ExecutionOperation, head Reposi
 		return err
 	}
 	descendant, err := isPublicationDescendant(s.identity.PrimaryRoot, c.BaseOID, remote)
-	if err != nil || !descendant {
-		return fmt.Errorf("completion abort remote is outside the original base: %w", err)
+	if err != nil {
+		return fmt.Errorf("inspect completion abort base history: %w", err)
+	}
+	if !descendant {
+		return fmt.Errorf("completion abort remote is outside the original base")
 	}
 	if err := s.validateTerminalPrimarySource(op); err != nil {
 		return err

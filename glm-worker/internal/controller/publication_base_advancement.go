@@ -115,9 +115,7 @@ func (s *Store) applyBaseAdvancement(op ExecutionOperation) error {
 		return err
 	}
 	if remote != expectedRemote {
-		if err := s.abortRacedBaseAdvancement(op, remote); err != nil {
-			return err
-		}
+		return s.abortRacedBaseAdvancement(op, remote)
 	}
 	if err := s.validateRetiredAdvancementBoundary(op); err != nil {
 		return err
