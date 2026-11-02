@@ -246,6 +246,7 @@ func requireNormalTaskHarness(cfg config.AppConfig) error {
 		if tracked {
 			return fmt.Errorf("normal task admission refuses missing tracked repository harness marker (%s: %s)", repositoryharness.MarkerPath, decision.Reason)
 		}
+		return nil
 	}
 	return fmt.Errorf("normal task admission requires canonical task authority (%s: %s); non-harness task authority is not yet connected", repositoryharness.MarkerPath, decision.Reason)
 }
