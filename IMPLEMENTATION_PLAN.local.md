@@ -12,7 +12,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/terminal-metadata-retirement-lint-recovery.md`](IMPLEMENTATION_TASKS/terminal-metadata-retirement-lint-recovery.md)
 - [`IMPLEMENTATION_TASKS/install-smoke-probe-readiness.md`](IMPLEMENTATION_TASKS/install-smoke-probe-readiness.md)
 - [`IMPLEMENTATION_TASKS/execution-authority-reentry-successor-projection.md`](IMPLEMENTATION_TASKS/execution-authority-reentry-successor-projection.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)

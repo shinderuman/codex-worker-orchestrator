@@ -9,6 +9,7 @@ type PublicationAdvancementRequired struct {
 	ControllerGeneration uint64
 	RemoteOID            string
 	Action               string
+	Reason               string
 }
 
 type CompletionFailure struct {
@@ -21,6 +22,12 @@ type CompletionFailure struct {
 }
 
 func (e *PublicationAdvancementRequired) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("publication transition %s was not applied; candidate reentry unavailable at controller generation %d for remote %s: %s", e.TransitionID, e.ControllerGeneration, e.RemoteOID, e.Reason)
+	}
+	if e.Action == PublicationOperationReenter {
+		return fmt.Sprintf("publication transition %s was not applied; run glm-parent-action prepare controller-publication --operation reenter at controller generation %d for remote %s", e.TransitionID, e.ControllerGeneration, e.RemoteOID)
+	}
 	return fmt.Sprintf("publication transition %s was not applied; %s at controller generation %d for remote %s", e.TransitionID, e.Action, e.ControllerGeneration, e.RemoteOID)
 }
 
@@ -42,15 +49,29 @@ func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryCon
 	if head.ControllerGeneration != op.Transition.TargetGeneration || head.PendingTransitionID != "" {
 		return ExecutionOperationResult{}, fmt.Errorf("aborted publication no longer owns controller")
 	}
-	action := publicationAbortAction(op)
-	if op.Terminal != nil && phase.Completion != nil && phase.Completion.AbortRemoteOID == op.Source.Head.IntegrationTip {
-		action = "reenter-accepted-candidate"
-	}
+	action, reason := s.publicationAbortRecoveryAction(op, head, phase)
 	remote := phase.Observed[op.Transition.Effects[0].Key()]
 	if op.Terminal != nil && phase.Completion != nil {
 		remote = phase.Completion.AbortRemoteOID
 	}
-	return ExecutionOperationResult{}, &PublicationAdvancementRequired{TransitionID: op.Transition.TransitionID, ControllerGeneration: head.ControllerGeneration, RemoteOID: remote, Action: action}
+	return ExecutionOperationResult{}, &PublicationAdvancementRequired{TransitionID: op.Transition.TransitionID, ControllerGeneration: head.ControllerGeneration, RemoteOID: remote, Action: action, Reason: reason}
+}
+
+func (s *Store) publicationAbortRecoveryAction(op ExecutionOperation, head RepositoryControllerHead, phase TransitionState) (string, string) {
+	if op.Terminal == nil || phase.Completion == nil || phase.Completion.AbortRemoteOID != op.Source.Head.IntegrationTip {
+		return publicationAbortAction(op), ""
+	}
+	if head.AcceptedCandidateRef == nil {
+		return "", "aborted completion has no accepted candidate"
+	}
+	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return "", err.Error()
+	}
+	if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
+		return "", err.Error()
+	}
+	return PublicationOperationReenter, ""
 }
 
 func (s *Store) abortCompletionPrepare(op ExecutionOperation, phase TransitionState, remote string) error {

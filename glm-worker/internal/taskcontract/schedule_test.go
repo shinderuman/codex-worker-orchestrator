@@ -141,3 +141,42 @@ func TestPlanScheduleMarkdownLinksPreserveSectionsAndRetirement(t *testing.T) {
 		t.Fatalf("retired linked plan: active=%q err=%v", active, err)
 	}
 }
+
+func TestRetirePlanTaskRemovesScheduleLinesWithoutSyntheticBlankRuns(t *testing.T) {
+	root := "IMPLEMENTATION_TASKS/root.md"
+	first := "IMPLEMENTATION_TASKS/first.md"
+	second := "IMPLEMENTATION_TASKS/second.md"
+	blocked := "IMPLEMENTATION_TASKS/blocked.md"
+	link := func(path string) string { return "- [`" + path + "`](" + path + ")" }
+	for _, next := range [][]string{{first, second}, {first}} {
+		plan := "# Plan\n\n## ACTIVE\n\n" + link(root) + "\n\n## NEXT\n\n"
+		for _, path := range next {
+			plan += link(path) + "\n"
+		}
+		plan += "\n## BLOCKED\n\n" + link(blocked) + "\n"
+		result, err := RetirePlanTask(plan, root, first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(result, "\n\n\n") {
+			t.Fatalf("retirement created extra blank lines:\n%s", result)
+		}
+		schedule := ParsePlanSchedule(result)
+		active, err := schedule.ValidateComplete()
+		if err != nil || active != first || len(schedule.Next) != len(next)-1 ||
+			len(schedule.Blocked) != 1 || schedule.Blocked[0] != blocked ||
+			!strings.Contains(result, "## ACTIVE\n\n"+link(first)) ||
+			!strings.Contains(result, "## BLOCKED\n\n"+link(blocked)) {
+			t.Fatalf("retirement changed schedule or link formatting: %q %v", result, err)
+		}
+		if len(next) > 1 && (!strings.Contains(result, "## NEXT\n\n"+link(second)) || schedule.Next[0] != second) {
+			t.Fatalf("retirement changed NEXT priority: %q", result)
+		}
+	}
+	plan := "# Plan\n\n## ACTIVE\n\n" + link(root) + "\n\n## NEXT\n\n## BLOCKED\n\n" + link(blocked) + "\n"
+	result, err := RetirePlanTask(plan, blocked, "")
+	if err != nil || strings.Contains(result, "\n\n\n") || strings.Contains(result, link(blocked)) ||
+		!strings.Contains(result, "## NEXT\n\n## BLOCKED\n") {
+		t.Fatalf("blocked retirement with no NEXT: %q %v", result, err)
+	}
+}

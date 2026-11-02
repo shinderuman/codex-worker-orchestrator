@@ -69,3 +69,51 @@ func terminalMetadataChangesByPath(t *testing.T, metadata TerminalMetadata) map[
 	}
 	return changes
 }
+
+func TestRetireTerminalMetadataNormalizesPlanWithNextBoundaryAndDependencies(t *testing.T) {
+	root, first, second, blocked := "IMPLEMENTATION_TASKS/root.md", "IMPLEMENTATION_TASKS/first.md",
+		"IMPLEMENTATION_TASKS/second.md", "IMPLEMENTATION_TASKS/blocked.md"
+	link := func(path string) string { return "- [`" + path + "`](" + path + ")" }
+	for _, next := range [][]string{{first, second}, {first}} {
+		plan := "# Plan\n\n## ACTIVE\n\n" + link(root) + "\n\n## NEXT\n\n"
+		for _, path := range next {
+			plan += link(path) + "\n"
+		}
+		plan += "\n## BLOCKED\n\n" + link(blocked) + "\n"
+		tasks := map[string][]byte{
+			root:    []byte("# root\n\n## Dependencies\n\nnone\n"),
+			first:   []byte("# first\n\n## Dependencies\n\nnone\n"),
+			blocked: []byte("# blocked\n\n## Dependencies\n\n- `" + root + "`\n"),
+		}
+		if len(next) == 2 {
+			tasks[second] = []byte("# second\n\n## Dependencies\n\nnone\n")
+		}
+		result, err := RetireTerminalMetadata([]byte(plan), tasks, root, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		changes := terminalMetadataChangesByPath(t, result)
+		if !changes[root].Delete || result.Successor != first {
+			t.Fatalf("retirement deleted wrong Task or promoted wrong NEXT: %#v", result)
+		}
+		planResult := string(changes["IMPLEMENTATION_PLAN.local.md"].NewBytes)
+		if strings.Contains(planResult, "\n\n\n") ||
+			!strings.Contains(planResult, "## ACTIVE\n\n"+link(first)) ||
+			!strings.Contains(planResult, "## BLOCKED\n\n"+link(blocked)) {
+			t.Fatalf("generated Plan lost canonical spacing or links:\n%s", planResult)
+		}
+		parsed := taskcontract.ParsePlanSchedule(planResult)
+		active, err := parsed.ValidateComplete()
+		if err != nil || active != first || len(parsed.Next) != len(next)-1 ||
+			len(parsed.Blocked) != 1 || parsed.Blocked[0] != blocked {
+			t.Fatalf("generated Plan lost schedule: %#v, %v", parsed, err)
+		}
+		if len(next) == 2 && (parsed.Next[0] != second || !strings.Contains(planResult, link(second))) {
+			t.Fatalf("generated Plan reordered NEXT: %s", planResult)
+		}
+		deps, err := taskcontract.ParseTaskDependencyState(changes[blocked].NewBytes)
+		if err != nil || len(deps.Outstanding) != 0 || len(deps.Fulfilled) != 1 || deps.Fulfilled[0] != root {
+			t.Fatalf("dependent Task did not record the original fulfilled dependency: %#v %v", deps, err)
+		}
+	}
+}

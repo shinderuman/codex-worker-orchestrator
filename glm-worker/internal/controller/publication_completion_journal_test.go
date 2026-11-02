@@ -198,7 +198,7 @@ func TestCompletionReadinessFailureRestoresUnpublishedPreparation(t *testing.T) 
 				return
 			}
 			var refusal *PublicationAdvancementRequired
-			if !errors.As(err, &refusal) || refusal.Action != "reenter-accepted-candidate" {
+			if !errors.As(err, &refusal) || refusal.Action != PublicationOperationReenter {
 				t.Fatalf("unfinished runtime did not return existing repair action: %v", err)
 			}
 			after, err := CaptureWorkspaceSnapshot(fixture.store.identity.PrimaryRoot)
@@ -239,7 +239,7 @@ func TestCompletionRemoteRejectionRestoresUnpublishedPreparation(t *testing.T) {
 	}
 	_, err = fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: implementation.CandidateID})
 	var refusal *PublicationAdvancementRequired
-	if !errors.As(err, &refusal) || refusal.Action != "reenter-accepted-candidate" {
+	if !errors.As(err, &refusal) || refusal.Action != PublicationOperationReenter {
 		t.Fatalf("definite server refusal did not return repair action: %v", err)
 	}
 	after, err := CaptureWorkspaceSnapshot(fixture.store.identity.PrimaryRoot)

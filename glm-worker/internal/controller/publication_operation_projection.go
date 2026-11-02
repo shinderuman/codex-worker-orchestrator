@@ -66,6 +66,7 @@ const (
 	PublicationOperationFinalValidation       = "final-validation"
 	PublicationOperationPromote               = "promote"
 	PublicationOperationPublish               = "publish"
+	PublicationOperationReenter               = "reenter"
 	PublicationOperationSuccessorStart        = "successor-start"
 	PublicationOperationValidationFailure     = "resolve-validation-failure"
 	PublicationOperationInstall               = "install-completion"
@@ -424,7 +425,33 @@ func (s *Store) ProjectParentCompletionOperation(requested string) (ParentComple
 	if requested == PublicationOperationReopen && operation.Operation == PublicationOperationAccept {
 		return s.projectUnsealedReopen(operation.Command.ExpectedGeneration), nil
 	}
+	if requested == PublicationOperationReenter && operation.Operation == PublicationOperationPublish {
+		head, err := s.LoadHead()
+		if err != nil {
+			return ParentCompletionOperation{}, err
+		}
+		candidate, err := s.projectReentryCandidate(operation, head)
+		if err != nil {
+			return ParentCompletionOperation{}, err
+		}
+		return s.projectCandidateOperation(head, candidate, PublicationOperationReenter), nil
+	}
 	return ParentCompletionOperation{}, fmt.Errorf("completion operation %s is not admitted at %s", requested, operation.Operation)
+}
+
+func (s *Store) projectReentryCandidate(operation ParentCompletionOperation, head RepositoryControllerHead) (AcceptedCandidate, error) {
+	if operation.Command == nil || head.AcceptedCandidateRef == nil ||
+		head.ControllerGeneration != operation.Command.ExpectedGeneration || head.PendingTransitionID != "" {
+		return AcceptedCandidate{}, fmt.Errorf("candidate reentry projection changed since publication admission")
+	}
+	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return AcceptedCandidate{}, err
+	}
+	if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
+		return AcceptedCandidate{}, fmt.Errorf("candidate reentry preflight: %w", err)
+	}
+	return candidate, nil
 }
 
 func (s *Store) runtimeAwaitingCompletion(head RepositoryControllerHead) (bool, error) {
