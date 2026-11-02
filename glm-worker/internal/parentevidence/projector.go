@@ -144,6 +144,7 @@ type DiffFile struct {
 	HeadBlob    string `json:"head_blob"`
 	IndexBlob   string `json:"index_blob"`
 	WorktreeSHA string `json:"worktree_sha256"`
+	WorktreeMode string `json:"worktree_mode,omitempty"`
 	Additions   int    `json:"additions"`
 	Deletions   int    `json:"deletions"`
 }
@@ -499,21 +500,19 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 		part.Reason = err.Error()
 		return p.recordPart(part, state.ParentEvidenceSurfaceDiff)
 	}
-	identity := make([]string, 0, len(files)*2)
-	for _, file := range files {
-		identity = append(identity, file.Path, file.HeadBlob, file.IndexBlob, file.WorktreeSHA)
-	}
-	part.Digest = StringDigest(append([]string{request.Question}, identity...)...)
-	diffBody := DiffBody{Question: request.Question, Paths: request.Paths, Files: files}
+	diffBody := DiffBody{Question: request.Question, Paths: request.Paths, Files: files, Body: body}
+	// The delivered patch and its per-path metadata share the delivery identity.
+	// A new patch, file type, mode, or worktree content must never match a prior claim.
+	part.Digest, _ = Digest(diffBody)
 	if len(body) > request.BudgetBytes {
 		part.Status = PartRefinement
 		part.Reason = fmt.Sprintf(
 			"diff body needs %d bytes but the budget is %d; narrow paths or raise budget_bytes; per-file identity is preserved",
 			len(body), request.BudgetBytes,
 		)
+		diffBody.Body = ""
 	} else {
 		part.Status = PartProjected
-		diffBody.Body = body
 		part.Bytes = len(body)
 		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
@@ -543,7 +542,10 @@ func captureDiff(repoRoot string, paths []string) ([]DiffFile, string, error) {
 			file.HeadBlob = ""
 		}
 		file.IndexBlob = diffIndexBlob(repoRoot, path)
-		file.WorktreeSHA = diffWorktreeSHA(repoRoot, path)
+		file.WorktreeSHA, file.WorktreeMode, err = diffWorktreeIdentity(repoRoot, path)
+		if err != nil {
+			return nil, "", err
+		}
 		file.Additions, file.Deletions = diffNumstat(string(numstat), path)
 		files = append(files, file)
 	}
@@ -574,17 +576,35 @@ func diffIndexBlob(repoRoot string, path string) string {
 	return fields[1]
 }
 
-func diffWorktreeSHA(repoRoot string, path string) string {
-	abs, err := joinRoot(repoRoot, path)
-	if err != nil {
-		return ""
+func diffWorktreeIdentity(repoRoot, path string) (string, string, error) {
+	abs := filepath.Join(repoRoot, filepath.FromSlash(path))
+	info, err := os.Lstat(abs)
+	if os.IsNotExist(err) {
+		// Deletions have no worktree object. HEAD/index and patch carry their identity.
+		return "", "", nil
 	}
-	content, err := os.ReadFile(abs)
 	if err != nil {
-		return ""
+		return "", "", fmt.Errorf("inspect diff path %q: %w", path, err)
+	}
+	mode := info.Mode().String()
+	var content []byte
+	switch {
+	case info.Mode().IsRegular():
+		content, err = os.ReadFile(abs)
+	case info.Mode()&os.ModeSymlink != 0:
+		var target string
+		target, err = os.Readlink(abs)
+		content = []byte(target)
+	default:
+		// A directory/pathspec's admissibility is a separate parent-owned decision.
+		// Its tracked child patch is still included in the diff digest.
+		return "", mode, nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("read diff path %q: %w", path, err)
 	}
 	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), mode, nil
 }
 
 func diffNumstat(numstatOutput string, path string) (int, int) {
