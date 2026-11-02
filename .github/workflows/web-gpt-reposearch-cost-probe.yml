@@ -1,0 +1,28 @@
+name: Repo Search Index Flag Cost Probe
+on:
+  push:
+    branches:
+      - web-gpt/repo-search-index-flag-cache-correctness-codex-review
+    paths:
+      - .github/workflows/web-gpt-reposearch-cost-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read canonical Go version
+        id: go-version
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go-version.outputs.go_version }}
+          cache: false
+      - name: Measure the target corpus
+        working-directory: glm-worker
+        run: go test -count=1 -run '^TestRepoSearchIndexFlagsCostRepresentativeCorpus$' -v ./internal/reposearch
