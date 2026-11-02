@@ -11,6 +11,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func TestNormalTaskAdmissionDoesNotAssumeHarnessInForeignGitRepository(t *testing.T) {
@@ -52,7 +55,7 @@ func TestNormalTaskAdmissionDoesNotAssumeHarnessInForeignGitRepository(t *testin
 				t.Fatalf("unexpected initial controller: exists=%v err=%v", exists, err)
 			}
 			_, err = activateWorkflowConfig(Command{Mode: ModeNewTask}, cfg)
-			if err == nil || !strings.Contains(err.Error(), "canonical non-harness task authority is not defined") || !strings.Contains(err.Error(), tc.reason) {
+			if err == nil || !strings.Contains(err.Error(), "non-harness") || !strings.Contains(err.Error(), tc.reason) {
 				t.Fatalf("inactive harness admission must fail explicitly without reading the Plan: %v", err)
 			}
 			if exists, err := controller.Exists(cfg); err != nil || exists {
@@ -112,6 +115,65 @@ func TestNormalTaskAdmissionKeepsCommittedHarnessAuthority(t *testing.T) {
 	}
 	if after.ControllerGeneration != before.ControllerGeneration || after.LiveLeaseID != before.LiveLeaseID || after.LiveAttemptID != before.LiveAttemptID {
 		t.Fatalf("rejected admission changed live controller authority: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestNormalTaskCLIRejectsUnsupportedScopeBeforeRunner(t *testing.T) {
+	for _, gitRepo := range []bool{false, true} {
+		name := "non-git"
+		want := "non-Git task authority"
+		if gitRepo {
+			name = "git-without-harness"
+			want = repositoryharness.ReasonAbsent
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if gitRepo {
+				runControllerActivationGit(t, root, "init", "-q")
+				runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
+				runControllerActivationGit(t, root, "config", "user.email", "admission@example.invalid")
+			}
+			writeAppTestFile(t, root, "README.md", "foreign project\n")
+			if gitRepo {
+				runControllerActivationGit(t, root, "add", ".")
+				runControllerActivationGit(t, root, "commit", "-qm", "base")
+			}
+			cfg := taskAdmissionTestConfig(t, root)
+			called := false
+			factory := func(_ config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
+				called = true
+				return nil
+			}
+			var stdout, stderr bytes.Buffer
+			err := runEntry([]string{"--task", "request"}, func() (config.AppConfig, error) { return cfg, nil }, factory, bytes.NewReader(nil), &stdout, &stderr)
+			if err == nil || !strings.Contains(err.Error(), want) || called {
+				t.Fatalf("CLI admission result: err=%v runnerFactoryCalled=%v", err, called)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("rejected CLI emitted success output: %q", stdout.String())
+			}
+			if gitRepo {
+				if exists, checkErr := controller.Exists(cfg); checkErr != nil || exists {
+					t.Fatalf("CLI rejection created controller: exists=%v err=%v", exists, checkErr)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalTaskCLIDispatchPreservesActiveHarnessAuthority(t *testing.T) {
+	cfg, rootTask, _, _ := newCanonicalWorkflowCorpus(t)
+	scripted := runCanonicalWorkflow(t, cfg, ModeNewTask, "admission fixture", rootTask, "")
+	store, err := controller.Open(scripted.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.LiveAttemptID == "" || head.LiveLeaseID == "" || head.ExecutionTaskRef == nil || head.ExecutionTaskRef.TaskPath != rootTask {
+		t.Fatalf("model dispatch did not preserve active committed authority: %+v", head)
 	}
 }
 
