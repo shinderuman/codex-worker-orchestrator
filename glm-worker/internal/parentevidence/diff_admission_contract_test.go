@@ -46,9 +46,9 @@ func identityAdmissionManifest(paths ...string) Manifest {
 	return Manifest{
 		Version: ManifestVersion,
 		Reason:  "exact diff path admission",
-		Diff: []DiffRequest{{
-			Question: "exact diff",
-			Paths: paths,
+		Diff:    []DiffRequest{{
+			Question:    "exact diff",
+			Paths:       paths,
 			BudgetBytes: MaxBudgetBytes,
 		}},
 	}

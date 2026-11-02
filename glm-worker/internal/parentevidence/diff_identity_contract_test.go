@@ -188,8 +188,8 @@ func deliverIdentityDiff(t *testing.T, repoRoot string, st *state.StateStore) Pa
 	projector := NewProjector(repoRoot, st, "diff-delivery", Providers{})
 	projector.Project(Manifest{
 		Version: ManifestVersion,
-		Reason: "review diff delivery",
-		Diff: []DiffRequest{{Question: "review", Paths: []string{"review.go"}, BudgetBytes: MaxBudgetBytes}},
+		Reason:  "review diff delivery",
+		Diff:    []DiffRequest{{Question: "review", Paths: []string{"review.go"}, BudgetBytes: MaxBudgetBytes}},
 	})
 	var output bytes.Buffer
 	if err := projector.Commit(&output, "diff identity test"); err != nil {
