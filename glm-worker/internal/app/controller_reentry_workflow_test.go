@@ -129,6 +129,14 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	if !afterReplay.Consistent || afterReplay.RequiredAction == nil || *afterReplay.RequiredAction != string(state.ParentActionReview) {
 		t.Fatalf("idempotent recovery changed canonical review handoff: %#v", afterReplay)
 	}
+	foreign := oldBinding
+	foreign.AttemptID = "foreign-attempt"
+	if err := runtime.SaveControllerRuntimeBinding(foreign); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: materialized.TransitionID}); err == nil {
+		t.Fatal("foreign runtime attempt was accepted by materialization replay")
+	}
 }
 
 func TestPromotedTaskMetadataKeepsPublicationAndReentryAvailable(t *testing.T) {
