@@ -3,6 +3,7 @@ package parentevidence
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -142,7 +145,9 @@ type DiffFile struct {
 	Path         string `json:"path"`
 	Status       string `json:"status"`
 	HeadBlob     string `json:"head_blob"`
+	HeadMode     string `json:"head_mode,omitempty"`
 	IndexBlob    string `json:"index_blob"`
+	IndexMode    string `json:"index_mode,omitempty"`
 	WorktreeSHA  string `json:"worktree_sha256"`
 	WorktreeMode string `json:"worktree_mode,omitempty"`
 	Additions    int    `json:"additions"`
@@ -173,6 +178,12 @@ type Providers struct {
 	Search      func(SearchRequest) Part
 }
 
+type diffCheck struct {
+	paths []string
+	question string
+	digest string
+}
+
 type Projector struct {
 	repoRoot      string
 	st            *state.StateStore
@@ -182,6 +193,7 @@ type Projector struct {
 	pendingClaims []state.ParentEvidenceLedgerEntry
 	leaseEpoch    int64
 	leaseErr      error
+	diffChecks    []diffCheck
 }
 
 const (
@@ -322,11 +334,25 @@ func validateDiffPart(request DiffRequest) error {
 		return machinecli.UsageErrorf("evidence manifestのdiff budget_bytesは1..262144で指定してください")
 	}
 	for _, path := range request.Paths {
-		if !RelativePath(path) {
-			return machinecli.UsageErrorf("evidence manifestのdiff pathsはrepository相対pathだけを受理します: " + path)
+		if !exactDiffPath(path) {
+			return machinecli.UsageErrorf("evidence manifestのdiff pathsはrepository相対のexact file pathだけを受理します: " + path)
 		}
 	}
 	return nil
+}
+
+func exactDiffPath(path string) bool {
+	if !RelativePath(path) || filepath.IsAbs(path) || strings.HasPrefix(path, ":") ||
+		strings.HasSuffix(path, "/") || strings.ContainsAny(path, "\x00*?[]") ||
+		path != filepath.ToSlash(filepath.Clean(path)) {
+		return false
+	}
+	for _, component := range strings.Split(path, "/") {
+		if component == "" || component == "." || component == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func validateSourcePart(request SourceRequest) error {
@@ -351,6 +377,7 @@ func RelativePath(path string) bool {
 }
 
 func (p *Projector) Project(manifest Manifest) {
+	p.diffChecks = nil
 	p.leaseEpoch, p.leaseErr = p.st.ParentEvidenceLeaseEpoch()
 	p.output = Output{
 		Version:     ManifestVersion,
@@ -502,6 +529,7 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 	}
 	diffBody := DiffBody{Question: request.Question, Paths: request.Paths, Files: files, Body: body}
 	part.Digest, _ = Digest(diffBody)
+	p.diffChecks = append(p.diffChecks, diffCheck{paths: append([]string(nil), request.Paths...), question: request.Question, digest: part.Digest})
 	if len(body) > request.BudgetBytes {
 		part.Status = PartRefinement
 		part.Reason = fmt.Sprintf(
@@ -520,34 +548,211 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 }
 
 func captureDiff(repoRoot string, paths []string) ([]DiffFile, string, error) {
-	body, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-textconv", "--no-renames", "--"}, paths...)...)
+	files, body, err := captureDiffOnce(repoRoot, paths)
 	if err != nil {
-		return nil, "", fmt.Errorf("git diff HEAD: %w", err)
+		return nil, "", err
 	}
-	numstat, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--numstat", "--no-renames", "--"}, paths...)...)
+	nextFiles, nextBody, err := captureDiffOnce(repoRoot, paths)
 	if err != nil {
-		return nil, "", fmt.Errorf("git diff HEAD --numstat: %w", err)
+		return nil, "", err
 	}
-	status, err := gitOutputIn(repoRoot, append([]string{"status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}, paths...)...)
+	if !reflect.DeepEqual(files, nextFiles) || body != nextBody {
+		return nil, "", fmt.Errorf("diff source changed during capture; request fresh evidence")
+	}
+	return files, body, nil
+}
+
+func captureDiffOnce(repoRoot string, paths []string) ([]DiffFile, string, error) {
+	root, err := os.OpenRoot(repoRoot)
 	if err != nil {
-		return nil, "", fmt.Errorf("git status: %w", err)
+		return nil, "", fmt.Errorf("open repository root: %w", err)
 	}
+	defer root.Close()
 	files := make([]DiffFile, 0, len(paths))
+	var untracked strings.Builder
 	for _, path := range paths {
-		file := DiffFile{Path: path, Status: diffFileStatusLetter(string(status), path)}
-		file.HeadBlob, err = gitTrimmedOutput(repoRoot, "rev-parse", "--verify", "HEAD:"+path)
-		if err != nil {
-			file.HeadBlob = ""
+		if !exactDiffPath(path) {
+			return nil, "", fmt.Errorf("invalid exact diff path %q", path)
 		}
-		file.IndexBlob = diffIndexBlob(repoRoot, path)
-		file.WorktreeSHA, file.WorktreeMode, err = diffWorktreeIdentity(repoRoot, path)
+		headMode, headBlob, err := gitDiffEntry(repoRoot, path, false)
 		if err != nil {
 			return nil, "", err
 		}
-		file.Additions, file.Deletions = diffNumstat(string(numstat), path)
+		indexMode, indexBlob, err := gitDiffEntry(repoRoot, path, true)
+		if err != nil {
+			return nil, "", err
+		}
+		worktreeSHA, worktreeMode, content, present, err := diffWorktreeObject(root, path)
+		if err != nil {
+			return nil, "", err
+		}
+		if headBlob == "" && indexBlob == "" && !present {
+			return nil, "", fmt.Errorf("diff path %q does not exist in HEAD, index or worktree", path)
+		}
+		file := DiffFile{Path: path, HeadBlob: headBlob, HeadMode: headMode, IndexBlob: indexBlob,
+			IndexMode: indexMode, WorktreeSHA: worktreeSHA, WorktreeMode: worktreeMode}
+		if headBlob == "" && indexBlob == "" {
+			file.Status = "?"
+			untracked.WriteString(untrackedDiffSection(path, worktreeMode, content))
+		}
 		files = append(files, file)
 	}
-	return files, string(body), nil
+	patch, err := gitLiteralOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-textconv", "--no-renames", "--"}, paths...)...)
+	if err != nil {
+		return nil, "", fmt.Errorf("git diff HEAD: %w", err)
+	}
+	numstat, err := gitLiteralOutputIn(repoRoot, append([]string{"diff", "HEAD", "--numstat", "--no-renames", "--"}, paths...)...)
+	if err != nil {
+		return nil, "", fmt.Errorf("git diff HEAD --numstat: %w", err)
+	}
+	status, err := gitLiteralOutputIn(repoRoot, append([]string{"status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}, paths...)...)
+	if err != nil {
+		return nil, "", fmt.Errorf("git status: %w", err)
+	}
+	for i := range files {
+		if files[i].Status != "?" {
+			files[i].Status = diffFileStatusLetter(string(status), files[i].Path)
+		}
+		files[i].Additions, files[i].Deletions = diffNumstat(string(numstat), files[i].Path)
+	}
+	return files, string(patch) + untracked.String(), nil
+}
+
+func gitDiffEntry(repoRoot, path string, index bool) (string, string, error) {
+	var args []string
+	if index {
+		args = []string{"ls-files", "-s", "-z", "--", path}
+	} else {
+		args = []string{"ls-tree", "-z", "HEAD", "--", path}
+	}
+	data, err := gitLiteralOutputIn(repoRoot, args...)
+	if err != nil {
+		return "", "", fmt.Errorf("read Git entry for %q: %w", path, err)
+	}
+	if len(data) == 0 {
+		return "", "", nil
+	}
+	var mode, object string
+	for _, row := range bytes.Split(bytes.TrimSuffix(data, []byte{0}), []byte{0}) {
+		meta, name, ok := bytes.Cut(row, []byte{'\t'})
+		if !ok || string(name) != path {
+			return "", "", fmt.Errorf("non-exact Git entry for %q", path)
+		}
+		fields := strings.Fields(string(meta))
+		if len(fields) != 3 || mode != "" || (index && fields[2] != "0") ||
+			(!index && fields[1] != "blob") ||
+			(fields[0] != "100644" && fields[0] != "100755" && fields[0] != "120000") {
+			return "", "", fmt.Errorf("unsupported or ambiguous Git entry for %q", path)
+		}
+		mode = fields[0]
+		if index {
+			object = fields[1]
+		} else {
+			object = fields[2]
+		}
+	}
+	return mode, object, nil
+}
+
+func diffWorktreeObject(root *os.Root, path string) (string, string, []byte, bool, error) {
+	components := strings.Split(path, "/")
+	for i := 1; i < len(components); i++ {
+		prefix := strings.Join(components[:i], "/")
+		info, err := root.Lstat(prefix)
+		if os.IsNotExist(err) {
+			return "", "", nil, false, nil
+		}
+		if err != nil {
+			return "", "", nil, false, fmt.Errorf("inspect diff parent %q: %w", prefix, err)
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return "", "", nil, false, fmt.Errorf("non-directory or symlink diff parent %q", prefix)
+		}
+	}
+	info, err := root.Lstat(path)
+	if os.IsNotExist(err) {
+		return "", "", nil, false, nil
+	}
+	if err != nil {
+		return "", "", nil, false, fmt.Errorf("inspect diff path %q: %w", path, err)
+	}
+	mode := info.Mode().String()
+	var content []byte
+	switch {
+	case info.Mode().IsRegular():
+		file, err := root.Open(path)
+		if err != nil {
+			return "", "", nil, false, fmt.Errorf("open diff path %q: %w", path, err)
+		}
+		opened, statErr := file.Stat()
+		if statErr == nil && (!opened.Mode().IsRegular() || !os.SameFile(info, opened)) {
+			statErr = fmt.Errorf("diff path changed during read")
+		}
+		if statErr == nil {
+			content, statErr = io.ReadAll(file)
+		}
+		closeErr := file.Close()
+		if statErr != nil {
+			return "", "", nil, false, fmt.Errorf("read diff path %q: %w", path, statErr)
+		}
+		if closeErr != nil {
+			return "", "", nil, false, closeErr
+		}
+	case info.Mode()&os.ModeSymlink != 0:
+		target, err := root.Readlink(path)
+		if err != nil {
+			return "", "", nil, false, fmt.Errorf("read diff link %q: %w", path, err)
+		}
+		content = []byte(target)
+	default:
+		return "", "", nil, false, fmt.Errorf("unsupported diff worktree type for %q: %s", path, mode)
+	}
+	after, err := root.Lstat(path)
+	if err != nil || !os.SameFile(info, after) || info.Mode() != after.Mode() ||
+		info.Size() != after.Size() || !info.ModTime().Equal(after.ModTime()) {
+		return "", "", nil, false, fmt.Errorf("diff path %q changed during capture", path)
+	}
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:]), mode, content, true, nil
+}
+
+func diffWorktreeIdentity(repoRoot, path string) (string, string, error) {
+	root, err := os.OpenRoot(repoRoot)
+	if err != nil {
+		return "", "", err
+	}
+	defer root.Close()
+	digest, mode, _, _, err := diffWorktreeObject(root, path)
+	return digest, mode, err
+}
+
+func untrackedDiffSection(path, mode string, content []byte) string {
+	name := "a/" + path + " b/" + path
+	dst := "b/" + path
+	if strings.ContainsAny(path, " \t\n\\\"") {
+		name = strconv.Quote("a/"+path) + " " + strconv.Quote("b/"+path)
+		dst = strconv.Quote(dst)
+	}
+	var body strings.Builder
+	fmt.Fprintf(&body, "diff --git %s\nnew untracked file mode %s\n--- /dev/null\n+++ %s\n", name, mode, dst)
+	if !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
+		fmt.Fprintf(&body, "untracked content (base64): %s\n", base64.StdEncoding.EncodeToString(content))
+		return body.String()
+	}
+	lines := strings.Split(string(content), "\n")
+	if len(content) == 0 {
+		lines = nil
+	} else if content[len(content)-1] == '\n' {
+		lines = lines[:len(lines)-1]
+	}
+	fmt.Fprintf(&body, "@@ -0,0 +1,%d @@\n", len(lines))
+	for _, line := range lines {
+		fmt.Fprintf(&body, "+%s\n", line)
+	}
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		body.WriteString("\\ No newline at end of file\n")
+	}
+	return body.String()
 }
 
 func diffFileStatusLetter(statusOutput string, path string) string {
@@ -560,57 +765,6 @@ func diffFileStatusLetter(statusOutput string, path string) string {
 		}
 	}
 	return "unknown"
-}
-
-func diffIndexBlob(repoRoot string, path string) string {
-	output, err := gitOutputIn(repoRoot, "ls-files", "-s", "--", path)
-	if err != nil {
-		return ""
-	}
-	fields := strings.Fields(strings.TrimSpace(string(output)))
-	if len(fields) < 2 {
-		return ""
-	}
-	return fields[1]
-}
-
-func diffWorktreeIdentity(repoRoot, path string) (string, string, error) {
-	root, err := filepath.EvalSymlinks(repoRoot)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve repository root: %w", err)
-	}
-	abs := filepath.Join(root, filepath.FromSlash(path))
-	info, err := os.Lstat(abs)
-	if os.IsNotExist(err) {
-		return "", "", nil
-	}
-	if err != nil {
-		return "", "", fmt.Errorf("inspect diff path %q: %w", path, err)
-	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(abs))
-	if err != nil {
-		return "", "", fmt.Errorf("resolve diff path parent %q: %w", path, err)
-	}
-	if parent != root && !strings.HasPrefix(parent, root+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("diff path %q escapes repository boundary", path)
-	}
-	mode := info.Mode().String()
-	var content []byte
-	switch {
-	case info.Mode().IsRegular():
-		content, err = os.ReadFile(abs)
-	case info.Mode()&os.ModeSymlink != 0:
-		var target string
-		target, err = os.Readlink(abs)
-		content = []byte(target)
-	default:
-		return "", mode, nil
-	}
-	if err != nil {
-		return "", "", fmt.Errorf("read diff path %q: %w", path, err)
-	}
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:]), mode, nil
 }
 
 func diffNumstat(numstatOutput string, path string) (int, int) {
@@ -708,6 +862,9 @@ func (p *Projector) commitLocked(stdout io.Writer, reason string) error {
 	if err := p.validateScope(); err != nil {
 		return err
 	}
+	if err := p.validateDiffSnapshots(); err != nil {
+		return err
+	}
 	if LeaseActive(p.st) {
 		if err := p.degradeDuplicateParts(); err != nil {
 			return err
@@ -746,6 +903,20 @@ func (p *Projector) validateScope() error {
 	}
 	if epoch != p.leaseEpoch || p.st.ReadOr("task.id", "") != p.output.TaskID || string(p.st.TaskStatus()) != p.output.TaskStatus {
 		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
+	}
+	return nil
+}
+
+func (p *Projector) validateDiffSnapshots() error {
+	for _, check := range p.diffChecks {
+		files, patch, err := captureDiff(p.repoRoot, check.paths)
+		if err != nil {
+			return fmt.Errorf("diff evidence changed before delivery: %w", err)
+		}
+		digest, err := Digest(DiffBody{Question: check.question, Paths: check.paths, Files: files, Body: patch})
+		if err != nil || digest != check.digest {
+			return fmt.Errorf("diff evidence changed before delivery; request fresh evidence")
+		}
 	}
 	return nil
 }
@@ -890,6 +1061,19 @@ func clearPartBody(part *Part) {
 	case part.Source != nil && part.Source.Content != "":
 		part.Source.Content = ""
 	}
+}
+
+func gitLiteralOutputIn(dir string, args ...string) ([]byte, error) {
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	command.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+	}
+	return output, nil
 }
 
 func gitOutputIn(dir string, args ...string) ([]byte, error) {

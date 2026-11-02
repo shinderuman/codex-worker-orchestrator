@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reviewtarget"
@@ -44,7 +45,7 @@ func TestDiffIdentityModeOnlyChangeAndStableReplay(t *testing.T) {
 	}
 }
 
-func TestDiffIdentityDirectoryChildPatchChange(t *testing.T) {
+func TestDiffIdentityDirectoryRejectedAndExactChildAccepted(t *testing.T) {
 	repoRoot, _ := newReviewCoverageStore(t)
 	dir := filepath.Join(repoRoot, "dir")
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -56,15 +57,16 @@ func TestDiffIdentityDirectoryChildPatchChange(t *testing.T) {
 	}
 	gitReviewCoverageCommand(t, repoRoot, "add", "dir/child.txt")
 	gitReviewCoverageCommand(t, repoRoot, "-c", "user.name=review test", "-c", "user.email=review@example.invalid", "commit", "-qm", "add child")
-	before := captureIdentityPart(t, repoRoot, "dir")
+	if part := NewProjector(repoRoot, nil, "identity-test", Providers{}).projectDiff(DiffRequest{
+		Question: "review", Paths: []string{"dir"}, BudgetBytes: MaxBudgetBytes,
+	}); part.Status != PartError {
+		t.Fatalf("directory unexpectedly accepted: %#v", part)
+	}
+	before := captureIdentityPart(t, repoRoot, "dir/child.txt")
 	if err := os.WriteFile(child, []byte("after\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	after := captureIdentityPart(t, repoRoot, "dir")
-	if before.Diff.Body == after.Diff.Body {
-		t.Fatal("directory child change failed to update patch")
-	}
-	assertChangedDiffIdentity(t, before, after)
+	assertChangedDiffIdentity(t, before, captureIdentityPart(t, repoRoot, "dir/child.txt"))
 }
 
 func TestDiffIdentityUntrackedContentAndFileType(t *testing.T) {
@@ -79,6 +81,9 @@ func TestDiffIdentityUntrackedContentAndFileType(t *testing.T) {
 	}
 	changed := captureIdentityPart(t, repoRoot, "new.txt")
 	assertChangedDiffIdentity(t, regular, changed)
+	if !strings.Contains(changed.Diff.Body, "changed content") {
+		t.Fatalf("untracked content was absent from delivered body: %q", changed.Diff.Body)
+	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +111,7 @@ func TestDiffIdentityTrackedDeleteAndRename(t *testing.T) {
 	for _, mode := range []string{"delete", "rename"} {
 		t.Run(mode, func(t *testing.T) {
 			repoRoot, _ := newReviewCoverageStore(t)
-			before := captureIdentityPart(t, repoRoot, "review.go", "moved.go")
+			before := captureIdentityPart(t, repoRoot, "review.go")
 			src := filepath.Join(repoRoot, "review.go")
 			if mode == "delete" {
 				if err := os.Remove(src); err != nil {
