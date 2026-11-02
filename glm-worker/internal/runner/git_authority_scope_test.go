@@ -2,6 +2,7 @@ package runner
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -90,5 +91,57 @@ func TestGitAuthorityGuardDetectsHeadSymbolicTargetMutation(t *testing.T) {
 	}
 	if !names["refs/heads/"+currentBranch] || !names["refs/heads/bypassed-authority"] {
 		t.Fatalf("ref change evidence lost the symbolic target rename: %#v", guardErr.RefChanges)
+	}
+}
+
+func TestGitAuthorityRefEvidenceIgnoresMoreThanSixtyFourUnrelatedChanges(t *testing.T) {
+	t.Parallel()
+	root := newGitAuthorityRepo(t)
+	runGitAuthorityCommand(t, root, "commit", "--allow-empty", "-q", "-m", "new authority")
+	oldOID := strings.TrimSpace(runGitAuthorityOutput(t, root, "rev-parse", "HEAD~1"))
+	newOID := strings.TrimSpace(runGitAuthorityOutput(t, root, "rev-parse", "HEAD"))
+	runGitAuthorityCommand(t, root, "reset", "--hard", oldOID)
+	current := strings.TrimSpace(runGitAuthorityOutput(t, root, "symbolic-ref", "HEAD"))
+	guard, err := prepareGitAuthorityGuard(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.cleanup()
+	for i := 0; i < 80; i++ {
+		runGitAuthorityCommand(t, root, "update-ref", fmt.Sprintf("refs/heads/irrelevant-%03d", i), newOID)
+	}
+	runGitAuthorityCommand(t, root, "update-ref", "HEAD", newOID)
+	err = guard.verify()
+	var guardErr *GitAuthorityGuardError
+	if !errors.As(err, &guardErr) || guardErr.Stage != guardStageAfterCallMutation {
+		t.Fatalf("authority mutation was not rejected: %v", err)
+	}
+	if guardErr.RefChangesTruncated || len(guardErr.RefChanges) != 1 {
+		t.Fatalf("unrelated churn displaced authority evidence: %#v", guardErr)
+	}
+	change := guardErr.RefChanges[0]
+	if change.Name != current || change.Before == nil || change.After == nil ||
+		change.Before.ObjectID != oldOID || change.After.ObjectID != newOID {
+		t.Fatalf("wrong current-branch ref evidence: %#v", change)
+	}
+}
+
+func TestGitAuthorityDetachedHeadDoesNotReportUnrelatedRefs(t *testing.T) {
+	t.Parallel()
+	root := newGitAuthorityRepo(t)
+	runGitAuthorityCommand(t, root, "checkout", "--detach", "-q", "HEAD")
+	guard, err := prepareGitAuthorityGuard(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guard.cleanup()
+	runGitAuthorityCommand(t, root, "commit", "--allow-empty", "-q", "-m", "detached commit")
+	err = guard.verify()
+	var guardErr *GitAuthorityGuardError
+	if !errors.As(err, &guardErr) || guardErr.Stage != guardStageAfterCallMutation {
+		t.Fatalf("detached HEAD movement not rejected: %v", err)
+	}
+	if len(guardErr.RefChanges) != 0 || guardErr.RefChangesTruncated {
+		t.Fatalf("detached HEAD reported unrelated ref changes: %#v", guardErr)
 	}
 }

@@ -229,7 +229,7 @@ func (g *gitAuthorityGuard) verify() error {
 	if g.before.refsDigest != after.refsDigest {
 		guardErr.RefBeforeDigest = g.before.refsDigest
 		guardErr.RefAfterDigest = after.refsDigest
-		guardErr.RefChanges, guardErr.RefChangesTruncated = gitAuthorityRefChanges(g.before.refs, after.refs)
+		guardErr.RefChanges, guardErr.RefChangesTruncated = gitAuthorityRefChanges(g.before, after)
 	}
 	return guardErr
 }
@@ -254,23 +254,16 @@ func gitAuthoritySnapshotMutations(before, after gitAuthoritySnapshot) []string 
 	return mutations
 }
 
-func gitAuthorityRefChanges(before, after []GitRefState) ([]GitRefChange, bool) {
-	beforeByName := make(map[string]GitRefState, len(before))
-	afterByName := make(map[string]GitRefState, len(after))
-	names := make(map[string]struct{}, len(before)+len(after))
-	for _, ref := range before {
+func gitAuthorityRefChanges(before, after gitAuthoritySnapshot) ([]GitRefChange, bool) {
+	beforeByName := make(map[string]GitRefState, len(before.refs))
+	afterByName := make(map[string]GitRefState, len(after.refs))
+	for _, ref := range before.refs {
 		beforeByName[ref.Name] = ref
-		names[ref.Name] = struct{}{}
 	}
-	for _, ref := range after {
+	for _, ref := range after.refs {
 		afterByName[ref.Name] = ref
-		names[ref.Name] = struct{}{}
 	}
-	ordered := make([]string, 0, len(names))
-	for name := range names {
-		ordered = append(ordered, name)
-	}
-	sort.Strings(ordered)
+	ordered := gitAuthorityRefTargetNames(before.symbolicHead, after.symbolicHead)
 
 	changes := make([]GitRefChange, 0)
 	truncated := false
@@ -296,6 +289,21 @@ func gitAuthorityRefChanges(before, after []GitRefState) ([]GitRefChange, bool) 
 		changes = append(changes, change)
 	}
 	return changes, truncated
+}
+
+func gitAuthorityRefTargetNames(before, after string) []string {
+	names := make(map[string]struct{}, 2)
+	for _, name := range []string{before, after} {
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Strings(ordered)
+	return ordered
 }
 
 func (g *gitAuthorityGuard) cleanup() {
