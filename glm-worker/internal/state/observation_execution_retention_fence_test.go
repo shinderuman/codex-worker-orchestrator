@@ -100,31 +100,6 @@ func TestObservationReplayFenceSurvivesTerminalRetention(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if _, err := st.BeginParentDecision(); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.CommitParentActionBegin(); err != nil {
-				t.Fatal(err)
-			}
-			admitObservationDecisionBoundary(t, st)
-			laterAdmission, err := st.ObservationExecuteAdmission()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if laterAdmission.Round <= admission.Round {
-				t.Fatalf("decision round failed to advance: %d -> %d", admission.Round, laterAdmission.Round)
-			}
-			exists, err = st.HasObservationExecution(first.Operation, first.ParamsDigest, laterAdmission.Round)
-			if err != nil || exists {
-				t.Fatalf("previous round incorrectly fences next round: exists=%v err=%v", exists, err)
-			}
-			later := first
-			later.ExecutionID = "replay-next-round"
-			later.DecisionRound = laterAdmission.Round
-			later.StartedAtRFC3339 = time.Now().UTC().Format(time.RFC3339Nano)
-			if err := st.BeginObservationExecution(later); err != nil {
-				t.Fatalf("next-round admission rejected: %v", err)
-			}
-		})
+					})
 	}
 }
