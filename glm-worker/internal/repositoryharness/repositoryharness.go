@@ -100,9 +100,18 @@ func Evaluate(root string) (Decision, error) {
 	return Decision{Active: true}, nil
 }
 
-// MarkerTracked reports whether the harness marker is tracked, even if absent from the worktree.
+// MarkerTracked reports whether the harness marker is tracked by the index or
+// committed HEAD, even when it is missing from the worktree or staged for removal.
 func MarkerTracked(root string) (bool, error) {
-	return markerTracked(root)
+	tracked, err := markerTracked(root)
+	if err != nil || tracked {
+		return tracked, err
+	}
+	output, err := gitexec.Command("git", root, "ls-tree", "--name-only", "HEAD", "--", MarkerPath).Output()
+	if err != nil {
+		return false, fmt.Errorf("git ls-tree %s: %w", MarkerPath, err)
+	}
+	return strings.TrimSpace(string(output)) != "", nil
 }
 
 func markerTracked(root string) (bool, error) {

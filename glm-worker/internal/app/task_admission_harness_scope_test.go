@@ -97,24 +97,35 @@ func TestNormalTaskAdmissionRetainsExistingCommittedPlanAuthorityWithoutHarness(
 }
 
 func TestNormalTaskAdmissionDoesNotTreatRemovedTrackedMarkerAsOptOut(t *testing.T) {
-	root := t.TempDir()
-	runControllerActivationGit(t, root, "init", "-q")
-	runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
-	runControllerActivationGit(t, root, "config", "user.email", "admission@example.invalid")
-	writeAppTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
-	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
-	writeAppTestFile(t, root, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\nfixture\n\n## Dependencies\n\nnone\n")
-	runControllerActivationGit(t, root, "add", ".")
-	runControllerActivationGit(t, root, "commit", "-qm", "base")
-	if err := os.Remove(filepath.Join(root, repositoryharness.MarkerPath)); err != nil {
-		t.Fatal(err)
-	}
-	cfg := taskAdmissionTestConfig(t, root)
-	if _, err := activateWorkflowConfig(Command{Mode: ModeNewTask}, cfg); err == nil || !strings.Contains(err.Error(), repositoryharness.ReasonAbsent) {
-		t.Fatalf("tracked marker deletion must remain fail-closed: %v", err)
-	}
-	if exists, err := controller.Exists(cfg); err != nil || exists {
-		t.Fatalf("marker deletion created controller: exists=%v err=%v", exists, err)
+	for _, staged := range []bool{false, true} {
+		name := "worktree-only"
+		if staged {
+			name = "staged-deletion"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			runControllerActivationGit(t, root, "init", "-q")
+			runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
+			runControllerActivationGit(t, root, "config", "user.email", "admission@example.invalid")
+			writeAppTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+			writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
+			writeAppTestFile(t, root, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\nfixture\n\n## Dependencies\n\nnone\n")
+			runControllerActivationGit(t, root, "add", ".")
+			runControllerActivationGit(t, root, "commit", "-qm", "base")
+			if staged {
+				runControllerActivationGit(t, root, "rm", "--cached", repositoryharness.MarkerPath)
+			}
+			if err := os.Remove(filepath.Join(root, repositoryharness.MarkerPath)); err != nil {
+				t.Fatal(err)
+			}
+			cfg := taskAdmissionTestConfig(t, root)
+			if _, err := activateWorkflowConfig(Command{Mode: ModeNewTask}, cfg); err == nil || !strings.Contains(err.Error(), repositoryharness.ReasonAbsent) {
+				t.Fatalf("tracked marker deletion must remain fail-closed: %v", err)
+			}
+			if exists, err := controller.Exists(cfg); err != nil || exists {
+				t.Fatalf("marker deletion created controller: exists=%v err=%v", exists, err)
+			}
+		})
 	}
 }
 
