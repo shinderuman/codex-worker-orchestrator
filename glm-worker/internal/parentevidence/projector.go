@@ -563,34 +563,9 @@ func captureDiff(repoRoot string, paths []string) ([]DiffFile, string, error) {
 }
 
 func captureDiffOnce(repoRoot string, paths []string) ([]DiffFile, string, error) {
-	files := make([]DiffFile, 0, len(paths))
-	var untracked strings.Builder
-	for _, path := range paths {
-		if !exactDiffPath(path) {
-			return nil, "", fmt.Errorf("invalid exact diff path %q", path)
-		}
-		headMode, headBlob, err := gitDiffEntry(repoRoot, path, false)
-		if err != nil {
-			return nil, "", err
-		}
-		indexMode, indexBlob, err := gitDiffEntry(repoRoot, path, true)
-		if err != nil {
-			return nil, "", err
-		}
-		worktreeSHA, worktreeMode, content, present, err := diffWorktreeObject(repoRoot, path)
-		if err != nil {
-			return nil, "", err
-		}
-		if headBlob == "" && indexBlob == "" && !present {
-			return nil, "", fmt.Errorf("diff path %q does not exist in HEAD, index or worktree", path)
-		}
-		file := DiffFile{Path: path, HeadBlob: headBlob, HeadMode: headMode, IndexBlob: indexBlob,
-			IndexMode: indexMode, WorktreeSHA: worktreeSHA, WorktreeMode: worktreeMode}
-		if headBlob == "" && indexBlob == "" {
-			file.Status = "?"
-			untracked.WriteString(untrackedDiffSection(path, worktreeMode, content))
-		}
-		files = append(files, file)
+	files, untracked, err := collectDiffFiles(repoRoot, paths)
+	if err != nil {
+		return nil, "", err
 	}
 	patch, err := gitLiteralOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-textconv", "--no-renames", "--"}, paths...)...)
 	if err != nil {
@@ -610,34 +585,86 @@ func captureDiffOnce(repoRoot string, paths []string) ([]DiffFile, string, error
 		}
 		files[i].Additions, files[i].Deletions = diffNumstat(string(numstat), files[i].Path)
 	}
-	return files, string(patch) + untracked.String(), nil
+	return files, string(patch) + untracked, nil
+}
+
+func collectDiffFiles(repoRoot string, paths []string) ([]DiffFile, string, error) {
+	files := make([]DiffFile, 0, len(paths))
+	var untracked strings.Builder
+	for _, path := range paths {
+		file, content, err := collectDiffFile(repoRoot, path)
+		if err != nil {
+			return nil, "", err
+		}
+		files = append(files, file)
+		untracked.WriteString(content)
+	}
+	return files, untracked.String(), nil
+}
+
+func collectDiffFile(repoRoot, path string) (DiffFile, string, error) {
+	if !exactDiffPath(path) {
+		return DiffFile{}, "", fmt.Errorf("invalid exact diff path %q", path)
+	}
+	headMode, headBlob, err := gitDiffEntry(repoRoot, path, false)
+	if err != nil {
+		return DiffFile{}, "", err
+	}
+	indexMode, indexBlob, err := gitDiffEntry(repoRoot, path, true)
+	if err != nil {
+		return DiffFile{}, "", err
+	}
+	worktreeSHA, worktreeMode, content, present, err := diffWorktreeObject(repoRoot, path)
+	if err != nil {
+		return DiffFile{}, "", err
+	}
+	if headBlob == "" && indexBlob == "" && !present {
+		return DiffFile{}, "", fmt.Errorf("diff path %q does not exist in HEAD, index or worktree", path)
+	}
+	file := DiffFile{
+		Path:         path,
+		HeadBlob:     headBlob,
+		HeadMode:     headMode,
+		IndexBlob:    indexBlob,
+		IndexMode:    indexMode,
+		WorktreeSHA:  worktreeSHA,
+		WorktreeMode: worktreeMode,
+	}
+	if headBlob == "" && indexBlob == "" {
+		file.Status = "?"
+		return file, untrackedDiffSection(path, worktreeMode, content), nil
+	}
+	return file, "", nil
 }
 
 func gitDiffEntry(repoRoot, path string, index bool) (string, string, error) {
-	var args []string
+	args := []string{"ls-tree", "-z", "HEAD", "--", path}
 	if index {
 		args = []string{"ls-files", "-s", "-z", "--", path}
-	} else {
-		args = []string{"ls-tree", "-z", "HEAD", "--", path}
 	}
 	data, err := gitLiteralOutputIn(repoRoot, args...)
 	if err != nil {
 		return "", "", fmt.Errorf("read Git entry for %q: %w", path, err)
 	}
+	return parseDiffGitEntry(data, path, index)
+}
+
+func parseDiffGitEntry(data []byte, path string, index bool) (string, string, error) {
+	var mode, object string
 	if len(data) == 0 {
 		return "", "", nil
 	}
-	var mode, object string
 	for _, row := range bytes.Split(bytes.TrimSuffix(data, []byte{0}), []byte{0}) {
 		meta, name, ok := bytes.Cut(row, []byte{'\t'})
-		if !ok || string(name) != path {
-			return "", "", fmt.Errorf("non-exact Git entry for %q", path)
+		if !ok || string(name) != path || mode != "" {
+			return "", "", fmt.Errorf("non-exact or ambiguous Git entry for %q", path)
 		}
 		fields := strings.Fields(string(meta))
-		if len(fields) != 3 || mode != "" || (index && fields[2] != "0") ||
-			(!index && fields[1] != "blob") ||
-			(fields[0] != "100644" && fields[0] != "100755" && fields[0] != "120000") {
-			return "", "", fmt.Errorf("unsupported or ambiguous Git entry for %q", path)
+		if len(fields) != 3 || !supportedDiffGitMode(fields[0]) {
+			return "", "", fmt.Errorf("unsupported Git entry for %q", path)
+		}
+		if index && fields[2] != "0" || !index && fields[1] != "blob" {
+			return "", "", fmt.Errorf("unsupported or unmerged Git entry for %q", path)
 		}
 		mode = fields[0]
 		if index {
@@ -647,6 +674,10 @@ func gitDiffEntry(repoRoot, path string, index bool) (string, string, error) {
 		}
 	}
 	return mode, object, nil
+}
+
+func supportedDiffGitMode(mode string) bool {
+	return mode == "100644" || mode == "100755" || mode == "120000"
 }
 
 func untrackedDiffSection(path, mode string, content []byte) string {
@@ -999,22 +1030,3 @@ func gitLiteralOutputIn(dir string, args ...string) ([]byte, error) {
 	return output, nil
 }
 
-func gitOutputIn(dir string, args ...string) ([]byte, error) {
-	command := exec.Command("git", args...)
-	command.Dir = dir
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
-	}
-	return output, nil
-}
-
-func gitTrimmedOutput(dir string, args ...string) (string, error) {
-	output, err := gitOutputIn(dir, args...)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
-}
