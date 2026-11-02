@@ -72,3 +72,67 @@ func TestDarwinObservationCancelledPreflightDoesNotLaunchTarget(t *testing.T) {
 		t.Fatalf("preflight failure created target result: %s", outcome.LogPath)
 	}
 }
+
+
+func TestDarwinObservationCancelledTargetReapsProcess(t *testing.T) {
+	binDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "target-pid")
+	cacheDir := t.TempDir()
+	sandbox := filepath.Join(binDir, "sandbox-exec")
+	sandboxScript := "#!/bin/sh\nif [ \"$1\" = \"-p\" ]; then shift 2; fi\nexec \"$@\"\n"
+	if err := os.WriteFile(sandbox, []byte(sandboxScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	goPath := filepath.Join(binDir, "go")
+	goScript := "#!/bin/sh\nif [ \"$1\" = \"env\" ] && [ \"$2\" = \"GOMODCACHE\" ]; then\n  printf '%s\\n' \"$OBSERVATION_TEST_MODCACHE\"\n  exit 0\nfi\nprintf '%s' \"$$\" > " + strconv.Quote(marker) + "\nexec sleep 30\n"
+	if err := os.WriteFile(goPath, []byte(goScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("OBSERVATION_TEST_MODCACHE", cacheDir)
+	moduleDir := writeIsolatedModule(t, "package example\n\nimport \"testing\"\n\nfunc TestValue(t *testing.T) {}\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		deadline := time.After(4 * time.Second)
+		for {
+			if _, err := os.Stat(marker); err == nil {
+				cancel()
+				return
+			}
+			select {
+			case <-deadline:
+				cancel()
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+	}()
+	started := time.Now()
+	outcome := RunIsolatedGoTest(ctx, GoTestInput{
+		ModuleDir: moduleDir, ArtifactDir: t.TempDir(), ExecutionID: "target-cancel-darwin", DeadlineMS: 15000,
+	})
+	<-stopped
+	if outcome.Status != StatusFail || outcome.ExitSource != exitSourceCancelled {
+		t.Fatalf("cancelled Darwin target outcome = %+v", outcome)
+	}
+	if time.Since(started) > 12*time.Second {
+		t.Fatalf("Darwin target cancellation exceeded bounded termination")
+	}
+	if outcome.LogPath == "" {
+		t.Fatal("target cancellation did not retain target execution log")
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("target subprocess never started: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		t.Fatalf("invalid target PID: %q %v", data, err)
+	}
+	if err := syscall.Kill(pid, 0); err == nil || err != syscall.ESRCH {
+		t.Fatalf("cancelled target process %d still exists: %v", pid, err)
+	}
+}
