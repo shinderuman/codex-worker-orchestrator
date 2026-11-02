@@ -150,32 +150,7 @@ func executeControllerSemanticObserveLive(
 }
 
 func currentControllerSemanticAdmission(cfg config.AppConfig, store *controller.Store) (controller.Admission, error) {
-	bound, err := controller.ParentContinuationConfig(cfg)
-	if err != nil {
-		return controller.Admission{}, err
-	}
-	cfg = bound
-	head, err := store.LoadHead()
-	if err != nil {
-		return controller.Admission{}, err
-	}
-	authority, err := controller.MutationAuthorityFromHead(head)
-	if err != nil {
-		return controller.Admission{}, err
-	}
-	identity, err := controller.ResolveRepositoryIdentity(cfg.RepoRoot)
-	if err != nil {
-		return controller.Admission{}, err
-	}
-	workspace, err := controller.ResolveWorkspaceIdentity(cfg.RepoRoot, identity)
-	if err != nil {
-		return controller.Admission{}, err
-	}
-	snapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
-	if err != nil {
-		return controller.Admission{}, err
-	}
-	return store.AdmitMutationOrFailClosed(authority, workspace, snapshot)
+	return controller.CurrentSemanticAdmission(cfg, store)
 }
 
 func executeControllerSemanticObserveTerminal(

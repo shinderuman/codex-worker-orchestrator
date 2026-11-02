@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -261,4 +262,32 @@ func newExecutionRecords(
 		CreatedAt:                   now,
 	}
 	return attempt, lease, nil
+}
+
+func CurrentSemanticAdmission(cfg config.AppConfig, store *Store) (Admission, error) {
+	bound, err := ParentContinuationConfig(cfg)
+	if err != nil {
+		return Admission{}, err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return Admission{}, err
+	}
+	authority, err := MutationAuthorityFromHead(head)
+	if err != nil {
+		return Admission{}, err
+	}
+	identity, err := ResolveRepositoryIdentity(bound.RepoRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	workspace, err := ResolveWorkspaceIdentity(bound.RepoRoot, identity)
+	if err != nil {
+		return Admission{}, err
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(bound.RepoRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	return store.AdmitMutationOrFailClosed(authority, workspace, snapshot)
 }

@@ -1,4 +1,4 @@
-package app
+package workflow
 
 import (
 	"io"
@@ -6,7 +6,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controller.Store, sourceSnapshotID string, task *controller.SemanticTaskRef) (controller.ExecutionOperationResult, error) {
@@ -14,12 +13,12 @@ func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controlle
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	wf := workflow.NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
+	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
 	before, err := wf.CaptureReentryReviewRepairEvidence()
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	admission, err := currentControllerSemanticAdmission(cfg, store)
+	admission, err := controller.CurrentSemanticAdmission(cfg, store)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
@@ -50,7 +49,7 @@ func executeControllerExecutionRecovery(cfg config.AppConfig, store *controller.
 	if err != nil {
 		return result, err
 	}
-	wf := workflow.NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
+	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
 	before, err := store.ReentryReviewRepairEvidence(transitionID)
 	if err != nil {
 		return result, err

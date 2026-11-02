@@ -1,4 +1,4 @@
-package app
+package workflow
 
 import (
 	"crypto/sha256"
@@ -10,11 +10,8 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-// This tests only the pre-transition trust boundary. End-to-end Controller
-// and runtime recovery must still be exercised through the normal CLI owner.
 func TestTaskAuthoritySyncEvidenceAdmissionBoundary(t *testing.T) {
 	t.Parallel()
 
@@ -41,20 +38,20 @@ func TestTaskAuthoritySyncEvidenceAdmissionBoundary(t *testing.T) {
 	binding := state.ControllerRuntimeBinding{
 		AttemptID: "attempt-1", TaskPath: taskPath, TaskContractDigest: digest,
 	}
-	attached := workflow.TaskAuthoritySyncEvidence{
-		Runtime: workflow.TaskAuthorityRuntimeAttached,
+	attached := TaskAuthoritySyncEvidence{
+		Runtime: TaskAuthorityRuntimeAttached,
 		TaskID:  "task-1",
 		Binding: &binding,
 	}
-	check := func(t *testing.T, evidence workflow.TaskAuthoritySyncEvidence, wantError bool) {
+	check := func(t *testing.T, evidence TaskAuthoritySyncEvidence, wantError bool) {
 		t.Helper()
 		payload, err := json.Marshal(evidence)
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = verifyTaskAuthoritySyncRuntime(payload, admission)
+		err = VerifyTaskAuthoritySyncRuntime(payload, admission)
 		if (err != nil) != wantError {
-			t.Fatalf("verifyTaskAuthoritySyncRuntime(%+v): error=%v, wantError=%v", evidence, err, wantError)
+			t.Fatalf("VerifyTaskAuthoritySyncRuntime(%+v): error=%v, wantError=%v", evidence, err, wantError)
 		}
 	}
 
@@ -62,17 +59,17 @@ func TestTaskAuthoritySyncEvidenceAdmissionBoundary(t *testing.T) {
 		check(t, attached, false)
 	})
 	t.Run("unstarted runtime requires no attached binding", func(t *testing.T) {
-		check(t, workflow.TaskAuthoritySyncEvidence{Runtime: workflow.TaskAuthorityRuntimeUnstarted}, false)
+		check(t, TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeUnstarted}, false)
 	})
 	for _, tc := range []struct {
 		name   string
-		mutate func(*workflow.TaskAuthoritySyncEvidence)
+		mutate func(*TaskAuthoritySyncEvidence)
 	}{
-		{"foreign attempt", func(e *workflow.TaskAuthoritySyncEvidence) { e.Binding.AttemptID = "foreign" }},
-		{"foreign task", func(e *workflow.TaskAuthoritySyncEvidence) { e.Binding.TaskPath = "IMPLEMENTATION_TASKS/other.md" }},
-		{"foreign digest", func(e *workflow.TaskAuthoritySyncEvidence) { e.Binding.TaskContractDigest = "foreign" }},
-		{"missing binding", func(e *workflow.TaskAuthoritySyncEvidence) { e.Binding = nil }},
-		{"unknown runtime phase", func(e *workflow.TaskAuthoritySyncEvidence) { e.Runtime = "unknown" }},
+		{"foreign attempt", func(e *TaskAuthoritySyncEvidence) { e.Binding.AttemptID = "foreign" }},
+		{"foreign task", func(e *TaskAuthoritySyncEvidence) { e.Binding.TaskPath = "IMPLEMENTATION_TASKS/other.md" }},
+		{"foreign digest", func(e *TaskAuthoritySyncEvidence) { e.Binding.TaskContractDigest = "foreign" }},
+		{"missing binding", func(e *TaskAuthoritySyncEvidence) { e.Binding = nil }},
+		{"unknown runtime phase", func(e *TaskAuthoritySyncEvidence) { e.Runtime = "unknown" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			candidate := attached
@@ -89,7 +86,7 @@ func TestTaskAuthoritySyncEvidenceAdmissionBoundary(t *testing.T) {
 		check(t, attached, true)
 	})
 	t.Run("malformed evidence is rejected", func(t *testing.T) {
-		if err := verifyTaskAuthoritySyncRuntime([]byte("{"), admission); err == nil {
+		if err := VerifyTaskAuthoritySyncRuntime([]byte("{"), admission); err == nil {
 			t.Fatal("malformed transition evidence was accepted")
 		}
 	})
