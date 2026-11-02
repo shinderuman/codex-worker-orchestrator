@@ -497,7 +497,8 @@ func TestTaskAuthoritySyncGuardBlocksFreshStartUntilSynced(t *testing.T) {
 	}
 }
 
-func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
+func prepareTaskAuthorityInterruptedSync(t *testing.T) (taskAuthoritySyncFixture, controller.SemanticTaskRef, controller.ExecutionOperationResult, controller.Admission) {
+	t.Helper()
 	f := taskAuthoritySyncLaneFixture(t)
 	revised := f.reviseActiveTask(t, "\n## Amendments\n\nrecovery境界の追加分。\n")
 
@@ -523,6 +524,12 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return f, revised, committed, admission
+}
+
+func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
+	f, revised, committed, _ := prepareTaskAuthorityInterruptedSync(t)
+
 
 	laneCfg := f.cfg
 	laneCfg.RepoRoot = f.source.Workspace.Root
@@ -579,6 +586,13 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
 		t.Fatalf("completed sync recovery is not idempotent: %v", err)
 	}
+}
+
+func TestTaskAuthoritySyncRejectsForeignAndRecoversPartialRuntimeBinding(t *testing.T) {
+	f, revised, committed, admission := prepareTaskAuthorityInterruptedSync(t)
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
+		t.Fatalf("baseline sync runtime recovery failed: %v", err)
+	}
 
 	foreign := revised
 	foreign.ContractDigest = "foreign-recovery-digest"
@@ -606,6 +620,7 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	if err != nil || !bytes.Contains(stored, []byte("recovery境界の追加分。")) {
 		t.Fatalf("mid-boundary recovery did not refresh the task authority snapshot: %v", err)
 	}
+
 }
 
 func TestTaskAuthoritySyncRejectsMissingIdentityWithRetainedRuntime(t *testing.T) {
