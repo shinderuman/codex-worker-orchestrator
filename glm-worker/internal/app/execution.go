@@ -9,6 +9,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
@@ -218,6 +219,22 @@ func acceptRetainedCanonicalWorkflow(cfg config.AppConfig, st *state.StateStore,
 }
 
 func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
+	if cmd.Mode == ModeNewTask {
+		present, err := controller.RepositoryPresent(cfg.RepoRoot)
+		if err != nil {
+			return cfg, fmt.Errorf("inspect normal task repository: %w", err)
+		}
+		if !present {
+			return cfg, fmt.Errorf("normal task admission requires a Git repository; canonical non-Git task authority is not defined")
+		}
+		decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+		if err != nil {
+			return cfg, fmt.Errorf("evaluate normal task repository harness: %w", err)
+		}
+		if !decision.Active {
+			return cfg, fmt.Errorf("normal task admission requires active repository harness (%s: %s); canonical non-harness task authority is not defined", repositoryharness.MarkerPath, decision.Reason)
+		}
+	}
 	if cmd.Mode != ModeNewTask {
 		exists, err := controller.Exists(cfg)
 		if err != nil {
