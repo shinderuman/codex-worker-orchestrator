@@ -207,7 +207,7 @@ func TestDiffIdentityDoesNotFollowIntermediateSymlinkOutsideRepository(t *testin
 	if err := os.Symlink(outside, filepath.Join(repoRoot, "external")); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := diffWorktreeIdentity(repoRoot, "external/secret.txt"); err == nil {
+	if _, _, _, _, err := diffWorktreeObject(repoRoot, "external/secret.txt"); err == nil {
 		t.Fatal("diff worktree identity crossed repository boundary")
 	}
 }

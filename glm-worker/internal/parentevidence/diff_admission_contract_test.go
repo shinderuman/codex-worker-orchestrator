@@ -149,12 +149,7 @@ func TestDiffLeafSymlinkAndUnknownType(t *testing.T) {
 	if err := os.Mkdir(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	root, err := os.OpenRoot(repoRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-	if _, _, _, _, err := diffWorktreeObject(root, "link"); err == nil {
+	if _, _, _, _, err := diffWorktreeObject(repoRoot, "link"); err == nil {
 		t.Fatal("nonregular worktree object had a successful identity")
 	}
 }
