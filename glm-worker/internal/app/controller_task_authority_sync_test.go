@@ -530,7 +530,6 @@ func prepareTaskAuthorityInterruptedSync(t *testing.T) (taskAuthoritySyncFixture
 func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	f, revised, committed, _ := prepareTaskAuthorityInterruptedSync(t)
 
-
 	laneCfg := f.cfg
 	laneCfg.RepoRoot = f.source.Workspace.Root
 	boundLane, err := controller.WorkflowConfig(laneCfg)
@@ -620,7 +619,6 @@ func TestTaskAuthoritySyncRejectsForeignAndRecoversPartialRuntimeBinding(t *test
 	if err != nil || !bytes.Contains(stored, []byte("recovery境界の追加分。")) {
 		t.Fatalf("mid-boundary recovery did not refresh the task authority snapshot: %v", err)
 	}
-
 }
 
 func TestTaskAuthoritySyncRejectsMissingIdentityWithRetainedRuntime(t *testing.T) {
