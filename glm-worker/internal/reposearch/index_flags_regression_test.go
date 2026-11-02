@@ -116,12 +116,14 @@ func TestRepoSearchIndexFlagsScopedToSearchCorpus(t *testing.T) {
 	dir := initRepo(t)
 	writeTestFile(t, filepath.Join(dir, "visible.txt"), "needle\n")
 	writeTestFile(t, filepath.Join(dir, "generated", "hidden.txt"), "needle\n")
+	writeTestFile(t, filepath.Join(dir, "node_modules", "ignored.txt"), "needle\n")
 	commitAll(t, dir, "initial")
 	opts := Options{CacheRoot: t.TempDir(), ExcludeDirs: []string{"generated"}}
 	if report, err := Search(context.Background(), dir, "needle", opts); err != nil || report.CacheStatus != CacheStatusRebuilt {
 		t.Fatalf("initial search: %#v %v", report, err)
 	}
 	gitRun(t, dir, "update-index", "--assume-unchanged", "generated/hidden.txt")
+	gitRun(t, dir, "update-index", "--skip-worktree", "node_modules/ignored.txt")
 	writeTestFile(t, filepath.Join(dir, "generated", "hidden.txt"), "changedneedle\n")
 	if report, err := Search(context.Background(), dir, "needle", opts); err != nil ||
 		report.CacheStatus != CacheStatusHit || !reflect.DeepEqual(resultPaths(report), []string{"visible.txt"}) {
@@ -184,5 +186,26 @@ func TestRepoSearchRejectsMalformedTrackedIndexEntryInsteadOfEmptyCorpus(t *test
 		if entry, included, err := parseTrackedIndexEntry(raw, map[string]bool{}); err == nil || included {
 			t.Fatalf("malformed index entry became search result: raw=%q entry=%#v included=%v err=%v", raw, entry, included, err)
 		}
+	}
+}
+func TestRepoSearchExhaustiveRejectsFlagAppearingDuringScan(t *testing.T) {
+	dir := initRepo(t)
+	writeTestFile(t, filepath.Join(dir, "data.txt"), "needle\n")
+	commitAll(t, dir, "initial")
+	original := captureFingerprint
+	calls := 0
+	captureFingerprint = func(ctx context.Context, root string, excludeDirs map[string]bool) (fingerprint, error) {
+		calls++
+		if calls == 2 {
+			gitRun(t, dir, "update-index", "--skip-worktree", "data.txt")
+		}
+		return original(ctx, root, excludeDirs)
+	}
+	defer func() { captureFingerprint = original }()
+	if report, err := ExhaustiveSearch(context.Background(), dir, "needle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) {
+		t.Fatalf("exhaustive search claimed completion after flag appeared: %#v %v", report, err)
+	}
+	if calls < 2 {
+		t.Fatal("exhaustive search did not reach its post-search fingerprint")
 	}
 }
