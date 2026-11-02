@@ -139,7 +139,6 @@ func TestObservationPreflightNormalAndFailedCommand(t *testing.T) {
 	}
 }
 
-
 func TestObservationPreflightCancellationStopsDescendant(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix shell process-group fixture")
