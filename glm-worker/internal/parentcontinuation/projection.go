@@ -471,7 +471,7 @@ func canonicalExecutionLifecycleTask(cfg config.AppConfig, st *state.StateStore,
 	if parentOnly || boundParentOnlySmokeIdentity(cfg, st) {
 		return task.TaskPath, nil
 	}
-	return canonicalLifecycleTask(st, task, quiescent)
+	return canonicalLifecycleTask(cfg, st, task, quiescent)
 }
 
 func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
@@ -486,18 +486,35 @@ func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
 	return store.LiveParentOnlyExecution()
 }
 
-func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
-	binding, err := st.LoadControllerRuntimeBinding()
-	if err != nil {
-		if quiescent && errors.Is(err, os.ErrNotExist) {
-			return task.TaskPath, nil
+func canonicalLifecycleTask(cfg config.AppConfig, st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
+	binding, bindingErr := st.LoadControllerRuntimeBinding()
+	if bindingErr == nil {
+		if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
+			return "", errors.New("controller runtime binding does not match canonical execution task")
 		}
+		return binding.TaskPath, nil
+	}
+	if !errors.Is(bindingErr, os.ErrNotExist) {
+		return "", bindingErr
+	}
+	if quiescent {
+		return task.TaskPath, nil
+	}
+	unstarted, err := st.UnstartedTaskRuntime()
+	if err != nil {
 		return "", err
 	}
-	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
-		return "", errors.New("controller runtime binding does not match canonical execution task")
+	if !unstarted {
+		return "", bindingErr
 	}
-	return binding.TaskPath, nil
+	committed, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	if err != nil {
+		return "", err
+	}
+	if committed.Task.TaskPath != task.TaskPath || committed.Task.Equal(task) {
+		return "", bindingErr
+	}
+	return task.TaskPath, nil
 }
 
 func retiredRuntimeHandover(cfg config.AppConfig, head *controller.RepositoryControllerHead, lifecycleTask, selectedTask string) (bool, error) {

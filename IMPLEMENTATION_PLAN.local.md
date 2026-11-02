@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/task-revision-worker-admission.md`](IMPLEMENTATION_TASKS/task-revision-worker-admission.md)
+- [`IMPLEMENTATION_TASKS/app-analysis-responsibility-owner.md`](IMPLEMENTATION_TASKS/app-analysis-responsibility-owner.md)
 
 ## NEXT（優先順）
 
@@ -21,7 +21,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/validation-failure-retry-admission.md`](IMPLEMENTATION_TASKS/validation-failure-retry-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
 - [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
-- [`IMPLEMENTATION_TASKS/app-analysis-responsibility-owner.md`](IMPLEMENTATION_TASKS/app-analysis-responsibility-owner.md)
 - [`IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md`](IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md)
 - [`IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`](IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md)

@@ -220,6 +220,25 @@ func (s *StateStore) TaskID() (string, error) {
 	return taskID, nil
 }
 
+func (s *StateStore) UnstartedTaskRuntime() (bool, error) {
+	if _, err := os.Lstat(s.Path("task.id")); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	for _, name := range []string{
+		"task.status", "worker.id", "reviewer.id", "parent-review-state.json",
+		"resume-checkpoint.json", ExecutionMilestonesStateFile, "controller-runtime-binding.json",
+	} {
+		if _, err := os.Lstat(s.Path(name)); err == nil {
+			return false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 func (s *StateStore) TaskStatus() TaskStatus {
 	if status, err := s.Read("task.status"); err == nil && status != "" {
 		return TaskStatus(status)
