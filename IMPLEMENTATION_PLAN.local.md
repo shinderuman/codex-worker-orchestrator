@@ -8,29 +8,29 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md)
+- [`IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md)
 
 ## NEXT（優先順）
 
+- [`IMPLEMENTATION_TASKS/task-admission-harness-scope.md`](IMPLEMENTATION_TASKS/task-admission-harness-scope.md)
+- [`IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md`](IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md)
+- [`IMPLEMENTATION_TASKS/observation-replay-fence-retention.md`](IMPLEMENTATION_TASKS/observation-replay-fence-retention.md)
+- [`IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`](IMPLEMENTATION_TASKS/observation-preparation-cancellation.md)
+- [`IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md)
+- [`IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md`](IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md)
+- [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
-- [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
 - [`IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md`](IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md)
-- [`IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md)
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md`](IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md)
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
-- [`IMPLEMENTATION_TASKS/task-admission-harness-scope.md`](IMPLEMENTATION_TASKS/task-admission-harness-scope.md)
 - [`IMPLEMENTATION_TASKS/task-requirement-reference-closure.md`](IMPLEMENTATION_TASKS/task-requirement-reference-closure.md)
-- [`IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md`](IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md)
-- [`IMPLEMENTATION_TASKS/observation-replay-fence-retention.md`](IMPLEMENTATION_TASKS/observation-replay-fence-retention.md)
-- [`IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`](IMPLEMENTATION_TASKS/observation-preparation-cancellation.md)
-- [`IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md`](IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md)
 - [`IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`](IMPLEMENTATION_TASKS/repo-search-result-context-budget.md)
 - [`IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`](IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md)
 - [`IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`](IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md)
