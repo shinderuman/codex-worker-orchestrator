@@ -70,7 +70,7 @@ func TestNormalTaskAdmissionDoesNotAssumeHarnessInForeignGitRepository(t *testin
 	}
 }
 
-func TestNormalTaskAdmissionRetainsExistingCommittedPlanAuthorityWithoutHarness(t *testing.T) {
+func TestNormalTaskAdmissionDoesNotPromotePlanWithoutHarnessOptIn(t *testing.T) {
 	root := t.TempDir()
 	runControllerActivationGit(t, root, "init", "-q")
 	runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
@@ -80,19 +80,11 @@ func TestNormalTaskAdmissionRetainsExistingCommittedPlanAuthorityWithoutHarness(
 	runControllerActivationGit(t, root, "add", ".")
 	runControllerActivationGit(t, root, "commit", "-qm", "base")
 	cfg := taskAdmissionTestConfig(t, root)
-	if _, err := activateWorkflowConfig(Command{Mode: ModeNewTask}, cfg); err != nil {
-		t.Fatalf("existing committed task authority was rejected: %v", err)
+	if _, err := activateWorkflowConfig(Command{Mode: ModeNewTask}, cfg); err == nil || !strings.Contains(err.Error(), repositoryharness.ReasonAbsent) {
+		t.Fatalf("Plan presence must not imply harness opt-in: %v", err)
 	}
-	store, err := controller.Open(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	head, err := store.LoadHead()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if head.LiveLeaseID == "" || head.ExecutionTaskRef == nil || head.ExecutionTaskRef.TaskPath != "IMPLEMENTATION_TASKS/root.md" {
-		t.Fatalf("committed task authority was not retained: %+v", head)
+	if exists, err := controller.Exists(cfg); err != nil || exists {
+		t.Fatalf("Plan-only admission unexpectedly created controller: exists=%v err=%v", exists, err)
 	}
 }
 

@@ -100,8 +100,6 @@ func Evaluate(root string) (Decision, error) {
 	return Decision{Active: true}, nil
 }
 
-// MarkerTracked reports whether the harness marker is tracked by the index or
-// committed HEAD, even when it is missing from the worktree or staged for removal.
 func MarkerTracked(root string) (bool, error) {
 	tracked, err := markerTracked(root)
 	if err != nil || tracked {

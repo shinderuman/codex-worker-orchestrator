@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -241,49 +239,27 @@ func requireNormalTaskHarness(cfg config.AppConfig) error {
 		return nil
 	}
 	if decision.Reason == repositoryharness.ReasonAbsent {
-		available, err := existingPlanBackedTaskAuthority(cfg.RepoRoot)
+		tracked, err := repositoryharness.MarkerTracked(cfg.RepoRoot)
 		if err != nil {
-			return fmt.Errorf("inspect normal task authority: %w", err)
+			return fmt.Errorf("inspect missing harness marker tracking: %w", err)
 		}
-		if available {
-			return nil
+		if tracked {
+			return fmt.Errorf("normal task admission refuses missing tracked repository harness marker (%s: %s)", repositoryharness.MarkerPath, decision.Reason)
 		}
 	}
-	return fmt.Errorf("normal task admission requires canonical task authority (%s: %s); non-harness task authority is not defined", repositoryharness.MarkerPath, decision.Reason)
+	return fmt.Errorf("normal task admission requires canonical task authority (%s: %s); non-harness task authority is not yet connected", repositoryharness.MarkerPath, decision.Reason)
 }
 
-func existingPlanBackedTaskAuthority(root string) (bool, error) {
-	tracked, err := repositoryharness.MarkerTracked(root)
-	if err != nil {
-		return false, err
+func requireWorkflowAdmission(cmd Command, cfg config.AppConfig) error {
+	if cmd.Mode == ModeNewTask {
+		return requireNormalTaskHarness(cfg)
 	}
-	if tracked {
-		return false, nil
-	}
-	plan, err := os.Lstat(filepath.Join(root, "IMPLEMENTATION_PLAN.local.md"))
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if !plan.Mode().IsRegular() {
-		return false, nil
-	}
-	_, err = controller.ResolveCommittedTaskAuthority(root)
-	return err == nil, nil
+	return requireExistingWorkflowController(cfg)
 }
 
 func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
-	if cmd.Mode == ModeNewTask {
-		if err := requireNormalTaskHarness(cfg); err != nil {
-			return cfg, err
-		}
-	}
-	if cmd.Mode != ModeNewTask {
-		if err := requireExistingWorkflowController(cfg); err != nil {
-			return cfg, err
-		}
+	if err := requireWorkflowAdmission(cmd, cfg); err != nil {
+		return cfg, err
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
