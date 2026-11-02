@@ -12,8 +12,10 @@ func TestRecoverStaleObservationExecutionMarksIndeterminateWithoutReplay(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	round,err:=st.ObservationExecutionRound()
-	if err!=nil{t.Fatal(err)}
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
+	}
 	started := time.Now().UTC().Add(-time.Minute)
 	claim := ObservationExecutionRecord{
 		ExecutionID:      "exec-stale",
@@ -53,8 +55,10 @@ func TestResolveObservationExecutionIndeterminatePreservesIdentity(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	round,err:=st.ObservationExecutionRound()
-	if err!=nil{t.Fatal(err)}
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
+	}
 	claim := ObservationExecutionRecord{
 		ExecutionID:      "exec-boundary",
 		TaskID:           taskID,

@@ -55,7 +55,9 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 }
 
 func (s *StateStore) applyNewTaskCanonicalState(taskID string) error {
-	if err := s.validateObservationTaskRetirement(); err != nil { return err }
+	if err := s.validateObservationTaskRetirement(); err != nil {
+		return err
+	}
 	if err := s.Remove("task.id"); err != nil {
 		return err
 	}
@@ -74,7 +76,9 @@ func (s *StateStore) applyNewTaskCanonicalState(taskID string) error {
 	if err := s.initializeParentReviewState(taskID); err != nil {
 		return err
 	}
-	if err := s.initObservationDocument(taskID); err != nil {return err}
+	if err := s.initObservationDocument(taskID); err != nil {
+		return err
+	}
 	if err := s.Write("task.status", string(TaskStatusActive)); err != nil {
 		return err
 	}
@@ -82,9 +86,13 @@ func (s *StateStore) applyNewTaskCanonicalState(taskID string) error {
 }
 
 func (s *StateStore) validateObservationTaskRetirement() error {
-	if !s.Exists("task.id") { return nil }
+	if !s.Exists("task.id") {
+		return nil
+	}
 	old, err := s.readObservationDocument()
-	if err != nil { return fmt.Errorf("cannot retire old task observation state: %w", err) }
+	if err != nil {
+		return fmt.Errorf("cannot retire old task observation state: %w", err)
+	}
 	for _, record := range old.Records {
 		if record.Status == ObservationExecutionStatusInFlight {
 			return fmt.Errorf("unresolved observation prevents task retirement")

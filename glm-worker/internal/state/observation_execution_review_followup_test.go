@@ -14,8 +14,10 @@ func TestObservationExecutionRetentionNeverEvictsInFlightClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	round,err:=st.ObservationExecutionRound()
-	if err!=nil{t.Fatal(err)}
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
+	}
 	claim := ObservationExecutionRecord{
 		ExecutionID:      "exec-active",
 		TaskID:           taskID,

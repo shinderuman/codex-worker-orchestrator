@@ -1,7 +1,7 @@
 package state
 
 import (
-		"testing"
+	"testing"
 	"time"
 )
 
@@ -12,7 +12,9 @@ func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testin
 		t.Fatal(err)
 	}
 	round, err := st.ObservationExecutionRound()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	started := time.Now().UTC().Format(time.RFC3339Nano)
 	claim := ObservationExecutionRecord{
 		ExecutionID:      "exec-inflight",
@@ -56,27 +58,35 @@ func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testin
 }
 
 func TestObservationExecutionIdentityIsCurrentTaskScoped(t *testing.T) {
-	st:=newObservationExecutionStore(t,observationExecutionDeclaration)
-	round,err:=st.ObservationExecutionRound()
-	if err!=nil{t.Fatal(err)}
-	taskID,err:=st.TaskID()
-	if err!=nil{t.Fatal(err)}
-	doc:=observationExecutionDocument{
-		TaskID:taskID, Round:round,
-		Fence:[]observationFenceIdentity{{ExecutionID:"exec-current-task",Operation:"shadow-eval",ParamsDigest:"current-digest"}},
-		Records:[]ObservationExecutionRecord{{ExecutionID:"exec-current-task",TaskID:taskID,Operation:"shadow-eval",
-			ParamsDigest:"current-digest",Status:ObservationExecutionStatusPass,DecisionRound:round,
-			CompletedAtRFC3339:time.Now().UTC().Format(time.RFC3339Nano)}},
+	st := newObservationExecutionStore(t, observationExecutionDeclaration)
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err:=st.writeObservationDocument(doc);err!=nil{t.Fatal(err)}
-	exists,err:=st.HasObservationExecution("shadow-eval","current-digest",round)
-	if err!=nil || !exists {t.Fatalf("current task fence is lost: %t %v",exists,err)}
-	// A foreign-task record is not a display-only curiosity: it is corrupt
-	// task-owned state and must not be silently imported or adopted.
-	doc.Records=append(doc.Records,ObservationExecutionRecord{
-		ExecutionID:"exec-old-task",TaskID:"old-task-id",Operation:"shadow-eval",
-		ParamsDigest:"shared-digest",Status:ObservationExecutionStatusPass,
-		DecisionRound:round,CompletedAtRFC3339:time.Now().UTC().Format(time.RFC3339Nano),
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := observationExecutionDocument{
+		TaskID: taskID, Round: round,
+		Fence: []observationFenceIdentity{{ExecutionID: "exec-current-task", Operation: "shadow-eval", ParamsDigest: "current-digest"}},
+		Records: []ObservationExecutionRecord{{ExecutionID: "exec-current-task", TaskID: taskID, Operation: "shadow-eval",
+			ParamsDigest: "current-digest", Status: ObservationExecutionStatusPass, DecisionRound: round,
+			CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano)}},
+	}
+	if err := st.writeObservationDocument(doc); err != nil {
+		t.Fatal(err)
+	}
+	exists, err := st.HasObservationExecution("shadow-eval", "current-digest", round)
+	if err != nil || !exists {
+		t.Fatalf("current task fence is lost: %t %v", exists, err)
+	}
+	doc.Records = append(doc.Records, ObservationExecutionRecord{
+		ExecutionID: "exec-old-task", TaskID: "old-task-id", Operation: "shadow-eval",
+		ParamsDigest: "shared-digest", Status: ObservationExecutionStatusPass,
+		DecisionRound: round, CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
 	})
-	if err:=st.writeObservationDocument(doc);err==nil{t.Fatal("foreign task record was accepted")}
+	if err := st.writeObservationDocument(doc); err == nil {
+		t.Fatal("foreign task record was accepted")
+	}
 }

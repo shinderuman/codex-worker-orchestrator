@@ -100,6 +100,6 @@ func TestObservationReplayFenceSurvivesTerminalRetention(t *testing.T) {
 				t.Fatal(err)
 			}
 
-					})
+		})
 	}
 }

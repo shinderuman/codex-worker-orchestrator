@@ -7,8 +7,10 @@ import (
 )
 
 func (s *StateStore) ResolveObservationExecutionIndeterminate(executionID, detail string, completedAt time.Time) error {
-	doc,err:=s.readObservationDocument()
-	if err!=nil{return err}
+	doc, err := s.readObservationDocument()
+	if err != nil {
+		return err
+	}
 	for index := range doc.Records {
 		record := &doc.Records[index]
 		if record.ExecutionID != executionID {

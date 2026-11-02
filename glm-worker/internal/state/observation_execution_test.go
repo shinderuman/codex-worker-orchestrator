@@ -127,7 +127,7 @@ func TestObservationExecutionRecordsRoundScopedAndBounded(t *testing.T) {
 	}
 	exists, err := st.HasObservationExecution("shadow-eval", digests[0], rounds[0])
 	if err == nil || exists {
-		t.Fatalf("stale round Has must fail closed: exists=%v err=%v", exists,err)
+		t.Fatalf("stale round Has must fail closed: exists=%v err=%v", exists, err)
 	}
 	exists, err = st.HasObservationExecution("shadow-eval", digests[0], rounds[2])
 	if err != nil || exists {
@@ -178,8 +178,10 @@ func TestObservationExecutionRoundAdvancesWhenTaskStatsWriteIsLost(t *testing.T)
 
 func TestAppendObservationExecutionBoundsRecordRetention(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
-	round,err:=st.ObservationExecutionRound()
-	if err!=nil{t.Fatal(err)}
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for index := 0; index < observationExecutionsRetention+4; index++ {
 		record := observationExecutionRecordFixture(retentionExecutionID(index), round)
 		if err := st.AppendObservationExecution(record); err != nil {
@@ -204,8 +206,10 @@ func TestAppendObservationExecutionRejectsArtifactsOutsideTaskArtifactDir(t *tes
 	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	round,err:=st.ObservationExecutionRound()
-	if err!=nil{t.Fatal(err)}
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
+	}
 	record := observationExecutionRecordFixture("exec-outside", round)
 	record.Artifacts = []string{outside}
 	if err := st.AppendObservationExecution(record); err == nil {

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,16 +32,15 @@ type ObservationExecutionRecord struct {
 	CompletedAtRFC3339 string   `json:"completed_at,omitempty"`
 }
 
-
 type observationFenceIdentity struct {
-	ExecutionID string `json:"execution_id"`
-	Operation string `json:"operation"`
+	ExecutionID  string `json:"execution_id"`
+	Operation    string `json:"operation"`
 	ParamsDigest string `json:"params_digest"`
 }
 type observationExecutionDocument struct {
-	TaskID string `json:"task_id"`
-	Round int `json:"round"`
-	Fence []observationFenceIdentity `json:"fence"`
+	TaskID  string                       `json:"task_id"`
+	Round   int                          `json:"round"`
+	Fence   []observationFenceIdentity   `json:"fence"`
 	Records []ObservationExecutionRecord `json:"records"`
 }
 
@@ -62,7 +61,6 @@ const (
 	ObservationExecutionStatusIndeterminate = "indeterminate"
 )
 
-
 func (s *StateStore) initObservationDocument(taskID string) error {
 	return s.writeObservationDocument(observationExecutionDocument{
 		TaskID: taskID, Fence: []observationFenceIdentity{}, Records: []ObservationExecutionRecord{},
@@ -75,7 +73,9 @@ func validateObservationDocument(doc observationExecutionDocument) error {
 		return fmt.Errorf("observation current-format document is invalid")
 	}
 	fence, err := validateObservationFence(doc.Fence)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return validateObservationDetails(doc, fence)
 }
 
@@ -99,7 +99,9 @@ func validateObservationDetails(doc observationExecutionDocument, fence map[stri
 	visible := map[string]bool{}
 	terminals := 0
 	for _, record := range doc.Records {
-		if err := validateObservationDetailIdentity(doc, fence, visible, record); err != nil { return err }
+		if err := validateObservationDetailIdentity(doc, fence, visible, record); err != nil {
+			return err
+		}
 		visible[record.ExecutionID] = true
 		if record.Status == ObservationExecutionStatusInFlight {
 			if record.DecisionRound != doc.Round || validateObservationInFlightRecord(record) != nil {
@@ -147,33 +149,51 @@ func validObservationTerminal(record ObservationExecutionRecord) bool {
 
 func (s *StateStore) readObservationDocument() (observationExecutionDocument, error) {
 	data, err := os.ReadFile(s.Path(observationExecutionsStateFile))
-	if err != nil { return observationExecutionDocument{}, fmt.Errorf("observation state unavailable: %w", err) }
+	if err != nil {
+		return observationExecutionDocument{}, fmt.Errorf("observation state unavailable: %w", err)
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var doc observationExecutionDocument
-	if err := dec.Decode(&doc); err != nil { return doc, fmt.Errorf("observation current-format decode: %w", err) }
+	if err := dec.Decode(&doc); err != nil {
+		return doc, fmt.Errorf("observation current-format decode: %w", err)
+	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return doc, fmt.Errorf("observation document trailing data")
 	}
-	if err := validateObservationDocument(doc); err != nil { return doc, err }
+	if err := validateObservationDocument(doc); err != nil {
+		return doc, err
+	}
 	taskID, err := s.TaskID()
-	if err != nil { return doc, err }
-	if doc.TaskID != taskID { return doc, fmt.Errorf("observation document task mismatch") }
+	if err != nil {
+		return doc, err
+	}
+	if doc.TaskID != taskID {
+		return doc, fmt.Errorf("observation document task mismatch")
+	}
 	return doc, nil
 }
 
 func (s *StateStore) writeObservationDocument(doc observationExecutionDocument) error {
 	doc.Records = trimObservationExecutions(doc.Records)
-	if err := validateObservationDocument(doc); err != nil { return err }
+	if err := validateObservationDocument(doc); err != nil {
+		return err
+	}
 	data, err := json.Marshal(doc)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return s.Write(observationExecutionsStateFile, string(data))
 }
 
 func (doc *observationExecutionDocument) advanceObservationRound(round int) error {
-	if round < doc.Round || round <= 0 { return fmt.Errorf("stale observation decision round") }
-	if round == doc.Round { return nil }
+	if round < doc.Round || round <= 0 {
+		return fmt.Errorf("stale observation decision round")
+	}
+	if round == doc.Round {
+		return nil
+	}
 	for _, record := range doc.Records {
 		if record.Status == ObservationExecutionStatusInFlight {
 			return fmt.Errorf("previous-round observation remains in-flight")
@@ -194,12 +214,14 @@ func (doc *observationExecutionDocument) reserveObservationIdentity(record Obser
 		}
 	}
 	for _, previous := range doc.Records {
-		if previous.ExecutionID == record.ExecutionID { return fmt.Errorf("observation execution id still in record history") }
+		if previous.ExecutionID == record.ExecutionID {
+			return fmt.Errorf("observation execution id still in record history")
+		}
 	}
 	if len(doc.Fence) >= observationReplayFenceLimit {
 		return fmt.Errorf("observation replay fence capacity exceeded (%d identities per task/round)", observationReplayFenceLimit)
 	}
-	doc.Fence = append(doc.Fence, observationFenceIdentity{record.ExecutionID,record.Operation,record.ParamsDigest})
+	doc.Fence = append(doc.Fence, observationFenceIdentity{record.ExecutionID, record.Operation, record.ParamsDigest})
 	doc.Records = append(doc.Records, record)
 	return nil
 }
@@ -255,10 +277,12 @@ func (s *StateStore) ObservationExecutionRound() (int, error) {
 	return round, nil
 }
 
-func (s *StateStore) ObservationExecutions() ([]ObservationExecutionRecord,error) {
-	doc,err:=s.readObservationDocument()
-	if err!=nil {return nil,err}
-	return doc.Records,nil
+func (s *StateStore) ObservationExecutions() ([]ObservationExecutionRecord, error) {
+	doc, err := s.readObservationDocument()
+	if err != nil {
+		return nil, err
+	}
+	return doc.Records, nil
 }
 
 func (s *StateStore) ObservationExecutionsForRound(round int) ([]ObservationExecutionRecord, error) {
@@ -279,30 +303,42 @@ func (s *StateStore) ObservationExecutionsForRound(round int) ([]ObservationExec
 	return filtered, nil
 }
 
-func (s *StateStore) HasObservationExecution(operation,paramsDigest string,round int)(bool,error){
-	current,err:=s.ObservationExecutionRound()
-	if err!=nil {return false,err}
-	if current!=round {return false,fmt.Errorf("observation request has noncanonical round")}
-	doc,err:=s.readObservationDocument()
-	if err!=nil {return false,err}
-	if doc.Round>round {return false,fmt.Errorf("observation fence is ahead of canonical lifecycle")}
-	if doc.Round<round {
-		for _,record:=range doc.Records {
-			if record.Status==ObservationExecutionStatusInFlight {
-				return false,fmt.Errorf("old in-flight observation blocks round switch")
+func (s *StateStore) HasObservationExecution(operation, paramsDigest string, round int) (bool, error) {
+	current, err := s.ObservationExecutionRound()
+	if err != nil {
+		return false, err
+	}
+	if current != round {
+		return false, fmt.Errorf("observation request has noncanonical round")
+	}
+	doc, err := s.readObservationDocument()
+	if err != nil {
+		return false, err
+	}
+	if doc.Round > round {
+		return false, fmt.Errorf("observation fence is ahead of canonical lifecycle")
+	}
+	if doc.Round < round {
+		for _, record := range doc.Records {
+			if record.Status == ObservationExecutionStatusInFlight {
+				return false, fmt.Errorf("old in-flight observation blocks round switch")
 			}
 		}
-		return false,nil
+		return false, nil
 	}
-	for _,entry:=range doc.Fence {
-		if entry.Operation==operation && entry.ParamsDigest==paramsDigest {return true,nil}
+	for _, entry := range doc.Fence {
+		if entry.Operation == operation && entry.ParamsDigest == paramsDigest {
+			return true, nil
+		}
 	}
-	return false,nil
+	return false, nil
 }
 
 func (s *StateStore) RecoverStaleObservationExecutions(now time.Time) error {
 	doc, err := s.readObservationDocument()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	records := doc.Records
 	changed := false
 	for index := range records {
@@ -334,57 +370,119 @@ func (s *StateStore) RecoverStaleObservationExecutions(now time.Time) error {
 	return s.writeObservationDocument(doc)
 }
 
-func (s *StateStore) BeginObservationExecution(record ObservationExecutionRecord)error{
-	taskID,err:=s.TaskID();if err!=nil{return err}
-	if record.TaskID=="" {record.TaskID=taskID}
-	if record.TaskID!=taskID {return fmt.Errorf("observation in-flight task mismatch")}
-	if err:=validateObservationInFlightRecord(record);err!=nil{return err}
-	round,err:=s.ObservationExecutionRound();if err!=nil{return err}
-	if round!=record.DecisionRound{return fmt.Errorf("observation request round is noncanonical")}
-	doc,err:=s.readObservationDocument();if err!=nil{return err}
-	if err:=doc.advanceObservationRound(round);err!=nil{return err}
-	if err:=doc.reserveObservationIdentity(record);err!=nil{return err}
+func (s *StateStore) BeginObservationExecution(record ObservationExecutionRecord) error {
+	taskID, err := s.TaskID()
+	if err != nil {
+		return err
+	}
+	if record.TaskID == "" {
+		record.TaskID = taskID
+	}
+	if record.TaskID != taskID {
+		return fmt.Errorf("observation in-flight task mismatch")
+	}
+	if err := validateObservationInFlightRecord(record); err != nil {
+		return err
+	}
+	round, err := s.ObservationExecutionRound()
+	if err != nil {
+		return err
+	}
+	if round != record.DecisionRound {
+		return fmt.Errorf("observation request round is noncanonical")
+	}
+	doc, err := s.readObservationDocument()
+	if err != nil {
+		return err
+	}
+	if err := doc.advanceObservationRound(round); err != nil {
+		return err
+	}
+	if err := doc.reserveObservationIdentity(record); err != nil {
+		return err
+	}
 	return s.writeObservationDocument(doc)
 }
 
 func (s *StateStore) CompleteObservationExecution(record ObservationExecutionRecord) error {
 	taskID, err := s.TaskID()
-	if err != nil { return err }
-	if record.TaskID != taskID { return fmt.Errorf("observation completion task mismatch") }
-	if err := validateObservationExecutionRecord(record, s.ArtifactDir(taskID)); err != nil { return err }
+	if err != nil {
+		return err
+	}
+	if record.TaskID != taskID {
+		return fmt.Errorf("observation completion task mismatch")
+	}
+	if err := validateObservationExecutionRecord(record, s.ArtifactDir(taskID)); err != nil {
+		return err
+	}
 	round, err := s.ObservationExecutionRound()
-	if err != nil { return err }
-	if round != record.DecisionRound { return fmt.Errorf("observation completion round changed") }
+	if err != nil {
+		return err
+	}
+	if round != record.DecisionRound {
+		return fmt.Errorf("observation completion round changed")
+	}
 	doc, err := s.readObservationDocument()
-	if err != nil { return err }
-	if doc.Round != round { return fmt.Errorf("observation completion fence round mismatch") }
+	if err != nil {
+		return err
+	}
+	if doc.Round != round {
+		return fmt.Errorf("observation completion fence round mismatch")
+	}
 	return s.completeObservationInDocument(doc, record)
 }
 
 func (s *StateStore) completeObservationInDocument(doc observationExecutionDocument, record ObservationExecutionRecord) error {
 	for index, existing := range doc.Records {
-		if existing.ExecutionID != record.ExecutionID { continue }
+		if existing.ExecutionID != record.ExecutionID {
+			continue
+		}
 		if existing.Status != ObservationExecutionStatusInFlight || !sameObservationExecutionIdentity(existing, record) {
 			return fmt.Errorf("observation completion does not match durable in-flight identity")
 		}
 		doc.Records[index] = record
-		if err := s.writeObservationDocument(doc); err != nil { return err }
+		if err := s.writeObservationDocument(doc); err != nil {
+			return err
+		}
 		return s.SecureArtifactDir()
 	}
 	return fmt.Errorf("observation completion lacks durable in-flight identity")
 }
 
-func (s *StateStore) AppendObservationExecution(record ObservationExecutionRecord)error{
-	taskID,err:=s.TaskID();if err!=nil{return err}
-	if record.TaskID==""{record.TaskID=taskID}
-	if record.TaskID!=taskID{return fmt.Errorf("observation append task mismatch")}
-	if err:=validateObservationExecutionRecord(record,s.ArtifactDir(taskID));err!=nil{return err}
-	round,err:=s.ObservationExecutionRound();if err!=nil{return err}
-	if round!=record.DecisionRound{return fmt.Errorf("observation append round noncanonical")}
-	doc,err:=s.readObservationDocument();if err!=nil{return err}
-	if err:=doc.advanceObservationRound(round);err!=nil{return err}
-	if err:=doc.reserveObservationIdentity(record);err!=nil{return err}
-	if err:=s.writeObservationDocument(doc);err!=nil{return err}
+func (s *StateStore) AppendObservationExecution(record ObservationExecutionRecord) error {
+	taskID, err := s.TaskID()
+	if err != nil {
+		return err
+	}
+	if record.TaskID == "" {
+		record.TaskID = taskID
+	}
+	if record.TaskID != taskID {
+		return fmt.Errorf("observation append task mismatch")
+	}
+	if err := validateObservationExecutionRecord(record, s.ArtifactDir(taskID)); err != nil {
+		return err
+	}
+	round, err := s.ObservationExecutionRound()
+	if err != nil {
+		return err
+	}
+	if round != record.DecisionRound {
+		return fmt.Errorf("observation append round noncanonical")
+	}
+	doc, err := s.readObservationDocument()
+	if err != nil {
+		return err
+	}
+	if err := doc.advanceObservationRound(round); err != nil {
+		return err
+	}
+	if err := doc.reserveObservationIdentity(record); err != nil {
+		return err
+	}
+	if err := s.writeObservationDocument(doc); err != nil {
+		return err
+	}
 	return s.SecureArtifactDir()
 }
 
