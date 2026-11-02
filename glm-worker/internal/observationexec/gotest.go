@@ -11,8 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 type GoTestInput struct {
@@ -266,24 +267,12 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 		return fmt.Errorf("隔離入力fileを読めません: %w", err)
 	}
 	defer func() { _ = src.Close() }()
-	syscall.ForkLock.RLock()
-	dst, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
-	if err != nil {
-		syscall.ForkLock.RUnlock()
-		return fmt.Errorf("隔離入力のcopy先を作れません: %w", err)
-	}
-	committed := false
-	defer func() {
-		_ = dst.Close()
-		if !committed {
-			_ = os.Remove(destination)
-		}
-		syscall.ForkLock.RUnlock()
-	}()
-	written, err := io.Copy(dst, io.LimitReader(src, remaining))
+	limited := &io.LimitedReader{R: src, N: remaining}
+	temp, err := execfile.WriteStream(filepath.Dir(destination), ".module-copy-*", limited, perm)
 	if err != nil {
 		return fmt.Errorf("隔離入力fileをcopyできません: %w", err)
 	}
+	defer func() { _ = os.Remove(temp) }()
 	var extra [1]byte
 	extraN, extraErr := src.Read(extra[:])
 	if extraN > 0 {
@@ -292,11 +281,13 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 	if extraErr != nil && !errors.Is(extraErr, io.EOF) {
 		return fmt.Errorf("隔離入力fileのsize境界を確認できません: %w", extraErr)
 	}
-	if err := dst.Close(); err != nil {
-		return fmt.Errorf("隔離入力fileを保存できません: %w", err)
+	if err := os.Link(temp, destination); err != nil {
+		return fmt.Errorf("隔離入力のcopy先を公開できません: %w", err)
 	}
-	c.bytes += written
-	committed = true
+	if err := os.Remove(temp); err != nil {
+		return fmt.Errorf("隔離入力の一時fileを削除できません: %w", err)
+	}
+	c.bytes += remaining - limited.N
 	return nil
 }
 
