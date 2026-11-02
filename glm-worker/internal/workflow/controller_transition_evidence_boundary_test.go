@@ -61,6 +61,12 @@ func TestTaskAuthoritySyncEvidenceAdmissionBoundary(t *testing.T) {
 	t.Run("unstarted runtime requires no attached binding", func(t *testing.T) {
 		check(t, TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeUnstarted}, false)
 	})
+	t.Run("unstarted runtime rejects claimed binding", func(t *testing.T) {
+		check(t, TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeUnstarted, Binding: &binding}, true)
+	})
+	t.Run("unstarted runtime rejects claimed task id", func(t *testing.T) {
+		check(t, TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeUnstarted, TaskID: "task-1"}, true)
+	})
 	for _, tc := range []struct {
 		name   string
 		mutate func(*TaskAuthoritySyncEvidence)
@@ -69,6 +75,7 @@ func TestTaskAuthoritySyncEvidenceAdmissionBoundary(t *testing.T) {
 		{"foreign task", func(e *TaskAuthoritySyncEvidence) { e.Binding.TaskPath = "IMPLEMENTATION_TASKS/other.md" }},
 		{"foreign digest", func(e *TaskAuthoritySyncEvidence) { e.Binding.TaskContractDigest = "foreign" }},
 		{"missing binding", func(e *TaskAuthoritySyncEvidence) { e.Binding = nil }},
+		{"missing task identity", func(e *TaskAuthoritySyncEvidence) { e.TaskID = "" }},
 		{"unknown runtime phase", func(e *TaskAuthoritySyncEvidence) { e.Runtime = "unknown" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

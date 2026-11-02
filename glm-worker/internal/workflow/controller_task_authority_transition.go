@@ -42,7 +42,7 @@ func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.
 		return controller.ExecutionOperationResult{}, err
 	}
 	if err := wf.CompleteTaskAuthoritySync(before); err != nil {
-		return controller.ExecutionOperationResult{}, err
+		return result, fmt.Errorf("task authority sync transition %s runtime completion failed: %w", result.TransitionID, err)
 	}
 	return result, nil
 }
@@ -53,9 +53,12 @@ func VerifyTaskAuthoritySyncRuntime(before []byte, admission controller.Admissio
 		return fmt.Errorf("decode task authority sync runtime evidence: %w", err)
 	}
 	if evidence.Runtime == TaskAuthorityRuntimeUnstarted {
+		if evidence.TaskID != "" || evidence.Binding != nil {
+			return fmt.Errorf("unstarted task authority sync must not claim retained runtime identity")
+		}
 		return nil
 	}
-	if evidence.Runtime != TaskAuthorityRuntimeAttached || evidence.Binding == nil {
+	if evidence.Runtime != TaskAuthorityRuntimeAttached || evidence.Binding == nil || evidence.TaskID == "" {
 		return fmt.Errorf("task authority sync evidence is incomplete")
 	}
 	if evidence.Binding.AttemptID != admission.Attempt.AttemptID ||

@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -35,7 +36,7 @@ func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controlle
 		return controller.ExecutionOperationResult{}, err
 	}
 	if err := wf.CompleteReentryReviewRepair(before); err != nil {
-		return controller.ExecutionOperationResult{}, err
+		return result, fmt.Errorf("reentry review transition %s runtime completion failed: %w", result.TransitionID, err)
 	}
 	return result, nil
 }

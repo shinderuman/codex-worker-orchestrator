@@ -24,7 +24,7 @@ type ControllerExecutionCommand struct {
 	UserTermination        *controller.UserTaskTransitionInput       `json:"user_termination,omitempty"`
 	ExecutionTermination   *controller.UserExecutionTransitionInput  `json:"execution_termination,omitempty"`
 	RevisedTask            *controller.SemanticTaskRef               `json:"revised_task,omitempty"`
-	AcceptedResultRecovery *workflow.AcceptedResultRuleRecoveryInput `json:"accepted_result_recovery,omitempty"`
+	AcceptedResultRecovery *AcceptedResultRuleRecoveryInput `json:"accepted_result_recovery,omitempty"`
 }
 
 func ExecuteControllerExecution(cfg config.AppConfig, store *controller.Store, command ControllerExecutionCommand) (controller.ExecutionOperationResult, error) {
@@ -170,12 +170,12 @@ func executeControllerMaterialize(cfg config.AppConfig, store *controller.Store,
 		return result, nil
 	}
 	if err := reenterMaterializedRuntimeCompletion(cfg, result); err != nil {
-		return controller.ExecutionOperationResult{}, err
+		return result, fmt.Errorf("materialized execution transition %s runtime reentry failed: %w", result.TransitionID, err)
 	}
 	if result.ParentSourceReview {
 		cfg.RepoRoot = result.Admission.Workspace.Root
 		if _, err := executeControllerReentryReview(cfg, store); err != nil {
-			return controller.ExecutionOperationResult{}, err
+			return result, fmt.Errorf("materialized execution transition %s review preparation failed: %w", result.TransitionID, err)
 		}
 	}
 	return result, nil
