@@ -1,7 +1,6 @@
 package app
 
 import (
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"bytes"
 	"encoding/json"
 	"os"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func TestExecutionPreparationDoesNotConsumeParentEvidenceLease(t *testing.T) {

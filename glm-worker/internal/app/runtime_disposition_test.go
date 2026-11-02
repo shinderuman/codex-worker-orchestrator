@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func TestActiveCompletionPreservesAndDisposesUnfinishedSuccessor(t *testing.T) {
