@@ -14,6 +14,8 @@ func TestObservationExecutionRetentionNeverEvictsInFlightClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	round,err:=st.ObservationExecutionRound()
+	if err!=nil{t.Fatal(err)}
 	claim := ObservationExecutionRecord{
 		ExecutionID:      "exec-active",
 		TaskID:           taskID,
@@ -21,7 +23,7 @@ func TestObservationExecutionRetentionNeverEvictsInFlightClaims(t *testing.T) {
 		ParamsDigest:     "active-digest",
 		Status:           ObservationExecutionStatusInFlight,
 		DeadlineMS:       30_000,
-		DecisionRound:    0,
+		DecisionRound:    round,
 		StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if err := st.BeginObservationExecution(claim); err != nil {
@@ -34,7 +36,7 @@ func TestObservationExecutionRetentionNeverEvictsInFlightClaims(t *testing.T) {
 			Operation:          "shadow-eval",
 			ParamsDigest:       fmt.Sprintf("digest-%d", index),
 			Status:             ObservationExecutionStatusPass,
-			DecisionRound:      0,
+			DecisionRound:      round,
 			StartedAtRFC3339:   time.Now().UTC().Format(time.RFC3339Nano),
 			CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
 		}
@@ -83,7 +85,7 @@ func TestObservationExecutionsRejectTasklessLegacyState(t *testing.T) {
 	if err := st.Write(observationExecutionsStateFile, string(encoded)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.ObservationExecutions(); err == nil || !strings.Contains(err.Error(), "task_id") {
+	if _, err := st.ObservationExecutions(); err == nil || !strings.Contains(err.Error(), "current-format") {
 		t.Fatalf("taskless legacy observation state must fail closed, got %v", err)
 	}
 }
