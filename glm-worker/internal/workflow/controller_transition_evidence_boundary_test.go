@@ -1,14 +1,13 @@
 package workflow
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -25,7 +24,10 @@ func TestTaskAuthoritySyncEvidenceAdmissionBoundary(t *testing.T) {
 	if err := os.WriteFile(path, task, 0644); err != nil {
 		t.Fatal(err)
 	}
-	digest := fmt.Sprintf("%x", sha256.Sum256(task))
+	digest, err := executionmilestone.TaskContractDigest(root, taskPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	admission := controller.Admission{
 		Attempt: controller.AttemptRecord{
 			AttemptID: "attempt-1",

@@ -95,7 +95,7 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("summary recovery concealed controller recovery: %#v", handoff)
 	}
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil {
 		t.Fatal(err)
 	}

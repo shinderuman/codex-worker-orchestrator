@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -39,7 +40,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("reentered candidate handoff must direct materialization: %#v", handoff)
 	}
-	var materializeCommand controllerExecutionCommand
+	var materializeCommand workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &materializeCommand); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 		t.Fatal("publication advanced the candidate invalidated for reentry")
 	}
 
-	materialized, err := executeControllerExecution(cfg, store, materializeCommand)
+	materialized, err := workflow.ExecuteControllerExecution(cfg, store, materializeCommand)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,7 +24,7 @@ type ControllerExecutionCommand struct {
 	UserTermination        *controller.UserTaskTransitionInput       `json:"user_termination,omitempty"`
 	ExecutionTermination   *controller.UserExecutionTransitionInput  `json:"execution_termination,omitempty"`
 	RevisedTask            *controller.SemanticTaskRef               `json:"revised_task,omitempty"`
-	AcceptedResultRecovery *AcceptedResultRuleRecoveryInput `json:"accepted_result_recovery,omitempty"`
+	AcceptedResultRecovery *AcceptedResultRuleRecoveryInput            `json:"accepted_result_recovery,omitempty"`
 }
 
 func ExecuteControllerExecution(cfg config.AppConfig, store *controller.Store, command ControllerExecutionCommand) (controller.ExecutionOperationResult, error) {
@@ -185,6 +185,10 @@ func completeMaterializedRuntime(cfg config.AppConfig, store *controller.Store, 
 	if !result.ParentSourceReview {
 		return nil
 	}
+	return completeMaterializedReview(cfg, store, result)
+}
+
+func completeMaterializedReview(cfg config.AppConfig, store *controller.Store, result controller.ExecutionOperationResult) error {
 	cfg.RepoRoot = result.Admission.Workspace.Root
 	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
 	if err != nil {

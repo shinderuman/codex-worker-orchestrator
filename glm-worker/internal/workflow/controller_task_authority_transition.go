@@ -61,6 +61,10 @@ func VerifyTaskAuthoritySyncRuntime(before []byte, admission controller.Admissio
 	if evidence.Runtime != TaskAuthorityRuntimeAttached || evidence.Binding == nil || evidence.TaskID == "" {
 		return fmt.Errorf("task authority sync evidence is incomplete")
 	}
+	return verifyTaskAuthoritySyncAttached(evidence, admission)
+}
+
+func verifyTaskAuthoritySyncAttached(evidence TaskAuthoritySyncEvidence, admission controller.Admission) error {
 	if evidence.Binding.AttemptID != admission.Attempt.AttemptID ||
 		evidence.Binding.TaskPath != admission.Attempt.SemanticTaskRef.TaskPath ||
 		evidence.Binding.TaskContractDigest != admission.Attempt.SemanticTaskRef.ContractDigest {

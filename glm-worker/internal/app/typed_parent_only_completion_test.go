@@ -14,6 +14,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
@@ -366,7 +367,7 @@ func runParentOnlyExecutionStep(t *testing.T, cfg config.AppConfig, parameters m
 	if payload == "" {
 		t.Fatalf("parent-only execution handoff lost its typed command: %#v", parameters)
 	}
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(payload), &command); err != nil {
 		t.Fatal(err)
 	}
