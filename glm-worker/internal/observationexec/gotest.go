@@ -316,6 +316,14 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 	if extraErr != nil && !errors.Is(extraErr, io.EOF) {
 		return fmt.Errorf("隔離入力fileのsize境界を確認できません: %w", extraErr)
 	}
+	if err := c.publishCopiedFile(temp, destination); err != nil {
+		return err
+	}
+	c.bytes += remaining - limited.N
+	return nil
+}
+
+func (c *moduleTreeCopier) publishCopiedFile(temp, destination string) error {
 	if err := c.cancelled(); err != nil {
 		return err
 	}
@@ -333,7 +341,6 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 		_ = os.Remove(destination)
 		return err
 	}
-	c.bytes += remaining - limited.N
 	return nil
 }
 
