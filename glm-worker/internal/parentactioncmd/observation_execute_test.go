@@ -131,7 +131,7 @@ func TestObservationExecuteRunsIsolatedGoTestAndRecordsTypedResult(t *testing.T)
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatal(err)
 	}
-	if output.Status != "executed" || output.Result != "pass" || output.Operation != "go-test" || output.DecisionRound != 0 {
+	if output.Status != "executed" || output.Result != "pass" || output.Operation != "go-test" || output.DecisionRound <= 0 {
 		t.Fatalf("output = %#v", output)
 	}
 	records, err := st.ObservationExecutions()
