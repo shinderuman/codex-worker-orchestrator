@@ -182,7 +182,44 @@ func NoIgnoredInputs(repository string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("inspect ignored validation inputs: %w", err)
 	}
-	return len(data) == 0, nil
+	if len(data) != 0 {
+		return false, nil
+	}
+	return noIgnoredNestedRepositoryInputs(repository)
+}
+
+func noIgnoredNestedRepositoryInputs(repository string) (bool, error) {
+	listing, err := exec.Command("git", "-C", repository, "ls-files", "--others", "--exclude-standard", "-z").Output()
+	if err != nil {
+		return false, fmt.Errorf("inspect nested untracked repositories: %w", err)
+	}
+	candidates := []string{}
+	for _, dir := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
+		if dir == "" || !strings.HasSuffix(dir, "/") {
+			continue
+		}
+		entries, err := state.NestedUntrackedRepositoryEntries(repository, dir)
+		if err != nil {
+			return false, err
+		}
+		for _, entry := range entries {
+			candidates = append(candidates, entry.Path)
+		}
+	}
+	if len(candidates) == 0 {
+		return true, nil
+	}
+	command := exec.Command("git", "-C", repository, "check-ignore", "-z", "--stdin")
+	command.Stdin = strings.NewReader(strings.Join(candidates, "\x00") + "\x00")
+	output, err := command.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return true, nil
+		}
+		return false, fmt.Errorf("inspect ignored nested validation inputs: %w", err)
+	}
+	return len(output) == 0, nil
 }
 
 func NewRunID() (string, error) {

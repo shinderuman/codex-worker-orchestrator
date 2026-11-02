@@ -94,6 +94,12 @@ func writeArchive(writer *tar.Writer, root, clone string, paths []byte) error {
 			continue
 		}
 		seen[path] = true
+		if strings.HasSuffix(path, "/") {
+			if err := archiveNestedRepository(writer, root, path); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := archiveEntry(writer, root, path, true); err != nil {
 			return err
 		}
@@ -108,6 +114,19 @@ func writeArchive(writer *tar.Writer, root, clone string, paths []byte) error {
 		}
 		return archiveEntry(writer, clone, relative, false)
 	})
+}
+
+func archiveNestedRepository(writer *tar.Writer, root, dir string) error {
+	entries, err := state.NestedUntrackedRepositoryEntries(root, dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := archiveEntry(writer, root, entry.Path, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func archiveEntry(writer *tar.Writer, root, path string, allowDeleted bool) error {

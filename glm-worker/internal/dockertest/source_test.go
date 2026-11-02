@@ -231,6 +231,134 @@ func TestSourceArchivePreservesRelativeSymlink(t *testing.T) {
 	}
 }
 
+func initNestedRepositoryFixture(t *testing.T, root, name string) {
+	t.Helper()
+	nested := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Join(nested, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "inner.txt"), []byte("inner\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "sub", "deep.txt"), []byte("deep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("inner.txt", filepath.Join(nested, "link")); err != nil {
+		t.Fatal(err)
+	}
+	innard := filepath.Join(nested, "innard")
+	if err := os.MkdirAll(innard, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(innard, ".git"), []byte("gitdir: ../.git\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(innard, "data.txt"), []byte("innard\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inner := filepath.Join(nested, "inner")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inner, "inner-file.txt"), []byte("nested nested\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "."},
+		{"config", "user.name", "fixture"},
+		{"config", "user.email", "fixture@example.invalid"},
+		{"add", "inner.txt"},
+		{"commit", "-qm", "nested"},
+	} {
+		if _, err := output(context.Background(), nested, "git", args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := output(context.Background(), inner, "git", "init", "-q", "."); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSourceArchiveIncludesUntrackedNestedRepositoryWorktree(t *testing.T) {
+	root := sourceFixture(t)
+	initNestedRepositoryFixture(t, root, "nested")
+	if err := os.WriteFile(filepath.Join(root, "plain.txt"), []byte("plain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatalf("untracked nested repositoryでsnapshotが失敗しました: %v", err)
+	}
+	archive, digest, err := sourceArchive(context.Background(), root, t.TempDir(), before)
+	if err != nil {
+		t.Fatalf("untracked nested repositoryでarchive構築が失敗しました: %v", err)
+	}
+	if len(digest) != 64 {
+		t.Fatalf("archive SHA-256 = %q", digest)
+	}
+	restored := t.TempDir()
+	extractFixtureArchive(t, archive, restored)
+	if body, err := os.ReadFile(filepath.Join(restored, "nested", "inner.txt")); err != nil || string(body) != "inner\n" {
+		t.Fatalf("nested repositoryのworktree fileが転送されていません: %q %v", body, err)
+	}
+	if body, err := os.ReadFile(filepath.Join(restored, "nested", "sub", "deep.txt")); err != nil || string(body) != "deep\n" {
+		t.Fatalf("nested repositoryのsub directory内容が転送されていません: %q %v", body, err)
+	}
+	if body, err := os.ReadFile(filepath.Join(restored, "nested", "inner", "inner-file.txt")); err != nil || string(body) != "nested nested\n" {
+		t.Fatalf("nested nested repositoryのworktree内容が転送されていません: %q %v", body, err)
+	}
+	if link, err := os.Readlink(filepath.Join(restored, "nested", "link")); err != nil || link != "inner.txt" {
+		t.Fatalf("nested repository内の相対symlinkが保存されていません: %q %v", link, err)
+	}
+	if body, err := os.ReadFile(filepath.Join(restored, "nested", "innard", "data.txt")); err != nil || string(body) != "innard\n" {
+		t.Fatalf("nested repository内の.git file隣接worktree fileが転送されていません: %q %v", body, err)
+	}
+	for _, metadata := range []string{filepath.Join("nested", ".git"), filepath.Join("nested", "inner", ".git"), filepath.Join("nested", "innard", ".git")} {
+		if _, err := os.Stat(filepath.Join(restored, metadata)); !os.IsNotExist(err) {
+			t.Fatalf("nested repositoryの.git metadataが転送されました: %s: %v", metadata, err)
+		}
+	}
+	if body, err := os.ReadFile(filepath.Join(restored, "plain.txt")); err != nil || string(body) != "plain\n" {
+		t.Fatalf("通常のuntracked fileが転送されていません: %q %v", body, err)
+	}
+	scoped := filepath.Join(t.TempDir(), "scoped")
+	if out, err := exec.Command("cp", "-Ra", root, scoped).CombinedOutput(); err != nil {
+		t.Fatalf("scoped比較treeの複製に失敗しました: %v: %s", err, out)
+	}
+	for _, metadata := range []string{filepath.Join("nested", ".git"), filepath.Join("nested", "inner", ".git"), filepath.Join("nested", "innard", ".git")} {
+		if err := os.RemoveAll(filepath.Join(scoped, metadata)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scopedSnapshot, err := state.CaptureGitSnapshot(scoped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := state.CaptureGitSnapshot(restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scopedSnapshot.Head != after.Head || scopedSnapshot.IndexDigest != after.IndexDigest || scopedSnapshot.WorktreeDigest != after.WorktreeDigest {
+		t.Fatalf("転送sourceがscoped snapshotと一致しません: scoped=%+v restored=%+v", scopedSnapshot, after)
+	}
+}
+
+func TestSourceArchiveRejectsTrackedSubmodule(t *testing.T) {
+	root := sourceFixture(t)
+	initNestedRepositoryFixture(t, root, "submodule")
+	if _, err := output(context.Background(), root, "git", "add", "submodule"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = sourceArchive(context.Background(), root, t.TempDir(), snapshot)
+	if err == nil || !strings.Contains(err.Error(), "submodule") {
+		t.Fatalf("tracked submoduleを拒否しませんでした: %v", err)
+	}
+}
+
 func TestSourceArchivePreservesSplitIndexStagedState(t *testing.T) {
 	root := sourceFixture(t)
 	if err := os.WriteFile(filepath.Join(root, "staged.txt"), []byte("split staged\n"), 0o644); err != nil {

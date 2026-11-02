@@ -2,6 +2,7 @@ package qualitygate
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,5 +77,50 @@ func TestRunToolchainMatchesRequiredGoVersion(t *testing.T) {
 		if toolchain.MatchesRequiredGoVersion() {
 			t.Fatalf("%s toolchain matched a required version", name)
 		}
+	}
+}
+
+func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) {
+	root := t.TempDir()
+	runGit := func(dir string, args ...string) {
+		t.Helper()
+		command := exec.Command("git", args...)
+		command.Dir = dir
+		if out, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit(root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(root, "add", ".gitignore")
+	runGit(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ignore rules")
+
+	nested := filepath.Join(root, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "nested.txt"), []byte("nested\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(nested, "init", "-q")
+	clean, err := NoIgnoredInputs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !clean {
+		t.Fatal("ignored fileがないnested repositoryで拒否されました")
+	}
+
+	if err := os.WriteFile(filepath.Join(nested, "trace.log"), []byte("on disk only after transfer\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ignored, err := NoIgnoredInputs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ignored {
+		t.Fatal("nested repository内のouter-ignored fileが無音通過されました")
 	}
 }
