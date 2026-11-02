@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,6 +53,7 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 			}
 			cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, true, failFlag)
 			acceptParentOnlyThroughProductionBoundary(t, cfg)
+
 			head, err := store.LoadHead()
 			if err != nil || head.AcceptedCandidateRef == nil {
 				t.Fatalf("parent-only candidate missing: %v", err)
@@ -61,8 +63,12 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 			handoff := executeParentHandoff(t, cfg)
+			commandJSON := handoff.RequiredActionParameters["controller_command_json"]
+			if commandJSON == "" {
+				t.Fatalf("parent-only failed-gate handoff omitted a controller command: %#v", handoff)
+			}
 			var failure controller.PublicationParentCommand
-			if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &failure); err != nil {
+			if err := json.Unmarshal([]byte(commandJSON), &failure); err != nil {
 				t.Fatal(err)
 			}
 			if failure.Action != controller.PublicationOperationValidationFailure {
@@ -95,8 +101,61 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 					t.Fatalf("native parent source rebind: %v", err)
 				}
 			}
+			materialize := executeParentHandoff(t, cfg)
+			runParentOnlyExecutionStep(t, cfg, materialize.RequiredActionParameters)
+			bound, err := controller.WorkflowConfig(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			smokeStore := state.AttachStateStore(bound)
+			currentID, err := smokeStore.Read("task.id")
+			if err != nil || currentID == "" || currentID == candidate.AttemptID {
+				t.Fatalf("reentry smoke identity: %q err=%v", currentID, err)
+			}
+			if err := smokeStore.Write("task.id", candidate.AttemptID); err != nil {
+				t.Fatal(err)
+			}
+			stale := executeParentHandoff(t, cfg)
+			if stale.Consistent || stale.Inconsistency == nil {
+				t.Fatalf("predecessor smoke identity accepted: %#v", stale)
+			}
+			if err := smokeStore.Write("task.id", currentID); err != nil {
+				t.Fatal(err)
+			}
 			driveParentOnlyCompletion(t, cfg, goShim, true, false)
 			assertParentOnlyTerminalState(t, cfg, store, policy, tasks, true)
+		})
+	}
+}
+
+func TestParentOnlyReviewStateIntegrity(t *testing.T) {
+	failFlag := filepath.Join(t.TempDir(), "fail-final-gate")
+	if err := os.WriteFile(failFlag, []byte("fail\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, _, _, _ := parentOnlyCompletionFixture(t, true, failFlag)
+	acceptParentOnlyThroughProductionBoundary(t, cfg)
+	bound, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewState := state.AttachStateStore(bound).Path("parent-review-state.json")
+	for _, kind := range []string{"corrupt", "dangling-link"} {
+		t.Run(kind, func(t *testing.T) {
+			if kind == "corrupt" {
+				if err := os.WriteFile(reviewState, []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Symlink(filepath.Join(t.TempDir(), "missing-review"), reviewState); err != nil {
+				t.Fatal(err)
+			}
+			projection := executeParentHandoff(t, cfg)
+			if projection.Consistent || projection.Inconsistency == nil {
+				t.Fatalf("untrusted review state accepted: %#v", projection)
+			}
+			if err := os.Remove(reviewState); err != nil {
+				t.Fatal(err)
+			}
 		})
 	}
 }
@@ -367,8 +426,8 @@ func executeParentOnlyControllerAction(t *testing.T, cfg config.AppConfig, paylo
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.AttachStateStore(bound).Exists("task.id") {
-		t.Fatal("parent-only overflow continuation created Runtime task state")
+	if _, err := state.AttachStateStore(bound).LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("parent-only overflow continuation created a model Runtime binding: %v", err)
 	}
 }
 

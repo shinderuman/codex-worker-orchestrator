@@ -218,6 +218,9 @@ func (s *Store) applyParentOnlyExecution(op ExecutionOperation) error {
 	if err := s.writeLease(*op.Lease); err != nil {
 		return err
 	}
+	if err := s.bindParentOnlySmokeTaskID(*op.Attempt); err != nil {
+		return err
+	}
 	actual := map[string]string{op.Transition.Effects[0].Key(): parentOnlyMaterializationIdentity(workspace, snapshot)}
 	_, err = s.commitAuthorityTransitionLocked(op.Transition, actual, false, func(next *RepositoryControllerHead) error {
 		next.ProjectSnapshotID = op.Transition.ProjectSnapshotNew
@@ -230,6 +233,30 @@ func (s *Store) applyParentOnlyExecution(op ExecutionOperation) error {
 		return nil
 	})
 	return err
+}
+
+func (s *Store) bindParentOnlySmokeTaskID(attempt AttemptRecord) error {
+	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly || attempt.AttemptID == "" {
+		return fmt.Errorf("parent-only smoke identity requires a bound parent-only attempt")
+	}
+	cfg := WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef)
+	runtime := state.AttachStateStore(cfg)
+	if err := os.MkdirAll(runtime.Path("."), 0o700); err != nil {
+		return fmt.Errorf("prepare parent-only smoke store: %w", err)
+	}
+	if info, err := os.Lstat(runtime.Path("task.id")); err == nil {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("parent-only smoke identity is not a regular file")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat parent-only smoke identity: %w", err)
+	}
+	if current, err := runtime.Read("task.id"); err == nil && current == attempt.AttemptID {
+		return nil
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read parent-only smoke identity: %w", err)
+	}
+	return runtime.Write("task.id", attempt.AttemptID)
 }
 
 func (s *Store) verifyCommittedParentOnlyExecution(op ExecutionOperation, head RepositoryControllerHead) error {
@@ -249,6 +276,14 @@ func (s *Store) verifyCommittedParentOnlyExecution(op ExecutionOperation, head R
 	}
 	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
 		return fmt.Errorf("committed parent-only execution attempt lost its execution authority")
+	}
+	runtime := state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
+	taskID, err := runtime.Read("task.id")
+	if err != nil {
+		return fmt.Errorf("read committed parent-only smoke identity: %w", err)
+	}
+	if taskID != attempt.AttemptID {
+		return fmt.Errorf("committed parent-only smoke identity does not match attempt %s", attempt.AttemptID)
 	}
 	lease, err := s.loadLease(head.LiveLeaseID)
 	if err != nil {
@@ -280,6 +315,28 @@ func (s *Store) parentOnlyLiveExecution(head RepositoryControllerHead) (AttemptR
 		return AttemptRecord{}, false, nil
 	}
 	return attempt, true, nil
+}
+
+func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
+	head, err := s.LoadHead()
+	if err != nil || head.Status != ControllerStatusActive {
+		return false
+	}
+	if head.LiveAttemptID != "" && head.LiveAttemptID != taskID {
+		return false
+	}
+	if head.AcceptedCandidateRef != nil {
+		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+		if err != nil || candidate.AttemptID != taskID {
+			return false
+		}
+	}
+	attempt, err := s.loadAttempt(taskID)
+	if err != nil || attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return false
+	}
+	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	return err == nil && authority.ExecutionMode == ExecutionAuthorityParentOnly && attempt.SemanticTaskRef.Equal(authority.Task)
 }
 
 func (s *Store) LiveParentOnlyExecution() (bool, error) {

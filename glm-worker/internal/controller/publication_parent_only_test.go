@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,8 +175,12 @@ func TestParentOnlyExecutionMaterializesAndCompletesThroughPublication(t *testin
 		t.Fatalf("parent-only completion did not retire its task from the plan: %#v", finalAuthority.Task)
 	}
 	runtime := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), task))
-	if runtime.Exists("task.id") {
-		t.Fatal("parent-only completion started a Runtime task")
+	taskID, err := runtime.Read("task.id")
+	if err != nil || taskID != admission.Attempt.AttemptID {
+		t.Fatalf("parent-only smoke identity not bound to its attempt: %q %v", taskID, err)
+	}
+	if _, err := runtime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("parent-only completion created a model Runtime binding: %v", err)
 	}
 	seal, err := fixture.store.LoadAttemptSeal(candidate.SealRef)
 	if err != nil {
@@ -282,6 +287,15 @@ func TestParentOnlyCompletionReentryPreservesAuthority(t *testing.T) {
 			reentered := materialized.Admission
 			if reentered == nil || reentered.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly || reentered.Attempt.PredecessorAttemptID != admission.Attempt.AttemptID {
 				t.Fatalf("parent-only authority was lost: %#v", reentered)
+			}
+			smokeStore := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), reentered.Attempt.SemanticTaskRef))
+			taskID, err := smokeStore.Read("task.id")
+			if err != nil || taskID != reentered.Attempt.AttemptID {
+				t.Fatalf("reentry did not bind the successor smoke identity: %q err=%v", taskID, err)
+			}
+			if fixture.store.ParentOnlySmokeIdentityMatches(admission.Attempt.AttemptID) ||
+				!fixture.store.ParentOnlySmokeIdentityMatches(reentered.Attempt.AttemptID) {
+				t.Fatal("parent-only reentry allowed stale attempt identity")
 			}
 			if route == "parent-source-rebind" {
 				data, err := os.ReadFile(filepath.Join(reentered.Workspace.Root, "evaluation-result.md"))

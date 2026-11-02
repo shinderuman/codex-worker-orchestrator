@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -53,6 +54,9 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 		SessionRotation: &state.SessionRotationProjection{State: state.SessionRotationProjectionUnavailable},
 	}
 	plan, planErr := st.ParentActionPlan()
+	if parentOnlyMissingReviewState(st, planErr) && boundParentOnlySmokeIdentity(cfg, st) {
+		plan, planErr = state.ParentActionPlan{RequiredAction: state.ParentActionComplete, AllowedActions: []state.ParentAction{state.ParentActionComplete}}, nil
+	}
 	if planErr != nil {
 		markInconsistent(&projection, planErr.Error())
 	} else {
@@ -73,6 +77,31 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
 	return projection
+}
+
+func parentOnlyMissingReviewState(st *state.StateStore, planErr error) bool {
+	var inconsistency *state.LifecycleInconsistencyError
+	if !errors.As(planErr, &inconsistency) ||
+		!strings.HasPrefix(inconsistency.Detail, "parent review state is unreadable: ") {
+		return false
+	}
+	_, err := os.Lstat(st.Path("parent-review-state.json"))
+	return errors.Is(err, os.ErrNotExist)
+}
+
+func boundParentOnlySmokeIdentity(cfg config.AppConfig, st *state.StateStore) bool {
+	if st.TaskStatus() != state.TaskStatusNone {
+		return false
+	}
+	taskID, err := st.Read("task.id")
+	if err != nil || taskID == "" {
+		return false
+	}
+	if _, err := st.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	store, err := controller.Open(cfg)
+	return err == nil && store.ParentOnlySmokeIdentityMatches(taskID)
 }
 
 func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
@@ -439,7 +468,7 @@ func canonicalExecutionLifecycleTask(cfg config.AppConfig, st *state.StateStore,
 	if err != nil {
 		return "", err
 	}
-	if parentOnly {
+	if parentOnly || boundParentOnlySmokeIdentity(cfg, st) {
 		return task.TaskPath, nil
 	}
 	return canonicalLifecycleTask(st, task, quiescent)
