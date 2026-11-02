@@ -45,13 +45,6 @@ type contextCopyReader struct {
 	reader io.Reader
 }
 
-func (r contextCopyReader) Read(p []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(p)
-}
-
 type isolatedGoTestRun struct {
 	outcome      GoTestOutcome
 	gateLog      []byte
@@ -84,6 +77,13 @@ const (
 )
 
 var observationConfinementAdmission = ConfinementAdmission
+
+func (r contextCopyReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
+}
 
 func RunIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	return runIsolatedGoTest(ctx, input)
@@ -308,9 +308,6 @@ func (c *moduleTreeCopier) copyFile(destination string, source string, perm fs.F
 		return fmt.Errorf("隔離入力fileをcopyできません: %w", err)
 	}
 	defer func() { _ = os.Remove(temp) }()
-	if err := c.cancelled(); err != nil {
-		return err
-	}
 	var extra [1]byte
 	extraN, extraErr := src.Read(extra[:])
 	if extraN > 0 {

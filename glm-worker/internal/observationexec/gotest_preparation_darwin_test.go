@@ -73,7 +73,6 @@ func TestDarwinObservationCancelledPreflightDoesNotLaunchTarget(t *testing.T) {
 	}
 }
 
-
 func TestDarwinObservationCancelledTargetReapsProcess(t *testing.T) {
 	binDir := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "target-pid")
