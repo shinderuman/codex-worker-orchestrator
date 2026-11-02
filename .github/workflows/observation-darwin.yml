@@ -4,6 +4,12 @@ on:
   pull_request:
     paths:
       - 'glm-worker/internal/observationexec/**'
+      - 'glm-worker/internal/execfile/**'
+      - 'glm-worker/go.mod'
+      - 'glm-worker/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'quality-tools.yml'
       - '.github/workflows/observation-darwin.yml'
   push:
     branches:
@@ -11,6 +17,12 @@ on:
       - 'web-gpt/**'
     paths:
       - 'glm-worker/internal/observationexec/**'
+      - 'glm-worker/internal/execfile/**'
+      - 'glm-worker/go.mod'
+      - 'glm-worker/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'quality-tools.yml'
       - '.github/workflows/observation-darwin.yml'
 
 permissions:

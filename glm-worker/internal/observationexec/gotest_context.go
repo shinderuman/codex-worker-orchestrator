@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -41,6 +42,7 @@ func runIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	if err := ConfinementPreflight(executionCtx, tempRoot); err != nil {
 		if stopErr := executionCtx.Err(); stopErr != nil {
 			outcome := goTestContextStopOutcome(stopErr, deadline)
+			outcome.Detail = boundedDetail(outcome.Detail + "; preflight: " + err.Error())
 			outcome.DurationMS = time.Since(started).Milliseconds()
 			return outcome
 		}
@@ -78,7 +80,9 @@ func runIsolatedGoTestProcessContext(ctx context.Context, input GoTestInput, tem
 	env, err := isolatedGoTestEnvContext(ctx, tempRoot)
 	if err != nil {
 		if stopErr := ctx.Err(); stopErr != nil {
-			return isolatedGoTestRun{outcome: goTestContextStopOutcome(stopErr, deadline)}
+			outcome := goTestContextStopOutcome(stopErr, deadline)
+			outcome.Detail = boundedDetail(outcome.Detail + "; module cache: " + err.Error())
+			return isolatedGoTestRun{outcome: outcome}
 		}
 		return isolatedGoTestRun{outcome: goTestConfinementFailure(err)}
 	}
@@ -130,9 +134,9 @@ func runObservationPreflightProcess(ctx context.Context, args []string) ([]byte,
 		return data, err
 	case <-ctx.Done():
 		terminateObservationProcessGroup(command.Process.Pid)
-		_ = boundedGoTestWait(waitDone)
+		waitErr := boundedGoTestWait(waitDone)
 		data, _, _ := output.snapshot()
-		return data, ctx.Err()
+		return data, observationCancellationWaitError(ctx.Err(), waitErr)
 	}
 }
 
@@ -199,14 +203,25 @@ func isolatedGoModuleCacheContext(ctx context.Context) (string, error) {
 		}
 	case <-ctx.Done():
 		terminateObservationProcessGroup(command.Process.Pid)
-		_ = boundedGoTestWait(waitDone)
-		return "", fmt.Errorf("隔離go testのmodule cacheを解決できません: %w", ctx.Err())
+		waitErr := boundedGoTestWait(waitDone)
+		return "", fmt.Errorf("隔離go testのmodule cacheを解決できません: %w", observationCancellationWaitError(ctx.Err(), waitErr))
 	}
 	path := strings.TrimSpace(output.String())
 	if path == "" || !filepath.IsAbs(path) {
 		return "", fmt.Errorf("隔離go testのmodule cacheがabsolute pathではありません: %q", path)
 	}
 	return filepath.Clean(path), nil
+}
+
+func observationCancellationWaitError(stopErr, waitErr error) error {
+	if waitErr == nil {
+		return stopErr
+	}
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) {
+		return stopErr
+	}
+	return errors.Join(stopErr, fmt.Errorf("process wait/reap not confirmed: %w", waitErr))
 }
 
 func boundedGoTestWait(waitDone <-chan error) error {

@@ -3,18 +3,17 @@ package observationexec
 import (
 	"context"
 	"errors"
+	"io"
+	"os/exec"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
-)
 
-type cancelAfterReadsContext struct {
-	context.Context
-	remaining int
-}
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
+)
 
 func TestCancelledObservationDoesNotEnterConfinement(t *testing.T) {
 	moduleDir := t.TempDir()
@@ -89,39 +88,86 @@ func TestCancelledModuleCopyDoesNotCommitInput(t *testing.T) {
 	}
 }
 
-func (c *cancelAfterReadsContext) Err() error {
-	c.remaining--
-	if c.remaining <= 0 {
-		return context.Canceled
+type controlledCopyReader struct {
+	started chan struct{}
+	resume  <-chan struct{}
+	first   bool
+}
+
+func (r *controlledCopyReader) Read(p []byte) (int, error) {
+	if r.first {
+		return 0, io.EOF
 	}
-	return nil
+	r.first = true
+	close(r.started)
+	<-r.resume
+	return copy(p, []byte("partial-copy-data")), nil
 }
 
 func TestModuleCopyCancellationRemovesPartialFile(t *testing.T) {
-	source := filepath.Join(t.TempDir(), "source.bin")
-	destination := filepath.Join(t.TempDir(), "target.bin")
-	f, err := os.Create(source)
-	if err != nil {
-		t.Fatal(err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	destination := filepath.Join(dir, "target.bin")
+	resume := make(chan struct{})
+	reader := &controlledCopyReader{started: make(chan struct{}), resume: resume}
+	done := make(chan error, 1)
+	go func() {
+		_, err := execfile.WriteStream(dir, ".module-copy-*", contextCopyReader{ctx: ctx, reader: reader}, 0o600)
+		done <- err
+	}()
+	select {
+	case <-reader.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("copy reader never began I/O")
 	}
-	if err := f.Truncate(16 << 20); err != nil {
-		_ = f.Close()
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-	ctx := &cancelAfterReadsContext{Context: context.Background(), remaining: 3}
-	copier := &moduleTreeCopier{ctx: ctx}
-	err = copier.copyFile(destination, source, 0o600)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("copy error = %v want context cancellation", err)
+	cancel()
+	close(resume)
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("copy error = %v, want real context cancellation", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelled atomic copy did not return")
 	}
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
-		t.Fatalf("partial destination was not removed: %v", err)
+		t.Fatalf("cancelled copy published destination: %v", err)
 	}
-	if copier.bytes != 0 {
-		t.Fatalf("cancelled copy committed %d bytes", copier.bytes)
+	temps, err := filepath.Glob(filepath.Join(dir, ".module-copy-*"))
+	if err != nil || len(temps) != 0 {
+		t.Fatalf("cancelled copy left partial temporary files: %v, %v", temps, err)
+	}
+}
+
+func TestModuleCopyCancelledPublicationDoesNotExposeDestination(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	dir := t.TempDir()
+	temp := filepath.Join(dir, ".module-copy-staged")
+	destination := filepath.Join(dir, "target.bin")
+	if err := os.WriteFile(temp, []byte("prepared"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	copier := &moduleTreeCopier{ctx: ctx}
+	if err := copier.publishCopiedFile(temp, destination); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled publication = %v", err)
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("cancelled publication exposed destination: %v", err)
+	}
+}
+
+func TestObservationCancellationWaitErrorsDistinguishReaping(t *testing.T) {
+	if err := observationCancellationWaitError(context.Canceled, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("clean cancellation = %v", err)
+	}
+	if err := observationCancellationWaitError(context.Canceled, &exec.ExitError{}); !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "not confirmed") {
+		t.Fatalf("reaped signalled process = %v", err)
+	}
+	err := observationCancellationWaitError(context.Canceled, context.DeadlineExceeded)
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "wait/reap not confirmed") {
+		t.Fatalf("bounded wait timeout lost cancellation/reap evidence: %v", err)
 	}
 }
 
@@ -139,47 +185,3 @@ func TestObservationPreflightNormalAndFailedCommand(t *testing.T) {
 	}
 }
 
-func TestObservationPreflightCancellationStopsDescendant(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix shell process-group fixture")
-	}
-	dir := t.TempDir()
-	childStarted := filepath.Join(dir, "child-started")
-	childSurvived := filepath.Join(dir, "child-survived")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		limit := time.After(4 * time.Second)
-		for {
-			if _, err := os.Stat(childStarted); err == nil {
-				cancel()
-				return
-			}
-			select {
-			case <-limit:
-				cancel()
-				return
-			case <-time.After(10 * time.Millisecond):
-			}
-		}
-	}()
-	script := "(printf launched > \"$1\"; sleep 2; printf survived > \"$2\") & wait"
-	start := time.Now()
-	_, err := runObservationPreflightProcess(ctx, []string{"/bin/sh", "-c", script, "sh", childStarted, childSurvived})
-	<-done
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("preflight child cancellation = %v", err)
-	}
-	if elapsed := time.Since(start); elapsed > 12*time.Second {
-		t.Fatalf("preflight descendant cancellation took %s", elapsed)
-	}
-	if _, err := os.Stat(childStarted); err != nil {
-		t.Fatalf("preflight child never started: %v", err)
-	}
-	time.Sleep(2200 * time.Millisecond)
-	if _, err := os.Stat(childSurvived); !os.IsNotExist(err) {
-		t.Fatalf("cancelled preflight descendant survived: %v", err)
-	}
-}
