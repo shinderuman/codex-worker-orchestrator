@@ -528,7 +528,7 @@ func prepareTaskAuthorityInterruptedSync(t *testing.T) (taskAuthoritySyncFixture
 }
 
 func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
-	f, revised, committed, _ := prepareTaskAuthorityInterruptedSync(t)
+	f, revised, committed, admission := prepareTaskAuthorityInterruptedSync(t)
 
 	laneCfg := f.cfg
 	laneCfg.RepoRoot = f.source.Workspace.Root
@@ -584,13 +584,6 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 
 	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
 		t.Fatalf("completed sync recovery is not idempotent: %v", err)
-	}
-}
-
-func TestTaskAuthoritySyncRejectsForeignAndRecoversPartialRuntimeBinding(t *testing.T) {
-	f, revised, committed, admission := prepareTaskAuthorityInterruptedSync(t)
-	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
-		t.Fatalf("baseline sync runtime recovery failed: %v", err)
 	}
 
 	foreign := revised
