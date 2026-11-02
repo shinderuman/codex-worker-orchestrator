@@ -1036,4 +1036,3 @@ func gitLiteralOutputIn(dir string, args ...string) ([]byte, error) {
 	}
 	return output, nil
 }
-
