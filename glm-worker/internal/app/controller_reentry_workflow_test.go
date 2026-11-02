@@ -76,7 +76,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 		resumed.Admission == nil || resumed.Admission.Attempt.AttemptID != materialized.Admission.Attempt.AttemptID {
 		t.Fatalf("recovery changed canonical Controller attempt: %#v", resumed)
 	}
-		if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
+	if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("controller reentry left the runtime at %s", runtime.TaskStatus())
 	}
 	open, err := runtime.CurrentParentReview()
