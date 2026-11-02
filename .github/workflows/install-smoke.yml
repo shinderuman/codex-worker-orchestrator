@@ -2,6 +2,9 @@ name: Install Smoke
 
 on:
   workflow_call:
+  push:
+    branches:
+      - web-gpt/install-smoke-lock-process-lifecycle
 
 permissions:
   contents: read
