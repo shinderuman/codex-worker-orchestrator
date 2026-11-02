@@ -79,7 +79,6 @@ func TestRepoSearchSparseCheckoutAndSparseIndexRespectCorpusBoundary(t *testing.
 			commitAll(t, dir, "initial")
 			gitRun(t, dir, "sparse-checkout", "init", "--cone")
 			gitRun(t, dir, "sparse-checkout", "set", test.flag, "keep")
-			// The default ls-files format must expand sparse-directory entries.
 			output, err := gitOutput(context.Background(), dir, "ls-files", "-z", "-v", "-s", "--cached")
 			if err != nil {
 				t.Fatal(err)
