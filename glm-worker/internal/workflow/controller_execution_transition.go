@@ -245,8 +245,30 @@ func reenterMaterializedRuntimeCompletion(cfg config.AppConfig, result controlle
 	if err != nil {
 		return err
 	}
-	_, err = state.AttachStateStore(runtimeCfg).ReenterAcceptedCompletionFromController(authority)
-	return err
+	runtime := state.AttachStateStore(runtimeCfg)
+	if _, err := runtime.ReenterAcceptedCompletionFromController(authority); err != nil {
+		return err
+	}
+	binding, err := runtime.LoadControllerRuntimeBinding()
+	if err != nil {
+		return err
+	}
+	if binding.TaskPath != authority.TaskPath {
+		return fmt.Errorf("materialized runtime binding belongs to a different Task source")
+	}
+	switch binding.AttemptID {
+	case authority.PredecessorAttemptID:
+		if binding.TaskContractDigest != authority.PredecessorTaskContractDigest {
+			return fmt.Errorf("materialized predecessor contract differs from canonical source")
+		}
+	case authority.AttemptID:
+		if binding.TaskContractDigest != authority.TaskContractDigest {
+			return fmt.Errorf("materialized successor contract differs from canonical source")
+		}
+	default:
+		return fmt.Errorf("materialized runtime binding belongs to a different attempt")
+	}
+	return nil
 }
 
 func executeControllerRuntimeDisposition(store *controller.Store, command ControllerExecutionCommand) (controller.ExecutionOperationResult, error) {
