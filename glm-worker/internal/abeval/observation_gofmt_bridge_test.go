@@ -1,4 +1,4 @@
-package state
+package abeval
 
 import (
 	"encoding/base64"
@@ -10,16 +10,16 @@ import (
 func TestTemporaryObservationGofmtBridge(t *testing.T) {
 	paths := []string{"../parentactioncmd/observation_execute_retention_fence_test.go",
 		"../parentactioncmd/observation_execute_test.go",
-		"new_task_transition.go",
-		"observation_execution.go",
-		"observation_execution_fence_contract_test.go",
-		"observation_execution_identity_test.go",
-		"observation_execution_recovery.go",
-		"observation_execution_recovery_test.go",
-		"observation_execution_retention_fence_test.go",
-		"observation_execution_review_followup_test.go",
-		"observation_execution_test.go",
-		"task_state_lifetime.go"}
+		"../state/new_task_transition.go",
+		"../state/observation_execution.go",
+		"../state/observation_execution_fence_contract_test.go",
+		"../state/observation_execution_identity_test.go",
+		"../state/observation_execution_recovery.go",
+		"../state/observation_execution_recovery_test.go",
+		"../state/observation_execution_retention_fence_test.go",
+		"../state/observation_execution_review_followup_test.go",
+		"../state/observation_execution_test.go",
+		"../state/task_state_lifetime.go"}
 	for _, name := range paths {
 		data, err := os.ReadFile(name)
 		if err != nil { t.Fatalf("GFMTERROR|%s|read: %v", name, err) }
