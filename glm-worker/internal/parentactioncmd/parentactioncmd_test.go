@@ -124,7 +124,9 @@ func TestRunPrepareStagedActionIsNotUsageRejected(t *testing.T) {
 
 func TestRunReportsInfrastructureGitFailureReason(t *testing.T) {
 	binDir := t.TempDir()
-	fakeGit := "#!/bin/sh\nexit 97\n"
+	marker := filepath.Join(t.TempDir(), "fake-git-was-invoked")
+	t.Setenv("FAKE_GIT_MARKER", marker)
+	fakeGit := "#!/bin/sh\nprintf 'invoked\\n' > \"$FAKE_GIT_MARKER\"\nexit 97\n"
 	if err := execfile.Write(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -137,8 +139,11 @@ func TestRunReportsInfrastructureGitFailureReason(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("失敗時にstdoutへ出力がありました: %q", stdout.String())
 	}
-	if stderr.Len() == 0 {
-		t.Fatal("基盤git失敗の理由がstderrへ出力されていません")
+	if stderr.Len() == 0 || !strings.Contains(stderr.String(), "exit status 97") {
+		t.Fatalf("fake Git exit 97に由来するエラーを確認できません: %q", stderr.String())
+	}
+	if content, err := os.ReadFile(marker); err != nil || strings.TrimSpace(string(content)) != "invoked" {
+		t.Fatalf("fake Gitへの実呼出しが確認できません: content=%q err=%v", content, err)
 	}
 }
 

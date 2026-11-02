@@ -74,26 +74,6 @@ func TestWebGPTAutofixHelperFailsClosedAroundPreparedPublication(t *testing.T) {
 	}
 }
 
-func TestControlledAutofixUsesControlPolicyOnly(t *testing.T) {
-	text := readWebGPTAutofixContractFile(t, "controlled_autofix.go")
-	requireWebGPTAutofixTokens(t, text, []string{
-		"newRealCommandRunner(controlRoot)",
-		"commentlint.Run(runner.targetRoot, fix)",
-		"controlled[index+1] = filepath.Join(controlRoot, \".golangci.yml\")",
-		"deterministicAutofixMaxIterations = 8",
-		"DeterministicFixCycle",
-		"changedSnapshotCount(state.current, next) == 0",
-		"seen[key]",
-		"fixGoFormatting(root, paths)",
-		"runDeterministicShellFixes(root, paths, runner)",
-	})
-	for _, forbidden := range []string{"runExternalFixers(", "\"run\", \"--fix\", \"--config\""} {
-		if strings.Contains(text, forbidden) {
-			t.Fatalf("controlled autofix must not use broad external fixer: %q", forbidden)
-		}
-	}
-}
-
 func readWebGPTAutofixContractFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)

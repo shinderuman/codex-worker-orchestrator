@@ -2,39 +2,9 @@ package bundleanalysis
 
 import (
 	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 )
-
-func TestBundleAnalysisTypesDoNotCarryExplanationFields(t *testing.T) {
-	t.Parallel()
-	for name, value := range map[string]any{
-		"interval":           bundleAnalysisInterval{},
-		"subsequents":        bundleAnalysisSubsequents{},
-		"rollout":            bundleAnalysisRollout{},
-		"count":              bundleAnalysisCount{},
-		"token-delta":        bundleAnalysisTokenDelta{},
-		"validations":        bundleAnalysisValidations{},
-		"retries":            bundleAnalysisRetries{},
-		"model-relations":    bundleAnalysisModelRelations{},
-		"retry-edge":         bundleAnalysisRetryEdge{},
-		"ambiguous-relation": bundleAnalysisAmbiguousRelation{},
-		"unlinked-call":      bundleAnalysisUnlinkedCall{},
-		"duplicate-calls":    bundleAnalysisDuplicateCalls{},
-		"record-trace":       bundleAnalysisRecordTrace{},
-		"wait-calls":         bundleAnalysisWaitCalls{},
-		"wait-call":          bundleAnalysisWaitCall{},
-		"wait-duplicate":     bundleAnalysisWaitDuplicate{},
-	} {
-		typeOf := reflect.TypeOf(value)
-		for _, field := range []string{"Basis", "Note", "Rule"} {
-			if _, found := typeOf.FieldByName(field); found {
-				t.Fatalf("%s retains explanation-only field %s", name, field)
-			}
-		}
-	}
-}
 
 func TestBundleAnalysisJSONRemainsStructural(t *testing.T) {
 	t.Parallel()

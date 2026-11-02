@@ -46,6 +46,11 @@ const fakeFocusedGo = `#!/bin/sh
 set -eu
 printf 'go %s\n' "$*" >> "$VALIDATION_LOG"
 case "${VALIDATION_MUTATION:-}" in
+	vet-fail)
+		case " $*" in
+			*" vet ./..."*) exit 47 ;;
+		esac
+		;;
 	target-dirty)
 		printf 'mutated\n' >> "$EXPECTED_TARGET_ROOT/fixture.txt"
 		;;
@@ -59,6 +64,15 @@ case "${VALIDATION_MUTATION:-}" in
 		git -C "$EXPECTED_CONTROL_ROOT" commit --allow-empty -m post-validation-control-mutation >/dev/null
 		;;
 esac
+`
+
+const fakeFocusedAwk = `#!/bin/sh
+set -eu
+"$VALIDATION_REAL_AWK" "$@"
+if [ "${VALIDATION_MUTATION:-}" = control-disappears-before-cd ] && [ "${1:-}" = '-F: ' ]; then
+	printf 'control-root-removed-before-cd\n' >> "$VALIDATION_LOG"
+	mv "$EXPECTED_CONTROL_ROOT" "$EXPECTED_CONTROL_ROOT.removed"
+fi
 `
 
 func TestWebGPTValidationRunsBoundedModes(t *testing.T) {
@@ -82,7 +96,7 @@ func TestWebGPTValidationRunsBoundedModes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("validation failed: %v: %s", err, output)
 			}
-			if result.Result != "pass" || result.TestedBranch != fixture.branch || result.TestedSHA != fixture.targetSHA || result.ControlSHA != fixture.controlSHA || result.Mode != item.mode || result.Scope != item.scope {
+			if result.Result != "pass" || result.TestedBranch != fixture.branch || result.TestedSHA != fixture.targetSHA || result.ControlSHA != fixture.controlSHA || result.Mode != item.mode || result.Scope != item.scope || result.ArtifactLocator != "web-gpt-validation-result-1" || result.Error != "" {
 				t.Fatalf("result = %#v", result)
 			}
 			data, readErr := os.ReadFile(fixture.log)
@@ -96,6 +110,54 @@ func TestWebGPTValidationRunsBoundedModes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWebGPTValidationVetFailureDoesNotProceedToBuild(t *testing.T) {
+	fixture := newWebGPTValidationFixture(t)
+	result, output, err := fixture.runWithMutation(t, "build-vet", "", fixture.targetSHA, "vet-fail")
+	if err == nil || result.Result != "fail" || result.Error != "validation_failed" {
+		t.Fatalf("vet error did not fail validation: result=%#v err=%v output=%s", result, err, output)
+	}
+	log, readErr := os.ReadFile(fixture.log)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(log), " vet ./...") || strings.Contains(string(log), " build ./...") {
+		t.Fatalf("vet failure did not stop before build: %s", log)
+	}
+}
+
+func TestWebGPTValidationRejectsMissingControlRootWithoutRunningGate(t *testing.T) {
+	fixture := newWebGPTValidationFixture(t)
+	result, output, err := fixture.runWithMutation(t, "repository-lint", "", fixture.targetSHA, "missing-control-root")
+	if err == nil || result.Result != "rejected" || result.Error != "invalid_control_root" {
+		t.Fatalf("missing control root was admitted: result=%#v err=%v output=%s", result, err, output)
+	}
+	log, readErr := os.ReadFile(fixture.log)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(log) != 0 {
+		t.Fatalf("control root rejection executed a gate: %s", log)
+	}
+}
+
+func TestWebGPTValidationControlRootDisappearsBeforeGateChangeDirectory(t *testing.T) {
+	fixture := newWebGPTValidationFixture(t)
+	result, output, err := fixture.runWithMutation(t, "repository-lint", "", fixture.targetSHA, "control-disappears-before-cd")
+	if err == nil || result.Result != "fail" || result.Error != "post_validation_control_head_unavailable" {
+		t.Fatalf("disappeared control root did not fail closed: result=%#v err=%v output=%s", result, err, output)
+	}
+	log, err := os.ReadFile(fixture.log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(log), "control-root-removed-before-cd") {
+		t.Fatalf("control root disappearance was not reached: %s", log)
+	}
+	if strings.Contains(string(log), "harnesslint") {
+		t.Fatalf("failed control directory change executed a gate: %s", log)
 	}
 }
 
@@ -176,6 +238,7 @@ func newWebGPTValidationFixture(t *testing.T) webGPTValidationFixture {
 	initializeFocusedValidationRepo(t, target)
 	writeFocusedValidationFile(t, target, "fixture.txt", "target\n", 0o644)
 	writeFocusedValidationFile(t, target, "glm-worker/go.mod", "module example.invalid/target\n\ngo 1.25.0\n", 0o644)
+	writeFocusedValidationFile(t, target, "harnesslint", "#!/bin/sh\nprintf 'target-harnesslint-executed\\n' >> \"$VALIDATION_LOG\"\n", 0o755)
 	runFocusedValidationGit(t, target, "add", ".")
 	runFocusedValidationGit(t, target, "commit", "-m", "target")
 	runFocusedValidationGit(t, target, "branch", "-M", branch)
@@ -192,6 +255,7 @@ func newWebGPTValidationFixture(t *testing.T) webGPTValidationFixture {
 	controlSHA := runFocusedValidationGit(t, control, "rev-parse", "HEAD")
 
 	writeFocusedValidationFile(t, bin, "go", fakeFocusedGo, 0o755)
+	writeFocusedValidationFile(t, bin, "awk", fakeFocusedAwk, 0o755)
 	if err := os.WriteFile(logPath, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -215,15 +279,24 @@ func (fixture webGPTValidationFixture) run(t *testing.T, mode, scope, expected s
 
 func (fixture webGPTValidationFixture) runWithMutation(t *testing.T, mode, scope, expected, mutation string) (webGPTValidationResult, []byte, error) {
 	t.Helper()
+	realAwk, err := exec.LookPath("awk")
+	if err != nil {
+		t.Fatal(err)
+	}
 	resultPath := filepath.Join(fixture.base, "result-"+strings.ReplaceAll(mode, "/", "-")+".json")
 	_ = os.Remove(resultPath)
 	command := exec.Command("sh", filepath.Join(fixture.control, "web-gpt-validate.sh"), fixture.branch, expected, fixture.controlSHA, mode, scope, resultPath, "web-gpt-validation-result-1")
 	command.Dir = fixture.target
+	controlRoot := fixture.control
+	if mutation == "missing-control-root" {
+		controlRoot = filepath.Join(fixture.base, "absent-control-root")
+	}
 	command.Env = append(os.Environ(),
 		"PATH="+fixture.bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"WEB_GPT_VALIDATION_CONTROL_ROOT="+fixture.control,
+		"WEB_GPT_VALIDATION_CONTROL_ROOT="+controlRoot,
 		"VALIDATION_LOG="+fixture.log,
 		"VALIDATION_MUTATION="+mutation,
+		"VALIDATION_REAL_AWK="+realAwk,
 		"EXPECTED_TARGET_ROOT="+fixture.target,
 		"EXPECTED_CONTROL_ROOT="+fixture.control,
 	)
@@ -231,6 +304,16 @@ func (fixture webGPTValidationFixture) runWithMutation(t *testing.T, mode, scope
 	data, readErr := os.ReadFile(resultPath)
 	if readErr != nil {
 		t.Fatalf("validation result missing: %v: %s", readErr, output)
+	}
+	var fields map[string]json.RawMessage
+	if jsonErr := json.Unmarshal(data, &fields); jsonErr != nil {
+		t.Fatalf("decode validation result fields: %v: %s", jsonErr, data)
+	}
+	for _, key := range []string{"tested_branch", "tested_sha", "control_sha", "mode", "result", "scope", "artifact_locator", "error"} {
+		value, ok := fields[key]
+		if !ok || string(value) == "null" {
+			t.Fatalf("validation result is missing required string %q: %s", key, data)
+		}
 	}
 	var result webGPTValidationResult
 	if jsonErr := json.Unmarshal(data, &result); jsonErr != nil {

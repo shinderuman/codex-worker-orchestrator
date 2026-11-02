@@ -9,19 +9,42 @@ import (
 
 func TestRuntimeArtifactContextCarriesOnlyDynamicProjection(t *testing.T) {
 	t.Parallel()
-	worker := withArtifactContext("implementation instruction", "/tmp/artifacts")
-	wantWorker := "implementation instruction\n\nREPORT_ARTIFACT_DIR: /tmp/artifacts\n" + priorArtifactReferenceMarker + "\n"
-	if worker != wantWorker {
-		t.Fatalf("worker artifact projection = %q want %q", worker, wantWorker)
-	}
-	if strings.Contains(worker, "--packet-check") {
-		t.Fatalf("stable packet procedure leaked into runtime artifact projection: %s", worker)
-	}
-
-	reviewer := withReviewerArtifactContext("review instruction", "/tmp/artifacts")
-	wantReviewer := "review instruction\n\nCURRENT_TASK_ARTIFACT_DIR: /tmp/artifacts\n" + priorArtifactReferenceMarker + "\n"
-	if reviewer != wantReviewer {
-		t.Fatalf("reviewer artifact projection = %q want %q", reviewer, wantReviewer)
+	for _, tc := range []struct {
+		name        string
+		actual      string
+		instruction string
+		selector    string
+	}{
+		{
+			name: "worker", actual: withArtifactContext("implementation instruction", "/tmp/artifacts"),
+			instruction: "implementation instruction", selector: "REPORT_ARTIFACT_DIR",
+		},
+		{
+			name: "reviewer", actual: withReviewerArtifactContext("review instruction", "/tmp/artifacts"),
+			instruction: "review instruction", selector: "CURRENT_TASK_ARTIFACT_DIR",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(tc.actual, tc.instruction) {
+				t.Fatalf("original instruction was lost: %q", tc.actual)
+			}
+			var artifactDirectories []string
+			for _, line := range strings.Split(tc.actual, "\n") {
+				key, value, ok := strings.Cut(line, ":")
+				if ok && strings.TrimSpace(key) == tc.selector {
+					artifactDirectories = append(artifactDirectories, strings.TrimSpace(value))
+				}
+			}
+			if len(artifactDirectories) != 1 || artifactDirectories[0] != "/tmp/artifacts" {
+				t.Fatalf("artifact directory is not projected exactly once: %q", tc.actual)
+			}
+			if strings.Count(tc.actual, priorArtifactReferenceMarker) != 1 {
+				t.Fatalf("prior artifact reference policy is not projected exactly once: %q", tc.actual)
+			}
+			if strings.Contains(tc.actual, "--packet-check") {
+				t.Fatalf("stable packet procedure leaked into dynamic runtime projection: %q", tc.actual)
+			}
+		})
 	}
 }
 

@@ -138,6 +138,55 @@ func deterministicAutofixFixture(t *testing.T, body string) string {
 	return root
 }
 
+func TestControlledRunnerUsesControlPolicyWithoutTargetToolExecution(t *testing.T) {
+	target := t.TempDir()
+	control := t.TempDir()
+	argumentLog := filepath.Join(t.TempDir(), "arguments")
+	targetMarker := filepath.Join(t.TempDir(), "target-tool-executed")
+	t.Setenv("CONTROLLED_ARGUMENT_LOG", argumentLog)
+	t.Setenv("TARGET_TOOL_MARKER", targetMarker)
+	writeFocusedValidationFile(t, control, ".golangci.yml", "control-policy-selected\n", 0o644)
+	writeFocusedValidationFile(t, target, ".golangci.yml", "target-policy-must-not-be-selected\n", 0o644)
+	targetTool := "#!/bin/sh\nprintf 'executed\\n' > \"$TARGET_TOOL_MARKER\"\nexit 87\n"
+	writeFocusedValidationFile(t, target, "commentlint", targetTool, 0o755)
+	writeFocusedValidationFile(t, target, "golangci-lint", targetTool, 0o755)
+	writeFocusedValidationFile(t, target, "subject.go", "package subject\n\n// explanation\nfunc Subject() {}\n", 0o644)
+	writeFocusedValidationFile(t, control, "golangci-lint", `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "$CONTROLLED_ARGUMENT_LOG"
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = --config ]; then
+		cat "$2"
+		exit 0
+	fi
+	shift
+done
+exit 86
+`, 0o755)
+	runner := controlledCommandRunner{
+		base:       realCommandRunner{golangciLintPath: filepath.Join(control, "golangci-lint")},
+		targetRoot: target, controlRoot: control,
+	}
+	result, err := runner.run(target, "golangci-lint", "run", "--config", filepath.Join(target, ".golangci.yml"))
+	if err != nil || result.exitCode != 0 || result.output != "control-policy-selected\n" {
+		t.Fatalf("controlled policy result = %#v, err = %v", result, err)
+	}
+	arguments, err := os.ReadFile(argumentLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(arguments) != "run\n--config\n"+filepath.Join(control, ".golangci.yml")+"\n" {
+		t.Fatalf("executed tool arguments = %q", arguments)
+	}
+	result, err = runner.run(target, filepath.Join(target, "commentlint"))
+	if err != nil || result.exitCode != 1 || len(parseCommentlint(result)) == 0 {
+		t.Fatalf("in-process commentlint result = %#v, err = %v", result, err)
+	}
+	if _, err := os.Stat(targetMarker); !os.IsNotExist(err) {
+		t.Fatalf("target-owned tool was executed: %v", err)
+	}
+}
+
 func readDeterministicAutofixFixture(t *testing.T, root string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(root, "fixture.sh"))

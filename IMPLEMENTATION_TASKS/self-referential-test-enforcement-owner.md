@@ -36,6 +36,10 @@ production側の品質検証が「テスト関数が定義されていること�
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 - 実行時のcurrent Gitにおける `glm-worker/internal/harnesslint/control_provenance.go`、`control_projection.go`、`quality_surface.go`、`go_rules_test_structure.go`、`codex/control-provenance.json` と周辺consumer/テストを調査する。これは存在確認型機構を持つ既知entrypointであり、他の同種production ownerにも対象を広げて確認する。
