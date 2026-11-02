@@ -20,13 +20,16 @@ func runIsolatedGoTest(ctx context.Context, input GoTestInput) GoTestOutcome {
 	if err := ValidateExecutionID(input.ExecutionID); err != nil {
 		return goTestInputFailure(err)
 	}
-	if err := observationConfinementAdmission(); err != nil {
-		return goTestConfinementFailure(err)
-	}
 	started := time.Now()
 	deadline := time.Duration(input.ResolvedGoTestDeadlineMS()) * time.Millisecond
 	executionCtx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
+	if err := executionCtx.Err(); err != nil {
+		return goTestContextStopOutcome(err, deadline)
+	}
+	if err := observationConfinementAdmission(); err != nil {
+		return goTestConfinementFailure(err)
+	}
 	tempRoot, err := os.MkdirTemp("", "glm-worker-observation-")
 	if err != nil {
 		return goTestWrapperFailure(started, fmt.Sprintf("隔離temp rootを作成できません: %v", err))
