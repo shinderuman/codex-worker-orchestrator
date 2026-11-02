@@ -17,7 +17,7 @@ func TestDarwinObservationCancelledPreflightDoesNotLaunchTarget(t *testing.T) {
 	binDir := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "preflight-started")
 	probe := filepath.Join(binDir, "sandbox-exec")
-	script := "#!/bin/sh\nprintf %s \"$\" > \"$OBSERVATION_PREFLIGHT_MARKER\"\nexec sleep 30\n"
+	script := "#!/bin/sh\nprintf %s \"$$\" > \"$OBSERVATION_PREFLIGHT_MARKER\"\nexec sleep 30\n"
 	if err := os.WriteFile(probe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
