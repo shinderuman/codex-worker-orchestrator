@@ -660,10 +660,7 @@ func parseDiffGitEntry(data []byte, path string, index bool) (string, string, er
 			return "", "", fmt.Errorf("non-exact or ambiguous Git entry for %q", path)
 		}
 		fields := strings.Fields(string(meta))
-		if len(fields) != 3 || !supportedDiffGitMode(fields[0]) {
-			return "", "", fmt.Errorf("unsupported Git entry for %q", path)
-		}
-		if index && fields[2] != "0" || !index && fields[1] != "blob" {
+		if !validDiffGitEntry(fields, index) {
 			return "", "", fmt.Errorf("unsupported or unmerged Git entry for %q", path)
 		}
 		mode = fields[0]
@@ -674,6 +671,16 @@ func parseDiffGitEntry(data []byte, path string, index bool) (string, string, er
 		}
 	}
 	return mode, object, nil
+}
+
+func validDiffGitEntry(fields []string, index bool) bool {
+	if len(fields) != 3 || !supportedDiffGitMode(fields[0]) {
+		return false
+	}
+	if index {
+		return fields[2] == "0"
+	}
+	return fields[1] == "blob"
 }
 
 func supportedDiffGitMode(mode string) bool {
