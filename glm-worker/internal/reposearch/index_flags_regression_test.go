@@ -1,13 +1,12 @@
 package reposearch
 
 import (
+	"strings"
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func TestRepoSearchRejectsAssumeUnchangedInsteadOfServingStaleCache(t *testing.T) {
@@ -64,15 +63,52 @@ func TestRepoSearchRejectsSkipWorktreeBeforeCacheOrExhaustiveSearch(t *testing.T
 	}
 }
 
-func TestRepoSearchRejectsSparseCheckoutOutsideMaterializedCorpus(t *testing.T) {
-	dir := initRepo(t)
-	writeTestFile(t, filepath.Join(dir, "keep", "visible.txt"), "needle\n")
-	writeTestFile(t, filepath.Join(dir, "hidden", "invisible.txt"), "needle\n")
-	commitAll(t, dir, "initial")
-	gitRun(t, dir, "sparse-checkout", "init", "--cone")
-	gitRun(t, dir, "sparse-checkout", "set", "keep")
-	if _, err := Search(context.Background(), dir, "needle", Options{DisableCache: true}); !errors.Is(err, ErrUnsupportedIndexFlags) {
-		t.Fatalf("sparse checkout was not rejected: %v", err)
+func TestRepoSearchSparseCheckoutAndSparseIndexRespectCorpusBoundary(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		flag string
+	}{
+		{name: "normal index", flag: "--no-sparse-index"},
+		{name: "sparse index", flag: "--sparse-index"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := initRepo(t)
+			writeTestFile(t, filepath.Join(dir, "keep", "visible.txt"), "needle\n")
+			writeTestFile(t, filepath.Join(dir, "hidden", "invisible.txt"), "needle\n")
+			writeTestFile(t, filepath.Join(dir, "root.txt"), "unrelated\n")
+			commitAll(t, dir, "initial")
+			gitRun(t, dir, "sparse-checkout", "init", "--cone")
+			gitRun(t, dir, "sparse-checkout", "set", test.flag, "keep")
+			// The default ls-files format must expand sparse-directory entries.
+			output, err := gitOutput(context.Background(), dir, "ls-files", "-z", "-v", "-s", "--cached")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(output), "\thidden/invisible.txt\x00") {
+				t.Fatalf("sparse tracked entry was not expanded by ls-files: %q", output)
+			}
+			if _, err := Search(context.Background(), dir, "needle", Options{DisableCache: true}); !errors.Is(err, ErrUnsupportedIndexFlags) {
+				t.Fatalf("in-corpus sparse entry accepted: %v", err)
+			}
+			if _, err := ExhaustiveSearch(context.Background(), dir, "needle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) {
+				t.Fatalf("in-corpus sparse entry accepted as exhaustive: %v", err)
+			}
+			opts := Options{CacheRoot: t.TempDir(), ExcludeDirs: []string{"hidden"}}
+			first, err := Search(context.Background(), dir, "needle", opts)
+			if err != nil || first.CacheStatus != CacheStatusRebuilt ||
+				!reflect.DeepEqual(resultPaths(first), []string{"keep/visible.txt"}) {
+				t.Fatalf("excluded sparse directory blocked scoped corpus: %#v %v", first, err)
+			}
+			hit, err := Search(context.Background(), dir, "needle", opts)
+			if err != nil || hit.CacheStatus != CacheStatusHit ||
+				!reflect.DeepEqual(resultPaths(hit), []string{"keep/visible.txt"}) {
+				t.Fatalf("excluded sparse directory broke cache hit: %#v %v", hit, err)
+			}
+			exhaustive, err := ExhaustiveSearch(context.Background(), dir, "needle", ExhaustiveOptions{ExcludeDirs: []string{"hidden"}})
+			if err != nil || len(exhaustive.Matches) != 1 || exhaustive.Matches[0].Path != "keep/visible.txt" {
+				t.Fatalf("excluded sparse directory broke exhaustive search: %#v %v", exhaustive, err)
+			}
+		})
 	}
 }
 
@@ -127,36 +163,26 @@ func TestRepoSearchIndexFlagAppearingDuringSearchFailsClosed(t *testing.T) {
 	}
 }
 
-func TestRepoSearchIndexFlagsCostRepresentativeCorpus(t *testing.T) {
+func TestRepoSearchIndexFlagsCannotBeHiddenByPostIndexQueryScopes(t *testing.T) {
 	dir := initRepo(t)
-	const files = 128
-	for i := 0; i < files; i++ {
-		writeTestFile(t, filepath.Join(dir, fmt.Sprintf("data-%03d.txt", i)), "needle for timing\n")
-	}
+	writeTestFile(t, filepath.Join(dir, "visible", "doc.txt"), "needle\n")
+	writeTestFile(t, filepath.Join(dir, "other", "flagged.txt"), "unrelated\n")
 	commitAll(t, dir, "initial")
-	opts := Options{CacheRoot: t.TempDir()}
-	if _, err := Search(context.Background(), dir, "needle", opts); err != nil {
-		t.Fatal(err)
-	}
-	const iterations = 8
-	measureLsFiles := func(flags ...string) time.Duration {
-		start := time.Now()
-		for i := 0; i < iterations; i++ {
-			if _, err := gitOutput(context.Background(), dir, append([]string{"ls-files", "-z"}, flags...)...); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return time.Since(start)
-	}
-	before := measureLsFiles("-s", "--cached")
-	after := measureLsFiles("-v", "-s", "--cached")
-	start := time.Now()
-	for i := 0; i < iterations; i++ {
-		report, err := Search(context.Background(), dir, "needle", opts)
-		if err != nil || report.CacheStatus != CacheStatusHit || report.IndexedFiles != files {
-			t.Fatalf("cache-hit #%d invalid: %#v %v", i, report, err)
+	gitRun(t, dir, "update-index", "--assume-unchanged", "other/flagged.txt")
+	for _, opts := range []Options{
+		{DisableCache: true, PathPrefixes: []string{"visible"}},
+		{DisableCache: true, Symbols: []string{"needle"}},
+	} {
+		if report, err := Search(context.Background(), dir, "needle", opts); !errors.Is(err, ErrUnsupportedIndexFlags) {
+			t.Fatalf("post-index query scope hid flagged entry: %#v %v", report, err)
 		}
 	}
-	hits := time.Since(start)
-	t.Logf("corpus=%d files, %d iterations: ls-files -s=%s, ls-files -v -s=%s, cached Search=%s total (all use existing subprocess count)", files, iterations, before, after, hits)
+}
+
+func TestRepoSearchRejectsMalformedTrackedIndexEntryInsteadOfEmptyCorpus(t *testing.T) {
+	for _, raw := range []string{"?", "H malformed", "X 100644 deadbeef 0\tentry.txt"} {
+		if entry, included, err := parseTrackedIndexEntry(raw, map[string]bool{}); err == nil || included {
+			t.Fatalf("malformed index entry became search result: raw=%q entry=%#v included=%v err=%v", raw, entry, included, err)
+		}
+	}
 }
