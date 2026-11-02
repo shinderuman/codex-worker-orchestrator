@@ -67,22 +67,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	if err != nil || oldBinding.AttemptID != materialized.Admission.Attempt.PredecessorAttemptID {
 		t.Fatalf("materialization changed retained predecessor binding before runtime completion: %#v %v", oldBinding, err)
 	}
-	recovery, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", TransitionID: materialized.TransitionID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var recoveredJSON bytes.Buffer
-	recognized, err := runControllerOperations(
-		[]string{controllerAuthorityFlag, controllerExecutionSurface},
-		func() (config.AppConfig, error) { return cfg, nil }, bytes.NewReader(recovery), &recoveredJSON,
-	)
-	if err != nil || !recognized {
-		t.Fatalf("typed recover after Controller commit failed: recognized=%v err=%v", recognized, err)
-	}
-	var resumed controller.ExecutionOperationResult
-	if err := json.Unmarshal(recoveredJSON.Bytes(), &resumed); err != nil {
-		t.Fatalf("typed recovery output is not an execution result: %v", err)
-	}
+	resumed := runControllerRecoveryCLI(t, cfg, materialized.TransitionID)
 	if resumed.TransitionID != materialized.TransitionID || resumed.Head.ControllerGeneration != materialized.Head.ControllerGeneration ||
 		resumed.Admission == nil || resumed.Admission.Attempt.AttemptID != materialized.Admission.Attempt.AttemptID {
 		t.Fatalf("recovery changed canonical Controller attempt: %#v", resumed)
@@ -137,6 +122,28 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: materialized.TransitionID}); err == nil {
 		t.Fatal("foreign runtime attempt was accepted by materialization replay")
 	}
+}
+
+func runControllerRecoveryCLI(t *testing.T, cfg config.AppConfig, transitionID string) controller.ExecutionOperationResult {
+	t.Helper()
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", TransitionID: transitionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	recognized, err := runControllerOperations(
+		[]string{controllerAuthorityFlag, controllerExecutionSurface},
+		func() (config.AppConfig, error) { return cfg, nil },
+		bytes.NewReader(command), &output,
+	)
+	if err != nil || !recognized {
+		t.Fatalf("typed Controller recovery failed: recognized=%v err=%v", recognized, err)
+	}
+	var recovered controller.ExecutionOperationResult
+	if err := json.Unmarshal(output.Bytes(), &recovered); err != nil {
+		t.Fatalf("typed Controller recovery output is invalid: %v", err)
+	}
+	return recovered
 }
 
 func TestPromotedTaskMetadataKeepsPublicationAndReentryAvailable(t *testing.T) {

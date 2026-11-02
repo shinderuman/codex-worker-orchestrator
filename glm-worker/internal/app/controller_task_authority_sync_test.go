@@ -548,24 +548,7 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 		t.Fatalf("stale runtime binding handoff stayed consistent mid-recovery: %#v", handoff)
 	}
 
-	recoveryCommand, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var recoveryOutput bytes.Buffer
-	recognized, err := runControllerOperations(
-		[]string{controllerAuthorityFlag, controllerExecutionSurface},
-		func() (config.AppConfig, error) { return f.cfg, nil },
-		bytes.NewReader(recoveryCommand),
-		&recoveryOutput,
-	)
-	if err != nil || !recognized {
-		t.Fatalf("CLI recovery failed: recognized=%v error=%v", recognized, err)
-	}
-	var recovered controller.ExecutionOperationResult
-	if err := json.Unmarshal(recoveryOutput.Bytes(), &recovered); err != nil {
-		t.Fatalf("CLI recovery did not return a typed result: %v", err)
-	}
+	recovered := runControllerRecoveryCLI(t, f.cfg, committed.TransitionID)
 	if recovered.TransitionID != committed.TransitionID || recovered.Head.RootTaskRef == nil || !recovered.Head.RootTaskRef.Equal(revised) {
 		t.Fatalf("CLI recovery lost the revised transition authority: %#v", recovered)
 	}
