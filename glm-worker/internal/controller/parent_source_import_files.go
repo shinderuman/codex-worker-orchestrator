@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -144,32 +146,217 @@ func (s *Store) applyParentSourceFiles(op ExecutionOperation) error {
 }
 
 func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) error {
-	previous := make(map[string]workspaceTreeEntry, len(before))
-	for _, entry := range before {
-		previous[entry.path] = entry
+	if err := validateSourceTreeReplacementDirectories(repo, before, after); err != nil {
+		return err
 	}
+	previous := sourceImportEntryMap(before)
+	next := sourceImportEntryMap(after)
+	removed := make([]workspaceTreeEntry, 0)
+	for _, entry := range before {
+		if _, remains := next[entry.path]; remains {
+			continue
+		}
+		if sourceTreeReplacementDirectoryPresent(repo, entry.path, after) ||
+			sourceTreeAncestorReplacementPresent(repo, entry.path, after) {
+			continue
+		}
+		removed = append(removed, entry)
+	}
+	for start := 0; start < len(removed); start += workspaceBlobBatchSize {
+		batch := removed[start:min(start+workspaceBlobBatchSize, len(removed))]
+		if err := applySourceEntryBatch(repo, batch, make([]workspaceTreeEntry, len(batch))); err != nil {
+			return err
+		}
+	}
+	return applySourceTreeAddedEntries(repo, previous, before, after)
+}
+
+func validateSourceTreeReplacementDirectories(repo string, before, after []workspaceTreeEntry) error {
+	entries := append(append([]workspaceTreeEntry(nil), before...), after...)
+	for _, entry := range entries {
+		if err := validateSuspensionPath(entry.path); err != nil {
+			return err
+		}
+	}
+	directories := sourceTreeDirectories(before)
+	for path := range sourceTreeDirectories(after) {
+		directories[path] = true
+	}
+	known := sourceImportEntryMap(entries)
+	validated := make(map[string]bool)
+	for _, entry := range entries {
+		if !directories[entry.path] || validated[entry.path] {
+			continue
+		}
+		if err := validateSourceTreeReplacementDirectory(repo, entry.path, directories, known); err != nil {
+			return err
+		}
+		validated[entry.path] = true
+	}
+	return nil
+}
+
+func sourceTreeDirectories(entries []workspaceTreeEntry) map[string]bool {
+	directories := make(map[string]bool)
+	for _, entry := range entries {
+		for directory := filepath.ToSlash(filepath.Dir(entry.path)); directory != "."; directory = filepath.ToSlash(filepath.Dir(directory)) {
+			directories[directory] = true
+		}
+	}
+	return directories
+}
+
+func validateSourceTreeReplacementDirectory(repo, root string, directories map[string]bool, known map[string]workspaceTreeEntry) error {
+	abs, err := suspensionWorktreePath(repo, root)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(abs)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	rootAbs, err := filepath.Abs(abs)
+	if err != nil {
+		return err
+	}
+	return filepath.WalkDir(rootAbs, func(current string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(rootAbs, current)
+		if err != nil {
+			return err
+		}
+		path := filepath.ToSlash(filepath.Join(root, relative))
+		if sourceTreeReplacementEntryOwned(path, entry, directories, known) {
+			return nil
+		}
+		return fmt.Errorf("unattributed source tree replacement path at %q", path)
+	})
+}
+
+func sourceTreeReplacementEntryOwned(path string, entry os.DirEntry, directories map[string]bool, known map[string]workspaceTreeEntry) bool {
+	if entry.IsDir() {
+		return directories[path]
+	}
+	return known[path].path != "" && (entry.Type().IsRegular() || entry.Type() == os.ModeSymlink)
+}
+
+func applySourceTreeAddedEntries(repo string, previous map[string]workspaceTreeEntry, before, after []workspaceTreeEntry) error {
 	for start := 0; start < len(after); start += workspaceBlobBatchSize {
 		batch := after[start:min(start+workspaceBlobBatchSize, len(after))]
 		prior := make([]workspaceTreeEntry, len(batch))
 		for index, entry := range batch {
 			prior[index] = previous[entry.path]
-			delete(previous, entry.path)
+			if err := removeSourceTreeReplacedDirectory(repo, entry.path, before); err != nil {
+				return err
+			}
 		}
 		if err := applySourceEntryBatch(repo, prior, batch); err != nil {
 			return err
 		}
 	}
-	remaining := make([]workspaceTreeEntry, 0, len(previous))
-	for _, entry := range previous {
-		remaining = append(remaining, entry)
+	return nil
+}
+
+func sourceTreeReplacementDirectoryPresent(repo, path string, after []workspaceTreeEntry) bool {
+	replaced := false
+	for _, entry := range after {
+		if strings.HasPrefix(entry.path, path+"/") {
+			replaced = true
+			break
+		}
 	}
-	for start := 0; start < len(remaining); start += workspaceBlobBatchSize {
-		batch := remaining[start:min(start+workspaceBlobBatchSize, len(remaining))]
-		if err := applySourceEntryBatch(repo, batch, make([]workspaceTreeEntry, len(batch))); err != nil {
+	if !replaced {
+		return false
+	}
+	info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(path)))
+	return err == nil && info.IsDir()
+}
+
+func sourceTreeAncestorReplacementPresent(repo, path string, after []workspaceTreeEntry) bool {
+	for _, entry := range after {
+		if !strings.HasPrefix(path, entry.path+"/") {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(entry.path)))
+		return err == nil && !info.IsDir()
+	}
+	return false
+}
+
+func removeSourceTreeReplacedDirectory(repo, path string, before []workspaceTreeEntry) error {
+	directories := sourceTreeReplacedDirectories(path, before)
+	if len(directories) == 0 {
+		return nil
+	}
+	abs, err := suspensionWorktreePath(repo, path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(abs)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	ordered := make([]string, 0, len(directories))
+	for directory := range directories {
+		ordered = append(ordered, directory)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		return len(ordered[i]) > len(ordered[j])
+	})
+	for _, directory := range ordered {
+		if err := removeSourceTreeEmptyDirectory(repo, directory); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func sourceTreeReplacedDirectories(path string, before []workspaceTreeEntry) map[string]bool {
+	directories := make(map[string]bool)
+	for _, entry := range before {
+		if !strings.HasPrefix(entry.path, path+"/") {
+			continue
+		}
+		for directory := filepath.ToSlash(filepath.Dir(entry.path)); directory != "."; directory = filepath.ToSlash(filepath.Dir(directory)) {
+			directories[directory] = true
+			if directory == path {
+				break
+			}
+		}
+	}
+	return directories
+}
+
+func removeSourceTreeEmptyDirectory(repo, path string) error {
+	abs, err := suspensionWorktreePath(repo, path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(abs)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	return os.Remove(abs)
 }
 
 func applySourceEntryBatch(repo string, before, after []workspaceTreeEntry) error {
@@ -235,8 +422,8 @@ func applyParentSourceEntry(repo string, before, after workspaceTreeEntry, blobs
 	if after.path == "" {
 		return os.Remove(path)
 	}
-	if after.mode != "100644" && after.mode != "100755" {
-		return fmt.Errorf("parent source update requires a regular file: %q", relative)
+	if after.mode != "100644" && after.mode != "100755" && after.mode != "120000" {
+		return fmt.Errorf("parent source update requires a file or symlink: %q", relative)
 	}
 	return writeParentSourceEntry(path, after, blobs)
 }
@@ -249,9 +436,31 @@ func writeParentSourceEntry(path string, entry workspaceTreeEntry, blobs workspa
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	if entry.mode == "120000" {
+		return replaceParentSourceSymlink(path, string(data))
+	}
 	mode := os.FileMode(0o644)
 	if entry.mode == "100755" {
 		mode = 0o755
 	}
 	return execfile.Write(path, data, mode)
+}
+
+func replaceParentSourceSymlink(path, target string) error {
+	temp, err := os.CreateTemp(filepath.Dir(path), ".source-link-*")
+	if err != nil {
+		return err
+	}
+	name := temp.Name()
+	defer func() { _ = os.Remove(name) }()
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(name); err != nil {
+		return err
+	}
+	if err := os.Symlink(target, name); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }

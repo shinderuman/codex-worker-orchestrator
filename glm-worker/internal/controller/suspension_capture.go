@@ -23,6 +23,9 @@ func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]wor
 			paths[path] = workspaceTreeEntry{path: path}
 		}
 	}
+	if err := pruneSuspensionReplacedDescendants(repo, paths); err != nil {
+		return nil, err
+	}
 	var entries []workspaceTreeEntry
 	for path, entry := range paths {
 		if !state.IsParentManagedPath(path) {
@@ -30,6 +33,40 @@ func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]wor
 		}
 	}
 	return captureSuspensionEntries(repo, entries)
+}
+
+func pruneSuspensionReplacedDescendants(repo string, paths map[string]workspaceTreeEntry) error {
+	for path := range paths {
+		replaced, err := suspensionReplacedFileAncestor(repo, path, paths)
+		if err != nil {
+			return err
+		}
+		if replaced {
+			delete(paths, path)
+		}
+	}
+	return nil
+}
+
+func suspensionReplacedFileAncestor(repo, path string, paths map[string]workspaceTreeEntry) (bool, error) {
+	for index := strings.LastIndex(path, "/"); index >= 0; {
+		ancestor := path[:index]
+		if _, present := paths[ancestor]; present {
+			absolute, err := suspensionWorktreePath(repo, ancestor)
+			if err != nil {
+				return false, err
+			}
+			info, err := os.Lstat(absolute)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, err
+			}
+			if err == nil && (info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
+				return true, nil
+			}
+		}
+		index = strings.LastIndex(ancestor, "/")
+	}
+	return false, nil
 }
 
 func captureSuspensionEntries(repo string, entries []workspaceTreeEntry) ([]workspaceTreeEntry, error) {

@@ -293,7 +293,7 @@ func (s *Store) validatePrimaryPromotionEntries(current string, before, after []
 	oldByPath, newByPath, currentByPath := sourceImportEntryMap(before), sourceImportEntryMap(after), sourceImportEntryMap(actual)
 	paths := append(append(append([]workspaceTreeEntry(nil), before...), after...), actual...)
 	for _, entry := range paths {
-		if err := s.validatePrimaryPromotionEntry(entry.path, oldByPath[entry.path], newByPath[entry.path], currentByPath[entry.path]); err != nil {
+		if err := validatePrimaryPromotionEntry(entry.path, oldByPath[entry.path], newByPath[entry.path], currentByPath[entry.path]); err != nil {
 			return err
 		}
 	}
@@ -308,14 +308,14 @@ func sourceImportEntryMap(entries []workspaceTreeEntry) map[string]workspaceTree
 	return result
 }
 
-func (s *Store) validatePrimaryPromotionEntry(path string, before, after, current workspaceTreeEntry) error {
+func validatePrimaryPromotionEntry(path string, before, after, current workspaceTreeEntry) error {
 	if current != before && current != after {
 		return fmt.Errorf("unattributed primary source mutation at %q", path)
 	}
-	if _, err := suspensionWorktreePath(s.identity.PrimaryRoot, path); err != nil {
+	if err := validateSuspensionPath(path); err != nil {
 		return err
 	}
-	if before != after && after.path != "" && after.mode != "100644" && after.mode != "100755" {
+	if before != after && after.path != "" && after.mode != "100644" && after.mode != "100755" && after.mode != "120000" {
 		return fmt.Errorf("primary promotion requires a regular output file: %q", path)
 	}
 	return nil
