@@ -63,6 +63,88 @@ func scenarioSelfTestViolations(set *token.FileSet, file *ast.File, path string,
 	return violations
 }
 
+func emptyTestEntrypointViolations(set *token.FileSet, file *ast.File, path string) []Violation {
+	if !strings.HasSuffix(path, "_test.go") {
+		return nil
+	}
+	var violations []Violation
+	for _, decl := range file.Decls {
+		function, ok := decl.(*ast.FuncDecl)
+		if !ok || !isGoTestEntrypoint(function.Name.Name) || function.Body == nil || !inertGoTestEntrypoint(function) {
+			continue
+		}
+		position := set.Position(function.Pos())
+		violations = append(violations, Violation{
+			Rule: "empty-test-entrypoint", Path: path, Line: position.Line, Column: position.Column,
+			Message: function.Name.Name + ": inert test entrypoint; replace static logging/skipping with assertions against production behavior, or remove this test",
+		})
+	}
+	return violations
+}
+
+func inertGoTestEntrypoint(function *ast.FuncDecl) bool {
+	if len(function.Body.List) == 0 {
+		return true
+	}
+	if function.Type.Params == nil || len(function.Type.Params.List) != 1 || len(function.Type.Params.List[0].Names) != 1 {
+		return false
+	}
+	receiver := function.Type.Params.List[0].Names[0].Name
+	for _, statement := range function.Body.List {
+		if !inertTestSetupStatement(statement, receiver) {
+			return false
+		}
+	}
+	return true
+}
+
+func inertTestSetupStatement(statement ast.Stmt, receiver string) bool {
+	expression, ok := statement.(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	call, ok := expression.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	base, ok := selector.X.(*ast.Ident)
+	if !ok || base.Name != receiver {
+		return false
+	}
+	switch selector.Sel.Name {
+	case "Parallel", "Helper", "SkipNow":
+		return len(call.Args) == 0
+	case "Skip", "Skipf", "Log", "Logf":
+		return literalOnlyTestCallArgs(call.Args)
+	default:
+		return false
+	}
+}
+
+func literalOnlyTestCallArgs(args []ast.Expr) bool {
+	for _, argument := range args {
+		for {
+			parenthesized, ok := argument.(*ast.ParenExpr)
+			if !ok {
+				break
+			}
+			argument = parenthesized.X
+		}
+		if _, literal := argument.(*ast.BasicLit); literal {
+			continue
+		}
+		constant, ok := argument.(*ast.Ident)
+		if !ok || (constant.Name != "true" && constant.Name != "false" && constant.Name != cleanCutoverNilIdentifier) {
+			return false
+		}
+	}
+	return true
+}
+
 func testSizeViolations(set *token.FileSet, file *ast.File, path string) []Violation {
 	if !strings.HasSuffix(path, "_test.go") {
 		return nil

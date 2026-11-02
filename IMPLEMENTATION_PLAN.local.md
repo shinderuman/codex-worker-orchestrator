@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md`](IMPLEMENTATION_TASKS/self-referential-test-prevention-harness.md)
+- [`IMPLEMENTATION_TASKS/recovery-rejection-error-provenance.md`](IMPLEMENTATION_TASKS/recovery-rejection-error-provenance.md)
 
 ## NEXT（優先順）
 
@@ -40,7 +40,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/observation-replay-fence-retention.md`](IMPLEMENTATION_TASKS/observation-replay-fence-retention.md)
 - [`IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`](IMPLEMENTATION_TASKS/observation-preparation-cancellation.md)
 - [`IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md`](IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md)
-- [`IMPLEMENTATION_TASKS/recovery-rejection-error-provenance.md`](IMPLEMENTATION_TASKS/recovery-rejection-error-provenance.md)
 - [`IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`](IMPLEMENTATION_TASKS/repo-search-result-context-budget.md)
 - [`IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`](IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md)
 - [`IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`](IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md)
