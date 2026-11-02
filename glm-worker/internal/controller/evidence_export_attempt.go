@@ -433,7 +433,7 @@ func (b *evidenceExportBuilder) collectAttemptTaskDiff(audit *EvidenceExportGitA
 	default:
 		return
 	}
-	diff, err := runGitBinary(b.store.config.RepoRoot, nil, "diff", "--binary", args[0], args[1])
+	diff, err := runGitBinary(b.store.config.RepoRoot, nil, "diff", "--binary", "--no-ext-diff", "--no-textconv", args[0], args[1])
 	entryPath := "attempt/git/task-diff.patch"
 	if err != nil {
 		b.recordUnreadable(entryPath, err.Error())

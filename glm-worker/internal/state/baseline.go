@@ -57,8 +57,8 @@ func captureGitBaselinePatches(repoRoot string, state *StateStore) (bool, error)
 		args []string
 	}{
 		{name: "baseline-status", args: []string{"status", "--porcelain=v1", "--untracked-files=all"}},
-		{name: "baseline-worktree.patch", args: []string{"diff", "--binary", "--no-ext-diff"}},
-		{name: "baseline-index.patch", args: []string{"diff", "--cached", "--binary", "--no-ext-diff"}},
+		{name: "baseline-worktree.patch", args: []string{"diff", "--binary", "--no-ext-diff", "--no-textconv"}},
+		{name: "baseline-index.patch", args: []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv"}},
 	}
 	for _, item := range commands {
 		command := exec.Command("git", item.args...)

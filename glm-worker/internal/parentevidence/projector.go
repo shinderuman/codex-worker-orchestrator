@@ -523,7 +523,7 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 }
 
 func captureDiff(repoRoot string, paths []string) ([]DiffFile, string, error) {
-	body, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-renames", "--"}, paths...)...)
+	body, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-textconv", "--no-renames", "--"}, paths...)...)
 	if err != nil {
 		return nil, "", fmt.Errorf("git diff HEAD: %w", err)
 	}

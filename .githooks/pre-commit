@@ -9,7 +9,7 @@ if [ -z "$metadata" ]; then
   exit 0
 fi
 
-if ! git diff --quiet -- IMPLEMENTATION_PLAN.local.md IMPLEMENTATION_TASKS; then
+if ! git diff --quiet --no-ext-diff --no-textconv -- IMPLEMENTATION_PLAN.local.md IMPLEMENTATION_TASKS; then
   printf '%s\n' 'parent metadata commit rejected: staged Plan/Task metadata differs from worktree' >&2
   exit 1
 fi

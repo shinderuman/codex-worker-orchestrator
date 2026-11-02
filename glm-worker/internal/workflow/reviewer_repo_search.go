@@ -97,7 +97,7 @@ func collectReviewerDiffImpactTerms(repoRoot, baseline string, paths []string) [
 	if strings.TrimSpace(baseline) == "" || len(paths) == 0 {
 		return nil
 	}
-	args := []string{"-C", repoRoot, "diff", "--unified=0", "--no-ext-diff", baseline, "--"}
+	args := []string{"-C", repoRoot, "diff", "--unified=0", "--no-ext-diff", "--no-textconv", baseline, "--"}
 	args = append(args, paths...)
 	output, err := exec.Command("git", args...).Output()
 	if err != nil {

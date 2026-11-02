@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`](IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md)
+- [`IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md`](IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md)
 
 ## NEXT（優先順）
 
@@ -22,7 +22,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md`](IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md)
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
-- [`IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md`](IMPLEMENTATION_TASKS/primary-promotion-tree-transitions.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md`](IMPLEMENTATION_TASKS/guardian-facade-review-effectiveness.md)

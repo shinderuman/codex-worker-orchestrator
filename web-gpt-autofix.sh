@@ -99,7 +99,7 @@ run_controlled_harnesslint() {
 
 capture_patch() {
 	output_path=$1
-	if ! git diff --binary --full-index --no-ext-diff HEAD -- >"$output_path"; then
+	if ! git diff --binary --full-index --no-ext-diff --no-textconv HEAD -- >"$output_path"; then
 		fail_closed patch_generation_failed not_published
 	fi
 }
@@ -222,7 +222,7 @@ publish_autofix() {
 	if ! git apply --index "$patch_path"; then
 		fail_closed patch_apply_failed
 	fi
-	if git diff --cached --quiet --; then
+	if git diff --cached --quiet --no-ext-diff --no-textconv --; then
 		fail_closed empty_prepared_patch
 	fi
 	if git diff --cached --name-status | grep -Eq '^(A|D|R|C|T)'; then
