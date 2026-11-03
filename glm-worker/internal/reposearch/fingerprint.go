@@ -37,7 +37,7 @@ func captureRepositoryFingerprint(ctx context.Context, repoRoot string, excludeD
 }
 
 func fingerprintIndexDigest(ctx context.Context, repoRoot string, excludeDirs map[string]bool) (string, error) {
-	entries, err := trackedFileEntries(ctx, repoRoot)
+	entries, err := trackedFileEntries(ctx, repoRoot, excludeDirs)
 	if err != nil {
 		return "", err
 	}
