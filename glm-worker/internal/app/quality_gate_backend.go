@@ -78,6 +78,7 @@ func runDarwinQualitySupplement(ctx context.Context, st *state.StateStore, recor
 	n := &qualitygate.NativeSupplement{Arguments: args, Toolchain: toolchain, Status: qualitygate.StatusRunning}
 	record.Execution.NativeSupplement = n
 	if !toolchain.MatchesRequiredGoVersion() || toolchain.GOOS != "darwin" || toolchain.GOARCH != "arm64" {
+		n.Status, n.ExitCode, n.ExitSource = qualitygate.StatusFail, 1, state.ValidationExitSourceWrapper
 		return fmt.Errorf("Darwin補完toolchainを利用できません")
 	}
 	var log bytes.Buffer
