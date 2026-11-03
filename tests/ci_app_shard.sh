@@ -32,12 +32,12 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
 list_tests() {
 	if [ "$mode" = race ]; then
-		go test -race -list . ./internal/app > "$tmp/listed"
+		go test -race -list . ./internal/app >"$tmp/listed"
 	else
-		go test -list . ./internal/app > "$tmp/listed"
+		go test -list . ./internal/app >"$tmp/listed"
 	fi
-	grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' "$tmp/listed" | LC_ALL=C sort > "$tmp/tests"
-	total=$(wc -l < "$tmp/tests")
+	grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' "$tmp/listed" | LC_ALL=C sort >"$tmp/tests"
+	total=$(wc -l <"$tmp/tests")
 	if [ "$total" -lt 12 ] || [ -n "$(uniq -d "$tmp/tests")" ]; then
 		echo 'app test inventory is missing or has duplicate names' >&2
 		exit 1
@@ -63,8 +63,8 @@ partition_tests() {
       else { slot = other % 9; owner = (slot < 3 ? slot + 3 : slot - 3); other++ }
       if (owner == shard) print
     }
-	' "$tmp/tests" > "$tmp/selected"
-	selected=$(wc -l < "$tmp/selected")
+	' "$tmp/tests" >"$tmp/selected"
+	selected=$(wc -l <"$tmp/selected")
 	if [ "$selected" -eq 0 ]; then
 		echo "empty app test shard: $mode $shard" >&2
 		exit 1
