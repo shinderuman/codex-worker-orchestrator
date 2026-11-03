@@ -7,7 +7,16 @@ import (
 )
 
 func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
-	t.Parallel()
+	t.Run("normal", testQualityWiringGoStructuralCases)
+	t.Run("compiler-exports-unavailable", func(t *testing.T) {
+		t.Setenv("GOROOT", filepath.Join(t.TempDir(), "missing-goroot"))
+		t.Setenv("PATH", t.TempDir())
+		testQualityWiringGoStructuralCases(t)
+	})
+}
+
+func testQualityWiringGoStructuralCases(t *testing.T) {
+	t.Helper()
 	for _, tc := range []struct {
 		name      string
 		source    string
@@ -72,6 +81,21 @@ func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
 			name:      "parenthesized imported Check is forbidden",
 			source:    "package workflow\nimport gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { gate.Run(root, true); (gate.Check)(root) }\n",
 			forbidden: true,
+		},
+		{
+			name:    "unrelated imported Run cannot impersonate canonical import",
+			source:  "package workflow\nimport gate \"example.invalid/another\"\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { gate.Run(root, true) }\n",
+			missing: "harnesslint.Run(root, true)",
+		},
+		{
+			name:    "local Run method cannot impersonate canonical import",
+			source:  "package workflow\nimport gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc captureQualitySurfaceDigest(root string) {}\ntype localGate struct{}; func (localGate) Run(string, bool) {}\nfunc runRepositoryQualityGate(root string) { gate := localGate{}; gate.Run(root, true) }\n",
+			missing: "harnesslint.Run(root, true)",
+		},
+		{
+			name:    "unresolved bool mode cannot satisfy true",
+			source:  "package workflow\nimport gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { flag := unknownFlag; gate.Run(root, flag) }\n",
+			missing: "harnesslint.Run(root, true)",
 		},
 		{
 			name:    "other root cannot satisfy the formal binding",
