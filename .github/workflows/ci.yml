@@ -83,7 +83,6 @@ jobs:
             echo 'Expected internal/harnesslint and at least two other packages' >&2
             exit 1
           fi
-          # Move harnesslint (~201s) away from workflow (~102s), preserving all packages.
           cut=$(( count / 2 ))
           printf 'Other packages: %s; shard %s; non-harnesslint cut at %s\n' "$count" "$SHARD" "$cut"
           printf '%s\n' "$packages" | awk -v shard="$SHARD" -v cut="$cut" '
