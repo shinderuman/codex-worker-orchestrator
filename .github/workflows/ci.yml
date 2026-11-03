@@ -26,8 +26,6 @@ jobs:
         include:
           - name: quality
             mode: quality
-          - name: app
-            mode: app
           - name: controller
             mode: controller
           - name: test-1
@@ -90,33 +88,154 @@ jobs:
             /\/internal\/workflow$/ { if (shard == 1) print; next }
             { other++; if ((shard == 0 && other <= cut) || (shard == 1 && other > cut)) print }
           ' | tee /dev/stderr | xargs -r go test
-      - name: Go tests for internal/app
-        if: ${{ matrix.mode == 'app' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -count=1 ./internal/app
-      - name: Profile app completion fixture costs (normal)
-        if: ${{ matrix.mode == 'app' && github.ref == 'refs/heads/web-gpt/app-test-fixture-runtime-cost' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -count=1 -v -run '^(TestTypedParentCompletionWorkflowThroughProductionBoundary|TestParentOnlyTaskCompletionThroughProductionBoundary|TestParentOnlyReentryThroughProductionBoundary)$' ./internal/app
-      - name: Profile app completion fixture costs (race)
-        if: ${{ matrix.mode == 'app' && github.ref == 'refs/heads/web-gpt/app-test-fixture-runtime-cost' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -race -count=1 -v -run '^(TestTypedParentCompletionWorkflowThroughProductionBoundary|TestParentOnlyTaskCompletionThroughProductionBoundary|TestParentOnlyReentryThroughProductionBoundary)$' ./internal/app
       - name: Go tests for internal/controller
         if: ${{ matrix.mode == 'controller' }}
         working-directory: glm-worker
         run: /usr/bin/time -p go test -count=1 ./internal/controller
 
+  app-shards:
+    if: ${{ (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
+    name: app-test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: app-normal-1
+            mode: app
+            shard: 0
+            race: false
+          - name: app-normal-2
+            mode: app
+            shard: 1
+            race: false
+          - name: app-normal-3
+            mode: app
+            shard: 2
+            race: false
+          - name: app-normal-4
+            mode: app
+            shard: 3
+            race: false
+          - name: app-normal-5
+            mode: app
+            shard: 4
+            race: false
+          - name: app-normal-6
+            mode: app
+            shard: 5
+            race: false
+          - name: app-race-1
+            mode: app
+            shard: 0
+            race: true
+          - name: app-race-2
+            mode: app
+            shard: 1
+            race: true
+          - name: app-race-3
+            mode: app
+            shard: 2
+            race: true
+          - name: app-race-4
+            mode: app
+            shard: 3
+            race: true
+          - name: app-race-5
+            mode: app
+            shard: 4
+            race: true
+          - name: app-race-6
+            mode: app
+            shard: 5
+            race: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Cache quality tools
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
+      - name: Install quality tools
+        run: |
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - name: Go tests for internal/app (partitioned)
+        working-directory: glm-worker
+        env:
+          APP_SHARD: ${{ matrix.shard }}
+          APP_RACE: ${{ matrix.race }}
+        run: |
+          set -euo pipefail
+          if [[ "$APP_RACE" == true ]]; then
+            go test -race -list . ./internal/app > "$RUNNER_TEMP/app-tests-listed.txt"
+          else
+            go test -list . ./internal/app > "$RUNNER_TEMP/app-tests-listed.txt"
+          fi
+          grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' "$RUNNER_TEMP/app-tests-listed.txt" | LC_ALL=C sort > "$RUNNER_TEMP/app-tests.txt"
+          count="$(wc -l < "$RUNNER_TEMP/app-tests.txt")"
+          if (( count < 6 )); then
+            echo 'Expected at least six named app tests' >&2
+            exit 1
+          fi
+          awk -v shard="$APP_SHARD" '
+            $0 == "TestTypedParentCompletionWorkflowThroughProductionBoundary" { owner = 0; nextOwner = 1 }
+            $0 == "TestParentOnlyTaskCompletionThroughProductionBoundary" { owner = 1; nextOwner = 1 }
+            $0 == "TestParentOnlyReentryThroughProductionBoundary" { owner = 2; nextOwner = 1 }
+            nextOwner == 0 { owner = (other + 3) % 6; other++ }
+            { if (owner == shard) print; nextOwner = 0 }
+          ' "$RUNNER_TEMP/app-tests.txt" > "$RUNNER_TEMP/app-shard-tests.txt"
+          selected="$(wc -l < "$RUNNER_TEMP/app-shard-tests.txt")"
+          if (( selected == 0 )); then
+            echo "Empty app shard $APP_SHARD" >&2
+            exit 1
+          fi
+          names="$(paste -sd '|' "$RUNNER_TEMP/app-shard-tests.txt")"
+          printf 'App tests: %s; shard %s; selected %s; race=%s\n' "$count" "$APP_SHARD" "$selected" "$APP_RACE"
+          cat "$RUNNER_TEMP/app-shard-tests.txt"
+          if [[ "$APP_RACE" == true ]]; then
+            /usr/bin/time -p go test -race -count=1 -run "^($names)$" ./internal/app
+          else
+            /usr/bin/time -p go test -count=1 -run "^($names)$" ./internal/app
+          fi
+
+  app:
+    if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
+    name: basic (app)
+    needs:
+      - app-shards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all app test partitions
+        env:
+          APP_SHARDS_RESULT: ${{ needs.app-shards.result }}
+        run: test "$APP_SHARDS_RESULT" = success
+
   lint:
     if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
     needs:
       - basic
+      - app
     runs-on: ubuntu-latest
     steps:
       - name: Require basic validation
         env:
           BASIC_RESULT: ${{ needs.basic.result }}
-        run: test "$BASIC_RESULT" = success
+          APP_RESULT: ${{ needs.app.result }}
+        run: |
+          test "$BASIC_RESULT" = success
+          test "$APP_RESULT" = success
 
   install-smoke:
     if: ${{ (github.event_name == 'push' && github.event.created == false && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
