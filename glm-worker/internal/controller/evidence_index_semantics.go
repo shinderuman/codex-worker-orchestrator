@@ -178,5 +178,5 @@ func canonicalSemanticTaskRefs(refs []SemanticTaskRef) []SemanticTaskRef {
 }
 
 func semanticTaskEvidenceKey(ref SemanticTaskRef) string {
-	return ref.TaskPath + "\x00" + ref.ContractDigest
+	return ref.Identity() + "\x00" + ref.ContractDigest
 }

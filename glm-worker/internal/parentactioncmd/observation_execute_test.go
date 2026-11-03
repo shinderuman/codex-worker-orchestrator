@@ -2,6 +2,7 @@ package parentactioncmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/observationexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -104,7 +106,7 @@ func stageObservationPayload(t *testing.T, cfg config.AppConfig, payload string)
 
 func skipObservationExecuteWhenConfinementUnavailable(t *testing.T) {
 	t.Helper()
-	if err := observationexec.ConfinementPreflight(t.TempDir()); err != nil {
+	if err := observationexec.ConfinementPreflight(context.Background(), t.TempDir()); err != nil {
 		t.Skipf("この実行環境ではconfinement初期化が拒否されるため隔離go test実行は親validation環境で実行します: %v", err)
 	}
 }
@@ -130,7 +132,7 @@ func TestObservationExecuteRunsIsolatedGoTestAndRecordsTypedResult(t *testing.T)
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatal(err)
 	}
-	if output.Status != "executed" || output.Result != "pass" || output.Operation != "go-test" || output.DecisionRound != 0 {
+	if output.Status != "executed" || output.Result != "pass" || output.Operation != "go-test" || output.DecisionRound <= 0 {
 		t.Fatalf("output = %#v", output)
 	}
 	records, err := st.ObservationExecutions()
@@ -299,7 +301,7 @@ func writeObservationShadowEvalStub(t *testing.T, stdoutPayload string, stderrPa
 		script += "\nprintf '%s' " + shellQuote(stderrPayload) + " >&2"
 	}
 	script += "\n"
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

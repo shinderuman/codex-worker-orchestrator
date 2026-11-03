@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func managedRulesFiles(t *testing.T) []string {
@@ -167,7 +169,7 @@ func TestExecPolicyCombinedCheckFailsClosed(t *testing.T) {
 	}
 	stubCodex := filepath.Join(badDir, "codex")
 	stubScript := "#!/bin/sh\nprintf 'not json\\n'\n"
-	if err := os.WriteFile(stubCodex, []byte(stubScript), 0o755); err != nil {
+	if err := execfile.Write(stubCodex, []byte(stubScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	argv := []string{"glm-worker", "--quality-gate", "go-test"}

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 const executionWorkspaceIdentityFile = "controller-workspace.json"
@@ -28,6 +30,11 @@ func (s *Store) applyExecutionMaterialization(op ExecutionOperation) error {
 	attempt, lease := materializedExecutionRecords(op, snapshot)
 	if err := s.writeMaterializedExecutionRecords(attempt, lease); err != nil {
 		return err
+	}
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if err := s.bindParentOnlySmokeTaskID(attempt); err != nil {
+			return err
+		}
 	}
 	return s.commitMaterializedExecution(op, workspace, attempt, lease)
 }
@@ -87,7 +94,7 @@ func (s *Store) verifyMaterializedExecution(op ExecutionOperation) (WorkspaceIde
 	if err != nil {
 		return WorkspaceIdentity{}, WorkspaceSnapshot{}, err
 	}
-	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase)
+	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase, op.Attempt.SemanticTaskRef)
 	if err != nil {
 		return WorkspaceIdentity{}, WorkspaceSnapshot{}, err
 	}
@@ -161,8 +168,9 @@ func materializeExecutionTrees(workspace WorkspaceIdentity, rebound ReboundSuspe
 	if err := verifyLaneMaterializationPaths(workspace.Root, entries); err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		if err := materializeExecutionEntry(workspace.Root, entry); err != nil {
+	for start := 0; start < len(entries); start += workspaceBlobBatchSize {
+		batch := entries[start:min(start+workspaceBlobBatchSize, len(entries))]
+		if err := materializeExecutionBatch(workspace.Root, batch); err != nil {
 			return err
 		}
 	}
@@ -179,6 +187,19 @@ func materializeExecutionTrees(workspace WorkspaceIdentity, rebound ReboundSuspe
 	}
 	_, err = runGitBinary(workspace.Root, nil, "read-tree", rebound.Current.IndexTree)
 	return err
+}
+
+func materializeExecutionBatch(repo string, entries []workspaceTreeEntry) error {
+	blobs, err := readWorkspaceBlobs(repo, entries)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := materializeExecutionEntry(repo, entry, blobs); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func verifyLaneMaterializationPaths(root string, entries []workspaceTreeEntry) error {
@@ -210,7 +231,7 @@ func verifyLaneMaterializationPaths(root string, entries []workspaceTreeEntry) e
 	})
 }
 
-func materializeExecutionEntry(repo string, entry workspaceTreeEntry) error {
+func materializeExecutionEntry(repo string, entry workspaceTreeEntry, blobs workspaceBlobs) error {
 	path, err := suspensionWorktreePath(repo, entry.path)
 	if err != nil {
 		return err
@@ -218,7 +239,7 @@ func materializeExecutionEntry(repo string, entry workspaceTreeEntry) error {
 	if entry.mode == "160000" {
 		return os.MkdirAll(path, 0o755)
 	}
-	data, err := runGitBinary(repo, nil, "cat-file", "blob", entry.oid)
+	data, err := blobs.content(entry)
 	if err != nil {
 		return err
 	}
@@ -246,7 +267,7 @@ func materializeExecutionEntry(repo string, entry workspaceTreeEntry) error {
 	if entry.mode == "100755" {
 		mode = 0o755
 	}
-	return os.WriteFile(path, data, mode)
+	return execfile.Write(path, data, mode)
 }
 
 func resolveExecutionWorkspaceNonce(workspace WorkspaceIdentity) (WorkspaceIdentity, error) {

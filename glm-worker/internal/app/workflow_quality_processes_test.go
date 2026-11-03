@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func prepareWorkflowQualityProcesses(t *testing.T, root string) {
@@ -43,7 +45,7 @@ func writeWorkflowQualityTool(t *testing.T, path, tool, version, log, fail strin
 		"printf '%s\\n' " + quoteWorkflowShell(tool+" $*") + " >>" + quoteWorkflowShell(log) + "\n" +
 		"if [ -f " + quoteWorkflowShell(fail) + " ]; then\n" +
 		" printf '%s\\n' 'cmd/fixture/main.go:1:1: fixture lint rejection (revive)'\n exit 1\nfi\n"
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+	if err := execfile.Write(path, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -58,7 +60,7 @@ func writeWorkflowQualityGo(t *testing.T, bin string, contract map[string]string
 	metadata := fmt.Sprintf("\tmod\tgolang.org/x/tools\tv%s\n", contract["deadcode"])
 	body := "#!/bin/sh\nif [ \"$1\" = version ] && [ \"${2:-}\" = -m ] && [ \"${3:-}\" = " + quoteWorkflowShell(deadcode) + " ]; then\n" +
 		" printf '%s' " + quoteWorkflowShell(metadata) + "; exit 0\nfi\nexec " + quoteWorkflowShell(realGo) + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(body), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "go"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

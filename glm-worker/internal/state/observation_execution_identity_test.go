@@ -1,7 +1,6 @@
 package state
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 )
@@ -9,6 +8,10 @@ import (
 func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
 	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := st.ObservationExecutionRound()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,8 +23,11 @@ func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testin
 		ParamsDigest:     "digest-inflight",
 		Status:           ObservationExecutionStatusInFlight,
 		DeadlineMS:       30_000,
-		DecisionRound:    0,
+		DecisionRound:    round,
 		StartedAtRFC3339: started,
+	}
+	if exists, err := st.HasObservationExecution(claim.Operation, claim.ParamsDigest, round); err != nil || exists {
+		t.Fatalf("initial identity is not available: %t %v", exists, err)
 	}
 	if err := st.BeginObservationExecution(claim); err != nil {
 		t.Fatal(err)
@@ -30,12 +36,17 @@ func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testin
 	if err != nil || !exists {
 		t.Fatalf("durable in-flight identity did not suppress replay: exists=%v err=%v", exists, err)
 	}
-	projected, err := st.ObservationExecutionsForRound(0)
+	projected, err := st.ObservationExecutionsForRound(round)
 	if err != nil || len(projected) != 0 {
 		t.Fatalf("in-flight record leaked into completed projection: %#v err=%v", projected, err)
 	}
 	if err := st.BeginObservationExecution(claim); err == nil {
 		t.Fatal("duplicate in-flight execution identity was admitted")
+	}
+	replay := claim
+	replay.ExecutionID = "concurrent-new-id"
+	if err := st.BeginObservationExecution(replay); err == nil {
+		t.Fatal("stale Has result bypassed the durable reservation")
 	}
 
 	completed := claim
@@ -48,7 +59,7 @@ func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testin
 	if err != nil || len(records) != 1 || records[0].Status != ObservationExecutionStatusPass {
 		t.Fatalf("completion did not resolve claim in place: %#v err=%v", records, err)
 	}
-	projected, err = st.ObservationExecutionsForRound(0)
+	projected, err = st.ObservationExecutionsForRound(round)
 	if err != nil || len(projected) != 1 || projected[0].ExecutionID != claim.ExecutionID {
 		t.Fatalf("completed execution projection = %#v err=%v", projected, err)
 	}
@@ -56,43 +67,34 @@ func TestObservationExecutionInFlightPreventsReplayAndCompletesInPlace(t *testin
 
 func TestObservationExecutionIdentityIsCurrentTaskScoped(t *testing.T) {
 	st := newObservationExecutionStore(t, observationExecutionDeclaration)
-	currentTaskID, err := st.TaskID()
+	round, err := st.ObservationExecutionRound()
 	if err != nil {
 		t.Fatal(err)
 	}
-	records := []ObservationExecutionRecord{
-		{
-			ExecutionID:        "exec-old-task",
-			TaskID:             "old-task-id",
-			Operation:          "shadow-eval",
-			ParamsDigest:       "shared-digest",
-			Status:             ObservationExecutionStatusPass,
-			DecisionRound:      0,
-			CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
-		},
-		{
-			ExecutionID:        "exec-current-task",
-			TaskID:             currentTaskID,
-			Operation:          "shadow-eval",
-			ParamsDigest:       "current-digest",
-			Status:             ObservationExecutionStatusPass,
-			DecisionRound:      0,
-			CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
-		},
-	}
-	encoded, err := json.Marshal(records)
+	taskID, err := st.TaskID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write(observationExecutionsStateFile, string(encoded)); err != nil {
+	doc := observationExecutionDocument{
+		TaskID: taskID, Round: round,
+		Fence: []observationFenceIdentity{{ExecutionID: "exec-current-task", Operation: "shadow-eval", ParamsDigest: "current-digest"}},
+		Records: []ObservationExecutionRecord{{ExecutionID: "exec-current-task", TaskID: taskID, Operation: "shadow-eval",
+			ParamsDigest: "current-digest", Status: ObservationExecutionStatusPass, DecisionRound: round,
+			CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano)}},
+	}
+	if err := st.writeObservationDocument(doc); err != nil {
 		t.Fatal(err)
 	}
-	exists, err := st.HasObservationExecution("shadow-eval", "shared-digest", 0)
-	if err != nil || exists {
-		t.Fatalf("prior-task record suppressed current task: exists=%v err=%v", exists, err)
+	exists, err := st.HasObservationExecution("shadow-eval", "current-digest", round)
+	if err != nil || !exists {
+		t.Fatalf("current task fence is lost: %t %v", exists, err)
 	}
-	projected, err := st.ObservationExecutionsForRound(0)
-	if err != nil || len(projected) != 1 || projected[0].TaskID != currentTaskID {
-		t.Fatalf("prior-task record entered current projection: %#v err=%v", projected, err)
+	doc.Records = append(doc.Records, ObservationExecutionRecord{
+		ExecutionID: "exec-old-task", TaskID: "old-task-id", Operation: "shadow-eval",
+		ParamsDigest: "shared-digest", Status: ObservationExecutionStatusPass,
+		DecisionRound: round, CompletedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
+	})
+	if err := st.writeObservationDocument(doc); err == nil {
+		t.Fatal("foreign task record was accepted")
 	}
 }

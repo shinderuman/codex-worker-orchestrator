@@ -22,6 +22,8 @@ none
 - 対象: glm-worker/internal/publicationsequence/sequence.go と parentactioncmd/publication*、既存parent usage/turn evidence。
 - `Review.md` の12観点・採否表・Codex Reduction優先判断が調査背景。本taskの契約はこのfile、実行priorityはPlanだけを正とする。
 
+- 長時間処理の調査からの引継ぎ: 分析入口はTask `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b` artifact `codex-direct/startup-remediation-audit.md`。Publicationの計測値と詳細は当該artifactが指すexecution-stages / controller transition recordから回収し、stage別wall・親介入・必要validationと残時間を次Dogfoodでも分離して再検出する。
+
 ## Purpose
 
 publication定型stageの親往復削減評価をboundedな一次証拠で行い、品質を落とす最適化と効果不明の実装を避ける。

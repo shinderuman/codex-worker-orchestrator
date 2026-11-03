@@ -11,7 +11,7 @@ func (s *Store) PromoteAcceptedCandidate(input PublicationInput) (ExecutionOpera
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	head, c, ref, err := s.publicationCandidateAuthority(input)
+	head, c, ref, err := s.currentPublicationCandidate(input)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -93,6 +93,17 @@ func (s *Store) publicationCandidateAuthority(input PublicationInput) (Repositor
 	return head, c, *head.AcceptedCandidateRef, nil
 }
 
+func (s *Store) currentPublicationCandidate(input PublicationInput) (RepositoryControllerHead, AcceptedCandidate, EvidenceObjectRef, error) {
+	head, c, ref, err := s.publicationCandidateAuthority(input)
+	if err != nil {
+		return head, c, ref, err
+	}
+	if err := s.requireCurrentCandidateSource(c); err != nil {
+		return head, c, ref, err
+	}
+	return head, c, ref, nil
+}
+
 func (s *Store) QuiescentCandidateAwaitMaterialization(head RepositoryControllerHead) (bool, error) {
 	if head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.AcceptedCandidateRef == nil {
 		return false, fmt.Errorf("quiescent candidate authority requires a sealed head with an accepted candidate")
@@ -130,7 +141,7 @@ func (s *Store) RevalidateAcceptedCandidate(input PublicationInput, evidence []E
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	head, c, ref, err := s.publicationCandidateAuthority(input)
+	head, c, ref, err := s.currentPublicationCandidate(input)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}

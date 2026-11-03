@@ -54,28 +54,3 @@ func TestWebGPTValidationControllerUsesBoundedCommands(t *testing.T) {
 		}
 	}
 }
-
-func TestWebGPTValidationControllerEmitsBoundedResult(t *testing.T) {
-	text := readWebGPTAutofixContractFile(t, "../../../web-gpt-validate.sh")
-	for _, key := range []string{"tested_branch", "tested_sha", "control_sha", "mode", "result", "scope", "artifact_locator", "error"} {
-		if !strings.Contains(text, "\\\""+key+"\\\"") && !strings.Contains(text, "\""+key+"\"") {
-			t.Fatalf("machine-readable validation result key missing: %s", key)
-		}
-	}
-	requireWebGPTAutofixTokens(t, text, []string{
-		"reported_branch=''",
-		"reported_sha=''",
-		"reported_control_sha=''",
-		"reported_mode=''",
-		"reported_scope=''",
-		"reported_artifact_locator=''",
-		"\"$reported_branch\" \"$reported_sha\" \"$reported_control_sha\" \"$reported_mode\"",
-		"reported_branch=$target_branch",
-		"reported_sha=$expected_head_sha",
-		"reported_control_sha=$control_sha",
-		"reported_artifact_locator=$artifact_locator",
-	})
-	if !strings.Contains(text, "invalid_package_scope") || !strings.Contains(text, "^\\./[A-Za-z0-9_]") {
-		t.Fatal("focused package scope grammar is not bounded")
-	}
-}

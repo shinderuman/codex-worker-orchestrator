@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
@@ -12,23 +13,23 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID}); err == nil {
-		t.Fatal("stale generation reentered the candidate")
-	}
-	if _, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"}); err == nil {
-		t.Fatal("foreign candidate reentered the sealed authority")
+	_, staleErr := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration - 1, CandidateID: candidate.CandidateID})
+	_, foreignErr := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: "foreign-candidate"})
+	if staleErr == nil || foreignErr == nil {
+		t.Fatalf("stale generation or foreign candidate reentered sealed authority: stale=%v foreign=%v", staleErr, foreignErr)
 	}
 
 	handoff := buildParentHandoffWithConfig(cfg, runtime)
-	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
-		t.Fatalf("sealed unpublished candidate handoff: %#v", handoff)
-	}
-	if !containsParentAction(handoff.AllowedActions, controllerPublicationSurface) || !containsParentAction(handoff.AllowedActions, controllerExecutionSurface) || !containsParentAction(handoff.AllowedActions, "controller-evidence") {
-		t.Fatalf("sealed candidate hid publication or reenter operations: %v", handoff.AllowedActions)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface ||
+		!containsParentAction(handoff.AllowedActions, controllerPublicationSurface) ||
+		!containsParentAction(handoff.AllowedActions, controllerExecutionSurface) ||
+		!containsParentAction(handoff.AllowedActions, "controller-evidence") {
+		t.Fatalf("sealed candidate hid its canonical publication/reentry operations: %#v", handoff)
 	}
 
 	reentered, err := store.ReenterAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
@@ -39,7 +40,7 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("reentered candidate handoff must direct materialization: %#v", handoff)
 	}
-	var materializeCommand controllerExecutionCommand
+	var materializeCommand workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &materializeCommand); err != nil {
 		t.Fatal(err)
 	}
@@ -50,15 +51,30 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 		t.Fatal("publication advanced the candidate invalidated for reentry")
 	}
 
-	materialized, err := executeControllerExecution(cfg, store, materializeCommand)
+	materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{
+		ExpectedGeneration: materializeCommand.ExpectedGeneration,
+		EpisodeID:          materializeCommand.EpisodeID,
+		EpisodeRevision:    materializeCommand.EpisodeRevision,
+		SuspensionID:       materializeCommand.SuspensionID,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if materialized.Admission == nil || materialized.Admission.Lease.LeaseID == "" {
-		t.Fatalf("reentered materialization has no live lease: %#v", materialized)
+	if materialized.Admission == nil || materialized.Admission.Lease.LeaseID == "" ||
+		materialized.Admission.Attempt.PredecessorAttemptID == "" {
+		t.Fatalf("reentered materialization has no canonical predecessor or live lease: %#v", materialized)
 	}
-	if materialized.Admission.Attempt.PredecessorAttemptID == "" {
-		t.Fatalf("materialized attempt lost its predecessor identity: %#v", materialized.Admission.Attempt)
+	if runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("Controller commit unexpectedly completed runtime: %s", runtime.TaskStatus())
+	}
+	oldBinding, err := runtime.LoadControllerRuntimeBinding()
+	if err != nil || oldBinding.AttemptID != materialized.Admission.Attempt.PredecessorAttemptID {
+		t.Fatalf("materialization changed retained predecessor binding before runtime completion: %#v %v", oldBinding, err)
+	}
+	resumed := runControllerRecoveryCLI(t, cfg, materialized.TransitionID)
+	if resumed.TransitionID != materialized.TransitionID || resumed.Head.ControllerGeneration != materialized.Head.ControllerGeneration ||
+		resumed.Admission == nil || resumed.Admission.Attempt.AttemptID != materialized.Admission.Attempt.AttemptID {
+		t.Fatalf("recovery changed canonical Controller attempt: %#v", resumed)
 	}
 	if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("controller reentry left the runtime at %s", runtime.TaskStatus())
@@ -88,6 +104,44 @@ func TestControllerReenterHandoffMaterializeAndRuntimeFixReentry(t *testing.T) {
 		}
 		t.Fatalf("reentered live attempt handoff: %#v inconsistency=%s", handoff, inconsistency)
 	}
+	replayed, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: materialized.TransitionID})
+	if err != nil || replayed.Head.ControllerGeneration != materialized.Head.ControllerGeneration || runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("repeated recovery changed the transition or runtime state: %#v %v", replayed, err)
+	}
+	afterReplay := buildParentHandoffWithConfig(laneCfg, runtime)
+	if !afterReplay.Consistent || afterReplay.RequiredAction == nil || *afterReplay.RequiredAction != string(state.ParentActionReview) {
+		t.Fatalf("idempotent recovery changed canonical review handoff: %#v", afterReplay)
+	}
+	foreign := oldBinding
+	foreign.AttemptID = "foreign-attempt"
+	if err := runtime.SaveControllerRuntimeBinding(foreign); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: materialized.TransitionID}); err == nil {
+		t.Fatal("foreign runtime attempt was accepted by materialization replay")
+	}
+}
+
+func runControllerRecoveryCLI(t *testing.T, cfg config.AppConfig, transitionID string) controller.ExecutionOperationResult {
+	t.Helper()
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", TransitionID: transitionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	recognized, err := runControllerOperations(
+		[]string{controllerAuthorityFlag, controllerExecutionSurface},
+		func() (config.AppConfig, error) { return cfg, nil },
+		bytes.NewReader(command), &output,
+	)
+	if err != nil || !recognized {
+		t.Fatalf("typed Controller recovery failed: recognized=%v err=%v", recognized, err)
+	}
+	var recovered controller.ExecutionOperationResult
+	if err := json.Unmarshal(output.Bytes(), &recovered); err != nil {
+		t.Fatalf("typed Controller recovery output is invalid: %v", err)
+	}
+	return recovered
 }
 
 func TestPromotedTaskMetadataKeepsPublicationAndReentryAvailable(t *testing.T) {
@@ -161,19 +215,9 @@ func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.
 	return cfg, store, accepted, candidate, runtime
 }
 
-func retiredWorkflowCorpus(t *testing.T, completionQuality bool) (config.AppConfig, controller.Admission, *controller.Store, controller.PublicationPolicy) {
+func retiredWorkflowCorpus(t *testing.T, completionQuality bool, appendedPlanSections ...string) (config.AppConfig, controller.Admission, *controller.Store, controller.PublicationPolicy) {
 	t.Helper()
-	cfg := newCanonicalAppConfig(t)
-	cfg.StateBase = filepath.Join(t.TempDir(), "sessions")
-	repo := cfg.RepoRoot
-	writeAppTestFile(t, repo, "IMPLEMENTATION_RULES.md", "# rules\n")
-	writeAppTestFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
-	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/successor.md`\n")
-	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/successor.md", "# successor\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
-	if completionQuality {
-		prepareCompletionQualityCorpus(t, repo)
-	}
-	policy := commitCorpusWithPublicationRemote(t, repo, "retired workflow test", "retired@example.invalid", "successor authority")
+	cfg, policy := prepareRetiredWorkflowCorpus(t, completionQuality, appendedPlanSections...)
 	admission, err := controller.Activate(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +227,26 @@ func retiredWorkflowCorpus(t *testing.T, completionQuality bool) (config.AppConf
 		t.Fatal(err)
 	}
 	return cfg, admission, store, policy
+}
+
+func prepareRetiredWorkflowCorpus(t *testing.T, completionQuality bool, appendedPlanSections ...string) (config.AppConfig, controller.PublicationPolicy) {
+	t.Helper()
+	cfg := newCanonicalAppConfig(t)
+	cfg.StateBase = filepath.Join(t.TempDir(), "sessions")
+	repo := cfg.RepoRoot
+	writeAppTestFile(t, repo, "IMPLEMENTATION_RULES.md", "# rules\n")
+	writeAppTestFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+	plan := "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/successor.md`\n"
+	for _, addition := range appendedPlanSections {
+		plan += addition
+	}
+	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", plan)
+	writeAppTestFile(t, repo, "IMPLEMENTATION_TASKS/successor.md", "# successor\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
+	if completionQuality {
+		prepareCompletionQualityCorpus(t, repo)
+	}
+	policy := commitCorpusWithPublicationRemote(t, repo, "retired workflow test", "retired@example.invalid", "successor authority")
+	return cfg, policy
 }
 
 func commitCorpusWithPublicationRemote(t *testing.T, repo, userName, userEmail, commitMessage string) controller.PublicationPolicy {

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
@@ -288,24 +289,7 @@ func replaceRegular(root string, update pendingUpdate) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("refusing to replace non-regular source %s", update.path)
 	}
-	file, err := os.CreateTemp(filepath.Dir(absolute), ".commentlint-*")
-	if err != nil {
-		return err
-	}
-	temp := file.Name()
-	defer func() { _ = os.Remove(temp) }()
-	if err := file.Chmod(update.mode); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if _, err := file.Write(update.data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, absolute); err != nil {
+	if err := execfile.Write(absolute, update.data, update.mode); err != nil {
 		return fmt.Errorf("replace %s: %w", update.path, err)
 	}
 	return nil

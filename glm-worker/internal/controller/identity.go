@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -145,7 +146,7 @@ func workspaceSnapshotID(snapshot WorkspaceSnapshot) string {
 }
 
 func primaryWorktree(commonDir string) (string, error) {
-	command := exec.Command("git", "--git-dir", commonDir, "worktree", "list", "--porcelain")
+	command := gitexec.Command("git", commonDir, "--git-dir", commonDir, "worktree", "list", "--porcelain")
 	output, err := command.Output()
 	if err != nil {
 		return "", fmt.Errorf("list git worktrees: %w", err)
@@ -164,7 +165,7 @@ func primaryWorktree(commonDir string) (string, error) {
 }
 
 func gitTrimmed(repoRoot string, args ...string) (string, error) {
-	command := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
+	command := gitexec.Command("git", repoRoot, args...)
 	output, err := command.Output()
 	if err != nil {
 		return "", err

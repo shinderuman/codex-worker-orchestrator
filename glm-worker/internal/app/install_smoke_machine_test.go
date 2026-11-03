@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -67,7 +68,7 @@ func writeInstallSmokeScript(t *testing.T, repoRoot, script string) {
 	if err := os.MkdirAll(filepath.Join(repoRoot, "tests"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repoRoot, "tests", "install_smoke.sh"), []byte(script), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(repoRoot, "tests", "install_smoke.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

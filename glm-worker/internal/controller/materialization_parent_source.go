@@ -6,7 +6,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func (s *Store) applyMaterializationCandidateSource(head RepositoryControllerHead, seal EvidenceObjectRef, rebound *ReboundSuspension) error {
+func (s *Store) applyMaterializationCandidateSource(head RepositoryControllerHead, seal EvidenceObjectRef, rebound *ReboundSuspension, task SemanticTaskRef) error {
 	if head.AcceptedCandidateRef != nil {
 		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 		if err != nil {
@@ -17,15 +17,15 @@ func (s *Store) applyMaterializationCandidateSource(head RepositoryControllerHea
 		}
 		rebound.Current.WorktreeTree = candidate.TreeOID
 	}
-	return s.normalizeMaterializationMetadataBase(head, rebound)
+	return s.normalizeMaterializationMetadataBase(head, rebound, task)
 }
 
-func (s *Store) normalizeMaterializationMetadataBase(head RepositoryControllerHead, rebound *ReboundSuspension) error {
+func (s *Store) normalizeMaterializationMetadataBase(head RepositoryControllerHead, rebound *ReboundSuspension, task SemanticTaskRef) error {
 	metadataBase, err := s.projectMetadataBase(head.ProjectSnapshotID)
 	if err != nil {
 		return err
 	}
-	return normalizeReboundTrees(s.identity.PrimaryRoot, metadataBase, rebound)
+	return normalizeReboundTrees(s.identity.PrimaryRoot, metadataBase, rebound, task)
 }
 
 func (s *Store) RuntimeMaterializationReentryAuthority(transitionID string) (state.ControllerReentryAuthority, error) {
@@ -64,30 +64,44 @@ func validateRuntimeReentryMaterialization(op ExecutionOperation) error {
 }
 
 func (s *Store) materializationParentSource(head RepositoryControllerHead) (*ParentSourceRevision, error) {
-	ref := head.AcceptedCandidateRef
+	if head.AcceptedCandidateRef == nil {
+		return nil, nil
+	}
+	current, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return nil, err
+	}
 	seen := map[string]bool{}
-	for ref != nil {
-		if seen[ref.Digest] {
-			return nil, fmt.Errorf("materialization candidate lineage cycles")
+	for ref := head.AcceptedCandidateRef; ref != nil; {
+		source, next, err := s.lineageParentSource(*ref, current, seen)
+		if err != nil || source != nil {
+			return source, err
 		}
-		seen[ref.Digest] = true
-		candidate, err := s.LoadAcceptedCandidate(*ref)
-		if err != nil {
-			return nil, err
-		}
-		var op ExecutionOperation
-		if err := readJSON(s.executionOperationPath(candidate.TransitionID), &op); err != nil {
-			return nil, err
-		}
-		if op.Publication == nil {
-			return nil, fmt.Errorf("materialization candidate publication is missing")
-		}
-		if op.Publication.ParentSource != nil {
-			return op.Publication.ParentSource, nil
-		}
-		ref = candidate.Previous
+		ref = next
 	}
 	return nil, nil
+}
+
+func (s *Store) lineageParentSource(ref EvidenceObjectRef, current AcceptedCandidate, seen map[string]bool) (*ParentSourceRevision, *EvidenceObjectRef, error) {
+	if seen[ref.Digest] {
+		return nil, nil, fmt.Errorf("materialization candidate lineage cycles")
+	}
+	seen[ref.Digest] = true
+	candidate, err := s.LoadAcceptedCandidate(ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	if candidate.BaseOID != current.BaseOID || candidate.TreeOID != current.TreeOID {
+		return nil, nil, nil
+	}
+	var op ExecutionOperation
+	if err := readJSON(s.executionOperationPath(candidate.TransitionID), &op); err != nil {
+		return nil, nil, err
+	}
+	if op.Publication == nil {
+		return nil, nil, fmt.Errorf("materialization candidate publication is missing")
+	}
+	return op.Publication.ParentSource, candidate.Previous, nil
 }
 
 func (s *Store) validateMaterializationParentSource(op ExecutionOperation) error {

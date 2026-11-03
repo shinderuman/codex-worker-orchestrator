@@ -1,0 +1,52 @@
+name: Observation Darwin Validation
+
+on:
+  pull_request:
+    paths:
+      - 'glm-worker/internal/observationexec/**'
+      - 'glm-worker/internal/execfile/**'
+      - 'glm-worker/go.mod'
+      - 'glm-worker/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'quality-tools.yml'
+      - '.github/workflows/observation-darwin.yml'
+  push:
+    branches:
+      - main
+      - 'web-gpt/**'
+    paths:
+      - 'glm-worker/internal/observationexec/**'
+      - 'glm-worker/internal/execfile/**'
+      - 'glm-worker/go.mod'
+      - 'glm-worker/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'quality-tools.yml'
+      - '.github/workflows/observation-darwin.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observation-darwin-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  darwin-observation:
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/') }}
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read Go version
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Validate supported Darwin observation executor
+        working-directory: glm-worker
+        run: go test -count=1 ./internal/observationexec

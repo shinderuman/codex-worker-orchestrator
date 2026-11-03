@@ -4,9 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestInstalledCompletionRuntimeRequiresExactCleanSource(t *testing.T) {
@@ -32,7 +33,7 @@ func TestInstalledCompletionRuntimeRequiresExactCleanSource(t *testing.T) {
 			}
 			script := []byte("#!/bin/sh\n[ \"$1\" = --status ] || exit 2\nprintf '%s\\n' '" + string(output) + "'\n")
 			path := filepath.Join(root, "glm-worker")
-			if err := os.WriteFile(path, script, 0755); err != nil {
+			if err := execfile.Write(path, script, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			identity, err := installedCompletionRuntime(path, root, source)

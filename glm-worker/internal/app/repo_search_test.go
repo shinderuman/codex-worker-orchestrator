@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -265,6 +266,35 @@ func TestPrintRepoSearchRefinementIsDeduplicatedWithinDecisionLease(t *testing.T
 	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(err, &duplicate) || second.Len() != 0 {
 		t.Fatalf("duplicate refinement error=%v stdout=%s", err, second.String())
+	}
+}
+
+func TestRepoSearchUnsupportedFlagCannotBeDeliveredAsEmptyResult(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	t.Setenv("GLM_WORKER_HOME", t.TempDir())
+	root := newRepoSearchGitRepo(t, "unsupportedflag")
+	command := exec.Command("git", "update-index", "--assume-unchanged", "corpus.md")
+	command.Dir = root
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("mark tracked file assume-unchanged: %v: %s", err, output)
+	}
+	cfg := config.AppConfig{RepoRoot: root, RepoSearch: true}
+	request := repoSearchRequest{Question: "unsupportedflag", Scopes: []string{"corpus.md"}, BudgetBytes: 4096}
+	var stdout bytes.Buffer
+	if err := printRepoSearch(request, cfg, nil, &stdout); !errors.Is(err, reposearch.ErrUnsupportedIndexFlags) {
+		t.Fatalf("standalone search did not propagate unsupported index error: %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("standalone search delivered success/empty output: %s", stdout.String())
+	}
+	part := projectParentEvidenceSearch(cfg, parentevidence.SearchRequest{
+		Question: "unsupportedflag", Scopes: []string{"corpus.md"}, BudgetBytes: 4096,
+	})
+	if part.Status != parentevidence.PartError || part.Search != nil ||
+		!strings.Contains(part.Reason, reposearch.ErrUnsupportedIndexFlags.Error()) {
+		t.Fatalf("parent evidence converted unsupported error to result: %#v", part)
 	}
 }
 

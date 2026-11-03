@@ -2,10 +2,13 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
+
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 const canonicalStartAction = "start"
@@ -23,18 +26,35 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		if applyExternalAdvancementSyncHandoff(cfg, output, report) {
 			return
 		}
+		if applyLiveAdvancementHandoff(cfg, output, report) {
+			return
+		}
 		applyExecutionTerminationHandoff(cfg, output)
 		return
 	}
 	canonicalizeParentAction(output)
-	if !applyTaskAuthoritySyncHandoff(cfg, output, report) &&
-		(report.Head.PendingTransitionID != "" || report.Head.LiveLeaseID == "") {
-		applyCanonicalQuiescentHandoff(cfg, output, report.Head)
+	if !applyTaskAuthoritySyncHandoff(cfg, output, report) {
+		applyPostSyncHandoff(cfg, output, report.Head)
 	}
 	applyParentCompletionOperationHandoff(cfg, output)
 	if output.ParentRequest != nil && output.RequiredAction != nil {
 		output.ParentRequest.Continuation.RequiredAction = *output.RequiredAction
 	}
+}
+
+func applyPostSyncHandoff(cfg config.AppConfig, output *parentHandoffOutput, head controller.RepositoryControllerHead) {
+	if head.PendingTransitionID != "" || head.LiveLeaseID == "" {
+		applyCanonicalQuiescentHandoff(cfg, output, head)
+		return
+	}
+	if head.LiveAttemptID == "" || head.AcceptedCandidateRef != nil ||
+		output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionNone) ||
+		output.TaskID != nil || output.TaskStatus != nil {
+		return
+	}
+	action := canonicalStartAction
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action, "controller-evidence"}
 }
 
 func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
@@ -63,7 +83,7 @@ func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *pare
 			output.Inconsistency = &message
 			return true
 		}
-		command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+		command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
 		if err != nil {
 			message := err.Error()
 			output.Inconsistency = &message
@@ -76,7 +96,7 @@ func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *pare
 		failParentCompletionHandoff(output, err)
 		return true
 	}
-	command, err := json.Marshal(controllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
 	if err != nil {
 		failParentCompletionHandoff(output, err)
 		return true
@@ -123,27 +143,65 @@ func observedTaskAttribution(output *parentHandoffOutput) *repositoryproject.Tas
 	return &output.ParentRequest.TaskAttribution
 }
 
-func externalAdvancementExplainsAttribution(attribution repositoryproject.TaskAttribution, authority controller.CommittedTaskAuthority) bool {
+func applyLiveAdvancementHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {
+	if report.Head.LiveLeaseID == "" {
+		return false
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false
+	}
+	operation, err := store.ProjectParentCompletion()
+	if err != nil {
+		var refusal *controller.ProjectedAdvancementRefusal
+		if !errors.As(err, &refusal) {
+			return false
+		}
+		message := refusal.Error()
+		if output.Inconsistency != nil {
+			message = *output.Inconsistency + "; " + message
+		}
+		output.Inconsistency = &message
+		return true
+	}
+	if operation.Operation != controller.PublicationOperationAdoptMutable || operation.Command == nil {
+		return false
+	}
+	command, err := json.Marshal(operation.Command)
+	if err != nil {
+		return false
+	}
+	action := controllerPublicationSurface
+	output.Consistent = true
+	output.Inconsistency = nil
+	output.ParentRequest = nil
+	output.RequiredAction = &action
+	output.AllowedActions = []string{action}
+	output.RequiredActionParameters = map[string]string{"controller_command_json": string(command)}
+	return true
+}
+
+func externalAdvancementExplainsAttribution(attribution repositoryproject.TaskAttribution, authority controller.TaskAuthority) bool {
 	if attribution.Matches || attribution.Reason != repositoryproject.ReasonActiveTaskMismatch || attribution.Handover {
 		return false
 	}
 	return attribution.ActiveTask == authority.Task.TaskPath && attribution.ActiveTask != attribution.LifecycleTask && authority.Task.TaskPath != ""
 }
 
-func externalAdvancementAuthority(cfg config.AppConfig, head controller.RepositoryControllerHead) (controller.CommittedTaskAuthority, bool) {
+func externalAdvancementAuthority(cfg config.AppConfig, head controller.RepositoryControllerHead) (controller.TaskAuthority, bool) {
 	if head.MetadataLineageRef == nil || head.PublicationPolicy == nil {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
 	if err != nil || authority.Snapshot.HeadOID == head.IntegrationTip {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	if _, err := store.RetiredSourceAdvancementRequired(head, authority.Snapshot.HeadOID); err != nil {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	return authority, true
 }
@@ -179,7 +237,7 @@ func applyTaskAuthoritySyncHandoff(cfg config.AppConfig, output *parentHandoffOu
 		return true
 	}
 	plan := required.Plan
-	command, err := json.Marshal(controllerExecutionCommand{
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{
 		Action:             "sync-task-authority",
 		ExpectedGeneration: report.Head.ControllerGeneration,
 		SourceSnapshotID:   plan.SourceSnapshotID,
@@ -208,7 +266,7 @@ func applyExecutionTerminationHandoff(cfg config.AppConfig, output *parentHandof
 	if err != nil {
 		return
 	}
-	data, err := json.Marshal(controllerExecutionCommand{Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input})
+	data, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input})
 	if err != nil {
 		return
 	}
@@ -224,7 +282,7 @@ func applyExecutionTerminationHandoff(cfg config.AppConfig, output *parentHandof
 func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffOutput, head controller.RepositoryControllerHead) {
 	action := canonicalQuiescentAction(cfg, head, output.TaskID)
 	if action == canonicalStartAction {
-		authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+		resolved, err := quiescentStartHandoffAction(cfg, head, action)
 		if err != nil {
 			output.Consistent = false
 			message := err.Error()
@@ -233,9 +291,7 @@ func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffO
 			output.RequiredAction = nil
 			return
 		}
-		if authority.ProjectSnapshotID != head.ProjectSnapshotID || authority.Snapshot.HeadOID != head.IntegrationTip {
-			action = controllerPublicationSurface
-		}
+		action = resolved
 	}
 	output.RequiredAction = &action
 	output.AllowedActions = []string{action, "controller-evidence"}
@@ -251,6 +307,24 @@ func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffO
 	if action == controllerPublicationSurface && output.ParentRequest != nil {
 		output.ParentRequest.TaskAttribution.LegalNextAction = action
 	}
+}
+
+func quiescentStartHandoffAction(cfg config.AppConfig, head controller.RepositoryControllerHead, action string) (string, error) {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return "", err
+	}
+	authority, err := controller.ResolveCommittedTaskAuthority(store.Identity().PrimaryRoot)
+	if err != nil {
+		return "", err
+	}
+	if authority.ProjectSnapshotID != head.ProjectSnapshotID || authority.Snapshot.HeadOID != head.IntegrationTip {
+		return controllerPublicationSurface, nil
+	}
+	if authority.ExecutionMode == controller.ExecutionAuthorityParentOnly {
+		return controllerExecutionSurface, nil
+	}
+	return action, nil
 }
 
 func canonicalParentAction(action string) string {
@@ -337,7 +411,7 @@ func applyRuntimeDispositionHandoff(cfg config.AppConfig, output *parentHandoffO
 	if err != nil || input == nil {
 		return false
 	}
-	command, err := json.Marshal(controllerExecutionCommand{Action: "dispose-runtime", ExpectedGeneration: report.Head.ControllerGeneration, RuntimeDisposition: input})
+	command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "dispose-runtime", ExpectedGeneration: report.Head.ControllerGeneration, RuntimeDisposition: input})
 	if err != nil {
 		return false
 	}

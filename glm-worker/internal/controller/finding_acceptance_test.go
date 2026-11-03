@@ -104,9 +104,7 @@ func TestFindingDuplicateConvergesOnCanonicalObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.ControllerGeneration != before.ControllerGeneration || after.ActiveEpisodeID != "" || after.LiveAttemptID != before.LiveAttemptID {
-		t.Fatalf("duplicate disposition changed execution authority: before=%#v after=%#v", before, after)
-	}
+	assertFindingHeadUnchanged(t, before, after)
 	harness.assertInvariant(t, "duplicate disposition")
 }
 

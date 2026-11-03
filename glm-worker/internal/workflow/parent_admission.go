@@ -18,7 +18,7 @@ func (w *Workflow) admitParentAction(action state.ParentAction) error {
 	return w.parentActionDenied(action)
 }
 
-func (w *Workflow) admitNewTask() error {
+func (w *Workflow) admitNewTask(request string) error {
 	if err := w.state.ClearPendingSessionRotationRecommendationRetirement(); err != nil {
 		return &WorkerError{Message: err.Error()}
 	}
@@ -36,7 +36,7 @@ func (w *Workflow) admitNewTask() error {
 		return &WorkerError{Message: err.Error()}
 	}
 	if admitted {
-		if err := w.admitNewTaskMutation(); err != nil {
+		if err := w.admitNewTaskMutation(request); err != nil {
 			return err
 		}
 		if claimID == "" {

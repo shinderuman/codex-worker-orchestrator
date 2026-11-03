@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -23,7 +23,7 @@ type workspaceTreeEntry struct {
 	path string
 }
 
-func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
+func CaptureExecutionTrees(repo, authorityBase string, task SemanticTaskRef) (ExecutionTrees, error) {
 	entries, err := suspensionIndexEntries(repo)
 	if err != nil {
 		return ExecutionTrees{}, err
@@ -36,7 +36,7 @@ func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
 	if err := writeSuspensionEntries(repo, index, entries); err != nil {
 		return ExecutionTrees{}, err
 	}
-	parentDigest, err := normalizeParentPaths(repo, index, authorityBase)
+	parentDigest, err := normalizeTaskParentPaths(repo, index, authorityBase, task)
 	if err != nil {
 		return ExecutionTrees{}, err
 	}
@@ -44,7 +44,7 @@ func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
 	if err != nil {
 		return ExecutionTrees{}, err
 	}
-	worktree, err := captureSuspensionWorktree(repo, entries)
+	worktree, err := captureSuspensionWorktree(repo, entries, task.RequestID == "")
 	if err != nil {
 		return ExecutionTrees{}, err
 	}
@@ -54,7 +54,7 @@ func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
 	if err := writeSuspensionEntries(repo, index, worktree); err != nil {
 		return ExecutionTrees{}, err
 	}
-	if _, err := normalizeParentPaths(repo, index, authorityBase); err != nil {
+	if _, err := normalizeTaskParentPaths(repo, index, authorityBase, task); err != nil {
 		return ExecutionTrees{}, err
 	}
 	worktreeTree, err := suspensionGitText(repo, index, nil, "write-tree")
@@ -186,6 +186,13 @@ func writeSuspensionEntries(repo, index string, entries []workspaceTreeEntry) er
 	return err
 }
 
+func normalizeTaskParentPaths(repo, index, base string, task SemanticTaskRef) (string, error) {
+	if task.RequestID != "" {
+		return digestBytes(nil), nil
+	}
+	return normalizeParentPaths(repo, index, base)
+}
+
 func normalizeParentPaths(repo, index, base string) (string, error) {
 	current, err := suspensionGit(repo, index, nil, "ls-files", "-z")
 	if err != nil {
@@ -218,13 +225,15 @@ func normalizeParentPaths(repo, index, base string) (string, error) {
 }
 
 func suspensionGit(repo, index string, input []byte, args ...string) ([]byte, error) {
-	command := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	for _, value := range os.Environ() {
+	command := gitexec.Command("git", repo, args...)
+	filtered := make([]string, 0, len(command.Env)+1)
+	for _, value := range command.Env {
 		if !strings.HasPrefix(value, "GIT_INDEX_FILE=") {
-			command.Env = append(command.Env, value)
+			filtered = append(filtered, value)
 		}
 	}
-	command.Env = append(command.Env, "GIT_INDEX_FILE="+index)
+	filtered = append(filtered, "GIT_INDEX_FILE="+index)
+	command.Env = filtered
 	command.Stdin = bytes.NewReader(input)
 	var diagnostic bytes.Buffer
 	command.Stderr = &diagnostic

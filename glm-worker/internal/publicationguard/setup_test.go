@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 const publicationGuardTestHook = "#!/bin/sh\nexit 1\n"
@@ -36,7 +38,7 @@ func TestInspectPublicationGuardSetupAcceptsCanonicalCustomHooksPath(t *testing.
 	repo := newPublicationGuardTestRepo(t)
 	hooks := t.TempDir()
 	for _, name := range publicationGuardHookNames {
-		if err := os.WriteFile(filepath.Join(hooks, name), []byte(publicationGuardTestHook), 0o755); err != nil {
+		if err := execfile.Write(filepath.Join(hooks, name), []byte(publicationGuardTestHook), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -62,14 +64,14 @@ func TestInspectPublicationGuardSetupUsesInstallerSnapshotAfterHeadMoves(t *test
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(hooks, name), body, 0o755); err != nil {
+		if err := execfile.Write(filepath.Join(hooks, name), body, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	bindCanonicalPublicationGuardT(t, repo, hooks)
 	runPublicationGuardGit(t, repo, "config", "core.hooksPath", hooks)
 
-	if err := os.WriteFile(filepath.Join(repo, ".githooks", "pre-push"), []byte("#!/bin/sh\n# newer canonical hook\nexit 1\n"), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(repo, ".githooks", "pre-push"), []byte("#!/bin/sh\n# newer canonical hook\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	runPublicationGuardGit(t, repo, "add", ".githooks/pre-push")
@@ -83,7 +85,7 @@ func TestInspectPublicationGuardSetupUsesInstallerSnapshotAfterHeadMoves(t *test
 		t.Fatalf("HEAD movement invalidated installed snapshot: %#v", report.Defects)
 	}
 
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	report, err = InspectPublicationGuardSetup(repo)
@@ -99,7 +101,7 @@ func TestInspectPublicationGuardSetupRejectsReplacedHookIdentity(t *testing.T) {
 	repo := newPublicationGuardTestRepo(t)
 	hooks := filepath.Join(repo, ".githooks")
 	bindCanonicalPublicationGuardT(t, repo, hooks)
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	report, err := InspectPublicationGuardSetup(repo)
@@ -114,7 +116,7 @@ func TestInspectPublicationGuardSetupRejectsReplacedHookIdentity(t *testing.T) {
 func TestInspectPublicationGuardSetupRejectsBindingWithoutCanonicalContract(t *testing.T) {
 	repo := newPublicationGuardTestRepo(t)
 	target := filepath.Join(t.TempDir(), "glm-publication-guard")
-	if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := execfile.Write(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writePublicationGuardBindingT(t, filepath.Join(repo, ".githooks"), target+"\nsnapshot="+publicationGuardTestHead(t, repo)+"\n")
@@ -160,7 +162,7 @@ func newPublicationGuardTestRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for _, name := range publicationGuardHookNames {
-		if err := os.WriteFile(filepath.Join(hooks, name), []byte(publicationGuardTestHook), 0o755); err != nil {
+		if err := execfile.Write(filepath.Join(hooks, name), []byte(publicationGuardTestHook), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -192,7 +194,7 @@ func canonicalPublicationGuardT(t *testing.T) string {
 	t.Helper()
 	target := filepath.Join(t.TempDir(), "glm-publication-guard")
 	body := "#!/bin/sh\nif [ \"${1:-}\" = probe ]; then\n  printf '%s\\n' '" + Contract + "'\n  exit 0\nfi\nexit 1\n"
-	if err := os.WriteFile(target, []byte(body), 0o755); err != nil {
+	if err := execfile.Write(target, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return target

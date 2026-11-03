@@ -158,7 +158,7 @@ func TestRunIsolatedGoTestRejectsUnsafeExecutionID(t *testing.T) {
 
 func skipWhenConfinementUnavailable(t *testing.T) {
 	t.Helper()
-	if err := ConfinementPreflight(t.TempDir()); err != nil {
+	if err := ConfinementPreflight(context.Background(), t.TempDir()); err != nil {
 		t.Skipf("この実行環境ではconfinement初期化が拒否されるため実行系testは親validation環境で実行します: %v", err)
 	}
 }

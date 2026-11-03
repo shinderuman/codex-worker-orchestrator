@@ -22,6 +22,8 @@ Reviewは外部の参考情報とし、実装要求は本Taskの親Codex判断�
 - `glm-worker/internal/state/resume.go:validateResumePersistedKeys`
 - `glm-worker/internal/workflow/resume_flow.go:resolveResumedReviewResult`
 
+- 長時間処理の調査から同一ownerへ引継ぎ: Task `22dd61fb-68bb-4c99-bb4d-0289fe879924` のreport-only call `a8cdeb86-585e-48e7-a92b-9365d37f6abe`。923,440ms、105 Read、同一inventoryの別rangeを103回（85回がlimit=1）、tool実時間合計564ms、CLI API730,149ms後にrate_limited。I/O自体を15分の原因と断定せず、補正に不要なmodel/tool往復を調査する。正本は当該Task Bundleの `predecessors/bed08621-e6b7-4707-b1f4-2a0250536520/transcripts/model/09efce96-aade-4eb7-874e-a2a2a403f0c1/0`、分析入口はTask `0b1b3ae0-f403-41f7-9f60-d9f5e847d07b` artifact `codex-direct/startup-remediation-audit.md`。
+
 ## Amendments
 
 ### 2026-10-25 External Reviewから同一責務へ統合: risk-floor-review-packet-bounds
@@ -70,6 +72,8 @@ External Reviewで確認した同一責務の具体条件（resume-obsolete-risk
 
 ## Must not
 
+- report-only補正に不要な実装・検証証拠の再調査を有限補正へ混入させない。通常の独立Reviewのtool権限を一括削除する変更へ拡張しない。全report-only再入箇所を横断確認し、追加の禁止文だけを根本解決としない。
+
 不正packetをPASSへ格上げしない。Schema互換や自由形式JSONでGuardを迂回しない。独立Reviewのsemantic指摘を削らない。
 
 - 対象外の外部指摘を一括実装しない。current schema拒否、Git/Task/source authority、独立Reviewを弱めない。
@@ -87,6 +91,8 @@ External Reviewで確認した同一責務の具体条件（resume-obsolete-risk
 
 - risk_floor_reemitを含むv6入力はmodel call/state変更前に拒否する。
 - 正当なcurrent review checkpointの再開とHIGH floorが維持される。
+
+- 上記report-only事象を、call phase・Read回数/同一path分割回数・tool実測時間・CLI API時間・終了状態を分離して機械的に再検出する。通常補正と失敗/再開経路の退行testを持ち、単にtimeoutを延長して隠さない。
 
 ## Historical invariants
 

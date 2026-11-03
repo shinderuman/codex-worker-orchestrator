@@ -121,17 +121,9 @@ func TestFindingDispositionAfterTaskAuthoritySyncsBindsCurrentAuthority(t *testi
 		t.Fatalf("finding observation record was rewritten: %#v", immutable)
 	}
 
-	runtimeCfg := WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), final.Attempt.SemanticTaskRef)
-	runtime := state.AttachStateStore(runtimeCfg)
-	if err := runtime.Write("task.id", "finding-sync-acceptance"); err != nil {
-		t.Fatal(err)
-	}
-	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
-		AttemptID:          final.Attempt.AttemptID,
-		TaskPath:           final.Attempt.SemanticTaskRef.TaskPath,
-		TaskContractDigest: final.Attempt.SemanticTaskRef.ContractDigest,
-	}); err != nil {
-		t.Fatal(err)
+	runtime := acceptedCompletionRuntime(t, fixture.store, final)
+	if runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+		t.Fatal("post-sync accepted Runtime is not awaiting publication")
 	}
 
 	writeSuspensionTestFile(t, final.Workspace.Root, "result.txt", "revised implementation\n")
@@ -149,6 +141,23 @@ func TestFindingDispositionAfterTaskAuthoritySyncsBindsCurrentAuthority(t *testi
 	}
 	if accepted.CandidateRef == nil {
 		t.Fatalf("candidate acceptance produced no candidate: %#v", accepted)
+	}
+	candidate, err := fixture.store.LoadAcceptedCandidate(*accepted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: accepted.Head.ControllerGeneration,
+		CandidateID:        candidate.CandidateID,
+	})
+	if err != nil {
+		t.Fatalf("post-sync accepted candidate could not promote: %v", err)
+	}
+	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{
+		ExpectedGeneration: promoted.Head.ControllerGeneration,
+		CandidateID:        candidate.CandidateID,
+	}); err != nil {
+		t.Fatalf("post-sync accepted candidate could not publish: %v", err)
 	}
 }
 

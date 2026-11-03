@@ -8,6 +8,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -22,9 +23,9 @@ const (
 	zaiSelfResumeModePostResetRetry = "post-reset-retry"
 )
 
-var zaiSelfResumeNow = func() time.Time { return time.Now().UTC() }
+func zaiSelfResumeNow() time.Time { return time.Now().UTC() }
 
-var waitForZaiSelfResume = func(target time.Time, controller *runner.StopController) bool {
+func waitForZaiSelfResume(target time.Time, controller *runner.StopController) bool {
 	if controller.StopRequested() {
 		return true
 	}
@@ -72,6 +73,11 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.W
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
 	}
+	if cmd.Mode == ModeNewTask {
+		if err := requireNormalTaskHarness(cfg); err != nil {
+			return err
+		}
+	}
 	var err error
 	cfg, err = controller.WorkflowConfig(cfg)
 	if err != nil {
@@ -110,15 +116,19 @@ func executeStateBacked(
 		return executeStateCommand(cmd, cfg, st, stdout)
 	}
 
-	lock, err := acquireWorkflowLock(cfg)
+	recorder := newWorkflowStageRecorder(st)
+	defer recorder.FlushOrArchive()
+	lock, err := acquireWorkflowLockTimed(recorder, cfg)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	if err := admitParentCommand(cmd, st); err != nil {
+	if err := recorder.Measure(state.StageParentAdmission, func() error {
+		return admitParentCommand(cmd, st)
+	}); err != nil {
 		return err
 	}
-	if _, err := controller.Activate(cfg); err != nil {
+	if _, err := controllerActivateTimed(recorder, cfg); err != nil {
 		return err
 	}
 
@@ -126,10 +136,33 @@ func executeStateBacked(
 	case dispatchLockedMutation:
 		return executeLockedMutation(cmd, cfg, st, stdout)
 	case dispatchWorkflow:
-		return executeWorkflow(cmd, cfg, st, rf, stdout)
+		return executeWorkflow(cmd, cfg, st, rf, stdout, recorder)
 	default:
 		return fmt.Errorf("unsupported state-backed dispatch owner: %d", owner)
 	}
+}
+
+func newWorkflowStageRecorder(st *state.StateStore) *state.StageRecorder {
+	recorder := state.NewStageRecorder(st)
+	recorder.RecordParentDispatch(time.Now().UTC())
+	return recorder
+}
+
+func acquireWorkflowLockTimed(recorder *state.StageRecorder, cfg config.AppConfig) (*RepoLock, error) {
+	var lock *RepoLock
+	err := recorder.Measure(state.StageWorkflowLock, func() error {
+		acquired, lockErr := acquireWorkflowLock(cfg)
+		lock = acquired
+		return lockErr
+	})
+	return lock, err
+}
+
+func controllerActivateTimed(recorder *state.StageRecorder, cfg config.AppConfig) (controller.Admission, error) {
+	span := recorder.Span(state.StageControllerActivate)
+	admission, err := controller.Activate(cfg)
+	span.End(err)
+	return admission, err
 }
 
 func retainedCanonicalWorkflowMode(mode CommandMode) bool {
@@ -143,19 +176,23 @@ func executeRetainedCanonicalWorkflow(
 	stdout io.Writer,
 ) error {
 	attached := state.AttachStateStore(cfg)
-	lock, err := acquireWorkflowLock(cfg)
+	recorder := newWorkflowStageRecorder(attached)
+	defer recorder.FlushOrArchive()
+	lock, err := acquireWorkflowLockTimed(recorder, cfg)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
 
-	if err := admitParentCommand(cmd, attached); err != nil {
+	if err := recorder.Measure(state.StageParentAdmission, func() error {
+		return admitParentCommand(cmd, attached)
+	}); err != nil {
 		return err
 	}
 	if cmd.Mode == ModeAccept && attached.TaskStatus() == state.TaskStatusNone {
 		return parentAccept(attached, stdout)
 	}
-	cfg, err = activateWorkflowConfig(cmd, cfg)
+	cfg, err = activateWorkflowConfigTimed(recorder, cmd, cfg)
 	if err != nil {
 		return err
 	}
@@ -163,10 +200,11 @@ func executeRetainedCanonicalWorkflow(
 	if err != nil {
 		return err
 	}
+	recorder.RebindStore(st)
 	if cmd.Mode == ModeAccept {
 		return acceptRetainedCanonicalWorkflow(cfg, st, stdout)
 	}
-	return executeWorkflow(cmd, cfg, st, rf, stdout)
+	return executeWorkflow(cmd, cfg, st, rf, stdout, recorder)
 }
 
 func acceptRetainedCanonicalWorkflow(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
@@ -179,21 +217,50 @@ func acceptRetainedCanonicalWorkflow(cfg config.AppConfig, st *state.StateStore,
 		return err
 	}
 	binding, err := st.LoadControllerRuntimeBinding()
-	if err != nil || head.ExecutionTaskRef == nil || binding.AttemptID != head.LiveAttemptID || binding.TaskPath != head.ExecutionTaskRef.TaskPath || binding.TaskContractDigest != head.ExecutionTaskRef.ContractDigest {
+	if err != nil || head.ExecutionTaskRef == nil || binding.AttemptID != head.LiveAttemptID || binding.TaskPath != head.ExecutionTaskRef.TaskPath || binding.RequestID != head.ExecutionTaskRef.RequestID || binding.TaskContractDigest != head.ExecutionTaskRef.ContractDigest {
 		return fmt.Errorf("parent acceptance requires review reentry for the current controller attempt")
 	}
 	return parentAccept(st, stdout)
 }
 
-func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
-	if cmd.Mode != ModeNewTask {
-		exists, err := controller.Exists(cfg)
+func requireNormalTaskHarness(cfg config.AppConfig) error {
+	present, err := controller.RepositoryPresent(cfg.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("inspect normal task repository: %w", err)
+	}
+	if !present {
+		return fmt.Errorf("normal task admission requires a Git repository; canonical non-Git task authority is not defined")
+	}
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("evaluate normal task repository harness: %w", err)
+	}
+	if decision.Active {
+		return nil
+	}
+	if decision.Reason == repositoryharness.ReasonAbsent {
+		tracked, err := repositoryharness.MarkerTracked(cfg.RepoRoot)
 		if err != nil {
-			return cfg, err
+			return fmt.Errorf("inspect missing harness marker tracking: %w", err)
 		}
-		if !exists {
-			return cfg, fmt.Errorf("existing workflow requires canonical controller execution authority")
+		if tracked {
+			return fmt.Errorf("normal task admission refuses missing tracked repository harness marker (%s: %s)", repositoryharness.MarkerPath, decision.Reason)
 		}
+		return nil
+	}
+	return fmt.Errorf("normal task admission refuses invalid repository harness marker (%s: %s)", repositoryharness.MarkerPath, decision.Reason)
+}
+
+func requireWorkflowAdmission(cmd Command, cfg config.AppConfig) error {
+	if cmd.Mode == ModeNewTask {
+		return requireNormalTaskHarness(cfg)
+	}
+	return requireExistingWorkflowController(cfg)
+}
+
+func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
+	if err := requireWorkflowAdmission(cmd, cfg); err != nil {
+		return cfg, err
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
@@ -203,7 +270,26 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 	if err != nil {
 		return cfg, err
 	}
-	if cmd.Mode == ModeNewTask && !controller.IsPristine(head) && head.LiveLeaseID == "" && head.ExecutionTaskRef == nil {
+	if err := rejectLiveParentOnlyExecution(store); err != nil {
+		return cfg, err
+	}
+	if cmd.Mode == ModeNewTask {
+		return activateNewWorkflowConfig(cfg, store, head, cmd.Payload)
+	}
+	_, err = controller.Activate(cfg)
+	return cfg, err
+}
+
+func activateNewWorkflowConfig(cfg config.AppConfig, store *controller.Store, head controller.RepositoryControllerHead, request string) (config.AppConfig, error) {
+	requestScope := false
+	if head.ProjectSnapshotID != "" {
+		project, err := store.LoadProjectSnapshot(head.ProjectSnapshotID)
+		if err != nil {
+			return cfg, err
+		}
+		requestScope = project.UserRequest != nil || project.CompletedRequest != nil
+	}
+	if !requestScope && !controller.IsPristine(head) && head.LiveLeaseID == "" && head.ExecutionTaskRef == nil {
 		materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: head.ControllerGeneration})
 		if err != nil {
 			return cfg, err
@@ -211,12 +297,45 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 		cfg.RepoRoot = materialized.Admission.Workspace.Root
 		return controller.WorkflowConfig(cfg)
 	}
-	_, err = controller.Activate(cfg)
-	return cfg, err
+	if _, err := controller.ActivateRequest(cfg, request); err != nil {
+		return cfg, err
+	}
+	return controller.WorkflowConfig(cfg)
 }
 
-func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer) error {
-	if err := preflightQualityToolchain(cfg, st); err != nil {
+func requireExistingWorkflowController(cfg config.AppConfig) error {
+	exists, err := controller.Exists(cfg)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("existing workflow requires canonical controller execution authority")
+	}
+	return nil
+}
+
+func rejectLiveParentOnlyExecution(store *controller.Store) error {
+	live, err := store.LiveParentOnlyExecution()
+	if err != nil {
+		return err
+	}
+	if live {
+		return fmt.Errorf("parent-only execution completes through the parent completion path; Runtime start is rejected")
+	}
+	return nil
+}
+
+func activateWorkflowConfigTimed(recorder *state.StageRecorder, cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
+	span := recorder.Span(state.StageControllerActivate)
+	bound, err := activateWorkflowConfig(cmd, cfg)
+	span.End(err)
+	return bound, err
+}
+
+func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer, recorder *state.StageRecorder) error {
+	if err := recorder.Measure(state.StageQualityPreflight, func() error {
+		return preflightQualityToolchain(cfg, st)
+	}); err != nil {
 		return err
 	}
 	controller := runner.NewStopController()
@@ -229,6 +348,10 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	r := rf(cfg, st, controller)
 	wf := workflow.NewWorkflow(cfg, st, r, stdout)
 	wf.AttachStopController(controller)
+	wf.AttachStageRecorder(recorder)
+	if cmd.Mode != ModeNewTask {
+		recorder.BindCurrentTask()
+	}
 
 	return executeWorkflowWithZaiSelfResume(cmd, wf, st, controller)
 }
@@ -244,6 +367,8 @@ func executeWorkflowWithZaiSelfResume(
 		controller,
 		func() error { return executeWorkflowCommand(cmd, wf) },
 		func() error { return wf.ExecuteResumeWithExecutionMilestones() },
+		zaiSelfResumeNow,
+		waitForZaiSelfResume,
 	)
 }
 
@@ -252,8 +377,10 @@ func executeZaiSelfResumeLoop(
 	controller *runner.StopController,
 	initial func() error,
 	resume func() error,
+	now func() time.Time,
+	wait func(time.Time, *runner.StopController) bool,
 ) error {
-	lastAttemptStartedAt := zaiSelfResumeNow()
+	lastAttemptStartedAt := now()
 	err := initial()
 	lastBoundary := ""
 	for {
@@ -261,29 +388,28 @@ func executeZaiSelfResumeLoop(
 		if !errors.As(err, &limitErr) {
 			return err
 		}
-		postReset, boundary, retryErr := classifyZaiSelfResumeRetry(lastBoundary, limitErr)
+		postReset, boundary, retryErr := classifyZaiSelfResumeRetry(lastBoundary, limitErr, now())
 		if retryErr != nil {
 			return retryErr
 		}
-		if waitErr := waitForZaiFiveHourSelfResume(st, controller, limitErr); waitErr != nil {
+		if waitErr := waitForZaiFiveHourSelfResume(st, controller, limitErr, now, wait); waitErr != nil {
 			return waitErr
 		}
-		if waitErr := waitForZaiPostResetRetryIfNeeded(st, controller, limitErr, postReset, lastAttemptStartedAt); waitErr != nil {
+		if waitErr := waitForZaiPostResetRetryIfNeeded(st, controller, limitErr, postReset, lastAttemptStartedAt, now, wait); waitErr != nil {
 			return waitErr
 		}
 		lastBoundary = boundary
-		lastAttemptStartedAt = zaiSelfResumeNow()
+		lastAttemptStartedAt = now()
 		err = resume()
 	}
 }
 
-func classifyZaiSelfResumeRetry(lastBoundary string, limitErr runner.ZaiRateLimitError) (bool, string, error) {
+func classifyZaiSelfResumeRetry(lastBoundary string, limitErr runner.ZaiRateLimitError, now time.Time) (bool, string, error) {
 	boundary := limitErr.Limit.ResetAtRFC3339
 	resumeAt, err := zaiSelfResumeAt(boundary)
 	if err != nil {
 		return false, boundary, errors.Join(limitErr, err)
 	}
-	now := zaiSelfResumeNow()
 	if resumeAt.After(now) {
 		return false, boundary, nil
 	}
@@ -349,6 +475,8 @@ func waitForZaiFiveHourSelfResume(
 	st *state.StateStore,
 	controller *runner.StopController,
 	limitErr runner.ZaiRateLimitError,
+	now func() time.Time,
+	wait func(time.Time, *runner.StopController) bool,
 ) error {
 	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {
 		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume pre-wait validation failed: %w", err))
@@ -357,7 +485,7 @@ func waitForZaiFiveHourSelfResume(
 	if err != nil {
 		return errors.Join(limitErr, err)
 	}
-	if resumeAt.After(zaiSelfResumeNow()) && waitForZaiSelfResume(resumeAt, controller) {
+	if resumeAt.After(now()) && wait(resumeAt, controller) {
 		return zaiSelfResumeInterrupted(controller, limitErr)
 	}
 	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {
@@ -372,11 +500,13 @@ func waitForZaiPostResetRetryIfNeeded(
 	limitErr runner.ZaiRateLimitError,
 	postReset bool,
 	lastAttemptStartedAt time.Time,
+	now func() time.Time,
+	wait func(time.Time, *runner.StopController) bool,
 ) error {
 	if !postReset {
 		return nil
 	}
-	return waitForZaiPostResetRetrySpacing(st, controller, limitErr, lastAttemptStartedAt)
+	return waitForZaiPostResetRetrySpacing(st, controller, limitErr, lastAttemptStartedAt, now, wait)
 }
 
 func waitForZaiPostResetRetrySpacing(
@@ -384,12 +514,14 @@ func waitForZaiPostResetRetrySpacing(
 	controller *runner.StopController,
 	limitErr runner.ZaiRateLimitError,
 	lastAttemptStartedAt time.Time,
+	now func() time.Time,
+	wait func(time.Time, *runner.StopController) bool,
 ) error {
 	if lastAttemptStartedAt.IsZero() {
 		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume previous attempt start time is unavailable"))
 	}
 	nextAttemptAt := lastAttemptStartedAt.Add(zaiPostResetRetryInterval)
-	if nextAttemptAt.After(zaiSelfResumeNow()) && waitForZaiSelfResume(nextAttemptAt, controller) {
+	if nextAttemptAt.After(now()) && wait(nextAttemptAt, controller) {
 		return zaiSelfResumeInterrupted(controller, limitErr)
 	}
 	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {

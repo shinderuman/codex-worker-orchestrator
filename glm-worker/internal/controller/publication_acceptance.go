@@ -30,7 +30,7 @@ func (s *Store) previewImplementationTree(admission Admission, policy Publicatio
 	if err != nil {
 		return "", err
 	}
-	trees, err := CaptureExecutionTrees(admission.Workspace.Root, metadataBase)
+	trees, err := CaptureExecutionTrees(admission.Workspace.Root, metadataBase, admission.Attempt.SemanticTaskRef)
 	if err != nil {
 		return "", err
 	}
@@ -42,7 +42,7 @@ func (s *Store) previewImplementationTree(admission Admission, policy Publicatio
 	if err != nil {
 		return "", err
 	}
-	base, err = normalizeCandidateTree(s.identity.PrimaryRoot, index, metadataBase)
+	base, err = normalizeCandidateTree(s.identity.PrimaryRoot, index, metadataBase, admission.Attempt.SemanticTaskRef)
 	if err != nil {
 		return "", err
 	}
@@ -54,6 +54,15 @@ func (s *Store) finalizeCandidateTree(admission Admission, implementationTree st
 }
 
 func (s *Store) finalizeCandidateTrees(task, root SemanticTaskRef, base string, implementationTree string) ([]TerminalMetadataFile, string, error) {
+	if task.RequestID != "" {
+		if !task.Equal(root) {
+			return nil, "", fmt.Errorf("request authority cannot use project child-task finalization")
+		}
+		if _, err := s.requestTaskAuthority(task); err != nil {
+			return nil, "", err
+		}
+		return nil, implementationTree, nil
+	}
 	implementation, err := createAcceptedCandidateCommit(s.identity.PrimaryRoot, implementationTree, base, "terminal finalization source")
 	if err != nil {
 		return nil, "", err
@@ -100,6 +109,9 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 	if strings.TrimSpace(input.Message) == "" || admission.Lease.InFlightCallID != "" {
 		return ExecutionOperation{}, fmt.Errorf("candidate acceptance requires message and quiescent execution")
 	}
+	if err := s.requireCurrentAdmissionSource(admission.Head); err != nil {
+		return ExecutionOperation{}, err
+	}
 	requiredValidations, requiredProbes, err := s.resolveAdoptedValidations(admission, input)
 	if err != nil {
 		return ExecutionOperation{}, err
@@ -136,7 +148,7 @@ func (s *Store) buildAcceptedCandidate(admission Admission, input CandidateAccep
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
-	if len(files) == 0 {
+	if len(files) == 0 && admission.Attempt.SemanticTaskRef.RequestID == "" {
 		return AcceptedCandidate{}, fmt.Errorf("candidate terminal finalization produced no metadata changes")
 	}
 	commit, err := createAcceptedCandidateCommit(s.identity.PrimaryRoot, finalTree, admission.Head.IntegrationTip, input.Message)

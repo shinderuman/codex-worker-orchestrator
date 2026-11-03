@@ -19,7 +19,7 @@ func (w *Workflow) ExecuteNewTaskWithMilestones(request string, definitions []ex
 }
 
 func (w *Workflow) executeNewTaskWithMilestones(request string, definitions []executionunit.MilestoneDefinition) error {
-	if err := w.validateNewTaskStart(); err != nil {
+	if err := w.validateNewTaskStart(request); err != nil {
 		return err
 	}
 	activeTaskPath, err := w.initializeNewTask(request)

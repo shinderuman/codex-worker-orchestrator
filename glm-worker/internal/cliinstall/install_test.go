@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestInstallRejectsUnownedCollisionsBeforeChangingAnyBinary(t *testing.T) {
@@ -217,7 +219,7 @@ func writeBuildSet(t *testing.T, dir, version string) {
 
 func writeExecutable(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+	if err := execfile.Write(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(path, 0o755); err != nil {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -39,6 +40,29 @@ func TestRunWithIsolatedFixesAppliesVerifiedPostimage(t *testing.T) {
 	}
 	if string(got) != "after\n" {
 		t.Fatalf("postimage = %q", got)
+	}
+}
+
+func TestIsolatedFixesKeepExecutableScriptsRunnable(t *testing.T) {
+	root := newFixIsolationRepo(t)
+	path := filepath.Join(root, "probe.sh")
+	if err := execfile.Write(path, []byte("#!/bin/sh\nprintf before\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitAddFixIsolationRepo(t, root)
+	_, err := runWithIsolatedFixes(root, func(workspace string) (Report, error) {
+		probe := filepath.Join(workspace, "probe.sh")
+		if output, err := exec.Command(probe).Output(); err != nil || string(output) != "before" {
+			t.Fatalf("materialized script = %q, %v", output, err)
+		}
+		err := execfile.Write(probe, []byte("#!/bin/sh\nprintf after\n"), 0o755)
+		return Report{Status: "pass", Fixed: 1, Violations: []Violation{}}, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(path).Output(); err != nil || string(output) != "after" {
+		t.Fatalf("applied script = %q, %v", output, err)
 	}
 }
 

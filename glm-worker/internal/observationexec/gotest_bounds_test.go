@@ -2,12 +2,31 @@ package observationexec
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
+
+func TestCopiedModuleExecutableRuns(t *testing.T) {
+	t.Parallel()
+	source := filepath.Join(t.TempDir(), "source.sh")
+	destination := filepath.Join(t.TempDir(), "copied.sh")
+	if err := execfile.Write(source, []byte("#!/bin/sh\nprintf copied\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copier := &moduleTreeCopier{ctx: context.Background()}
+	if err := copier.copyFile(destination, source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(destination).Output(); err != nil || string(output) != "copied" {
+		t.Fatalf("copied executable = %q, %v", output, err)
+	}
+}
 
 func TestModuleTreeCopierEnforcesByteBudgetDuringCopy(t *testing.T) {
 	sourceDir := t.TempDir()
@@ -17,7 +36,7 @@ func TestModuleTreeCopierEnforcesByteBudgetDuringCopy(t *testing.T) {
 	if err := os.WriteFile(source, []byte("12345"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	copier := &moduleTreeCopier{maxBytes: 4}
+	copier := &moduleTreeCopier{ctx: context.Background(), maxBytes: 4}
 	if err := copier.copyFile(destination, source, 0o600); err == nil || !strings.Contains(err.Error(), "size") {
 		t.Fatalf("copy error = %v, want byte-budget rejection", err)
 	}

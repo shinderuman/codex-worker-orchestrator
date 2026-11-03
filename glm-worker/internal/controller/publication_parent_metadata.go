@@ -7,6 +7,13 @@ import (
 )
 
 func (s *Store) completionMetadataBase(admission Admission) (string, error) {
+	if admission.Attempt.SemanticTaskRef.RequestID != "" {
+		authority, err := s.LoadProjectSnapshot(admission.Head.ProjectSnapshotID)
+		if err != nil {
+			return "", err
+		}
+		return authority.HeadOID, nil
+	}
 	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
 	if err != nil {
 		return "", err

@@ -281,7 +281,7 @@ func (s *Store) verifySealedCleanupContent(workspace WorkspaceIdentity, seal Att
 	if err != nil {
 		return err
 	}
-	trees, err := CaptureExecutionTrees(root, metadataBase)
+	trees, err := CaptureExecutionTrees(root, metadataBase, attempt.SemanticTaskRef)
 	if err != nil {
 		return err
 	}

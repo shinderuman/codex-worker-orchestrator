@@ -197,7 +197,7 @@ func DiffTextForPaths(repoRoot, baselineHead string, paths []string, readBoundBy
 }
 
 func changedPathDiffText(repoRoot, base string, paths []string, readBoundBytes int) (string, error) {
-	tracked, err := gitOutput(repoRoot, readBoundBytes, append([]string{"diff", "--no-renames", base, "--"}, paths...)...)
+	tracked, err := gitOutput(repoRoot, readBoundBytes, append([]string{"diff", "--no-ext-diff", "--no-textconv", "--no-renames", base, "--"}, paths...)...)
 	if err != nil {
 		return "", err
 	}

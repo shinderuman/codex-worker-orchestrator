@@ -11,43 +11,44 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-type CommittedTaskAuthority struct {
+type TaskAuthority struct {
 	Task              SemanticTaskRef
 	ProjectSnapshotID string
 	Snapshot          ProjectSnapshot
+	ExecutionMode     string
 }
 
-func ResolveCommittedTaskAuthority(repoRoot string) (CommittedTaskAuthority, error) {
+func ResolveCommittedTaskAuthority(repoRoot string) (TaskAuthority, error) {
 	repository, err := ResolveRepositoryIdentity(repoRoot)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	head, err := gitTrimmed(repoRoot, "rev-parse", "--verify", "HEAD")
 	if err != nil {
-		return CommittedTaskAuthority{}, fmt.Errorf("resolve committed repository HEAD: %w", err)
+		return TaskAuthority{}, fmt.Errorf("resolve committed repository HEAD: %w", err)
 	}
 	if head == "" {
-		return CommittedTaskAuthority{}, fmt.Errorf("committed repository HEAD is empty")
+		return TaskAuthority{}, fmt.Errorf("committed repository HEAD is empty")
 	}
 	return resolveCommittedTaskAuthority(repoRoot, repository.LineageID, head)
 }
 
-func ResolveCommittedTaskAuthorityAt(repoRoot, revision string) (CommittedTaskAuthority, error) {
+func ResolveCommittedTaskAuthorityAt(repoRoot, revision string) (TaskAuthority, error) {
 	repository, err := ResolveRepositoryIdentity(repoRoot)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	head, err := gitTrimmed(repoRoot, "rev-parse", "--verify", revision+"^{commit}")
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	return resolveCommittedTaskAuthority(repoRoot, repository.LineageID, head)
 }
 
-func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (CommittedTaskAuthority, error) {
+func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (TaskAuthority, error) {
 	project, err := repositoryprojectcommit.Load(repoRoot, head)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	refs := make([]SemanticTaskRef, 0, len(project.Tasks))
 	for _, task := range project.Tasks {
@@ -55,7 +56,11 @@ func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (Committ
 	}
 	root, ok := findTaskRef(refs, project.RootTaskPath)
 	if !ok {
-		return CommittedTaskAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", project.RootTaskPath)
+		return TaskAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", project.RootTaskPath)
+	}
+	authority, err := committedTaskExecutionMode(project)
+	if err != nil {
+		return TaskAuthority{}, err
 	}
 	snapshot := ProjectSnapshot{
 		SchemaVersion:       controllerSchemaVersion,
@@ -71,7 +76,39 @@ func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (Committ
 		Tasks:               append([]SemanticTaskRef(nil), refs...),
 	}
 	snapshot.SnapshotID = projectSnapshotID(snapshot)
-	return CommittedTaskAuthority{Task: root, ProjectSnapshotID: snapshot.SnapshotID, Snapshot: snapshot}, nil
+	return TaskAuthority{Task: root, ProjectSnapshotID: snapshot.SnapshotID, Snapshot: snapshot, ExecutionMode: authority.Mode}, nil
+}
+
+func committedTaskExecutionMode(project repositoryprojectcommit.Project) (taskcontract.ExecutionAuthority, error) {
+	for _, task := range project.Tasks {
+		if task.Path != project.RootTaskPath {
+			continue
+		}
+		authority, err := taskcontract.ParseExecutionAuthority(task.Content)
+		if err != nil {
+			return taskcontract.ExecutionAuthority{}, fmt.Errorf("committed root task %s: %w", task.Path, err)
+		}
+		return authority, nil
+	}
+	return taskcontract.ExecutionAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", project.RootTaskPath)
+}
+
+func (s *Store) committedTaskExecutionMode(path string) (string, error) {
+	project, err := repositoryprojectcommit.Load(s.identity.PrimaryRoot, "HEAD")
+	if err != nil {
+		return "", err
+	}
+	for _, task := range project.Tasks {
+		if task.Path != path {
+			continue
+		}
+		authority, err := taskcontract.ParseExecutionAuthority(task.Content)
+		if err != nil {
+			return "", fmt.Errorf("committed task %s: %w", path, err)
+		}
+		return authority.Mode, nil
+	}
+	return "", fmt.Errorf("committed task %s is missing from the corpus at HEAD", path)
 }
 
 func findTaskRef(refs []SemanticTaskRef, path string) (SemanticTaskRef, bool) {
@@ -86,7 +123,7 @@ func findTaskRef(refs []SemanticTaskRef, path string) (SemanticTaskRef, bool) {
 func digestTaskRefs(refs []SemanticTaskRef) string {
 	parts := []string{"controller-task-corpus-v1"}
 	for _, ref := range refs {
-		parts = append(parts, ref.TaskPath, ref.ContractDigest)
+		parts = append(parts, ref.Identity(), ref.ContractDigest)
 	}
 	return digestStrings(parts...)
 }
@@ -120,7 +157,7 @@ func digestSchedule(schedule taskcontract.PlanSchedule) string {
 
 func projectSnapshotID(snapshot ProjectSnapshot) string {
 	parts := []string{
-		"controller-project-snapshot-v2",
+		"controller-project-snapshot-v3",
 		snapshot.RepositoryIdentity,
 		snapshot.HeadOID,
 		snapshot.PlanDigest,
@@ -134,9 +171,15 @@ func projectSnapshotID(snapshot ProjectSnapshot) string {
 	parts = append(parts, snapshot.Next...)
 	parts = append(parts, "BLOCKED")
 	parts = append(parts, snapshot.Blocked...)
+	if snapshot.UserRequest != nil {
+		parts = append(parts, "REQUEST", snapshot.UserRequest.RequestID, digestBytes([]byte(snapshot.UserRequest.Content)))
+	}
+	if snapshot.CompletedRequest != nil {
+		parts = append(parts, "COMPLETED-REQUEST", snapshot.CompletedRequest.RequestID, digestBytes([]byte(snapshot.CompletedRequest.Content)))
+	}
 	parts = append(parts, "TASKS")
 	for _, ref := range snapshot.Tasks {
-		parts = append(parts, ref.TaskPath, ref.ContractDigest)
+		parts = append(parts, ref.Identity(), ref.ContractDigest)
 	}
 	return digestStrings(parts...)
 }
@@ -144,6 +187,9 @@ func projectSnapshotID(snapshot ProjectSnapshot) string {
 func (s *Store) writeProjectSnapshot(snapshot ProjectSnapshot) error {
 	if snapshot.SchemaVersion != controllerSchemaVersion || snapshot.RepositoryIdentity != s.identity.LineageID {
 		return fmt.Errorf("project snapshot identity is invalid")
+	}
+	if err := validateRequestTaskSnapshot(snapshot); err != nil {
+		return err
 	}
 	if snapshot.SnapshotID == "" || snapshot.SnapshotID != projectSnapshotID(snapshot) {
 		return fmt.Errorf("project snapshot digest is invalid")
@@ -169,6 +215,9 @@ func (s *Store) LoadProjectSnapshot(id string) (ProjectSnapshot, error) {
 	}
 	if snapshot.SchemaVersion != controllerSchemaVersion || snapshot.RepositoryIdentity != s.identity.LineageID || snapshot.SnapshotID != id || projectSnapshotID(snapshot) != id {
 		return ProjectSnapshot{}, fmt.Errorf("project snapshot %s identity is invalid", id)
+	}
+	if err := validateRequestTaskSnapshot(snapshot); err != nil {
+		return ProjectSnapshot{}, err
 	}
 	return snapshot, nil
 }

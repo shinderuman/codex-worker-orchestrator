@@ -273,6 +273,34 @@ func TestControlProvenanceRejectsLineNumberSchema(t *testing.T) {
 	}
 }
 
+func TestControlProvenanceAcceptsCoordinatedTestSymbolRename(t *testing.T) {
+	root := t.TempDir()
+	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+	control := controlProvenanceMachineFixture()
+	assertLocators := func(wantInvalid bool) {
+		t.Helper()
+		writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+			Version: 1, Controls: []controlProvenanceControl{control},
+		})
+		violations, err := controlProvenanceViolations(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wantInvalid != hasControlProvenanceViolation(violations, "owner_test.go", "test", control.Tests[0].Symbol) {
+			t.Fatalf("renamed locator drift not enforced: wantInvalid=%t violations=%#v", wantInvalid, violations)
+		}
+		if !wantInvalid && len(violations) != 0 {
+			t.Fatalf("matching locator rejected: %#v", violations)
+		}
+	}
+	assertLocators(false)
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestRenamed() {}\n")
+	assertLocators(true)
+	control.Tests[0].Symbol = "TestRenamed"
+	assertLocators(false)
+}
+
 func controlProvenanceMachineFixture() controlProvenanceControl {
 	return controlProvenanceControl{
 		ID:                     "machine",

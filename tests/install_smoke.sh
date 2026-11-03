@@ -6,19 +6,72 @@ go_mod_cache=$(go env GOMODCACHE)
 quality_tool_namespace=$(awk -F': ' '$1 == "namespace" { print $2; exit }' "$source_root/quality-tools.yml")
 quality_tools_default=$(awk -F': ' '$1 == "default-bin-dir" { print $2; exit }' "$source_root/quality-tools.yml")
 deadcode_version=$(awk -F': ' '$1 == "deadcode" { print $2; exit }' "$source_root/quality-tools.yml")
+go_contract_version=$(awk -F': ' '$1 == "go" { print $2; exit }' "$source_root/quality-tools.yml")
 case "${QUALITY_TOOLS_BIN_DIR:-}" in
 "") source_quality_tools="$HOME/$quality_tools_default" ;;
 /*) source_quality_tools="$QUALITY_TOOLS_BIN_DIR" ;;
 *) source_quality_tools="$source_root/$QUALITY_TOOLS_BIN_DIR" ;;
 esac
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
-trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+export_lock_pid=
+export_writer_pid=
+stop_export_processes() {
+	if [ -n "$export_writer_pid" ]; then
+		kill "$export_writer_pid" 2>/dev/null || true
+		wait "$export_writer_pid" 2>/dev/null || true
+		export_writer_pid=
+	fi
+	if [ -n "$export_lock_pid" ]; then
+		kill "$export_lock_pid" 2>/dev/null || true
+		wait "$export_lock_pid" 2>/dev/null || true
+		export_lock_pid=
+	fi
+}
+cleanup() {
+	stop_export_processes
+	rm -rf "$tmp"
+}
+trap 'cleanup' EXIT
+trap 'exit 1' HUP INT TERM
 repo="$tmp/repo"
 home="$tmp/home"
 home_quality_tools="$home/$quality_tools_default"
 mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin" "$home_quality_tools"
 rsync -a --exclude .git --exclude .codex "$source_root/" "$repo/"
 git -C "$repo" init -q -b main
+git -C "$repo" add -A
+git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm source
+(
+	cd "$repo/glm-worker"
+	HOME="$home" GOMODCACHE="$go_mod_cache" GOTOOLCHAIN="go$go_contract_version" go build -o "$tmp/plancheck" ./cmd/plancheck
+)
+"$tmp/plancheck" "$repo"
+fixture_task_path=IMPLEMENTATION_TASKS/install-smoke-normal-task.md
+test ! -e "$source_root/$fixture_task_path"
+rm -rf "$repo/IMPLEMENTATION_TASKS"
+mkdir "$repo/IMPLEMENTATION_TASKS"
+cat >"$repo/$fixture_task_path" <<'EOF_FIXTURE_TASK'
+# Task: install smoke検証用repositoryの通常Task実行
+
+## Original instruction
+
+install smokeが検証用repositoryへ固定する通常Task。インストール対象sourceのACTIVE指定(通常Task・parent-only評価Taskのいずれ)へ依存しないcanonical authorityで、installed runtimeの通常Task実行を検証する。
+
+## Dependencies
+
+none
+
+## External feasibility
+
+status: not-applicable
+EOF_FIXTURE_TASK
+cat >"$repo/IMPLEMENTATION_PLAN.local.md" <<'EOF_FIXTURE_PLAN'
+# install smoke検証用Plan
+
+## ACTIVE
+
+- `IMPLEMENTATION_TASKS/install-smoke-normal-task.md`
+EOF_FIXTURE_PLAN
 git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
 repo_revision=$(git -C "$repo" rev-parse HEAD)
@@ -242,6 +295,9 @@ export_attempt_id=$(sed -n 's/.*"attempt_id":"\([^"]*\)".*/\1/p' "$tmp/controlle
 export_task_path=$(sed -n 's/.*"task_path":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
 export_contract_digest=$(sed -n 's/.*"contract_digest":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
 test -n "$export_attempt_id" && test -n "$export_task_path" && test -n "$export_contract_digest"
+test "$export_task_path" = "$fixture_task_path"
+fixture_contract_digest=$(git -C "$repo" show HEAD:"$fixture_task_path" | shasum -a 256 | cut -d' ' -f1)
+test "$export_contract_digest" = "$fixture_contract_digest"
 repo_physical_export=$(CDPATH='' cd -- "$repo" && pwd -P)
 export_lineage=$(printf 'git-common-lineage-v1\0%s\0' "$repo_physical_export/.git" | shasum -a 256 | cut -d' ' -f1)
 export_controller_store="$home/.glm-worker/controllers/$export_lineage"
@@ -332,14 +388,31 @@ import (
 )
 
 func main() {
+	try := len(os.Args) == 3 && os.Args[2] == "--try"
+	if len(os.Args) != 2 && !try {
+		fmt.Fprintln(os.Stderr, "usage: hold-workflow-lock <path> [--try]")
+		os.Exit(2)
+	}
 	file, err := os.OpenFile(os.Args[1], os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+	defer file.Close()
+	mode := syscall.LOCK_EX
+	if try {
+		mode |= syscall.LOCK_NB
+	}
+	if err := syscall.Flock(int(file.Fd()), mode); err != nil {
+		if try && (err == syscall.EWOULDBLOCK || err == syscall.EAGAIN) {
+			fmt.Fprintln(os.Stderr, "workflow lock already held")
+			os.Exit(3)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+	if try {
+		return
 	}
 	fmt.Println("locked")
 	signals := make(chan os.Signal, 1)
@@ -347,20 +420,68 @@ func main() {
 	<-signals
 }
 EOF_HOLD_LOCK
-(
-	cd "$tmp"
-	HOME="$home" GOMODCACHE="$go_mod_cache" go run hold-workflow-lock.go "$export_workflow_lock"
-) >"$tmp/export-lock-held.out" 2>"$tmp/export-lock-held.stderr" &
+HOME="$home" GOMODCACHE="$go_mod_cache" go build -o "$tmp/hold-workflow-lock" "$tmp/hold-workflow-lock.go"
+
+if "$tmp/hold-workflow-lock" "$tmp/missing-lock-directory/workflow.lock" --try >"$tmp/export-lock-fault.out" 2>"$tmp/export-lock-fault.stderr"; then
+	printf '%s\n' 'lock probe accepted an inaccessible lock path' >&2
+	exit 1
+else
+	lock_fault_status=$?
+fi
+test "$lock_fault_status" -eq 1
+grep -q 'no such file or directory' "$tmp/export-lock-fault.stderr"
+
+wait_for_export_lock() {
+	lock_output=$1
+	for _ in $(seq 1 100); do
+		if grep -Fxq locked "$lock_output" 2>/dev/null; then
+			if "$tmp/hold-workflow-lock" "$export_workflow_lock" --try >"$tmp/export-lock-probe.out" 2>"$tmp/export-lock-probe.stderr"; then
+				printf '%s\n' 'lock helper reported readiness without holding the workflow lock' >&2
+				return 1
+			else
+				lock_probe_status=$?
+				if [ "$lock_probe_status" -ne 3 ]; then
+					printf 'lock contention probe failed (exit %s):\n' "$lock_probe_status" >&2
+					cat "$tmp/export-lock-probe.stderr" >&2
+					return 1
+				fi
+			fi
+			return 0
+		fi
+		if ! kill -0 "$export_lock_pid" 2>/dev/null; then
+			break
+		fi
+		sleep 0.1
+	done
+	printf '%s\n' 'lock helper did not become ready' >&2
+	return 1
+}
+
+if (
+	trap 'stop_export_processes' EXIT
+	trap 'exit 1' HUP INT TERM
+	"$tmp/hold-workflow-lock" "$export_workflow_lock" >"$tmp/export-lock-failure.out" 2>"$tmp/export-lock-failure.stderr" &
+	export_lock_pid=$!
+	printf '%s\n' "$export_lock_pid" >"$tmp/export-lock-failure.pid"
+	wait_for_export_lock "$tmp/export-lock-failure.out" || exit 2
+	exit 19
+); then
+	printf '%s\n' 'expected lock-holder failure-path exit' >&2
+	exit 1
+else
+	export_failure_status=$?
+fi
+test "$export_failure_status" -eq 19
+export_failure_pid=$(cat "$tmp/export-lock-failure.pid")
+if kill -0 "$export_failure_pid" 2>/dev/null; then
+	printf '%s\n' 'lock helper survived failure-path cleanup' >&2
+	exit 1
+fi
+"$tmp/hold-workflow-lock" "$export_workflow_lock" --try >"$tmp/export-lock-failure-reacquired.out"
+
+"$tmp/hold-workflow-lock" "$export_workflow_lock" >"$tmp/export-lock-held.out" 2>"$tmp/export-lock-held.stderr" &
 export_lock_pid=$!
-export_lock_ready=0
-for _ in $(seq 1 100); do
-	if grep -q locked "$tmp/export-lock-held.out" 2>/dev/null; then
-		export_lock_ready=1
-		break
-	fi
-	sleep 0.1
-done
-test "$export_lock_ready" -eq 1
+wait_for_export_lock "$tmp/export-lock-held.out"
 (
 	while :; do
 		printf '%s\n' '{"version":3,"call_id":"active-writer"}' >>"$export_runtime_dir/telemetry/runtime-task-smoke-1.jsonl"
@@ -369,10 +490,13 @@ test "$export_lock_ready" -eq 1
 ) &
 export_writer_pid=$!
 run_single_export >"$tmp/export-concurrent.json"
-kill "$export_writer_pid" 2>/dev/null || true
-kill "$export_lock_pid" 2>/dev/null || true
-wait "$export_writer_pid" 2>/dev/null || true
-wait "$export_lock_pid" 2>/dev/null || true
+export_lock_wait_pid=$export_lock_pid
+stop_export_processes
+if kill -0 "$export_lock_wait_pid" 2>/dev/null; then
+	printf '%s\n' 'lock helper survived successful export cleanup' >&2
+	exit 1
+fi
+"$tmp/hold-workflow-lock" "$export_workflow_lock" --try >"$tmp/export-lock-reacquired.out"
 grep -q '"runtime_section":"collected"' "$tmp/export-concurrent.json"
 grep -q '"archive_path":"' "$tmp/export-concurrent.json"
 export_concurrent_archive=$(sed -n 's/.*"archive_path":"\([^"]*\)".*/\1/p' "$tmp/export-concurrent.json")

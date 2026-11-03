@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestPullHookOwnerLookupFailsClosedWhenIdentityProbeFails(t *testing.T) {
@@ -22,7 +24,7 @@ func TestPullHookOwnerLookupFailsClosedWhenIdentityProbeFails(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		if err := execfile.Write(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -30,7 +32,7 @@ func TestPullHookOwnerLookupFailsClosedWhenIdentityProbeFails(t *testing.T) {
 	runHookOwnerGit(t, repo, "commit", "-qm", "hooks")
 
 	guard := filepath.Join(t.TempDir(), "glm-parent-action")
-	if err := os.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := execfile.Write(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	lockRoot := filepath.Join(repo, ".git", "codex-worker-orchestrator", "hooks-install.lock")
@@ -57,7 +59,7 @@ if [ "$1" = -p ] && [ "$2" = 424242 ] && [ "$3" = -o ]; then
 fi
 exec "$REAL_PS" "$@"
 `
-	if err := os.WriteFile(fakePS, []byte(fakeScript), 0o755); err != nil {
+	if err := execfile.Write(fakePS, []byte(fakeScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

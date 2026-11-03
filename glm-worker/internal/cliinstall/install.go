@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 type installState struct {
@@ -434,25 +436,11 @@ func stageBinary(source, dir, label string) (string, error) {
 }
 
 func writeTempFile(dir, pattern string, source io.Reader, mode os.FileMode) (string, error) {
-	file, err := os.CreateTemp(dir, pattern)
+	path, err := execfile.WriteStream(dir, pattern, source, mode)
 	if err != nil {
-		return "", fmt.Errorf("create temp file: %w", err)
-	}
-	path := file.Name()
-	if _, err := io.Copy(file, source); err != nil {
-		return "", discardOpenTemp(file, path, fmt.Errorf("write temp file: %w", err))
-	}
-	if err := file.Chmod(mode); err != nil {
-		return "", discardOpenTemp(file, path, fmt.Errorf("chmod temp file: %w", err))
-	}
-	if err := file.Close(); err != nil {
-		return "", errors.Join(fmt.Errorf("close temp file: %w", err), removeIfExists(path))
+		return "", fmt.Errorf("write temp file: %w", err)
 	}
 	return path, nil
-}
-
-func discardOpenTemp(file *os.File, path string, cause error) error {
-	return errors.Join(cause, file.Close(), removeIfExists(path))
 }
 
 func removeState(statePath string) error {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 )
@@ -55,6 +56,9 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 }
 
 func (s *StateStore) applyNewTaskCanonicalState(taskID string) error {
+	if err := s.validateObservationTaskRetirement(); err != nil {
+		return err
+	}
 	if err := s.Remove("task.id"); err != nil {
 		return err
 	}
@@ -73,10 +77,32 @@ func (s *StateStore) applyNewTaskCanonicalState(taskID string) error {
 	if err := s.initializeParentReviewState(taskID); err != nil {
 		return err
 	}
+	if err := s.initObservationDocument(taskID); err != nil {
+		return err
+	}
 	if err := s.Write("task.status", string(TaskStatusActive)); err != nil {
 		return err
 	}
 	return s.Write("task.id", taskID)
+}
+
+func (s *StateStore) validateObservationTaskRetirement() error {
+	if !s.Exists("task.id") {
+		return nil
+	}
+	if err := s.RecoverStaleObservationExecutions(time.Now().UTC()); err != nil {
+		return fmt.Errorf("cannot recover old task observation state: %w", err)
+	}
+	old, err := s.readObservationDocument()
+	if err != nil {
+		return fmt.Errorf("cannot retire old task observation state: %w", err)
+	}
+	for _, record := range old.Records {
+		if record.Status == ObservationExecutionStatusInFlight {
+			return fmt.Errorf("unresolved observation prevents task retirement")
+		}
+	}
+	return nil
 }
 
 func (s *StateStore) captureNewTaskTransitionSnapshot() (newTaskTransitionSnapshot, error) {

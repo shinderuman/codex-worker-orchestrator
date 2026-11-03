@@ -18,7 +18,7 @@ func (s *Store) applyAdvancementSuspension(op ExecutionOperation) error {
 	if err := s.retainSuspension(op.Source.Workspace.Root, *op.Suspension); err != nil {
 		return err
 	}
-	trees, err := CaptureExecutionTrees(op.Source.Workspace.Root, op.Suspension.ExecutionBaseOID)
+	trees, err := CaptureExecutionTrees(op.Source.Workspace.Root, op.Suspension.ExecutionBaseOID, op.Source.Attempt.SemanticTaskRef)
 	if err != nil {
 		return err
 	}

@@ -55,6 +55,9 @@ func (s *Store) CandidateInstallWorkspace(input PublicationInput) (AcceptedCandi
 	if err != nil {
 		return candidate, "", nil, err
 	}
+	if err := s.requireCurrentCandidateSource(candidate); err != nil {
+		return candidate, "", nil, err
+	}
 	if candidate.State != candidatePrepared || !candidate.EvidenceValid || !candidate.Policy.RequireInstall {
 		return candidate, "", nil, fmt.Errorf("candidate installation requires a prepared obligated source")
 	}
@@ -116,14 +119,15 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
-	runtime, taskID, err := s.boundAttemptRuntime(Admission{Attempt: attempt})
+	runtime, taskID, err := s.candidateInstallSmokeRuntime(candidate, attempt)
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
 	if runtime == nil || !qualitygate.ValidRunID(smokeID) {
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate install smoke identity is unavailable")
 	}
-	data, err := os.ReadFile(runtime.Path(filepath.Join("install-smoke-runs", smokeID, qualitygate.RunFile)))
+	recordPath := runtime.Path(filepath.Join("install-smoke-runs", smokeID, qualitygate.RunFile))
+	data, err := readRegularCandidateSmokeFile(recordPath)
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
@@ -137,11 +141,47 @@ func (s *Store) readCandidateInstallSmoke(candidate AcceptedCandidate, root, smo
 	if smoke.Log != filepath.ToSlash(filepath.Join("install-smoke-runs", smokeID, "smoke.log")) {
 		return qualitygate.RunRecord{}, nil, fmt.Errorf("candidate smoke log locator is invalid")
 	}
-	smokeLog, err := os.ReadFile(runtime.Path(filepath.FromSlash(smoke.Log)))
+	smokeLog, err := readRegularCandidateSmokeFile(runtime.Path(filepath.FromSlash(smoke.Log)))
 	if err != nil {
 		return qualitygate.RunRecord{}, nil, err
 	}
 	return smoke, smokeLog, nil
+}
+
+func readRegularCandidateSmokeFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("candidate smoke evidence must be a regular file")
+	}
+	return os.ReadFile(path)
+}
+
+func (s *Store) candidateInstallSmokeRuntime(candidate AcceptedCandidate, attempt AttemptRecord) (*state.StateStore, string, error) {
+	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return s.boundAttemptRuntime(Admission{Attempt: attempt})
+	}
+	if !attempt.SemanticTaskRef.Equal(candidate.TaskRef) {
+		return nil, "", fmt.Errorf("parent-only install smoke Task contract does not match candidate")
+	}
+	runtime := state.AttachStateStore(WorkflowTaskConfig(s.config, s.identity, attempt.SemanticTaskRef))
+	identityInfo, err := os.Lstat(runtime.Path("task.id"))
+	if err != nil {
+		return nil, "", fmt.Errorf("stat parent-only install smoke task identity: %w", err)
+	}
+	if !identityInfo.Mode().IsRegular() {
+		return nil, "", fmt.Errorf("parent-only install smoke task identity is not a regular file")
+	}
+	taskID, err := runtime.Read("task.id")
+	if err != nil {
+		return nil, "", fmt.Errorf("read parent-only install smoke task identity: %w", err)
+	}
+	if taskID == "" || taskID != attempt.AttemptID {
+		return nil, "", fmt.Errorf("parent-only install smoke task identity does not match attempt %s", attempt.AttemptID)
+	}
+	return runtime, taskID, nil
 }
 
 func candidateInstallSmokeMatches(smoke qualitygate.RunRecord, runID, taskID, root string) bool {

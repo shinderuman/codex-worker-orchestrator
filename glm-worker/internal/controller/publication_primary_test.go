@@ -8,8 +8,17 @@ import (
 
 func primaryPromotionFixture(t *testing.T) (findingAcceptanceFixture, PublicationPolicy, ExecutionOperationResult, AcceptedCandidate) {
 	t.Helper()
+	return primaryPromotionFixtureWithTreeEdit(t, "external.txt", "external baseline\n", func(root string) {
+		writeSuspensionTestFile(t, root, "lane-only.txt", "reviewed lane result\n")
+	})
+}
+
+func primaryPromotionFixtureWithTreeEdit(
+	t *testing.T, remotePath, remoteContent string, edit func(string),
+) (findingAcceptanceFixture, PublicationPolicy, ExecutionOperationResult, AcceptedCandidate) {
+	t.Helper()
 	f, policy := newPublicationTestFixture(t)
-	advancePublicationTestRemote(t, f, policy, "external.txt", "external baseline\n")
+	advancePublicationTestRemote(t, f, policy, remotePath, remoteContent)
 	suspended, err := f.store.AdoptMutableExternalAdvancement(f.source, policy)
 	if err != nil {
 		t.Fatal(err)
@@ -19,7 +28,15 @@ func primaryPromotionFixture(t *testing.T) (findingAcceptanceFixture, Publicatio
 		t.Fatal(err)
 	}
 	f.source = *resumed.Admission
-	source := publicationTestEdit(t, f, "lane-only.txt", "reviewed lane result\n")
+	edit(f.source.Workspace.Root)
+	snapshot, err := CaptureWorkspaceSnapshot(f.source.Workspace.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := f.store.RecordAdmittedMutation(f.source, "publication test edit", "success", snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
 	primary := f.store.identity.PrimaryRoot
 	plan, err := os.ReadFile(filepath.Join(primary, "IMPLEMENTATION_PLAN.local.md"))
 	if err != nil {
@@ -126,7 +143,7 @@ func TestRootPromotionRecoversExactPartialSourceAndRejectsForeignMutation(t *tes
 	}
 	for _, entry := range entries {
 		if entry.path == "lane-only.txt" {
-			if err := applyParentSourceEntry(f.store.identity.PrimaryRoot, workspaceTreeEntry{}, entry); err != nil {
+			if err := applySourceTreeEntries(f.store.identity.PrimaryRoot, nil, []workspaceTreeEntry{entry}); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func newDecisionRunner(t *testing.T, commandScript string) *ClaudeRunner {
@@ -17,7 +18,7 @@ func newDecisionRunner(t *testing.T, commandScript string) *ClaudeRunner {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	claudeConfigDir := filepath.Join(t.TempDir(), "claude-home")

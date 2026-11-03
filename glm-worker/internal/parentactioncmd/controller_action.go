@@ -9,6 +9,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
@@ -23,6 +24,16 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 	if err != nil {
 		return err
 	}
+	var operation struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal(command, &operation); err != nil {
+		return err
+	}
+	recorder := state.NewStageRecorder(state.AttachStateStore(cfg))
+	recorder.SetClockOrigin("parent-command")
+	recorder.BindCurrentTask()
+	defer recorder.FlushOrArchive()
 	run := func() error {
 		consume := func() error {
 			_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
@@ -39,10 +50,12 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 		_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
 		return err
 	}
-	if args[0] == "controller-evidence" {
-		return run()
-	}
-	return withParentWaitLease(cfg, run)
+	return recorder.Measure(args[0]+"-"+operation.Action, func() error {
+		if args[0] == "controller-evidence" {
+			return run()
+		}
+		return withParentWaitLease(cfg, run)
+	})
 }
 
 func validateControllerCommandObject(payload []byte) error {

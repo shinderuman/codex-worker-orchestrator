@@ -61,7 +61,7 @@ func (s *Store) parentSourceImportTrees(admission Admission, source ParentSource
 	if err != nil {
 		return ReboundSuspension{}, err
 	}
-	current, err := CaptureExecutionTrees(admission.Workspace.Root, base)
+	current, err := CaptureExecutionTrees(admission.Workspace.Root, base, admission.Attempt.SemanticTaskRef)
 	if err != nil {
 		return ReboundSuspension{}, err
 	}
@@ -74,7 +74,7 @@ func (s *Store) parentSourceImportTrees(admission Admission, source ParentSource
 	}
 	rebound := ReboundSuspension{BaseOID: admission.Snapshot.Head, Baseline: admission.Attempt.BaselineTrees, Current: current}
 	rebound.Current.WorktreeTree = tree
-	if err := normalizeReboundTrees(s.identity.PrimaryRoot, metadataBase, &rebound); err != nil {
+	if err := normalizeReboundTrees(s.identity.PrimaryRoot, metadataBase, &rebound, admission.Attempt.SemanticTaskRef); err != nil {
 		return ReboundSuspension{}, err
 	}
 	if rebound.Current.WorktreeTree != tree {
@@ -120,7 +120,7 @@ func (s *Store) previewParentSourcePreservation(admission Admission) (WorkspaceS
 	if err != nil {
 		return primary, err
 	}
-	current, err := CaptureExecutionTrees(admission.Workspace.Root, base)
+	current, err := CaptureExecutionTrees(admission.Workspace.Root, base, admission.Attempt.SemanticTaskRef)
 	if err != nil {
 		return primary, err
 	}
@@ -147,7 +147,7 @@ func (s *Store) verifyParentSourcePreservation(admission Admission, current Exec
 		return err
 	}
 	rebound := ReboundSuspension{Baseline: baseline, Current: current}
-	if err := normalizeReboundTrees(s.identity.PrimaryRoot, base, &rebound); err != nil {
+	if err := normalizeReboundTrees(s.identity.PrimaryRoot, base, &rebound, admission.Attempt.SemanticTaskRef); err != nil {
 		return err
 	}
 	index, err := newSuspensionIndex(s.identity.PrimaryRoot, primaryTree)
@@ -155,7 +155,7 @@ func (s *Store) verifyParentSourcePreservation(admission Admission, current Exec
 		return err
 	}
 	defer func() { _ = os.Remove(index) }()
-	primary, err := normalizeCandidateTree(s.identity.PrimaryRoot, index, base)
+	primary, err := normalizeCandidateTree(s.identity.PrimaryRoot, index, base, admission.Attempt.SemanticTaskRef)
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,7 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	trees, err := CaptureExecutionTrees(op.Workspace.Root, base)
+	trees, err := CaptureExecutionTrees(op.Workspace.Root, base, op.Attempt.SemanticTaskRef)
 	if err != nil {
 		return err
 	}
@@ -365,7 +365,7 @@ func (s *Store) validateParentSourceImportProject(op ExecutionOperation) error {
 		return err
 	}
 	rebound := ReboundSuspension{Current: op.Source.Attempt.BaselineTrees}
-	if err := normalizeReboundTrees(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, &rebound); err != nil {
+	if err := normalizeReboundTrees(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, &rebound, op.Source.Attempt.SemanticTaskRef); err != nil {
 		return err
 	}
 	if rebound.Current.IndexTree != op.Rebound.Current.IndexTree {

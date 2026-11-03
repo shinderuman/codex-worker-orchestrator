@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -59,8 +61,17 @@ type gitAuthorityGuard struct {
 	metadataPaths []string
 	goToolchain   string
 	dockerPolicy  bool
-	dockerSocket  string
-	before        gitAuthoritySnapshot
+
+	dockerTestStagingDir      string
+	dockerTestResponseDir     string
+	dockerTestRun             dockerTestRunFunc
+	dockerTestScanInterval    time.Duration
+	dockerTestRequestTimeout  time.Duration
+	dockerTestMaxRequestBytes int
+	dockerTestMaxOutputBytes  int
+	dockerTestMaxRequests     int
+
+	before gitAuthoritySnapshot
 }
 
 const (
@@ -132,7 +143,6 @@ func (g *gitAuthorityGuard) resolveGoTestDockerPolicy(repoRoot string) error {
 		return nil
 	}
 	g.dockerPolicy = true
-	g.dockerSocket = resolveDockerDaemonSocket()
 	if realGo, err := exec.LookPath("go"); err == nil {
 		absolute, err := filepath.Abs(realGo)
 		if err != nil {
@@ -160,20 +170,37 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, g.workerTempDir)
-	if err := os.WriteFile(g.proxyPath, []byte(proxy), 0o700); err != nil {
+	if err := execfile.Write(g.proxyPath, []byte(proxy), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	if g.dockerPolicy && g.realGo != "" {
 		g.goProxyPath = filepath.Join(tempDir, "go")
-		if err := os.WriteFile(g.goProxyPath, []byte(goTestProxyScript(g.realGo)), 0o700); err != nil {
+		if err := execfile.Write(g.goProxyPath, []byte(goTestProxyScript(g.realGo)), 0o700); err != nil {
+			return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
+		}
+	}
+	if g.dockerPolicy {
+		if err := g.prepareDockerTestBoundary(tempDir); err != nil {
 			return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 		}
 	}
 	deny := gitAuthorityDenyTransportScript(g.attemptLog)
-	if err := os.WriteFile(g.denyPath, []byte(deny), 0o700); err != nil {
+	if err := execfile.Write(g.denyPath, []byte(deny), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	return nil
+}
+
+func (g *gitAuthorityGuard) prepareDockerTestBoundary(tempDir string) error {
+	g.dockerTestStagingDir = filepath.Join(g.workerTempDir, dockerTestStagingDirName)
+	if err := os.Mkdir(g.dockerTestStagingDir, 0o700); err != nil {
+		return err
+	}
+	g.dockerTestResponseDir = filepath.Join(tempDir, dockerTestResponseDirName)
+	if err := os.Mkdir(g.dockerTestResponseDir, 0o700); err != nil {
+		return err
+	}
+	return execfile.Write(filepath.Join(tempDir, "docker"), []byte(dockerCLIDenyScript(g.attemptLog)), 0o700)
 }
 
 func (g *gitAuthorityGuard) verify() error {
@@ -202,7 +229,7 @@ func (g *gitAuthorityGuard) verify() error {
 	if g.before.refsDigest != after.refsDigest {
 		guardErr.RefBeforeDigest = g.before.refsDigest
 		guardErr.RefAfterDigest = after.refsDigest
-		guardErr.RefChanges, guardErr.RefChangesTruncated = gitAuthorityRefChanges(g.before.refs, after.refs)
+		guardErr.RefChanges, guardErr.RefChangesTruncated = gitAuthorityRefChanges(g.before, after)
 	}
 	return guardErr
 }
@@ -227,23 +254,16 @@ func gitAuthoritySnapshotMutations(before, after gitAuthoritySnapshot) []string 
 	return mutations
 }
 
-func gitAuthorityRefChanges(before, after []GitRefState) ([]GitRefChange, bool) {
-	beforeByName := make(map[string]GitRefState, len(before))
-	afterByName := make(map[string]GitRefState, len(after))
-	names := make(map[string]struct{}, len(before)+len(after))
-	for _, ref := range before {
+func gitAuthorityRefChanges(before, after gitAuthoritySnapshot) ([]GitRefChange, bool) {
+	beforeByName := make(map[string]GitRefState, len(before.refs))
+	afterByName := make(map[string]GitRefState, len(after.refs))
+	for _, ref := range before.refs {
 		beforeByName[ref.Name] = ref
-		names[ref.Name] = struct{}{}
 	}
-	for _, ref := range after {
+	for _, ref := range after.refs {
 		afterByName[ref.Name] = ref
-		names[ref.Name] = struct{}{}
 	}
-	ordered := make([]string, 0, len(names))
-	for name := range names {
-		ordered = append(ordered, name)
-	}
-	sort.Strings(ordered)
+	ordered := gitAuthorityRefTargetNames(before.symbolicHead, after.symbolicHead)
 
 	changes := make([]GitRefChange, 0)
 	truncated := false
@@ -269,6 +289,21 @@ func gitAuthorityRefChanges(before, after []GitRefState) ([]GitRefChange, bool) 
 		changes = append(changes, change)
 	}
 	return changes, truncated
+}
+
+func gitAuthorityRefTargetNames(before, after string) []string {
+	names := make(map[string]struct{}, 2)
+	for _, name := range []string{before, after} {
+		if name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Strings(ordered)
+	return ordered
 }
 
 func (g *gitAuthorityGuard) cleanup() {

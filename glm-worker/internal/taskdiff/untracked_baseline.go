@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -131,7 +132,7 @@ func trackedPreexistingUntrackedPatch(repoRoot, path string) ([]byte, error) {
 	if info != nil && !info.IsDir() {
 		return newFilePatch(repoRoot, path)
 	}
-	args := []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-renames", "--", path}
+	args := []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", "--", path}
 	stdout, stderr, err := runGitCommand(repoRoot, nil, nil, args...)
 	if err != nil {
 		return nil, fmt.Errorf("capture tracked pre-existing untracked path %s: %w: %s", path, err, strings.TrimSpace(string(stderr)))
@@ -206,7 +207,7 @@ func diffPreexistingUntrackedPath(repoRoot string, entry state.UntrackedBaseline
 	}
 
 	oldArg := filepath.ToSlash(filepath.Join("a", filepath.FromSlash(entry.Path)))
-	args := []string{"diff", "--no-index", "--binary", "--no-ext-diff", "--no-renames", "--no-prefix", "--", oldArg, newArg}
+	args := []string{"diff", "--no-index", "--binary", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-prefix", "--", oldArg, newArg}
 	stdout, stderr, err := runGitCommand(tempDir, nil, nil, args...)
 	if err == nil {
 		return stdout, nil
@@ -255,11 +256,8 @@ func materializeUntrackedBaselineEntry(path string, entry state.UntrackedBaselin
 	}
 	switch entry.Kind {
 	case state.UntrackedBaselineKindFile:
-		if err := os.WriteFile(path, entry.Content, os.FileMode(entry.Mode)); err != nil {
+		if err := execfile.Write(path, entry.Content, os.FileMode(entry.Mode)); err != nil {
 			return fmt.Errorf("materialize pre-existing untracked file %s: %w", entry.Path, err)
-		}
-		if err := os.Chmod(path, os.FileMode(entry.Mode)); err != nil {
-			return fmt.Errorf("restore pre-existing untracked mode %s: %w", entry.Path, err)
 		}
 	case state.UntrackedBaselineKindSymlink:
 		if err := os.Symlink(string(entry.Content), path); err != nil {

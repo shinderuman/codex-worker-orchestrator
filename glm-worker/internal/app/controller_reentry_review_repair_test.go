@@ -38,7 +38,7 @@ func reentryReviewRepairAppFixtureWithPreparation(t *testing.T, prepare bool) re
 	if err != nil {
 		t.Fatal(err)
 	}
-	lane, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
+	lane, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func reentryReviewRepairAppFixtureWithPreparation(t *testing.T, prepare bool) re
 	if !prepare {
 		return reentryReviewRepairFixture{cfg: cfg, store: store, runtime: runtime, admit: source}
 	}
-	if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "prepare-reentry-review", ExpectedGeneration: source.Head.ControllerGeneration}); err != nil {
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "prepare-reentry-review", ExpectedGeneration: source.Head.ControllerGeneration}); err != nil {
 		t.Fatal(err)
 	}
 	if runtime.TaskStatus() != state.TaskStatusInterrupted {
@@ -101,11 +101,11 @@ func TestReentrySourceHandoffPreparesThenImportsParentRevision(t *testing.T) {
 		if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
 			t.Fatalf("source revision lost its regular owner: %#v", handoff)
 		}
-		var command controllerExecutionCommand
+		var command workflow.ControllerExecutionCommand
 		if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil || command.Action != action {
 			t.Fatalf("source revision command: %#v %v", command, err)
 		}
-		if _, err := executeControllerExecution(f.cfg, f.store, command); err != nil {
+		if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, command); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -152,13 +152,13 @@ func validatedReentryReviewRepairFixture(t *testing.T) reentryReviewRepairFixtur
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale := controllerExecutionCommand{Action: "update-reentry-review", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: "stale-parent-snapshot", RevisedTask: &revised}
-	if _, err := executeControllerExecution(f.cfg, f.store, stale); err == nil {
+	stale := workflow.ControllerExecutionCommand{Action: "update-reentry-review", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: "stale-parent-snapshot", RevisedTask: &revised}
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, stale); err == nil {
 		t.Fatal("stale parent source snapshot was imported")
 	}
 	foreign := revised
 	foreign.TaskPath = "IMPLEMENTATION_TASKS/successor.md"
-	if _, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "update-reentry-review", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: snapshot.ID, RevisedTask: &foreign}); err == nil {
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "update-reentry-review", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: snapshot.ID, RevisedTask: &foreign}); err == nil {
 		t.Fatal("foreign Task authority was imported into the live lane")
 	}
 	afterRejection, err := f.store.LoadHead()
@@ -166,11 +166,11 @@ func validatedReentryReviewRepairFixture(t *testing.T) reentryReviewRepairFixtur
 		t.Fatal("rejected reentry review repair mutated controller authority")
 	}
 	handoff := buildParentHandoffWithConfig(f.cfg, f.runtime)
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if !handoff.Consistent || json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command) != nil || command.Action != "repair-reentry-review" || command.SourceSnapshotID != snapshot.ID {
 		t.Fatalf("parent source revision was hidden by Task-only synchronization: %#v", handoff)
 	}
-	updated, err := executeControllerExecution(f.cfg, f.store, command)
+	updated, err := workflow.ExecuteControllerExecution(f.cfg, f.store, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestControllerReentryReviewRepairPreservesAuthorityAndRecoversPartialComple
 	if err != nil {
 		t.Fatal(err)
 	}
-	admission, err := currentControllerSemanticAdmission(f.cfg, f.store)
+	admission, err := controller.CurrentSemanticAdmission(f.cfg, f.store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestControllerReentryReviewRepairPreservesAuthorityAndRecoversPartialComple
 	if err != nil || !bytes.Contains(laneTask, []byte("review修正後の追加改訂")) {
 		t.Fatalf("second revision was not applied to the lane: %v", err)
 	}
-	recovered, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "recover", TransitionID: partial.TransitionID})
+	recovered, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: partial.TransitionID})
 	if err != nil {
 		t.Fatal(err)
 	}

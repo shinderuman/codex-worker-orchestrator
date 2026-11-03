@@ -91,23 +91,60 @@ func RetirePlanTask(plan, target, successor string) (string, error) {
 	if err := validateTerminalScheduleRetirement(plan, target, successor); err != nil {
 		return "", err
 	}
+	result, err := retirePlanScheduleLines(plan, target, successor)
+	if err != nil {
+		return "", err
+	}
+	updated := strings.Join(result, "\n")
+	if err := validateTerminalScheduleRetirementResult(updated, target, successor); err != nil {
+		return "", err
+	}
+	return updated, nil
+}
+
+func retirePlanScheduleLines(plan, target, successor string) ([]string, error) {
 	lines := strings.Split(plan, "\n")
+	result := make([]string, 0, len(lines))
 	section := planScheduleSection("")
-	for index, line := range lines {
+	for _, line := range lines {
 		if strings.HasPrefix(line, "## ") {
 			section = retirementPlanSection(line)
-			continue
 		}
-		if section == "" || strings.TrimSpace(line) == "" {
-			continue
-		}
-		updated, err := retirementPlanLine(line, section, target, successor)
+		updated, removed, err := retirePlanScheduleLine(line, section, target, successor)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		lines[index] = updated
+		if removed || (section != "" && updated == "" && len(result) != 0 && result[len(result)-1] == "") {
+			continue
+		}
+		result = append(result, updated)
 	}
-	return strings.Join(lines, "\n"), nil
+	return result, nil
+}
+
+func retirePlanScheduleLine(line string, section planScheduleSection, target, successor string) (string, bool, error) {
+	if section == "" || strings.TrimSpace(line) == "" || strings.HasPrefix(line, "## ") {
+		return line, false, nil
+	}
+	updated, err := retirementPlanLine(line, section, target, successor)
+	return updated, updated == "", err
+}
+
+func validateTerminalScheduleRetirementResult(plan, target, successor string) error {
+	schedule := ParsePlanSchedule(plan)
+	active, err := schedule.ValidateComplete()
+	if err != nil {
+		return err
+	}
+	for _, path := range append(append([]string{active}, schedule.Next...), schedule.Blocked...) {
+		if path == target || (successor != "" && path == successor && active != successor) {
+			return fmt.Errorf("terminal schedule retirement retained a retired or duplicated entry")
+		}
+	}
+	if successor != "" && active != successor {
+		return fmt.Errorf("terminal schedule retirement did not promote the successor")
+	}
+	return nil
 }
 
 func retirementPlanSection(line string) planScheduleSection {
@@ -151,7 +188,7 @@ func validateTerminalScheduleRetirement(plan, target, successor string) error {
 			count++
 		}
 	}
-	if count != 1 || (active == target && successor == "") || (active != target && successor != "") {
+	if count != 1 || (active == target && (len(schedule.Next) == 0 || schedule.Next[0] != successor)) || (active != target && successor != "") {
 		return fmt.Errorf("terminal schedule retirement is not mechanically determined")
 	}
 	return nil

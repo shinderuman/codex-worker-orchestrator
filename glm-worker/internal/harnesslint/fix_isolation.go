@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -187,7 +188,7 @@ func materializeFixManifest(root string, manifest fixManifest) error {
 		}
 		switch {
 		case state.mode.IsRegular():
-			if err := os.WriteFile(absolute, state.data, state.mode.Perm()); err != nil {
+			if err := execfile.Write(absolute, state.data, state.mode.Perm()); err != nil {
 				return fmt.Errorf("materialize quality fixer path %s: %w", path, err)
 			}
 		case state.mode&os.ModeSymlink != 0:
@@ -271,24 +272,7 @@ func applyFixPostimage(root, path string, before, after fixFileState) error {
 		return fmt.Errorf("quality fixer path changed before postimage apply: %s", path)
 	}
 	absolute := filepath.Join(root, filepath.FromSlash(path))
-	file, err := os.CreateTemp(filepath.Dir(absolute), ".harnesslint-fix-*")
-	if err != nil {
-		return err
-	}
-	temp := file.Name()
-	defer func() { _ = os.Remove(temp) }()
-	if err := file.Chmod(after.mode.Perm()); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if _, err := file.Write(after.data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, absolute); err != nil {
+	if err := execfile.Write(absolute, after.data, after.mode.Perm()); err != nil {
 		return fmt.Errorf("apply quality fixer postimage %s: %w", path, err)
 	}
 	return nil

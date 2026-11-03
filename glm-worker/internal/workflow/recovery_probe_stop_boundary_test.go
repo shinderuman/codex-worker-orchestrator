@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -34,7 +35,7 @@ echo $$ > "$GLM_PROBE_PID"
 ) &
 while :; do sleep 0.2; done
 `
-	if err := os.WriteFile(commandPath, []byte(script), 0o755); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_PROBE_PID", pidPath)

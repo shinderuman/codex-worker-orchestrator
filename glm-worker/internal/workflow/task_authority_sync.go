@@ -26,12 +26,12 @@ const (
 
 func (w *Workflow) CaptureTaskAuthoritySyncEvidence() ([]byte, error) {
 	if !w.state.Exists("task.id") {
-		for _, name := range []string{"task.status", "worker.id", "reviewer.id", "parent-review-state.json", "resume-checkpoint.json", state.ExecutionMilestonesStateFile, "controller-runtime-binding.json"} {
-			if _, err := os.Lstat(w.state.Path(name)); err == nil {
-				return nil, fmt.Errorf("task identity is missing while retained runtime state exists: %s", name)
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return nil, err
-			}
+		unstarted, err := w.state.UnstartedTaskRuntime()
+		if err != nil {
+			return nil, err
+		}
+		if !unstarted {
+			return nil, fmt.Errorf("task identity is missing while retained runtime state exists")
 		}
 		return json.Marshal(TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeUnstarted})
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func stubAcceptedCandidateValidation(t *testing.T, request controller.FinalValidationRequest, lookup controller.CandidateValidationLookup, err error) {
@@ -243,7 +244,7 @@ case "$1" in
   *) exit 9 ;;
 esac
 `
-	if err := os.WriteFile(worker, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
+	if err := execfile.Write(worker, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -379,7 +380,7 @@ func activateFinalizationWorker(t *testing.T, body string) {
 	t.Helper()
 	workerDir := t.TempDir()
 	worker := filepath.Join(workerDir, "glm-worker")
-	if err := os.WriteFile(worker, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
+	if err := execfile.Write(worker, []byte("#!/bin/sh\nset -eu\n"+body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))

@@ -3,7 +3,6 @@ package runner
 import (
 	"encoding/json"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -76,28 +75,17 @@ func TestGitAuthoritySandboxSettingsProtectMetadataAndOwnedTemp(t *testing.T) {
 	}
 }
 
-func TestGitAuthoritySandboxAllowsDockerSocketOnlyUnderDockerPolicy(t *testing.T) {
+func TestGitAuthoritySandboxDeniesUnixSocketsEvenUnderDockerPolicy(t *testing.T) {
 	t.Parallel()
 	guard := &gitAuthorityGuard{
 		before:        gitAuthoritySnapshot{active: true},
 		workerTempDir: filepath.Join(t.TempDir(), "worker"),
 		metadataPaths: []string{filepath.Join(t.TempDir(), "metadata")},
 	}
-	if policy := guard.bashSandboxPolicy(); policy == nil || len(policy.allowUnixSockets) != 0 {
-		t.Fatalf("Docker policyなしでUnix socketを許可しました: %#v", policy)
-	}
-	guard.dockerSocket = "/Users/worker/.docker/run/docker.sock"
-	if policy := guard.bashSandboxPolicy(); policy == nil || len(policy.allowUnixSockets) != 0 {
-		t.Fatalf("socket解決だけではUnix socketを許可しました: %#v", policy)
-	}
 	guard.dockerPolicy = true
 	policy := guard.bashSandboxPolicy()
 	if policy == nil {
 		t.Fatal("sandbox policy is nil")
-	}
-	want := []string{"/Users/worker/.docker/run/docker.sock"}
-	if !reflect.DeepEqual(policy.allowUnixSockets, want) {
-		t.Fatalf("allowUnixSockets = %#v want %#v", policy.allowUnixSockets, want)
 	}
 	encoded, err := isolationSettings(t.TempDir(), policy)
 	if err != nil {
@@ -117,10 +105,10 @@ func TestGitAuthoritySandboxAllowsDockerSocketOnlyUnderDockerPolicy(t *testing.T
 	if err := json.Unmarshal([]byte(encoded), &settings); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(settings.Sandbox.Network.AllowUnixSockets, want) {
-		t.Fatalf("network allowUnixSockets = %#v want %#v", settings.Sandbox.Network.AllowUnixSockets, want)
+	if len(settings.Sandbox.Network.AllowUnixSockets) != 0 || settings.Sandbox.Network.AllowAllUnixSockets || settings.Sandbox.Network.AllowLocalBinding {
+		t.Fatalf("Docker policy有効でもUnix socketを許可しました: %#v", settings.Sandbox.Network)
 	}
-	if len(settings.Sandbox.Network.AllowedDomains) != 0 || !settings.Sandbox.Network.StrictAllowlist || settings.Sandbox.Network.AllowAllUnixSockets || settings.Sandbox.Network.AllowLocalBinding {
+	if len(settings.Sandbox.Network.AllowedDomains) != 0 || !settings.Sandbox.Network.StrictAllowlist {
 		t.Fatalf("network = %#v", settings.Sandbox.Network)
 	}
 }

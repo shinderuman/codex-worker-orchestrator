@@ -21,13 +21,22 @@ const (
 )
 
 func (w *Workflow) exhaustiveSearchContext(request, activeTaskPath string, role state.SessionRole, seq int) (string, error) {
+	span := w.beginStartupSpan(state.StageRepoSearchContext)
 	required, query, err := exhaustiveSearchContract(w.config.RepoRoot, request, activeTaskPath)
 	if err != nil {
+		span.End(err)
 		return "", err
 	}
 	if !required {
+		span.EndNotRun()
 		return "", nil
 	}
+	contextProof, searchErr := w.runExhaustiveSearch(query, role, seq)
+	span.End(searchErr)
+	return contextProof, searchErr
+}
+
+func (w *Workflow) runExhaustiveSearch(query string, role state.SessionRole, seq int) (string, error) {
 	if strings.TrimSpace(query) == "" {
 		return "", &WorkerError{Message: fmt.Sprintf("exhaustive search proof requires a non-marker query before %s dispatch", role)}
 	}

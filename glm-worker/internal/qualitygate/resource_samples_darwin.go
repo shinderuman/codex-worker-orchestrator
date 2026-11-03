@@ -31,33 +31,30 @@ func platformHostResourceSource() hostResourceSource {
 		MemoryDefinition: "darwin: /usr/bin/vm_stat page counts; used = (anonymous + wired down + occupied by compressor) * page size; available = (free + speculative) * page size; clean file cache is excluded from available although the system can reclaim it; raw page counts are recorded for re-derivation",
 		SwapDefinition:   "darwin: /usr/sbin/sysctl -n vm.swapusage formatted output; used = total - free as reported; values are megabyte-quantized",
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	source := hostResourceSource{
-		label: darwinResourceSourceLabel, supported: true, host: host, read: readDarwinHostResources,
+		label: darwinResourceSourceLabel, supported: true, host: host, cancel: cancel, read: func() hostResourceReading { return readDarwinHostResources(ctx) },
 	}
 	source.host.LogicalCPUs = darwinLogicalCPUs()
 	source.host.TotalMemoryBytes = darwinTotalMemory()
-	if _, err := darwinMemorySample(); err != nil {
-		source.supported = false
-		source.reason = "memory: vm_stat is unavailable on this host"
-	}
 	return source
 }
 
-func readDarwinHostResources() hostResourceReading {
+func readDarwinHostResources(ctx context.Context) hostResourceReading {
 	reading := hostResourceReading{}
-	memory, memoryErr := darwinMemorySample()
+	memory, memoryErr := darwinMemorySampleContext(ctx)
 	if memoryErr != nil {
 		reading.problems = append(reading.problems, "memory: "+memoryErr.Error())
 	} else {
 		reading.memory = memory
 	}
-	swap, swapErr := darwinSwapSample()
+	swap, swapErr := darwinSwapSampleContext(ctx)
 	if swapErr != nil {
 		reading.problems = append(reading.problems, "swap: "+swapErr.Error())
 	} else {
 		reading.swap = swap
 	}
-	percent, cpuErr := darwinCPUPercent()
+	percent, cpuErr := darwinCPUPercentContext(ctx)
 	if cpuErr != nil {
 		reading.problems = append(reading.problems, "cpu: "+cpuErr.Error())
 	} else {
@@ -66,8 +63,8 @@ func readDarwinHostResources() hostResourceReading {
 	return reading
 }
 
-func darwinMemorySample() (*MemorySample, error) {
-	out, err := darwinCommandOutput(darwinResourceCommandTimeout, "/usr/bin/vm_stat")
+func darwinMemorySampleContext(ctx context.Context) (*MemorySample, error) {
+	out, err := darwinCommandOutputContext(ctx, darwinResourceCommandTimeout, "/usr/bin/vm_stat")
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +129,8 @@ func parseDarwinVMStatPageLine(line string) (string, uint64, bool) {
 	return strings.Trim(strings.TrimSpace(name), `"`), count, true
 }
 
-func darwinSwapSample() (*SwapSample, error) {
-	out, err := darwinCommandOutput(darwinResourceCommandTimeout, "/usr/sbin/sysctl", "-n", "vm.swapusage")
+func darwinSwapSampleContext(ctx context.Context) (*SwapSample, error) {
+	out, err := darwinCommandOutputContext(ctx, darwinResourceCommandTimeout, "/usr/sbin/sysctl", "-n", "vm.swapusage")
 	if err != nil {
 		return nil, err
 	}
@@ -184,9 +181,9 @@ func parseDarwinSwapValue(token string) (uint64, error) {
 	return uint64(megabytes*1024*1024 + 0.5), nil
 }
 
-func darwinCPUPercent() (*cpuPercentReading, error) {
+func darwinCPUPercentContext(ctx context.Context) (*cpuPercentReading, error) {
 	delay := strconv.Itoa(int(darwinCPUTopWindow.Seconds()))
-	out, err := darwinCommandOutput(darwinCPUTopTimeout, "/usr/bin/top", "-l", "2", "-s", delay, "-n", "0")
+	out, err := darwinCommandOutputContext(ctx, darwinCPUTopTimeout, "/usr/bin/top", "-l", "2", "-s", delay, "-n", "0")
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +318,11 @@ func darwinSysctlUint64(value string) uint64 {
 }
 
 func darwinCommandOutput(timeout time.Duration, path string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return darwinCommandOutputContext(context.Background(), timeout, path, args...)
+}
+
+func darwinCommandOutputContext(parent context.Context, timeout time.Duration, path string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, path, args...).Output()
 	if err != nil {

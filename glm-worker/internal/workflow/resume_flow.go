@@ -63,6 +63,12 @@ func (w *Workflow) routeStoppedResultReuse(
 	decl externalFeasibility,
 	completedResult *packet.Result,
 ) error {
+	if previous.SummaryRecovered {
+		if err := w.clearResultCorrectionRecord(); err != nil {
+			return err
+		}
+		checkpoint.SummaryRecovered = false
+	}
 	if err := w.state.ClearResumeCheckpoint(); err != nil {
 		return err
 	}
@@ -134,7 +140,11 @@ func (w *Workflow) prepareResumeContinuation(
 	if !checkpoint.StopKind.IsStopped() {
 		return checkpoint, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unsupported resume stop kind: %q", checkpoint.StopKind)}
 	}
-	checkpoint.Prompt = resumePrompt(checkpoint)
+	prompt, err := w.resultCorrectionResumePrompt(checkpoint)
+	if err != nil {
+		return checkpoint, err
+	}
+	checkpoint.Prompt = prompt
 	activatedCheckpoint, err := w.activateResumeRuleContext(checkpoint)
 	if err != nil {
 		return checkpoint, err

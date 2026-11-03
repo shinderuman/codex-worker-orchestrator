@@ -183,6 +183,9 @@ func (s *Store) CandidatePostInstallSmokeWorkspace(input PublicationInput) (Acce
 	if err != nil {
 		return candidate, "", nil, err
 	}
+	if err := s.requireCurrentCandidateSource(candidate); err != nil {
+		return candidate, "", nil, err
+	}
 	if candidate.State != candidatePrepared || !candidate.EvidenceValid {
 		return candidate, "", nil, fmt.Errorf("post-install smoke requires a prepared obligated source")
 	}
@@ -471,6 +474,9 @@ func latestSmokeProbeRun(module *state.StateStore, repoRoot, probeID string) (qu
 	var latest qualitygate.RunRecord
 	found := false
 	entries, err := os.ReadDir(module.Path(qualitygate.RunDirectory))
+	if errors.Is(err, os.ErrNotExist) {
+		return latest, false, nil
+	}
 	if err != nil {
 		return latest, false, err
 	}

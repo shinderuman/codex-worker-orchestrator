@@ -135,6 +135,114 @@ func TestCaptureGitSnapshotDetectsUntrackedContentChange(t *testing.T) {
 	}
 }
 
+func TestCaptureGitSnapshotDetectsNestedRepositoryWorktreeChange(t *testing.T) {
+	dir := initCommittedRepo(t)
+	nested := filepath.Join(dir, "nested")
+	if err := os.MkdirAll(filepath.Join(nested, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "inner.txt"), []byte("inner\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "sub", "deep.txt"), []byte("deep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, nested, "init", "--quiet", ".")
+	base, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatalf("untracked nested repositoryでsnapshotが失敗しました: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "sub", "deep.txt"), []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.WorktreeDigest == after.WorktreeDigest {
+		t.Fatalf("nested repositoryのworktree内容変更へdigestが反応しません: base=%q after=%q", base.WorktreeDigest, after.WorktreeDigest)
+	}
+	gitRun(t, nested, "add", "inner.txt")
+	gitRun(t, nested, "commit", "--quiet", "-m", "metadata only")
+	metadataOnly, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.WorktreeDigest != metadataOnly.WorktreeDigest {
+		t.Fatalf("nested repositoryの.git metadata変化へdigestが反応しました: after=%q metadataOnly=%q", after.WorktreeDigest, metadataOnly.WorktreeDigest)
+	}
+	if err := os.RemoveAll(nested); err != nil {
+		t.Fatal(err)
+	}
+	gone, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.WorktreeDigest == gone.WorktreeDigest {
+		t.Fatalf("nested repositoryの出現・消滅へdigestが反応しません: base=%q gone=%q", base.WorktreeDigest, gone.WorktreeDigest)
+	}
+}
+
+func TestCaptureGitSnapshotRejectsSpecialFileInsideNestedRepository(t *testing.T) {
+	dir := initCommittedRepo(t)
+	nested := filepath.Join(dir, "nested")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "inner.txt"), []byte("inner\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, nested, "init", "--quiet", ".")
+	fifo := filepath.Join(nested, "pipe")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("この環境ではfifoを作成できません: %v", err)
+	}
+	_, err := CaptureGitSnapshot(dir)
+	if err == nil || !strings.Contains(err.Error(), "取り扱えないfile type") {
+		t.Fatalf("nested repository内の特殊fileを拒否しませんでした: %v", err)
+	}
+}
+
+func TestCaptureGitSnapshotExcludesNestedGitFileMetadata(t *testing.T) {
+	dir := initCommittedRepo(t)
+	nested := filepath.Join(dir, "nested")
+	innard := filepath.Join(nested, "innard")
+	if err := os.MkdirAll(innard, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(innard, ".git"), []byte("gitdir: ../.git\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(innard, "data.txt"), []byte("innard\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, nested, "init", "--quiet", ".")
+	base, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatalf("nested repository内の.git fileでsnapshotが失敗しました: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(innard, ".git"), []byte("gitdir: /elsewhere\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.WorktreeDigest != after.WorktreeDigest {
+		t.Fatalf("nested .git fileのmetadata変化へdigestが反応しました: base=%q after=%q", base.WorktreeDigest, after.WorktreeDigest)
+	}
+	if err := os.WriteFile(filepath.Join(innard, "data.txt"), []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	contentChanged, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.WorktreeDigest == contentChanged.WorktreeDigest {
+		t.Fatalf("nested .git file隣接のworktree内容変更へdigestが反応しません: after=%q contentChanged=%q", after.WorktreeDigest, contentChanged.WorktreeDigest)
+	}
+}
+
 func TestCaptureGitSnapshotFailsOutsideRepo(t *testing.T) {
 	if _, err := CaptureGitSnapshot(t.TempDir()); err == nil {
 		t.Fatal("git repo外でのsnapshot取得は失敗する必要があります")

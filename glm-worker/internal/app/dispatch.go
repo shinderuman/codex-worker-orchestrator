@@ -25,6 +25,7 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 	case ModeStatus,
 		ModeHandoff,
 		ModeTimeline,
+		ModeStageTimeline,
 		ModeConvergence,
 		ModeStats,
 		ModeEvalAB,
@@ -73,6 +74,8 @@ func executeRuntimeControl(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 
 func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
 	switch cmd.Mode {
+	case ModeStageTimeline:
+		return report.PrintStageTimeline(state.AttachStateStore(cfg), cmd.Payload, stdout)
 	case ModeTimeline,
 		ModeConvergence,
 		ModeEvalAB,

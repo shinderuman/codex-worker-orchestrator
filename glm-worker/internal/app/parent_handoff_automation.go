@@ -8,6 +8,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type projectContinuationAutomation struct {
@@ -24,8 +25,42 @@ func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) pa
 		st = state.AttachStateStore(cfg)
 	}
 	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
+	if applyAvailableSummaryRecoveryHandoff(cfg, st, &output) {
+		return output
+	}
 	applyCanonicalControllerHandoff(cfg, &output)
+	applyReportResubmissionAvailability(cfg, st, &output)
 	return output
+}
+
+func applyAvailableSummaryRecoveryHandoff(cfg config.AppConfig, st *state.StateStore, output *parentHandoffOutput) bool {
+	if !output.Consistent || output.RequiredAction == nil ||
+		*output.RequiredAction != string(state.ParentActionResubmitReport) ||
+		(output.ParentRequest != nil && !output.ParentRequest.TaskAttribution.Matches) {
+		return false
+	}
+	wf := workflow.NewWorkflow(cfg, st, nil, io.Discard)
+	if wf.SummaryRecoveryAvailable() != nil {
+		return false
+	}
+	applyCanonicalControllerHandoff(cfg, output)
+	return true
+}
+
+func applyReportResubmissionAvailability(cfg config.AppConfig, st *state.StateStore, output *parentHandoffOutput) {
+	if output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionResubmitReport) {
+		return
+	}
+	wf := workflow.NewWorkflow(cfg, st, nil, io.Discard)
+	if err := wf.ReportResubmissionAvailable(); err != nil {
+		reason := "report resubmission unavailable: " + err.Error()
+		output.Consistent = false
+		output.Inconsistency = &reason
+		output.RequiredAction = nil
+		output.AllowedActions = nil
+		output.RequiredActionParameters = nil
+		output.ParentRequest = nil
+	}
 }
 
 func printParentHandoffLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {

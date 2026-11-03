@@ -100,11 +100,11 @@ func validateControlProvenanceRegistry(root string, registry controlProvenanceRe
 		lastID = control.ID
 		violations = append(violations, validateControlProvenanceControl(root, control)...)
 	}
-	violations = append(violations, validateKnownMachineControlCoverage(root, registry.Controls)...)
+	violations = append(violations, validateKnownMachineControlRegistrations(root, registry.Controls)...)
 	return violations, nil
 }
 
-func validateKnownMachineControlCoverage(root string, controls []controlProvenanceControl) []Violation {
+func validateKnownMachineControlRegistrations(root string, controls []controlProvenanceControl) []Violation {
 	known := []knownMachineControl{
 		{
 			id:                           cleanCutoverRule,

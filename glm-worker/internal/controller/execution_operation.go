@@ -45,10 +45,11 @@ type ExecutionOperationResult struct {
 }
 
 const (
-	executionSuspend     = "SUSPEND_EXECUTION"
-	executionMaterialize = "MATERIALIZE_EXECUTION"
-	executionCleanup     = "CLEANUP_EXECUTION"
-	executionGC          = "GC_SUSPENSION"
+	executionSuspend               = "SUSPEND_EXECUTION"
+	executionMaterialize           = "MATERIALIZE_EXECUTION"
+	executionParentOnlyMaterialize = "MATERIALIZE_PARENT_ONLY_EXECUTION"
+	executionCleanup               = "CLEANUP_EXECUTION"
+	executionGC                    = "GC_SUSPENSION"
 )
 
 func (s *Store) SuspendExecution(admission Admission, episodeID string, revision uint64) (ExecutionOperationResult, error) {

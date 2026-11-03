@@ -31,8 +31,9 @@ type evidenceBundlePublication struct {
 }
 
 type evidenceBundleCollector struct {
-	store *Store
-	refs  map[string]EvidenceObjectRef
+	store    *Store
+	refs     map[string]EvidenceObjectRef
+	expanded map[string]bool
 }
 
 type evidenceBundleAuthority struct {

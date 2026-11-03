@@ -2,8 +2,8 @@ package parentcontinuation
 
 import (
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -146,7 +146,7 @@ func continuationValidationMatches(record qualitygate.RunRecord, repoRoot string
 }
 
 func continuationTreeClean(repoRoot string) (bool, error) {
-	command := exec.Command("git", "-C", repoRoot, "status", "--porcelain=v1", "--untracked-files=all")
+	command := gitexec.Command("git", repoRoot, "status", "--porcelain=v1", "--untracked-files=all")
 	output, err := command.Output()
 	if err != nil {
 		return false, fmt.Errorf("git status: %w", err)

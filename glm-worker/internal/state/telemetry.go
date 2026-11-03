@@ -92,6 +92,7 @@ type ModelCallLog struct {
 	RetryElapsedMS         int64               `json:"retry_elapsed_ms,omitempty"`
 	ResumeSource           string              `json:"resume_source,omitempty"`
 	Snapshot               *SnapshotDiagnostic `json:"snapshot,omitempty"`
+	Stage                  *StageTiming        `json:"stage,omitempty"`
 
 	Runtime     *CallRuntime `json:"runtime,omitempty"`
 	RetryOf     string       `json:"retry_of,omitempty"`

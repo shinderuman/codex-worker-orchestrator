@@ -25,8 +25,7 @@ func platformHostResourceSource() hostResourceSource {
 		label: linuxResourceSourceLabel, supported: true, host: host, read: readLinuxHostResources,
 	}
 	if err := probeLinuxHost(&source); err != nil {
-		source.supported = false
-		source.reason = "memory: " + err.Error()
+		source.reason = err.Error()
 	}
 	return source
 }

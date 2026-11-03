@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -123,8 +124,10 @@ func TestRunPrepareStagedActionIsNotUsageRejected(t *testing.T) {
 
 func TestRunReportsInfrastructureGitFailureReason(t *testing.T) {
 	binDir := t.TempDir()
-	fakeGit := "#!/bin/sh\nexit 97\n"
-	if err := os.WriteFile(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
+	marker := filepath.Join(t.TempDir(), "fake-git-was-invoked")
+	t.Setenv("FAKE_GIT_MARKER", marker)
+	fakeGit := "#!/bin/sh\nprintf 'invoked\\n' > \"$FAKE_GIT_MARKER\"\nexit 97\n"
+	if err := execfile.Write(filepath.Join(binDir, "git"), []byte(fakeGit), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)
@@ -136,8 +139,11 @@ func TestRunReportsInfrastructureGitFailureReason(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("失敗時にstdoutへ出力がありました: %q", stdout.String())
 	}
-	if stderr.Len() == 0 {
-		t.Fatal("基盤git失敗の理由がstderrへ出力されていません")
+	if stderr.Len() == 0 || !strings.Contains(stderr.String(), "exit status 97") {
+		t.Fatalf("fake Git exit 97に由来するエラーを確認できません: %q", stderr.String())
+	}
+	if content, err := os.ReadFile(marker); err != nil || strings.TrimSpace(string(content)) != "invoked" {
+		t.Fatalf("fake Gitへの実呼出しが確認できません: content=%q err=%v", content, err)
 	}
 }
 
@@ -390,7 +396,7 @@ func writeParentActionWorkerStubWithCheck(t *testing.T, cfg config.AppConfig, ch
 	marker := filepath.Join(root, "invoked")
 	script := "#!/bin/sh\n" + check + " || exit 3\ntouch \"$GLM_STUB_MARKER\"\n"
 	stubPath := filepath.Join(binDir, "glm-worker")
-	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+	if err := execfile.Write(stubPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

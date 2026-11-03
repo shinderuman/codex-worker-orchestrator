@@ -232,8 +232,8 @@ func CaptureStopPatches(cfg config.AppConfig, st *StateStore) error {
 		name string
 		args []string
 	}{
-		{name: stopWorktreePatchFile, args: []string{"diff", "--binary", "--no-ext-diff"}},
-		{name: stopIndexPatchFile, args: []string{"diff", "--cached", "--binary", "--no-ext-diff"}},
+		{name: stopWorktreePatchFile, args: []string{"diff", "--binary", "--no-ext-diff", "--no-textconv"}},
+		{name: stopIndexPatchFile, args: []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv"}},
 	}
 
 	for _, item := range commands {

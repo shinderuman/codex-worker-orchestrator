@@ -14,6 +14,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactioncmd"
 )
 
@@ -60,7 +61,7 @@ func writeRetirementCLIShimDir(t *testing.T) string {
 	}
 	dir := t.TempDir()
 	script := "#!/bin/sh\nGLM_RETIREMENT_RECOVERY_TEST_PROCESS=1 exec '" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "' -test.run '^TestRetirementRecoveryCLIProcess$' -- \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "glm-worker"), []byte(script), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(dir, "glm-worker"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -129,7 +130,7 @@ func interruptCompletionBeforePush(t *testing.T, cfg config.AppConfig, store *co
 	pidFile := filepath.Join(t.TempDir(), "controller-pid")
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
 	script := "#!/bin/sh\nset -eu\nkill -KILL \"$(cat " + quote(pidFile) + ")\"\nexit 1\n"
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(script), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(hooks, "pre-push"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	runControllerActivationGit(t, cfg.RepoRoot, "config", "core.hooksPath", hooks)

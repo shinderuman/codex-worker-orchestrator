@@ -217,7 +217,7 @@ func TestPreflightQualityToolchainRecordsFailureOnFreshStore(t *testing.T) {
 }
 
 func TestPreflightQualityToolchainSkipsRepoWithoutQualitySurface(t *testing.T) {
-	cfg := newCanonicalAppConfig(t)
+	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)

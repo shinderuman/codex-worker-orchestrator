@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -27,7 +28,7 @@ func newProbeFixture(t *testing.T) (*ClaudeRunner, *state.StateStore, string) {
 	argumentsPath := filepath.Join(t.TempDir(), "args")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_FILE\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"GLM_WORKER_PROBE_OK\\n\",\"duration_ms\":7,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_ARGS_FILE", argumentsPath)
@@ -168,7 +169,7 @@ func TestProbeRejectsMalformedSuccessResponses(t *testing.T) {
 				t.Fatal(err)
 			}
 			commandPath := filepath.Join(t.TempDir(), "fake-claude")
-			if err := os.WriteFile(commandPath, []byte(tc.script), 0o700); err != nil {
+			if err := execfile.Write(commandPath, []byte(tc.script), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			st := newTestStateStore(t)
@@ -230,7 +231,7 @@ func TestProbeRejectsIsErrorResultOnExitZero(t *testing.T) {
 				t.Fatal(err)
 			}
 			commandScript := "#!/bin/sh\nprintf '%s\\n' '" + string(encoded) + "'\n"
-			if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+			if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			st := newTestStateStore(t)
@@ -268,7 +269,7 @@ func TestProbeReturnsErrorOnExitFailure(t *testing.T) {
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s\\n' 'API Error: 503 Service Unavailable'\nexit 1\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	st := newTestStateStore(t)

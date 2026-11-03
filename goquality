@@ -18,6 +18,9 @@ if [ "$#" -ge 1 ] && [ "$1" = test ] && [ "$(uname -s)" = Darwin ] && [ "$(uname
   case "$backend" in
     docker-linux-arm64)
       shift
+      if [ -n "${GLM_WORKER_DOCKER_TEST_STAGING:-}" ] && [ -n "${GLM_WORKER_DOCKER_TEST_RESPONSES:-}" ]; then
+        exec go -C "$repo_root/glm-worker" run ./cmd/goquality --staging "$GLM_WORKER_DOCKER_TEST_STAGING" --responses "$GLM_WORKER_DOCKER_TEST_RESPONSES" "$@"
+      fi
       exec go -C "$repo_root/glm-worker" run ./cmd/goquality "$repo_root" "$@"
       ;;
     native)
@@ -40,23 +43,113 @@ sys.stdout.write(json.dumps(sys.argv[1:]))' "$@"
 }
 
 source_snapshot() {
-  untracked_list=$(mktemp "${TMPDIR:-/tmp}/goquality-untracked.XXXXXX") || exit 1
-  git -C "$repo_root" rev-parse --verify HEAD || exit 1
-  git -C "$repo_root" ls-files -s || exit 1
-  git -C "$repo_root" diff HEAD || exit 1
-  git -C "$repo_root" ls-files -o --exclude-standard >"$untracked_list" || exit 1
+  untracked_list=$(mktemp "${TMPDIR:-/tmp}/goquality-untracked.XXXXXX") || return 1
+  git -C "$repo_root" rev-parse --verify HEAD || return 1
+  git -C "$repo_root" ls-files -s || return 1
+  git -C "$repo_root" diff --no-ext-diff --no-textconv HEAD || return 1
+  git -C "$repo_root" ls-files -o --exclude-standard >"$untracked_list" || return 1
   while IFS= read -r untracked_path; do
     [ -n "$untracked_path" ] || continue
-    printf 'untracked %s\n' "$untracked_path"
-    cksum "$repo_root/$untracked_path" || exit 1
+    case $untracked_path in
+    */)
+      snapshot_nested_repository "$untracked_path" || return 1
+      ;;
+    *)
+      printf 'untracked %s\n' "$untracked_path"
+      snapshot_untracked_entry "$untracked_path" || return 1
+      ;;
+    esac
   done <"$untracked_list"
   rm -f "$untracked_list"
 }
 
+snapshot_untracked_entry() {
+  if [ -L "$repo_root/$1" ]; then
+    snapshot_symlink "$1" || return 1
+  else
+    cksum "$repo_root/$1" || return 1
+  fi
+}
+
+snapshot_nested_repository() {
+  nested_list=$(mktemp "${TMPDIR:-/tmp}/goquality-nested.XXXXXX") || return 1
+  if ! (cd "$repo_root" && find "${1%/}" \( -name .git -prune \) -o -print) >"$nested_list"; then
+    rm -f "$nested_list"
+    return 1
+  fi
+  if ! LC_ALL=C sort -o "$nested_list" "$nested_list"; then
+    rm -f "$nested_list"
+    return 1
+  fi
+  if ! reject_nested_ignored_entries "$nested_list"; then
+    rm -f "$nested_list"
+    return 1
+  fi
+  while IFS= read -r nested_path; do
+    [ -n "$nested_path" ] || continue
+    if [ -L "$repo_root/$nested_path" ]; then
+      printf 'untracked %s\n' "$nested_path"
+      snapshot_symlink "$nested_path" || { rm -f "$nested_list"; return 1; }
+    elif [ -d "$repo_root/$nested_path" ]; then
+      continue
+    elif [ -f "$repo_root/$nested_path" ]; then
+      printf 'untracked %s\n' "$nested_path"
+      cksum "$repo_root/$nested_path" || { rm -f "$nested_list"; return 1; }
+    else
+      echo "goquality: nested repository内の取り扱えないfile typeです: $nested_path" >&2
+      rm -f "$nested_list"
+      return 1
+    fi
+  done <"$nested_list"
+  rm -f "$nested_list"
+}
+
+reject_nested_ignored_entries() {
+  ignored_paths=$(git -C "$repo_root" check-ignore --stdin <"$1")
+  ignore_status=$?
+  case $ignore_status in
+    1) ;;
+    0)
+      echo "goquality: nested repository内のignored fileは診断sourceに含められません: $(printf '%s' "$ignored_paths" | head -n 1)" >&2
+      return 1
+      ;;
+    *)
+      echo "goquality: nested repositoryのignored file確認に失敗しました" >&2
+      return 1
+      ;;
+  esac
+}
+
+snapshot_symlink() {
+  link_target=$(readlink "$repo_root/$1") || return 1
+  python3 -c 'import os, sys
+target = sys.argv[1]
+if os.path.isabs(target):
+    sys.exit(2)
+resolved = os.path.normpath(os.path.join(sys.argv[2], target))
+root = sys.argv[3]
+sys.exit(0 if resolved == root or resolved.startswith(root + os.sep) else 1)' "$link_target" "$(dirname "$repo_root/$1")" "$repo_root"
+  link_status=$?
+  case $link_status in
+    0) ;;
+    2)
+      echo "goquality: 絶対path symlinkは診断sourceに含められません: $1" >&2
+      return 1
+      ;;
+    *)
+      echo "goquality: repository外へのsymlinkは診断sourceに含められません: $1" >&2
+      return 1
+      ;;
+  esac
+  printf '%s\n' "$link_target"
+}
+
 source_snapshot_digest() {
   snapshot_file=$(mktemp "${TMPDIR:-/tmp}/goquality-snapshot.XXXXXX") || return 1
+  untracked_list=
   if ! source_snapshot >"$snapshot_file"; then
     rm -f "$snapshot_file"
+    remove_untracked_list
     return 1
   fi
   snapshot_cksum=$(cksum "$snapshot_file") || {
@@ -65,6 +158,12 @@ source_snapshot_digest() {
   }
   rm -f "$snapshot_file"
   printf '%s\n' "${snapshot_cksum%% *}"
+}
+
+remove_untracked_list() {
+  if [ -n "$untracked_list" ]; then
+    rm -f "$untracked_list"
+  fi
 }
 
 if [ "$#" -eq 1 ]; then

@@ -12,6 +12,10 @@ func TestRecoverStaleObservationExecutionMarksIndeterminateWithoutReplay(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
+	}
 	started := time.Now().UTC().Add(-time.Minute)
 	claim := ObservationExecutionRecord{
 		ExecutionID:      "exec-stale",
@@ -20,7 +24,7 @@ func TestRecoverStaleObservationExecutionMarksIndeterminateWithoutReplay(t *test
 		ParamsDigest:     "digest-stale",
 		Status:           ObservationExecutionStatusInFlight,
 		DeadlineMS:       30_000,
-		DecisionRound:    0,
+		DecisionRound:    round,
 		StartedAtRFC3339: started.Format(time.RFC3339Nano),
 	}
 	if err := st.BeginObservationExecution(claim); err != nil {
@@ -51,6 +55,10 @@ func TestResolveObservationExecutionIndeterminatePreservesIdentity(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	round, err := st.ObservationExecutionRound()
+	if err != nil {
+		t.Fatal(err)
+	}
 	claim := ObservationExecutionRecord{
 		ExecutionID:      "exec-boundary",
 		TaskID:           taskID,
@@ -58,7 +66,7 @@ func TestResolveObservationExecutionIndeterminatePreservesIdentity(t *testing.T)
 		ParamsDigest:     "digest-boundary",
 		Status:           ObservationExecutionStatusInFlight,
 		DeadlineMS:       30_000,
-		DecisionRound:    2,
+		DecisionRound:    round,
 		StartedAtRFC3339: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if err := st.BeginObservationExecution(claim); err != nil {

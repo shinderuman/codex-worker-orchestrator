@@ -11,7 +11,7 @@ func (w *Workflow) ExecuteReportResubmission() error {
 }
 
 func (w *Workflow) executeReportResubmission() error {
-	if err := w.admitParentAction(state.ParentActionResubmitReport); err != nil {
+	if err := w.admitReportResubmission(); err != nil {
 		return err
 	}
 	checkpoint, decl, _, err := w.loadResumeCheckpoint()
@@ -19,6 +19,9 @@ func (w *Workflow) executeReportResubmission() error {
 		return err
 	}
 	previous := checkpoint
+	if record, loadErr := w.loadResultCorrectionRecord(); loadErr == nil && record.Terminal != nil && record.Resubmissions >= maxResultReportResubmissions {
+		return w.recoverOversizedSummary(checkpoint, decl, record)
+	}
 	if err := w.authorizeResultReportResubmission(checkpoint); err != nil {
 		return err
 	}

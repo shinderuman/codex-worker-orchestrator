@@ -13,8 +13,10 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func qualityToolsBinDirEnv(t *testing.T) []string {
@@ -100,7 +102,7 @@ func TestCompletionLifecycleRecoveryAndSuccessorAdmission(t *testing.T) {
 	if handoff.ParentRequest != nil && handoff.ParentRequest.CompletionAdmitted {
 		t.Fatal("unpublished Task was reported complete")
 	}
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +239,7 @@ func interruptedCompletionWorkflowFixture(t *testing.T) (config.AppConfig, *cont
 	t.Helper()
 	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
 	hooks := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	runControllerActivationGit(t, cfg.RepoRoot, "config", "core.hooksPath", hooks)

@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestRealCommandRunnerDisablesImplicitShellcheckConfiguration(t *testing.T) {
@@ -127,7 +129,7 @@ func writeQualityToolProbe(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "quality-tool-probe")
 	content := "#!/bin/sh\nprintf 'args=%s\\n' \"$*\"\nprintf 'shellcheck_opts=%s\\n' \"${SHELLCHECK_OPTS-<unset>}\"\n"
-	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(content), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return path

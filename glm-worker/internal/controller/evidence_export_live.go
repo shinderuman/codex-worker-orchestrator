@@ -69,6 +69,9 @@ func (s *Store) collectRuntimeSection(
 	target EvidenceExportTarget,
 	attempt AttemptRecord,
 ) (EvidenceExportRuntimeSection, *EvidenceExportGitAudit, error) {
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return s.collectParentOnlyRuntimeSection(builder, target, attempt)
+	}
 	if !target.Live {
 		return s.collectBoundRuntimeSection(builder, attempt)
 	}
@@ -113,6 +116,35 @@ func (s *Store) collectRuntimeSection(
 	}
 	section := collector.section(evidenceExportRuntimeModeLive, attempt, workspace.ID)
 	return section, git, nil
+}
+
+func (s *Store) collectParentOnlyRuntimeSection(builder *evidenceExportBuilder, target EvidenceExportTarget, attempt AttemptRecord) (EvidenceExportRuntimeSection, *EvidenceExportGitAudit, error) {
+	if err := s.requireNoModelRuntimeEvidence(attempt.AttemptID); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	section := EvidenceExportRuntimeSection{
+		Status:        evidenceExportRuntimeAbsent,
+		AbsenceReason: "parent-only attempt has no model Runtime",
+		Basis:         completionBundleNoModelRuntimeBasis,
+	}
+	if !target.Live {
+		return section, nil, nil
+	}
+	workspace, err := s.liveAttemptWorkspace(builder.head, attempt)
+	if err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	collector := &evidenceLiveCollector{
+		store: s, attempt: attempt, builder: builder, observedAt: builder.observedAt,
+		prefix: evidenceExportRuntimeModeLive, inProgress: true,
+		workspace: workspace, workspaceResolved: true,
+		windowEnd: builder.observedAt, windowEndBasis: evidenceExportLiveEndBasis,
+	}
+	if err := collector.collectValidationEvidence(); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	audit, err := collector.observeGit()
+	return section, audit, err
 }
 
 func (s *Store) collectBoundRuntimeSection(
@@ -228,7 +260,7 @@ func (s *Store) resolveExportRuntime(attempt AttemptRecord) (*state.StateStore, 
 		return nil, "", fmt.Errorf("evidence export live runtime source is not bound: %w", err)
 	}
 	if binding.AttemptID != attempt.AttemptID ||
-		binding.TaskPath != attempt.SemanticTaskRef.TaskPath ||
+		binding.TaskPath != attempt.SemanticTaskRef.TaskPath || binding.RequestID != attempt.SemanticTaskRef.RequestID ||
 		binding.TaskContractDigest != attempt.SemanticTaskRef.ContractDigest {
 		return nil, "", fmt.Errorf("evidence export live runtime source is bound to %s (%s), not the target attempt", binding.AttemptID, binding.TaskPath)
 	}
@@ -557,12 +589,12 @@ func (c *evidenceLiveCollector) observeGit() (*EvidenceExportGitAudit, error) {
 }
 
 func (c *evidenceLiveCollector) collectGitDiffs() error {
-	staged, err := runGitBinary(c.workspace.Root, nil, "diff", "--cached", "--binary")
+	staged, err := runGitBinary(c.workspace.Root, nil, "diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv")
 	if err != nil {
 		return fmt.Errorf("evidence export staged diff: %w", err)
 	}
 	c.addBytes("live/git/diff-staged.patch", evidenceExportSourceGitDiff, staged, false)
-	unstaged, err := runGitBinary(c.workspace.Root, nil, "diff", "--binary")
+	unstaged, err := runGitBinary(c.workspace.Root, nil, "diff", "--binary", "--no-ext-diff", "--no-textconv")
 	if err != nil {
 		return fmt.Errorf("evidence export unstaged diff: %w", err)
 	}

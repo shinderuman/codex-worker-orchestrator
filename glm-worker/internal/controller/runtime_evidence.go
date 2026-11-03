@@ -70,17 +70,19 @@ func (c *attemptRuntimeEvidence) captureInstructionSnapshots() error {
 }
 
 func applyAttemptSealRuntimeCoverage(seal *AttemptSeal, runtimeCaptured bool) {
-	if runtimeCaptured {
+	if runtimeCaptured && len(seal.Missing) == 0 && len(seal.Unreadable) == 0 {
 		seal.Coverage = attemptSealCoverageComplete
 		return
 	}
 	seal.Coverage = attemptSealCoverageIncomplete
-	seal.Missing = append(seal.Missing, attemptSealRuntimeEvidenceMissing)
+	if !runtimeCaptured {
+		seal.Missing = append(seal.Missing, attemptSealRuntimeEvidenceMissing)
+	}
 }
 
 func (s *Store) boundAttemptRuntime(source Admission) (*state.StateStore, string, error) {
 	cfg := s.config
-	cfg.RepoHash = digestStrings(s.identity.LineageID, source.Attempt.SemanticTaskRef.TaskPath)
+	cfg.RepoHash = digestStrings(s.identity.LineageID, source.Attempt.SemanticTaskRef.Identity())
 	runtime := state.AttachStateStore(cfg)
 	info, err := os.Lstat(runtime.Path("."))
 	if errors.Is(err, os.ErrNotExist) {
@@ -102,7 +104,7 @@ func (s *Store) boundAttemptRuntime(source Admission) (*state.StateStore, string
 	if binding.AttemptID != source.Attempt.AttemptID {
 		return nil, "", fmt.Errorf("runtime evidence belongs to another attempt")
 	}
-	if binding.TaskPath != source.Attempt.SemanticTaskRef.TaskPath || binding.TaskContractDigest != source.Attempt.SemanticTaskRef.ContractDigest {
+	if binding.TaskPath != source.Attempt.SemanticTaskRef.TaskPath || binding.RequestID != source.Attempt.SemanticTaskRef.RequestID || binding.TaskContractDigest != source.Attempt.SemanticTaskRef.ContractDigest {
 		return nil, "", fmt.Errorf("runtime evidence semantic task binding is stale")
 	}
 	taskID, err := validateRuntimeEvidenceTask(runtime)
@@ -135,6 +137,7 @@ func (c *attemptRuntimeEvidence) captureStateFiles() error {
 	}
 	files := []struct{ path, kind, logical string }{
 		{c.runtime.ModelCallLogPath(c.taskID), "telemetry", c.logicalName("telemetry.jsonl")},
+		{c.runtime.TaskStageLogPath(c.taskID), "runtime-state", c.logicalName("execution-stages.jsonl")},
 		{c.runtime.TaskEventLogPath(c.taskID), "task-events", c.logicalName("events.jsonl")},
 		{c.runtime.TaskLiveStatusPath(c.taskID), "task-events", c.logicalName("live.json")},
 		{c.runtime.RoundLogPath(c.taskID), "review-rounds", c.logicalName("rounds.jsonl")},
@@ -189,6 +192,7 @@ func (c *attemptRuntimeEvidence) captureRuntimeRunDirectory(directory string) er
 func (c *attemptRuntimeEvidence) captureRuntimeValidationRun(directory, runID string) error {
 	record, err := readValidationRunRecord(c.runtime, directory, runID)
 	if err != nil || record == nil {
+		c.markValidationRunRecordUnavailable(directory, runID, err)
 		return nil
 	}
 	if !validationRunBindsToWindow(*record, c.taskID, c.workspace, c.seal.StartedAt, c.seal.SealedAt) {
@@ -245,6 +249,7 @@ func (c *attemptRuntimeEvidence) captureRepositoryRunDirectory(module *state.Sta
 func (c *attemptRuntimeEvidence) captureRepositoryValidationRun(module *state.StateStore, directory, runID string) error {
 	record, err := readValidationRunRecord(module, directory, runID)
 	if err != nil || record == nil {
+		c.markValidationRunRecordUnavailable(directory, runID, err)
 		return nil
 	}
 	if !validationRunBindsToWindow(*record, c.taskID, c.workspace, c.seal.StartedAt, c.seal.SealedAt) {
@@ -269,11 +274,20 @@ func (c *attemptRuntimeEvidence) captureRepositoryValidationRun(module *state.St
 	return nil
 }
 
+func (c *attemptRuntimeEvidence) markValidationRunRecordUnavailable(directory, runID string, err error) {
+	logical := c.logicalName("state/" + directory + "/" + runID + "/" + qualitygate.RunFile)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		c.seal.Missing = append(c.seal.Missing, logical)
+		return
+	}
+	c.seal.Unreadable = append(c.seal.Unreadable, logical)
+}
+
 func readValidationRunRecord(store *state.StateStore, directory, runID string) (*qualitygate.RunRecord, error) {
 	if directory == qualitygate.RunDirectory {
 		record, err := qualitygate.Read(store, runID)
 		if err != nil {
-			return nil, nil
+			return nil, err
 		}
 		return &record, nil
 	}

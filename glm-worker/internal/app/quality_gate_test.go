@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
@@ -68,7 +69,7 @@ func writeQualityGateGoShim(t *testing.T, failFlagPath string) (string, string) 
 		"    exit 0\n" +
 		"fi\n" +
 		"printf '%s\\n' 'go shim: ok'\n"
-	if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
+	if err := execfile.Write(shim, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return shimDir, invocationLog
@@ -167,7 +168,7 @@ func TestQualityGateRejectsToolchainDriftBeforeRun(t *testing.T) {
 		"fi\n" +
 		"printf '%s\\n' 'go shim: must not execute'\n" +
 		"exit 0\n"
-	if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -204,7 +205,7 @@ func TestQualityGateChildRejectsToolchainDriftAsWrapperFailure(t *testing.T) {
 		"fi\n" +
 		"printf '%s\\n' 'go shim: must not execute'\n" +
 		"exit 0\n"
-	if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -493,7 +494,7 @@ func TestQualityGateRejectsSourceMutationDespiteTargetSuccess(t *testing.T) {
 				"fi\n" +
 				"printf 'changed during validation\\n' > untracked-input.txt\n" +
 				"exit 0\n"
-			if err := os.WriteFile(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
+			if err := execfile.Write(filepath.Join(shimDir, "go"), []byte(shim), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))

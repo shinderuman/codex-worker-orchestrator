@@ -51,12 +51,12 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if err := verifyTaskOnlyAuthorityDelta(s.identity.PrimaryRoot, base, authority.Snapshot.HeadOID, task.TaskPath); err != nil {
 		return ExecutionOperation{}, err
 	}
-	current, err := CaptureExecutionTrees(admission.Workspace.Root, base)
+	current, err := CaptureExecutionTrees(admission.Workspace.Root, base, admission.Attempt.SemanticTaskRef)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
 	rebound := ReboundSuspension{Baseline: admission.Attempt.BaselineTrees, Current: current}
-	if err := normalizeReboundTrees(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, &rebound); err != nil {
+	if err := normalizeReboundTrees(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, &rebound, task); err != nil {
 		return ExecutionOperation{}, err
 	}
 	if err := verifyTaskOnlyTreeDelta(s.identity.PrimaryRoot, current.WorktreeTree, rebound.Current.WorktreeTree, task.TaskPath); err != nil {
@@ -68,7 +68,7 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	return s.buildTaskAuthoritySync(admission, source, authority, rebound, runtimeRef, task)
 }
 
-func (s *Store) buildTaskAuthoritySync(admission Admission, source ParentSourceRevision, authority CommittedTaskAuthority, rebound ReboundSuspension, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperation, error) {
+func (s *Store) buildTaskAuthoritySync(admission Admission, source ParentSourceRevision, authority TaskAuthority, rebound ReboundSuspension, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperation, error) {
 	if _, err := s.LoadEvidenceObject(runtimeRef); err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -143,6 +143,10 @@ func (s *Store) RequiredTaskAuthoritySync(head RepositoryControllerHead) (*TaskA
 	}
 	sealed, err := s.candidateOwnsTaskAuthority(head)
 	if err != nil || sealed {
+		return nil, err
+	}
+	if head.ExecutionTaskRef.RequestID != "" {
+		_, err := s.requestTaskAuthority(*head.ExecutionTaskRef)
 		return nil, err
 	}
 	repo := s.identity.PrimaryRoot
@@ -230,8 +234,11 @@ func (s *Store) TaskAuthoritySyncEvidence(transitionID string) ([]byte, error) {
 	if err := readJSON(s.executionOperationPath(transitionID), &op); err != nil {
 		return nil, err
 	}
-	if op.Transition.Kind != executionTaskAuthoritySync || !parentSourceRuntimeIdentity(op, TaskAuthoritySyncProducer) {
+	if op.Transition.Kind != executionTaskAuthoritySync {
 		return nil, nil
+	}
+	if !parentSourceRuntimeIdentity(op, TaskAuthoritySyncProducer) {
+		return nil, fmt.Errorf("task authority sync is missing canonical runtime evidence")
 	}
 	head, err := s.LoadHead()
 	if err != nil {
@@ -249,34 +256,34 @@ func (s *Store) TaskAuthoritySyncEvidence(transitionID string) ([]byte, error) {
 	return s.LoadEvidenceObject(*op.RuntimeBeforeRef)
 }
 
-func (s *Store) captureTaskSourceRevision(snapshotID, remote, taskPath string) (ParentSourceRevision, CommittedTaskAuthority, error) {
+func (s *Store) captureTaskSourceRevision(snapshotID, remote, taskPath string) (ParentSourceRevision, TaskAuthority, error) {
 	repo := s.identity.PrimaryRoot
 	snapshot, err := captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	tree, err := captureTaskSourceTree(repo, remote, taskPath)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	commit, err := suspensionTreeCommit(repo, tree, remote)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	authority, err := ResolveCommittedTaskAuthorityAt(repo, commit)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	ref, _, err := s.CaptureGitObjectArchive(repo, "task-source:"+snapshot.ID, []string{commit})
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	after, err := CaptureWorkspaceSnapshot(repo)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	if after != snapshot {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, fmt.Errorf("parent source changed during capture")
+		return ParentSourceRevision{}, TaskAuthority{}, fmt.Errorf("parent source changed during capture")
 	}
 	return ParentSourceRevision{Snapshot: snapshot, AuthorityOID: commit, Archive: ref}, authority, nil
 }

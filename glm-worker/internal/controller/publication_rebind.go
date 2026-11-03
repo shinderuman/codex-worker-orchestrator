@@ -109,7 +109,7 @@ func (s *Store) validateApprovedAmendmentClaims(head RepositoryControllerHead, c
 	return validateParentMetadataHistory(s.identity.PrimaryRoot, head.IntegrationTip, remote)
 }
 
-func validateApprovedAmendmentProject(authority CommittedTaskAuthority, approval *TaskAmendmentApproval) error {
+func validateApprovedAmendmentProject(authority TaskAuthority, approval *TaskAmendmentApproval) error {
 	if !authority.Task.Equal(approval.NewRootTaskRef) {
 		return fmt.Errorf("approved Task amendment new root authority differs from the committed Project")
 	}
@@ -140,7 +140,7 @@ func (s *Store) reboundCandidate(old AcceptedCandidate, base string, superseded 
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
-	tree, err = normalizeCandidateTree(s.identity.PrimaryRoot, index, base)
+	tree, err = normalizeCandidateTree(s.identity.PrimaryRoot, index, base, old.TaskRef)
 	if err != nil {
 		return AcceptedCandidate{}, err
 	}
@@ -176,7 +176,7 @@ func (s *Store) rebaseCandidateSurface(oldTree string, old AcceptedCandidate) (s
 	if err != nil {
 		return "", err
 	}
-	return normalizeCandidateTree(s.identity.PrimaryRoot, index, oldTree)
+	return normalizeCandidateTree(s.identity.PrimaryRoot, index, oldTree, old.TaskRef)
 }
 
 func (s *Store) publicationProjectAdvancement(head RepositoryControllerHead, tip string) (ProjectSnapshot, error) {
@@ -193,9 +193,9 @@ func (s *Store) publicationProjectAdvancement(head RepositoryControllerHead, tip
 	return authority.Snapshot, nil
 }
 
-func normalizeCandidateTree(repo, index, base string) (string, error) {
+func normalizeCandidateTree(repo, index, base string, task SemanticTaskRef) (string, error) {
 	defer func() { _ = os.Remove(index) }()
-	if _, err := normalizeParentPaths(repo, index, base); err != nil {
+	if _, err := normalizeTaskParentPaths(repo, index, base, task); err != nil {
 		return "", err
 	}
 	return suspensionGitText(repo, index, nil, "write-tree")

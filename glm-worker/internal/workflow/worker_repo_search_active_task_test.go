@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -29,7 +30,7 @@ func TestNewWorkerTaskPromptSearchesLauncherFromActiveTaskSeed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, activeTaskPath), []byte(task), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "commentlint"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+	if err := execfile.Write(filepath.Join(root, "commentlint"), []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 

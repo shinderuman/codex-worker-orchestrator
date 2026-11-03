@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -39,7 +40,7 @@ func sealSmokeProbeInstallProof(t *testing.T, store *Store, c AcceptedCandidate,
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "deployed-worker")
 	data := []byte(payload)
-	if err := os.WriteFile(binary, data, 0o755); err != nil {
+	if err := execfile.Write(binary, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(data)

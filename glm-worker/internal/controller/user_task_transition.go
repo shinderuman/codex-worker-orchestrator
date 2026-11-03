@@ -84,7 +84,7 @@ func (s *Store) planUserTaskTransition(input UserTaskTransitionInput) (Execution
 	return s.buildUserTaskTransition(input, head, authority, transition)
 }
 
-func (s *Store) buildUserTaskTransition(input UserTaskTransitionInput, head RepositoryControllerHead, authority CommittedTaskAuthority, transition TransitionRecord) (ExecutionOperation, RepositoryControllerHead, error) {
+func (s *Store) buildUserTaskTransition(input UserTaskTransitionInput, head RepositoryControllerHead, authority TaskAuthority, transition TransitionRecord) (ExecutionOperation, RepositoryControllerHead, error) {
 	archive, _, err := s.CaptureGitObjectArchive(s.identity.PrimaryRoot, "user-termination:"+transition.TransitionID, []string{authority.Snapshot.HeadOID})
 	if err != nil {
 		return ExecutionOperation{}, head, err
@@ -426,20 +426,20 @@ func verifyUserTerminationClearedExecution(head RepositoryControllerHead) error 
 	return nil
 }
 
-func (s *Store) UserTerminatedSuccessorAuthority(head RepositoryControllerHead) (CommittedTaskAuthority, error) {
+func (s *Store) UserTerminatedSuccessorAuthority(head RepositoryControllerHead) (TaskAuthority, error) {
 	if head.UserTerminationRef == nil || head.ExecutionTaskRef != nil || head.LiveLeaseID != "" || head.LiveAttemptID != "" || head.PendingTransitionID != "" || head.RootTaskRef == nil {
-		return CommittedTaskAuthority{}, fmt.Errorf("user termination successor is not quiescent")
+		return TaskAuthority{}, fmt.Errorf("user termination successor is not quiescent")
 	}
 	record, err := s.LoadUserTaskTermination(*head.UserTerminationRef)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	op := ExecutionOperation{UserTermination: &UserTaskTransitionOperation{Record: record, RecordRef: *head.UserTerminationRef}}
 	if err := s.verifyCommittedUserTaskTransition(op, head); err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	if err := s.verifyFinalizedUserTaskTransition(record, head); err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	return ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, head.IntegrationTip)
 }

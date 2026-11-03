@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func (g *gitAuthorityGuard) prepareClaudeWrapper(claudeBin string) (string, error) {
@@ -13,7 +15,7 @@ func (g *gitAuthorityGuard) prepareClaudeWrapper(claudeBin string) (string, erro
 	}
 	path := filepath.Join(g.tempDir, "claude-with-git-authority-guard")
 	content := gitAuthorityClaudeWrapperScript(g, claudeBin)
-	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+	if err := execfile.Write(path, []byte(content), 0o700); err != nil {
 		return "", &GitAuthorityGuardError{Stage: "prepare-claude-wrapper", Cause: err}
 	}
 	return path, nil
@@ -26,8 +28,10 @@ func gitAuthorityClaudeWrapperScript(g *gitAuthorityGuard, claudeBin string) str
 	if g.goToolchain != "" {
 		result += "GOTOOLCHAIN=" + shellSingleQuote(g.goToolchain) + "\nexport GOTOOLCHAIN\n"
 	}
-	if g.dockerSocket != "" {
-		result += "DOCKER_HOST=" + shellSingleQuote("unix://"+g.dockerSocket) + "\nexport DOCKER_HOST\n"
+	result += "unset DOCKER_HOST\n"
+	if g.dockerPolicy && g.dockerTestStagingDir != "" {
+		result += "GLM_WORKER_DOCKER_TEST_STAGING=" + shellSingleQuote(g.dockerTestStagingDir) + "\nexport GLM_WORKER_DOCKER_TEST_STAGING\n"
+		result += "GLM_WORKER_DOCKER_TEST_RESPONSES=" + shellSingleQuote(g.dockerTestResponseDir) + "\nexport GLM_WORKER_DOCKER_TEST_RESPONSES\n"
 	}
 	result += "GLM_WORKER_GIT_TEMP_ROOT=" + shellSingleQuote(g.workerTempDir) + "\nexport GLM_WORKER_GIT_TEMP_ROOT\n"
 	result += "CLAUDE_CODE_TMPDIR=" + shellSingleQuote(g.workerTempDir) + "\nexport CLAUDE_CODE_TMPDIR\n"

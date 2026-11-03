@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os/exec"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"strings"
 )
 
@@ -21,7 +21,7 @@ func CaptureGitAuthorityRefs(gitPath, repoRoot string) ([]GitAuthorityRef, error
 	if authority.SymbolicHead == "" || authority.Unborn {
 		return nil, nil
 	}
-	output, err := exec.Command(gitPath, "-C", repoRoot, "rev-parse", "--verify", authority.SymbolicHead).Output()
+	output, err := gitexec.Command(gitPath, repoRoot, "rev-parse", "--verify", authority.SymbolicHead).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git rev-parse %s: %w", authority.SymbolicHead, err)
 	}

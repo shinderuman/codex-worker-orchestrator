@@ -3,6 +3,7 @@ package taskdiff
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,18 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func TestRestoredUntrackedExecutableRuns(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "restored", "probe.sh")
+	entry := state.UntrackedBaselineEntry{Path: "probe.sh", Kind: state.UntrackedBaselineKindFile, Mode: 0o755, Content: []byte("#!/bin/sh\nprintf restored\n")}
+	if err := materializeUntrackedBaselineEntry(path, entry); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(path).Output(); err != nil || string(output) != "restored" {
+		t.Fatalf("restored executable = %q, %v", output, err)
+	}
+}
 
 func TestPreexistingUntrackedChangeAndDeletionAreTaskDiff(t *testing.T) {
 	repoRoot, cfg, st := newPreexistingUntrackedFixture(t, "text")

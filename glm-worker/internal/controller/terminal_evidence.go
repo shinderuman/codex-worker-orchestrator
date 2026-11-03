@@ -109,7 +109,13 @@ func (s *Store) validateTerminalMetadataFiles(record TerminalTaskRecord, files [
 }
 
 func completeTerminalMetadataPayload(op ExecutionOperation) bool {
-	return op.Transition.Kind == publicationPublish && op.Terminal != nil && op.Publication == nil && op.SealRef != nil && op.Terminal.RootTaskRef != nil && len(op.Terminal.Files) >= 2
+	if op.Transition.Kind != publicationPublish || op.Terminal == nil || op.Publication != nil || op.SealRef == nil {
+		return false
+	}
+	if op.Terminal.Record.TaskRef.RequestID != "" {
+		return op.Terminal.RootTaskRef == nil && len(op.Terminal.Files) == 0
+	}
+	return op.Terminal.RootTaskRef != nil && len(op.Terminal.Files) >= 2
 }
 
 func bindingContainsPath(bindings []MetadataTaskBinding, path string) bool {
@@ -422,7 +428,10 @@ func validateTerminalMetadataJournal(op ExecutionOperation, record TerminalTaskR
 	if !reflect.DeepEqual(record, p.Record) || record.TransitionID != op.Transition.TransitionID || record.ControllerGeneration != op.Transition.CommittedGeneration || record.SourceProject.SnapshotID != op.Transition.ProjectSnapshotOld || record.ResultProject.SnapshotID != op.Transition.ProjectSnapshotNew || !reflect.DeepEqual(effects, op.Transition.Effects) {
 		return fmt.Errorf("terminal metadata journal authority differs")
 	}
-	if !projectHasTask(record.SourceProject, record.TaskRef) || projectHasTask(record.ResultProject, record.TaskRef) || !projectHasTask(record.ResultProject, *p.RootTaskRef) {
+	if record.TaskRef.RequestID != "" {
+		return validateTerminalRequestBinding(record, p.RootTaskRef)
+	}
+	if !projectHasTask(record.SourceProject, record.TaskRef) || projectHasTask(record.ResultProject, record.TaskRef) || p.RootTaskRef == nil || !projectHasTask(record.ResultProject, *p.RootTaskRef) {
 		return fmt.Errorf("terminal retirement Task/project identity differs")
 	}
 	return nil
@@ -501,6 +510,9 @@ func (s *Store) terminalMetadataEpisodeEvidence(op ExecutionOperation, previous 
 }
 
 func validateTerminalProjectBindings(record TerminalTaskRecord) error {
+	if record.TaskRef.RequestID != "" {
+		return validateTerminalRequestBinding(record, nil)
+	}
 	for _, project := range []ProjectSnapshot{record.SourceProject, record.ResultProject} {
 		if project.SchemaVersion != controllerSchemaVersion || project.RepositoryIdentity != record.RepositoryIdentity {
 			return fmt.Errorf("terminal metadata project schema/identity differs")

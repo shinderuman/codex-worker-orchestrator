@@ -21,7 +21,7 @@ func (s *Store) planTerminalMetadata(input TerminalTaskInput) (ExecutionOperatio
 }
 
 func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot) (ExecutionOperation, RepositoryControllerHead, error) {
-	if len(c.TerminalFiles) == 0 {
+	if len(c.TerminalFiles) == 0 && c.TaskRef.RequestID == "" {
 		return ExecutionOperation{}, head, fmt.Errorf("candidate lacks accept-time terminal finalization; re-enter and accept under the current contract")
 	}
 	record, c, candidateRef, err := s.planTerminalCompletionCandidate(head, c, candidateRef)
@@ -29,7 +29,7 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 		return ExecutionOperation{}, head, err
 	}
 	commit := c.CommitOID
-	result, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, commit)
+	result, err := s.terminalResultAuthority(c, project)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
@@ -42,7 +42,10 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	payload := &TerminalMetadataOperation{Record: terminal, RecordRef: ref, Policy: c.Policy, Files: c.TerminalFiles, RootTaskRef: &result.Task}
+	payload := &TerminalMetadataOperation{Record: terminal, RecordRef: ref, Policy: c.Policy, Files: c.TerminalFiles}
+	if !result.Task.Empty() {
+		payload.RootTaskRef = &result.Task
+	}
 	record.ProjectSnapshotNew = result.ProjectSnapshotID
 	bindCompletionTransition(&record, c, result.Task)
 	if err := s.planTerminalMetadataEpisode(head, payload, &record, c.TaskRef); err != nil {
@@ -112,9 +115,8 @@ func (s *Store) terminalSourceProject(input TerminalTaskInput, head RepositoryCo
 	if err != nil {
 		return ProjectSnapshot{}, err
 	}
-	actual, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, project.HeadOID)
-	if err != nil || actual.ProjectSnapshotID != project.SnapshotID {
-		return ProjectSnapshot{}, fmt.Errorf("terminal source ProjectSnapshot is stale: %w", err)
+	if err := s.validateTerminalSourceAuthority(head, c, project); err != nil {
+		return ProjectSnapshot{}, err
 	}
 	remote, err := s.observeCandidateRemote(head, c)
 	if err != nil {
@@ -205,4 +207,16 @@ func bindCompletionTransition(record *TransitionRecord, c AcceptedCandidate, tas
 	record.SourceExecutionTaskRef = c.TaskRef
 	record.TargetExecutionTaskRef = task
 	record.SourceAttemptID = c.AttemptID
+}
+
+func (s *Store) validateTerminalSourceAuthority(head RepositoryControllerHead, c AcceptedCandidate, project ProjectSnapshot) error {
+	if c.TaskRef.RequestID != "" {
+		_, err := s.executionTaskAuthority(head, c.TaskRef)
+		return err
+	}
+	actual, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, project.HeadOID)
+	if err != nil || actual.ProjectSnapshotID != project.SnapshotID {
+		return fmt.Errorf("terminal source ProjectSnapshot is stale: %w", err)
+	}
+	return nil
 }

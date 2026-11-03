@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -23,7 +24,7 @@ func writeReadOnlyBoundaryFakeClaude(t *testing.T) string {
 	argumentsPath := filepath.Join(t.TempDir(), "args")
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 	commandScript := "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_FILE\"\nprintf '%s\\n' '" + readonlyBoundaryResultEvent + "'\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_ARGS_FILE", argumentsPath)

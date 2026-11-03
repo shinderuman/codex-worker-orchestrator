@@ -15,6 +15,9 @@ func (s *Store) ReenterAcceptedCandidate(input PublicationInput) (ExecutionOpera
 	if c.ImplementationRef != nil {
 		return ExecutionOperationResult{}, fmt.Errorf("completion candidate cannot reenter execution")
 	}
+	if err := s.requireCurrentCandidateSource(c); err != nil {
+		return ExecutionOperationResult{}, err
+	}
 	snapshot, remote, err := s.candidateReentrySource(head, c)
 	if err != nil {
 		return ExecutionOperationResult{}, err
@@ -44,6 +47,20 @@ func (s *Store) ReenterAcceptedCandidate(input PublicationInput) (ExecutionOpera
 		return ExecutionOperationResult{}, err
 	}
 	return s.recoverExecutionOperationLocked(op)
+}
+
+func (s *Store) admitPromotedCandidateReentry(head RepositoryControllerHead, candidate AcceptedCandidate) error {
+	if head.PendingTransitionID != "" || head.LiveLeaseID != "" || head.AcceptedCandidateRef == nil {
+		return fmt.Errorf("candidate reentry requires quiescent accepted authority")
+	}
+	if !candidate.EvidenceValid || candidate.State != candidatePromoted {
+		return fmt.Errorf("candidate reentry requires a promoted, accepted source")
+	}
+	if err := s.requireCurrentCandidateSource(candidate); err != nil {
+		return err
+	}
+	_, _, err := s.candidateReentrySource(head, candidate)
+	return err
 }
 
 func candidateReentryMetadata(c AcceptedCandidate) []TerminalMetadataFile {

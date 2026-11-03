@@ -149,7 +149,9 @@ func (w *Workflow) invokeModelCall(
 	guardBefore parentFileGuard,
 ) (modelCallExecution, error) {
 	execution := modelCallExecution{startedAt: w.now().UTC()}
+	span := w.beginStartupSpan(state.StageModelCallAdmission)
 	controllerGuard, err := w.admitModelMutation(checkpoint)
+	span.End(err)
 	if err != nil {
 		return execution, err
 	}

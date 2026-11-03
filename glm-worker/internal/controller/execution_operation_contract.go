@@ -66,6 +66,15 @@ var executionOperationContractTable = map[string]executionOperationContractFacto
 			projectResult:   s.projectExecutionAdmissionResult,
 		}
 	},
+	executionParentOnlyMaterialize: func(s *Store) executionOperationContract {
+		return executionOperationContract{
+			effects:         executionOperationEffectsSingle,
+			validate:        s.validateParentOnlyExecutionOperation,
+			apply:           s.applyParentOnlyExecution,
+			verifyCommitted: s.verifyCommittedParentOnlyExecution,
+			projectResult:   s.projectExecutionAdmissionResult,
+		}
+	},
 	executionCleanup: func(s *Store) executionOperationContract {
 		return executionOperationContract{
 			effects:         executionOperationEffectsSingle,

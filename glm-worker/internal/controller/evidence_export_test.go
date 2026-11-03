@@ -31,6 +31,7 @@ type evidenceExportFixture struct {
 	skipLiveHead                       bool
 	skipRuntimeEvidence                bool
 	withSealedRuntime                  bool
+	withSealedResources                bool
 	withOlderSeal                      bool
 	sealedAssociationRuntimeTask       string
 	sealedAssociationUnreadable        bool
@@ -171,6 +172,19 @@ func (f *evidenceExportFixture) attachSealedRuntimeEvidence(t *testing.T, seal A
 	}
 	if f.sealedAssociationRuntimeTask != "" {
 		association.RuntimeTaskID = f.sealedAssociationRuntimeTask
+	}
+	if f.withSealedResources {
+		document := sealedTaskResourceDocument(seal, association.RuntimeTaskID)
+		data, err := qualitygate.EncodeResourceSamples(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		logical := attemptID + ":artifacts/task-resources/" + document.Execution.CallID + "/" + qualitygate.ResourceSamplesFile
+		ref, err := f.store.PutEvidenceObject("runtime-artifact", "application/json", logical, true, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seal.EvidenceRefs = append(seal.EvidenceRefs, ref)
 	}
 	associationData, err := json.Marshal(association)
 	if err != nil {

@@ -5,9 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"hash"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -60,6 +61,11 @@ type SnapshotDiagnostic struct {
 	Matched      *bool           `json:"matched,omitempty"`
 	MismatchAxis string          `json:"mismatch_axis,omitempty"`
 	Reason       string          `json:"reason,omitempty"`
+}
+
+type NestedRepositoryWorktreeEntry struct {
+	Path string
+	Mode os.FileMode
 }
 
 const (
@@ -144,7 +150,7 @@ func captureSnapshotHead(repoRoot string) (string, error) {
 }
 
 func captureSnapshotIndexDigest(repoRoot string) (string, error) {
-	output, err := exec.Command("git", "-C", repoRoot, "ls-files", "-s").Output()
+	output, err := gitexec.Command("git", repoRoot, "ls-files", "-s").Output()
 	if err != nil {
 		return "", fmt.Errorf("git ls-files: %w", err)
 	}
@@ -178,7 +184,7 @@ func ParentExcludePathspecs() []string {
 }
 
 func captureWorktreeDigestVariant(repoRoot string, excludePathspecs []string) (string, error) {
-	diffArgs := []string{"diff", "--binary", "--no-ext-diff"}
+	diffArgs := []string{"diff", "--binary", "--no-ext-diff", "--no-textconv"}
 	untrackedArgs := []string{"ls-files", "-z", "--others", "--exclude-standard"}
 	if len(excludePathspecs) > 0 {
 		diffArgs = append(diffArgs, "--")
@@ -198,7 +204,7 @@ func captureWorktreeDigestVariant(repoRoot string, excludePathspecs []string) (s
 }
 
 func gitSnapshotOutput(repoRoot string, args []string) ([]byte, error) {
-	output, err := exec.Command("git", append([]string{"-C", repoRoot}, args...)...).Output()
+	output, err := gitexec.Command("git", repoRoot, args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w", args[0], err)
 	}
@@ -227,7 +233,7 @@ func buildWorktreeDigest(diffOutput, untrackedOutput []byte, repoRoot string) (s
 		}
 		hasher.Write([]byte(path))
 		hasher.Write([]byte{0})
-		if err := hashUntrackedEntry(hasher, absPath, info.Mode()); err != nil {
+		if err := hashUntrackedEntry(hasher, repoRoot, absPath, path, info.Mode()); err != nil {
 			return "", err
 		}
 		hasher.Write([]byte("\n"))
@@ -239,7 +245,7 @@ func CleanWorktreeDigestExcludingParent() (string, error) {
 	return buildWorktreeDigest(nil, nil, "")
 }
 
-func hashUntrackedEntry(hasher hash.Hash, absPath string, mode os.FileMode) error {
+func hashUntrackedEntry(hasher hash.Hash, repoRoot, absPath, path string, mode os.FileMode) error {
 	switch {
 	case mode.IsRegular():
 		content, err := os.ReadFile(absPath)
@@ -257,10 +263,58 @@ func hashUntrackedEntry(hasher hash.Hash, absPath string, mode os.FileMode) erro
 		sum := sha256.Sum256([]byte(target))
 		hasher.Write([]byte("symlink\x00"))
 		hasher.Write([]byte(hex.EncodeToString(sum[:])))
+	case mode.IsDir():
+		hasher.Write([]byte("nested-repository\x00"))
+		entries, err := NestedUntrackedRepositoryEntries(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			hasher.Write([]byte(entry.Path))
+			hasher.Write([]byte{0})
+			if err := hashUntrackedEntry(hasher, repoRoot, filepath.Join(repoRoot, filepath.FromSlash(entry.Path)), entry.Path, entry.Mode); err != nil {
+				return err
+			}
+			hasher.Write([]byte("\n"))
+		}
 	default:
 		return fmt.Errorf("untracked file %sは取り扱えないfile type %sです", absPath, mode.Type())
 	}
 	return nil
+}
+
+func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryWorktreeEntry, error) {
+	root := filepath.Join(repoRoot, filepath.FromSlash(dir))
+	entries := []NestedRepositoryWorktreeEntry{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.Name() == ".git" {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		mode := d.Type()
+		if !mode.IsRegular() && mode&os.ModeSymlink == 0 {
+			return fmt.Errorf("nested repository内の取り扱えないfile typeです: %s (%s)", path, mode.Type())
+		}
+		relative, err := filepath.Rel(repoRoot, path)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, NestedRepositoryWorktreeEntry{Path: filepath.ToSlash(relative), Mode: mode})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	return entries, nil
 }
 
 func joinWithinRoot(root, rel string) (string, error) {

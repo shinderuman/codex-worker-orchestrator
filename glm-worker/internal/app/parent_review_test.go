@@ -102,7 +102,7 @@ func needsSolDecisionPacketApp() string {
 
 func newParentReviewOpportunity(t *testing.T) (config.AppConfig, *state.StateStore) {
 	t.Helper()
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	review := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: reviewFixPacketApp()},
@@ -161,7 +161,6 @@ func executeAccept(t *testing.T, cfg config.AppConfig) acceptOutput {
 }
 
 func TestExecuteParentReviewOpensOpportunity(t *testing.T) {
-	t.Parallel()
 	cfg, st := newParentReviewOpportunity(t)
 
 	stats, err := st.CurrentTaskStats()
@@ -196,7 +195,6 @@ func TestExecuteParentReviewOpensOpportunity(t *testing.T) {
 }
 
 func TestExecuteParentReviewFixThenAcceptRecordsOutcomes(t *testing.T) {
-	t.Parallel()
 	cfg, st := newParentReviewOpportunity(t)
 	applyParentReviewFix(t, cfg)
 	if accept := executeAccept(t, cfg); !accept.Accepted {
@@ -227,7 +225,6 @@ func TestExecuteParentReviewFixThenAcceptRecordsOutcomes(t *testing.T) {
 }
 
 func TestExecuteParentReviewAcceptIsSingleUse(t *testing.T) {
-	t.Parallel()
 	cfg, st := newParentReviewOpportunity(t)
 	applyParentReviewFix(t, cfg)
 	if first := executeAccept(t, cfg); !first.Accepted {
@@ -243,7 +240,6 @@ func TestExecuteParentReviewAcceptIsSingleUse(t *testing.T) {
 }
 
 func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
-	t.Parallel()
 	cfg, st := newParentReviewOpportunity(t)
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err == nil {
 		t.Fatal("evidenceのないopen reviewをacceptできてしまいました")
@@ -252,7 +248,7 @@ func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
 		t.Fatalf("rejected accept changed status = %q", got)
 	}
 
-	cfg = newCanonicalAppConfig(t)
+	cfg = newHarnessAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +265,6 @@ func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
 }
 
 func TestExecuteParentReviewStatsExposeRework(t *testing.T) {
-	t.Parallel()
 	cfg, st := newParentReviewOpportunity(t)
 	applyParentReviewFix(t, cfg)
 	if accept := executeAccept(t, cfg); !accept.Accepted {
@@ -424,8 +419,7 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 	}
 }
 func TestExecuteAcceptRejectsPendingDecisionOpportunity(t *testing.T) {
-	t.Parallel()
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	decision := &fakeRunner{steps: []fakeStep{
 		{structured: needsSolDecisionPacketApp()},
 	}}
@@ -452,8 +446,7 @@ func TestExecuteAcceptRejectsPendingDecisionOpportunity(t *testing.T) {
 }
 
 func TestExecuteDecisionRecordsParentOutcome(t *testing.T) {
-	t.Parallel()
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	decisionWait := &fakeRunner{steps: []fakeStep{
 		{structured: needsSolDecisionPacketApp()},
 	}}
@@ -486,8 +479,7 @@ func TestExecuteDecisionRecordsParentOutcome(t *testing.T) {
 }
 
 func TestExecuteFixWithoutOriginRecordsUnknownOrigin(t *testing.T) {
-	t.Parallel()
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	review := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: reviewFixPacketApp()},
@@ -522,7 +514,6 @@ func TestExecuteFixWithoutOriginRecordsUnknownOrigin(t *testing.T) {
 }
 
 func TestExecuteFixOriginValuesRecorded(t *testing.T) {
-	t.Parallel()
 	for _, origin := range []string{
 		state.ParentOriginCodexReview,
 		state.ParentOriginGLMReviewer,
@@ -530,7 +521,7 @@ func TestExecuteFixOriginValuesRecorded(t *testing.T) {
 		state.ParentOriginExternalReview,
 		state.ParentOriginMetadataRepair,
 	} {
-		cfg := newCanonicalAppConfig(t)
+		cfg := newHarnessAppConfig(t)
 		review := &fakeRunner{steps: []fakeStep{
 			{structured: implementedPacketApp("done")},
 			{structured: reviewFixPacketApp()},

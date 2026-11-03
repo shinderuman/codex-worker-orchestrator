@@ -54,7 +54,7 @@ func TestEvidenceGraphMemoizesValidatedRevisionChains(t *testing.T) {
 	walker := evidenceGraphWalker{
 		store:                  store,
 		refs:                   map[string]EvidenceObjectRef{},
-		expanded:               map[string]bool{},
+		expanded:               map[string]AttemptSeal{},
 		validatedTaskChains:    map[string]uint64{},
 		validatedEpisodeChains: map[string]uint64{},
 	}
@@ -87,7 +87,7 @@ func TestEvidenceGraphMemoizesValidatedRevisionChains(t *testing.T) {
 	if err := os.Remove(store.evidenceObjectPath(firstTaskRef.Digest)); err != nil {
 		t.Fatal(err)
 	}
-	fresh := evidenceGraphWalker{store: store, refs: map[string]EvidenceObjectRef{}, expanded: map[string]bool{}}
+	fresh := evidenceGraphWalker{store: store, refs: map[string]EvidenceObjectRef{}, expanded: map[string]AttemptSeal{}}
 	if err := fresh.walkTaskRevisionChain(subject, secondTaskRef, 2); err == nil {
 		t.Fatal("fresh graph validation accepted a missing required revision object")
 	}
@@ -135,7 +135,7 @@ func TestEpisodeRevisionMemoizationIsScopedToPublishedTaskAuthority(t *testing.T
 	walker := evidenceGraphWalker{
 		store:                  store,
 		refs:                   map[string]EvidenceObjectRef{},
-		expanded:               map[string]bool{},
+		expanded:               map[string]AttemptSeal{},
 		publishedTaskHeads:     map[string]EvidenceObjectRef{subject: secondTaskRef},
 		validatedTaskChains:    map[string]uint64{},
 		validatedEpisodeChains: map[string]uint64{},

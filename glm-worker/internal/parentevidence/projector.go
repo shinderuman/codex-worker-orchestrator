@@ -3,6 +3,7 @@ package parentevidence
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -139,13 +142,16 @@ type SearchBody struct {
 }
 
 type DiffFile struct {
-	Path        string `json:"path"`
-	Status      string `json:"status"`
-	HeadBlob    string `json:"head_blob"`
-	IndexBlob   string `json:"index_blob"`
-	WorktreeSHA string `json:"worktree_sha256"`
-	Additions   int    `json:"additions"`
-	Deletions   int    `json:"deletions"`
+	Path         string `json:"path"`
+	Status       string `json:"status"`
+	HeadBlob     string `json:"head_blob"`
+	HeadMode     string `json:"head_mode,omitempty"`
+	IndexBlob    string `json:"index_blob"`
+	IndexMode    string `json:"index_mode,omitempty"`
+	WorktreeSHA  string `json:"worktree_sha256"`
+	WorktreeMode string `json:"worktree_mode,omitempty"`
+	Additions    int    `json:"additions"`
+	Deletions    int    `json:"deletions"`
 }
 
 type DiffBody struct {
@@ -172,6 +178,12 @@ type Providers struct {
 	Search      func(SearchRequest) Part
 }
 
+type diffCheck struct {
+	paths    []string
+	question string
+	digest   string
+}
+
 type Projector struct {
 	repoRoot      string
 	st            *state.StateStore
@@ -181,6 +193,7 @@ type Projector struct {
 	pendingClaims []state.ParentEvidenceLedgerEntry
 	leaseEpoch    int64
 	leaseErr      error
+	diffChecks    []diffCheck
 }
 
 const (
@@ -321,11 +334,25 @@ func validateDiffPart(request DiffRequest) error {
 		return machinecli.UsageErrorf("evidence manifestのdiff budget_bytesは1..262144で指定してください")
 	}
 	for _, path := range request.Paths {
-		if !RelativePath(path) {
-			return machinecli.UsageErrorf("evidence manifestのdiff pathsはrepository相対pathだけを受理します: " + path)
+		if !exactDiffPath(path) {
+			return machinecli.UsageErrorf("evidence manifestのdiff pathsはrepository相対のexact file pathだけを受理します: " + path)
 		}
 	}
 	return nil
+}
+
+func exactDiffPath(path string) bool {
+	if !RelativePath(path) || filepath.IsAbs(path) || strings.HasPrefix(path, ":") ||
+		strings.HasSuffix(path, "/") || strings.ContainsAny(path, "\x00*?[]") ||
+		path != filepath.ToSlash(filepath.Clean(path)) {
+		return false
+	}
+	for _, component := range strings.Split(path, "/") {
+		if component == "" || component == "." || component == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func validateSourcePart(request SourceRequest) error {
@@ -350,6 +377,7 @@ func RelativePath(path string) bool {
 }
 
 func (p *Projector) Project(manifest Manifest) {
+	p.diffChecks = nil
 	p.leaseEpoch, p.leaseErr = p.st.ParentEvidenceLeaseEpoch()
 	p.output = Output{
 		Version:     ManifestVersion,
@@ -499,21 +527,18 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 		part.Reason = err.Error()
 		return p.recordPart(part, state.ParentEvidenceSurfaceDiff)
 	}
-	identity := make([]string, 0, len(files)*2)
-	for _, file := range files {
-		identity = append(identity, file.Path, file.HeadBlob, file.IndexBlob, file.WorktreeSHA)
-	}
-	part.Digest = StringDigest(append([]string{request.Question}, identity...)...)
-	diffBody := DiffBody{Question: request.Question, Paths: request.Paths, Files: files}
+	diffBody := DiffBody{Question: request.Question, Paths: request.Paths, Files: files, Body: body}
+	part.Digest, _ = Digest(diffBody)
+	p.diffChecks = append(p.diffChecks, diffCheck{paths: append([]string(nil), request.Paths...), question: request.Question, digest: part.Digest})
 	if len(body) > request.BudgetBytes {
 		part.Status = PartRefinement
 		part.Reason = fmt.Sprintf(
 			"diff body needs %d bytes but the budget is %d; narrow paths or raise budget_bytes; per-file identity is preserved",
 			len(body), request.BudgetBytes,
 		)
+		diffBody.Body = ""
 	} else {
 		part.Status = PartProjected
-		diffBody.Body = body
 		part.Bytes = len(body)
 		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
@@ -523,84 +548,163 @@ func (p *Projector) projectDiff(request DiffRequest) Part {
 }
 
 func captureDiff(repoRoot string, paths []string) ([]DiffFile, string, error) {
-	body, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-renames", "--"}, paths...)...)
+	files, body, err := captureDiffOnce(repoRoot, paths)
 	if err != nil {
-		return nil, "", fmt.Errorf("git diff HEAD: %w", err)
+		return nil, "", err
 	}
-	numstat, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--numstat", "--no-renames", "--"}, paths...)...)
+	nextFiles, nextBody, err := captureDiffOnce(repoRoot, paths)
 	if err != nil {
-		return nil, "", fmt.Errorf("git diff HEAD --numstat: %w", err)
+		return nil, "", err
 	}
-	status, err := gitOutputIn(repoRoot, append([]string{"status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}, paths...)...)
-	if err != nil {
-		return nil, "", fmt.Errorf("git status: %w", err)
+	if !reflect.DeepEqual(files, nextFiles) || body != nextBody {
+		return nil, "", fmt.Errorf("diff source changed during capture; request fresh evidence")
 	}
+	return files, body, nil
+}
+
+func captureDiffOnce(repoRoot string, paths []string) ([]DiffFile, string, error) {
 	files := make([]DiffFile, 0, len(paths))
+	var untracked strings.Builder
 	for _, path := range paths {
-		file := DiffFile{Path: path, Status: diffFileStatusLetter(string(status), path)}
-		file.HeadBlob, err = gitTrimmedOutput(repoRoot, "rev-parse", "--verify", "HEAD:"+path)
+		file, content, err := collectDiffFile(repoRoot, path)
 		if err != nil {
-			file.HeadBlob = ""
+			return nil, "", err
 		}
-		file.IndexBlob = diffIndexBlob(repoRoot, path)
-		file.WorktreeSHA = diffWorktreeSHA(repoRoot, path)
-		file.Additions, file.Deletions = diffNumstat(string(numstat), path)
 		files = append(files, file)
+		untracked.WriteString(content)
 	}
-	return files, string(body), nil
+	return files, untracked.String(), nil
 }
 
-func diffFileStatusLetter(statusOutput string, path string) string {
-	for _, record := range strings.Split(strings.TrimRight(statusOutput, "\x00"), "\x00") {
-		if record == "" {
-			continue
-		}
-		if len(record) > 3 && record[3:] == path {
-			return string(record[0])
-		}
+func collectDiffFile(repoRoot, path string) (DiffFile, string, error) {
+	if !exactDiffPath(path) {
+		return DiffFile{}, "", fmt.Errorf("invalid exact diff path %q", path)
 	}
-	return "unknown"
-}
-
-func diffIndexBlob(repoRoot string, path string) string {
-	output, err := gitOutputIn(repoRoot, "ls-files", "-s", "--", path)
+	headMode, headBlob, err := gitDiffEntry(repoRoot, path, false)
 	if err != nil {
-		return ""
+		return DiffFile{}, "", err
 	}
-	fields := strings.Fields(strings.TrimSpace(string(output)))
-	if len(fields) < 2 {
-		return ""
+	indexMode, indexBlob, err := gitDiffEntry(repoRoot, path, true)
+	if err != nil {
+		return DiffFile{}, "", err
 	}
-	return fields[1]
+	worktreeSHA, worktreeMode, content, present, err := diffWorktreeObject(repoRoot, path)
+	if err != nil {
+		return DiffFile{}, "", err
+	}
+	if headBlob == "" && indexBlob == "" && !present {
+		return DiffFile{}, "", fmt.Errorf("diff path %q does not exist in HEAD, index or worktree", path)
+	}
+	file := DiffFile{
+		Path:         path,
+		HeadBlob:     headBlob,
+		HeadMode:     headMode,
+		IndexBlob:    indexBlob,
+		IndexMode:    indexMode,
+		WorktreeSHA:  worktreeSHA,
+		WorktreeMode: worktreeMode,
+	}
+	return renderCapturedDiffFile(repoRoot, file, content, present)
 }
 
-func diffWorktreeSHA(repoRoot string, path string) string {
-	abs, err := joinRoot(repoRoot, path)
-	if err != nil {
-		return ""
+func renderCapturedDiffFile(repoRoot string, file DiffFile, content []byte, present bool) (DiffFile, string, error) {
+	if file.HeadBlob == "" && file.IndexBlob == "" {
+		file.Status = "?"
+		return file, untrackedDiffSection(file.Path, file.WorktreeMode, content), nil
 	}
-	content, err := os.ReadFile(abs)
+	patch, err := capturedDiffPatch(repoRoot, file, content, present)
 	if err != nil {
-		return ""
+		return DiffFile{}, "", err
 	}
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:])
+	switch {
+	case !present:
+		file.Status = "D"
+	case file.HeadBlob == "":
+		file.Status = "A"
+	case patch != "" || file.HeadMode != file.IndexMode || file.HeadBlob != file.IndexBlob:
+		file.Status = "M"
+	}
+	file.Additions, file.Deletions = diffLineCounts(patch)
+	return file, patch, nil
 }
 
-func diffNumstat(numstatOutput string, path string) (int, int) {
-	for _, line := range strings.Split(strings.TrimRight(numstatOutput, "\n"), "\n") {
-		fields := strings.SplitN(line, "\t", 3)
-		if len(fields) != 3 || fields[2] != path {
-			continue
-		}
-		additions, addErr := strconv.Atoi(fields[0])
-		deletions, delErr := strconv.Atoi(fields[1])
-		if addErr != nil || delErr != nil {
-			return 0, 0
-		}
-		return additions, deletions
+func gitDiffEntry(repoRoot, path string, index bool) (string, string, error) {
+	args := []string{"ls-tree", "-z", "HEAD", "--", path}
+	if index {
+		args = []string{"ls-files", "-s", "-z", "--", path}
 	}
-	return 0, 0
+	data, err := gitLiteralOutputIn(repoRoot, args...)
+	if err != nil {
+		return "", "", fmt.Errorf("read Git entry for %q: %w", path, err)
+	}
+	return parseDiffGitEntry(data, path, index)
+}
+
+func parseDiffGitEntry(data []byte, path string, index bool) (string, string, error) {
+	var mode, object string
+	if len(data) == 0 {
+		return "", "", nil
+	}
+	for _, row := range bytes.Split(bytes.TrimSuffix(data, []byte{0}), []byte{0}) {
+		meta, name, ok := bytes.Cut(row, []byte{'\t'})
+		if !ok || string(name) != path || mode != "" {
+			return "", "", fmt.Errorf("non-exact or ambiguous Git entry for %q", path)
+		}
+		fields := strings.Fields(string(meta))
+		if !validDiffGitEntry(fields, index) {
+			return "", "", fmt.Errorf("unsupported or unmerged Git entry for %q", path)
+		}
+		mode = fields[0]
+		if index {
+			object = fields[1]
+		} else {
+			object = fields[2]
+		}
+	}
+	return mode, object, nil
+}
+
+func validDiffGitEntry(fields []string, index bool) bool {
+	if len(fields) != 3 || !supportedDiffGitMode(fields[0]) {
+		return false
+	}
+	if index {
+		return fields[2] == "0"
+	}
+	return fields[1] == "blob"
+}
+
+func supportedDiffGitMode(mode string) bool {
+	return mode == "100644" || mode == "100755" || mode == "120000"
+}
+
+func untrackedDiffSection(path, mode string, content []byte) string {
+	name := "a/" + path + " b/" + path
+	dst := "b/" + path
+	if strings.ContainsAny(path, " \t\n\\\"") {
+		name = strconv.Quote("a/"+path) + " " + strconv.Quote("b/"+path)
+		dst = strconv.Quote(dst)
+	}
+	var body strings.Builder
+	fmt.Fprintf(&body, "diff --git %s\nnew untracked file mode %s\n--- /dev/null\n+++ %s\n", name, mode, dst)
+	if !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
+		fmt.Fprintf(&body, "untracked content (base64): %s\n", base64.StdEncoding.EncodeToString(content))
+		return body.String()
+	}
+	lines := strings.Split(string(content), "\n")
+	if len(content) == 0 {
+		lines = nil
+	} else if content[len(content)-1] == '\n' {
+		lines = lines[:len(lines)-1]
+	}
+	fmt.Fprintf(&body, "@@ -0,0 +1,%d @@\n", len(lines))
+	for _, line := range lines {
+		fmt.Fprintf(&body, "+%s\n", line)
+	}
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		body.WriteString("\\ No newline at end of file\n")
+	}
+	return body.String()
 }
 
 func (p *Projector) projectSource(request SourceRequest) Part {
@@ -682,23 +786,28 @@ func (p *Projector) commitLocked(stdout io.Writer, reason string) error {
 	if err := p.validateScope(); err != nil {
 		return err
 	}
+	if err := p.validateDiffSnapshots(); err != nil {
+		return err
+	}
 	if LeaseActive(p.st) {
 		if err := p.degradeDuplicateParts(); err != nil {
 			return err
 		}
 	}
 	output := p.output
-	applyTotalBudget(&output)
+	deliverable := applyTotalBudget(&output)
 	p.output = output
 	written, err := WriteMeasuredJSON(stdout, output)
 	if err != nil {
 		return err
 	}
-	if err := p.markReviewProof(output.Parts); err != nil {
-		return err
-	}
-	if err := p.saveSurvivingClaims(output.Parts); err != nil {
-		return err
+	if deliverable {
+		if err := p.markReviewProof(output.Parts); err != nil {
+			return err
+		}
+		if err := p.saveSurvivingClaims(output.Parts); err != nil {
+			return err
+		}
 	}
 	Record(p.st, state.ParentEvidenceRecord{
 		Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
@@ -718,6 +827,20 @@ func (p *Projector) validateScope() error {
 	}
 	if epoch != p.leaseEpoch || p.st.ReadOr("task.id", "") != p.output.TaskID || string(p.st.TaskStatus()) != p.output.TaskStatus {
 		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
+	}
+	return nil
+}
+
+func (p *Projector) validateDiffSnapshots() error {
+	for _, check := range p.diffChecks {
+		files, patch, err := captureDiff(p.repoRoot, check.paths)
+		if err != nil {
+			return fmt.Errorf("diff evidence changed before delivery: %w", err)
+		}
+		digest, _ := Digest(DiffBody{Question: check.question, Paths: check.paths, Files: files, Body: patch})
+		if digest != check.digest {
+			return fmt.Errorf("diff evidence changed before delivery; request fresh evidence")
+		}
 	}
 	return nil
 }
@@ -775,10 +898,30 @@ func (p *Projector) degradeDuplicateParts() error {
 	return nil
 }
 
-func applyTotalBudget(output *Output) {
-	for outputSize(*output) > MaxOutputBytes && stripBody(output) {
+func applyTotalBudget(output *Output) bool {
+	output.Status = aggregateStatus(output.Parts)
+	for outputSize(*output)+1 > MaxOutputBytes && stripBody(output) {
+		output.Status = aggregateStatus(output.Parts)
+	}
+	if outputSize(*output)+1 > MaxOutputBytes {
+		*output = Output{
+			Version:     ManifestVersion,
+			Status:      StatusError,
+			OwnerCallID: output.OwnerCallID,
+			Reason:      "parent evidence metadata exceeds output budget; narrow the manifest and retry",
+			Parts: []Part{{
+				Kind:   "manifest",
+				Status: PartError,
+				Reason: "evidence metadata cannot fit within the serialized output budget",
+			}},
+		}
+		if outputSize(*output)+1 > MaxOutputBytes {
+			output.OwnerCallID = ""
+		}
+		return false
 	}
 	output.Status = aggregateStatus(output.Parts)
+	return true
 }
 
 func outputSize(output Output) int {
@@ -844,9 +987,10 @@ func clearPartBody(part *Part) {
 	}
 }
 
-func gitOutputIn(dir string, args ...string) ([]byte, error) {
+func gitLiteralOutputIn(dir string, args ...string) ([]byte, error) {
 	command := exec.Command("git", args...)
 	command.Dir = dir
+	command.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()
@@ -854,12 +998,4 @@ func gitOutputIn(dir string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return output, nil
-}
-
-func gitTrimmedOutput(dir string, args ...string) (string, error) {
-	output, err := gitOutputIn(dir, args...)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
 }

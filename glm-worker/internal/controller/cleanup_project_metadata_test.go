@@ -14,7 +14,7 @@ func TestCleanupUsesSealedProjectMetadata(t *testing.T) {
 	if err := f.store.writeProjectSnapshot(authority.Snapshot); err != nil {
 		t.Fatal(err)
 	}
-	trees, err := CaptureExecutionTrees(f.source.Workspace.Root, authority.Snapshot.HeadOID)
+	trees, err := CaptureExecutionTrees(f.source.Workspace.Root, authority.Snapshot.HeadOID, f.source.Attempt.SemanticTaskRef)
 	if err != nil {
 		t.Fatal(err)
 	}

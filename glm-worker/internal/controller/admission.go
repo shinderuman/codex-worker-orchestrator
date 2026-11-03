@@ -2,8 +2,10 @@ package controller
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -44,6 +46,9 @@ func (s *Store) bootstrapWithoutLiveLease(task SemanticTaskRef, workspace Worksp
 	if !authority.Task.Equal(task) {
 		return Admission{}, fmt.Errorf("requested bootstrap task does not match committed repository authority")
 	}
+	if authority.ExecutionMode == ExecutionAuthorityParentOnly {
+		return Admission{}, fmt.Errorf("parent-only designated task %s must not bootstrap a Runtime execution", authority.Task.TaskPath)
+	}
 	if snapshot.Head != authority.Snapshot.HeadOID {
 		return Admission{}, fmt.Errorf("bootstrap workspace HEAD does not match committed project snapshot")
 	}
@@ -62,7 +67,7 @@ func (s *Store) validateBootstrapWorkspace(workspace WorkspaceIdentity) error {
 
 func (s *Store) bootstrapFreshExecution(
 	head RepositoryControllerHead,
-	authority CommittedTaskAuthority,
+	authority TaskAuthority,
 	workspace WorkspaceIdentity,
 	snapshot WorkspaceSnapshot,
 ) (Admission, error) {
@@ -143,7 +148,7 @@ func (s *Store) loadAdmissibleHead(task SemanticTaskRef) (RepositoryControllerHe
 	if head.ProjectSnapshotID == "" {
 		return RepositoryControllerHead{}, fmt.Errorf("repository controller has no project snapshot authority")
 	}
-	if _, err := s.LoadProjectSnapshot(head.ProjectSnapshotID); err != nil {
+	if _, err := s.executionTaskAuthority(head, task); err != nil {
 		return RepositoryControllerHead{}, err
 	}
 	return head, nil
@@ -228,7 +233,7 @@ func newExecutionRecords(
 		return AttemptRecord{}, ExecutionLease{}, err
 	}
 	now := time.Now().UTC()
-	trees, err := CaptureExecutionTrees(workspace.Root, snapshot.Head)
+	trees, err := CaptureExecutionTrees(workspace.Root, snapshot.Head, task)
 	if err != nil {
 		return AttemptRecord{}, ExecutionLease{}, err
 	}
@@ -258,4 +263,57 @@ func newExecutionRecords(
 		CreatedAt:                   now,
 	}
 	return attempt, lease, nil
+}
+
+func CurrentSemanticAdmission(cfg config.AppConfig, store *Store) (Admission, error) {
+	if err := store.ValidateConfigScope(cfg); err != nil {
+		return Admission{}, err
+	}
+	bound, err := ParentContinuationConfig(cfg)
+	if err != nil {
+		return Admission{}, err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return Admission{}, err
+	}
+	authority, err := MutationAuthorityFromHead(head)
+	if err != nil {
+		return Admission{}, err
+	}
+	identity, err := ResolveRepositoryIdentity(bound.RepoRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	workspace, err := ResolveWorkspaceIdentity(bound.RepoRoot, identity)
+	if err != nil {
+		return Admission{}, err
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(bound.RepoRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	return store.AdmitMutationOrFailClosed(authority, workspace, snapshot)
+}
+
+func (s *Store) ValidateConfigScope(cfg config.AppConfig) error {
+	identity, err := ResolveRepositoryIdentity(cfg.RepoRoot)
+	if err != nil {
+		return err
+	}
+	if identity.LineageID != s.identity.LineageID {
+		return fmt.Errorf("controller config and Store belong to different repositories")
+	}
+	actual, err := filepath.Abs(cfg.StateBase)
+	if err != nil {
+		return err
+	}
+	expected, err := filepath.Abs(s.config.StateBase)
+	if err != nil {
+		return err
+	}
+	if actual != expected {
+		return fmt.Errorf("controller config and Store belong to different state roots")
+	}
+	return nil
 }

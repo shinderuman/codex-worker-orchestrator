@@ -122,11 +122,11 @@ func (s *Store) verifyCompletionLocalTarget(op ExecutionOperation) error {
 	if err := s.verifyPrimaryPublicationTree(c); err != nil {
 		return err
 	}
-	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	authority, err := s.completionTargetAuthority(op)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(authority.Snapshot, op.Terminal.Record.ResultProject) || !authority.Task.Equal(*op.Terminal.RootTaskRef) {
+	if !reflect.DeepEqual(authority.Snapshot, op.Terminal.Record.ResultProject) || !completionRootMatches(op.Terminal.RootTaskRef, authority) {
 		return fmt.Errorf("completion final commit and target authority differ")
 	}
 	target := op.Source.Head
@@ -243,8 +243,8 @@ func (s *Store) loadCompletionLint(ref EvidenceObjectRef) (EvidenceObjectRef, Co
 	return ref, evidence, err
 }
 
-func validateCompletionSuccessorAuthority(head RepositoryControllerHead, authority CommittedTaskAuthority) error {
-	if head.RootTaskRef == nil || !head.RootTaskRef.Equal(authority.Task) || head.ExecutionTaskRef != nil || head.AcceptedCandidateRef != nil || head.LiveAttemptID != "" || head.LiveLeaseID != "" || head.ProjectSnapshotID != authority.ProjectSnapshotID || head.IntegrationTip != authority.Snapshot.HeadOID {
+func validateCompletionSuccessorAuthority(head RepositoryControllerHead, authority TaskAuthority) error {
+	if !completionRootMatches(head.RootTaskRef, authority) || head.ExecutionTaskRef != nil || head.AcceptedCandidateRef != nil || head.LiveAttemptID != "" || head.LiveLeaseID != "" || head.ProjectSnapshotID != authority.ProjectSnapshotID || head.IntegrationTip != authority.Snapshot.HeadOID {
 		return fmt.Errorf("completion successor bootstrap authority differs")
 	}
 	return nil

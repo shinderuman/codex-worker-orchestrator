@@ -63,7 +63,7 @@ func (s *Store) planParentSourceRebind(input PublicationInput, sourceSnapshotID 
 	return op, head, nil
 }
 
-func (s *Store) parentSourceCandidate(candidate AcceptedCandidate, source ParentSourceRevision, authority CommittedTaskAuthority, remote string) (AcceptedCandidate, error) {
+func (s *Store) parentSourceCandidate(candidate AcceptedCandidate, source ParentSourceRevision, authority TaskAuthority, remote string) (AcceptedCandidate, error) {
 	tree, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", source.AuthorityOID+"^{tree}")
 	if err != nil {
 		return candidate, err
@@ -80,37 +80,37 @@ func (s *Store) parentSourceCandidate(candidate AcceptedCandidate, source Parent
 	return candidate, err
 }
 
-func (s *Store) captureParentSourceRevision(snapshotID, remote string) (ParentSourceRevision, CommittedTaskAuthority, error) {
+func (s *Store) captureParentSourceRevision(snapshotID, remote string) (ParentSourceRevision, TaskAuthority, error) {
 	repo := s.identity.PrimaryRoot
 	snapshot, err := CaptureWorkspaceSnapshot(repo)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	if snapshot.ID != snapshotID || snapshot.Head != remote {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, fmt.Errorf("parent source revision snapshot or remote HEAD differs")
+		return ParentSourceRevision{}, TaskAuthority{}, fmt.Errorf("parent source revision snapshot or remote HEAD differs")
 	}
 	tree, err := captureParentSourceTree(repo)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	commit, err := suspensionTreeCommit(repo, tree, remote)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	authority, err := ResolveCommittedTaskAuthorityAt(repo, commit)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	ref, _, err := s.CaptureGitObjectArchive(repo, "parent-source:"+snapshot.ID, []string{commit})
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	after, err := CaptureWorkspaceSnapshot(repo)
 	if err != nil {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, err
+		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
 	if after != snapshot {
-		return ParentSourceRevision{}, CommittedTaskAuthority{}, fmt.Errorf("parent source changed during capture")
+		return ParentSourceRevision{}, TaskAuthority{}, fmt.Errorf("parent source changed during capture")
 	}
 	return ParentSourceRevision{Snapshot: snapshot, AuthorityOID: commit, Archive: ref}, authority, nil
 }
@@ -120,7 +120,7 @@ func captureParentSourceTree(repo string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	entries, err = captureSuspensionWorktree(repo, entries)
+	entries, err = captureSuspensionWorktree(repo, entries, true)
 	if err != nil {
 		return "", err
 	}

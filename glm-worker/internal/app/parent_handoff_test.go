@@ -607,7 +607,7 @@ func TestSessionRotationRepeatedHandoffWritesNothingAndReturnsSameDirective(t *t
 }
 
 func TestSessionRotationNewThreadBindRetiresOldDirective(t *testing.T) {
-	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
+	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newHarnessAppConfig(t))
 
 	newThread := prepareNextRotatedTask(t, st)
 	next := &fakeRunner{steps: []fakeStep{
@@ -660,7 +660,7 @@ func prepareNextRotatedTask(t *testing.T, st *state.StateStore) string {
 }
 
 func TestSessionRotationPendingAllowsOrdinaryNewTaskAndRetiresRecommendation(t *testing.T) {
-	cfg, st, threadID := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
+	cfg, st, threadID := seedSessionRotationAcceptConfig(t, newHarnessAppConfig(t))
 	beforeTaskID := st.ReadOr("task.id", "")
 	t.Setenv(state.ParentActionCodexThreadIDEnv, threadID)
 	t.Setenv(state.ParentActionCodexSessionIDEnv, threadID)
@@ -687,7 +687,7 @@ func TestSessionRotationPendingAllowsOrdinaryNewTaskAndRetiresRecommendation(t *
 }
 
 func TestSessionRotationPendingOnOtherThreadAllowsOrdinaryStartAndRetiresRecommendation(t *testing.T) {
-	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
+	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newHarnessAppConfig(t))
 	marker, err := st.LoadSessionRotationMarker(oldThread)
 	if err != nil || marker == nil || marker.Directive == nil {
 		t.Fatalf("pending marker = %#v err=%v", marker, err)
@@ -750,7 +750,7 @@ func TestSessionRotationHandoffSurvivesUnreadableStatsMirror(t *testing.T) {
 }
 
 func TestSessionRotationStartResumesAfterTaskSwitch(t *testing.T) {
-	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newCanonicalAppConfig(t))
+	cfg, st, oldThread := seedSessionRotationAcceptConfig(t, newHarnessAppConfig(t))
 	marker, err := st.LoadSessionRotationMarker(oldThread)
 	if err != nil {
 		t.Fatal(err)

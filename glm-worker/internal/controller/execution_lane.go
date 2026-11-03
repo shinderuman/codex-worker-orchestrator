@@ -60,6 +60,9 @@ func (s *Store) planExecutionMaterialization(input MaterializeExecutionInput) (E
 		attempt.PredecessorAttemptID = suspended.AttemptID
 		attempt.ResumedFromSealID = seal.LogicalIdentity
 	}
+	if err := s.bindMaterializedExecutionAuthority(task, suspended, &attempt, &lease); err != nil {
+		return ExecutionOperation{}, head, err
+	}
 	record, err := executionTransition(head, executionMaterialize)
 	if err != nil {
 		return ExecutionOperation{}, head, err
@@ -79,6 +82,31 @@ func (s *Store) planExecutionMaterialization(input MaterializeExecutionInput) (E
 		return ExecutionOperation{}, head, err
 	}
 	return op, head, nil
+}
+
+func (s *Store) bindMaterializedExecutionAuthority(task SemanticTaskRef, suspended *SuspensionSnapshot, attempt *AttemptRecord, lease *ExecutionLease) error {
+	mode, err := s.committedTaskExecutionMode(task.TaskPath)
+	if err != nil {
+		return err
+	}
+	if suspended == nil {
+		if mode == ExecutionAuthorityParentOnly {
+			return fmt.Errorf("parent-only designated task %s must not materialize a Runtime execution", task.TaskPath)
+		}
+		return nil
+	}
+	previous, err := s.loadAttempt(suspended.AttemptID)
+	if err != nil {
+		return err
+	}
+	if (mode == ExecutionAuthorityParentOnly) != (previous.ExecutionAuthority == ExecutionAuthorityParentOnly) {
+		return fmt.Errorf("materialized execution authority differs from predecessor attempt %s", suspended.AttemptID)
+	}
+	if mode == ExecutionAuthorityParentOnly {
+		attempt.ExecutionAuthority = ExecutionAuthorityParentOnly
+		lease.Purpose = parentOnlyExecutionPurpose
+	}
+	return nil
 }
 
 func (s *Store) materializationAuthority(input MaterializeExecutionInput) (RepositoryControllerHead, BlockerEpisodeRevision, SemanticTaskRef, error) {
@@ -155,7 +183,7 @@ func (s *Store) materializationTrees(head RepositoryControllerHead, task Semanti
 	if err != nil {
 		return result, &snapshot, &seal, s.preservePublicationConflict(head, &snapshot, err)
 	}
-	if err := s.applyMaterializationCandidateSource(head, seal, &result); err != nil {
+	if err := s.applyMaterializationCandidateSource(head, seal, &result, task); err != nil {
 		return result, &snapshot, &seal, err
 	}
 	return result, &snapshot, &seal, nil
@@ -168,7 +196,7 @@ func (s *Store) freshMaterializationTrees(head RepositoryControllerHead, task Se
 	}
 	trees := ExecutionTrees{IndexTree: tree, WorktreeTree: tree}
 	result := ReboundSuspension{BaseOID: head.IntegrationTip, Baseline: trees, Current: trees}
-	if err := s.normalizeMaterializationMetadataBase(head, &result); err != nil {
+	if err := s.normalizeMaterializationMetadataBase(head, &result, task); err != nil {
 		return ReboundSuspension{}, nil, nil, err
 	}
 	hasSuspended, err := s.hasSuspendedExecution(head, task)
@@ -182,26 +210,31 @@ func (s *Store) freshMaterializationTrees(head RepositoryControllerHead, task Se
 }
 
 func (s *Store) hasSuspendedExecution(head RepositoryControllerHead, task SemanticTaskRef) (bool, error) {
+	_, suspended, err := s.suspendedExecutionSnapshot(head, task)
+	return suspended, err
+}
+
+func (s *Store) suspendedExecutionSnapshot(head RepositoryControllerHead, task SemanticTaskRef) (*SuspensionSnapshot, bool, error) {
 	entries, err := os.ReadDir(filepath.Join(s.dir, "suspensions"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return nil, false, nil
 		}
-		return false, err
+		return nil, false, err
 	}
 	for _, entry := range entries {
 		var snapshot SuspensionSnapshot
 		if err := readJSON(filepath.Join(s.dir, "suspensions", entry.Name()), &snapshot); err != nil {
-			return false, err
+			return nil, false, err
 		}
 		if snapshot.SemanticTaskRef.TaskPath == task.TaskPath {
 			terminated, err := s.suspensionExecutionTerminated(head, snapshot)
 			if err != nil || !terminated {
-				return !terminated, err
+				return &snapshot, !terminated, err
 			}
 		}
 	}
-	return false, nil
+	return nil, false, nil
 }
 
 func executionLaneName(identity RepositoryIdentity) string {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -263,7 +264,7 @@ func writeTimedStreamScript(t *testing.T, lines ...string) string {
 		script += fmt.Sprintf("printf '%%s\\n' '%s'\n", line)
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude-timed")
-	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return commandPath

@@ -1,13 +1,10 @@
 package app
 
 import (
-	"archive/zip"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -87,7 +84,7 @@ func writeEvidenceExportArchiveFile(path string, export controller.EvidenceExpor
 		_ = file.Close()
 		return fmt.Errorf("chmod evidence export temp archive: %w", err)
 	}
-	if err := writeEvidenceExportZip(file, export); err != nil {
+	if err := controller.WriteEvidenceExportZip(file, export); err != nil {
 		_ = file.Close()
 		return err
 	}
@@ -107,27 +104,6 @@ func writeEvidenceExportArchiveFile(path string, export controller.EvidenceExpor
 func publishEvidenceExportArchive(temporary, path string) error {
 	if err := os.Rename(temporary, path); err != nil {
 		return fmt.Errorf("publish evidence export archive: %w", err)
-	}
-	return nil
-}
-
-func writeEvidenceExportZip(target io.Writer, export controller.EvidenceExport) error {
-	writer := zip.NewWriter(target)
-	for _, file := range export.Files {
-		entry, err := writer.CreateHeader(&zip.FileHeader{
-			Name:     file.Path,
-			Method:   zip.Deflate,
-			Modified: time.Unix(0, 0).UTC(),
-		})
-		if err != nil {
-			return fmt.Errorf("stage evidence export entry %s: %w", file.Path, err)
-		}
-		if _, err := entry.Write(file.Data); err != nil {
-			return fmt.Errorf("write evidence export entry %s: %w", file.Path, err)
-		}
-	}
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("finalize evidence export archive: %w", err)
 	}
 	return nil
 }

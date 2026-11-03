@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestStopControllerRequestIsIdempotent(t *testing.T) {
@@ -95,7 +97,7 @@ echo $$ > "$1"
 echo $! > "$2"
 while :; do sleep 0.2; done
 `
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := execfile.Write(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -184,7 +186,7 @@ func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 func TestRunCommandPrefersCompletedNaturalExit(t *testing.T) {
 	t.Parallel()
 	stub := filepath.Join(t.TempDir(), "quick-exit")
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := execfile.Write(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	runner := &ClaudeRunner{}

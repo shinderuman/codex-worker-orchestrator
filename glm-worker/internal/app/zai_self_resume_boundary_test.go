@@ -24,6 +24,8 @@ func TestExecuteZaiSelfResumeLoopDoesNotRetryUnrelatedFailure(t *testing.T) {
 			resumeCalls++
 			return nil
 		},
+		zaiSelfResumeNow,
+		waitForZaiSelfResume,
 	)
 	if !errors.Is(err, unrelated) {
 		t.Fatalf("error = %v want unrelated failure", err)
@@ -39,7 +41,6 @@ func TestExecuteZaiSelfResumeLoopHonorsStopDuringPostResetRetryWait(t *testing.T
 	controller := runner.NewStopController()
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	setZaiSelfResumeReset(t, st, &limitErr, now.Add(-5*time.Second))
-	replaceZaiSelfResumeNow(t, func() time.Time { return now })
 	controller.Request()
 
 	resumeCalls := 0
@@ -51,6 +52,8 @@ func TestExecuteZaiSelfResumeLoopHonorsStopDuringPostResetRetryWait(t *testing.T
 			resumeCalls++
 			return nil
 		},
+		func() time.Time { return now },
+		waitForZaiSelfResume,
 	)
 	var interrupted *runner.InterruptedCallError
 	if !errors.As(err, &interrupted) {

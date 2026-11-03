@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestRootLaunchersSharePinnedGoEnvironment(t *testing.T) {
@@ -36,7 +38,7 @@ func runLauncherRecordingGoEnvironment(t *testing.T, root, name string) string {
 	stubDir := t.TempDir()
 	probe := filepath.Join(stubDir, name+".env")
 	stub := "#!/bin/sh\nprintf '%s\\n%s\\n' \"$GOTOOLCHAIN\" \"$GOCACHE\" >\"$GLM_TEST_LAUNCHER_PROBE\"\n"
-	if err := os.WriteFile(filepath.Join(stubDir, "go"), []byte(stub), 0o755); err != nil {
+	if err := execfile.Write(filepath.Join(stubDir, "go"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))

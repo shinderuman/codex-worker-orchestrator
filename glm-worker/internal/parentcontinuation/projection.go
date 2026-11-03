@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -53,6 +54,9 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 		SessionRotation: &state.SessionRotationProjection{State: state.SessionRotationProjectionUnavailable},
 	}
 	plan, planErr := st.ParentActionPlan()
+	if parentOnlyMissingReviewState(st, planErr) && boundParentOnlySmokeIdentity(cfg, st) {
+		plan, planErr = state.ParentActionPlan{RequiredAction: state.ParentActionComplete, AllowedActions: []state.ParentAction{state.ParentActionComplete}}, nil
+	}
 	if planErr != nil {
 		markInconsistent(&projection, planErr.Error())
 	} else {
@@ -60,7 +64,7 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	}
 
 	repoRoot := st.ReadOr("repo-root", "")
-	repoRoot = quiescentSnapshotRoot(cfg, repoRoot)
+	repoRoot = canonicalSnapshotRoot(cfg, repoRoot)
 	if repoRoot == "" && st.TaskStatus() == state.TaskStatusNone {
 		var err error
 		repoRoot, err = freshRepositoryAuthorityRoot(cfg)
@@ -73,6 +77,31 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
 	return projection
+}
+
+func parentOnlyMissingReviewState(st *state.StateStore, planErr error) bool {
+	var inconsistency *state.LifecycleInconsistencyError
+	if !errors.As(planErr, &inconsistency) ||
+		!strings.HasPrefix(inconsistency.Detail, "parent review state is unreadable: ") {
+		return false
+	}
+	_, err := os.Lstat(st.Path("parent-review-state.json"))
+	return errors.Is(err, os.ErrNotExist)
+}
+
+func boundParentOnlySmokeIdentity(cfg config.AppConfig, st *state.StateStore) bool {
+	if st.TaskStatus() != state.TaskStatusNone {
+		return false
+	}
+	taskID, err := st.Read("task.id")
+	if err != nil || taskID == "" {
+		return false
+	}
+	if _, err := st.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	store, err := controller.Open(cfg)
+	return err == nil && store.ParentOnlySmokeIdentityMatches(taskID)
 }
 
 func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
@@ -93,17 +122,33 @@ func freshRepositoryAuthorityRoot(cfg config.AppConfig) (string, error) {
 	return cfg.RepoRoot, nil
 }
 
-func quiescentSnapshotRoot(cfg config.AppConfig, repoRoot string) string {
-	if exists, err := controller.Exists(cfg); err == nil && exists {
-		store, err := controller.Open(cfg)
-		if err == nil {
-			head, err := store.LoadHead()
-			if err == nil && head.Status == controller.ControllerStatusActive && head.LiveLeaseID == "" && head.LiveAttemptID == "" {
-				repoRoot = store.Identity().PrimaryRoot
-			}
-		}
+func canonicalSnapshotRoot(cfg config.AppConfig, repoRoot string) string {
+	if exists, err := controller.Exists(cfg); err != nil || !exists {
+		return repoRoot
 	}
-	return repoRoot
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return repoRoot
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return repoRoot
+	}
+	if head.Status == controller.ControllerStatusActive && head.LiveLeaseID == "" && head.LiveAttemptID == "" {
+		return store.Identity().PrimaryRoot
+	}
+	return parentOnlySnapshotRoot(store, repoRoot)
+}
+
+func parentOnlySnapshotRoot(store *controller.Store, repoRoot string) string {
+	if parentOnly, err := store.LiveParentOnlyExecution(); err != nil || !parentOnly {
+		return repoRoot
+	}
+	report, err := store.ProjectStatus()
+	if err != nil || report.Live == nil || report.LiveError != "" {
+		return repoRoot
+	}
+	return report.Live.WorkspaceRoot
 }
 
 func BuildPostCompletionRequest(repoRoot, completedTask string) (Request, error) {
@@ -391,7 +436,7 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		return Request{}, canonical, err
 	}
 	status := st.TaskStatus()
-	lifecycleTask, err := canonicalLifecycleTask(st, task, quiescent)
+	lifecycleTask, err := canonicalExecutionLifecycleTask(cfg, st, task, quiescent)
 	if err != nil {
 		return Request{}, true, err
 	}
@@ -418,18 +463,58 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 	}, true, nil
 }
 
-func canonicalLifecycleTask(st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
-	binding, err := st.LoadControllerRuntimeBinding()
+func canonicalExecutionLifecycleTask(cfg config.AppConfig, st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
+	parentOnly, err := liveParentOnlyExecution(cfg)
 	if err != nil {
-		if quiescent && errors.Is(err, os.ErrNotExist) {
-			return task.TaskPath, nil
-		}
 		return "", err
 	}
-	if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
-		return "", errors.New("controller runtime binding does not match canonical execution task")
+	if parentOnly || boundParentOnlySmokeIdentity(cfg, st) {
+		return task.TaskPath, nil
 	}
-	return binding.TaskPath, nil
+	return canonicalLifecycleTask(cfg, st, task, quiescent)
+}
+
+func liveParentOnlyExecution(cfg config.AppConfig) (bool, error) {
+	exists, err := controller.Exists(cfg)
+	if err != nil || !exists {
+		return false, err
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return false, err
+	}
+	return store.LiveParentOnlyExecution()
+}
+
+func canonicalLifecycleTask(cfg config.AppConfig, st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {
+	binding, bindingErr := st.LoadControllerRuntimeBinding()
+	if bindingErr == nil {
+		if !quiescent && (binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest) {
+			return "", errors.New("controller runtime binding does not match canonical execution task")
+		}
+		return binding.TaskPath, nil
+	}
+	if !errors.Is(bindingErr, os.ErrNotExist) {
+		return "", bindingErr
+	}
+	if quiescent {
+		return task.TaskPath, nil
+	}
+	unstarted, err := st.UnstartedTaskRuntime()
+	if err != nil {
+		return "", err
+	}
+	if !unstarted {
+		return "", bindingErr
+	}
+	committed, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+	if err != nil {
+		return "", err
+	}
+	if committed.Task.TaskPath != task.TaskPath || committed.Task.Equal(task) {
+		return "", bindingErr
+	}
+	return task.TaskPath, nil
 }
 
 func retiredRuntimeHandover(cfg config.AppConfig, head *controller.RepositoryControllerHead, lifecycleTask, selectedTask string) (bool, error) {

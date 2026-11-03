@@ -5,12 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestDockerTargetFailureRetainsExitProvenance(t *testing.T) {
@@ -20,7 +23,7 @@ func TestDockerTargetFailureRetainsExitProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nprintf 'target failure\n'\nexit 7\n"), 0700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nprintf 'target failure\n'\nexit 7\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -46,7 +49,7 @@ func TestDockerSuccessfulTargetCannotHideSourceDrift(t *testing.T) {
 	bin := t.TempDir()
 	t.Setenv("DOCKER_TEST_SOURCE", root)
 	body := "#!/bin/sh\nprintf changed > \"$DOCKER_TEST_SOURCE/dirty.txt\"\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(body), 0700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "docker"), []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -67,8 +70,13 @@ func TestCanonicalTargetExitRequiresAttestation(t *testing.T) {
 		name, marker string
 		proxy, want  int
 		target       bool
+		wantFailure  string
 	}{
-		{"success", "0", 0, 0, false}, {"target failure", "7", 7, 7, true}, {"proxy mismatch", "0", 1, 1, false}, {"invalid evidence", "unknown", 0, 1, false},
+		{"success", "0", 0, 0, false, ""},
+		{"target failure", "7", 7, 7, true, ""},
+		{"proxy mismatch", "0", 1, 1, false, "proxy=1 target=0"},
+		{"nil proxy mismatch", "7", 0, 1, false, "proxy=0 target=7"},
+		{"invalid evidence", "unknown", 0, 1, false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := sourceFixture(t)
@@ -83,7 +91,7 @@ func TestCanonicalTargetExitRequiresAttestation(t *testing.T) {
 if [ "$5" = cat ]; then printf '%s\n' "$MOCK_TARGET_EXIT"; exit 0; fi
 exit "$MOCK_PROXY_EXIT"
 `
-			if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
+			if err := execfile.Write(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -93,6 +101,9 @@ exit "$MOCK_PROXY_EXIT"
 			var target *qualitygate.TargetExitError
 			if code != tc.want || errors.As(err, &target) != tc.target || (err == nil) != (tc.name == "success") {
 				t.Fatalf("code=%d target=%v error=%v", code, target, err)
+			}
+			if tc.wantFailure != "" && (err == nil || !strings.Contains(err.Error(), tc.wantFailure) || strings.Contains(err.Error(), "%!w")) {
+				t.Fatalf("終了値不一致の診断textが不正です: %v", err)
 			}
 		})
 	}

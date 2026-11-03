@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,8 +103,7 @@ func gitExitCode(err error) int {
 }
 
 func gitOutput(root string, args ...string) (string, error) {
-	commandArgs := append([]string{"-C", root}, args...)
-	command := exec.Command("git", commandArgs...)
+	command := gitexec.Command("git", root, args...)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()

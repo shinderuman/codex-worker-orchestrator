@@ -13,6 +13,7 @@ func (w *Workflow) bindCanonicalWorkflowAttempt(admission controller.Admission) 
 	target := state.ControllerRuntimeBinding{
 		AttemptID:          admission.Attempt.AttemptID,
 		TaskPath:           admission.Attempt.SemanticTaskRef.TaskPath,
+		RequestID:          admission.Attempt.SemanticTaskRef.RequestID,
 		TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest,
 	}
 	previous, err := w.state.LoadControllerRuntimeBinding()
@@ -21,7 +22,7 @@ func (w *Workflow) bindCanonicalWorkflowAttempt(admission controller.Admission) 
 	case err != nil:
 		return fmt.Errorf("read controller runtime binding: %w", err)
 	case previous.AttemptID == target.AttemptID:
-		if previous.TaskPath != target.TaskPath || previous.TaskContractDigest != target.TaskContractDigest {
+		if previous.TaskPath != target.TaskPath || previous.RequestID != target.RequestID || previous.TaskContractDigest != target.TaskContractDigest {
 			return fmt.Errorf("workflow runtime binding does not match canonical controller task")
 		}
 	default:

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -26,14 +27,13 @@ func WorkflowConfig(cfg config.AppConfig) (config.AppConfig, error) {
 		return cfg, err
 	}
 	if task.Empty() {
-		authority, err := ResolveCommittedTaskAuthority(cfg.RepoRoot)
+		task, err = workflowBootstrapTask(cfg.RepoRoot, exists)
 		if err != nil {
-			if exists {
-				return cfg, err
-			}
+			return cfg, err
+		}
+		if task.Empty() {
 			return cfg, nil
 		}
-		task = authority.Task
 	}
 	identity, err := ResolveRepositoryIdentity(cfg.RepoRoot)
 	if err != nil {
@@ -43,7 +43,7 @@ func WorkflowConfig(cfg config.AppConfig) (config.AppConfig, error) {
 }
 
 func WorkflowTaskConfig(cfg config.AppConfig, identity RepositoryIdentity, task SemanticTaskRef) config.AppConfig {
-	cfg.RepoHash = digestStrings(identity.LineageID, task.TaskPath)
+	cfg.RepoHash = digestStrings(identity.LineageID, task.Identity())
 	cfg.RepoShort = cfg.RepoHash[:12]
 	return cfg
 }
@@ -111,7 +111,8 @@ func workflowTaskRef(cfg config.AppConfig, exists bool) (SemanticTaskRef, error)
 	if head.RootTaskRef != nil {
 		return *head.RootTaskRef, nil
 	}
-	return SemanticTaskRef{}, nil
+	task, _, err := store.completedRequestTask(head)
+	return task, err
 }
 
 func WorkflowLockPath(cfg config.AppConfig) (string, error) {
@@ -197,6 +198,9 @@ func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head Reposi
 		authority, err := store.UserTerminatedSuccessorAuthority(head)
 		return authority.Task, true, err
 	}
+	if task, request, err := store.completedRequestTask(head); request || err != nil {
+		return task, true, err
+	}
 	if !retiredMetadataHead(head) {
 		if task, sealed := sealedAcceptedReadAuthority(store, head); sealed {
 			return task, true, nil
@@ -207,6 +211,9 @@ func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head Reposi
 }
 
 func (store *Store) retiredWorkflowAuthority(cfg config.AppConfig, head RepositoryControllerHead) (SemanticTaskRef, bool, error) {
+	if task, request, err := store.completedRequestTask(head); request || err != nil {
+		return task, true, err
+	}
 	if _, err := store.retiredProjectAuthority(head); err != nil {
 		return SemanticTaskRef{}, true, err
 	}
@@ -215,8 +222,11 @@ func (store *Store) retiredWorkflowAuthority(cfg config.AppConfig, head Reposito
 		return SemanticTaskRef{}, true, err
 	}
 	descendant, err := isPublicationDescendant(cfg.RepoRoot, head.IntegrationTip, authority.Snapshot.HeadOID)
-	if err != nil || !descendant {
-		return SemanticTaskRef{}, true, fmt.Errorf("retired read authority is outside integration history: %w", err)
+	if err != nil {
+		return SemanticTaskRef{}, true, fmt.Errorf("inspect retired read authority history: %w", err)
+	}
+	if !descendant {
+		return SemanticTaskRef{}, true, fmt.Errorf("retired read authority is outside integration history")
 	}
 	return authority.Task, true, nil
 }
@@ -233,7 +243,7 @@ func sealedAcceptedReadAuthority(store *Store, head RepositoryControllerHead) (S
 
 func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string, error) {
 	if head.RootTaskRef == nil {
-		return "", fmt.Errorf("quiescent Runtime requires selected Task authority")
+		return "", s.requestCompletionHasNoSuccessor(head)
 	}
 	cfg := WorkflowTaskConfig(s.config, s.identity, *head.RootTaskRef)
 	cfg.RepoRoot = s.identity.PrimaryRoot
@@ -264,4 +274,22 @@ func quiescentRuntimeReady(runtime *state.StateStore) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+func workflowBootstrapTask(root string, controllerExists bool) (SemanticTaskRef, error) {
+	decision, err := repositoryharness.Evaluate(root)
+	if err != nil {
+		return SemanticTaskRef{}, err
+	}
+	if !decision.Active {
+		return SemanticTaskRef{}, nil
+	}
+	authority, err := ResolveCommittedTaskAuthority(root)
+	if err != nil {
+		if controllerExists {
+			return SemanticTaskRef{}, err
+		}
+		return SemanticTaskRef{}, nil
+	}
+	return authority.Task, nil
 }

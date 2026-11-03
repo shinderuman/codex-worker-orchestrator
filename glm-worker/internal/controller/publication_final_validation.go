@@ -74,6 +74,9 @@ func (s *Store) resolveAdoptedValidations(admission Admission, input CandidateAc
 	if len(probes) != 0 && !input.Policy.RequireInstall {
 		return nil, nil, fmt.Errorf("declared post-install smoke probes require verification deployment policy")
 	}
+	if err := s.validateParentOnlyInheritedValidations(admission, forms, probes); err != nil {
+		return nil, nil, err
+	}
 	return forms, probes, nil
 }
 
@@ -87,15 +90,19 @@ func declaredFormCovered(forms []FinalValidationRequest, declared FinalValidatio
 }
 
 func (s *Store) declaredFinalValidation(admission Admission) (*FinalValidationRequest, error) {
-	return s.taskDeclaredFinalValidation(admission.Attempt.SemanticTaskRef)
+	missingAdmitted := admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly
+	return s.taskDeclaredFinalValidationFor(admission.Attempt.SemanticTaskRef, missingAdmitted)
 }
 
-func (s *Store) taskDeclaredFinalValidation(task SemanticTaskRef) (*FinalValidationRequest, error) {
+func (s *Store) taskDeclaredFinalValidationFor(task SemanticTaskRef, missingObligationAdmitted bool) (*FinalValidationRequest, error) {
 	cfg := WorkflowTaskConfig(s.config, s.identity, task)
 	cfg.RepoRoot = s.identity.PrimaryRoot
 	runtime := state.AttachStateStore(cfg)
 	raw, err := runtime.Read(state.FinalValidationObligationKey)
 	if errors.Is(err, os.ErrNotExist) {
+		if missingObligationAdmitted {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("final validation obligation record is missing: the bound Runtime did not complete a worker round under the current contract")
 	}
 	if err != nil {

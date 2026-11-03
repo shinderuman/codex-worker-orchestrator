@@ -162,7 +162,9 @@ func newCanonicalWorkflowCorpus(t *testing.T) (config.AppConfig, string, string,
 	writeAppTestFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `"+rootTask+"`\n\n## NEXT\n\n- `"+blockerTask+"`\n")
 	writeAppTestFile(t, cfg.RepoRoot, rootTask, "# root\n\n## Contract\n\n606 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\n- `"+blockerTask+"`\n")
 	writeAppTestFile(t, cfg.RepoRoot, blockerTask, "# blocker\n\n## Contract\n\nF11 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+	qualityStarted := time.Now()
 	prepareCompletionQualityCorpus(t, cfg.RepoRoot)
+	logAppFixturePhase(t, "typed/quality-corpus", qualityStarted)
 	policy := commitCorpusWithPublicationRemote(t, cfg.RepoRoot, "Canonical Workflow Test", "canonical@example.invalid", "canonical workflow corpus")
 	return cfg, rootTask, blockerTask, policy
 }
@@ -183,8 +185,8 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	}
 	source := canonicalWorkflowAdmission(t, cfg, store)
 	episode := planCanonicalWorkflowBlocker(t, store, source, blockerTask)
-	suspended := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "suspend", ExpectedGeneration: source.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: episode.Revision})
-	lane := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: suspended.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: episode.Revision})
+	suspended := canonicalCLIExecution(t, binary, cfg, workflow.ControllerExecutionCommand{Action: "suspend", ExpectedGeneration: source.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: episode.Revision})
+	lane := canonicalCLIExecution(t, binary, cfg, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: suspended.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: episode.Revision})
 	blockerCfg := cfg
 	blockerCfg.RepoRoot = lane.Admission.Workspace.Root
 	blockerRunner := runCanonicalWorkflow(t, blockerCfg, ModeNewTask, "F11 request", blockerTask, "f11-result.txt")
@@ -214,9 +216,9 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cleaned := canonicalCLIExecution(t, binary, blockerCfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: published.Head.ControllerGeneration, WorkspaceID: blockedSource.Workspace.ID, SealRef: &candidate.SealRef})
+	cleaned := canonicalCLIExecution(t, binary, blockerCfg, workflow.ControllerExecutionCommand{Action: "cleanup", ExpectedGeneration: published.Head.ControllerGeneration, WorkspaceID: blockedSource.Workspace.ID, SealRef: &candidate.SealRef})
 	assertCanonicalTransitionHandoff(t, cfg, rootState)
-	resumed := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: cleaned.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: published.Head.ActiveEpisodeRevision, SuspensionID: suspended.Suspension.SnapshotID})
+	resumed := canonicalCLIExecution(t, binary, cfg, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: cleaned.Head.ControllerGeneration, EpisodeID: episode.EpisodeID, EpisodeRevision: published.Head.ActiveEpisodeRevision, SuspensionID: suspended.Suspension.SnapshotID})
 	rootCfg := cfg
 	rootCfg.RepoRoot = resumed.Admission.Workspace.Root
 	resumedRunner := runCanonicalWorkflow(t, rootCfg, ModeResume, "", rootTask, "")
@@ -288,7 +290,7 @@ func planCanonicalWorkflowBlocker(t *testing.T, store *controller.Store, source 
 	return disposition.Episode
 }
 
-func canonicalCLIExecution(t *testing.T, binary string, cfg config.AppConfig, input controllerExecutionCommand) controller.ExecutionOperationResult {
+func canonicalCLIExecution(t *testing.T, binary string, cfg config.AppConfig, input workflow.ControllerExecutionCommand) controller.ExecutionOperationResult {
 	t.Helper()
 	return canonicalCLIOperation(t, binary, cfg, "controller-execution", input)
 }

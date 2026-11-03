@@ -10,7 +10,7 @@ import (
 type evidenceGraphWalker struct {
 	store                  *Store
 	refs                   map[string]EvidenceObjectRef
-	expanded               map[string]bool
+	expanded               map[string]AttemptSeal
 	publishedTaskHeads     map[string]EvidenceObjectRef
 	validatedTaskChains    map[string]uint64
 	validatedEpisodeChains map[string]uint64
@@ -24,7 +24,7 @@ func (s *Store) validateEvidenceGraphRoots(
 	walker := evidenceGraphWalker{
 		store:                  s,
 		refs:                   map[string]EvidenceObjectRef{},
-		expanded:               map[string]bool{},
+		expanded:               map[string]AttemptSeal{},
 		validatedTaskChains:    map[string]uint64{},
 		validatedEpisodeChains: map[string]uint64{},
 	}
@@ -408,20 +408,24 @@ func (w *evidenceGraphWalker) walkAttemptSeal(ref EvidenceObjectRef) (AttemptSea
 	if err := w.addRef(ref); err != nil {
 		return AttemptSeal{}, err
 	}
+	key := evidenceRefKey(ref)
+	if seal, ok := w.expanded[key]; ok {
+		return seal, nil
+	}
 	seal, err := w.store.LoadAttemptSeal(ref)
 	if err != nil {
 		return AttemptSeal{}, err
 	}
-	if w.expanded[evidenceRefKey(ref)] {
-		return seal, nil
-	}
-	w.expanded[evidenceRefKey(ref)] = true
 	if err := w.addRef(seal.GitObjectArchive); err != nil {
 		return AttemptSeal{}, err
 	}
 	if err := w.addRefs(seal.EvidenceRefs); err != nil {
 		return AttemptSeal{}, err
 	}
+	if w.expanded == nil {
+		w.expanded = map[string]AttemptSeal{}
+	}
+	w.expanded[key] = seal
 	return seal, nil
 }
 

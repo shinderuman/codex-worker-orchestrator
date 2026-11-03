@@ -2,10 +2,12 @@ package app
 
 import (
 	"encoding/json"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestExternalAdvancementInterruptedRecoveryHandoff(t *testing.T) {
@@ -22,7 +24,7 @@ func TestExternalAdvancementInterruptedRecoveryHandoff(t *testing.T) {
 	runControllerActivationGit(t, cfg.RepoRoot, "add", published.Head.RootTaskRef.TaskPath)
 	runControllerActivationGit(t, cfg.RepoRoot, "commit", "-qm", "successor amendment")
 	hooks := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0755); err != nil {
+	if err := execfile.Write(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	runControllerActivationGit(t, cfg.RepoRoot, "config", "core.hooksPath", hooks)

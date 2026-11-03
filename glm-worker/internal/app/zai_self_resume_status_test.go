@@ -9,16 +9,13 @@ import (
 
 func TestStatusRateLimitResumeMode(t *testing.T) {
 	t.Parallel()
-	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	replaceZaiSelfResumeNow(t, func() time.Time { return now })
-
 	cases := []struct {
 		name  string
 		reset time.Time
 		want  string
 	}{
-		{name: "initial grace", reset: now.Add(time.Minute), want: zaiSelfResumeModeInitialGrace},
-		{name: "post reset retry", reset: now.Add(-10 * time.Second), want: zaiSelfResumeModePostResetRetry},
+		{name: "initial grace", reset: time.Now().UTC().Add(time.Hour), want: zaiSelfResumeModeInitialGrace},
+		{name: "post reset retry", reset: time.Now().UTC().Add(-time.Hour), want: zaiSelfResumeModePostResetRetry},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -38,7 +35,7 @@ func TestStatusRateLimitResumeMode(t *testing.T) {
 				Prompt:         "p",
 				Request:        "req",
 				StopKind:       state.ResumeStopRateLimited,
-				ResetAtRFC3339: c.reset.Format(time.RFC3339),
+				ResetAtRFC3339: c.reset.Truncate(time.Second).Format(time.RFC3339),
 			}
 			if err := st.EnterStop(checkpoint); err != nil {
 				t.Fatal(err)

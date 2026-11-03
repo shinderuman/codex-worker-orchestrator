@@ -70,8 +70,18 @@ func (w *Workflow) resolveControllerExecutionTask() (string, bool, error) {
 	if err != nil {
 		return "", true, fmt.Errorf("read controller runtime binding: %w", err)
 	}
-	if binding.TaskPath != task.TaskPath || binding.TaskContractDigest != task.ContractDigest {
+	if binding.TaskPath != task.TaskPath || binding.RequestID != task.RequestID || binding.TaskContractDigest != task.ContractDigest {
 		return "", true, fmt.Errorf("controller runtime binding differs from canonical controller execution task")
+	}
+	if task.RequestID != "" {
+		store, err := controller.Open(w.config)
+		if err != nil {
+			return "", true, err
+		}
+		if err := store.ValidateRequestTask(task, w.state.ReadOr("last-request", "")); err != nil {
+			return "", true, err
+		}
+		return "", true, nil
 	}
 	if !activeTaskFileExists(w.config.RepoRoot, task.TaskPath) {
 		return "", true, fmt.Errorf("controller execution task file is missing: %s", task.TaskPath)

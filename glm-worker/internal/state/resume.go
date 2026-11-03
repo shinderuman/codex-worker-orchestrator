@@ -51,6 +51,7 @@ type ResumeCheckpoint struct {
 	ResetAtRFC3339  string         `json:"reset_at_rfc3339,omitempty"`
 
 	ResultCorrection bool `json:"result_correction,omitempty"`
+	SummaryRecovered bool `json:"summary_recovered,omitempty"`
 
 	ReportOnly bool `json:"report_only"`
 
@@ -226,6 +227,7 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 	checkpoint.GuardRefChanges = nil
 	checkpoint.GuardRefChangesTruncated = false
 	checkpoint.QualityGateFailure = ""
+	checkpoint.SummaryRecovered = false
 	if clearCompletedResult {
 		checkpoint.CompletedResult = nil
 	}
@@ -234,19 +236,16 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 }
 
 func (checkpoint ResumeCheckpoint) validateStopState() error {
+	if checkpoint.SummaryRecovered {
+		if err := checkpoint.validateSummaryRecoveryStop(); err != nil {
+			return err
+		}
+	}
 	if !checkpoint.StopKind.Valid() {
 		return fmt.Errorf("unknown resume stop kind: %q", checkpoint.StopKind)
 	}
-	if checkpoint.QualitySurfaceApprovalActivated && !checkpoint.QualitySurfaceApprovalPending {
-		return fmt.Errorf("activated quality-surface approval checkpoint must retain the pending approval fact")
-	}
-	if checkpoint.QualitySurfaceApprovalPending && checkpoint.IsStopped() {
-		if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
-			return fmt.Errorf("quality-surface approval checkpoint cannot carry non-transient resume stop kind %q", checkpoint.StopKind)
-		}
-		if checkpoint.CompletedResult == nil {
-			return fmt.Errorf("stopped quality-surface approval checkpoint requires the completed worker result")
-		}
+	if err := checkpoint.validateQualitySurfaceApprovalStop(); err != nil {
+		return err
 	}
 	if err := checkpoint.validateRateLimitStopPayload(); err != nil {
 		return err
@@ -258,6 +257,28 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 		return err
 	}
 	return checkpoint.validateQualityGateStopPayload()
+}
+
+func (checkpoint ResumeCheckpoint) validateQualitySurfaceApprovalStop() error {
+	if checkpoint.QualitySurfaceApprovalActivated && !checkpoint.QualitySurfaceApprovalPending {
+		return fmt.Errorf("activated quality-surface approval checkpoint must retain the pending approval fact")
+	}
+	if checkpoint.QualitySurfaceApprovalPending && checkpoint.IsStopped() {
+		if !checkpoint.StopKind.CanInterruptQualitySurfaceApproval() {
+			return fmt.Errorf("quality-surface approval checkpoint cannot carry non-transient resume stop kind %q", checkpoint.StopKind)
+		}
+		if checkpoint.CompletedResult == nil {
+			return fmt.Errorf("stopped quality-surface approval checkpoint requires the completed worker result")
+		}
+	}
+	return nil
+}
+
+func (checkpoint ResumeCheckpoint) validateSummaryRecoveryStop() error {
+	if checkpoint.StopKind != ResumeStopInterrupted || checkpoint.Stage != ResumeStageWorker || checkpoint.Role != WorkerRole || checkpoint.ResultCorrection || checkpoint.CompletedResult == nil || checkpoint.CompletedResult.Status != packet.StatusImplemented {
+		return fmt.Errorf("summary recovery requires an interrupted completed worker report")
+	}
+	return packet.ValidateWorkerResult(*checkpoint.CompletedResult)
 }
 
 func (checkpoint ResumeCheckpoint) validateRateLimitStopPayload() error {
@@ -302,7 +323,7 @@ func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
 	}
 	guardEvidence := checkpoint.GuardFailure != "" || checkpoint.GuardRefBeforeDigest != "" ||
 		checkpoint.GuardRefAfterDigest != "" || len(checkpoint.GuardRefChanges) != 0 || checkpoint.GuardRefChangesTruncated
-	guardResult := checkpoint.CompletedResult != nil && !checkpoint.QualitySurfaceApprovalPending && checkpoint.StopKind != ResumeStopQualityGate
+	guardResult := checkpoint.CompletedResult != nil && !checkpoint.QualitySurfaceApprovalPending && checkpoint.StopKind != ResumeStopQualityGate && !checkpoint.SummaryRecovered
 	if !guardEvidence && !guardResult {
 		return nil
 	}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -17,7 +18,7 @@ func TestControllerTransportReturnsTerminalAndWaitSurvivesTaskHandover(t *testin
 	bin := t.TempDir()
 	handoff := `{"projection":"recovery","consistent":true,"controller":{"canonical_active":true,"head":{"repository_identity":"repo"}},"task_id":null,"task_status":null,"required_action":"start","allowed_actions":["start"]}`
 	stub := "#!/bin/sh\ncase \"$1\" in\n --authority) cat;;\n --handoff) printf '%s\\n' '" + handoff + "' ;;\n *) exit 9;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
+	if err := execfile.Write(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
