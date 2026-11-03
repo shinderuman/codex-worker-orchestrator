@@ -56,6 +56,12 @@ jobs:
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - name: Diagnose app shard shfmt output
+        if: ${{ matrix.mode == 'quality' && github.ref == 'refs/heads/web-gpt/app-test-fixture-runtime-cost' }}
+        run: |
+          namespace=$(awk -F': ' '$1 == "namespace" { print $2 }' quality-tools.yml)
+          version=$(awk -F': ' '$1 == "shfmt" { print $2 }' quality-tools.yml)
+          "$QUALITY_TOOLS_BIN_DIR/$namespace-shfmt-$version" -i=0 -d tests/ci_app_shard.sh || true
       - name: Quality tool ownership smoke
         if: ${{ matrix.mode == 'quality' }}
         run: sh ./tests/install_quality_tools_smoke.sh
