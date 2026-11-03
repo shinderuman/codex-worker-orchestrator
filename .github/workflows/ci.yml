@@ -94,6 +94,14 @@ jobs:
         if: ${{ matrix.mode == 'app' }}
         working-directory: glm-worker
         run: /usr/bin/time -p go test -count=1 ./internal/app
+      - name: Profile app completion fixture costs (normal)
+        if: ${{ matrix.mode == 'app' && github.ref == 'refs/heads/web-gpt/app-test-fixture-runtime-cost' }}
+        working-directory: glm-worker
+        run: /usr/bin/time -p go test -count=1 -v -run '^(TestTypedParentCompletionWorkflowThroughProductionBoundary|TestParentOnlyTaskCompletionThroughProductionBoundary|TestParentOnlyReentryThroughProductionBoundary)$' ./internal/app
+      - name: Profile app completion fixture costs (race)
+        if: ${{ matrix.mode == 'app' && github.ref == 'refs/heads/web-gpt/app-test-fixture-runtime-cost' }}
+        working-directory: glm-worker
+        run: /usr/bin/time -p go test -race -count=1 -v -run '^(TestTypedParentCompletionWorkflowThroughProductionBoundary|TestParentOnlyTaskCompletionThroughProductionBoundary|TestParentOnlyReentryThroughProductionBoundary)$' ./internal/app
       - name: Go tests for internal/controller
         if: ${{ matrix.mode == 'controller' }}
         working-directory: glm-worker
