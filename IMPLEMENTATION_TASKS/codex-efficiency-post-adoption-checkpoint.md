@@ -1,4 +1,4 @@
-# Task: Web GPT候補取り込み途中のCodex効率中間評価
+# Task: 巻き取り後のCodex効率中間評価
 
 ## Original instruction
 
@@ -24,9 +24,9 @@ mode: parent-only
 ## Contract
 
 - 親Codexだけで評価し、追加GLM・他モデル呼出を行わない。
-- `review-evidence/codex-efficiency-checkpoint-2026-11-03.md`を前回評価として、差分と新証拠へ限定する。
-- 比較条件不一致・欠損はunknownに保ち、機械処理の短縮をCodex削減率へ外挿しない。
-- 全Taskの優先順位と重複を確認し、具体的な改善を計画化する。次回中間評価を最大5件後へ配置する。
+- `review-evidence/codex-efficiency-webgpt-adoption-2026-11-03.md`を前回評価として、差分と新証拠へ限定する。
+- 比較条件不一致・欠損はunknownに保ち、machine処理時間をCodex削減率へ外挿しない。
+- appの責務改善、未Task化Finding、Plan priorityを評価し、次回checkpointを最大5件後へ配置する。
 
 ## Must not
 

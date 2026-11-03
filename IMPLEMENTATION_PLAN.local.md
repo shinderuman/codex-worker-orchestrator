@@ -8,14 +8,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md)
+- [`IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md`](IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md`](IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md)
 - [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
+- [`IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md`](IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
+- [`IMPLEMENTATION_TASKS/codex-efficiency-post-adoption-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-post-adoption-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
