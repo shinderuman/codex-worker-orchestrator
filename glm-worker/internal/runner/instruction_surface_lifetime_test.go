@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -15,7 +16,11 @@ func TestInstructionSurfaceBaselineSurvivesFreshTaskAndRebindsByTaskID(t *testin
 
 	root := t.TempDir()
 	writeInstructionGuardFile(t, root, "AGENTS.local.md", "task-one")
-	r := newInstructionGuardRunner(t, root, "task-one")
+	st := newTestStateStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	r := NewClaudeRunner(config.AppConfig{RepoRoot: root}, st)
 	if _, err := r.prepareInstructionSurfaceGuard(); err != nil {
 		t.Fatal(err)
 	}
