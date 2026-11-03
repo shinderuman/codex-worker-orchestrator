@@ -13,6 +13,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## NEXT（優先順）
 
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
+- [`IMPLEMENTATION_TASKS/darwin-tagged-acceptance-before-publication.md`](IMPLEMENTATION_TASKS/darwin-tagged-acceptance-before-publication.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
