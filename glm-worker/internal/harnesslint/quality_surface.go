@@ -455,18 +455,9 @@ func qualityWiringMissingTokenMessage(token string, evidence qualityWiringGoEvid
 
 func qualityWiringPartialBindings(set *token.FileSet, file *ast.File) (types.Info, error) {
 	bindings := types.Info{Defs: make(map[*ast.Ident]types.Object), Uses: make(map[*ast.Ident]types.Object)}
-	configuration := types.Config{Importer: qualityWiringNameImporter{}, Error: func(error) {}}
+	configuration := types.Config{Error: func(error) {}}
 	_, err := configuration.Check(file.Name.Name, set, []*ast.File{file}, &bindings)
 	return bindings, err
-}
-
-type qualityWiringNameImporter struct{}
-
-func (qualityWiringNameImporter) Import(importPath string) (*types.Package, error) {
-	name := importPath[strings.LastIndexByte(importPath, '/')+1:]
-	pkg := types.NewPackage(importPath, name)
-	pkg.MarkComplete()
-	return pkg, nil
 }
 
 func qualityWiringBodyCallsHarnessRun(function *ast.FuncDecl, harnessImport string, bindings *types.Info) bool {
