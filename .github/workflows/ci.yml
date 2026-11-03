@@ -77,66 +77,13 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
-          packages="$(go list ./... | grep -Ev '/internal/(app|controller)
-      - name: Go tests for internal/app
-        if: ${{ matrix.mode == 'app' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -count=1 ./internal/app
-      - name: Go tests for internal/controller
-        if: ${{ matrix.mode == 'controller' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -count=1 ./internal/controller
-
-  lint:
-    if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
-    needs:
-      - basic
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require basic validation
-        env:
-          BASIC_RESULT: ${{ needs.basic.result }}
-        run: test "$BASIC_RESULT" = success
-
-  install-smoke:
-    if: ${{ (github.event_name == 'push' && github.event.created == false && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
-    needs:
-      - lint
-    uses: ./.github/workflows/install-smoke.yml
- | sort)"
+          packages="$(go list ./... | grep -Ev '/internal/(app|controller)$' | sort)"
           count="$(printf '%s\n' "$packages" | wc -l)"
-          if (( count < 2 )) || ! grep -qE '/internal/harnesslint
-      - name: Go tests for internal/app
-        if: ${{ matrix.mode == 'app' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -count=1 ./internal/app
-      - name: Go tests for internal/controller
-        if: ${{ matrix.mode == 'controller' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -count=1 ./internal/controller
-
-  lint:
-    if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
-    needs:
-      - basic
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require basic validation
-        env:
-          BASIC_RESULT: ${{ needs.basic.result }}
-        run: test "$BASIC_RESULT" = success
-
-  install-smoke:
-    if: ${{ (github.event_name == 'push' && github.event.created == false && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
-    needs:
-      - lint
-    uses: ./.github/workflows/install-smoke.yml
- <<< "$packages"; then
+          if (( count < 2 )) || ! grep -qE '/internal/harnesslint$' <<< "$packages"; then
             echo 'Expected internal/harnesslint and at least two other packages' >&2
             exit 1
           fi
-          # The existing CI run measured harnesslint at ~201s and workflow at ~102s.
-          # Keep every package in exactly one shard, but place those two long tests apart.
+          # Move harnesslint (~201s) away from workflow (~102s), preserving all packages.
           cut=$(( count / 2 ))
           printf 'Other packages: %s; shard %s; non-harnesslint cut at %s\n' "$count" "$SHARD" "$cut"
           printf '%s\n' "$packages" | awk -v shard="$SHARD" -v cut="$cut" '
