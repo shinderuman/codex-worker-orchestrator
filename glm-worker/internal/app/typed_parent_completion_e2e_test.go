@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -48,13 +49,48 @@ func typedCompletionScenarios() []struct {
 	}
 }
 
+func appFixtureCostTarget(t *testing.T) bool {
+	for _, name := range []string{
+		"TestTypedParentCompletionWorkflowThroughProductionBoundary",
+		"TestParentOnlyTaskCompletionThroughProductionBoundary",
+		"TestParentOnlyReentryThroughProductionBoundary",
+	} {
+		if t.Name() == name || strings.HasPrefix(t.Name(), name+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func logAppFixturePhase(t *testing.T, phase string, started time.Time) {
+	t.Helper()
+	if appFixtureCostTarget(t) {
+		t.Logf("app-fixture-cost phase=%s elapsed=%s", phase, time.Since(started))
+	}
+}
+
+func runMeasuredCompletionFixtureGit(t *testing.T, repo string, args ...string) {
+	t.Helper()
+	started := time.Now()
+	runControllerActivationGit(t, repo, args...)
+	if appFixtureCostTarget(t) {
+		t.Logf("app-fixture-cost kind=fixture-git args=%q elapsed=%s", args, time.Since(started))
+	}
+}
+
 func TestTypedParentCompletionWorkflowThroughProductionBoundary(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
 	for _, scenario := range typedCompletionScenarios() {
 		t.Run(scenario.name, func(t *testing.T) {
+			started := time.Now()
 			cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange)
+			logAppFixturePhase(t, "typed/fixture", started)
+			started = time.Now()
 			driveTypedCompletionToStart(t, cfg, goShim, scenario.sourceChange, scenario.interrupt)
+			logAppFixturePhase(t, "typed/production-cli", started)
+			started = time.Now()
 			assertTypedCompletionTerminalState(t, cfg, runtime)
+			logAppFixturePhase(t, "typed/terminal-assertions", started)
 		})
 	}
 }
@@ -134,7 +170,11 @@ func runTypedParentActionCLI(t *testing.T, cfg config.AppConfig, args ...string)
 	command.Env = parentActionChildEnv(t, cfg, filepath.Dir(worker))
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &stderr
+	started := time.Now()
 	code := childExitCode(command.Run())
+	if appFixtureCostTarget(t) {
+		t.Logf("app-fixture-cost kind=cli args=%q elapsed=%s exit=%d", args, time.Since(started), code)
+	}
 	return code, stdout.String(), stderr.String()
 }
 
@@ -224,9 +264,9 @@ func interruptTypedPublication(t *testing.T, cfg config.AppConfig, parameters ma
 		t.Fatal(err)
 	}
 	primary := store.Identity().PrimaryRoot
-	runControllerActivationGit(t, primary, "config", "core.hooksPath", hooks)
+	runMeasuredCompletionFixtureGit(t, primary, "config", "core.hooksPath", hooks)
 	exit, _, diagnostics := runTypedPublicationCLI(t, cfg, parameters, typedSemanticSlotValues(t, parameters, requireInstall))
-	runControllerActivationGit(t, primary, "config", "--unset", "core.hooksPath")
+	runMeasuredCompletionFixtureGit(t, primary, "config", "--unset", "core.hooksPath")
 	if exit == 0 {
 		t.Fatalf("injected publication fault succeeded: %s", diagnostics)
 	}
@@ -473,9 +513,11 @@ func (r *typedCompletionRunner) Run(role state.SessionRole, phase, model string,
 func typedCompletionWorkflowFixture(t *testing.T, binary string, sourceChange bool) (config.AppConfig, *state.StateStore, string) {
 	t.Helper()
 	cfg, runtime, shim, _, _ := typedCompletionReviewFixture(t, binary, sourceChange)
+	started := time.Now()
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
+	logAppFixturePhase(t, "typed/parent-accept", started)
 	if runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("parent accept left Runtime at %s", runtime.TaskStatus())
 	}
@@ -484,7 +526,9 @@ func typedCompletionWorkflowFixture(t *testing.T, binary string, sourceChange bo
 
 func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool) (config.AppConfig, *state.StateStore, string, controller.PublicationPolicy, *typedCompletionRunner) {
 	t.Helper()
+	started := time.Now()
 	cfg, task, _, policy := newCanonicalWorkflowCorpus(t)
+	logAppFixturePhase(t, "typed/corpus-git-remote", started)
 	cfg.TelemetryContent = true
 	body, err := os.ReadFile(filepath.Join(cfg.RepoRoot, task))
 	if err != nil {
@@ -529,9 +573,11 @@ func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool
 		path = goShim + string(os.PathListSeparator) + path
 	}
 	t.Setenv("PATH", path)
-	runControllerActivationGit(t, cfg.RepoRoot, "add", ".")
-	runControllerActivationGit(t, cfg.RepoRoot, "commit", "-qm", "typed completion corpus")
-	runControllerActivationGit(t, cfg.RepoRoot, "push", "-q", "-u", "origin", "HEAD:refs/heads/main")
+	started = time.Now()
+	runMeasuredCompletionFixtureGit(t, cfg.RepoRoot, "add", ".")
+	runMeasuredCompletionFixtureGit(t, cfg.RepoRoot, "commit", "-qm", "typed completion corpus")
+	runMeasuredCompletionFixtureGit(t, cfg.RepoRoot, "push", "-q", "-u", "origin", "HEAD:refs/heads/main")
+	logAppFixturePhase(t, "typed/fixture-git-publish", started)
 
 	scripted := &typedCompletionRunner{canonicalWorkflowRunner: canonicalWorkflowRunner{complete: true, t: t, task: task, path: resultPath}, sourceChange: sourceChange}
 	factory := func(actual config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
@@ -539,9 +585,11 @@ func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool
 		return scripted
 	}
 	var output bytes.Buffer
+	started = time.Now()
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "typed completion request"}, cfg, factory, &output, io.Discard); err != nil {
 		t.Fatalf("worker round: %v %s", err, output.String())
 	}
+	logAppFixturePhase(t, "typed/worker-review", started)
 	cfg = scripted.cfg
 	runtime := state.AttachStateStore(cfg)
 	if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -562,9 +610,11 @@ func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool
 	}
 	manifest := writeParentReviewEvidenceManifest(t, request)
 	var proof bytes.Buffer
+	started = time.Now()
 	if err := printParentEvidence(Command{EvidenceManifest: manifest}, cfg, runtime, &proof); err != nil {
 		t.Fatal(err)
 	}
+	logAppFixturePhase(t, "typed/evidence-snapshot", started)
 	return cfg, runtime, goShim, policy, scripted
 }
 

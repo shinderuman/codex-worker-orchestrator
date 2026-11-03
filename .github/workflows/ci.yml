@@ -26,8 +26,6 @@ jobs:
         include:
           - name: quality
             mode: quality
-          - name: app
-            mode: app
           - name: controller
             mode: controller
           - name: test-1
@@ -79,34 +77,77 @@ jobs:
           set -euo pipefail
           packages="$(go list ./... | grep -Ev '/internal/(app|controller)$' | sort)"
           count="$(printf '%s\n' "$packages" | wc -l)"
-          if (( count < 2 )); then
-            echo 'Expected at least two other packages' >&2
+          if (( count < 2 )) || ! grep -qE '/internal/harnesslint$' <<< "$packages" || ! grep -qE '/internal/workflow$' <<< "$packages"; then
+            echo 'Expected internal/harnesslint and internal/workflow plus other packages' >&2
             exit 1
           fi
-          cut=$(( (count + 1) / 2 ))
-          printf 'Other packages: %s; half %s; cut at %s\n' "$count" "$SHARD" "$cut"
+          cut=$(( (count - 1) / 2 ))
+          printf 'Other packages: %s; shard %s; other-package cut at %s\n' "$count" "$SHARD" "$cut"
           printf '%s\n' "$packages" | awk -v shard="$SHARD" -v cut="$cut" '
-            (shard == 0 && NR <= cut) || (shard == 1 && NR > cut) { print }
+            /\/internal\/harnesslint$/ { if (shard == 0) print; next }
+            /\/internal\/workflow$/ { if (shard == 1) print; next }
+            { other++; if ((shard == 0 && other <= cut) || (shard == 1 && other > cut)) print }
           ' | tee /dev/stderr | xargs -r go test
-      - name: Go tests for internal/app
-        if: ${{ matrix.mode == 'app' }}
-        working-directory: glm-worker
-        run: /usr/bin/time -p go test -count=1 ./internal/app
       - name: Go tests for internal/controller
         if: ${{ matrix.mode == 'controller' }}
         working-directory: glm-worker
         run: /usr/bin/time -p go test -count=1 ./internal/controller
 
+  app-shards:
+    if: ${{ (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
+    name: app-test (${{ matrix.mode }}-${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        mode: [normal, race]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        exclude:
+          - mode: normal
+            shard: 6
+          - mode: normal
+            shard: 7
+          - mode: normal
+            shard: 8
+          - mode: normal
+            shard: 9
+          - mode: normal
+            shard: 10
+          - mode: normal
+            shard: 11
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-quality-go
+      - name: Go tests for internal/app (partitioned)
+        working-directory: glm-worker
+        run: sh ../tests/ci_app_shard.sh "${{ matrix.mode }}" "${{ matrix.shard }}"
+
+  app:
+    if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
+    name: basic (app)
+    needs:
+      - app-shards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all app test partitions
+        env:
+          APP_SHARDS_RESULT: ${{ needs.app-shards.result }}
+        run: test "$APP_SHARDS_RESULT" = success
+
   lint:
     if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
     needs:
       - basic
+      - app
     runs-on: ubuntu-latest
     steps:
       - name: Require basic validation
         env:
           BASIC_RESULT: ${{ needs.basic.result }}
-        run: test "$BASIC_RESULT" = success
+          APP_RESULT: ${{ needs.app.result }}
+        run: |
+          test "$BASIC_RESULT" = success
+          test "$APP_RESULT" = success
 
   install-smoke:
     if: ${{ (github.event_name == 'push' && github.event.created == false && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
