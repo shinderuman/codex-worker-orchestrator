@@ -284,7 +284,9 @@ func parentOnlyCompletionFixture(t *testing.T, sourceChange bool, failFlags ...s
 	writeAppTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n\n## NEXT\n\n- `"+tasks.parent+"`\n\n- `"+tasks.successor+"`\n")
 	writeAppTestFile(t, repo, tasks.parent, parentOnlyAppTaskContent(controller.ExecutionAuthorityParentOnly))
 	writeAppTestFile(t, repo, tasks.successor, "# successor\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
+	started = time.Now()
 	prepareCompletionQualityCorpus(t, repo)
+	logAppFixturePhase(t, "parent-only/quality-corpus", started)
 	started = time.Now()
 	policy := commitCorpusWithPublicationRemote(t, repo, "parent-only completion test", "parent-only@example.invalid", "parent-only completion corpus")
 	logAppFixturePhase(t, "parent-only/fixture-git-remote", started)
@@ -488,9 +490,9 @@ func interruptParentOnlyPublication(t *testing.T, cfg config.AppConfig, paramete
 		t.Fatal(err)
 	}
 	primary := store.Identity().PrimaryRoot
-	runControllerActivationGit(t, primary, "config", "core.hooksPath", hooks)
+	runMeasuredCompletionFixtureGit(t, primary, "config", "core.hooksPath", hooks)
 	exit, output, diagnostics := runTypedPublicationCLI(t, cfg, parameters, parentOnlySemanticSlots(t, parameters, sourceChange))
-	runControllerActivationGit(t, primary, "config", "--unset", "core.hooksPath")
+	runMeasuredCompletionFixtureGit(t, primary, "config", "--unset", "core.hooksPath")
 	if exit == 0 {
 		t.Fatalf("injected parent-only publication fault succeeded: out=<%s> err=<%s>", output, diagnostics)
 	}

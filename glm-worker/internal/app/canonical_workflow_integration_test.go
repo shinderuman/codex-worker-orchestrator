@@ -162,7 +162,9 @@ func newCanonicalWorkflowCorpus(t *testing.T) (config.AppConfig, string, string,
 	writeAppTestFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `"+rootTask+"`\n\n## NEXT\n\n- `"+blockerTask+"`\n")
 	writeAppTestFile(t, cfg.RepoRoot, rootTask, "# root\n\n## Contract\n\n606 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\n- `"+blockerTask+"`\n")
 	writeAppTestFile(t, cfg.RepoRoot, blockerTask, "# blocker\n\n## Contract\n\nF11 work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+	qualityStarted := time.Now()
 	prepareCompletionQualityCorpus(t, cfg.RepoRoot)
+	logAppFixturePhase(t, "typed/quality-corpus", qualityStarted)
 	policy := commitCorpusWithPublicationRemote(t, cfg.RepoRoot, "Canonical Workflow Test", "canonical@example.invalid", "canonical workflow corpus")
 	return cfg, rootTask, blockerTask, policy
 }

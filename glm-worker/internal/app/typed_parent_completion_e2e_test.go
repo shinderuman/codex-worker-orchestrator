@@ -49,9 +49,33 @@ func typedCompletionScenarios() []struct {
 	}
 }
 
+func appFixtureCostTarget(t *testing.T) bool {
+	for _, name := range []string{
+		"TestTypedParentCompletionWorkflowThroughProductionBoundary",
+		"TestParentOnlyTaskCompletionThroughProductionBoundary",
+		"TestParentOnlyReentryThroughProductionBoundary",
+	} {
+		if t.Name() == name || strings.HasPrefix(t.Name(), name+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func logAppFixturePhase(t *testing.T, phase string, started time.Time) {
 	t.Helper()
-	t.Logf("app-fixture-cost phase=%s elapsed=%s", phase, time.Since(started))
+	if appFixtureCostTarget(t) {
+		t.Logf("app-fixture-cost phase=%s elapsed=%s", phase, time.Since(started))
+	}
+}
+
+func runMeasuredCompletionFixtureGit(t *testing.T, repo string, args ...string) {
+	t.Helper()
+	started := time.Now()
+	runControllerActivationGit(t, repo, args...)
+	if appFixtureCostTarget(t) {
+		t.Logf("app-fixture-cost kind=fixture-git args=%q elapsed=%s", args, time.Since(started))
+	}
 }
 
 func TestTypedParentCompletionWorkflowThroughProductionBoundary(t *testing.T) {
@@ -148,7 +172,9 @@ func runTypedParentActionCLI(t *testing.T, cfg config.AppConfig, args ...string)
 	command.Stdout, command.Stderr = &stdout, &stderr
 	started := time.Now()
 	code := childExitCode(command.Run())
-	t.Logf("app-fixture-cost kind=cli args=%q elapsed=%s exit=%d", args, time.Since(started), code)
+	if appFixtureCostTarget(t) {
+		t.Logf("app-fixture-cost kind=cli args=%q elapsed=%s exit=%d", args, time.Since(started), code)
+	}
 	return code, stdout.String(), stderr.String()
 }
 
@@ -238,9 +264,9 @@ func interruptTypedPublication(t *testing.T, cfg config.AppConfig, parameters ma
 		t.Fatal(err)
 	}
 	primary := store.Identity().PrimaryRoot
-	runControllerActivationGit(t, primary, "config", "core.hooksPath", hooks)
+	runMeasuredCompletionFixtureGit(t, primary, "config", "core.hooksPath", hooks)
 	exit, _, diagnostics := runTypedPublicationCLI(t, cfg, parameters, typedSemanticSlotValues(t, parameters, requireInstall))
-	runControllerActivationGit(t, primary, "config", "--unset", "core.hooksPath")
+	runMeasuredCompletionFixtureGit(t, primary, "config", "--unset", "core.hooksPath")
 	if exit == 0 {
 		t.Fatalf("injected publication fault succeeded: %s", diagnostics)
 	}
@@ -548,9 +574,9 @@ func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool
 	}
 	t.Setenv("PATH", path)
 	started = time.Now()
-	runControllerActivationGit(t, cfg.RepoRoot, "add", ".")
-	runControllerActivationGit(t, cfg.RepoRoot, "commit", "-qm", "typed completion corpus")
-	runControllerActivationGit(t, cfg.RepoRoot, "push", "-q", "-u", "origin", "HEAD:refs/heads/main")
+	runMeasuredCompletionFixtureGit(t, cfg.RepoRoot, "add", ".")
+	runMeasuredCompletionFixtureGit(t, cfg.RepoRoot, "commit", "-qm", "typed completion corpus")
+	runMeasuredCompletionFixtureGit(t, cfg.RepoRoot, "push", "-q", "-u", "origin", "HEAD:refs/heads/main")
 	logAppFixturePhase(t, "typed/fixture-git-publish", started)
 
 	scripted := &typedCompletionRunner{canonicalWorkflowRunner: canonicalWorkflowRunner{complete: true, t: t, task: task, path: resultPath}, sourceChange: sourceChange}

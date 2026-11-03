@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -72,9 +71,7 @@ func TestRunEntryControllerActivationRequiresExplicitMachineAction(t *testing.T)
 func runControllerActivationGit(t *testing.T, repo string, args ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	started := time.Now()
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
-	t.Logf("app-fixture-cost kind=fixture-git args=%q elapsed=%s", args, time.Since(started))
 }
