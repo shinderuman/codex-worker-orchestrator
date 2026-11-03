@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md`](IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md)
+- [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
 - [`IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md`](IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
