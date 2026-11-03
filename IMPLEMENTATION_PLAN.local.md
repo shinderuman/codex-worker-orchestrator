@@ -12,6 +12,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- [`IMPLEMENTATION_TASKS/install-smoke-fixture-source-fidelity.md`](IMPLEMENTATION_TASKS/install-smoke-fixture-source-fidelity.md)
 - [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
