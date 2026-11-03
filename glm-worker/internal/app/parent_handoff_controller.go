@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -151,7 +152,19 @@ func applyLiveAdvancementHandoff(cfg config.AppConfig, output *parentHandoffOutp
 		return false
 	}
 	operation, err := store.ProjectParentCompletion()
-	if err != nil || operation.Operation != controller.PublicationOperationAdoptMutable || operation.Command == nil {
+	if err != nil {
+		var refusal *controller.ProjectedAdvancementRefusal
+		if !errors.As(err, &refusal) {
+			return false
+		}
+		message := refusal.Error()
+		if output.Inconsistency != nil {
+			message = *output.Inconsistency + "; " + message
+		}
+		output.Inconsistency = &message
+		return true
+	}
+	if operation.Operation != controller.PublicationOperationAdoptMutable || operation.Command == nil {
 		return false
 	}
 	command, err := json.Marshal(operation.Command)

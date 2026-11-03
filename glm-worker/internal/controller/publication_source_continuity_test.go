@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,12 +151,26 @@ func TestAdmissionSourceAdvancementProjectsAdoptMutableBeforeAcceptance(t *testi
 
 func TestPulledAdvancementAttributionRefusesUnprovenMutations(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"overlapping-uncommitted", "remote-ahead", "divergent"} {
+	causes := map[string]string{
+		"overlapping-uncommitted": "overlaps uncommitted execution path",
+		"remote-ahead":            "does not match the configured remote tip",
+		"divergent":               "not a fast-forward of the recorded execution base",
+		"in-flight-lease":         "requires quiescent execution",
+		"stale-base":              "requires the recorded execution base",
+	}
+	for _, mode := range []string{"overlapping-uncommitted", "remote-ahead", "divergent", "in-flight-lease", "stale-base"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			f, policy := newPublicationTestFixture(t)
 			bindPublicationUpstream(t, f.store, policy)
 			source := publicationTestEdit(t, f, "result.txt", "reviewed implementation\n")
+			if mode == "in-flight-lease" {
+				bound, err := f.store.BindModelCall(source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				source = bound
+			}
 			seedAwaitingCompletionRuntime(t, f.store, source, true)
 			root := f.store.identity.PrimaryRoot
 			switch mode {
@@ -167,6 +182,8 @@ func TestPulledAdvancementAttributionRefusesUnprovenMutations(t *testing.T) {
 			case "remote-ahead":
 				pullRetiredExternalSourceChange(t, f, policy, "IMPLEMENTATION_HISTORY.md", "cross-lane parent metadata record\n")
 				advancePublicationTestRemote(t, f, policy, "unpulled-external.txt", "advancement beyond the pulled primary\n")
+			case "in-flight-lease", "stale-base":
+				pullRetiredExternalSourceChange(t, f, policy, "IMPLEMENTATION_HISTORY.md", "cross-lane parent metadata record\n")
 			default:
 				if err := os.WriteFile(filepath.Join(root, "divergent.txt"), []byte("divergence\n"), 0o644); err != nil {
 					t.Fatal(err)
@@ -174,13 +191,41 @@ func TestPulledAdvancementAttributionRefusesUnprovenMutations(t *testing.T) {
 				runControllerGit(t, root, "add", "divergent.txt")
 				runControllerGit(t, root, "commit", "--amend", "-qm", "divergent history rewrite")
 			}
+			if mode == "stale-base" {
+				lease, err := f.store.loadLease(source.Head.LiveLeaseID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lease.ExpectedBaseOID = controllerGitOutput(t, root, "rev-parse", source.Head.IntegrationTip+"^")
+				if err := f.store.writeLease(lease); err != nil {
+					t.Fatal(err)
+				}
+			}
 			before, err := f.store.LoadHead()
 			if err != nil {
 				t.Fatal(err)
 			}
 			remoteBefore := observeTestRemote(t, root, policy)
-			if _, err := f.store.AdoptMutableExternalAdvancement(source, policy); err == nil {
-				t.Fatal("unproven primary mutation was adopted as an external pull")
+
+			_, admissionErr := f.store.LiveMutableAdvancementAdmission(policy)
+			if admissionErr == nil || !strings.Contains(admissionErr.Error(), causes[mode]) {
+				t.Fatalf("%s adopt-mutable admission did not refuse with its cause: %v", mode, admissionErr)
+			}
+			operation, projectionErr := f.store.ProjectParentCompletion()
+			if operation.Operation == PublicationOperationAdoptMutable && operation.Command != nil {
+				t.Fatalf("%s was projected as an executable adopt-mutable: %#v", mode, operation)
+			}
+			var refusal *ProjectedAdvancementRefusal
+			if errors.As(projectionErr, &refusal) != (mode != "divergent") {
+				t.Fatalf("%s projection did not keep its refusal boundary: %v", mode, projectionErr)
+			}
+			if mode != "divergent" && !strings.Contains(projectionErr.Error(), admissionErr.Error()) {
+				t.Fatalf("%s projection lost the admission cause: %v", mode, projectionErr)
+			}
+			if mode != "stale-base" {
+				if _, err := f.store.AdoptMutableExternalAdvancement(source, policy); err == nil {
+					t.Fatal("unproven primary mutation was adopted as an external pull")
+				}
 			}
 			after, err := f.store.LoadHead()
 			if err != nil || after.Status != ControllerStatusActive || after.PendingTransitionID != "" || after.LiveAttemptID != before.LiveAttemptID || after.IntegrationTip != before.IntegrationTip {
@@ -190,6 +235,49 @@ func TestPulledAdvancementAttributionRefusesUnprovenMutations(t *testing.T) {
 				t.Fatalf("refused attribution moved the remote: %s", remote)
 			}
 		})
+	}
+}
+
+func TestProjectedAdoptMutableReverifiesAdvancementAtExecution(t *testing.T) {
+	t.Parallel()
+	f, policy := newPublicationTestFixture(t)
+	bindPublicationUpstream(t, f.store, policy)
+	source := publicationTestEdit(t, f, "result.txt", "reviewed implementation\n")
+	seedAwaitingCompletionRuntime(t, f.store, source, true)
+	root := f.store.identity.PrimaryRoot
+	pullRetiredExternalSourceChange(t, f, policy, "IMPLEMENTATION_HISTORY.md", "cross-lane parent metadata record\n")
+
+	operation, err := f.store.ProjectParentCompletion()
+	if err != nil || operation.Operation != PublicationOperationAdoptMutable || operation.Command == nil {
+		t.Fatalf("executable advancement lost its typed adopt-mutable: %#v %v", operation, err)
+	}
+	if _, err := f.store.LiveMutableAdvancementAdmission(policy); err != nil {
+		t.Fatalf("verified advancement stopped being admissible: %v", err)
+	}
+
+	raced := advancePublicationTestRemote(t, f, policy, "unpulled-external.txt", "advancement beyond the pulled primary\n")
+	_, admissionErr := f.store.LiveMutableAdvancementAdmission(policy)
+	if admissionErr == nil {
+		t.Fatal("admission accepted a raced remote")
+	}
+	if _, err := f.store.AdoptMutableExternalAdvancement(source, policy); err == nil || err.Error() != admissionErr.Error() {
+		t.Fatalf("stale adopt-mutable execution did not refuse at the admission boundary: %v", err)
+	}
+	head, err := f.store.LoadHead()
+	if err != nil || head.IntegrationTip != source.Head.IntegrationTip || head.PendingTransitionID != "" || head.LiveLeaseID != source.Lease.LeaseID || head.AcceptedCandidateRef != nil {
+		t.Fatalf("refused race changed controller authority: %v %#v", err, head)
+	}
+	if remote := observeTestRemote(t, root, policy); remote != raced {
+		t.Fatalf("refused race moved the remote: %s", remote)
+	}
+
+	runControllerGit(t, root, "pull", "--ff-only", policy.Remote, policy.RemoteRef)
+	adopted, err := f.store.AdoptMutableExternalAdvancement(source, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adopted.Head.IntegrationTip != raced || adopted.Head.LiveLeaseID != "" || adopted.Head.AcceptedCandidateRef != nil || adopted.Head.PendingTransitionID != "" {
+		t.Fatalf("resynchronized adopt-mutable did not converge on the remote tip: %#v", adopted.Head)
 	}
 }
 

@@ -2,6 +2,18 @@ package controller
 
 import "fmt"
 
+type ProjectedAdvancementRefusal struct {
+	Cause error
+}
+
+func (e *ProjectedAdvancementRefusal) Error() string {
+	return fmt.Sprintf("projected %s is not executable: %v", PublicationOperationAdoptMutable, e.Cause)
+}
+
+func (e *ProjectedAdvancementRefusal) Unwrap() error {
+	return e.Cause
+}
+
 func (s *Store) AdoptMutableExternalAdvancement(admission Admission, policy PublicationPolicy) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
@@ -26,7 +38,7 @@ func (s *Store) LiveMutableAdvancementAdmission(policy PublicationPolicy) (Admis
 	if _, err := s.AdmitMutation(admission.MutationAuthority(), admission.Workspace, admission.Snapshot); err != nil {
 		attributed, attributionErr := s.attributeExternalPull(admission, policy)
 		if attributionErr != nil {
-			return Admission{}, err
+			return Admission{}, attributionErr
 		}
 		return attributed, nil
 	}
@@ -81,7 +93,7 @@ func (s *Store) captureAdvancementSuspensionLocked(admission Admission, policy P
 	}
 	attributed, attributionErr := s.attributeExternalPull(admission, policy)
 	if attributionErr != nil {
-		return SuspensionSnapshot{}, err
+		return SuspensionSnapshot{}, attributionErr
 	}
 	return s.captureAdmittedSuspensionLocked(attributed)
 }

@@ -364,6 +364,9 @@ func (s *Store) projectAdmissionSourceAdvancement(head RepositoryControllerHead)
 	if err != nil {
 		return ParentCompletionOperation{}, false, err
 	}
+	if _, err := s.LiveMutableAdvancementAdmission(policy); err != nil {
+		return ParentCompletionOperation{}, false, &ProjectedAdvancementRefusal{Cause: err}
+	}
 	return ParentCompletionOperation{
 		Surface:   PublicationOperationSurface,
 		Operation: PublicationOperationAdoptMutable,

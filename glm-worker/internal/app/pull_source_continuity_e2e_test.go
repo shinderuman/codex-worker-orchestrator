@@ -332,3 +332,122 @@ func TestAdoptedAdmissionPublishesOnceOnPulledSource(t *testing.T) {
 	}
 	publishFreshRoundOnceOnPulledSource(t, f.cfg, f.scripted, f.store, f.tip, Command{Mode: ModeFix, Payload: "recovered source review"})
 }
+
+func advanceRemoteBeyondPulledPrimary(t *testing.T, primary string, policy controller.PublicationPolicy, path, data string) string {
+	t.Helper()
+	external := filepath.Join(t.TempDir(), "external")
+	runControllerActivationGit(t, primary, "clone", "--quiet", primary, external)
+	runControllerActivationGit(t, external, "config", "user.email", "test@example.com")
+	runControllerActivationGit(t, external, "config", "user.name", "external")
+	writeAppTestFile(t, external, path, data)
+	runControllerActivationGit(t, external, "add", "--all")
+	runControllerActivationGit(t, external, "commit", "-qm", "remote advancement beyond the pulled primary")
+	remote := strings.TrimSpace(string(appTestGitOutput(t, primary, "remote", "get-url", policy.Remote)))
+	runControllerActivationGit(t, external, "push", remote, "HEAD:"+policy.RemoteRef)
+	return strings.TrimSpace(string(appTestGitOutput(t, external, "rev-parse", "HEAD")))
+}
+
+func prepareStagedPublication(t *testing.T, cfg config.AppConfig) (string, controllerPublicationCommand) {
+	t.Helper()
+	exit, output, diagnostics := runParentActionCLI(t, cfg, "prepare", controllerPublicationSurface)
+	if exit != 0 {
+		t.Fatalf("prepare staged parent action: %s", diagnostics)
+	}
+	var prepared struct {
+		Path  string `json:"path"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(output), &prepared); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(prepared.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := ""
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, "COMMAND_TEMPLATE: ") {
+			template = strings.TrimPrefix(line, "COMMAND_TEMPLATE: ")
+		}
+	}
+	if template == "" {
+		t.Fatalf("staged publication template is missing: %s", string(body))
+	}
+	var command controllerPublicationCommand
+	if err := json.Unmarshal([]byte(template), &command); err != nil {
+		t.Fatal(err)
+	}
+	return prepared.Token, command
+}
+
+func TestRemoteAheadAdvancementHandoffFailsClosedUntilSynced(t *testing.T) {
+	f := awaitingAdmissionBehindPull(t)
+	handoff := executeParentHandoff(t, f.cfg)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("pulled admission handoff: %v %#v", stringPointerValue(handoff.Inconsistency), handoff)
+	}
+	var advertised controllerPublicationCommand
+	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &advertised); err != nil {
+		t.Fatal(err)
+	}
+	if advertised.Action != controller.PublicationOperationAdoptMutable {
+		t.Fatalf("pulled admission advertised %q instead of the typed adopt-mutable", advertised.Action)
+	}
+	token, staged := prepareStagedPublication(t, f.cfg)
+	if staged.Action != controller.PublicationOperationAdoptMutable {
+		t.Fatalf("staged template advertised %q instead of the typed adopt-mutable", staged.Action)
+	}
+
+	primary := f.store.Identity().PrimaryRoot
+	before, err := f.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raced := advanceRemoteBeyondPulledPrimary(t, primary, f.policy, "unpulled-external.txt", "advancement beyond the pulled primary\n")
+
+	exit, _, diagnostics := runParentActionCLI(t, f.cfg, controllerPublicationSurface, token)
+	if exit == 0 || !strings.Contains(diagnostics, "does not match the configured remote tip") {
+		t.Fatalf("staged adopt-mutable did not refuse the remote race with its cause: %s", diagnostics)
+	}
+	head, err := f.store.LoadHead()
+	if err != nil || head.IntegrationTip != before.IntegrationTip || head.LiveLeaseID != before.LiveLeaseID || head.PendingTransitionID != "" || head.AcceptedCandidateRef != nil {
+		t.Fatalf("refused staged adoption changed controller authority: %v %#v", err, head)
+	}
+	if remoteFields := strings.Fields(string(appTestGitOutput(t, primary, "ls-remote", f.policy.Remote, f.policy.RemoteRef))); len(remoteFields) != 2 || remoteFields[0] != raced {
+		t.Fatalf("refused staged adoption moved the remote: %v", remoteFields)
+	}
+	if _, err := executeControllerPublication(f.cfg, f.store, controllerPublicationCommand{Action: controller.PublicationOperationAdoptMutable, ExpectedGeneration: head.ControllerGeneration - 1, Policy: f.policy}); err == nil || !strings.Contains(err.Error(), "generation is stale") {
+		t.Fatalf("stale generation bypassed the publication freshness guard: %v", err)
+	}
+
+	blocked := executeParentHandoff(t, f.cfg)
+	if blocked.Consistent && blocked.RequiredAction != nil && *blocked.RequiredAction == controllerPublicationSurface && blocked.RequiredActionParameters["controller_command_json"] != "" {
+		t.Fatalf("remote-ahead handoff advertised an executable adopt-mutable: %#v", blocked)
+	}
+	if blocked.Inconsistency == nil || !strings.Contains(*blocked.Inconsistency, "does not match the configured remote tip") {
+		t.Fatalf("remote-ahead handoff lost the refusal cause: %v", stringPointerValue(blocked.Inconsistency))
+	}
+	exit, _, diagnostics = runParentActionCLI(t, f.cfg, "prepare", controllerPublicationSurface)
+	if exit == 0 || !strings.Contains(diagnostics, "does not match the configured remote tip") {
+		t.Fatalf("remote-ahead preparation did not fail closed with its cause: %s", diagnostics)
+	}
+
+	runControllerActivationGit(t, primary, "pull", "--ff-only", f.policy.Remote, f.policy.RemoteRef)
+	synced := strings.TrimSpace(string(appTestGitOutput(t, primary, "rev-parse", "HEAD")))
+	if synced != raced {
+		t.Fatalf("primary did not fast-forward to the raced tip: %s", synced)
+	}
+	resynced := executeParentHandoff(t, f.cfg)
+	if !resynced.Consistent || resynced.RequiredAction == nil || *resynced.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("resynchronized handoff: %v %#v", stringPointerValue(resynced.Inconsistency), resynced)
+	}
+	executeStagedParentAction(t, f.cfg, resynced.RequiredActionParameters["controller_command_json"])
+	adopted, err := f.store.LoadHead()
+	if err != nil || adopted.IntegrationTip != raced || adopted.LiveLeaseID != "" || adopted.AcceptedCandidateRef != nil || adopted.PendingTransitionID != "" {
+		t.Fatalf("resynchronized adopt-mutable did not converge on the remote tip: %v %#v", err, adopted)
+	}
+	resume := executeParentHandoff(t, f.cfg)
+	if !resume.Consistent || resume.RequiredAction == nil || *resume.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("resynchronized handoff lost the execution resume surface: %v %#v", stringPointerValue(resume.Inconsistency), resume)
+	}
+}
