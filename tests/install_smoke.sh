@@ -6,6 +6,7 @@ go_mod_cache=$(go env GOMODCACHE)
 quality_tool_namespace=$(awk -F': ' '$1 == "namespace" { print $2; exit }' "$source_root/quality-tools.yml")
 quality_tools_default=$(awk -F': ' '$1 == "default-bin-dir" { print $2; exit }' "$source_root/quality-tools.yml")
 deadcode_version=$(awk -F': ' '$1 == "deadcode" { print $2; exit }' "$source_root/quality-tools.yml")
+go_contract_version=$(awk -F': ' '$1 == "go" { print $2; exit }' "$source_root/quality-tools.yml")
 case "${QUALITY_TOOLS_BIN_DIR:-}" in
 "") source_quality_tools="$HOME/$quality_tools_default" ;;
 /*) source_quality_tools="$QUALITY_TOOLS_BIN_DIR" ;;
@@ -37,6 +38,14 @@ home="$tmp/home"
 home_quality_tools="$home/$quality_tools_default"
 mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin" "$home_quality_tools"
 rsync -a --exclude .git --exclude .codex "$source_root/" "$repo/"
+git -C "$repo" init -q -b main
+git -C "$repo" add -A
+git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm source
+(
+	cd "$repo/glm-worker"
+	HOME="$home" GOMODCACHE="$go_mod_cache" GOTOOLCHAIN="go$go_contract_version" go build -o "$tmp/plancheck" ./cmd/plancheck
+)
+"$tmp/plancheck" "$repo"
 fixture_task_path=IMPLEMENTATION_TASKS/install-smoke-normal-task.md
 test ! -e "$source_root/$fixture_task_path"
 rm -rf "$repo/IMPLEMENTATION_TASKS"
@@ -63,7 +72,6 @@ cat >"$repo/IMPLEMENTATION_PLAN.local.md" <<'EOF_FIXTURE_PLAN'
 
 - `IMPLEMENTATION_TASKS/install-smoke-normal-task.md`
 EOF_FIXTURE_PLAN
-git -C "$repo" init -q -b main
 git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
 repo_revision=$(git -C "$repo" rev-parse HEAD)
