@@ -37,6 +37,32 @@ home="$tmp/home"
 home_quality_tools="$home/$quality_tools_default"
 mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin" "$home_quality_tools"
 rsync -a --exclude .git --exclude .codex "$source_root/" "$repo/"
+fixture_task_path=IMPLEMENTATION_TASKS/install-smoke-normal-task.md
+test ! -e "$source_root/$fixture_task_path"
+rm -rf "$repo/IMPLEMENTATION_TASKS"
+mkdir "$repo/IMPLEMENTATION_TASKS"
+cat >"$repo/$fixture_task_path" <<'EOF_FIXTURE_TASK'
+# Task: install smoke検証用repositoryの通常Task実行
+
+## Original instruction
+
+install smokeが検証用repositoryへ固定する通常Task。インストール対象sourceのACTIVE指定(通常Task・parent-only評価Taskのいずれ)へ依存しないcanonical authorityで、installed runtimeの通常Task実行を検証する。
+
+## Dependencies
+
+none
+
+## External feasibility
+
+status: not-applicable
+EOF_FIXTURE_TASK
+cat >"$repo/IMPLEMENTATION_PLAN.local.md" <<'EOF_FIXTURE_PLAN'
+# install smoke検証用Plan
+
+## ACTIVE
+
+- `IMPLEMENTATION_TASKS/install-smoke-normal-task.md`
+EOF_FIXTURE_PLAN
 git -C "$repo" init -q -b main
 git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
@@ -261,6 +287,9 @@ export_attempt_id=$(sed -n 's/.*"attempt_id":"\([^"]*\)".*/\1/p' "$tmp/controlle
 export_task_path=$(sed -n 's/.*"task_path":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
 export_contract_digest=$(sed -n 's/.*"contract_digest":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
 test -n "$export_attempt_id" && test -n "$export_task_path" && test -n "$export_contract_digest"
+test "$export_task_path" = "$fixture_task_path"
+fixture_contract_digest=$(git -C "$repo" show HEAD:"$fixture_task_path" | shasum -a 256 | cut -d' ' -f1)
+test "$export_contract_digest" = "$fixture_contract_digest"
 repo_physical_export=$(CDPATH='' cd -- "$repo" && pwd -P)
 export_lineage=$(printf 'git-common-lineage-v1\0%s\0' "$repo_physical_export/.git" | shasum -a 256 | cut -d' ' -f1)
 export_controller_store="$home/.glm-worker/controllers/$export_lineage"
