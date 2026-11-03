@@ -8,13 +8,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md)
+- [`IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md`](IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md`](IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md)
+- [`IMPLEMENTATION_TASKS/harnesslint-importer-parent-only-bundle-failure.md`](IMPLEMENTATION_TASKS/harnesslint-importer-parent-only-bundle-failure.md)
+- [`IMPLEMENTATION_TASKS/app-test-fixture-runtime-cost.md`](IMPLEMENTATION_TASKS/app-test-fixture-runtime-cost.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
+- [`IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md`](IMPLEMENTATION_TASKS/post-publication-terminal-handoff-scope-failure.md)
 - [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
