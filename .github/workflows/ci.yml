@@ -149,6 +149,30 @@ jobs:
             mode: app
             shard: 5
             race: true
+          - name: app-race-7
+            mode: app
+            shard: 6
+            race: true
+          - name: app-race-8
+            mode: app
+            shard: 7
+            race: true
+          - name: app-race-9
+            mode: app
+            shard: 8
+            race: true
+          - name: app-race-10
+            mode: app
+            shard: 9
+            race: true
+          - name: app-race-11
+            mode: app
+            shard: 10
+            race: true
+          - name: app-race-12
+            mode: app
+            shard: 11
+            race: true
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
@@ -189,12 +213,13 @@ jobs:
             echo 'Expected at least six named app tests' >&2
             exit 1
           fi
-          awk -v shard="$APP_SHARD" '
-            $0 == "TestTypedParentCompletionWorkflowThroughProductionBoundary" { owner = 0; nextOwner = 1 }
-            $0 == "TestParentOnlyTaskCompletionThroughProductionBoundary" { owner = 1; nextOwner = 1 }
-            $0 == "TestParentOnlyReentryThroughProductionBoundary" { owner = 2; nextOwner = 1 }
-            nextOwner == 0 { slot = other % 9; owner = (slot < 3 ? slot + 3 : slot - 3); other++ }
-            { if (owner == shard) print; nextOwner = 0 }
+          awk -v shard="$APP_SHARD" -v race="$APP_RACE" '
+            $0 == "TestTypedParentCompletionWorkflowThroughProductionBoundary" { owner = 0; pinned = 1 }
+            $0 == "TestParentOnlyTaskCompletionThroughProductionBoundary" { owner = 1; pinned = 1 }
+            $0 == "TestParentOnlyReentryThroughProductionBoundary" { owner = 2; pinned = 1 }
+            pinned == 1 { if (owner == shard) print; pinned = 0; next }
+            race == "true" { owner = 3 + (other % 9); other++; if (owner == shard) print; next }
+            { slot = other % 9; owner = (slot < 3 ? slot + 3 : slot - 3); other++; if (owner == shard) print }
           ' "$RUNNER_TEMP/app-tests.txt" > "$RUNNER_TEMP/app-shard-tests.txt"
           selected="$(wc -l < "$RUNNER_TEMP/app-shard-tests.txt")"
           if (( selected == 0 )); then

@@ -42,6 +42,14 @@ Appのテストと他のテストが同じぐらいで終わるようにしろ
 ただし重複したテストがあるならそれは削っていい
 ```
 
+### 2026-11-03 AppジョブをMatrix:basicより短縮
+
+ユーザー原文:
+
+```text
+Matrix:basicの一番遅いものよりAppのほうが早くなるように調整しろ
+```
+
 ## Resolved references
 
 - 採否と一次run locatorは`review-evidence/codex-efficiency-followup-2026-11-03.md`。実装開始時はcurrent sourceで再確認し、既存観測を現sourceの測定値へ付け替えない。
@@ -79,7 +87,7 @@ status: not-applicable
 - 上位testの時間内訳・起動回数・保証するbehaviorを示し、支配原因と不明点を区別できる。
 - 改善前後で同等のscenario/invariant coverageと、実CLIを通す必要のある境界を確認できる。
 - 通常/raceのfocused測定と必要な正規gate・独立Reviewがsourceへ束縛され、app/package/gate時間を区別して効果を説明できる。
-- AppのCIテストを他のテストジョブと同程度の所要時間へ平準化し、job/shard別時間と全体critical path、実行量・反復・coverageを比較して効果と限界を示す。テスト選別による省略は行わず、重複削減は検証の同等性を示す場合に限る。単に最長jobを細分化して重複setupや総コストを増やした結果を無条件に改善としない。
+- 同一CI runのMatrix:basicに含まれる最長ジョブより、Appの各通常/raceジョブを短時間で完了させる。AppのCIテストを他のテストジョブと同程度の所要時間へ平準化し、job/shard別時間と全体critical path、実行量・反復・coverageを比較して効果と限界を示す。テスト選別による省略は行わず、重複削減は検証の同等性を示す場合に限る。単に最長jobを細分化して重複setupや総コストを増やした結果を無条件に改善としない。
 - 改善未成立時は親判断を求め、未検証の時間削減を完成としない。
 
 ## Historical invariants
