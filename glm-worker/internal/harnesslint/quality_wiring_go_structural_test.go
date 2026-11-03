@@ -1,6 +1,7 @@
 package harnesslint
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
