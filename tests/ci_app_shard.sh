@@ -54,7 +54,7 @@ list_tests() {
 }
 
 partition_tests() {
-  awk -v mode="$mode" -v shard="$shard" '
+	awk -v mode="$mode" -v shard="$shard" '
     {
       if ($0 == "TestTypedParentCompletionWorkflowThroughProductionBoundary") owner = 0
       else if ($0 == "TestParentOnlyTaskCompletionThroughProductionBoundary") owner = 1
