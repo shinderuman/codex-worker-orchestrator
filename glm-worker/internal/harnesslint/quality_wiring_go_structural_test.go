@@ -134,3 +134,25 @@ func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
 		})
 	}
 }
+
+func TestQualityWiringDoesNotDependOnHostCompilerExports(t *testing.T) {
+	t.Setenv("GOROOT", filepath.Join(t.TempDir(), "missing-goroot"))
+	t.Setenv("PATH", t.TempDir())
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	writeQualityFile(t, root, check.path, "package workflow\nimport (\n\"crypto/sha256\"\n gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\n)\nvar _ = sha256.Sum256\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { gate.Run(root, true) }\n")
+	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
+	if err != nil || len(violations) != 0 {
+		t.Fatalf("import bindings require host compiler exports: violations=%+v err=%v", violations, err)
+	}
+}
+
+func TestQualityWiringParseFailureCannotPassWithoutCompilerExports(t *testing.T) {
+	t.Setenv("GOROOT", filepath.Join(t.TempDir(), "missing-goroot"))
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	writeQualityFile(t, root, check.path, "package workflow\nfunc runRepositoryQualityGate(\n")
+	if violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check); err == nil {
+		t.Fatalf("invalid Go syntax was accepted: %+v", violations)
+	}
+}
