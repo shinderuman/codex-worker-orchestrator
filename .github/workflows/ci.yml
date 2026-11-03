@@ -193,7 +193,7 @@ jobs:
             $0 == "TestTypedParentCompletionWorkflowThroughProductionBoundary" { owner = 0; nextOwner = 1 }
             $0 == "TestParentOnlyTaskCompletionThroughProductionBoundary" { owner = 1; nextOwner = 1 }
             $0 == "TestParentOnlyReentryThroughProductionBoundary" { owner = 2; nextOwner = 1 }
-            nextOwner == 0 { owner = (other + 3) % 6; other++ }
+            nextOwner == 0 { slot = other % 9; owner = (slot < 3 ? slot + 3 : slot - 3); other++ }
             { if (owner == shard) print; nextOwner = 0 }
           ' "$RUNNER_TEMP/app-tests.txt" > "$RUNNER_TEMP/app-shard-tests.txt"
           selected="$(wc -l < "$RUNNER_TEMP/app-shard-tests.txt")"
