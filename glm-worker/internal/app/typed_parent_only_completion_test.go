@@ -39,8 +39,19 @@ func TestParentOnlyTaskCompletionThroughProductionBoundary(t *testing.T) {
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, scenario.sourceChange)
+			handoff := executeParentHandoff(t, cfg)
+			if handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
+				t.Fatalf("parent-only materialization handoff: %#v", handoff)
+			}
+			runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters)
+			head, err := store.LoadHead()
+			if err != nil || head.ExecutionTaskRef == nil || head.ExecutionTaskRef.TaskPath != tasks.parent {
+				t.Fatalf("parent-only export target: %v", err)
+			}
+			assertParentOnlyEvidenceExport(t, cfg, store, head.LiveAttemptID, true)
 			driveParentOnlyCompletion(t, cfg, goShim, scenario.sourceChange, scenario.interrupt)
 			assertParentOnlyTerminalState(t, cfg, store, policy, tasks, scenario.sourceChange)
+			assertParentOnlyEvidenceExport(t, cfg, store, head.LiveAttemptID, false)
 		})
 	}
 }

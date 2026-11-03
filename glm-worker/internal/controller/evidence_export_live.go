@@ -69,6 +69,9 @@ func (s *Store) collectRuntimeSection(
 	target EvidenceExportTarget,
 	attempt AttemptRecord,
 ) (EvidenceExportRuntimeSection, *EvidenceExportGitAudit, error) {
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return s.collectParentOnlyRuntimeSection(builder, target, attempt)
+	}
 	if !target.Live {
 		return s.collectBoundRuntimeSection(builder, attempt)
 	}
@@ -113,6 +116,35 @@ func (s *Store) collectRuntimeSection(
 	}
 	section := collector.section(evidenceExportRuntimeModeLive, attempt, workspace.ID)
 	return section, git, nil
+}
+
+func (s *Store) collectParentOnlyRuntimeSection(builder *evidenceExportBuilder, target EvidenceExportTarget, attempt AttemptRecord) (EvidenceExportRuntimeSection, *EvidenceExportGitAudit, error) {
+	if err := s.requireNoModelRuntimeEvidence(attempt.AttemptID); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	section := EvidenceExportRuntimeSection{
+		Status:        evidenceExportRuntimeAbsent,
+		AbsenceReason: "parent-only attempt has no model Runtime",
+		Basis:         completionBundleNoModelRuntimeBasis,
+	}
+	if !target.Live {
+		return section, nil, nil
+	}
+	workspace, err := s.liveAttemptWorkspace(builder.head, attempt)
+	if err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	collector := &evidenceLiveCollector{
+		store: s, attempt: attempt, builder: builder, observedAt: builder.observedAt,
+		prefix: evidenceExportRuntimeModeLive, inProgress: true,
+		workspace: workspace, workspaceResolved: true,
+		windowEnd: builder.observedAt, windowEndBasis: evidenceExportLiveEndBasis,
+	}
+	if err := collector.collectValidationEvidence(); err != nil {
+		return EvidenceExportRuntimeSection{}, nil, err
+	}
+	audit, err := collector.observeGit()
+	return section, audit, err
 }
 
 func (s *Store) collectBoundRuntimeSection(

@@ -1,12 +1,22 @@
 package harnesslint
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
-	t.Parallel()
+	t.Run("normal", testQualityWiringGoStructuralCases)
+	t.Run("compiler-exports-unavailable", func(t *testing.T) {
+		t.Setenv("GOROOT", filepath.Join(t.TempDir(), "missing-goroot"))
+		t.Setenv("PATH", t.TempDir())
+		testQualityWiringGoStructuralCases(t)
+	})
+}
+
+func testQualityWiringGoStructuralCases(t *testing.T) {
+	t.Helper()
 	for _, tc := range []struct {
 		name      string
 		source    string
@@ -73,6 +83,21 @@ func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
 			forbidden: true,
 		},
 		{
+			name:    "unrelated imported Run cannot impersonate canonical import",
+			source:  "package workflow\nimport gate \"example.invalid/another\"\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { gate.Run(root, true) }\n",
+			missing: "harnesslint.Run(root, true)",
+		},
+		{
+			name:    "local Run method cannot impersonate canonical import",
+			source:  "package workflow\nimport gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc captureQualitySurfaceDigest(root string) {}\ntype localGate struct{}; func (localGate) Run(string, bool) {}\nfunc runRepositoryQualityGate(root string) { gate := localGate{}; gate.Run(root, true) }\n",
+			missing: "harnesslint.Run(root, true)",
+		},
+		{
+			name:    "unresolved bool mode cannot satisfy true",
+			source:  "package workflow\nimport gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { flag := unknownFlag; gate.Run(root, flag) }\n",
+			missing: "harnesslint.Run(root, true)",
+		},
+		{
 			name:    "other root cannot satisfy the formal binding",
 			source:  "package workflow\nimport gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { otherRoot := \"other\"; gate.Run(otherRoot, true) }\n",
 			missing: "harnesslint.Run(root, true)",
@@ -132,5 +157,27 @@ func TestQualityWiringGoChecksIgnoreCommentsAndAcceptWhitespace(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestQualityWiringDoesNotDependOnHostCompilerExports(t *testing.T) {
+	t.Setenv("GOROOT", filepath.Join(t.TempDir(), "missing-goroot"))
+	t.Setenv("PATH", t.TempDir())
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	writeQualityFile(t, root, check.path, "package workflow\nimport (\n\"crypto/sha256\"\n gate \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\n)\nvar _ = sha256.Sum256\nfunc captureQualitySurfaceDigest(root string) {}\nfunc runRepositoryQualityGate(root string) { gate.Run(root, true) }\n")
+	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
+	if err != nil || len(violations) != 0 {
+		t.Fatalf("import bindings require host compiler exports: violations=%+v err=%v", violations, err)
+	}
+}
+
+func TestQualityWiringParseFailureCannotPassWithoutCompilerExports(t *testing.T) {
+	t.Setenv("GOROOT", filepath.Join(t.TempDir(), "missing-goroot"))
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	writeQualityFile(t, root, check.path, "package workflow\nfunc runRepositoryQualityGate(\n")
+	if violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check); err == nil {
+		t.Fatalf("invalid Go syntax was accepted: %+v", violations)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
-	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -456,7 +455,7 @@ func qualityWiringMissingTokenMessage(token string, evidence qualityWiringGoEvid
 
 func qualityWiringPartialBindings(set *token.FileSet, file *ast.File) (types.Info, error) {
 	bindings := types.Info{Defs: make(map[*ast.Ident]types.Object), Uses: make(map[*ast.Ident]types.Object)}
-	configuration := types.Config{Importer: importer.Default(), Error: func(error) {}}
+	configuration := types.Config{Error: func(error) {}}
 	_, err := configuration.Check(file.Name.Name, set, []*ast.File{file}, &bindings)
 	return bindings, err
 }

@@ -19,13 +19,14 @@ type EvidenceExportRequest struct {
 }
 
 type EvidenceExportTarget struct {
-	Kind           string          `json:"kind"`
-	Task           SemanticTaskRef `json:"task"`
-	AttemptID      string          `json:"attempt_id,omitempty"`
-	EpisodeID      string          `json:"episode_id,omitempty"`
-	RuntimeTaskID  string          `json:"runtime_task_id,omitempty"`
-	SelectionBasis string          `json:"selection_basis"`
-	Live           bool            `json:"live"`
+	Kind               string          `json:"kind"`
+	Task               SemanticTaskRef `json:"task"`
+	AttemptID          string          `json:"attempt_id,omitempty"`
+	EpisodeID          string          `json:"episode_id,omitempty"`
+	RuntimeTaskID      string          `json:"runtime_task_id,omitempty"`
+	ExecutionAuthority string          `json:"execution_authority,omitempty"`
+	SelectionBasis     string          `json:"selection_basis"`
+	Live               bool            `json:"live"`
 }
 
 type EvidenceExportWindow struct {
@@ -333,6 +334,9 @@ func (s *Store) liveExportCandidate(head RepositoryControllerHead) (evidenceExpo
 		return evidenceExportLiveCandidate{}, err
 	}
 	candidate := evidenceExportLiveCandidate{attempt: attempt, exists: true}
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return candidate, s.requireNoModelRuntimeEvidence(attempt.AttemptID)
+	}
 	_, taskID, err := s.resolveExportRuntime(attempt)
 	if err != nil && !errors.Is(err, errEvidenceExportRuntimeAbsent) {
 		return evidenceExportLiveCandidate{}, err
@@ -388,7 +392,7 @@ func evidenceExportTaskIDTargetMatch(taskID string, matches []evidenceExportTask
 
 func (s *Store) resolveDefaultExportTarget(head RepositoryControllerHead, live evidenceExportLiveCandidate) (EvidenceExportTarget, AttemptRecord, error) {
 	if live.exists {
-		if live.runtimeTaskID == "" {
+		if live.runtimeTaskID == "" && live.attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
 			return EvidenceExportTarget{}, AttemptRecord{}, errEvidenceExportRuntimeTaskUnresolved
 		}
 		return evidenceExportTargetFor(live.attempt, evidenceExportTargetRunning, evidenceExportBasisLiveAttempt, live.runtimeTaskID, true), live.attempt, nil
@@ -409,6 +413,9 @@ func (s *Store) resolveDefaultExportTarget(head RepositoryControllerHead, live e
 }
 
 func (s *Store) attemptRuntimeTaskIdentity(head RepositoryControllerHead, attempt AttemptRecord) (string, error) {
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return "", s.requireNoModelRuntimeEvidence(attempt.AttemptID)
+	}
 	if attempt.AttemptSealID == "" {
 		_, taskID, err := s.resolveExportRuntime(attempt)
 		if err != nil || taskID == "" {
@@ -432,7 +439,7 @@ func evidenceExportTargetFor(attempt AttemptRecord, kind, basis, runtimeTaskID s
 	return EvidenceExportTarget{
 		Kind: kind, Task: attempt.SemanticTaskRef,
 		AttemptID: attempt.AttemptID, EpisodeID: attempt.EpisodeID,
-		RuntimeTaskID: runtimeTaskID, SelectionBasis: basis, Live: live,
+		RuntimeTaskID: runtimeTaskID, ExecutionAuthority: attempt.ExecutionAuthority, SelectionBasis: basis, Live: live,
 	}
 }
 
@@ -748,5 +755,8 @@ func evidenceExportResult(target EvidenceExportTarget, manifest EvidenceExportMa
 }
 
 func evidenceExportArchiveName(target EvidenceExportTarget) string {
+	if target.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return "parent-only-" + target.AttemptID + ".zip"
+	}
 	return target.RuntimeTaskID + ".zip"
 }

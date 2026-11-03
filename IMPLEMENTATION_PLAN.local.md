@@ -8,12 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md`](IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md)
+- [`IMPLEMENTATION_TASKS/app-test-fixture-runtime-cost.md`](IMPLEMENTATION_TASKS/app-test-fixture-runtime-cost.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/harnesslint-importer-parent-only-bundle-failure.md`](IMPLEMENTATION_TASKS/harnesslint-importer-parent-only-bundle-failure.md)
-- [`IMPLEMENTATION_TASKS/app-test-fixture-runtime-cost.md`](IMPLEMENTATION_TASKS/app-test-fixture-runtime-cost.md)
+- [`IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md`](IMPLEMENTATION_TASKS/install-smoke-fixture-authority-isolation.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)
 - [`IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md`](IMPLEMENTATION_TASKS/quality-gate-supplement-and-darwin-sysctl-accuracy.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md)
