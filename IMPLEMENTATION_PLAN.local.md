@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`](IMPLEMENTATION_TASKS/observation-preparation-cancellation.md)
+- [`IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md`](IMPLEMENTATION_TASKS/install-smoke-lock-process-lifecycle.md)
 - [`IMPLEMENTATION_TASKS/app-controller-transition-owner.md`](IMPLEMENTATION_TASKS/app-controller-transition-owner.md)
 - [`IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md`](IMPLEMENTATION_TASKS/publication-adopt-mutable-projection-admission.md)

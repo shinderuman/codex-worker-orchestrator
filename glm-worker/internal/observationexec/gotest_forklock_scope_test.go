@@ -4,6 +4,7 @@ package observationexec
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +46,7 @@ func newStalledCopyFixture(t *testing.T, boundaryRead bool) stalledCopyFixture {
 		_ = writer.Close()
 	}()
 	copyDone := make(chan error, 1)
-	copier := &moduleTreeCopier{}
+	copier := &moduleTreeCopier{ctx: context.Background()}
 	if boundaryRead {
 		copier.maxBytes = int64(len(content))
 	}

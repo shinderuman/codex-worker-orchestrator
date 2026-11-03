@@ -2,6 +2,7 @@ package observationexec
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +19,7 @@ func TestCopiedModuleExecutableRuns(t *testing.T) {
 	if err := execfile.Write(source, []byte("#!/bin/sh\nprintf copied\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	copier := &moduleTreeCopier{}
+	copier := &moduleTreeCopier{ctx: context.Background()}
 	if err := copier.copyFile(destination, source, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +36,7 @@ func TestModuleTreeCopierEnforcesByteBudgetDuringCopy(t *testing.T) {
 	if err := os.WriteFile(source, []byte("12345"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	copier := &moduleTreeCopier{maxBytes: 4}
+	copier := &moduleTreeCopier{ctx: context.Background(), maxBytes: 4}
 	if err := copier.copyFile(destination, source, 0o600); err == nil || !strings.Contains(err.Error(), "size") {
 		t.Fatalf("copy error = %v, want byte-budget rejection", err)
 	}

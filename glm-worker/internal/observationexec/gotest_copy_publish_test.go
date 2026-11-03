@@ -1,6 +1,7 @@
 package observationexec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -37,7 +38,7 @@ func TestModuleCopyPreservesExistingDestinationAndCleansTemporaryFile(t *testing
 			if err := os.WriteFile(source, []byte("new content"), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			copier := &moduleTreeCopier{}
+			copier := &moduleTreeCopier{ctx: context.Background()}
 			if err := copier.copyFile(destination, source, 0o700); !errors.Is(err, os.ErrExist) {
 				t.Fatalf("既存destinationへのcopy: %v", err)
 			}
@@ -70,7 +71,7 @@ func TestCopiedExecutablesRunDuringConcurrentCopiesAndSubprocesses(t *testing.T)
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			copier := &moduleTreeCopier{}
+			copier := &moduleTreeCopier{ctx: context.Background()}
 			for iteration := 0; iteration < 16; iteration++ {
 				destination := filepath.Join(dir, fmt.Sprintf("probe-%d", iteration))
 				if err := copier.copyFile(destination, source, 0o700); err != nil {

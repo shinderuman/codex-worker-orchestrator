@@ -86,13 +86,14 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`
 - `IMPLEMENTATION_TASKS/task-requirement-reference-closure.md`
 - `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
 - `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`
 - `IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`
 
 ## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`
 
 - `IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md`
 
