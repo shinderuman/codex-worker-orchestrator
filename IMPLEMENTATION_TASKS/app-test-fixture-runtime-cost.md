@@ -50,6 +50,17 @@ Appのテストと他のテストが同じぐらいで終わるようにしろ
 Matrix:basicの一番遅いものよりAppのほうが早くなるように調整しろ
 ```
 
+### 2026-11-03 Workflowの保守性
+
+ユーザー原文:
+
+```text
+Workflowファイルの実装がだいぶひどいことになっているが関数化みたいなことはできないのか
+リファクタリングできるならしてほしい
+保守性を保ちたい
+できないならやらなくてもいいが
+```
+
 ## Resolved references
 
 - 採否と一次run locatorは`review-evidence/codex-efficiency-followup-2026-11-03.md`。実装開始時はcurrent sourceで再確認し、既存観測を現sourceの測定値へ付け替えない。

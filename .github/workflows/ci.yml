@@ -36,26 +36,7 @@ jobs:
             shard: 1
     steps:
       - uses: actions/checkout@v6
-      - name: Read quality tool contract
-        id: quality-tools
-        run: |
-          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
-          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ steps.quality-tools.outputs.go_version }}
-          cache: false
-      - name: Cache quality tools
-        continue-on-error: true
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
-          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
-      - name: Install quality tools
-        run: |
-          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
-          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
-          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - uses: ./.github/actions/setup-quality-go
       - name: Quality tool ownership smoke
         if: ${{ matrix.mode == 'quality' }}
         run: sh ./tests/install_quality_tools_smoke.sh
@@ -95,145 +76,32 @@ jobs:
 
   app-shards:
     if: ${{ (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
-    name: app-test (${{ matrix.name }})
+    name: app-test (${{ matrix.mode }}-${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true
       matrix:
-        include:
-          - name: app-normal-1
-            mode: app
-            shard: 0
-            race: false
-          - name: app-normal-2
-            mode: app
-            shard: 1
-            race: false
-          - name: app-normal-3
-            mode: app
-            shard: 2
-            race: false
-          - name: app-normal-4
-            mode: app
-            shard: 3
-            race: false
-          - name: app-normal-5
-            mode: app
-            shard: 4
-            race: false
-          - name: app-normal-6
-            mode: app
-            shard: 5
-            race: false
-          - name: app-race-1
-            mode: app
-            shard: 0
-            race: true
-          - name: app-race-2
-            mode: app
-            shard: 1
-            race: true
-          - name: app-race-3
-            mode: app
-            shard: 2
-            race: true
-          - name: app-race-4
-            mode: app
-            shard: 3
-            race: true
-          - name: app-race-5
-            mode: app
-            shard: 4
-            race: true
-          - name: app-race-6
-            mode: app
-            shard: 5
-            race: true
-          - name: app-race-7
-            mode: app
+        mode: [normal, race]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        exclude:
+          - mode: normal
             shard: 6
-            race: true
-          - name: app-race-8
-            mode: app
+          - mode: normal
             shard: 7
-            race: true
-          - name: app-race-9
-            mode: app
+          - mode: normal
             shard: 8
-            race: true
-          - name: app-race-10
-            mode: app
+          - mode: normal
             shard: 9
-            race: true
-          - name: app-race-11
-            mode: app
+          - mode: normal
             shard: 10
-            race: true
-          - name: app-race-12
-            mode: app
+          - mode: normal
             shard: 11
-            race: true
     steps:
       - uses: actions/checkout@v6
-      - name: Read quality tool contract
-        id: quality-tools
-        run: |
-          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
-          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ steps.quality-tools.outputs.go_version }}
-          cache: false
-      - name: Cache quality tools
-        continue-on-error: true
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
-          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
-      - name: Install quality tools
-        run: |
-          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
-          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
-          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - uses: ./.github/actions/setup-quality-go
       - name: Go tests for internal/app (partitioned)
         working-directory: glm-worker
-        env:
-          APP_SHARD: ${{ matrix.shard }}
-          APP_RACE: ${{ matrix.race }}
-        run: |
-          set -euo pipefail
-          if [[ "$APP_RACE" == true ]]; then
-            go test -race -list . ./internal/app > "$RUNNER_TEMP/app-tests-listed.txt"
-          else
-            go test -list . ./internal/app > "$RUNNER_TEMP/app-tests-listed.txt"
-          fi
-          grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' "$RUNNER_TEMP/app-tests-listed.txt" | LC_ALL=C sort > "$RUNNER_TEMP/app-tests.txt"
-          count="$(wc -l < "$RUNNER_TEMP/app-tests.txt")"
-          if (( count < 6 )); then
-            echo 'Expected at least six named app tests' >&2
-            exit 1
-          fi
-          awk -v shard="$APP_SHARD" -v race="$APP_RACE" '
-            $0 == "TestTypedParentCompletionWorkflowThroughProductionBoundary" { owner = 0; pinned = 1 }
-            $0 == "TestParentOnlyTaskCompletionThroughProductionBoundary" { owner = 1; pinned = 1 }
-            $0 == "TestParentOnlyReentryThroughProductionBoundary" { owner = 2; pinned = 1 }
-            pinned == 1 { if (owner == shard) print; pinned = 0; next }
-            race == "true" { owner = 3 + (other % 9); other++; if (owner == shard) print; next }
-            { slot = other % 9; owner = (slot < 3 ? slot + 3 : slot - 3); other++; if (owner == shard) print }
-          ' "$RUNNER_TEMP/app-tests.txt" > "$RUNNER_TEMP/app-shard-tests.txt"
-          selected="$(wc -l < "$RUNNER_TEMP/app-shard-tests.txt")"
-          if (( selected == 0 )); then
-            echo "Empty app shard $APP_SHARD" >&2
-            exit 1
-          fi
-          names="$(paste -sd '|' "$RUNNER_TEMP/app-shard-tests.txt")"
-          printf 'App tests: %s; shard %s; selected %s; race=%s\n' "$count" "$APP_SHARD" "$selected" "$APP_RACE"
-          cat "$RUNNER_TEMP/app-shard-tests.txt"
-          if [[ "$APP_RACE" == true ]]; then
-            /usr/bin/time -p go test -race -count=1 -run "^($names)$" ./internal/app
-          else
-            /usr/bin/time -p go test -count=1 -run "^($names)$" ./internal/app
-          fi
+        run: sh ../tests/ci_app_shard.sh "${{ matrix.mode }}" "${{ matrix.shard }}"
 
   app:
     if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
