@@ -163,6 +163,20 @@ func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.
 
 func retiredWorkflowCorpus(t *testing.T, completionQuality bool, appendedPlanSections ...string) (config.AppConfig, controller.Admission, *controller.Store, controller.PublicationPolicy) {
 	t.Helper()
+	cfg, policy := prepareRetiredWorkflowCorpus(t, completionQuality, appendedPlanSections...)
+	admission, err := controller.Activate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg, admission, store, policy
+}
+
+func prepareRetiredWorkflowCorpus(t *testing.T, completionQuality bool, appendedPlanSections ...string) (config.AppConfig, controller.PublicationPolicy) {
+	t.Helper()
 	cfg := newCanonicalAppConfig(t)
 	cfg.StateBase = filepath.Join(t.TempDir(), "sessions")
 	repo := cfg.RepoRoot
@@ -178,15 +192,7 @@ func retiredWorkflowCorpus(t *testing.T, completionQuality bool, appendedPlanSec
 		prepareCompletionQualityCorpus(t, repo)
 	}
 	policy := commitCorpusWithPublicationRemote(t, repo, "retired workflow test", "retired@example.invalid", "successor authority")
-	admission, err := controller.Activate(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := controller.Open(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cfg, admission, store, policy
+	return cfg, policy
 }
 
 func commitCorpusWithPublicationRemote(t *testing.T, repo, userName, userEmail, commitMessage string) controller.PublicationPolicy {

@@ -55,7 +55,7 @@ func (s *Store) captureAdmittedSuspensionLocked(current Admission) (SuspensionSn
 	if err != nil {
 		return SuspensionSnapshot{}, err
 	}
-	trees, err := CaptureExecutionTrees(current.Workspace.Root, metadataBase)
+	trees, err := CaptureExecutionTrees(current.Workspace.Root, metadataBase, current.Attempt.SemanticTaskRef)
 	if err != nil {
 		return SuspensionSnapshot{}, err
 	}

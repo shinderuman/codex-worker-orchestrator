@@ -10,6 +10,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -69,6 +70,15 @@ func newWorkflowGuardFixture(t *testing.T, repo string) (config.AppConfig, *stat
 	runWorkflowGuardGit(t, repo, "init", "-q")
 	runWorkflowGuardGit(t, repo, "config", "user.email", "workflow-guard@example.invalid")
 	runWorkflowGuardGit(t, repo, "config", "user.name", "Workflow Guard Test")
+	if err := os.WriteFile(filepath.Join(repo, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "glm-worker"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "glm-worker/go.mod"), []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
 		t.Fatal(err)
 	}

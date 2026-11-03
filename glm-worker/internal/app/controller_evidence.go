@@ -21,7 +21,7 @@ type controllerEvidenceCommand struct {
 }
 
 type controllerEvidenceOutput struct {
-	CommittedAuthority *controller.CommittedTaskAuthority   `json:"committed_authority,omitempty"`
+	CommittedAuthority *controller.TaskAuthority            `json:"committed_authority,omitempty"`
 	Action             controllerEvidenceAction             `json:"action"`
 	CleanupProof       *controller.CleanupDurabilityProof   `json:"cleanup_proof,omitempty"`
 	Bundle             *controller.EvidenceBundleProjection `json:"bundle,omitempty"`
@@ -61,7 +61,7 @@ func executeControllerEvidenceRequest(
 	if err != nil {
 		return err
 	}
-	store, err := openControllerSemanticStore(cfg)
+	store, err := openControllerOperationStore(cfg)
 	if err != nil {
 		return err
 	}

@@ -23,7 +23,7 @@ type workspaceTreeEntry struct {
 	path string
 }
 
-func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
+func CaptureExecutionTrees(repo, authorityBase string, task SemanticTaskRef) (ExecutionTrees, error) {
 	entries, err := suspensionIndexEntries(repo)
 	if err != nil {
 		return ExecutionTrees{}, err
@@ -36,7 +36,7 @@ func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
 	if err := writeSuspensionEntries(repo, index, entries); err != nil {
 		return ExecutionTrees{}, err
 	}
-	parentDigest, err := normalizeParentPaths(repo, index, authorityBase)
+	parentDigest, err := normalizeTaskParentPaths(repo, index, authorityBase, task)
 	if err != nil {
 		return ExecutionTrees{}, err
 	}
@@ -44,7 +44,7 @@ func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
 	if err != nil {
 		return ExecutionTrees{}, err
 	}
-	worktree, err := captureSuspensionWorktree(repo, entries)
+	worktree, err := captureSuspensionWorktree(repo, entries, task.RequestID == "")
 	if err != nil {
 		return ExecutionTrees{}, err
 	}
@@ -54,7 +54,7 @@ func CaptureExecutionTrees(repo, authorityBase string) (ExecutionTrees, error) {
 	if err := writeSuspensionEntries(repo, index, worktree); err != nil {
 		return ExecutionTrees{}, err
 	}
-	if _, err := normalizeParentPaths(repo, index, authorityBase); err != nil {
+	if _, err := normalizeTaskParentPaths(repo, index, authorityBase, task); err != nil {
 		return ExecutionTrees{}, err
 	}
 	worktreeTree, err := suspensionGitText(repo, index, nil, "write-tree")
@@ -184,6 +184,13 @@ func writeSuspensionEntries(repo, index string, entries []workspaceTreeEntry) er
 	}
 	_, err := suspensionGit(repo, index, input.Bytes(), "update-index", "-z", "--index-info")
 	return err
+}
+
+func normalizeTaskParentPaths(repo, index, base string, task SemanticTaskRef) (string, error) {
+	if task.RequestID != "" {
+		return digestBytes(nil), nil
+	}
+	return normalizeParentPaths(repo, index, base)
 }
 
 func normalizeParentPaths(repo, index, base string) (string, error) {

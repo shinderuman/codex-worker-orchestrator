@@ -18,7 +18,7 @@ func runControllerStatus(
 	if err != nil {
 		return true, err
 	}
-	store, err := openControllerSemanticStore(cfg)
+	store, err := openControllerOperationStore(cfg)
 	if err != nil {
 		return true, err
 	}

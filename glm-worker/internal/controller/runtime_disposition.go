@@ -71,7 +71,7 @@ func runtimeDispositionSuspended(head RepositoryControllerHead) bool {
 }
 
 func (s *Store) PreviewRuntimeDisposition(head RepositoryControllerHead) (*RuntimeDispositionInput, error) {
-	if runtimeDispositionSuspended(head) {
+	if runtimeDispositionNotApplicable(head) {
 		return nil, nil
 	}
 	task, err := s.runtimeDispositionTarget(head)
@@ -350,4 +350,8 @@ func runtimeDispositionRecordRef(revision TaskIndexRevision, transitionID string
 		}
 	}
 	return EvidenceObjectRef{}, fmt.Errorf("runtime disposition evidence record is missing")
+}
+
+func runtimeDispositionNotApplicable(head RepositoryControllerHead) bool {
+	return runtimeDispositionSuspended(head) || (head.ExecutionTaskRef != nil && head.ExecutionTaskRef.RequestID != "")
 }

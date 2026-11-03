@@ -99,6 +99,18 @@ func (s *Store) ProjectParentCompletion() (ParentCompletionOperation, error) {
 }
 
 func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCompletionOperation, error) {
+	if head.RootTaskRef == nil && head.ExecutionTaskRef == nil && head.ProjectSnapshotID != "" {
+		project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+		if err != nil {
+			return ParentCompletionOperation{}, err
+		}
+		if project.CompletedRequest != nil {
+			if err := s.requireCompletedRequest(head); err != nil {
+				return ParentCompletionOperation{}, err
+			}
+			return noneCompletionOperation("request completed; a new request must be supplied explicitly"), nil
+		}
+	}
 	if operation, ok, err := s.projectExternalAdvancement(head); err != nil || ok {
 		return operation, err
 	}

@@ -597,11 +597,11 @@ func (s *Store) runtimeDirTaskMatch(entry os.DirEntry, taskID string) (evidenceE
 	if err != nil || bindingTaskID != taskID {
 		return evidenceExportTaskMatch{}, false
 	}
-	if entry.Name() != digestStrings(s.identity.LineageID, binding.TaskPath) {
+	if entry.Name() != digestStrings(s.identity.LineageID, (SemanticTaskRef{TaskPath: binding.TaskPath, RequestID: binding.RequestID, ContractDigest: binding.TaskContractDigest}).Identity()) {
 		return evidenceExportTaskMatch{}, false
 	}
 	attempt, err := s.loadAttempt(binding.AttemptID)
-	if err != nil || attempt.SemanticTaskRef.TaskPath != binding.TaskPath {
+	if err != nil || !attempt.SemanticTaskRef.Equal(SemanticTaskRef{TaskPath: binding.TaskPath, RequestID: binding.RequestID, ContractDigest: binding.TaskContractDigest}) {
 		return evidenceExportTaskMatch{}, false
 	}
 	return evidenceExportTaskMatch{attempt: attempt, basis: evidenceExportBasisRuntimeBinding}, true

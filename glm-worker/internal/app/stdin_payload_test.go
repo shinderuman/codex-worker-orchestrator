@@ -173,8 +173,8 @@ func assertFailClosedStateUnchanged(t *testing.T, cfg config.AppConfig, before m
 }
 
 func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
-	cfg := newCanonicalAppConfig(t)
-	prepareWaitingDecisionState(t, cfg)
+	cfg := newHarnessAppConfig(t)
+	startStdinTaskAtDecision(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("decision applied")},
@@ -242,8 +242,8 @@ func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
 }
 
 func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
-	cfg := newCanonicalAppConfig(t)
-	prepareWaitingSolReviewState(t, cfg)
+	cfg := newHarnessAppConfig(t)
+	startStdinTaskAtReview(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("fix applied")},
@@ -286,8 +286,8 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 }
 
 func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
-	cfg := newCanonicalAppConfig(t)
-	prepareWaitingDecisionState(t, cfg)
+	cfg := newHarnessAppConfig(t)
+	startStdinTaskAtDecision(t, cfg)
 	payload := "NUL先頭\x00中間\x00末尾\n2行目 `backtick` $HOME \"double\" 'single' 日本語\x00"
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("decision applied")},
@@ -353,5 +353,21 @@ func TestReadStdinPayloadRejectsInsufficientBytes(t *testing.T) {
 	_, err := readStdinPayload(strings.NewReader(payload[:10]), int64(len(payload)), "")
 	if err == nil || !strings.Contains(err.Error(), "stdin payload read failed after 10 of") {
 		t.Fatalf("不足byteをerrorにする必要があります: %v", err)
+	}
+}
+
+func startStdinTaskAtDecision(t *testing.T, cfg config.AppConfig) {
+	t.Helper()
+	scripted := &fakeRunner{steps: []fakeStep{{structured: needsSolDecisionPacketApp()}}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, scripted.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func startStdinTaskAtReview(t *testing.T, cfg config.AppConfig) {
+	t.Helper()
+	scripted := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}, {structured: needsSolReviewPacketApp()}}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, scripted.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
 	}
 }

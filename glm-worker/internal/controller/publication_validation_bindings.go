@@ -145,7 +145,7 @@ func (s *Store) verifyAcceptanceSource(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase)
+	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase, op.Source.Attempt.SemanticTaskRef)
 	if err != nil {
 		return err
 	}

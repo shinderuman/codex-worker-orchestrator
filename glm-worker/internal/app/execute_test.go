@@ -20,6 +20,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -157,6 +158,7 @@ func newCanonicalAppConfig(t *testing.T) config.AppConfig {
 	t.Helper()
 	cfg := newAppConfig(t)
 	repo := cfg.RepoRoot
+	writeAppTestFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	if err := os.MkdirAll(filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +172,15 @@ func newCanonicalAppConfig(t *testing.T) config.AppConfig {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return cfg
+}
+
+func newHarnessAppConfig(t *testing.T) config.AppConfig {
+	t.Helper()
+	cfg := newCanonicalAppConfig(t)
+	prepareCompletionQualityCorpus(t, cfg.RepoRoot)
+	runCanonicalGuardGit(t, cfg.RepoRoot, "add", ".")
+	runCanonicalGuardGit(t, cfg.RepoRoot, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "harness quality corpus")
 	return cfg
 }
 
@@ -311,8 +322,7 @@ func TestExecuteResumeRejectsNonRateLimited(t *testing.T) {
 }
 
 func TestExecuteNewTaskReachesPass(t *testing.T) {
-	t.Parallel()
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: passPacketApp()},
@@ -333,7 +343,7 @@ func TestExecuteNewTaskReachesPass(t *testing.T) {
 }
 
 func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 
 	first := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
@@ -371,8 +381,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 }
 
 func TestExecutePropagatesWorkerFailure(t *testing.T) {
-	t.Parallel()
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{{runErr: errors.New("boom")}}}
 
 	err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, r.factory(), io.Discard, io.Discard)
@@ -386,7 +395,7 @@ func TestExecutePropagatesWorkerFailure(t *testing.T) {
 }
 
 func TestRunUsesInjectedDependencies(t *testing.T) {
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
 		{structured: passPacketApp()},
@@ -578,8 +587,7 @@ func writeAutomationSchedulerRow(t *testing.T, cfg config.AppConfig, key string,
 }
 
 func TestInstructionMutationGuardRecoveryCLIAcceptance(t *testing.T) {
-	t.Parallel()
-	cfg := newCanonicalAppConfig(t)
+	cfg := newHarnessAppConfig(t)
 	seedGitCommit(t, cfg.RepoRoot)
 	decisionWait := &fakeRunner{steps: []fakeStep{
 		{structured: needsSolDecisionPacketApp()},

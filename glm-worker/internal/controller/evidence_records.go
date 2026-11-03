@@ -314,7 +314,7 @@ func evidenceRecordDigest(value any) (string, error) {
 }
 
 func taskEvidenceSubjectID(ref SemanticTaskRef) string {
-	return digestStrings("controller-evidence-task-v1", ref.TaskPath, ref.ContractDigest)
+	return digestStrings("controller-evidence-task-v1", ref.Identity(), ref.ContractDigest)
 }
 
 func canonicalEvidenceRefs(refs []EvidenceObjectRef) []EvidenceObjectRef {

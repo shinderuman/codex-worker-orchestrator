@@ -6,7 +6,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func (s *Store) applyMaterializationCandidateSource(head RepositoryControllerHead, seal EvidenceObjectRef, rebound *ReboundSuspension) error {
+func (s *Store) applyMaterializationCandidateSource(head RepositoryControllerHead, seal EvidenceObjectRef, rebound *ReboundSuspension, task SemanticTaskRef) error {
 	if head.AcceptedCandidateRef != nil {
 		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 		if err != nil {
@@ -17,15 +17,15 @@ func (s *Store) applyMaterializationCandidateSource(head RepositoryControllerHea
 		}
 		rebound.Current.WorktreeTree = candidate.TreeOID
 	}
-	return s.normalizeMaterializationMetadataBase(head, rebound)
+	return s.normalizeMaterializationMetadataBase(head, rebound, task)
 }
 
-func (s *Store) normalizeMaterializationMetadataBase(head RepositoryControllerHead, rebound *ReboundSuspension) error {
+func (s *Store) normalizeMaterializationMetadataBase(head RepositoryControllerHead, rebound *ReboundSuspension, task SemanticTaskRef) error {
 	metadataBase, err := s.projectMetadataBase(head.ProjectSnapshotID)
 	if err != nil {
 		return err
 	}
-	return normalizeReboundTrees(s.identity.PrimaryRoot, metadataBase, rebound)
+	return normalizeReboundTrees(s.identity.PrimaryRoot, metadataBase, rebound, task)
 }
 
 func (s *Store) RuntimeMaterializationReentryAuthority(transitionID string) (state.ControllerReentryAuthority, error) {

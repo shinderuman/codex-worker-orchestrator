@@ -38,6 +38,9 @@ func (s *Store) workflowSealedMetadata() (map[string][]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	if candidate.TaskRef.RequestID != "" {
+		return nil, false, nil
+	}
 	metadata, err := s.readSealedTaskMetadata(candidate)
 	return metadata, err == nil, err
 }

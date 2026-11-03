@@ -13,23 +13,31 @@ type EffectClassification string
 type MutationSurface string
 
 type SemanticTaskRef struct {
-	TaskPath       string `json:"task_path"`
+	TaskPath       string `json:"task_path,omitempty"`
+	RequestID      string `json:"request_id,omitempty"`
 	ContractDigest string `json:"contract_digest"`
 }
 
+type RequestTaskAuthority struct {
+	RequestID string `json:"request_id"`
+	Content   string `json:"content"`
+}
+
 type ProjectSnapshot struct {
-	SchemaVersion       int               `json:"schema_version"`
-	SnapshotID          string            `json:"snapshot_id"`
-	RepositoryIdentity  string            `json:"repository_identity"`
-	HeadOID             string            `json:"head_oid"`
-	PlanDigest          string            `json:"plan_digest"`
-	TaskCorpusDigest    string            `json:"task_corpus_digest"`
-	SemanticGraphDigest string            `json:"semantic_graph_digest"`
-	ScheduleDigest      string            `json:"schedule_digest"`
-	Active              []string          `json:"active"`
-	Next                []string          `json:"next,omitempty"`
-	Blocked             []string          `json:"blocked,omitempty"`
-	Tasks               []SemanticTaskRef `json:"tasks"`
+	UserRequest         *RequestTaskAuthority `json:"user_request,omitempty"`
+	CompletedRequest    *RequestTaskAuthority `json:"completed_request,omitempty"`
+	SchemaVersion       int                   `json:"schema_version"`
+	SnapshotID          string                `json:"snapshot_id"`
+	RepositoryIdentity  string                `json:"repository_identity"`
+	HeadOID             string                `json:"head_oid"`
+	PlanDigest          string                `json:"plan_digest"`
+	TaskCorpusDigest    string                `json:"task_corpus_digest"`
+	SemanticGraphDigest string                `json:"semantic_graph_digest"`
+	ScheduleDigest      string                `json:"schedule_digest"`
+	Active              []string              `json:"active"`
+	Next                []string              `json:"next,omitempty"`
+	Blocked             []string              `json:"blocked,omitempty"`
+	Tasks               []SemanticTaskRef     `json:"tasks"`
 }
 
 type RepositoryControllerHead struct {
@@ -245,13 +253,20 @@ const (
 )
 
 func (ref SemanticTaskRef) Equal(other SemanticTaskRef) bool {
-	return ref.TaskPath == other.TaskPath && ref.ContractDigest == other.ContractDigest
+	return ref.TaskPath == other.TaskPath && ref.RequestID == other.RequestID && ref.ContractDigest == other.ContractDigest
 }
 
 func (ref SemanticTaskRef) Empty() bool {
-	return ref.TaskPath == "" && ref.ContractDigest == ""
+	return ref.TaskPath == "" && ref.RequestID == "" && ref.ContractDigest == ""
 }
 
 func (effect EffectExpectation) Key() string {
 	return string(effect.Surface) + "\x00" + effect.Resource
+}
+
+func (ref SemanticTaskRef) Identity() string {
+	if ref.RequestID != "" {
+		return "request:" + ref.RequestID
+	}
+	return ref.TaskPath
 }

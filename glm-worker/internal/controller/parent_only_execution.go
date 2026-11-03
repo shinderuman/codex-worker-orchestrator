@@ -87,7 +87,7 @@ func (s *Store) planParentOnlyExecution(input ParentOnlyMaterializeInput) (Execu
 	return op, head, nil
 }
 
-func (s *Store) newParentOnlyExecutionRecords(authority CommittedTaskAuthority, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, generation uint64) (AttemptRecord, ExecutionLease, error) {
+func (s *Store) newParentOnlyExecutionRecords(authority TaskAuthority, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, generation uint64) (AttemptRecord, ExecutionLease, error) {
 	attempt, lease, err := newExecutionRecords(authority.Task, authority.Task, workspace, snapshot, generation, parentOnlyExecutionPurpose)
 	if err != nil {
 		return AttemptRecord{}, ExecutionLease{}, err
@@ -118,7 +118,7 @@ func validateParentOnlyMaterializeHead(head RepositoryControllerHead, input Pare
 	return nil
 }
 
-func (s *Store) parentOnlySuccessorAuthority(head RepositoryControllerHead) (CommittedTaskAuthority, error) {
+func (s *Store) parentOnlySuccessorAuthority(head RepositoryControllerHead) (TaskAuthority, error) {
 	if IsPristine(head) {
 		return ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
 	}
@@ -127,14 +127,14 @@ func (s *Store) parentOnlySuccessorAuthority(head RepositoryControllerHead) (Com
 	}
 	authority, err := s.retiredProjectAuthority(head)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	current, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	if current.ProjectSnapshotID != authority.ProjectSnapshotID {
-		return CommittedTaskAuthority{}, fmt.Errorf("parent metadata advancement must be adopted before parent-only execution")
+		return TaskAuthority{}, fmt.Errorf("parent metadata advancement must be adopted before parent-only execution")
 	}
 	return current, nil
 }

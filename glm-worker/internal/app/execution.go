@@ -8,6 +8,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -71,6 +72,11 @@ func run(
 func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.Writer) error {
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
+	}
+	if cmd.Mode == ModeNewTask {
+		if err := requireNormalTaskHarness(cfg); err != nil {
+			return err
+		}
 	}
 	var err error
 	cfg, err = controller.WorkflowConfig(cfg)
@@ -211,21 +217,50 @@ func acceptRetainedCanonicalWorkflow(cfg config.AppConfig, st *state.StateStore,
 		return err
 	}
 	binding, err := st.LoadControllerRuntimeBinding()
-	if err != nil || head.ExecutionTaskRef == nil || binding.AttemptID != head.LiveAttemptID || binding.TaskPath != head.ExecutionTaskRef.TaskPath || binding.TaskContractDigest != head.ExecutionTaskRef.ContractDigest {
+	if err != nil || head.ExecutionTaskRef == nil || binding.AttemptID != head.LiveAttemptID || binding.TaskPath != head.ExecutionTaskRef.TaskPath || binding.RequestID != head.ExecutionTaskRef.RequestID || binding.TaskContractDigest != head.ExecutionTaskRef.ContractDigest {
 		return fmt.Errorf("parent acceptance requires review reentry for the current controller attempt")
 	}
 	return parentAccept(st, stdout)
 }
 
-func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
-	if cmd.Mode != ModeNewTask {
-		exists, err := controller.Exists(cfg)
+func requireNormalTaskHarness(cfg config.AppConfig) error {
+	present, err := controller.RepositoryPresent(cfg.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("inspect normal task repository: %w", err)
+	}
+	if !present {
+		return fmt.Errorf("normal task admission requires a Git repository; canonical non-Git task authority is not defined")
+	}
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("evaluate normal task repository harness: %w", err)
+	}
+	if decision.Active {
+		return nil
+	}
+	if decision.Reason == repositoryharness.ReasonAbsent {
+		tracked, err := repositoryharness.MarkerTracked(cfg.RepoRoot)
 		if err != nil {
-			return cfg, err
+			return fmt.Errorf("inspect missing harness marker tracking: %w", err)
 		}
-		if !exists {
-			return cfg, fmt.Errorf("existing workflow requires canonical controller execution authority")
+		if tracked {
+			return fmt.Errorf("normal task admission refuses missing tracked repository harness marker (%s: %s)", repositoryharness.MarkerPath, decision.Reason)
 		}
+		return nil
+	}
+	return fmt.Errorf("normal task admission refuses invalid repository harness marker (%s: %s)", repositoryharness.MarkerPath, decision.Reason)
+}
+
+func requireWorkflowAdmission(cmd Command, cfg config.AppConfig) error {
+	if cmd.Mode == ModeNewTask {
+		return requireNormalTaskHarness(cfg)
+	}
+	return requireExistingWorkflowController(cfg)
+}
+
+func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig, error) {
+	if err := requireWorkflowAdmission(cmd, cfg); err != nil {
+		return cfg, err
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
@@ -238,7 +273,23 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 	if err := rejectLiveParentOnlyExecution(store); err != nil {
 		return cfg, err
 	}
-	if cmd.Mode == ModeNewTask && !controller.IsPristine(head) && head.LiveLeaseID == "" && head.ExecutionTaskRef == nil {
+	if cmd.Mode == ModeNewTask {
+		return activateNewWorkflowConfig(cfg, store, head, cmd.Payload)
+	}
+	_, err = controller.Activate(cfg)
+	return cfg, err
+}
+
+func activateNewWorkflowConfig(cfg config.AppConfig, store *controller.Store, head controller.RepositoryControllerHead, request string) (config.AppConfig, error) {
+	requestScope := false
+	if head.ProjectSnapshotID != "" {
+		project, err := store.LoadProjectSnapshot(head.ProjectSnapshotID)
+		if err != nil {
+			return cfg, err
+		}
+		requestScope = project.UserRequest != nil || project.CompletedRequest != nil
+	}
+	if !requestScope && !controller.IsPristine(head) && head.LiveLeaseID == "" && head.ExecutionTaskRef == nil {
 		materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: head.ControllerGeneration})
 		if err != nil {
 			return cfg, err
@@ -246,8 +297,21 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 		cfg.RepoRoot = materialized.Admission.Workspace.Root
 		return controller.WorkflowConfig(cfg)
 	}
-	_, err = controller.Activate(cfg)
-	return cfg, err
+	if _, err := controller.ActivateRequest(cfg, request); err != nil {
+		return cfg, err
+	}
+	return controller.WorkflowConfig(cfg)
+}
+
+func requireExistingWorkflowController(cfg config.AppConfig) error {
+	exists, err := controller.Exists(cfg)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("existing workflow requires canonical controller execution authority")
+	}
+	return nil
 }
 
 func rejectLiveParentOnlyExecution(store *controller.Store) error {

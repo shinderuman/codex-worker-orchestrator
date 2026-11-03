@@ -228,7 +228,7 @@ func (s *Store) resolveExportRuntime(attempt AttemptRecord) (*state.StateStore, 
 		return nil, "", fmt.Errorf("evidence export live runtime source is not bound: %w", err)
 	}
 	if binding.AttemptID != attempt.AttemptID ||
-		binding.TaskPath != attempt.SemanticTaskRef.TaskPath ||
+		binding.TaskPath != attempt.SemanticTaskRef.TaskPath || binding.RequestID != attempt.SemanticTaskRef.RequestID ||
 		binding.TaskContractDigest != attempt.SemanticTaskRef.ContractDigest {
 		return nil, "", fmt.Errorf("evidence export live runtime source is bound to %s (%s), not the target attempt", binding.AttemptID, binding.TaskPath)
 	}

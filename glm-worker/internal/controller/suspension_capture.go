@@ -9,7 +9,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]workspaceTreeEntry, error) {
+func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry, parentManaged bool) ([]workspaceTreeEntry, error) {
 	paths := make(map[string]workspaceTreeEntry, len(indexed))
 	for _, entry := range indexed {
 		paths[entry.path] = entry
@@ -28,7 +28,7 @@ func captureSuspensionWorktree(repo string, indexed []workspaceTreeEntry) ([]wor
 	}
 	var entries []workspaceTreeEntry
 	for path, entry := range paths {
-		if !state.IsParentManagedPath(path) {
+		if !parentManaged || !state.IsParentManagedPath(path) {
 			entries = append(entries, entry)
 		}
 	}

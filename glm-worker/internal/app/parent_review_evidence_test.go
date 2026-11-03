@@ -14,6 +14,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -209,6 +210,7 @@ func newParentEvidenceReviewStore(t *testing.T, canonical ...bool) (config.AppCo
 
 	cfg := config.AppConfig{StateBase: t.TempDir(), RepoHash: "review-evidence", RepoRoot: repoRoot}
 	if len(canonical) != 0 && canonical[0] {
+		writeAppTestFile(t, repoRoot, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 		writeAppTestFile(t, repoRoot, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n")
 		writeAppTestFile(t, repoRoot, "IMPLEMENTATION_TASKS/root.md", "# root\n\n## Contract\n\nreview\n\n## Dependencies\n\nnone\n")
 		gitParentReviewEvidenceCommand(t, repoRoot, "add", ".")

@@ -16,7 +16,7 @@ type controllerModelCallGuard struct {
 }
 
 func (w *Workflow) admitCanonicalWorkflowMutation() error {
-	admission, err := w.canonicalWorkflowAdmission()
+	admission, err := w.canonicalWorkflowAdmission(w.state.ReadOr("last-request", ""))
 	if err != nil {
 		return err
 	}
@@ -27,8 +27,8 @@ func (w *Workflow) admitCanonicalWorkflowMutation() error {
 	return nil
 }
 
-func (w *Workflow) admitCanonicalNewTaskMutation() error {
-	admission, err := w.canonicalWorkflowAdmission()
+func (w *Workflow) admitCanonicalNewTaskMutation(request string) error {
+	admission, err := w.canonicalWorkflowAdmission(request)
 	if err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func (w *Workflow) admitCanonicalNewTaskMutation() error {
 	return nil
 }
 
-func (w *Workflow) canonicalWorkflowAdmission() (controller.Admission, error) {
+func (w *Workflow) canonicalWorkflowAdmission(request string) (controller.Admission, error) {
 	if w.state.TaskStatus() != state.TaskStatusNone {
 		exists, err := controller.Exists(w.config)
 		if err != nil {
@@ -46,7 +46,7 @@ func (w *Workflow) canonicalWorkflowAdmission() (controller.Admission, error) {
 			return controller.Admission{}, fmt.Errorf("existing workflow requires canonical controller execution authority")
 		}
 	}
-	admission, err := controller.Activate(w.config)
+	admission, err := controller.ActivateRequest(w.config, request)
 	if err != nil {
 		return controller.Admission{}, err
 	}
@@ -72,18 +72,28 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 		return controllerModelCallGuard{}, err
 	}
 	if active {
-		if required, err := store.RequiredTaskAuthoritySync(head); err != nil {
+		if err := w.validateCanonicalModelAuthority(store, head, checkpoint); err != nil {
 			return controllerModelCallGuard{}, err
-		} else if required != nil {
-			return controllerModelCallGuard{}, required
 		}
 	}
 	if checkpoint.ReadOnly {
+		if active && head.ExecutionTaskRef != nil && head.ExecutionTaskRef.RequestID != "" {
+			return w.admitControllerSource(store, head)
+		}
 		return controllerModelCallGuard{}, nil
 	}
 	if !active {
 		return controllerModelCallGuard{}, fmt.Errorf("mutating model call requires canonical controller execution authority")
 	}
+	guard, err := w.admitControllerSource(store, head)
+	if err != nil {
+		return controllerModelCallGuard{}, err
+	}
+	guard.admission, err = store.BindModelCall(guard.admission)
+	return guard, err
+}
+
+func (w *Workflow) admitControllerSource(store *controller.Store, head controller.RepositoryControllerHead) (controllerModelCallGuard, error) {
 	workspace, err := controller.ResolveWorkspaceIdentity(w.config.RepoRoot, store.Identity())
 	if err != nil {
 		return controllerModelCallGuard{}, err
@@ -97,10 +107,6 @@ func (w *Workflow) admitControllerModelCall(checkpoint state.ResumeCheckpoint) (
 		return controllerModelCallGuard{}, err
 	}
 	admission, err := store.AdmitMutationOrFailClosed(authority, workspace, before)
-	if err != nil {
-		return controllerModelCallGuard{}, err
-	}
-	admission, err = store.BindModelCall(admission)
 	if err != nil {
 		return controllerModelCallGuard{}, err
 	}
@@ -159,6 +165,16 @@ func (*Workflow) commitControllerModelCall(
 	if !guard.active {
 		return nil
 	}
+	if checkpoint.ReadOnly {
+		if after == guard.before {
+			return nil
+		}
+		cause := fmt.Errorf("read-only request model call changed repository source")
+		if err := guard.store.FailClosedAdmission(guard.admission, cause.Error(), after); err != nil {
+			return errors.Join(cause, err)
+		}
+		return cause
+	}
 	outcome := "success"
 	if runErr != nil {
 		outcome = "error"
@@ -180,4 +196,29 @@ func (*Workflow) failControllerModelCall(
 		reason = "model call violated repository guard"
 	}
 	return guard.store.FailClosedAdmission(guard.admission, reason, after)
+}
+
+func (w *Workflow) validateCanonicalModelAuthority(store *controller.Store, head controller.RepositoryControllerHead, checkpoint state.ResumeCheckpoint) error {
+	if err := w.validateModelRequest(store, head, checkpoint); err != nil {
+		return err
+	}
+	required, err := store.RequiredTaskAuthoritySync(head)
+	if err != nil {
+		return err
+	}
+	if required != nil {
+		return required
+	}
+	return nil
+}
+
+func (w *Workflow) validateModelRequest(store *controller.Store, head controller.RepositoryControllerHead, checkpoint state.ResumeCheckpoint) error {
+	if head.ExecutionTaskRef == nil || head.ExecutionTaskRef.RequestID == "" {
+		return nil
+	}
+	saved := w.state.ReadOr("last-request", "")
+	if checkpoint.Request != "" && checkpoint.Request != saved {
+		return fmt.Errorf("checkpoint request differs from canonical runtime request")
+	}
+	return store.ValidateRequestTask(*head.ExecutionTaskRef, saved)
 }

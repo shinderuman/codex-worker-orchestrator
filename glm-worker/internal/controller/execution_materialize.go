@@ -94,7 +94,7 @@ func (s *Store) verifyMaterializedExecution(op ExecutionOperation) (WorkspaceIde
 	if err != nil {
 		return WorkspaceIdentity{}, WorkspaceSnapshot{}, err
 	}
-	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase)
+	trees, err := CaptureExecutionTrees(workspace.Root, metadataBase, op.Attempt.SemanticTaskRef)
 	if err != nil {
 		return WorkspaceIdentity{}, WorkspaceSnapshot{}, err
 	}

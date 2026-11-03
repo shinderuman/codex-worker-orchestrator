@@ -62,13 +62,13 @@ func (s *Store) validatePromotionSourceOwnership(c AcceptedCandidate, before Exe
 	if err != nil {
 		return err
 	}
-	base, err := s.normalizePromotionTree(c.BaseOID, metadataBase)
+	base, err := s.normalizePromotionTree(c.BaseOID, metadataBase, c.TaskRef)
 	if err != nil {
 		return err
 	}
 	allowed := map[string]bool{baseSource: true, base: true, c.TreeOID: true}
 	if c.ImplementationTree != "" {
-		implementation, err := s.normalizePromotionTree(c.ImplementationTree, metadataBase)
+		implementation, err := s.normalizePromotionTree(c.ImplementationTree, metadataBase, c.TaskRef)
 		if err != nil {
 			return err
 		}
@@ -84,7 +84,7 @@ func (s *Store) validatePromotionSourceOwnership(c AcceptedCandidate, before Exe
 		if allowed[tree] {
 			continue
 		}
-		normalized, err := s.normalizePromotionTree(tree, metadataBase)
+		normalized, err := s.normalizePromotionTree(tree, metadataBase, c.TaskRef)
 		if err != nil || normalized != tree {
 			return fmt.Errorf("primary Metadata differs from accepted Project authority: %w", err)
 		}
@@ -103,7 +103,7 @@ func (s *Store) allowPromotionCandidateLineage(c AcceptedCandidate, metadataBase
 		}
 		for _, tree := range []string{previous.BaseOID, previous.TreeOID} {
 			allowed[tree] = true
-			normalized, err := s.normalizePromotionTree(tree, metadataBase)
+			normalized, err := s.normalizePromotionTree(tree, metadataBase, c.TaskRef)
 			if err != nil {
 				return err
 			}
@@ -121,13 +121,13 @@ func validatePromotionCandidatePredecessor(c, previous AcceptedCandidate) error 
 	return nil
 }
 
-func (s *Store) normalizePromotionTree(tree, metadataBase string) (string, error) {
+func (s *Store) normalizePromotionTree(tree, metadataBase string, task SemanticTaskRef) (string, error) {
 	index, err := newSuspensionIndex(s.identity.PrimaryRoot, tree)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = os.Remove(index) }()
-	return normalizeCandidateTree(s.identity.PrimaryRoot, index, metadataBase)
+	return normalizeCandidateTree(s.identity.PrimaryRoot, index, metadataBase, task)
 }
 
 func (s *Store) validatePromotionPredecessorTrees(c AcceptedCandidate, before ExecutionTrees, metadataBase string, allowed map[string]bool) error {
@@ -165,7 +165,7 @@ func (s *Store) allowSealedPromotionTrees(seal AttemptSeal, metadataBase string,
 	}
 	for _, tree := range []string{seal.CurrentIndexTree, seal.CurrentWorktreeTree} {
 		allowed[tree] = true
-		normalized, err := s.normalizePromotionTree(tree, metadataBase)
+		normalized, err := s.normalizePromotionTree(tree, metadataBase, seal.SemanticTaskRef)
 		if err != nil {
 			return err
 		}

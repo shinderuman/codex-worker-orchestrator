@@ -52,21 +52,31 @@ func (s *Store) requireCurrentCandidateSource(c AcceptedCandidate) error {
 }
 
 func (s *Store) admissionSourceContinuity(head RepositoryControllerHead) (publicationSourceContinuity, string, error) {
-	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
-	if err != nil {
-		return publicationSourceConflict, "", fmt.Errorf("committed primary authority is unreadable: %w", err)
+	var tip string
+	if head.ExecutionTaskRef != nil && head.ExecutionTaskRef.RequestID != "" {
+		var err error
+		tip, err = gitTrimmed(s.identity.PrimaryRoot, "rev-parse", "--verify", "HEAD")
+		if err != nil {
+			return publicationSourceConflict, "", err
+		}
+	} else {
+		authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+		if err != nil {
+			return publicationSourceConflict, "", fmt.Errorf("committed primary authority is unreadable: %w", err)
+		}
+		tip = authority.Snapshot.HeadOID
 	}
-	if authority.Snapshot.HeadOID == head.IntegrationTip {
-		return publicationSourceContinuous, authority.Snapshot.HeadOID, nil
+	if tip == head.IntegrationTip {
+		return publicationSourceContinuous, tip, nil
 	}
-	descendant, err := isPublicationDescendant(s.identity.PrimaryRoot, head.IntegrationTip, authority.Snapshot.HeadOID)
+	descendant, err := isPublicationDescendant(s.identity.PrimaryRoot, head.IntegrationTip, tip)
 	if err != nil {
 		return publicationSourceConflict, "", err
 	}
 	if !descendant {
-		return publicationSourceConflict, authority.Snapshot.HeadOID, nil
+		return publicationSourceConflict, tip, nil
 	}
-	return publicationSourceAdvanced, authority.Snapshot.HeadOID, nil
+	return publicationSourceAdvanced, tip, nil
 }
 
 func (s *Store) requireCurrentAdmissionSource(head RepositoryControllerHead) error {

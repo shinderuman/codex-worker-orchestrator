@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/task-admission-harness-scope.md`](IMPLEMENTATION_TASKS/task-admission-harness-scope.md)
+- [`IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md`](IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md`](IMPLEMENTATION_TASKS/repo-search-index-flag-cache-correctness.md)
 - [`IMPLEMENTATION_TASKS/observation-replay-fence-retention.md`](IMPLEMENTATION_TASKS/observation-replay-fence-retention.md)
 - [`IMPLEMENTATION_TASKS/observation-preparation-cancellation.md`](IMPLEMENTATION_TASKS/observation-preparation-cancellation.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-webgpt-adoption-checkpoint.md)

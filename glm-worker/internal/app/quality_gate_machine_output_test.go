@@ -21,8 +21,16 @@ func TestFinalCandidateConsumesActualQualityGateDispatchEvidence(t *testing.T) {
 	useInlineQualityGateRunner(t)
 	shimDir, _ := writeQualityGateGoShim(t, filepath.Join(t.TempDir(), "absent-flag"))
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
-	if err := os.Remove(filepath.Join(cfg.RepoRoot, repositoryharness.MarkerPath)); err != nil {
+	cfg, policy := prepareRetiredWorkflowCorpus(t, false)
+	runCanonicalGuardGit(t, cfg.RepoRoot, "rm", repositoryharness.MarkerPath)
+	runCanonicalGuardGit(t, cfg.RepoRoot, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "validation-only corpus")
+	runCanonicalGuardGit(t, cfg.RepoRoot, "push", "-q", "origin", "HEAD:refs/heads/main")
+	admission, err := controller.Activate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := controller.Open(cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)

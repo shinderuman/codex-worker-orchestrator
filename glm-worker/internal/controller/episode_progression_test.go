@@ -284,7 +284,7 @@ func commitProgressionResult(
 	remove []string,
 	rewrites map[string]string,
 	plan string,
-) CommittedTaskAuthority {
+) TaskAuthority {
 	t.Helper()
 	for _, taskPath := range remove {
 		if err := os.Remove(filepath.Join(repo, filepath.FromSlash(taskPath))); err != nil {

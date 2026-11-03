@@ -182,7 +182,7 @@ func candidateEvidenceComplete(candidate AcceptedCandidate, seen map[string]bool
 }
 
 func acceptedCandidateID(c AcceptedCandidate) string {
-	return digestStrings("accepted-candidate-v1", c.AttemptID, c.TaskRef.TaskPath, c.TaskRef.ContractDigest, c.BaseOID, c.CommitOID, c.TreeOID, c.SnapshotID, c.Message, c.Policy.Remote, c.Policy.RemoteRef, c.Policy.LocalRef, strconv.FormatBool(c.Policy.RequireInstall))
+	return digestStrings("accepted-candidate-v1", c.AttemptID, c.TaskRef.Identity(), c.TaskRef.ContractDigest, c.BaseOID, c.CommitOID, c.TreeOID, c.SnapshotID, c.Message, c.Policy.Remote, c.Policy.RemoteRef, c.Policy.LocalRef, strconv.FormatBool(c.Policy.RequireInstall))
 }
 
 func validateCandidateIdentity(c AcceptedCandidate) error {

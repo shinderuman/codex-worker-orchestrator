@@ -82,7 +82,7 @@ func applyAttemptSealRuntimeCoverage(seal *AttemptSeal, runtimeCaptured bool) {
 
 func (s *Store) boundAttemptRuntime(source Admission) (*state.StateStore, string, error) {
 	cfg := s.config
-	cfg.RepoHash = digestStrings(s.identity.LineageID, source.Attempt.SemanticTaskRef.TaskPath)
+	cfg.RepoHash = digestStrings(s.identity.LineageID, source.Attempt.SemanticTaskRef.Identity())
 	runtime := state.AttachStateStore(cfg)
 	info, err := os.Lstat(runtime.Path("."))
 	if errors.Is(err, os.ErrNotExist) {
@@ -104,7 +104,7 @@ func (s *Store) boundAttemptRuntime(source Admission) (*state.StateStore, string
 	if binding.AttemptID != source.Attempt.AttemptID {
 		return nil, "", fmt.Errorf("runtime evidence belongs to another attempt")
 	}
-	if binding.TaskPath != source.Attempt.SemanticTaskRef.TaskPath || binding.TaskContractDigest != source.Attempt.SemanticTaskRef.ContractDigest {
+	if binding.TaskPath != source.Attempt.SemanticTaskRef.TaskPath || binding.RequestID != source.Attempt.SemanticTaskRef.RequestID || binding.TaskContractDigest != source.Attempt.SemanticTaskRef.ContractDigest {
 		return nil, "", fmt.Errorf("runtime evidence semantic task binding is stale")
 	}
 	taskID, err := validateRuntimeEvidenceTask(runtime)

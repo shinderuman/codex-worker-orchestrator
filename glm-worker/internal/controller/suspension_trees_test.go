@@ -5,11 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 func TestSuspensionCaptureAndTwoStageRebindPreserveWorkspaceSemantics(t *testing.T) {
 	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
+	writeSuspensionTestFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	files := map[string]string{"staged.txt": "original\n", "unstaged.txt": "original\n", "delete-index.txt": "original\n", "delete-worktree.txt": "original\n", "mode.txt": "original\n"}
 	for path, data := range files {
 		writeSuspensionTestFile(t, repo, path, data)
@@ -20,7 +23,7 @@ func TestSuspensionCaptureAndTwoStageRebindPreserveWorkspaceSemantics(t *testing
 	writeSuspensionTestFile(t, repo, "staged.txt", "baseline staged\n")
 	runControllerGit(t, repo, "add", "staged.txt")
 	writeSuspensionTestFile(t, repo, "staged.txt", "baseline unstaged\n")
-	baseline, err := CaptureExecutionTrees(repo, base)
+	baseline, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +43,7 @@ func TestSuspensionCaptureAndTwoStageRebindPreserveWorkspaceSemantics(t *testing
 	}
 	writeSuspensionTestFile(t, repo, "untracked\nname.txt", "untracked\x00binary\n")
 	writeSuspensionTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", "parent-owned changed state\n")
-	current, err := CaptureExecutionTrees(repo, base)
+	current, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +116,7 @@ func TestSuspensionCaptureRejectsUnsupportedIndexBeforeMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := CaptureExecutionTrees(repo, base); err == nil {
+			if _, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo)); err == nil {
 				t.Fatal("unsupported index accepted")
 			}
 			after, err := CaptureWorkspaceSnapshot(repo)
@@ -131,12 +134,12 @@ func TestSuspensionRebindConflictPreservesSourceWorkspace(t *testing.T) {
 	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)
 	base := controllerGitOutput(t, repo, "rev-parse", "HEAD")
-	baseline, err := CaptureExecutionTrees(repo, base)
+	baseline, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo))
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeSuspensionTestFile(t, repo, "source.txt", "task change\n")
-	current, err := CaptureExecutionTrees(repo, base)
+	current, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +181,7 @@ func TestSuspensionGitlinkCapturePreservesCleanAndRejectsDirtySubmodule(t *testi
 	runControllerGit(t, repo, "-c", "protocol.file.allow=always", "submodule", "add", child, "child")
 	runControllerGit(t, repo, "commit", "-qm", "clean gitlink")
 	base := controllerGitOutput(t, repo, "rev-parse", "HEAD")
-	trees, err := CaptureExecutionTrees(repo, base)
+	trees, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,16 +197,16 @@ func TestSuspensionGitlinkCapturePreservesCleanAndRejectsDirtySubmodule(t *testi
 		t.Fatal(err)
 	}
 	writeSuspensionTestFile(t, repo, "child/source.txt", "dirty nested work\n")
-	if _, err := CaptureExecutionTrees(repo, base); err == nil {
+	if _, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo)); err == nil {
 		t.Fatal("dirty gitlink accepted")
 	}
 	runControllerGit(t, filepath.Join(repo, "child"), "checkout", "--", "source.txt")
 	runControllerGit(t, filepath.Join(repo, "child"), "-c", "user.name=Test", "-c", "user.email=test@invalid", "commit", "--allow-empty", "-qm", "advanced gitlink")
-	if _, err := CaptureExecutionTrees(repo, base); err == nil {
+	if _, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo)); err == nil {
 		t.Fatal("unstaged gitlink commit accepted without replay support")
 	}
 	runControllerGit(t, repo, "submodule", "deinit", "--force", "child")
-	if _, err := CaptureExecutionTrees(repo, base); err != nil {
+	if _, err := CaptureExecutionTrees(repo, base, controllerTestTask(t, repo)); err != nil {
 		t.Fatal(err)
 	}
 }

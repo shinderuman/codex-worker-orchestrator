@@ -166,27 +166,27 @@ func applyLiveAdvancementHandoff(cfg config.AppConfig, output *parentHandoffOutp
 	return true
 }
 
-func externalAdvancementExplainsAttribution(attribution repositoryproject.TaskAttribution, authority controller.CommittedTaskAuthority) bool {
+func externalAdvancementExplainsAttribution(attribution repositoryproject.TaskAttribution, authority controller.TaskAuthority) bool {
 	if attribution.Matches || attribution.Reason != repositoryproject.ReasonActiveTaskMismatch || attribution.Handover {
 		return false
 	}
 	return attribution.ActiveTask == authority.Task.TaskPath && attribution.ActiveTask != attribution.LifecycleTask && authority.Task.TaskPath != ""
 }
 
-func externalAdvancementAuthority(cfg config.AppConfig, head controller.RepositoryControllerHead) (controller.CommittedTaskAuthority, bool) {
+func externalAdvancementAuthority(cfg config.AppConfig, head controller.RepositoryControllerHead) (controller.TaskAuthority, bool) {
 	if head.MetadataLineageRef == nil || head.PublicationPolicy == nil {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
 	if err != nil || authority.Snapshot.HeadOID == head.IntegrationTip {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	store, err := controller.Open(cfg)
 	if err != nil {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	if _, err := store.RetiredSourceAdvancementRequired(head, authority.Snapshot.HeadOID); err != nil {
-		return controller.CommittedTaskAuthority{}, false
+		return controller.TaskAuthority{}, false
 	}
 	return authority, true
 }

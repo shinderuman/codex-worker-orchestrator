@@ -41,7 +41,7 @@ type Workflow struct {
 	captureQualitySurface   func(root string) (string, error)
 	repoSearch              repoSearchFunc
 	admitCanonicalMutation  func() error
-	admitNewTaskMutation    func() error
+	admitNewTaskMutation    func(string) error
 	admitModelMutation      func(state.ResumeCheckpoint) (controllerModelCallGuard, error)
 	canonicalAdmission      *controller.Admission
 
@@ -191,7 +191,7 @@ func (e *WorkerError) Unwrap() error {
 
 func (w *Workflow) ExecuteNewTask(request string) error {
 	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
-		if err := w.validateNewTaskStart(); err != nil {
+		if err := w.validateNewTaskStart(request); err != nil {
 			return err
 		}
 		activeTaskPath, err := w.initializeNewTask(request)
@@ -227,8 +227,8 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 	}))
 }
 
-func (w *Workflow) validateNewTaskStart() error {
-	return w.admitNewTask()
+func (w *Workflow) validateNewTaskStart(request string) error {
+	return w.admitNewTask(request)
 }
 
 func (w *Workflow) initializeNewTask(request string) (string, error) {

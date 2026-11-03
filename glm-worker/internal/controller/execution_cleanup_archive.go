@@ -35,7 +35,7 @@ func captureCleanupTrees(repo string) (ExecutionTrees, error) {
 }
 
 func captureCleanupWorktree(repo string, indexed []workspaceTreeEntry) ([]workspaceTreeEntry, error) {
-	worktree, err := captureSuspensionWorktree(repo, indexed)
+	worktree, err := captureSuspensionWorktree(repo, indexed, true)
 	if err != nil {
 		return nil, err
 	}

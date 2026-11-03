@@ -10,7 +10,7 @@ type executionSwitchFixture struct {
 	store         *Store
 	workspace     WorkspaceIdentity
 	snapshot      WorkspaceSnapshot
-	authority     CommittedTaskAuthority
+	authority     TaskAuthority
 	source        Admission
 	child         SemanticTaskRef
 	targetAttempt AttemptRecord

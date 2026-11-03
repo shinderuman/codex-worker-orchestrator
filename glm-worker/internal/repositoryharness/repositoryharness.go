@@ -100,6 +100,18 @@ func Evaluate(root string) (Decision, error) {
 	return Decision{Active: true}, nil
 }
 
+func MarkerTracked(root string) (bool, error) {
+	tracked, err := markerTracked(root)
+	if err != nil || tracked {
+		return tracked, err
+	}
+	output, err := gitexec.Command("git", root, "ls-tree", "--name-only", "HEAD", "--", MarkerPath).Output()
+	if err != nil {
+		return false, fmt.Errorf("git ls-tree %s: %w", MarkerPath, err)
+	}
+	return strings.TrimSpace(string(output)) != "", nil
+}
+
 func markerTracked(root string) (bool, error) {
 	inside, err := gitWorktreePresent(root)
 	if err != nil {

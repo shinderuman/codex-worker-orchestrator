@@ -10,13 +10,15 @@ import (
 type ControllerRuntimeBinding struct {
 	AttemptID          string
 	TaskPath           string
+	RequestID          string
 	TaskContractDigest string
 }
 
 type controllerRuntimeBindingWire struct {
 	Version            int    `json:"version"`
 	AttemptID          string `json:"attempt_id"`
-	TaskPath           string `json:"task_path"`
+	TaskPath           string `json:"task_path,omitempty"`
+	RequestID          string `json:"request_id,omitempty"`
 	TaskContractDigest string `json:"task_contract_digest"`
 }
 
@@ -33,6 +35,7 @@ func (s *StateStore) SaveControllerRuntimeBinding(binding ControllerRuntimeBindi
 		Version:            controllerRuntimeBindingVersion,
 		AttemptID:          binding.AttemptID,
 		TaskPath:           binding.TaskPath,
+		RequestID:          binding.RequestID,
 		TaskContractDigest: binding.TaskContractDigest,
 	}
 	data, err := json.Marshal(wire)
@@ -60,6 +63,7 @@ func (s *StateStore) LoadControllerRuntimeBinding() (ControllerRuntimeBinding, e
 	binding := ControllerRuntimeBinding{
 		AttemptID:          wire.AttemptID,
 		TaskPath:           wire.TaskPath,
+		RequestID:          wire.RequestID,
 		TaskContractDigest: wire.TaskContractDigest,
 	}
 	if err := validateControllerRuntimeBinding(binding); err != nil {
@@ -87,7 +91,7 @@ func validateControllerRuntimeBinding(binding ControllerRuntimeBinding) error {
 	if binding.AttemptID == "" {
 		return fmt.Errorf("controller runtime binding attempt ID is empty")
 	}
-	if binding.TaskPath == "" || binding.TaskContractDigest == "" {
+	if (binding.TaskPath == "") == (binding.RequestID == "") || binding.TaskContractDigest == "" || (binding.RequestID != "" && !ValidGeneratedUUID(binding.RequestID)) {
 		return fmt.Errorf("controller runtime binding semantic task identity is incomplete")
 	}
 	return nil

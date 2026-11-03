@@ -183,7 +183,7 @@ func (s *Store) materializationTrees(head RepositoryControllerHead, task Semanti
 	if err != nil {
 		return result, &snapshot, &seal, s.preservePublicationConflict(head, &snapshot, err)
 	}
-	if err := s.applyMaterializationCandidateSource(head, seal, &result); err != nil {
+	if err := s.applyMaterializationCandidateSource(head, seal, &result, task); err != nil {
 		return result, &snapshot, &seal, err
 	}
 	return result, &snapshot, &seal, nil
@@ -196,7 +196,7 @@ func (s *Store) freshMaterializationTrees(head RepositoryControllerHead, task Se
 	}
 	trees := ExecutionTrees{IndexTree: tree, WorktreeTree: tree}
 	result := ReboundSuspension{BaseOID: head.IntegrationTip, Baseline: trees, Current: trees}
-	if err := s.normalizeMaterializationMetadataBase(head, &result); err != nil {
+	if err := s.normalizeMaterializationMetadataBase(head, &result, task); err != nil {
 		return ReboundSuspension{}, nil, nil, err
 	}
 	hasSuspended, err := s.hasSuspendedExecution(head, task)

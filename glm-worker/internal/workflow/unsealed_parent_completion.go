@@ -17,7 +17,7 @@ func (w *Workflow) ReopenUnsealedParentCompletion(generation uint64, reason stri
 	if err != nil {
 		return controller.EvidenceObjectRef{}, err
 	}
-	binding := state.ControllerRuntimeBinding{AttemptID: admission.Attempt.AttemptID, TaskPath: admission.Attempt.SemanticTaskRef.TaskPath, TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest}
+	binding := state.ControllerRuntimeBinding{AttemptID: admission.Attempt.AttemptID, TaskPath: admission.Attempt.SemanticTaskRef.TaskPath, RequestID: admission.Attempt.SemanticTaskRef.RequestID, TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest}
 	source, err := w.state.CaptureUnsealedParentCompletion(binding)
 	if err != nil {
 		return controller.EvidenceObjectRef{}, err

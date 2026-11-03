@@ -65,7 +65,7 @@ func (s *Store) validateBootstrapWorkspace(workspace WorkspaceIdentity) error {
 
 func (s *Store) bootstrapFreshExecution(
 	head RepositoryControllerHead,
-	authority CommittedTaskAuthority,
+	authority TaskAuthority,
 	workspace WorkspaceIdentity,
 	snapshot WorkspaceSnapshot,
 ) (Admission, error) {
@@ -146,7 +146,7 @@ func (s *Store) loadAdmissibleHead(task SemanticTaskRef) (RepositoryControllerHe
 	if head.ProjectSnapshotID == "" {
 		return RepositoryControllerHead{}, fmt.Errorf("repository controller has no project snapshot authority")
 	}
-	if _, err := s.LoadProjectSnapshot(head.ProjectSnapshotID); err != nil {
+	if _, err := s.executionTaskAuthority(head, task); err != nil {
 		return RepositoryControllerHead{}, err
 	}
 	return head, nil
@@ -231,7 +231,7 @@ func newExecutionRecords(
 		return AttemptRecord{}, ExecutionLease{}, err
 	}
 	now := time.Now().UTC()
-	trees, err := CaptureExecutionTrees(workspace.Root, snapshot.Head)
+	trees, err := CaptureExecutionTrees(workspace.Root, snapshot.Head, task)
 	if err != nil {
 		return AttemptRecord{}, ExecutionLease{}, err
 	}

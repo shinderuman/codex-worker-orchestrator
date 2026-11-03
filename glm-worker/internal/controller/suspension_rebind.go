@@ -38,7 +38,7 @@ func RebindSuspensionTrees(repo string, snapshot SuspensionSnapshot, newBase str
 	if err != nil {
 		return ReboundSuspension{}, err
 	}
-	if err := normalizeReboundTrees(repo, newBase, &result); err != nil {
+	if err := normalizeReboundTrees(repo, newBase, &result, snapshot.SemanticTaskRef); err != nil {
 		return ReboundSuspension{}, err
 	}
 	return result, nil
@@ -77,7 +77,7 @@ func suspensionTreeCommit(repo, tree, parent string) (string, error) {
 	return strings.TrimSpace(string(data)), err
 }
 
-func normalizeReboundTrees(repo, base string, result *ReboundSuspension) error {
+func normalizeReboundTrees(repo, base string, result *ReboundSuspension, task SemanticTaskRef) error {
 	targets := []*ExecutionTrees{&result.Baseline, &result.Current}
 	for _, target := range targets {
 		for _, tree := range []*string{&target.IndexTree, &target.WorktreeTree} {
@@ -85,7 +85,7 @@ func normalizeReboundTrees(repo, base string, result *ReboundSuspension) error {
 			if err != nil {
 				return err
 			}
-			digest, err := normalizeParentPaths(repo, index, base)
+			digest, err := normalizeTaskParentPaths(repo, index, base, task)
 			if err == nil {
 				*tree, err = suspensionGitText(repo, index, nil, "write-tree")
 			}

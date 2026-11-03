@@ -14,37 +14,37 @@ func retiredMetadataHead(head RepositoryControllerHead) bool {
 		head.AcceptedCandidateRef == nil && head.PendingTransitionID == "" && head.ActiveEpisodeID == ""
 }
 
-func (s *Store) retiredProjectAuthority(head RepositoryControllerHead) (CommittedTaskAuthority, error) {
+func (s *Store) retiredProjectAuthority(head RepositoryControllerHead) (TaskAuthority, error) {
 	if !retiredMetadataHead(head) {
-		return CommittedTaskAuthority{}, fmt.Errorf("ordinary successor requires finalized retired controller authority")
+		return TaskAuthority{}, fmt.Errorf("ordinary successor requires finalized retired controller authority")
 	}
 	if err := s.ensureTerminalMetadataFinalized(head); err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	if err := s.verifyTerminalTaskRecord(*head.MetadataLineageRef); err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, head.IntegrationTip)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	if err := validateCompletionSuccessorAuthority(head, authority); err != nil {
 		return authority, err
 	}
 	if !reflect.DeepEqual(authority.Snapshot, project) || !authority.Task.Equal(*head.RootTaskRef) {
-		return CommittedTaskAuthority{}, fmt.Errorf("ordinary successor project authority is stale")
+		return TaskAuthority{}, fmt.Errorf("ordinary successor project authority is stale")
 	}
 	record, err := s.LoadTerminalTaskRecord(*head.MetadataLineageRef)
 	if err != nil {
-		return CommittedTaskAuthority{}, err
+		return TaskAuthority{}, err
 	}
 	if record.ResultProject.SnapshotID != project.SnapshotID {
 		if err := s.verifyRetiredMetadataLineage(head); err != nil {
-			return CommittedTaskAuthority{}, err
+			return TaskAuthority{}, err
 		}
 	}
 	return authority, nil
@@ -269,7 +269,7 @@ func (s *Store) planRetiredMetadataAdvancement(head RepositoryControllerHead, po
 	return s.finalizeRetiredAdvancement(head, op, tip)
 }
 
-func (s *Store) retiredAdvancementOperation(head RepositoryControllerHead, policy PublicationPolicy, authority CommittedTaskAuthority, tip, remote, kind string) (ExecutionOperation, error) {
+func (s *Store) retiredAdvancementOperation(head RepositoryControllerHead, policy PublicationPolicy, authority TaskAuthority, tip, remote, kind string) (ExecutionOperation, error) {
 	record, err := executionTransition(head, kind)
 	if err != nil {
 		return ExecutionOperation{}, err

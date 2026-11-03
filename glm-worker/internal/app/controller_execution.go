@@ -267,7 +267,7 @@ func decodeControllerCommand(loadConfig func() (config.AppConfig, error), stdin 
 	if err != nil {
 		return cfg, nil, err
 	}
-	store, err := openControllerSemanticStore(cfg)
+	store, err := openControllerOperationStore(cfg)
 	if err != nil {
 		return cfg, nil, err
 	}
