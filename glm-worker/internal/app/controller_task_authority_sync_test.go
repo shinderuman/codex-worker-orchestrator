@@ -54,7 +54,7 @@ func taskAuthoritySyncLaneFixture(t *testing.T) taskAuthoritySyncFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lane, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
+	lane, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestTaskAuthoritySyncHandoffGuidesAndRevisesLiveLaneContract(t *testing.T) 
 		t.Fatalf("revised Task handoff admitted start before the sync: %v", handoff.AllowedActions)
 	}
 	payload := handoff.RequiredActionParameters["controller_command_json"]
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(payload), &command); err != nil {
 		t.Fatal(err)
 	}
@@ -221,13 +221,13 @@ func TestTaskAuthoritySyncRejectsUnexplainedOrStaleRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertSyncRejected := func(command controllerExecutionCommand) {
+	assertSyncRejected := func(command workflow.ControllerExecutionCommand) {
 		t.Helper()
 		before, err := f.store.LoadHead()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := executeControllerExecution(f.cfg, f.store, command); err == nil {
+		if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, command); err == nil {
 			t.Fatalf("unexplained revision was synced: %#v", command)
 		}
 		after, err := f.store.LoadHead()
@@ -236,18 +236,18 @@ func TestTaskAuthoritySyncRejectsUnexplainedOrStaleRevisions(t *testing.T) {
 		}
 	}
 
-	stale := controllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: "stale-parent-snapshot", RevisedTask: &revised}
+	stale := workflow.ControllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: "stale-parent-snapshot", RevisedTask: &revised}
 	assertSyncRejected(stale)
 	foreign := revised
 	foreign.TaskPath = "IMPLEMENTATION_TASKS/successor.md"
-	assertSyncRejected(controllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &foreign})
+	assertSyncRejected(workflow.ControllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &foreign})
 	unchanged := f.source.Attempt.SemanticTaskRef
-	assertSyncRejected(controllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &unchanged})
-	assertSyncRejected(controllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration + 1, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &revised})
+	assertSyncRejected(workflow.ControllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &unchanged})
+	assertSyncRejected(workflow.ControllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration + 1, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &revised})
 
 	writeAppTestFile(t, f.cfg.RepoRoot, "parent-extra.txt", "another parent edit\n")
 	snapshot := currentPrimarySnapshotID(t, f)
-	_, err = executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: snapshot, RevisedTask: &revised})
+	_, err = workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: headBefore.ControllerGeneration, SourceSnapshotID: snapshot, RevisedTask: &revised})
 	if err == nil || !strings.Contains(err.Error(), "active Task file") {
 		t.Fatalf("extra primary change was accepted: %v", err)
 	}
@@ -271,11 +271,11 @@ func TestTaskAuthoritySyncRequiresStoppedRuntimeAndLiveAttemptBinding(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := controllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: head.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &revised}
+	command := workflow.ControllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: head.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &revised}
 	if err := f.runtime.SetTaskStatus(state.TaskStatusActive); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "stopped runtime") {
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "stopped runtime") {
 		t.Fatalf("active runtime accepted a Task sync: %v", err)
 	}
 	if err := f.runtime.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
@@ -289,7 +289,7 @@ func TestTaskAuthoritySyncRequiresStoppedRuntimeAndLiveAttemptBinding(t *testing
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "source binding") {
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "source binding") {
 		t.Fatalf("foreign runtime binding accepted a Task sync: %v", err)
 	}
 	if err := f.runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
@@ -299,13 +299,13 @@ func TestTaskAuthoritySyncRequiresStoppedRuntimeAndLiveAttemptBinding(t *testing
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "source binding") {
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "source binding") {
 		t.Fatalf("foreign runtime contract digest accepted a Task sync: %v", err)
 	}
 	if err := f.runtime.ClearControllerRuntimeBinding(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "intact runtime binding") {
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, command); err == nil || !strings.Contains(err.Error(), "intact runtime binding") {
 		t.Fatalf("corrupted runtime state was treated as unstarted: %v", err)
 	}
 }
@@ -343,7 +343,7 @@ func syncRevisedTaskThroughRegularOwner(t *testing.T, f taskAuthoritySyncFixture
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{
+	result, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{
 		Action: "sync-task-authority", ExpectedGeneration: head.ControllerGeneration,
 		SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &revised,
 	})
@@ -471,7 +471,7 @@ func TestTaskAuthoritySyncGuardBlocksFreshStartUntilSynced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
 		Action: "sync-task-authority", ExpectedGeneration: loaded.ControllerGeneration,
 		SourceSnapshotID: snapshot.ID,
 		RevisedTask:      &controller.SemanticTaskRef{TaskPath: rootTask, ContractDigest: revisedDigest},
@@ -497,7 +497,8 @@ func TestTaskAuthoritySyncGuardBlocksFreshStartUntilSynced(t *testing.T) {
 	}
 }
 
-func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
+func prepareTaskAuthorityInterruptedSync(t *testing.T) (taskAuthoritySyncFixture, controller.SemanticTaskRef, controller.ExecutionOperationResult, controller.Admission) {
+	t.Helper()
 	f := taskAuthoritySyncLaneFixture(t)
 	revised := f.reviseActiveTask(t, "\n## Amendments\n\nrecovery境界の追加分。\n")
 
@@ -510,7 +511,7 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	admission, err := currentControllerSemanticAdmission(f.cfg, f.store)
+	admission, err := controller.CurrentSemanticAdmission(f.cfg, f.store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,6 +524,11 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return f, revised, committed, admission
+}
+
+func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
+	f, revised, committed, admission := prepareTaskAuthorityInterruptedSync(t)
 
 	laneCfg := f.cfg
 	laneCfg.RepoRoot = f.source.Workspace.Root
@@ -542,12 +548,9 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 		t.Fatalf("stale runtime binding handoff stayed consistent mid-recovery: %#v", handoff)
 	}
 
-	recovered, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recovered.Head.RootTaskRef == nil || !recovered.Head.RootTaskRef.Equal(revised) {
-		t.Fatalf("recovery lost the revised authority: %#v", recovered.Head)
+	recovered := runControllerRecoveryCLI(t, f.cfg, committed.TransitionID)
+	if recovered.TransitionID != committed.TransitionID || recovered.Head.RootTaskRef == nil || !recovered.Head.RootTaskRef.Equal(revised) {
+		t.Fatalf("CLI recovery lost the revised transition authority: %#v", recovered)
 	}
 	binding, err := f.runtime.LoadControllerRuntimeBinding()
 	if err != nil || binding.TaskContractDigest != revised.ContractDigest {
@@ -562,7 +565,7 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 		t.Fatalf("recovered milestone plan is not admitted: %v", err)
 	}
 
-	if _, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
 		t.Fatalf("completed sync recovery is not idempotent: %v", err)
 	}
 
@@ -573,7 +576,7 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err == nil ||
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err == nil ||
 		!strings.Contains(err.Error(), "recovery lineage") {
 		t.Fatalf("foreign runtime binding was recovered: %v", err)
 	}
@@ -585,7 +588,7 @@ func TestTaskAuthoritySyncRecoversInterruptedRuntimeCompletion(t *testing.T) {
 	if err := f.runtime.SaveCurrentTaskAuthority(revised.TaskPath, []byte("# stale authority\n")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
+	if _, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "recover", TransitionID: committed.TransitionID}); err != nil {
 		t.Fatalf("mid-boundary crash was not recovered from the target binding: %v", err)
 	}
 	stored, err := os.ReadFile(f.runtime.TaskAuthorityContentPath(mustTaskAuthorityID(t, f.runtime)))
@@ -604,7 +607,7 @@ func TestTaskAuthoritySyncRejectsMissingIdentityWithRetainedRuntime(t *testing.T
 	if err := f.runtime.Remove("task.id"); err != nil {
 		t.Fatal(err)
 	}
-	_, err = executeControllerExecution(f.cfg, f.store, controllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: before.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &revised})
+	_, err = workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{Action: "sync-task-authority", ExpectedGeneration: before.ControllerGeneration, SourceSnapshotID: currentPrimarySnapshotID(t, f), RevisedTask: &revised})
 	if err == nil || !strings.Contains(err.Error(), "retained runtime") {
 		t.Fatalf("missing identity was treated as unstarted: %v", err)
 	}
@@ -633,7 +636,7 @@ func TestTaskAuthoritySyncRejectsForeignMilestoneLineage(t *testing.T) {
 				t.Fatal(err)
 			}
 			if phase == "recovery" {
-				admission, err := currentControllerSemanticAdmission(f.cfg, f.store)
+				admission, err := controller.CurrentSemanticAdmission(f.cfg, f.store)
 				if err != nil {
 					t.Fatal(err)
 				}

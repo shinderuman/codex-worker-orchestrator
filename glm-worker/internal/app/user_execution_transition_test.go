@@ -10,6 +10,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func userExecutionTerminationFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.UserExecutionTransitionInput, *state.StateStore, string) {
@@ -19,7 +20,7 @@ func userExecutionTerminationFixture(t *testing.T) (config.AppConfig, *controlle
 	if err != nil {
 		t.Fatal(err)
 	}
-	lane, err := executeControllerExecution(cfg, store, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
+	lane, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +75,7 @@ func TestUserExecutionTerminationValidatesAuthorityAndKeepsRequirementsQueued(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
 		Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration,
 	}); err == nil || !strings.Contains(err.Error(), "execution termination requires exact transition authority") {
 		t.Fatalf("action without transition input = %v", err)
@@ -94,7 +95,7 @@ func TestUserExecutionTerminationValidatesAuthorityAndKeepsRequirementsQueued(t 
 		t.Run(change.name, func(t *testing.T) {
 			denied := input
 			change.mutate(&denied)
-			if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+			if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
 				Action: "user-terminate-execution", ExpectedGeneration: denied.ExpectedGeneration, ExecutionTermination: &denied,
 			}); err == nil {
 				t.Fatal("invalid execution termination admitted")
@@ -105,7 +106,7 @@ func TestUserExecutionTerminationValidatesAuthorityAndKeepsRequirementsQueued(t 
 			}
 		})
 	}
-	result, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+	result, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
 		Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input,
 	})
 	if err != nil {
@@ -146,7 +147,7 @@ func TestUserExecutionTerminationValidatesAuthorityAndKeepsRequirementsQueued(t 
 	if _, err := os.Stat(workspaceRoot); !os.IsNotExist(err) {
 		t.Fatalf("terminated lane workspace remains: %v", err)
 	}
-	if _, err := executeControllerExecution(cfg, store, controllerExecutionCommand{
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
 		Action: "user-terminate-execution", ExpectedGeneration: head.ControllerGeneration, ExecutionTermination: &input,
 	}); err == nil {
 		t.Fatal("terminated execution was terminated again")

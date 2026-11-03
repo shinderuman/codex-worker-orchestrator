@@ -1,4 +1,4 @@
-# Task: 巻き取り後のCodex効率中間評価
+# Task: 次回Codex効率中間評価
 
 ## Original instruction
 
@@ -7,7 +7,23 @@
 
 ## Amendments
 
-none
+### 2026-11-03 巻き取り完了後の先頭復帰
+
+原文（順序どおり）:
+
+````text
+最後のコミットで
+\- [\`IMPLEMENTATION_TASKS/codex-efficiency-post-adoption-checkpoint.md\`]\(IMPLEMENTATION_TASKS/codex-efficiency-post-adoption-checkpoint.md\)\
+が先頭に戻るようにしておけよ
+````
+
+````text
+IMPLEMENTATION_TASKS/codex-efficiency-followup-checkpoint.md
+いやこっちだった
+````
+
+- 最新の訂正により、このfileを7候補の巻き取り完了後の最初の評価Taskとして再開する。実評価・採否はCodex自身が行い、終了Metadataで評価完了を先取りしない。
+- 前回評価は`review-evidence/codex-efficiency-webgpt-adoption-2026-11-03.md`とし、その後のsource・検証・履歴整理・未Task化Findingとの差分を評価する。同じ責務で作った`codex-efficiency-post-adoption-checkpoint.md`の評価要求を本Taskへ統合する。
 
 ## Purpose
 
@@ -25,8 +41,8 @@ mode: parent-only
 
 - 親Codexだけで評価し、追加GLM・他モデル呼出を行わない。
 - `review-evidence/codex-efficiency-webgpt-adoption-2026-11-03.md`を前回評価として、差分と新証拠へ限定する。
-- 比較条件不一致・欠損はunknownに保ち、machine処理時間をCodex削減率へ外挿しない。
-- appの責務改善、未Task化Finding、Plan priorityを評価し、次回checkpointを最大5件後へ配置する。
+- 比較条件不一致・欠損はunknownに保ち、機械処理の短縮をCodex削減率へ外挿しない。
+- 全Taskの優先順位と重複を確認し、具体的な改善を計画化する。次回中間評価を最大5件後へ配置する。
 
 ## Must not
 

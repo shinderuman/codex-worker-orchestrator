@@ -124,11 +124,11 @@ func driveReboundExecutionSteps(t *testing.T, cfg config.AppConfig, store *contr
 		if payload == "" {
 			t.Fatalf("rebound execution handoff lost its typed command: %#v", handoff)
 		}
-		var command controllerExecutionCommand
+		var command workflow.ControllerExecutionCommand
 		if err := json.Unmarshal([]byte(payload), &command); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := executeControllerExecution(cfg, store, command); err != nil {
+		if _, err := workflow.ExecuteControllerExecution(cfg, store, command); err != nil {
 			t.Fatalf("rebound execution step %s: %v", command.Action, err)
 		}
 	}
@@ -317,7 +317,7 @@ func TestAwaitingAdmissionPullExecutesStagedAdoptMutable(t *testing.T) {
 	if !resume.Consistent || resume.RequiredAction == nil || *resume.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("post-adoption handoff lost the execution resume surface: %v %#v", stringPointerValue(resume.Inconsistency), resume)
 	}
-	var resumeCommand controllerExecutionCommand
+	var resumeCommand workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(resume.RequiredActionParameters["controller_command_json"]), &resumeCommand); err != nil || resumeCommand.Action != "materialize" || resumeCommand.SuspensionID == "" {
 		t.Fatalf("post-adoption handoff lost the typed resume command: %#v %v", resumeCommand, err)
 	}

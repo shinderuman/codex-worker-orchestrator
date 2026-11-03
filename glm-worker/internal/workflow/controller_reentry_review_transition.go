@@ -1,12 +1,12 @@
-package app
+package workflow
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controller.Store, sourceSnapshotID string, task *controller.SemanticTaskRef) (controller.ExecutionOperationResult, error) {
@@ -14,12 +14,12 @@ func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controlle
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	wf := workflow.NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
+	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
 	before, err := wf.CaptureReentryReviewRepairEvidence()
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	admission, err := currentControllerSemanticAdmission(cfg, store)
+	admission, err := controller.CurrentSemanticAdmission(cfg, store)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
@@ -36,7 +36,7 @@ func executeControllerReentryReviewRepair(cfg config.AppConfig, store *controlle
 		return controller.ExecutionOperationResult{}, err
 	}
 	if err := wf.CompleteReentryReviewRepair(before); err != nil {
-		return controller.ExecutionOperationResult{}, err
+		return result, fmt.Errorf("reentry review transition %s runtime completion failed: %w", result.TransitionID, err)
 	}
 	return result, nil
 }
@@ -46,21 +46,39 @@ func executeControllerExecutionRecovery(cfg config.AppConfig, store *controller.
 	if err != nil {
 		return result, err
 	}
-	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
+	record, _, err := store.LoadTransition(transitionID)
 	if err != nil {
 		return result, err
 	}
-	wf := workflow.NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
+	if record.Kind == "MATERIALIZE_EXECUTION" {
+		return result, completeMaterializedRuntime(cfg, store, result)
+	}
 	before, err := store.ReentryReviewRepairEvidence(transitionID)
 	if err != nil {
 		return result, err
 	}
+	var syncBefore []byte
+	if before == nil {
+		syncBefore, err = store.TaskAuthoritySyncEvidence(transitionID)
+		if err != nil {
+			return result, err
+		}
+	}
+	if before == nil && syncBefore == nil {
+		return result, nil
+	}
+	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		return result, fmt.Errorf("controller execution transition %s runtime config failed: %w", transitionID, err)
+	}
+	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
 	if before != nil {
-		return result, wf.CompleteReentryReviewRepair(before)
+		err = wf.CompleteReentryReviewRepair(before)
+	} else {
+		err = wf.CompleteTaskAuthoritySync(syncBefore)
 	}
-	syncBefore, err := store.TaskAuthoritySyncEvidence(transitionID)
-	if err != nil || syncBefore == nil {
-		return result, err
+	if err != nil {
+		return result, fmt.Errorf("controller execution transition %s runtime completion failed: %w", transitionID, err)
 	}
-	return result, wf.CompleteTaskAuthoritySync(syncBefore)
+	return result, nil
 }

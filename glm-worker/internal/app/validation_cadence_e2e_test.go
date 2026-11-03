@@ -367,7 +367,7 @@ func cadenceFixCandidate(t *testing.T, binary string, cfg config.AppConfig, poli
 		reentered = cadenceCleanupBeforeReentry(t, binary, cfg, candidate, reentered)
 		cfg.RepoRoot = store.Identity().PrimaryRoot
 	}
-	materialized := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
+	materialized := canonicalCLIExecution(t, binary, cfg, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID})
 	if materialized.Admission == nil {
 		t.Fatal("reentry did not materialize a live execution")
 	}
@@ -451,7 +451,7 @@ func cadenceCleanupBeforeReentry(t *testing.T, binary string, cfg config.AppConf
 	}
 	primaryCfg := cfg
 	primaryCfg.RepoRoot = store.Identity().PrimaryRoot
-	cleaned := canonicalCLIExecution(t, binary, primaryCfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: reentered.Head.ControllerGeneration, WorkspaceID: suspension.WorkspaceID, SealRef: &candidate.SealRef})
+	cleaned := canonicalCLIExecution(t, binary, primaryCfg, workflow.ControllerExecutionCommand{Action: "cleanup", ExpectedGeneration: reentered.Head.ControllerGeneration, WorkspaceID: suspension.WorkspaceID, SealRef: &candidate.SealRef})
 	if _, err := os.Stat(cfg.RepoRoot); !os.IsNotExist(err) {
 		t.Fatalf("sealed execution lane was not removed: %v", err)
 	}
@@ -460,7 +460,7 @@ func cadenceCleanupBeforeReentry(t *testing.T, binary string, cfg config.AppConf
 		t.Fatalf("cleanup hid normal materialization: %#v", handoff)
 	}
 	assertRetiredBootstrap(t, primaryCfg, candidate.TaskRef.TaskPath)
-	if _, err := executeControllerExecution(primaryCfg, store, controllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID}); err == nil {
+	if _, err := workflow.ExecuteControllerExecution(primaryCfg, store, workflow.ControllerExecutionCommand{Action: "materialize", ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID}); err == nil {
 		t.Fatal("cleanup admitted stale materialization authority")
 	}
 	if _, err := store.ProveCleanupDurability(candidate.SealRef); err != nil {
@@ -499,7 +499,7 @@ func cadenceCleanup(t *testing.T, binary string, cfg config.AppConfig, candidate
 		t.Fatal(err)
 	}
 	cfg.RepoRoot = store.Identity().PrimaryRoot
-	cleaned := canonicalCLIExecution(t, binary, cfg, controllerExecutionCommand{Action: "cleanup", ExpectedGeneration: head.ControllerGeneration, WorkspaceID: suspension.WorkspaceID, SealRef: &candidate.SealRef})
+	cleaned := canonicalCLIExecution(t, binary, cfg, workflow.ControllerExecutionCommand{Action: "cleanup", ExpectedGeneration: head.ControllerGeneration, WorkspaceID: suspension.WorkspaceID, SealRef: &candidate.SealRef})
 	if cleaned.Head.LiveLeaseID != "" || cleaned.Head.PendingTransitionID != "" {
 		t.Fatal("Cleanup retained live lifecycle authority")
 	}

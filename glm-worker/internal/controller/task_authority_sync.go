@@ -234,8 +234,11 @@ func (s *Store) TaskAuthoritySyncEvidence(transitionID string) ([]byte, error) {
 	if err := readJSON(s.executionOperationPath(transitionID), &op); err != nil {
 		return nil, err
 	}
-	if op.Transition.Kind != executionTaskAuthoritySync || !parentSourceRuntimeIdentity(op, TaskAuthoritySyncProducer) {
+	if op.Transition.Kind != executionTaskAuthoritySync {
 		return nil, nil
+	}
+	if !parentSourceRuntimeIdentity(op, TaskAuthoritySyncProducer) {
+		return nil, fmt.Errorf("task authority sync is missing canonical runtime evidence")
 	}
 	head, err := s.LoadHead()
 	if err != nil {

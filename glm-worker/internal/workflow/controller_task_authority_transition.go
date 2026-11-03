@@ -1,4 +1,4 @@
-package app
+package workflow
 
 import (
 	"crypto/sha256"
@@ -11,10 +11,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.Store, command controllerExecutionCommand) (controller.ExecutionOperationResult, error) {
+func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.Store, command ControllerExecutionCommand) (controller.ExecutionOperationResult, error) {
 	if command.SourceSnapshotID == "" || command.RevisedTask == nil {
 		return controller.ExecutionOperationResult{}, fmt.Errorf("task authority sync requires exact source snapshot and revised Task identity")
 	}
@@ -22,16 +21,16 @@ func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	wf := workflow.NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
+	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
 	before, err := wf.CaptureTaskAuthoritySyncEvidence()
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	admission, err := currentControllerSemanticAdmission(cfg, store)
+	admission, err := controller.CurrentSemanticAdmission(cfg, store)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	if err := verifyTaskAuthoritySyncRuntime(before, admission); err != nil {
+	if err := VerifyTaskAuthoritySyncRuntime(before, admission); err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
 	ref, err := store.PutEvidenceObject("runtime-artifact", "application/json", admission.Attempt.AttemptID+":"+controller.TaskAuthoritySyncProducer+":"+command.SourceSnapshotID, true, before)
@@ -43,22 +42,29 @@ func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.
 		return controller.ExecutionOperationResult{}, err
 	}
 	if err := wf.CompleteTaskAuthoritySync(before); err != nil {
-		return controller.ExecutionOperationResult{}, err
+		return result, fmt.Errorf("task authority sync transition %s runtime completion failed: %w", result.TransitionID, err)
 	}
 	return result, nil
 }
 
-func verifyTaskAuthoritySyncRuntime(before []byte, admission controller.Admission) error {
-	var evidence workflow.TaskAuthoritySyncEvidence
+func VerifyTaskAuthoritySyncRuntime(before []byte, admission controller.Admission) error {
+	var evidence TaskAuthoritySyncEvidence
 	if err := json.Unmarshal(before, &evidence); err != nil {
 		return fmt.Errorf("decode task authority sync runtime evidence: %w", err)
 	}
-	if evidence.Runtime == workflow.TaskAuthorityRuntimeUnstarted {
+	if evidence.Runtime == TaskAuthorityRuntimeUnstarted {
+		if evidence.TaskID != "" || evidence.Binding != nil {
+			return fmt.Errorf("unstarted task authority sync must not claim retained runtime identity")
+		}
 		return nil
 	}
-	if evidence.Runtime != workflow.TaskAuthorityRuntimeAttached || evidence.Binding == nil {
+	if evidence.Runtime != TaskAuthorityRuntimeAttached || evidence.Binding == nil || evidence.TaskID == "" {
 		return fmt.Errorf("task authority sync evidence is incomplete")
 	}
+	return verifyTaskAuthoritySyncAttached(evidence, admission)
+}
+
+func verifyTaskAuthoritySyncAttached(evidence TaskAuthoritySyncEvidence, admission controller.Admission) error {
 	if evidence.Binding.AttemptID != admission.Attempt.AttemptID ||
 		evidence.Binding.TaskPath != admission.Attempt.SemanticTaskRef.TaskPath ||
 		evidence.Binding.TaskContractDigest != admission.Attempt.SemanticTaskRef.ContractDigest {

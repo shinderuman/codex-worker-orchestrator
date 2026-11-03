@@ -38,8 +38,8 @@ func applyReentrySourceHandoff(cfg config.AppConfig, output *parentHandoffOutput
 	return true
 }
 
-func reentrySourceCommand(cfg config.AppConfig, admission controller.Admission, primary controller.WorkspaceSnapshot, revised controller.SemanticTaskRef) (controllerExecutionCommand, error) {
-	command := controllerExecutionCommand{ExpectedGeneration: admission.Head.ControllerGeneration}
+func reentrySourceCommand(cfg config.AppConfig, admission controller.Admission, primary controller.WorkspaceSnapshot, revised controller.SemanticTaskRef) (workflow.ControllerExecutionCommand, error) {
+	command := workflow.ControllerExecutionCommand{ExpectedGeneration: admission.Head.ControllerGeneration}
 	runtime := state.AttachStateStore(cfg)
 	binding, err := runtime.LoadControllerRuntimeBinding()
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type parentOnlyWorkflowTasks struct {
@@ -366,7 +367,7 @@ func runParentOnlyExecutionStep(t *testing.T, cfg config.AppConfig, parameters m
 	if payload == "" {
 		t.Fatalf("parent-only execution handoff lost its typed command: %#v", parameters)
 	}
-	var command controllerExecutionCommand
+	var command workflow.ControllerExecutionCommand
 	if err := json.Unmarshal([]byte(payload), &command); err != nil {
 		t.Fatal(err)
 	}

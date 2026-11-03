@@ -2,8 +2,10 @@ package controller
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -261,4 +263,57 @@ func newExecutionRecords(
 		CreatedAt:                   now,
 	}
 	return attempt, lease, nil
+}
+
+func CurrentSemanticAdmission(cfg config.AppConfig, store *Store) (Admission, error) {
+	if err := store.ValidateConfigScope(cfg); err != nil {
+		return Admission{}, err
+	}
+	bound, err := ParentContinuationConfig(cfg)
+	if err != nil {
+		return Admission{}, err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return Admission{}, err
+	}
+	authority, err := MutationAuthorityFromHead(head)
+	if err != nil {
+		return Admission{}, err
+	}
+	identity, err := ResolveRepositoryIdentity(bound.RepoRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	workspace, err := ResolveWorkspaceIdentity(bound.RepoRoot, identity)
+	if err != nil {
+		return Admission{}, err
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(bound.RepoRoot)
+	if err != nil {
+		return Admission{}, err
+	}
+	return store.AdmitMutationOrFailClosed(authority, workspace, snapshot)
+}
+
+func (s *Store) ValidateConfigScope(cfg config.AppConfig) error {
+	identity, err := ResolveRepositoryIdentity(cfg.RepoRoot)
+	if err != nil {
+		return err
+	}
+	if identity.LineageID != s.identity.LineageID {
+		return fmt.Errorf("controller config and Store belong to different repositories")
+	}
+	actual, err := filepath.Abs(cfg.StateBase)
+	if err != nil {
+		return err
+	}
+	expected, err := filepath.Abs(s.config.StateBase)
+	if err != nil {
+		return err
+	}
+	if actual != expected {
+		return fmt.Errorf("controller config and Store belong to different state roots")
+	}
+	return nil
 }
