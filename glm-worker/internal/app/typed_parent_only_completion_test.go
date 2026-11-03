@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -38,9 +39,15 @@ func TestParentOnlyTaskCompletionThroughProductionBoundary(t *testing.T) {
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
+			started := time.Now()
 			cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, scenario.sourceChange)
+			logAppFixturePhase(t, "parent-only/fixture", started)
+			started = time.Now()
 			driveParentOnlyCompletion(t, cfg, goShim, scenario.sourceChange, scenario.interrupt)
+			logAppFixturePhase(t, "parent-only/production-cli", started)
+			started = time.Now()
 			assertParentOnlyTerminalState(t, cfg, store, policy, tasks, scenario.sourceChange)
+			logAppFixturePhase(t, "parent-only/terminal-assertions", started)
 		})
 	}
 }
@@ -52,8 +59,12 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 			if err := os.WriteFile(failFlag, []byte("fail\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			started := time.Now()
 			cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, true, failFlag)
+			logAppFixturePhase(t, "parent-only-reentry/fixture", started)
+			started = time.Now()
 			acceptParentOnlyThroughProductionBoundary(t, cfg)
+			logAppFixturePhase(t, "parent-only-reentry/accept-and-failed-gate", started)
 
 			head, err := store.LoadHead()
 			if err != nil || head.AcceptedCandidateRef == nil {
@@ -123,8 +134,12 @@ func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
 			if err := smokeStore.Write("task.id", currentID); err != nil {
 				t.Fatal(err)
 			}
+			started = time.Now()
 			driveParentOnlyCompletion(t, cfg, goShim, true, false)
+			logAppFixturePhase(t, "parent-only-reentry/production-cli", started)
+			started = time.Now()
 			assertParentOnlyTerminalState(t, cfg, store, policy, tasks, true)
+			logAppFixturePhase(t, "parent-only-reentry/terminal-assertions", started)
 		})
 	}
 }
@@ -245,7 +260,9 @@ func TestParentOnlyWorkerProcess(_ *testing.T) {
 
 func parentOnlyCompletionFixture(t *testing.T, sourceChange bool, failFlags ...string) (config.AppConfig, *controller.Store, controller.PublicationPolicy, parentOnlyWorkflowTasks, string) {
 	t.Helper()
+	started := time.Now()
 	cfg := newCanonicalAppConfig(t)
+	logAppFixturePhase(t, "parent-only/corpus-git", started)
 	stateHome := t.TempDir()
 	cfg.StateBase = filepath.Join(stateHome, "sessions")
 	cfg.ClaudeConfigDir = filepath.Join(stateHome, "claude")
@@ -268,8 +285,11 @@ func parentOnlyCompletionFixture(t *testing.T, sourceChange bool, failFlags ...s
 	writeAppTestFile(t, repo, tasks.parent, parentOnlyAppTaskContent(controller.ExecutionAuthorityParentOnly))
 	writeAppTestFile(t, repo, tasks.successor, "# successor\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\nsuccessor task\n\n## Dependencies\n\nnone\n")
 	prepareCompletionQualityCorpus(t, repo)
+	started = time.Now()
 	policy := commitCorpusWithPublicationRemote(t, repo, "parent-only completion test", "parent-only@example.invalid", "parent-only completion corpus")
+	logAppFixturePhase(t, "parent-only/fixture-git-remote", started)
 
+	started = time.Now()
 	store, err := controller.Open(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -297,6 +317,7 @@ func parentOnlyCompletionFixture(t *testing.T, sourceChange bool, failFlags ...s
 	if _, err := store.PublishAcceptedCandidate(controller.PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err != nil {
 		t.Fatal(err)
 	}
+	logAppFixturePhase(t, "parent-only/root-controller-accept-publish", started)
 
 	if sourceChange {
 		writeAppTestFile(t, repo, "glm-worker/internal/fixture/fixture.go", "package fixture\n\nfunc Run() { _ = parentOnlyProduct() }\n\nfunc parentOnlyProduct() error { return nil }\n")
