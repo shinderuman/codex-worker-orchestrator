@@ -33,13 +33,8 @@ func (s *Store) rebindUnpublishedCandidate(input PublicationInput, sourceOID str
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if sourceOID != "" {
-		if remote != sourceOID {
-			return ExecutionOperationResult{}, fmt.Errorf("post-pull candidate remote tip differs from pulled source")
-		}
-		if err := s.requirePulledSource(head, c.Policy, sourceOID); err != nil {
-			return ExecutionOperationResult{}, err
-		}
+	if err := s.requirePulledCandidateSource(head, c.Policy, remote, sourceOID); err != nil {
+		return ExecutionOperationResult{}, err
 	}
 	c, err = s.reboundCandidate(c, remote, ref)
 	if err != nil {
@@ -255,4 +250,14 @@ func (s *Store) unpublishedRebindRemote(head RepositoryControllerHead, c Accepte
 		return "", fmt.Errorf("candidate is positively observed; publish/adopt its immutable lineage")
 	}
 	return remote, nil
+}
+
+func (s *Store) requirePulledCandidateSource(head RepositoryControllerHead, policy PublicationPolicy, remote, sourceOID string) error {
+	if sourceOID == "" {
+		return nil
+	}
+	if remote != sourceOID {
+		return fmt.Errorf("post-pull candidate remote tip differs from pulled source")
+	}
+	return s.requirePulledSource(head, policy, sourceOID)
 }

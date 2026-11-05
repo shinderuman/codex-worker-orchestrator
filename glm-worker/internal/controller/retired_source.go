@@ -47,10 +47,8 @@ func (s *Store) adoptRetiredExternalSource(input RetiredSourceAdvancementInput, 
 	if err := s.validateRetiredSourceBoundary(input.Policy, input.SourceOID); err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if pulledOnly {
-		if err := s.requirePulledSource(head, input.Policy, input.SourceOID); err != nil {
-			return ExecutionOperationResult{}, err
-		}
+	if err := s.requirePulledRetiredSource(head, input, pulledOnly); err != nil {
+		return ExecutionOperationResult{}, err
 	}
 	op, err := s.planRetiredSourceAdvancement(head, input.Policy, input.SourceOID)
 	if err != nil {
@@ -189,4 +187,11 @@ func (s *Store) validateRetiredAdvancementBoundary(op ExecutionOperation) error 
 	}
 	_, err := s.QuiescentRuntimeAdmission(op.Source.Head)
 	return err
+}
+
+func (s *Store) requirePulledRetiredSource(head RepositoryControllerHead, input RetiredSourceAdvancementInput, pulledOnly bool) error {
+	if !pulledOnly {
+		return nil
+	}
+	return s.requirePulledSource(head, input.Policy, input.SourceOID)
 }

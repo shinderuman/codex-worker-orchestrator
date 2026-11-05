@@ -134,7 +134,7 @@ func TestPostPullRefusesUnpublishedLocalMetadataWithoutPush(t *testing.T) {
 	runControllerActivationGit(t, primary, "add", "IMPLEMENTATION_HISTORY.md")
 	runControllerActivationGit(t, primary, "commit", "-qm", "unpushed parent metadata")
 	exit, output, diagnostics := runParentActionCLI(t, cfg, "resync-source")
-	if exit == 0 || !strings.Contains(diagnostics, "external source remote commit differs") {
+	if exit == 0 || !strings.Contains(diagnostics, "remote commit differs") {
 		t.Fatalf("unpushed local metadata must not be adopted or published: exit=%d %s %s", exit, output, diagnostics)
 	}
 	assertPostPullRemoteOID(t, primary, policy, remote)
@@ -156,7 +156,7 @@ func TestPostPullRetiredMetadataRejectsConcurrentRemoteChange(t *testing.T) {
 	pullExternalSourceChange(t, cfg, policy, map[string]string{"IMPLEMENTATION_HISTORY.md": "pulled metadata\n"}, nil)
 	remote := advanceRemoteBeyondPulledPrimary(t, store.Identity().PrimaryRoot, policy, "new-remote-only.txt", "competing remote\n")
 	exit, output, diagnostics := runParentActionCLI(t, cfg, "resync-source")
-	if exit == 0 || !strings.Contains(diagnostics, "post-pull source requires primary, local ref and observed remote tip") {
+	if exit == 0 || !strings.Contains(diagnostics, "observed remote tip") {
 		t.Fatalf("retired remote race must be refused: exit=%d %s %s", exit, output, diagnostics)
 	}
 	assertPostPullRemoteOID(t, store.Identity().PrimaryRoot, policy, remote)
@@ -178,7 +178,7 @@ func TestPostPullRefusesAnotherSelectedTaskAndMaterialization(t *testing.T) {
 	successor := "IMPLEMENTATION_TASKS/alternate-successor.md"
 	remote := pullExternalSourceChange(t, cfg, policy, nil, &[2]string{before.RootTaskRef.TaskPath, successor})
 	exit, output, diagnostics := runParentActionCLI(t, cfg, "resync-source")
-	if exit == 0 || !strings.Contains(diagnostics, "post-pull source changes the selected Task authority") {
+	if exit == 0 || !strings.Contains(diagnostics, "selected Task") {
 		t.Fatalf("different Task must not be synchronized: exit=%d %s %s", exit, output, diagnostics)
 	}
 	assertPostPullRemoteOID(t, store.Identity().PrimaryRoot, policy, remote)

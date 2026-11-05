@@ -13,6 +13,13 @@ func (s *Store) requirePulledSource(head RepositoryControllerHead, policy Public
 	if expectedPolicy != policy {
 		return fmt.Errorf("post-pull publication policy differs from Controller authority")
 	}
+	if err := s.verifyPulledSourceOID(head.IntegrationTip, policy, sourceOID); err != nil {
+		return err
+	}
+	return s.verifyPulledSourceTask(head, sourceOID)
+}
+
+func (s *Store) verifyPulledSourceOID(base string, policy PublicationPolicy, sourceOID string) error {
 	primary, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", "--verify", "HEAD")
 	if err != nil {
 		return err
@@ -28,13 +35,17 @@ func (s *Store) requirePulledSource(head RepositoryControllerHead, policy Public
 	if !exists || local != sourceOID || primary != sourceOID || remote != sourceOID {
 		return fmt.Errorf("post-pull source requires primary, local ref and observed remote tip to equal %s (primary=%s local=%s remote=%s)", sourceOID, primary, local, remote)
 	}
-	fastForward, err := isPublicationDescendant(s.identity.PrimaryRoot, head.IntegrationTip, sourceOID)
+	fastForward, err := isPublicationDescendant(s.identity.PrimaryRoot, base, sourceOID)
 	if err != nil {
 		return err
 	}
 	if !fastForward {
 		return fmt.Errorf("post-pull source is not a fast-forward of Controller integration authority")
 	}
+	return nil
+}
+
+func (s *Store) verifyPulledSourceTask(head RepositoryControllerHead, sourceOID string) error {
 	project, err := s.publicationProjectAdvancement(head, sourceOID)
 	if err != nil {
 		return err
