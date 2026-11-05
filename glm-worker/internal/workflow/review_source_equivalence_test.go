@@ -150,6 +150,21 @@ func TestEquivalentReviewSourceRejectsChangedPlanAndUnprovableIndex(t *testing.T
 			t.Fatal("unaddressable target accepted")
 		}
 	})
+	t.Run("new Task is referenced by an existing NEXT Task", func(t *testing.T) {
+		root, _ := reviewEquivalenceFixture(t)
+		reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/old-next.md", "# NEXT\\nDepends on IMPLEMENTATION_TASKS/new-next.md\\n")
+		reviewEquivalenceGit(t, root, "add", ".")
+		reviewEquivalenceGit(t, root, "commit", "-qm", "unresolved indirect metadata reference")
+		s, err := state.CaptureGitSnapshot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		old := state.SnapshotDigest{Head: s.Head, IndexDigest: s.IndexDigest, WorktreeDigest: s.WorktreeDigest}
+		reviewEquivalenceCommitNext(t, root)
+		if _, err := equivalentReviewSource(root, old, []string{"review.go:1"}); err == nil {
+			t.Fatal("new Task resolved a pre-existing transitive reference")
+		}
+	})
 	t.Run("new Task enters ACTIVE reference closure", func(t *testing.T) {
 		root, _ := reviewEquivalenceFixture(t)
 		reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/active.md", "# ACTIVE\nref IMPLEMENTATION_TASKS/new-next.md\n")
