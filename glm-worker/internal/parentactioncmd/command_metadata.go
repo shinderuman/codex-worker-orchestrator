@@ -32,9 +32,14 @@ const (
 	parentActionExecutionPreflightDecision
 	parentActionExecutionObservationExecute
 	parentActionExecutionExportBundle
+	parentActionExecutionSourceResynchronization
 )
 
 var parentActionCommands = map[string]parentActionCommandDescriptor{
+	"resync-source": {
+		Action: "resync-source",
+		Execute: parentActionExecutionSourceResynchronization,
+	},
 	"rotation-claim": {
 		Action:  "rotation-claim",
 		Execute: parentActionExecutionSessionRotation,
@@ -191,6 +196,8 @@ func executeInterfaceParentAction(
 		return executeGitEvidenceAction(cfg, args, stdout), true
 	case parentActionExecutionObservationExecute:
 		return executeObservationExecuteAction(cfg, args, stdout), true
+	case parentActionExecutionSourceResynchronization:
+		return executeSourceResynchronization(cfg, args, stdout, stderr), true
 	default:
 		return nil, false
 	}

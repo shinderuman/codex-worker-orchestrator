@@ -48,6 +48,9 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	if spec, handled := projectExecutionUnitAction(action); handled {
 		return spec, true
 	}
+	if action == "resync-source" {
+		return direct(action), true
+	}
 	if action == FinalizeCheckAction {
 		return projectFinalizeCheck(requiredParameters)
 	}
