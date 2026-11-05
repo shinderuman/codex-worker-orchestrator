@@ -11,8 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-const requirementBlobType = "blob"
-
 type Task struct {
 	Path    string
 	Content []byte
@@ -35,6 +33,8 @@ type Project struct {
 	Tasks        []Task
 	graph        *repositoryproject.TaskGraph
 }
+
+const requirementBlobType = "blob"
 
 func Load(root, revision string) (Project, error) {
 	head, err := gitOutput(root, "rev-parse", "--verify", revision+"^{commit}")
