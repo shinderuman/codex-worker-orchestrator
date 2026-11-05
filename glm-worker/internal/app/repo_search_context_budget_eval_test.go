@@ -8,9 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 )
 
-// Standalone and manifest-based parent search share repoSearchResults and
-// buildRepoSearchOutput. Measure their current locator projection directly;
-// generated source snippets are not part of the model-visible response.
 func TestRepoSearchContextBudgetParentLocatorProjection(t *testing.T) {
 	source := []reposearch.Result{
 		{Path: "glm-worker/internal/reposearch/cache.go", Line: 42, Score: 3.5, Snippet: "duplicate source line"},
@@ -35,8 +32,6 @@ func TestRepoSearchContextBudgetParentLocatorProjection(t *testing.T) {
 		t.Fatalf("source snippets leaked into parent model-visible JSON: %s", visible)
 	}
 
-	// Even identical snippets in different source files cannot consume parent
-	// context twice: both distinct, exact-read-capable locators remain present.
 	source[0].Snippet = "a different source snippet"
 	source[1].Snippet = ""
 	modified, err := json.Marshal(buildRepoSearchOutput(request, report, repoSearchResults(source)))
@@ -47,8 +42,6 @@ func TestRepoSearchContextBudgetParentLocatorProjection(t *testing.T) {
 		t.Fatalf("parent output depends on hidden source snippets: before=%s after=%s", visible, modified)
 	}
 
-	// The existing parent byte budget fails closed rather than silently
-	// truncating locators or weakening required follow-up source inspection.
 	serializedLocators, err := json.Marshal(locators)
 	if err != nil {
 		t.Fatal(err)
