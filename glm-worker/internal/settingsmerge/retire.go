@@ -12,8 +12,6 @@ import (
     "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 )
 
-// RetireFiles removes only settings with surviving installer ownership records.
-// User-modified owned settings cause a failure without surrendering ownership evidence.
 func RetireFiles(targetPath string) error {
     lock, err := acquireSettingsMergeLock(targetPath)
     if err != nil { return err }
@@ -32,7 +30,7 @@ func retireFilesUnlocked(targetPath string) error {
         if err != nil { return err }
         inputs[path] = snapshot
     }
-    overrideState, err := overrideStateFromSnapshot(inputs[statePathFor(targetPath)])
+    previousOverride, err := overrideStateFromSnapshot(inputs[statePathFor(targetPath)])
     if err != nil { return err }
     managed, err := managedStateFromSnapshot(inputs[ManagedStatePath(targetPath)])
     if err != nil { return err }
@@ -52,7 +50,7 @@ func retireFilesUnlocked(targetPath string) error {
     env, _ := target["env"].(map[string]any)
     deleted := make(map[string]bool, len(override.Deletes))
     for _, key := range override.Deletes { deleted[key] = true }
-    for key := range overrideState.Env {
+    for key := range previousOverride.Env {
         value, exists := env[key]
         if expected, ok := override.Sets[key]; ok {
             if !exists || !reflect.DeepEqual(value, expected) {
@@ -64,9 +62,7 @@ func retireFilesUnlocked(targetPath string) error {
             return fmt.Errorf("cannot verify applied Claude override for %q (override source changed)", key)
         }
     }
-    // Check all managed paths before changing any value.
-    // Values under override-managed env keys must be checked after override baseline restoration.
-    restoreEnvBaselines(target, overrideState)
+    restoreEnvBaselines(target, previousOverride)
     for _, record := range managed.Values {
         value, exists, err := managedValueAt(target, record.Path)
         if err != nil { return err }
@@ -77,8 +73,6 @@ func retireFilesUnlocked(targetPath string) error {
     if err := restorePreviousManagedValues(target, managed.Values, map[string]managedLeaf{}); err != nil {
         return err
     }
-    // If the original settings file was absent and now becomes empty, remove it
-    // only when it has no user content. Existing settings files remain intact.
     plans := make([]plannedWrite, 0, 3)
     if !reflect.DeepEqual(before, target) {
         data, err := marshalObject(target)
@@ -103,8 +97,6 @@ func retireFilesUnlocked(targetPath string) error {
             return err
         }
     }
-    // Clearing empty ownership records is independent of target setting
-    // changes. Retry safely after a crash between commit and cleanup.
     for _, entry := range []struct{ path string; state any }{
         {statePathFor(targetPath), emptyOverride},
         {ManagedStatePath(targetPath), emptyManaged},
