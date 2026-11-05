@@ -1,11 +1,12 @@
 package workflow
 
 import (
-	"encoding/json"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 	"unicode/utf8"
@@ -53,8 +54,9 @@ type Workflow struct {
 
 	currentResumeSource string
 
-	pendingRetry *callRetryContext
-	lastCallID   string
+	pendingRetry          *callRetryContext
+	lastCallID            string
+	lastReviewerRawPacket []byte
 
 	lastProducer             state.ParentReviewProducer
 	observedInstructionReads map[string]struct{}
@@ -499,32 +501,63 @@ func (w *Workflow) enforceRiskFloor(effectiveHigh bool, reviewResult packet.Resu
 }
 
 func (w *Workflow) riskFloorEscalationResult(reviewResult packet.Result) (packet.Result, error) {
-	targets := canonicalReviewTargets(reviewResult.Targets)
-	raw, err := json.Marshal(reviewResult)
-	if err != nil {
-		return packet.Result{}, err
+	if len(w.lastReviewerRawPacket) == 0 {
+		return packet.Result{}, fmt.Errorf("HIGH risk-floor reviewer raw packet is unavailable")
 	}
-	issues := fmt.Sprintf("raw reviewer result: %s; %s; raw packet: %s", reviewResult.Status, reviewResult.Issues, raw)
+	targets := canonicalReviewTargets(reviewResult.Targets)
 	if len(targets) == 0 {
-		derived, deriveErr := w.riskFloorReviewTargets()
-		if deriveErr != nil {
-			return packet.Result{}, fmt.Errorf("HIGH risk-floor review evidence is unavailable: %w", deriveErr)
+		derived, err := w.riskFloorReviewTargets()
+		if err != nil {
+			return packet.Result{}, fmt.Errorf("HIGH risk-floor review evidence is unavailable: %w", err)
 		}
 		targets = derived
 	}
-	return packet.Result{
+
+	dir, err := w.state.PrepareArtifactDir()
+	if err != nil {
+		return packet.Result{}, err
+	}
+	id, err := state.NewUUID()
+	if err != nil {
+		return packet.Result{}, err
+	}
+	rawPath := filepath.Join(dir, "reviewer-risk-floor-"+id+".json")
+	file, err := os.OpenFile(rawPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	if _, err := file.Write(w.lastReviewerRawPacket); err != nil {
+		_ = file.Close()
+		_ = os.Remove(rawPath)
+		return packet.Result{}, err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(rawPath)
+		return packet.Result{}, err
+	}
+	rawHash := sha256.Sum256(w.lastReviewerRawPacket)
+	result := packet.Result{
 		Status:              packet.StatusNeedsSolReview,
 		Risk:                packet.RiskHigh,
 		Summary:             fmt.Sprintf("HIGH risk-floor経路のreviewer PASS (reviewer raw status=%s) を機械的にSol確認へ昇格", reviewResult.Status),
-		RequirementCoverage: "raw reviewer PASSのcoverage判断はSol確認対象であり昇格結果では主張しない",
+		RequirementCoverage: "元Reviewerのcoverage判断は原文artifactに保持され、Sol確認対象であり昇格結果では主張しない",
 		Invariants:          "wrapper risk floorはHIGH RISK経路のreviewer PASSのみでの完了を許容しない",
-		TestEvidence:        reviewResult.TestEvidence,
-		Issues:              issues,
-		ResidualRisk:        "reviewer判断だけでHIGH RISK経路を完了扱いできない; raw reviewer PASSの内容は原文のまま保持",
+		TestEvidence:        "元Reviewerのtest_evidenceは原文artifactに保持; evidenceを短縮・改変していない",
+		Issues:              fmt.Sprintf("reviewer raw status=%s; original issues, coverage, evidence, targets and artifact references: %s; sha256=%x; source_call_id=%s", reviewResult.Status, rawPath, rawHash, w.lastCallID),
+		ResidualRisk:        "reviewer判断だけでHIGH RISK経路を完了扱いできない; 原Reviewer packetの全内容は原文artifactを参照",
 		Targets:             targets,
-		Artifacts:           append([]string(nil), reviewResult.Artifacts...),
+		Artifacts:           []string{rawPath},
 		SolQuestion:         "HIGH risk-floor経路のreviewer PASSの最終採否・修正方針をSolが判断する",
-	}, nil
+	}
+	if err := packet.ValidateReviewerResult(result); err != nil {
+		_ = os.Remove(rawPath)
+		return packet.Result{}, fmt.Errorf("HIGH risk-floor wrapper violates packet schema: %w", err)
+	}
+	if err := packet.ValidateArtifacts(result.Artifacts, dir); err != nil {
+		_ = os.Remove(rawPath)
+		return packet.Result{}, err
+	}
+	return result, nil
 }
 
 func (w *Workflow) riskFloorReviewTargets() ([]string, error) {

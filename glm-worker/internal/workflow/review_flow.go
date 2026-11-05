@@ -359,11 +359,13 @@ func (w *Workflow) prepareAutoFixCheckpoint(
 		prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
 		phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
 	}
-	exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, nextAutoFixes)
-	if err != nil {
-		return state.ResumeCheckpoint{}, err
+	if !reportOnly {
+		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, nextAutoFixes)
+		if err != nil {
+			return state.ResumeCheckpoint{}, err
+		}
+		prompt += exhaustiveContext
 	}
-	prompt += exhaustiveContext
 	return state.ResumeCheckpoint{
 		Stage:          state.ResumeStageAutoFix,
 		Phase:          phase,

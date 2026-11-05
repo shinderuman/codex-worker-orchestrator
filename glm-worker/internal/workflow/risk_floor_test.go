@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -64,6 +66,11 @@ func TestRiskFloorEscalationPacketIsValid(t *testing.T) {
 
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+	raw, err := passPkt.MachineJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.lastReviewerRawPacket = raw
 	enforced, err := w.riskFloorEscalationResult(passPkt)
 	if err != nil {
 		t.Fatal(err)
@@ -77,11 +84,64 @@ func TestRiskFloorEscalationPacketIsValid(t *testing.T) {
 	if enforced.RequirementCoverage == "covered" {
 		t.Fatalf("reviewerのPASS内容を昇格結果へ捏造している: %#v", enforced)
 	}
-	if !strings.Contains(enforced.Summary, "PASS") || !strings.Contains(enforced.TestEvidence, "ev") {
+	if !strings.Contains(enforced.Summary, "PASS") || !strings.Contains(enforced.TestEvidence, "原文artifact") {
 		t.Fatalf("raw reviewer PASSの内容を保持すべき: %#v", enforced)
 	}
 	if len(enforced.Targets) != 1 || enforced.Targets[0] != "internal/task/change.go:@diff" {
 		t.Fatalf("semantic review targets = %#v", enforced.Targets)
+	}
+}
+
+func TestRiskFloorEscalationRetainsNearLimitPASS(t *testing.T) {
+	t.Parallel()
+	pass := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
+	pass.Issues = strings.Repeat("I", packet.MaxFieldBytes)
+	pass.RequirementCoverage = strings.Repeat("C", packet.MaxFieldBytes)
+	pass.TestEvidence = strings.Repeat("T", packet.MaxFieldBytes)
+	if err := packet.ValidateReviewerResult(pass); err != nil {
+		t.Fatalf("source PASS must be valid: %v", err)
+	}
+	raw, err := pass.MachineJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"internal/task/change.go"}, nil
+	}
+	w.lastReviewerRawPacket = raw
+	w.lastCallID = "source-call-id"
+	escalated, err := w.riskFloorEscalationResult(pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := packet.ValidateReviewerResult(escalated); err != nil {
+		t.Fatal(err)
+	}
+	if escalated.Risk != packet.RiskHigh || escalated.Status != packet.StatusNeedsSolReview {
+		t.Fatalf("risk floor weakened: %#v", escalated)
+	}
+	if len(escalated.Artifacts) != 1 || len(escalated.Issues) > packet.MaxFieldBytes || !strings.Contains(escalated.Issues, "source-call-id") {
+		t.Fatalf("missing bounded original locator: %#v", escalated)
+	}
+	stored, err := os.ReadFile(escalated.Artifacts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, raw) {
+		t.Fatal("original reviewer packet bytes were not retained verbatim")
+	}
+	if strings.Contains(escalated.Issues, strings.Repeat("I", 100)) {
+		t.Fatal("original issues duplicated in wrapper")
+	}
+}
+
+func TestRiskFloorEscalationRejectsMissingRawPacket(t *testing.T) {
+	t.Parallel()
+	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
+	pass := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
+	if result, err := w.riskFloorEscalationResult(pass); err == nil || result.Status != "" {
+		t.Fatalf("missing raw reviewer packet must fail closed: %#v %v", result, err)
 	}
 }
 
