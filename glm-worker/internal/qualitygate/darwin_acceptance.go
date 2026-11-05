@@ -100,14 +100,111 @@ func ChangedDarwinPackages(repository string) ([]DarwinPackageRequirement, error
 }
 
 func darwinSourceFile(path, name string) bool {
-	// The Go filename suffix itself limits the file to Darwin.
 	if strings.HasSuffix(name, "_darwin.go") || strings.HasSuffix(name, "_darwin_test.go") {
 		return true
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// Deleted or renamed files are included when their name is Darwin-specific.
 		return false
+	}
+	return darwinSourceBytes(name, data)
+}
+
+// ChangedDarwinPackagesAtCommit recomputes the required scope from immutable
+// Git objects, independently of the saved run record and released checkout.
+// Publication must not accept a run that omitted a candidate's Darwin tests.
+func ChangedDarwinPackagesAtCommit(repository, commit string) ([]DarwinPackageRequirement, error) {
+	if len(commit) != 40 {
+		return nil, fmt.Errorf("invalid candidate commit identity")
+	}
+	for _, ch := range commit {
+		if ch < '0' || (ch > '9' && ch < 'a') || ch > 'f' {
+			return nil, fmt.Errorf("invalid candidate commit identity")
+		}
+	}
+	changed, err := darwinGitOutput(repository, "diff-tree", "--root", "-r", "--no-commit-id", "--name-only", "-z", commit)
+	if err != nil {
+		return nil, err
+	}
+	dirs := map[string]bool{}
+	for _, entry := range bytes.Split(changed, []byte{0}) {
+		path := string(entry)
+		if !strings.HasPrefix(path, "glm-worker/") || !strings.HasSuffix(path, ".go") {
+			continue
+		}
+		target, showErr := darwinGitOutput(repository, "show", commit+":"+path)
+		if showErr != nil {
+			// A removed file may still have carried a Darwin build constraint.
+			target, showErr = darwinGitOutput(repository, "show", commit+"^:"+path)
+		}
+		if showErr == nil && darwinSourceBytes(filepath.Base(path), target) {
+			dirs[filepath.ToSlash(filepath.Dir(strings.TrimPrefix(path, "glm-worker/")))] = true
+		}
+	}
+	keys := make([]string, 0, len(dirs))
+	for dir := range dirs {
+		keys = append(keys, dir)
+	}
+	sort.Strings(keys)
+	required := make([]DarwinPackageRequirement, 0, len(keys))
+	for _, dir := range keys {
+		entries, err := darwinGitOutput(repository, "ls-tree", "-r", "--name-only", "-z", commit, "--", "glm-worker/"+dir)
+		if err != nil {
+			return nil, err
+		}
+		hasGo := false
+		tests := map[string]bool{}
+		for _, entry := range bytes.Split(entries, []byte{0}) {
+			path := string(entry)
+			if filepath.ToSlash(filepath.Dir(strings.TrimPrefix(path, "glm-worker/"))) != dir || !strings.HasSuffix(path, ".go") {
+				continue
+			}
+			hasGo = true
+			if !strings.HasSuffix(path, "_test.go") {
+				continue
+			}
+			body, err := darwinGitOutput(repository, "show", commit+":"+path)
+			if err != nil {
+				return nil, err
+			}
+			if !darwinSourceBytes(filepath.Base(path), body) {
+				continue
+			}
+			parsed, err := parser.ParseFile(token.NewFileSet(), path, body, 0)
+			if err != nil {
+				return nil, fmt.Errorf("parse candidate Darwin tests %s: %w", path, err)
+			}
+			for _, decl := range parsed.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
+					tests[fn.Name.Name] = true
+				}
+			}
+		}
+		if !hasGo {
+			continue
+		}
+		item := DarwinPackageRequirement{Package: "./" + dir}
+		for name := range tests {
+			item.Tests = append(item.Tests, name)
+		}
+		sort.Strings(item.Tests)
+		required = append(required, item)
+	}
+	return required, nil
+}
+
+func darwinGitOutput(repository string, args ...string) ([]byte, error) {
+	out, err := exec.Command("git", append([]string{"-C", repository}, args...)...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("inspect source-bound Darwin acceptance: %w", err)
+	}
+	return out, nil
+}
+
+func darwinSourceBytes(name string, data []byte) bool {
+	if strings.HasSuffix(name, "_darwin.go") || strings.HasSuffix(name, "_darwin_test.go") {
+		return true
 	}
 	for _, line := range strings.SplitN(string(data), "\n", 30) {
 		line = strings.TrimSpace(line)

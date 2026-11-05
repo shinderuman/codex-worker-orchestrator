@@ -50,12 +50,28 @@ func TestChangedDarwinPackagesOnlyForCandidateDarwinSource(t *testing.T) {
 	if !reflect.DeepEqual(req, want) {
 		t.Fatalf("Darwin acceptance = %#v, want %#v", req, want)
 	}
+	committed, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	atCommit, err := ChangedDarwinPackagesAtCommit(root, strings.TrimSpace(string(committed)))
+	if err != nil || !reflect.DeepEqual(atCommit, want) {
+		t.Fatalf("committed Darwin acceptance = %#v %v", atCommit, err)
+	}
 	darwinTestWrite(t, filepath.Join(base, "sampler_linux.go"), "package qualitygate\nconst linux = 2\n")
 	darwinTestGit(t, root, "add", ".")
 	darwinTestGit(t, root, "commit", "-m", "only Linux")
 	req, err = ChangedDarwinPackages(root)
 	if err != nil || len(req) != 0 {
 		t.Fatalf("unrelated Task requires Darwin validation: %#v %v", req, err)
+	}
+	committed, err = exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	atCommit, err = ChangedDarwinPackagesAtCommit(root, strings.TrimSpace(string(committed)))
+	if err != nil || len(atCommit) != 0 {
+		t.Fatalf("unrelated committed source requires Darwin acceptance: %#v %v", atCommit, err)
 	}
 }
 

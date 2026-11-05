@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -181,6 +182,10 @@ func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalVali
 	if err != nil {
 		return nil, err
 	}
+	requiredDarwin, err := qualitygate.ChangedDarwinPackagesAtCommit(s.identity.PrimaryRoot, c.CommitOID)
+	if err != nil {
+		return nil, err
+	}
 	evidence := make([]FinalValidationEvidence, 0, len(requests))
 	for _, request := range requests {
 		repoRoot, err := s.finalValidationWorkspace(c, request)
@@ -197,6 +202,9 @@ func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalVali
 		}
 		if !ok || !finalValidationMatchesSource(record, repoRoot, source, request) {
 			return nil, fmt.Errorf("final validation %s has no terminal PASS run for the current candidate source", request.Form)
+		}
+		if !reflect.DeepEqual(record.DarwinPackages, requiredDarwin) {
+			return nil, fmt.Errorf("final validation %s did not cover candidate Darwin acceptance", request.Form)
 		}
 		if err := qualitygate.VerifyTerminalPass(record); err != nil {
 			return nil, fmt.Errorf("final validation %s run %s is not a terminal PASS: %w", request.Form, record.ValidationRunID, err)
@@ -220,6 +228,10 @@ func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []Fi
 	if err != nil {
 		return err
 	}
+	requiredDarwin, err := qualitygate.ChangedDarwinPackagesAtCommit(s.identity.PrimaryRoot, c.CommitOID)
+	if err != nil {
+		return err
+	}
 	for _, request := range requests {
 		repoRoot, err := s.finalValidationWorkspace(c, request)
 		if err != nil {
@@ -231,6 +243,13 @@ func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []Fi
 		}
 		if err := verifyFinalValidationRun(module, repoRoot, byForm[request.Form], request, source); err != nil {
 			return err
+		}
+		saved, err := qualitygate.Read(module, byForm[request.Form])
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(saved.DarwinPackages, requiredDarwin) {
+			return fmt.Errorf("final validation %s omitted candidate Darwin acceptance", request.Form)
 		}
 		latest, _, err := latestFinalValidationRun(module, repoRoot, request.Form)
 		if err != nil {
