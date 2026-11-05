@@ -207,6 +207,20 @@ func completeMaterializedReview(cfg config.AppConfig, store *controller.Store, r
 	if retained {
 		return verifyRetainedMaterializedReview(runtimeCfg, result.Admission.Attempt)
 	}
+	// A source-bound, independently authenticated HIGH Review may survive a
+	// metadata-only fast-forward without another model call. The canonical
+	// workflow attempt binding and parent evidence gates remain mandatory.
+	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
+	if review, err := wf.state.CurrentParentReviewBinding(); err == nil && review != nil && review.SourceEquivalence != nil {
+		if err := wf.admitCanonicalReenteredReview(); err != nil {
+			return err
+		}
+		admitted, err := admittedEquivalentReview(wf.state, result.Admission.Attempt)
+		if err != nil || !admitted {
+			return fmt.Errorf("equivalent Review failed current source admission: %v", err)
+		}
+		return nil
+	}
 	if _, err := executeControllerReentryReview(cfg, store); err != nil {
 		return fmt.Errorf("materialized execution transition %s review preparation failed: %w", result.TransitionID, err)
 	}
@@ -268,6 +282,13 @@ func reenterMaterializedRuntimeCompletion(cfg config.AppConfig, result controlle
 		return err
 	}
 	runtime := state.AttachStateStore(runtimeCfg)
+	if result.ParentSourceReview {
+		if retained, err := reenterWithEquivalentReview(runtime, result.Admission.Workspace.Root, authority); err != nil {
+			return err
+		} else if retained {
+			return verifyMaterializedRuntimeBinding(runtime, authority)
+		}
+	}
 	if _, err := runtime.ReenterAcceptedCompletionFromController(authority); err != nil {
 		return err
 	}
