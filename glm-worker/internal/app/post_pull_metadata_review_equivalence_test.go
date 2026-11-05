@@ -48,13 +48,13 @@ func newPostPullMetadataReviewFixture(t *testing.T) postPullMetadataReviewFixtur
 	taskID := seedPostPullModelCalls(t, runtime, result)
 	original := acceptPostPullOriginalReview(t, runtime)
 	return postPullMetadataReviewFixture{
-		cfg: cfg,
-		store: store,
-		runtime: runtime,
-		accepted: accepted,
+		cfg:       cfg,
+		store:     store,
+		runtime:   runtime,
+		accepted:  accepted,
 		candidate: candidate,
-		original: original,
-		taskID: taskID,
+		original:  original,
+		taskID:    taskID,
 	}
 }
 
@@ -80,8 +80,8 @@ func seedPostPullReviewSnapshots(t *testing.T, cfg config.AppConfig, runtime *st
 		t.Fatal(err)
 	}
 	return state.SnapshotDigest{
-		Head: snapshot.Head,
-		IndexDigest: snapshot.IndexDigest,
+		Head:           snapshot.Head,
+		IndexDigest:    snapshot.IndexDigest,
 		WorktreeDigest: snapshot.WorktreeDigest,
 	}
 }
@@ -188,14 +188,14 @@ func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, m
 	}
 	newTask := "IMPLEMENTATION_TASKS/post-pull-next.md"
 	writeAppTestFile(t, repo, newTask, "# NEXT\n\n## Contract\n\nMetadata-only successor.\n\n## Dependencies\n\nnone\n\n## External feasibility\n\nstatus: not-applicable\n")
-	nextLine := "- `"+newTask+"`\n"
-	writeAppTestFile(t, repo, state.ParentPlanFile, strings.Replace(string(before), "## NEXT\n", "## NEXT\n\n"+nextLine, 1))
+	nextLine := "- `" + newTask + "`\n"
+	writeAppTestFile(t, repo, state.ParentPlanFile, strings.Replace(string(before), "## NEXT\n", "## NEXT\n\n" + nextLine, 1))
 	if mutate != nil {
 		mutate(repo)
 	}
 	runControllerActivationGit(t, repo, "add", "--all")
 	runControllerActivationGit(t, repo, "commit", "-qm", "add next-only task after independent HIGH review")
-	runControllerActivationGit(t, repo, "push", "-q", f.candidate.Policy.Remote, "HEAD:"+f.candidate.Policy.RemoteRef)
+	runControllerActivationGit(t, repo, "push", "-q", f.candidate.Policy.Remote, "HEAD:" + f.candidate.Policy.RemoteRef)
 	snapshot, err := controller.CaptureWorkspaceSnapshot(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +221,7 @@ func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, m
 	live, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{
 		Action:             "materialize",
 		ExpectedGeneration: entered.Head.ControllerGeneration,
-		SuspensionID: entered.Suspension.SnapshotID,
+		SuspensionID:       entered.Suspension.SnapshotID,
 	})
 	if err != nil {
 		if live.Admission != nil {
@@ -294,9 +294,9 @@ func TestPostPullMetadataEquivalentReviewReentersThroughMaterializeAndAcceptsNew
 	laneCfg.RepoRoot = live.Admission.Workspace.Root
 	manifest := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
 		Version: parentevidence.ManifestVersion,
-		Reason: "re-prove independent HIGH target against materialized source",
+		Reason:  "re-prove independent HIGH target against materialized source",
 		Source: []parentevidence.SourceRequest{{
-			Question: "inspect original target on new source",
+			Question:    "inspect original target on new source",
 			Path:        "IMPLEMENTATION_TASKS/root.md",
 			LineStart:   1,
 			LineEnd:     1,
