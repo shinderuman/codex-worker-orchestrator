@@ -726,6 +726,10 @@ func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt i
 	if probeErr == nil {
 		return true, "", startedAt, completedAt, nil
 	}
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(probeErr, &scheduled) {
+		return false, "", time.Time{}, time.Time{}, probeErr
+	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(probeErr, &interrupted) {
 		return false, "", time.Time{}, time.Time{}, probeErr

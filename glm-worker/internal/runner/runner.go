@@ -28,6 +28,7 @@ type StructuredOutputError struct {
 
 type ClaudeRunner struct {
 	config             config.AppConfig
+	pauseEvaluator     func(time.Time) (bool, time.Time)
 	state              *state.StateStore
 	stop               *StopController
 	bashSandbox        *gitBashSandboxPolicy

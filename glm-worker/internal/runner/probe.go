@@ -108,13 +108,6 @@ func (r *ClaudeRunner) probeCommandPreflight(deadline time.Time) error {
 	return nil
 }
 
-func (r *ClaudeRunner) probeStopRequested() <-chan struct{} {
-	if r.stop == nil {
-		return nil
-	}
-	return r.stop.Requested()
-}
-
 func probeDeadlineChannel(deadline time.Time) (<-chan time.Time, func()) {
 	if deadline.IsZero() {
 		return nil, func() {}

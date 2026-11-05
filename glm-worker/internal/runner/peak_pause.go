@@ -19,7 +19,7 @@ func (e *ScheduledPauseError) Error() string {
 }
 
 func (r *ClaudeRunner) runManagedCommand(command *exec.Cmd, deadline time.Time, probe bool) error {
-	active, next := r.config.PeakPause.Evaluate(time.Now())
+	active, next := r.evaluatePause(time.Now())
 	if active {
 		return &ScheduledPauseError{ResumeAt: next}
 	}
@@ -70,7 +70,7 @@ func (r *ClaudeRunner) runManagedCommand(command *exec.Cmd, deadline time.Time, 
 				pauseTimer.Stop()
 			}
 			var paused bool
-			paused, next = r.config.PeakPause.Evaluate(time.Now())
+			paused, next = r.evaluatePause(time.Now())
 			if !paused {
 				continue
 			}
@@ -82,4 +82,11 @@ func (r *ClaudeRunner) runManagedCommand(command *exec.Cmd, deadline time.Time, 
 			return &ScheduledPauseError{ResumeAt: next, CleanupWarning: warning}
 		}
 	}
+}
+
+func (r *ClaudeRunner) evaluatePause(now time.Time) (bool, time.Time) {
+	if r.pauseEvaluator != nil {
+		return r.pauseEvaluator(now)
+	}
+	return r.config.PeakPause.Evaluate(now)
 }
