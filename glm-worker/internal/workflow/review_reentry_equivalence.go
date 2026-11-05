@@ -156,7 +156,7 @@ func reenterWithEquivalentReview(runtime *state.StateStore, repo string, authori
 	return reentered, nil
 }
 
-func admittedEquivalentReview(runtime *state.StateStore, attempt controller.AttemptRecord) (bool, error) {
+func admittedEquivalentReview(runtime *state.StateStore, attempt controller.AttemptRecord, repoRoot string) (bool, error) {
 	if runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
 		return false, nil
 	}
@@ -177,7 +177,7 @@ func admittedEquivalentReview(runtime *state.StateStore, attempt controller.Atte
 		open.Risk != string(packet.RiskHigh) || open.PacketStatus != string(packet.StatusNeedsSolReview) {
 		return false, err
 	}
-	now, err := state.CaptureGitSnapshot(runtime.ReadOr("repo-root", ""))
+	now, err := state.CaptureGitSnapshot(repoRoot)
 	if err != nil {
 		return false, err
 	}
