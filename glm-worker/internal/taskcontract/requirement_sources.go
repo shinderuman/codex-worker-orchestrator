@@ -54,7 +54,7 @@ func ParseRequirementSources(content []byte) ([]RequirementSource, error) {
 		value := strings.TrimSpace(strings.TrimPrefix(item, requirementSourcePrefix))
 		// Use a single backtick pair so that a malformed source cannot be
 		// accepted as an ordinary completion or a historical text locator.
-		if len(value) < 3 || value[0] != 96 || value[len(value)-1] != 96 {
+		if len(value) < 3 || value[0] != 96 || value[len(value)-1] != 96 || strings.Count(value, string(rune(96))) != 2 {
 			return nil, fmt.Errorf("requirement-source at line %d must be a single backtick-wrapped locator", i+1)
 		}
 		value = value[1 : len(value)-1]

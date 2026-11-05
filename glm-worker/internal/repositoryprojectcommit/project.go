@@ -140,6 +140,18 @@ func (p Project) RetireTerminalMetadata(taskPath string, blocker bool) (Terminal
 			return TerminalMetadata{}, fmt.Errorf("task %s: %w", task.Path, err)
 		}
 		for _, source := range sources {
+			if source.Kind == taskcontract.RequirementSourceFile {
+				// File-based current authorities must exist in the committed
+				// source tree, not only in a mutable worktree.
+				if p.RepoRoot == "" || p.Head == "" {
+					return TerminalMetadata{}, fmt.Errorf("task %s has current file requirement source without committed Git identity", task.Path)
+				}
+				kind, err := gitOutput(p.RepoRoot, "cat-file", "-t", p.Head+":"+source.Path)
+				if err != nil || kind != "blob" {
+					return TerminalMetadata{}, fmt.Errorf("task %s has missing committed requirement file %s at %s", task.Path, source.Path, p.Head)
+				}
+				continue
+			}
 			if source.Kind != taskcontract.RequirementSourceGit {
 				continue
 			}

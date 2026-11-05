@@ -42,6 +42,19 @@ func TestCommittedTerminalRetirementVerifiesPinnedRequirementSource(t *testing.T
 	if _, err := makeProject(strings.Repeat("0", 40), "requirement.md").RetireTerminalMetadata(active, false); err == nil {
 		t.Fatal("missing Git commit admitted by publication retirement")
 	}
+
+	fileProject := makeProject(sha, "requirement.md")
+	fileProject.Head = sha
+	fileProject.Tasks[1].Content = []byte("## Resolved references\n- requirement-source: " + tick +
+		"file:requirement.md" + tick + "\n\n## Dependencies\nnone\n")
+	if _, err := fileProject.RetireTerminalMetadata(active, false); err != nil {
+		t.Fatalf("committed current file requirement rejected: %v", err)
+	}
+	fileProject.Tasks[1].Content = []byte("## Resolved references\n- requirement-source: " + tick +
+		"file:missing.md" + tick + "\n\n## Dependencies\nnone\n")
+	if _, err := fileProject.RetireTerminalMetadata(active, false); err == nil {
+		t.Fatal("missing committed current file requirement admitted")
+	}
 	if _, err := makeProject(sha, ".").RetireTerminalMetadata(active, false); err == nil {
 		t.Fatal("invalid pinned path admitted")
 	}
