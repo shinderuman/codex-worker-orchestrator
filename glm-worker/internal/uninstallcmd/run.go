@@ -63,7 +63,7 @@ func run(repoRoot, binDir, codexDir string, stdout io.Writer) error {
 		cmd := exec.Command("sh", filepath.Join(repoRoot, "scripts", "manage-pull-hook.sh"),
 			"retire", repoRoot, filepath.Join(binDir, "glm-publication-guard"))
 		cmd.Stdout = stdout
-		cmd.Stderr = io.Discard
+		cmd.Stderr = stdout
 		return cmd.Run()
 	})
 	attempt("Codex", func() error { return codexinstall.Retire(codexDir, stdout) })
