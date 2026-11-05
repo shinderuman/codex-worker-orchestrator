@@ -90,6 +90,7 @@ func AnalyzeReportOnlyReadReentry(transcriptCallID string, transcript []byte, ca
 	scanner.Buffer(make([]byte, 64*1024), reportOnlyTranscriptMaxBytes)
 	reads := int64(0)
 	readIDs := make(map[string]struct{})
+	pathReadCounts := make(map[string]int64)
 	ranges := make(map[string]map[reportOnlyReadRange]struct{})
 	rangesComplete := true
 	idsComplete := true
@@ -124,6 +125,7 @@ func AnalyzeReportOnlyReadReentry(transcriptCallID string, transcript []byte, ca
 				continue
 			}
 			path := block.Input.FilePath
+			pathReadCounts[path]++
 			if ranges[path] == nil {
 				ranges[path] = make(map[reportOnlyReadRange]struct{})
 			}
@@ -137,20 +139,8 @@ func AnalyzeReportOnlyReadReentry(transcriptCallID string, transcript []byte, ca
 	if rangesComplete {
 		split := int64(0)
 		for path, variants := range ranges {
-			if len(variants) < 2 {
-				continue
-			}
-			for _, line := range bytes.Split(transcript, []byte{'
-'}) {
-				var record reportOnlyTranscriptRecord
-				if json.Unmarshal(line, &record) != nil || record.Type != "assistant" {
-					continue
-				}
-				for _, block := range record.Message.Content {
-					if block.Type == "tool_use" && block.Name == "Read" && block.Input.FilePath == path {
-						split++
-					}
-				}
+			if len(variants) >= 2 {
+				split += pathReadCounts[path]
 			}
 		}
 		out.SamePathSplitReads = reportOnlyKnownMetric(split)
