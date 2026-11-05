@@ -32,6 +32,9 @@ func writeExportProbeFixture(t *testing.T, f *evidenceExportFixture, record qual
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if record.LogSHA256 == "" {
+		record.LogSHA256 = digestBytes(log)
+	}
 	encoded, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)
@@ -141,6 +144,36 @@ func TestExportPostInstallProbeRejectsUnboundOrTamperedLog(t *testing.T) {
 			}
 			if analysis := findExportProbeAnalysis(t, export, record); analysis.Log != "" {
 				t.Fatalf("tampered probe log linked by analysis: %#v", analysis)
+			}
+		})
+	}
+}
+
+func TestExportPostInstallProbeRejectsModifiedContentAndFalseDigest(t *testing.T) {
+	for _, mode := range []string{"modified-log", "false-recorded-digest"} {
+		t.Run(mode, func(t *testing.T) {
+			fixture := newEvidenceExportFixture(t)
+			record := exportProbeFixtureRecord(fixture)
+			original := []byte("authentic probe bytes")
+			if mode == "false-recorded-digest" {
+				record.LogSHA256 = digestBytes([]byte("different probe bytes"))
+			}
+			writeExportProbeFixture(t, fixture, record, original)
+			if mode == "modified-log" {
+				if err := os.WriteFile(record.Log, []byte("tampered probe bytes"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry := exportEntryByPath(t, export.Manifest, exportProbeManifestPath(record))
+			if entry.Unreadable == "" || entry.SHA256 != "" || entry.Bytes != 0 {
+				t.Fatalf("modified probe bytes became valid evidence: %#v", entry)
+			}
+			if run := findExportProbeAnalysis(t, export, record); run.Log != "" {
+				t.Fatalf("modified probe evidence became canonical: %#v", run)
 			}
 		})
 	}
