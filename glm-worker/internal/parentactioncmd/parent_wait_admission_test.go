@@ -13,8 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// 親ownerだけの終了はmodel再入境界ではない。Workerのin-flightを維持し、
-// 正規の中断とrepository lock解放を受けて初めて復旧handoffを返す。
 func TestParentWaitAdmissionRetainsWorkerAndDeliversInterruption(t *testing.T) {
 	cfg, st := newParentActionTestState(t)
 	if _, err := st.StartNewTask(); err != nil {
@@ -49,7 +47,6 @@ func TestParentWaitAdmissionRetainsWorkerAndDeliversInterruption(t *testing.T) {
 	}
 	assertParentWaitStillBlocked(t, done, &stdout)
 
-	// Simulate the canonical worker stop transition before it releases the lock.
 	if err := st.SetTaskStatus(state.TaskStatusInterrupted); err != nil {
 		t.Fatal(err)
 	}
@@ -77,8 +74,6 @@ func TestParentWaitAdmissionRetainsWorkerAndDeliversInterruption(t *testing.T) {
 	}
 }
 
-// primary ownerの解放後に新しいowner epochへ切り替わった場合、
-// 古いwaiterはWorkerを奪わず、古いhandoffも返さない。
 func TestParentWaitAdmissionSupersededWhileWorkerRemainsInFlight(t *testing.T) {
 	cfg, st := newParentActionTestState(t)
 	if _, err := st.StartNewTask(); err != nil {
@@ -193,7 +188,7 @@ func writeInterruptedParentWaitWorkerStub(t *testing.T) {
 	bin := t.TempDir()
 	script := `#!/bin/sh
 if [ "${1:-}" = "--handoff" ] && [ "${2:-}" = "recovery" ]; then
-  printf '%s\\n' '{"projection":"recovery","consistent":true,"task_id":"task-1","task_status":"interrupted","required_action":"resume","allowed_actions":["resume"]}'
+  printf '%s\n' '{"projection":"recovery","consistent":true,"task_id":"task-1","task_status":"interrupted","required_action":"resume","allowed_actions":["resume"]}'
   exit 0
 fi
 exit 2
