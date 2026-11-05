@@ -12,25 +12,25 @@ import (
 )
 
 const (
-	enabledEnv = "GLM_WORKER_PEAK_PAUSE_ENABLED"
+	enabledEnv  = "GLM_WORKER_PEAK_PAUSE_ENABLED"
 	timezoneEnv = "GLM_WORKER_PEAK_PAUSE_TIMEZONE"
-	windowsEnv = "GLM_WORKER_PEAK_PAUSE_WINDOWS"
+	windowsEnv  = "GLM_WORKER_PEAK_PAUSE_WINDOWS"
 )
 
 type Window struct {
-	days [7]bool
+	days        [7]bool
 	startMinute int
-	endMinute int
+	endMinute   int
 }
 
 type Policy struct {
 	location *time.Location
-	windows []Window
+	windows  []Window
 }
 
 type interval struct {
 	start time.Time
-	end time.Time
+	end   time.Time
 }
 
 func FromEnvironment() (Policy, error) {

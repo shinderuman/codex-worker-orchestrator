@@ -12,6 +12,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudesettings"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/peakpause"
 )
 
 type AppConfig struct {
@@ -44,6 +45,7 @@ type AppConfig struct {
 	TelemetryContent      bool
 	RepoSearch            bool
 	FailurePathAdvisory   bool
+	PeakPause             peakpause.Policy
 }
 
 type boolFlags struct {
@@ -92,6 +94,10 @@ func Load() (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
+	peakPolicy, err := peakpause.FromEnvironment()
+	if err != nil {
+		return AppConfig{}, err
+	}
 
 	return AppConfig{
 		RepoRoot:               repoRoot,
@@ -117,6 +123,7 @@ func Load() (AppConfig, error) {
 		TelemetryContent:       flags.telemetryContent,
 		RepoSearch:             flags.repoSearch,
 		FailurePathAdvisory:    flags.failurePathAdvisory,
+		PeakPause:              peakPolicy,
 	}, nil
 }
 
