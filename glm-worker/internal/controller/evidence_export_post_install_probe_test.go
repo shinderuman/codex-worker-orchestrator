@@ -96,7 +96,7 @@ func TestExportPostInstallProbePreservesActualLogAndOtherValidationForms(t *test
 	}
 	for name, content := range map[string][]byte{
 		qualitygate.ResourceSamplesFile: resourceBytes,
-		qualitygate.TestTimingsFile: timingBytes,
+		qualitygate.TestTimingsFile:     timingBytes,
 	} {
 		if err := os.WriteFile(fixture.runtime.Path(filepath.Join(qualitygate.RunDirectory, goRace.ValidationRunID, name)), content, 0o600); err != nil {
 			t.Fatal(err)
