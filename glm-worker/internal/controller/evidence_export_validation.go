@@ -247,6 +247,10 @@ func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateSto
 		c.recordUnreadable(entry, "post-install probe source changed during read")
 		return ""
 	}
+	if record.LogSHA256 == "" || record.LogSHA256 != digestBytes(data) {
+		c.recordUnreadable(entry, "post-install probe log digest is missing or differs from the run record")
+		return ""
+	}
 	c.commit(EvidenceExportEntry{
 		Path: entry, Source: evidenceExportSourceGateRun, Basis: basis,
 		SHA256: digestBytes(data), Bytes: int64(len(data)), CollectedAt: c.observedAt,
