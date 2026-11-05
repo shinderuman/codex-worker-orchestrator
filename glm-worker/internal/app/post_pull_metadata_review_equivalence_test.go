@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -347,5 +348,12 @@ func TestPostPullMetadataChangedDependencyFallsBackToFreshReview(t *testing.T) {
 	}
 	if countPostPullReviewerCalls(t, f.runtime, f.taskID) != originalCalls {
 		t.Fatal("falling back to ordinary Review itself manufactured a model call")
+	}
+}
+
+func TestPostPullMetadataSourceGoFmtDiagnostic(t *testing.T) {
+	output, err := exec.Command("gofmt", "-d", "post_pull_metadata_review_equivalence_test.go").CombinedOutput()
+	if err != nil || len(output) != 0 {
+		t.Fatalf("post-pull metadata test gofmt difference: %s; err=%v", output, err)
 	}
 }
