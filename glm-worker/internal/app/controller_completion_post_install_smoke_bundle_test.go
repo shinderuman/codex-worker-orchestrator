@@ -198,14 +198,14 @@ func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
 		if err := os.WriteFile(record.Log, []byte("tampered probe output\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		invalid, invalidMembers := exportPostInstallProbeZIP(t, cfg, store)
+		invalid, invalidMembers := exportPostInstallProbeZIP(t, cfg, store, record.TaskID)
 		probeExportAssertIncomplete(t, invalid, invalidMembers, logEntry, record.ValidationRunID, false)
 	})
 	t.Run("missing-probe-log", func(t *testing.T) {
 		if err := os.Remove(record.Log); err != nil {
 			t.Fatal(err)
 		}
-		invalid, invalidMembers := exportPostInstallProbeZIP(t, cfg, store)
+		invalid, invalidMembers := exportPostInstallProbeZIP(t, cfg, store, record.TaskID)
 		probeExportAssertIncomplete(t, invalid, invalidMembers, logEntry, record.ValidationRunID, true)
 	})
 	t.Run("legacy-missing-digest", func(t *testing.T) {
@@ -216,7 +216,7 @@ func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
 		if err := writePostInstallSmokeRecord(runtime, record); err != nil {
 			t.Fatal(err)
 		}
-		invalid, invalidMembers := exportPostInstallProbeZIP(t, cfg, store)
+		invalid, invalidMembers := exportPostInstallProbeZIP(t, cfg, store, record.TaskID)
 		probeExportAssertIncomplete(t, invalid, invalidMembers, logEntry, record.ValidationRunID, false)
 	})
 }
