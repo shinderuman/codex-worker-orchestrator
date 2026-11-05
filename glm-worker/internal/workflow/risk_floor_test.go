@@ -1,9 +1,9 @@
 package workflow
 
 import (
-	"strings"
-	"os"
 	"bytes"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -67,7 +67,9 @@ func TestRiskFloorEscalationPacketIsValid(t *testing.T) {
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
 	raw, err := passPkt.MachineJSON()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.lastReviewerRawPacket = raw
 	enforced, err := w.riskFloorEscalationResult(passPkt)
 	if err != nil {
@@ -100,22 +102,38 @@ func TestRiskFloorEscalationRetainsNearLimitPASS(t *testing.T) {
 		t.Fatalf("source PASS must be valid: %v", err)
 	}
 	raw, err := pass.MachineJSON()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
-	w.collectChangedPaths = func(string, string) ([]string, error) { return []string{"internal/task/change.go"}, nil }
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"internal/task/change.go"}, nil
+	}
 	w.lastReviewerRawPacket = raw
 	w.lastCallID = "source-call-id"
 	escalated, err := w.riskFloorEscalationResult(pass)
-	if err != nil { t.Fatal(err) }
-	if err := packet.ValidateReviewerResult(escalated); err != nil { t.Fatal(err) }
-	if escalated.Risk != packet.RiskHigh || escalated.Status != packet.StatusNeedsSolReview { t.Fatalf("risk floor weakened: %#v", escalated) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := packet.ValidateReviewerResult(escalated); err != nil {
+		t.Fatal(err)
+	}
+	if escalated.Risk != packet.RiskHigh || escalated.Status != packet.StatusNeedsSolReview {
+		t.Fatalf("risk floor weakened: %#v", escalated)
+	}
 	if len(escalated.Artifacts) != 1 || len(escalated.Issues) > packet.MaxFieldBytes || !strings.Contains(escalated.Issues, "source-call-id") {
 		t.Fatalf("missing bounded original locator: %#v", escalated)
 	}
 	stored, err := os.ReadFile(escalated.Artifacts[0])
-	if err != nil { t.Fatal(err) }
-	if !bytes.Equal(stored, raw) { t.Fatal("original reviewer packet bytes were not retained verbatim") }
-	if strings.Contains(escalated.Issues, strings.Repeat("I", 100)) { t.Fatal("original issues duplicated in wrapper") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, raw) {
+		t.Fatal("original reviewer packet bytes were not retained verbatim")
+	}
+	if strings.Contains(escalated.Issues, strings.Repeat("I", 100)) {
+		t.Fatal("original issues duplicated in wrapper")
+	}
 }
 
 func TestRiskFloorEscalationRejectsMissingRawPacket(t *testing.T) {

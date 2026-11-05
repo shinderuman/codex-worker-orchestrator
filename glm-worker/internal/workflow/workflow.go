@@ -54,8 +54,8 @@ type Workflow struct {
 
 	currentResumeSource string
 
-	pendingRetry *callRetryContext
-	lastCallID   string
+	pendingRetry          *callRetryContext
+	lastCallID            string
 	lastReviewerRawPacket []byte
 
 	lastProducer             state.ParentReviewProducer

@@ -22,7 +22,9 @@ func TestRiskFloorEscalationTargetsProduceParentDiffClaim(t *testing.T) {
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 	raw, err := passPkt.MachineJSON()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.lastReviewerRawPacket = raw
 	enforced, err := w.riskFloorEscalationResult(passPkt)
 	if err != nil {
@@ -78,7 +80,9 @@ func TestRiskFloorEscalationDoesNotSubstituteFallbackTarget(t *testing.T) {
 	w := newWorkflowT(t, newStateStoreT(t), &scriptedRunner{})
 	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 	raw, err := passPkt.MachineJSON()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.lastReviewerRawPacket = raw
 	w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }
 	if escalated, err := w.riskFloorEscalationResult(passPkt); err == nil || !strings.Contains(err.Error(), "no changed paths") || escalated.Status != "" {
