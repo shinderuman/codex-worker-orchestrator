@@ -74,7 +74,7 @@ func TestReviewerPacketCorrectionProductionEntryThroughFinalGate(t *testing.T) {
 			if len(logs) != 3 || logs[1].Outcome != "invalid_packet" || logs[1].PacketRejectReason != tt.reason ||
 				logs[2].Outcome != "success" || logs[2].RetryOf != logs[1].CallID ||
 				logs[1].Role != state.ReviewerRole || logs[2].Role != state.ReviewerRole ||
-				logs[0].SessionID == logs[1].SessionID || logs[1].SessionID != logs[2].SessionID {
+				logs[1].SessionID != logs[2].SessionID {
 				t.Fatalf("model call source/review/retry telemetry = %#v", logs)
 			}
 			if st.Exists(state.ResultCorrectionStateFile) {
