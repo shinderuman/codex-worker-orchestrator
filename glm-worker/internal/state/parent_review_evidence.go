@@ -2,7 +2,6 @@ package state
 
 import (
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -13,7 +12,7 @@ import (
 type ParentReviewBinding struct {
 	ID           string                        `json:"id"`
 	PacketSHA256 string                        `json:"packet_sha256"`
-	Packet       json.RawMessage               `json:"packet,omitempty"`
+	Packet       string                        `json:"packet,omitempty"`
 	Targets      []string                      `json:"targets"`
 	SolQuestion  string                        `json:"sol_question"`
 	Snapshot     SnapshotDigest                `json:"snapshot"`
@@ -57,7 +56,7 @@ func newParentReviewBinding(value packet.Result, snapshot SnapshotDigest) (*Pare
 	return &ParentReviewBinding{
 		ID:           id,
 		PacketSHA256: hex.EncodeToString(sum[:]),
-		Packet:       append(json.RawMessage(nil), machine...),
+		Packet:       string(machine),
 		Targets:      append([]string(nil), value.Targets...),
 		SolQuestion:  value.SolQuestion,
 		Snapshot:     snapshot,
@@ -93,7 +92,7 @@ func validateParentReviewBindingIdentity(state ParentReviewState) error {
 	}
 
 	if len(binding.Packet) != 0 {
-		result, err := packet.ParseStructured(binding.Packet)
+		result, err := packet.ParseStructured([]byte(binding.Packet))
 		if err != nil {
 			return fmt.Errorf("saved parent review packet is unreadable: %w", err)
 		}
@@ -182,7 +181,6 @@ func (s *StateStore) CurrentParentReviewBinding() (*ParentReviewBinding, error) 
 	}
 	binding := *state.Review
 	binding.Targets = append([]string(nil), binding.Targets...)
-	binding.Packet = append(json.RawMessage(nil), binding.Packet...)
 	if binding.Coverage != nil {
 		coverage := *binding.Coverage
 		coverage.Claims = append([]ParentReviewTargetCoverageClaim(nil), coverage.Claims...)
