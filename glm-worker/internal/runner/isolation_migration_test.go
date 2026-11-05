@@ -406,7 +406,7 @@ func TestIsolationArgsIdenticalAcrossRoleAndResume(t *testing.T) {
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
 
-	commandScript := "#!/bin/sh\nn=$(cat \"$GLM_ARGS_DIR/count\" 2>/dev/null || echo 0)\nn=$((n+1))\nprintf '%s\\n' \"$n\" >\"$GLM_ARGS_DIR/count\"\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_DIR/run-$n\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"ok\\n\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n"
+	commandScript := "#!/bin/sh\nn=$(cat \"$GLM_ARGS_DIR/count\" 2>/dev/null || echo 0)\nn=$((n+1))\nprintf '%s\\n' \"$n\" >\"$GLM_ARGS_DIR/count\"\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_DIR/run-$n\"\ncat >\"$GLM_ARGS_DIR/run-$n.stdin\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"ok\\n\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n"
 	if err := execfile.Write(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -446,8 +446,15 @@ func TestIsolationArgsIdenticalAcrossRoleAndResume(t *testing.T) {
 
 	for index, step := range paths {
 		args := readLines(t, filepath.Join(argsDir, fmt.Sprintf("run-%d", index+1)))
-		if !containsArgument(args, step.name+" prompt") {
-			t.Fatalf("%s: prompt引数が記録されていません: %#v", step.name, args)
+		if containsArgument(args, step.name+" prompt") {
+			t.Fatalf("%s: promptがargvに漏れています: %#v", step.name, args)
+		}
+		stdin, err := os.ReadFile(filepath.Join(argsDir, fmt.Sprintf("run-%d.stdin", index+1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(stdin) != step.name+" prompt" {
+			t.Fatalf("%s: stdin prompt=%q", step.name, stdin)
 		}
 		assertFullIsolationArgs(t, args, claudeConfigDir, step.expectReviewer)
 		if strings.HasSuffix(step.name, "-new") {
