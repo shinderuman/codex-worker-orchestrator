@@ -68,7 +68,7 @@ func runQualityGateExecution(st *state.StateStore, record *qualitygate.RunRecord
 }
 
 func runDarwinQualitySupplement(ctx context.Context, st *state.StateStore, record *qualitygate.RunRecord) error {
-	args := qualitygate.DarwinSupplementArguments(record.Form)
+	args := qualitygate.DarwinSupplementArguments(record.Form, qualitygate.DarwinRequirementPackages(record.DarwinPackages)...)
 	if len(args) == 0 {
 		return fmt.Errorf("supplement requires a canonical Go test form")
 	}
@@ -96,6 +96,9 @@ func runDarwinQualitySupplement(ctx context.Context, st *state.StateStore, recor
 	}
 	if runErr == nil && writeErr == nil {
 		writeErr = qualitygate.VerifyDarwinCoverage(log.Bytes())
+		if writeErr == nil {
+			writeErr = qualitygate.VerifyDarwinAcceptance(log.Bytes(), record.DarwinPackages)
+		}
 	}
 	if writeErr != nil {
 		n.Status = qualitygate.StatusFail

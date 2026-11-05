@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -153,8 +154,16 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.Run
 	if err != nil {
 		return qualitygate.RunRecord{}, err
 	}
+	darwinPackages, err := qualitygate.ChangedDarwinPackages(identity.Repository)
+	if err != nil {
+		return qualitygate.RunRecord{}, err
+	}
+	if len(darwinPackages) > 0 && execution == nil && (runtime.GOOS != "darwin" || runtime.GOARCH != "arm64") {
+		return qualitygate.RunRecord{}, fmt.Errorf("Darwin-tagged acceptance requires a Darwin ARM64 validation host")
+	}
 	return qualitygate.RunRecord{
 		Execution:                     execution,
+		DarwinPackages:                darwinPackages,
 		ValidationRunID:               runID,
 		Form:                          identity.Form,
 		Repository:                    identity.Repository,

@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/build/constraint"
 	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +75,7 @@ func ChangedDarwinPackages(repository string) ([]DarwinPackageRequirement, error
 			if !strings.HasSuffix(name, "_test.go") || !darwinSourceFile(filepath.Join(moduleDir, name), name) {
 				continue
 			}
-			parsed, err := parser.ParseFile(parser.NewFileSet(), filepath.Join(moduleDir, name), nil, 0)
+			parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(moduleDir, name), nil, 0)
 			if err != nil {
 				return nil, fmt.Errorf("parse Darwin acceptance tests %s: %w", name, err)
 			}

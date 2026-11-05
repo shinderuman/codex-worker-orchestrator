@@ -33,7 +33,8 @@ type RunToolchain struct {
 }
 
 type RunRecord struct {
-	Execution                     *Execution    `json:"execution,omitempty"`
+	Execution                     *Execution                 `json:"execution,omitempty"`
+	DarwinPackages                []DarwinPackageRequirement `json:"darwin_packages,omitempty"`
 	ValidationRunID               string        `json:"validation_run_id"`
 	Form                          string        `json:"form"`
 	Repository                    string        `json:"repository"`
@@ -285,6 +286,16 @@ func VerifyTerminalPass(record RunRecord) error {
 	}
 	if _, err := os.Stat(record.Log); err != nil {
 		return fmt.Errorf("quality gate log evidence is unavailable: %w", err)
+	}
+	if len(record.DarwinPackages) > 0 && (record.Execution == nil || record.Execution.Backend == BackendNative) {
+		if record.Toolchain == nil || record.Toolchain.GOOS != platformDarwin || record.Toolchain.GOARCH != platformARM64 || !record.Toolchain.MatchesRequiredGoVersion() {
+			return fmt.Errorf("Darwin acceptance lacks the required native toolchain")
+		}
+		log, err := os.ReadFile(record.Log)
+		if err != nil {
+			return err
+		}
+		return VerifyDarwinAcceptance(log, record.DarwinPackages)
 	}
 	return nil
 }

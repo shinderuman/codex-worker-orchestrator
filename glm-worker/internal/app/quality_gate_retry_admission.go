@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -46,10 +47,11 @@ func qualityGateInvocationDigest(record qualitygate.RunRecord, args []string) (s
 		Environment   []string
 		HostToolchain *qualitygate.RunToolchain
 		Backend       string
+		DarwinPackages []qualitygate.DarwinPackageRequirement
 	}{
 		ExecutableSHA: executableSHA, GoSHA: goSHA, Arguments: args,
 		Environment: environment, HostToolchain: qualityGateHostToolchain(record),
-		Backend: qualityGateBackend(record),
+		Backend: qualityGateBackend(record), DarwinPackages: record.DarwinPackages,
 	})
 	if err != nil {
 		return "", err
@@ -147,7 +149,8 @@ func sameQualityGateRecordSource(previous, candidate qualitygate.RunRecord) bool
 		previous.IndexDigest == candidate.IndexDigest &&
 		previous.WorktreeDigest == candidate.WorktreeDigest &&
 		previous.WorktreeDigestExcludingParent == candidate.WorktreeDigestExcludingParent &&
-		previous.TaskID == candidate.TaskID
+		previous.TaskID == candidate.TaskID &&
+		reflect.DeepEqual(previous.DarwinPackages, candidate.DarwinPackages)
 }
 
 func reusableFailedQualityGateRecord(previous, candidate qualitygate.RunRecord) bool {

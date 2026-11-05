@@ -123,10 +123,16 @@ func GoTestArguments(form string) []string {
 	return append(args, "-json", "-timeout=45m", "./...")
 }
 
-func DarwinSupplementArguments(form string) []string {
+func DarwinSupplementArguments(form string, additional ...string) []string {
 	args := GoTestArguments(form)
-	if len(args) > 0 {
-		args[len(args)-1] = "./internal/observationexec"
+	if len(args) == 0 {
+		return nil
+	}
+	args[len(args)-1] = "./internal/observationexec"
+	if len(additional) > 0 {
+		// An acceptance-specific supplement must execute tests, not reuse cache.
+		args = append(args[:len(args)-1], "-count=1", "./internal/observationexec")
+		args = append(args, additional...)
 	}
 	return args
 }
@@ -184,14 +190,17 @@ func verifyNativeSupplement(record RunRecord) error {
 	if n.Toolchain.RequiredGoVersion != record.Toolchain.RequiredGoVersion {
 		return fmt.Errorf("macOS補完のGo version契約が一致しません")
 	}
-	if !slices.Equal(n.Arguments, DarwinSupplementArguments(record.Form)) || n.Toolchain.Command != "go "+strings.Join(n.Arguments, " ") || !executionToolchainRecorded(n.Toolchain) {
+	if !slices.Equal(n.Arguments, DarwinSupplementArguments(record.Form, DarwinRequirementPackages(record.DarwinPackages)...)) || n.Toolchain.Command != "go "+strings.Join(n.Arguments, " ") || !executionToolchainRecorded(n.Toolchain) {
 		return fmt.Errorf("macOS補完検証が正規形式に一致しません")
 	}
 	data, err := os.ReadFile(n.Log)
 	if err != nil {
 		return fmt.Errorf("macOS補完logを取得できません: %w", err)
 	}
-	return VerifyDarwinCoverage(data)
+	if err := VerifyDarwinCoverage(data); err != nil {
+		return err
+	}
+	return VerifyDarwinAcceptance(data, record.DarwinPackages)
 }
 
 func nativeSupplementComplete(n *NativeSupplement) bool {
