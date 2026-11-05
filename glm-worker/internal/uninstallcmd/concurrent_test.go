@@ -2,7 +2,6 @@ package uninstallcmd
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -184,7 +183,3 @@ func assertConcurrentRetireAbsent(t *testing.T, path string) {
 	}
 }
 
-func ExampleConcurrentRetireSchedule() {
-	fmt.Println("install: CLI | uninstall: hooks Codex Claude | install: Codex Claude hooks | uninstall: CLI")
-	// Output: install: CLI | uninstall: hooks Codex Claude | install: Codex Claude hooks | uninstall: CLI
-}
