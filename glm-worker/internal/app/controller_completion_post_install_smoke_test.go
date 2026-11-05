@@ -120,6 +120,15 @@ func TestPostInstallSmokeActionRunsDeclaredProbes(t *testing.T) {
 	if output.ProbeRuns[0].InstallEvidenceBinding == "" {
 		t.Fatalf("probe run lost its verification deployment binding: %#v", output.ProbeRuns[0])
 	}
+	record := latestAppProbeRun(t, cfg, store, candidate, "docker-worker-path")
+	bytes, err := os.ReadFile(record.Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(bytes)
+	if record.LogSHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("post-install probe run record log digest = %q, expected %x", record.LogSHA256, sum)
+	}
 	probes, err := store.OutstandingSmokeProbes(candidate)
 	if err != nil {
 		t.Fatal(err)
