@@ -37,7 +37,7 @@ const (
 
 var parentActionCommands = map[string]parentActionCommandDescriptor{
 	"resync-source": {
-		Action: "resync-source",
+		Action:  "resync-source",
 		Execute: parentActionExecutionSourceResynchronization,
 	},
 	"rotation-claim": {

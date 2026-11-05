@@ -92,4 +92,3 @@ func TestPostPullSourceResynchronizationRefusesRemoteRace(t *testing.T) {
 		t.Fatalf("refused resynchronization modified the remote: %v", fields)
 	}
 }
-
