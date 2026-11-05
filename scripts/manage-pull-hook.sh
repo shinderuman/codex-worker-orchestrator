@@ -383,21 +383,43 @@ install_managed_hooks() {
 }
 
 remove_managed_hooks() {
-    if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then return 0; fi
+    if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then
+        return 0
+    fi
     for hook in $required_hooks; do
-        rm -- "$managed_hooks_path/$hook" || return 1
+        if [ -e "$managed_hooks_path/$hook" ] || [ -L "$managed_hooks_path/$hook" ]; then
+            if [ -L "$managed_hooks_path/$hook" ] || [ ! -f "$managed_hooks_path/$hook" ]; then
+                printf 'git hook: changed managed hook before removal: %s\n' "$hook" >&2
+                return 1
+            fi
+            rm -- "$managed_hooks_path/$hook" || return 1
+        fi
     done
-    rm -- "$managed_hooks_path/glm-publication-guard.path" || return 1
+    if [ -e "$managed_hooks_path/glm-publication-guard.path" ]; then
+        if [ -L "$managed_hooks_path/glm-publication-guard.path" ] || [ ! -f "$managed_hooks_path/glm-publication-guard.path" ]; then
+            return 1
+        fi
+        rm -- "$managed_hooks_path/glm-publication-guard.path" || return 1
+    fi
     rmdir -- "$managed_hooks_path"
 }
 
 verify_retire_snapshot() {
-    if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then return 0; fi
+    if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then
+        return 0
+    fi
     if [ ! -d "$managed_hooks_path" ] || [ -L "$managed_hooks_path" ]; then
         printf '%s\n' 'git hook: unsafe managed snapshot path' >&2
         return 1
     fi
     binding="$managed_hooks_path/glm-publication-guard.path"
+    if [ ! -e "$binding" ] && [ ! -L "$binding" ]; then
+        if [ -n "$(find "$managed_hooks_path" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+            printf '%s\n' 'git hook: incomplete snapshot without binding contains unexpected entries' >&2
+            return 1
+        fi
+        return 0
+    fi
     if [ ! -f "$binding" ] || [ -L "$binding" ]; then
         printf '%s\n' 'git hook: invalid managed snapshot binding' >&2
         return 1
@@ -415,12 +437,20 @@ verify_retire_snapshot() {
         printf '%s\n' 'git hook: managed snapshot guard binding changed' >&2
         return 1
     fi
-    if [ "$(find "$managed_hooks_path" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" -ne 5 ]; then
-        printf '%s\n' 'git hook: unexpected managed snapshot entries' >&2
-        return 1
-    fi
+    for item in "$managed_hooks_path"/*; do
+        if [ ! -e "$item" ] && [ ! -L "$item" ]; then
+            continue
+        fi
+        case "${item##*/}" in
+        post-merge | pre-commit | reference-transaction | pre-push | glm-publication-guard.path) ;;
+        *) printf 'git hook: unknown snapshot entry %s\n' "$item" >&2; return 1 ;;
+        esac
+    done
     for hook in $required_hooks; do
         installed="$managed_hooks_path/$hook"
+        if [ ! -e "$installed" ] && [ ! -L "$installed" ]; then
+            continue
+        fi
         if [ ! -f "$installed" ] || [ -L "$installed" ] || [ ! -x "$installed" ]; then
             printf 'git hook: invalid managed hook: %s\n' "$installed" >&2
             return 1
