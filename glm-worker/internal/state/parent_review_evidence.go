@@ -10,15 +10,15 @@ import (
 )
 
 type ParentReviewBinding struct {
-	ID                 string                          `json:"id"`
-	PacketSHA256       string                          `json:"packet_sha256"`
-	Packet             string                          `json:"packet,omitempty"`
-	Targets            []string                        `json:"targets"`
-	SolQuestion        string                          `json:"sol_question"`
-	Snapshot           SnapshotDigest                  `json:"snapshot"`
-	Coverage           *ParentReviewEvidenceCoverage   `json:"coverage,omitempty"`
-	Proof              *ParentReviewEvidenceProof      `json:"proof,omitempty"`
-	SourceEquivalence  *ParentReviewSourceEquivalence  `json:"source_equivalence,omitempty"`
+	ID                string                         `json:"id"`
+	PacketSHA256      string                         `json:"packet_sha256"`
+	Packet            string                         `json:"packet,omitempty"`
+	Targets           []string                       `json:"targets"`
+	SolQuestion       string                         `json:"sol_question"`
+	Snapshot          SnapshotDigest                 `json:"snapshot"`
+	Coverage          *ParentReviewEvidenceCoverage  `json:"coverage,omitempty"`
+	Proof             *ParentReviewEvidenceProof     `json:"proof,omitempty"`
+	SourceEquivalence *ParentReviewSourceEquivalence `json:"source_equivalence,omitempty"`
 }
 
 type ParentReviewEvidenceProof struct {
