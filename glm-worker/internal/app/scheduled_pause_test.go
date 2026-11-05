@@ -24,7 +24,7 @@ func prepareScheduledPauseStop(t *testing.T, resumeAt time.Time) (*state.StateSt
 	checkpoint := state.ResumeCheckpoint{
 		Stage: state.ResumeStageReview,
 		Phase: "reviewer-1",
-		Role: state.ReviewerRole,
+		Role:  state.ReviewerRole,
 		Model: "sonnet",
 	}
 	checkpoint.SetStopKind(state.ResumeStopScheduledPause)

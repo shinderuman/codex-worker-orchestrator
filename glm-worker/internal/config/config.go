@@ -90,11 +90,7 @@ func Load() (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
-	flags, err := loadBoolFlags()
-	if err != nil {
-		return AppConfig{}, err
-	}
-	peakPolicy, err := peakpause.FromEnvironment()
+	flags, peakPolicy, err := loadOptionalConfig()
 	if err != nil {
 		return AppConfig{}, err
 	}
@@ -125,6 +121,15 @@ func Load() (AppConfig, error) {
 		FailurePathAdvisory:    flags.failurePathAdvisory,
 		PeakPause:              peakPolicy,
 	}, nil
+}
+
+func loadOptionalConfig() (boolFlags, peakpause.Policy, error) {
+	flags, err := loadBoolFlags()
+	if err != nil {
+		return boolFlags{}, peakpause.Policy{}, err
+	}
+	policy, err := peakpause.FromEnvironment()
+	return flags, policy, err
 }
 
 func loadBoolFlags() (boolFlags, error) {

@@ -126,18 +126,7 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 	case errors.As(err, &qualityGateRecoverable):
 		return qualityGateRecoverableProcessError(qualityGateRecoverable), true
 	case errors.As(err, &scheduled):
-		return processErrorBody{
-			Kind: errorKindScheduledPause,
-			Message: "configured GLM pause window; task stopped and resumable",
-			Detail: map[string]any{
-				"phase": scheduled.Phase,
-				"task_id": scheduled.TaskID,
-				"repo_root": scheduled.RepoRoot,
-				"resume_at": scheduled.ResumeAt.Format(time.RFC3339),
-				"resume_available": true,
-				"cleanup_warning": scheduled.CleanupWarning,
-			},
-		}, true
+		return scheduledPauseProcessError(scheduled), true
 	case errors.As(err, &rateLimit):
 		return processErrorBody{
 			Kind:    errorKindRateLimited,
@@ -176,6 +165,21 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 		return processErrorBody{Kind: kind, Message: stopEndpoint.Error()}, true
 	default:
 		return processErrorBody{}, false
+	}
+}
+
+func scheduledPauseProcessError(paused *runner.ScheduledPauseError) processErrorBody {
+	return processErrorBody{
+		Kind: errorKindScheduledPause,
+		Message: "configured GLM pause window; task stopped and resumable",
+		Detail: map[string]any{
+			"phase": paused.Phase,
+			"task_id": paused.TaskID,
+			"repo_root": paused.RepoRoot,
+			"resume_at": paused.ResumeAt.Format(time.RFC3339),
+			"resume_available": true,
+			"cleanup_warning": paused.CleanupWarning,
+		},
 	}
 }
 

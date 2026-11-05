@@ -584,13 +584,19 @@ func waitForScheduledPause(
 			return fmt.Errorf("scheduled-pause task status changed: %s", st.TaskStatus())
 		}
 		taskID, err := st.TaskID()
-		if err != nil || taskID != paused.TaskID {
-			return fmt.Errorf("scheduled-pause task identity changed: %q / %v", taskID, err)
+		if err != nil {
+			return fmt.Errorf("scheduled-pause task identity is unavailable: %w", err)
+		}
+		if taskID != paused.TaskID {
+			return fmt.Errorf("scheduled-pause task identity changed: got %q want %q", taskID, paused.TaskID)
 		}
 		checkpoint, err := st.LoadResumeCheckpoint()
-		if err != nil || checkpoint.StopKind != state.ResumeStopScheduledPause ||
+		if err != nil {
+			return fmt.Errorf("scheduled-pause checkpoint is unavailable: %w", err)
+		}
+		if checkpoint.StopKind != state.ResumeStopScheduledPause ||
 			checkpoint.ScheduledResumeAt != paused.ResumeAt.Format(time.RFC3339) {
-			return fmt.Errorf("scheduled-pause checkpoint or resume boundary changed: %v", err)
+			return fmt.Errorf("scheduled-pause checkpoint or resume boundary changed")
 		}
 		return nil
 	}
