@@ -75,8 +75,8 @@ func TestEquivalentReviewSourceNextOnlyFastForward(t *testing.T) {
 
 func TestEquivalentReviewSourceRejectsPremiseChanges(t *testing.T) {
 	tests := []struct {
-		name string
-		path string
+		name    string
+		path    string
 		content string
 	}{
 		{"ACTIVE task", "IMPLEMENTATION_TASKS/active.md", "# altered ACTIVE\n"},
@@ -128,7 +128,7 @@ func TestEquivalentReviewSourceRejectsChangedPlanAndUnprovableIndex(t *testing.T
 		}
 	})
 	t.Run("new Task enters ACTIVE reference closure", func(t *testing.T) {
-		root, old := reviewEquivalenceFixture(t)
+		root, _ := reviewEquivalenceFixture(t)
 		reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/active.md", "# ACTIVE\nref IMPLEMENTATION_TASKS/new-next.md\n")
 		reviewEquivalenceGit(t, root, "add", ".")
 		reviewEquivalenceGit(t, root, "commit", "-qm", "unresolved reference")
@@ -136,7 +136,7 @@ func TestEquivalentReviewSourceRejectsChangedPlanAndUnprovableIndex(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		old = state.SnapshotDigest{Head: s.Head, IndexDigest: s.IndexDigest, WorktreeDigest: s.WorktreeDigest}
+		old := state.SnapshotDigest{Head: s.Head, IndexDigest: s.IndexDigest, WorktreeDigest: s.WorktreeDigest}
 		reviewEquivalenceCommitNext(t, root)
 		if _, err := equivalentReviewSource(root, old, []string{"review.go:1"}); err == nil {
 			t.Fatal("new Task changes old ACTIVE reference closure")
