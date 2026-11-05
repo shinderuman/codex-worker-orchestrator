@@ -119,7 +119,9 @@ func applyCompletionExecutionHandoff(output *parentHandoffOutput, operation cont
 	if operation.Execution == nil {
 		return
 	}
-	if *output.RequiredAction != controllerExecutionSurface && *output.RequiredAction != controllerPublicationSurface {
+	if *output.RequiredAction != controllerExecutionSurface &&
+		*output.RequiredAction != controllerPublicationSurface &&
+		*output.RequiredAction != canonicalStartAction {
 		return
 	}
 	command, err := json.Marshal(operation.Execution)
