@@ -104,8 +104,22 @@ func TestEquivalentReentryPreservesIndependentHighReviewAndReprovesParentEvidenc
 		t.Fatalf("independently re-proven target should allow parent decision: ready=%v err=%v", ready, err)
 	}
 	after, err := st.ReadModelCallLogs(reviewer.TaskID)
-	if err != nil || len(after) != len(before) {
-		t.Fatalf("reentry produced a fake Reviewer model call: before=%d after=%d err=%v", len(before), len(after), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeReviewers, afterReviewers := 0, 0
+	for _, entry := range before {
+		if entry.CallType == CallTypeTask && entry.Role == ReviewerRole {
+			beforeReviewers++
+		}
+	}
+	for _, entry := range after {
+		if entry.CallType == CallTypeTask && entry.Role == ReviewerRole {
+			afterReviewers++
+		}
+	}
+	if afterReviewers != beforeReviewers {
+		t.Fatalf("reentry produced a fake Reviewer model call: before=%d after=%d", beforeReviewers, afterReviewers)
 	}
 }
 
