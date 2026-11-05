@@ -20,8 +20,10 @@ func RetireFiles(targetPath string) error {
 }
 
 func retireFilesUnlocked(targetPath string) error {
+    for _, path := range []string{targetPath, statePathFor(targetPath), ManagedStatePath(targetPath), mergeTransactionPath(targetPath)} {
+        if err := rejectMergeSymlinks(path); err != nil { return err }
+    }
     if err := recoverSettingsTransaction(targetPath, writeAtomic); err != nil { return err }
-    if err := rejectMergeSymlinks(targetPath); err != nil { return err }
     paths := []string{targetPath, statePathFor(targetPath), ManagedStatePath(targetPath)}
     inputs := make(map[string]fileRestore, len(paths))
     for _, path := range paths {
