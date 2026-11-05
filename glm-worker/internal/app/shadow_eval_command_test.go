@@ -206,8 +206,13 @@ func TestExecuteShadowEvalComparesAgainstReference(t *testing.T) {
 	t.Parallel()
 	st, taskID, _ := newShadowEvalState(t)
 	fakeShadowDecision(t, shadowDecisionRaw(t), nil)
+	withoutReference, err := runShadowEval(t, st, taskID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemsSHA256 := withoutReference["items_sha256"].(string)
 	referencePath := filepath.Join(t.TempDir(), "reference.json")
-	reference := `{"schema":"system-one-shadow-reference/v1","bundle_task_id":"` + taskID + `","basis":"canonical Sol decision","labels":[{"call_id":"22222222-2222-4222-8222-222222222222","correctness_finding":true,"owner":"test-scenario","disposition":"fix","locator":"rows 1-5"}],"unknown_call_ids":["11111111-1111-4111-8111-111111111111"]}`
+	reference := `{"schema":"system-one-shadow-reference/v2","bundle_task_id":"` + taskID + `","items_sha256":"` + itemsSHA256 + `","basis":"canonical Sol decision","labels":[{"call_id":"22222222-2222-4222-8222-222222222222","correctness_finding":true,"owner":"test-scenario","disposition":"fix","locator":"rows 1-5"}],"unknown_call_ids":["11111111-1111-4111-8111-111111111111"]}`
 	if err := os.WriteFile(referencePath, []byte(reference), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +227,13 @@ func TestExecuteShadowEvalComparesAgainstReference(t *testing.T) {
 	agreement := output["disposition_agreement_known"].(map[string]any)
 	if agreement["matching"] != float64(1) || agreement["denominator"] != float64(1) {
 		t.Fatalf("agreement = %#v", agreement)
+	}
+	staleReference := strings.Replace(reference, itemsSHA256, strings.Repeat("0", 64), 1)
+	if err := os.WriteFile(referencePath, []byte(staleReference), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runShadowEval(t, st, taskID, referencePath); err == nil || !strings.Contains(err.Error(), "items_sha256が対象inputと一致しません") {
+		t.Fatalf("same-task stale reference should fail closed: %v", err)
 	}
 }
 
@@ -310,7 +322,7 @@ func TestExecuteShadowEvalFailsClosedOnBadInput(t *testing.T) {
 	}
 
 	mismatchPath := filepath.Join(t.TempDir(), "reference.json")
-	valid := `{"schema":"system-one-shadow-reference/v1","bundle_task_id":"other-task","labels":[]}`
+	valid := `{"schema":"system-one-shadow-reference/v2","bundle_task_id":"other-task","items_sha256":"` + strings.Repeat("0", 64) + `","labels":[]}`
 	if err := os.WriteFile(mismatchPath, []byte(valid), 0o600); err != nil {
 		t.Fatal(err)
 	}
