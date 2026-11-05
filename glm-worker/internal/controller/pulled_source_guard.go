@@ -6,7 +6,11 @@ func (s *Store) requirePulledSource(head RepositoryControllerHead, policy Public
 	if sourceOID == "" || sourceOID == head.IntegrationTip {
 		return fmt.Errorf("post-pull source requires a distinct advanced commit")
 	}
-	if head.PublicationPolicy == nil || *head.PublicationPolicy != policy {
+	expectedPolicy, err := s.parentCompletionPolicy(head)
+	if err != nil {
+		return err
+	}
+	if expectedPolicy != policy {
 		return fmt.Errorf("post-pull publication policy differs from Controller authority")
 	}
 	primary, err := gitTrimmed(s.identity.PrimaryRoot, "rev-parse", "--verify", "HEAD")
