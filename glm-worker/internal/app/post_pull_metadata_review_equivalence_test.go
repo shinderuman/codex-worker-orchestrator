@@ -218,6 +218,9 @@ func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, m
 	if err != nil {
 		t.Fatal(err)
 	}
+	if status := f.runtime.TaskStatus(); status != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("original accepted Runtime status changed before materialization: %s", status)
+	}
 	live, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{
 		Action:             "materialize",
 		ExpectedGeneration: entered.Head.ControllerGeneration,
