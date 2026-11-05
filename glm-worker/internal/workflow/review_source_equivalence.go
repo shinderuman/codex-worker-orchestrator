@@ -202,16 +202,22 @@ func reviewPlanTaskPath(row string) (string, bool) {
 
 func reviewPlanActivePath(planWithoutNext string) (string, bool) {
 	section := false
+	active := ""
 	for _, line := range strings.Split(planWithoutNext, "\n") {
 		if strings.HasPrefix(line, "## ") {
 			section = strings.HasPrefix(line, "## ACTIVE")
 			continue
 		}
-		if section && strings.TrimSpace(line) != "" {
-			return reviewPlanTaskPath(strings.TrimSpace(line))
+		if !section || strings.TrimSpace(line) == "" {
+			continue
 		}
+		path, ok := reviewPlanTaskPath(strings.TrimSpace(line))
+		if !ok || active != "" {
+			return "", false
+		}
+		active = path
 	}
-	return "", false
+	return active, active != ""
 }
 
 // Reconstruct the pre-pull Git index from the current index and old committed
