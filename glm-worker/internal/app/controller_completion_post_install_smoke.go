@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -141,6 +142,7 @@ func runPostInstallSmokeProbe(store *controller.Store, candidate controller.Acce
 		return record, err
 	}
 	record.Log = logPath
+	record.LogSHA256 = fmt.Sprintf("%x", sha256.Sum256(log))
 	return record, writePostInstallSmokeRecord(runtime, record)
 }
 
