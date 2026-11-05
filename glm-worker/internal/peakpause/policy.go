@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-const (
-	enabledEnv  = "GLM_WORKER_PEAK_PAUSE_ENABLED"
-	timezoneEnv = "GLM_WORKER_PEAK_PAUSE_TIMEZONE"
-	windowsEnv  = "GLM_WORKER_PEAK_PAUSE_WINDOWS"
-)
-
 type Window struct {
 	days        [7]bool
 	startMinute int
@@ -29,6 +23,17 @@ type Policy struct {
 type interval struct {
 	start time.Time
 	end   time.Time
+}
+
+const (
+	enabledEnv  = "GLM_WORKER_PEAK_PAUSE_ENABLED"
+	timezoneEnv = "GLM_WORKER_PEAK_PAUSE_TIMEZONE"
+	windowsEnv  = "GLM_WORKER_PEAK_PAUSE_WINDOWS"
+)
+
+var weekdays = map[string]time.Weekday{
+	"sun": time.Sunday, "mon": time.Monday, "tue": time.Tuesday,
+	"wed": time.Wednesday, "thu": time.Thursday, "fri": time.Friday, "sat": time.Saturday,
 }
 
 func FromEnvironment() (Policy, error) {
@@ -77,6 +82,18 @@ func (p Policy) Evaluate(now time.Time) (bool, time.Time) {
 	if !p.Enabled() {
 		return false, time.Time{}
 	}
+	for _, current := range mergeIntervals(p.intervalsAround(now)) {
+		if now.Before(current.start) {
+			return false, current.start
+		}
+		if now.Before(current.end) {
+			return true, current.end
+		}
+	}
+	return false, time.Time{}
+}
+
+func (p Policy) intervalsAround(now time.Time) []interval {
 	local := now.In(p.location)
 	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, p.location)
 	ranges := make([]interval, 0, 10*len(p.windows))
@@ -92,12 +109,15 @@ func (p Policy) Evaluate(now time.Time) (bool, time.Time) {
 				endDay = day.AddDate(0, 0, 1)
 			}
 			end := clockTime(endDay, window.endMinute, p.location)
-			if !end.After(start) {
-				continue
+			if end.After(start) {
+				ranges = append(ranges, interval{start: start, end: end})
 			}
-			ranges = append(ranges, interval{start: start, end: end})
 		}
 	}
+	return ranges
+}
+
+func mergeIntervals(ranges []interval) []interval {
 	sort.Slice(ranges, func(i, j int) bool { return ranges[i].start.Before(ranges[j].start) })
 	merged := make([]interval, 0, len(ranges))
 	for _, current := range ranges {
@@ -110,15 +130,7 @@ func (p Policy) Evaluate(now time.Time) (bool, time.Time) {
 		}
 		merged = append(merged, current)
 	}
-	for _, current := range merged {
-		if now.Before(current.start) {
-			return false, current.start
-		}
-		if now.Before(current.end) {
-			return true, current.end
-		}
-	}
-	return false, time.Time{}
+	return merged
 }
 
 func clockTime(day time.Time, minute int, location *time.Location) time.Time {
@@ -152,41 +164,43 @@ func parseWindow(raw string) (Window, error) {
 	return Window{days: days, startMinute: start, endMinute: end}, nil
 }
 
-var weekdays = map[string]time.Weekday{
-	"sun": time.Sunday, "mon": time.Monday, "tue": time.Tuesday,
-	"wed": time.Wednesday, "thu": time.Thursday, "fri": time.Friday, "sat": time.Saturday,
-}
-
 func parseDays(raw string) ([7]bool, error) {
 	var days [7]bool
 	if strings.TrimSpace(raw) == "" {
 		return days, fmt.Errorf("days cannot be empty")
 	}
 	for _, spec := range strings.Split(strings.ToLower(raw), ",") {
-		ends := strings.Split(strings.TrimSpace(spec), "-")
-		if len(ends) < 1 || len(ends) > 2 {
-			return days, fmt.Errorf("invalid day specification %q", spec)
-		}
-		from, ok := weekdays[ends[0]]
-		if !ok {
-			return days, fmt.Errorf("invalid weekday %q", ends[0])
-		}
-		to := from
-		if len(ends) == 2 {
-			var valid bool
-			to, valid = weekdays[ends[1]]
-			if !valid {
-				return days, fmt.Errorf("invalid weekday %q", ends[1])
-			}
-		}
-		for day := from; ; day = (day + 1) % 7 {
-			days[day] = true
-			if day == to {
-				break
-			}
+		if err := markDayRange(&days, strings.TrimSpace(spec)); err != nil {
+			return days, err
 		}
 	}
 	return days, nil
+}
+
+func markDayRange(days *[7]bool, spec string) error {
+	ends := strings.Split(spec, "-")
+	if len(ends) < 1 || len(ends) > 2 {
+		return fmt.Errorf("invalid day specification %q", spec)
+	}
+	from, ok := weekdays[ends[0]]
+	if !ok {
+		return fmt.Errorf("invalid weekday %q", ends[0])
+	}
+	to := from
+	if len(ends) == 2 {
+		var valid bool
+		to, valid = weekdays[ends[1]]
+		if !valid {
+			return fmt.Errorf("invalid weekday %q", ends[1])
+		}
+	}
+	for day := from; ; day = (day + 1) % 7 {
+		days[day] = true
+		if day == to {
+			break
+		}
+	}
+	return nil
 }
 
 func parseClock(raw string) (int, error) {

@@ -29,59 +29,64 @@ func (r *ClaudeRunner) runManagedCommand(command *exec.Cmd, deadline time.Time, 
 	if err := command.Start(); err != nil {
 		return err
 	}
+	return r.awaitManagedCommand(command, deadline, probe, next)
+}
+
+func (r *ClaudeRunner) awaitManagedCommand(command *exec.Cmd, deadline time.Time, probe bool, next time.Time) error {
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
-
 	var stopRequested <-chan struct{}
 	if r.stop != nil {
 		stopRequested = r.stop.Requested()
 	}
 	var deadlineReached <-chan time.Time
+	var stopDeadline func()
 	if probe {
-		var stopDeadline func()
 		deadlineReached, stopDeadline = probeDeadlineChannel(deadline)
 		defer stopDeadline()
 	}
 	for {
-		var pauseReached <-chan time.Time
-		var pauseTimer *time.Timer
-		if !next.IsZero() {
-			pauseTimer = time.NewTimer(time.Until(next))
-			pauseReached = pauseTimer.C
-		}
+		pauseReached, stopTimer := pauseBoundaryChannel(next)
 		select {
 		case err := <-waitDone:
-			if pauseTimer != nil {
-				pauseTimer.Stop()
-			}
+			stopTimer()
 			return err
 		case <-stopRequested:
-			if pauseTimer != nil {
-				pauseTimer.Stop()
-			}
+			stopTimer()
 			return finishInterruptedProbeCommand(command, waitDone)
 		case <-deadlineReached:
-			if pauseTimer != nil {
-				pauseTimer.Stop()
-			}
+			stopTimer()
 			return finishDeadlineProbeCommand(command, waitDone)
 		case <-pauseReached:
-			if pauseTimer != nil {
-				pauseTimer.Stop()
-			}
-			var paused bool
-			paused, next = r.evaluatePause(time.Now())
-			if !paused {
-				continue
-			}
-			if err, completed := completedProbeCommand(waitDone); completed {
+			stopTimer()
+			ended, boundary, err := r.onPauseBoundary(command, waitDone)
+			if ended {
 				return err
 			}
-			warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
-			<-waitDone
-			return &ScheduledPauseError{ResumeAt: next, CleanupWarning: warning}
+			next = boundary
 		}
 	}
+}
+
+func (r *ClaudeRunner) onPauseBoundary(command *exec.Cmd, waitDone <-chan error) (bool, time.Time, error) {
+	active, next := r.evaluatePause(time.Now())
+	if !active {
+		return false, next, nil
+	}
+	if err, completed := completedProbeCommand(waitDone); completed {
+		return true, next, err
+	}
+	warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
+	<-waitDone
+	return true, next, &ScheduledPauseError{ResumeAt: next, CleanupWarning: warning}
+}
+
+func pauseBoundaryChannel(next time.Time) (<-chan time.Time, func()) {
+	if next.IsZero() {
+		return nil, func() {}
+	}
+	timer := time.NewTimer(time.Until(next))
+	return timer.C, func() { timer.Stop() }
 }
 
 func (r *ClaudeRunner) evaluatePause(now time.Time) (bool, time.Time) {
