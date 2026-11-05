@@ -270,9 +270,11 @@ func assertPostPullReviewPreserved(t *testing.T, binding *state.ParentReviewBind
 	}
 	if binding.SourceEquivalence.ReviewerCallID != "original-reviewer-call" ||
 		binding.SourceEquivalence.WorkerCallID != "original-worker-call" ||
-		binding.SourceEquivalence.OriginalSnapshot != *original.Source ||
+		binding.SourceEquivalence.OriginalSnapshot != original.Review.Snapshot ||
 		binding.Proof != nil || binding.Coverage != nil {
-		t.Fatalf("original Review provenance or stale parent proof was corrupted: %#v", binding)
+		t.Fatalf("original Review provenance or stale parent proof was corrupted: reviewer=%q worker=%q original=%#v expected=%#v proof=%#v coverage=%#v",
+			binding.SourceEquivalence.ReviewerCallID, binding.SourceEquivalence.WorkerCallID,
+			binding.SourceEquivalence.OriginalSnapshot, original.Review.Snapshot, binding.Proof, binding.Coverage)
 	}
 }
 
