@@ -151,9 +151,14 @@ func (c *evidenceLiveCollector) collectGateRuns(store *state.StateStore, basis, 
 }
 
 func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, basis, storeBinding string, binds func(qualitygate.RunRecord) (bool, error)) error {
-	record, err := qualitygate.Read(store, runID)
+	recordBytes, err := readValidationRunFile(store, runID, qualitygate.RunFile)
 	if err != nil {
 		c.recordUnreadable(c.validationEntry("quality-gate/"+runID+"/run.json"), err.Error())
+		return nil
+	}
+	record, err := qualitygate.Decode(recordBytes)
+	if err != nil || record.ValidationRunID != runID {
+		c.recordUnreadable(c.validationEntry("quality-gate/"+runID+"/run.json"), "validation run record is invalid or its run identity differs")
 		return nil
 	}
 	if binds != nil {
@@ -165,7 +170,11 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 			return nil
 		}
 	}
-	c.addFileBasis(store.Path(qualitygate.RunRelativePath(runID)), c.validationEntry("quality-gate/"+runID+"/"+qualitygate.RunFile), evidenceExportSourceGateRun, basis, false)
+	c.commit(EvidenceExportEntry{
+		Path: c.validationEntry("quality-gate/"+runID+"/"+qualitygate.RunFile),
+		Source: evidenceExportSourceGateRun, Basis: basis,
+		SHA256: digestBytes(recordBytes), Bytes: int64(len(recordBytes)), CollectedAt: c.observedAt,
+	}, recordBytes)
 	if record.Form == smokeProbeForm {
 		logEntry := c.collectPostInstallProbeLog(store, record, runID, basis)
 		c.builder.validationRuns = append(c.builder.validationRuns, collectedValidationRun{
@@ -189,6 +198,54 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 	return nil
 }
 
+// readValidationRunFile keeps recorded evidence inside its validation store and
+// rejects symlink substitution or a file replaced/modified during the read.
+func readValidationRunFile(store *state.StateStore, runID, filename string) ([]byte, error) {
+	if !qualitygate.ValidRunID(runID) {
+		return nil, fmt.Errorf("invalid validation run ID")
+	}
+	root, err := os.OpenRoot(store.Path("."))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	dir := filepath.Join(qualitygate.RunDirectory, runID)
+	for _, component := range []string{qualitygate.RunDirectory, dir} {
+		info, err := root.Lstat(component)
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("validation run source directory is not an ordinary directory")
+		}
+	}
+	relative := filepath.Join(dir, filename)
+	before, err := root.Lstat(relative)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, fmt.Errorf("validation run source is not a regular file")
+	}
+	file, err := root.Open(relative)
+	if err != nil {
+		return nil, err
+	}
+	opened, statErr := file.Stat()
+	data, readErr := io.ReadAll(file)
+	closedErr := file.Close()
+	after, afterErr := root.Lstat(relative)
+	if statErr != nil || readErr != nil || closedErr != nil || afterErr != nil {
+		return nil, fmt.Errorf("validation run source failed or changed during read: %w",
+			errors.Join(statErr, readErr, closedErr, afterErr))
+	}
+	if !opened.Mode().IsRegular() || !after.Mode().IsRegular() ||
+		evidenceExportFileChanged(before, opened) || evidenceExportFileChanged(opened, after) {
+		return nil, fmt.Errorf("validation run source changed during read")
+	}
+	return data, nil
+}
+
 // collectPostInstallProbeLog resolves the source from the bound validation store,
 // not from RunRecord.Log. A probe has no Go gate log or resource sampler.
 func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateStore, record qualitygate.RunRecord, runID, basis string) string {
@@ -203,48 +260,13 @@ func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateSto
 		c.recordUnreadable(entry, "post-install probe log locator or run source binding differs from the validation store")
 		return ""
 	}
-	root, err := os.OpenRoot(store.Path("."))
-	if err != nil {
-		c.recordUnreadable(entry, err.Error())
-		return ""
-	}
-	defer root.Close()
-	for _, dir := range []string{qualitygate.RunDirectory, relativeDir} {
-		info, err := root.Lstat(dir)
-		if err != nil || !info.IsDir() {
-			c.recordUnreadable(entry, "post-install probe source directory is unavailable or not a directory")
-			return ""
-		}
-	}
-	before, err := root.Lstat(relativeLog)
+	data, err := readValidationRunFile(store, runID, "probe.log")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			c.recordMissing(entry)
 		} else {
 			c.recordUnreadable(entry, err.Error())
 		}
-		return ""
-	}
-	if !before.Mode().IsRegular() {
-		c.recordUnreadable(entry, "post-install probe source is not a regular file")
-		return ""
-	}
-	file, err := root.Open(relativeLog)
-	if err != nil {
-		c.recordUnreadable(entry, err.Error())
-		return ""
-	}
-	opened, statErr := file.Stat()
-	data, readErr := io.ReadAll(file)
-	closedErr := file.Close()
-	after, afterErr := root.Lstat(relativeLog)
-	if statErr != nil || readErr != nil || closedErr != nil || afterErr != nil {
-		c.recordUnreadable(entry, "post-install probe source changed or failed during read")
-		return ""
-	}
-	if !opened.Mode().IsRegular() || !after.Mode().IsRegular() ||
-		evidenceExportFileChanged(before, opened) || evidenceExportFileChanged(opened, after) {
-		c.recordUnreadable(entry, "post-install probe source changed during read")
 		return ""
 	}
 	if record.LogSHA256 == "" || record.LogSHA256 != digestBytes(data) {
