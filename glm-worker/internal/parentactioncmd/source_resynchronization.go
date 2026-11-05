@@ -14,9 +14,9 @@ import (
 // sourceResynchronizationStep records only operations performed by the existing
 // Controller owners. It does not grant Git or Review authority.
 type sourceResynchronizationStep struct {
-	Surface   string `json:"surface"`
-	Operation string `json:"operation"`
-	DurationMS int64 `json:"duration_ms"`
+	Surface    string `json:"surface"`
+	Operation  string `json:"operation"`
+	DurationMS int64  `json:"duration_ms"`
 }
 
 // executeSourceResynchronization is invoked after an externally authorized
@@ -49,12 +49,12 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 					status = "mechanical-recovery-applied"
 				}
 				return json.NewEncoder(stdout).Encode(struct {
-					Status        string                        `json:"status"`
-					SourceAdopted bool                          `json:"source_adopted"`
-					Steps         []sourceResynchronizationStep `json:"steps"`
-					NextSurface   string                        `json:"next_surface,omitempty"`
-					NextOperation string                        `json:"next_operation"`
-					ProcessingDurationMS int64                `json:"processing_duration_ms"`
+					Status               string                        `json:"status"`
+					SourceAdopted        bool                          `json:"source_adopted"`
+					Steps                []sourceResynchronizationStep `json:"steps"`
+					NextSurface          string                        `json:"next_surface,omitempty"`
+					NextOperation        string                        `json:"next_operation"`
+					ProcessingDurationMS int64                         `json:"processing_duration_ms"`
 				}{
 					Status: status, SourceAdopted: sourceAdvanced, Steps: steps,
 					NextSurface: operation.Surface, NextOperation: operation.Operation,

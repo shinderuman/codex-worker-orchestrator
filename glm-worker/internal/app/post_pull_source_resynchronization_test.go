@@ -13,7 +13,7 @@ func TestPostPullSourceResynchronizationAdoptsAndReentersReview(t *testing.T) {
 	if exit != 0 {
 		t.Fatalf("source resynchronization failed: %s %s", output, diagnostics)
 	}
-	if !strings.Contains(output, "\"source-resynchronized\"") || !strings.Contains(output, "\"adopt-mutable\"") {
+	if !strings.Contains(output, "\"source-resynchronized\"") || !strings.Contains(output, "\"adopt-mutable\"") || !strings.Contains(output, "\"processing_duration_ms\"") {
 		t.Fatalf("source resynchronization missed typed adoption: %s", output)
 	}
 	head, err := f.store.LoadHead()
@@ -26,9 +26,16 @@ func TestPostPullSourceResynchronizationAdoptsAndReentersReview(t *testing.T) {
 	if f.runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("resynchronization must require a fresh Review: %s", f.runtime.TaskStatus())
 	}
+	if f.scripted.workerRounds != 1 {
+		t.Fatalf("resynchronization unexpectedly invoked a model: %d worker rounds", f.scripted.workerRounds)
+	}
 	remote := strings.Fields(string(appTestGitOutput(t, f.store.Identity().PrimaryRoot, "ls-remote", f.policy.Remote, f.policy.RemoteRef)))
 	if len(remote) != 2 || remote[0] != f.tip {
 		t.Fatalf("source resynchronization modified the remote: %v", remote)
+	}
+	exit, output, diagnostics = runParentActionCLIInProcess(t, f.cfg, "resync-source")
+	if exit != 0 || !strings.Contains(output, "\"no-mechanical-step\"") {
+		t.Fatalf("repeat resynchronization must be a no-op: exit=%d %s %s", exit, output, diagnostics)
 	}
 }
 
