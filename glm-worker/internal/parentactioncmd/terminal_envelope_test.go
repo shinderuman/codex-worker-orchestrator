@@ -84,7 +84,7 @@ func TestExecuteWithTerminalEnvelope(t *testing.T) {
 func TestWriteTerminalHandoffFailurePreservesTerminalResult(t *testing.T) {
 	var stdout bytes.Buffer
 	handoffErr := errors.New("handoff unavailable")
-	err := writeTerminalHandoffFailure(config.AppConfig{}, &stdout, json.RawMessage(`{"status":"PASS"}`), handoffErr)
+	err := writeTerminalHandoffFailure(config.AppConfig{}, &stdout, json.RawMessage(`{"status":"PASS"}`), nil, handoffErr)
 	if !errors.Is(err, handoffErr) {
 		t.Fatalf("error = %v, want %v", err, handoffErr)
 	}

@@ -16,14 +16,18 @@ type completionPublicationCommand struct {
 }
 
 type completionWorkflowResult struct {
-	Status       string   `json:"status"`
-	Steps        []string `json:"steps"`
-	SourceOID    string   `json:"source_oid,omitempty"`
-	FinalOID     string   `json:"final_oid,omitempty"`
-	RemoteOID    string   `json:"remote_oid,omitempty"`
-	StopBoundary string   `json:"stop_boundary,omitempty"`
-	Failure      any      `json:"failure,omitempty"`
+	Status               string   `json:"status"`
+	Steps                []string `json:"steps"`
+	SourceOID            string   `json:"source_oid,omitempty"`
+	FinalOID             string   `json:"final_oid,omitempty"`
+	RemoteOID            string   `json:"remote_oid,omitempty"`
+	StopBoundary         string   `json:"stop_boundary,omitempty"`
+	TransitionID         string   `json:"transition_id,omitempty"`
+	ControllerGeneration uint64   `json:"controller_generation,omitempty"`
+	Failure              any      `json:"failure,omitempty"`
 }
+
+const completionWorkflowCompleted = "completed"
 
 func runCompletionWorkflow(cfg config.AppConfig, command completionPublicationCommand, consume func() error, stdout, stderr io.Writer) error {
 	result := completionWorkflowResult{Status: "blocked"}
@@ -85,7 +89,7 @@ func driveCompletionWorkflow(cfg config.AppConfig, result completionWorkflowResu
 			return writeCompletionWorkflowFailure(stdout, result, err)
 		}
 		if done {
-			result.Status, result.StopBoundary = "completed", "next-task-not-started"
+			result.Status, result.StopBoundary = completionWorkflowCompleted, "next-task-not-started"
 			return json.NewEncoder(stdout).Encode(result)
 		}
 		progressed, err := runCompletionStep(cfg, operation, &result, stderr)
@@ -122,21 +126,17 @@ func runCompletionStep(cfg config.AppConfig, operation controller.ParentCompleti
 	default:
 		return false, fmt.Errorf("completion requires a parent disposition at %s", operation.Operation)
 	}
-	raw, err := runCompletionPublication(cfg, completionPublicationCommand{PublicationParentCommand: *operation.Command}, nil, stderr)
+	var published controller.ExecutionOperationResult
+	_, err := runCompletionPublication(cfg, completionPublicationCommand{PublicationParentCommand: *operation.Command}, &published, stderr)
 	if err != nil {
 		return false, err
 	}
 	result.Steps = append(result.Steps, operation.Operation)
-	var published struct {
-		Head struct {
-			IntegrationTip string `json:"integration_tip"`
-			Remote         string `json:"observed_remote_tip"`
-		} `json:"head"`
+	result.FinalOID, result.RemoteOID = published.Head.IntegrationTip, published.Head.ObservedRemoteTip
+	if lineage := published.Head.MetadataLineageRef; lineage != nil && lineage.LogicalIdentity == published.TransitionID {
+		result.TransitionID = published.TransitionID
+		result.ControllerGeneration = published.Head.ControllerGeneration
 	}
-	if err := json.Unmarshal(raw, &published); err != nil {
-		return false, err
-	}
-	result.FinalOID, result.RemoteOID = published.Head.IntegrationTip, published.Head.Remote
 	return true, nil
 }
 

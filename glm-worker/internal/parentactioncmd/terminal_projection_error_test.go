@@ -355,7 +355,7 @@ func TestWriteTerminalHandoffFailureBoundsOversizedTerminal(t *testing.T) {
 	cfg := continuationTestConfig(t)
 	var stdout bytes.Buffer
 
-	err := writeTerminalHandoffFailure(cfg, &stdout, terminal, handoffErr)
+	err := writeTerminalHandoffFailure(cfg, &stdout, terminal, nil, handoffErr)
 	if !errors.Is(err, handoffErr) {
 		t.Fatalf("error = %v, want handoff error", err)
 	}

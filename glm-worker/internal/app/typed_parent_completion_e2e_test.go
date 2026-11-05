@@ -37,6 +37,25 @@ type typedCompletionScenario struct {
 	sourceChange bool
 	interrupt    bool
 	fullProcess  bool
+	handoffFault string
+}
+
+type typedPublicationEnvelope struct {
+	Status   string              `json:"status"`
+	Handoff  parentHandoffOutput `json:"handoff"`
+	Recovery struct {
+		Command    []string `json:"command"`
+		WorkingDir string   `json:"working_dir"`
+	} `json:"handoff_recovery"`
+	Terminal struct {
+		Status       string `json:"status"`
+		Failure      any    `json:"failure"`
+		SourceOID    string `json:"source_oid"`
+		FinalOID     string `json:"final_oid"`
+		RemoteOID    string `json:"remote_oid"`
+		StopBoundary string `json:"stop_boundary"`
+		TransitionID string `json:"transition_id"`
+	} `json:"terminal"`
 }
 
 func typedCompletionScenarios() []typedCompletionScenario {
@@ -45,6 +64,10 @@ func typedCompletionScenarios() []typedCompletionScenario {
 		{name: "no-code-publication-reentry", interrupt: true},
 		{name: "runtime-change", sourceChange: true},
 		{name: "runtime-change-publication-reentry", sourceChange: true, interrupt: true},
+		{name: "no-code-handoff-io-failure", fullProcess: true, handoffFault: "io"},
+		{name: "no-code-handoff-task-change", fullProcess: true, handoffFault: "task"},
+		{name: "no-code-handoff-lease-change", fullProcess: true, handoffFault: "lease"},
+		{name: "no-code-handoff-status-change", fullProcess: true, handoffFault: "status"},
 	}
 }
 
@@ -96,11 +119,29 @@ func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario)
 	started := time.Now()
 	cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange)
 	logAppFixturePhase(t, "typed/fixture", started)
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := strings.TrimSpace(string(appTestGitOutput(t, store.Identity().PrimaryRoot, "remote", "get-url", "origin")))
+	if err := execfile.Write(filepath.Join(remote, "hooks", "post-receive"), []byte("#!/bin/sh\ncat >> task-publication-receipts\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if scenario.handoffFault != "" {
+		t.Setenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT", scenario.handoffFault)
+	}
 	started = time.Now()
 	driveTypedCompletionToStart(t, cfg, goShim, scenario.sourceChange, scenario.interrupt, scenario.fullProcess)
 	logAppFixturePhase(t, "typed/production-cli", started)
 	started = time.Now()
 	assertTypedCompletionTerminalState(t, cfg, runtime)
+	receipts, err := os.ReadFile(filepath.Join(remote, "task-publication-receipts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Split(strings.TrimSpace(string(receipts)), "\n"); len(lines) != 1 {
+		t.Fatalf("expected one accepted remote update, got %q", receipts)
+	}
 	logAppFixturePhase(t, "typed/terminal-assertions", started)
 }
 
@@ -133,6 +174,18 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 	if separator < 0 {
 		os.Exit(2)
 	}
+	args := os.Args[separator+1:]
+	if primary := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_PRIMARY"); primary != "" && len(args) == 1 && args[0] == "--handoff" {
+		root, err := os.Getwd()
+		if err != nil || root != primary {
+			_, _ = fmt.Fprintln(os.Stderr, "completion handoff cannot read the retired execution lane")
+			os.Exit(1)
+		}
+		if fault := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT"); fault != "" {
+			_ = WriteProcessError(os.Stderr, typedCompletionHandoffFault(fault))
+			os.Exit(1)
+		}
+	}
 	launchQualityGateRunner = func(st *state.StateStore, record qualitygate.RunRecord) (qualityGateRunnerWait, error) {
 		return func() error { return executeQualityGateRun(st, record.ValidationRunID) }, nil
 	}
@@ -157,11 +210,50 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 		sum := sha256.Sum256(data)
 		return controller.InstalledRuntimeIdentity{SourceOID: sourceOID, BinaryPath: binary, BinarySHA256: hex.EncodeToString(sum[:])}, nil
 	}
-	if err := Run(os.Args[separator+1:]); err != nil {
+	if err := Run(args); err != nil {
 		_ = WriteProcessError(os.Stderr, err)
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+func typedCompletionHandoffFault(fault string) error {
+	if fault == "io" {
+		return os.ErrPermission
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	cfg, err = controller.WorkflowConfig(cfg)
+	if err != nil {
+		return err
+	}
+	if state.AttachStateStore(cfg).Present() {
+		return fmt.Errorf("successor already has Runtime state")
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(filepath.Dir(st.Path("repo-root"))) }()
+	return printParentHandoffLeased(st, os.Stdout, func() (parentHandoffOutput, error) {
+		value := buildParentHandoffWithConfig(cfg, st)
+		return value, changeTypedCompletionHandoffScope(st, fault)
+	})
+}
+
+func changeTypedCompletionHandoffScope(st *state.StateStore, fault string) error {
+	switch fault {
+	case "task":
+		return st.Write("task.id", "another-task")
+	case "lease":
+		return st.AdvanceParentEvidenceLease()
+	case "status":
+		return st.SetTaskStatus(state.TaskStatusComplete)
+	default:
+		return fmt.Errorf("unknown handoff fault %q", fault)
+	}
 }
 
 func runTypedParentActionCLI(t *testing.T, cfg config.AppConfig, args ...string) (int, string, string) {
@@ -246,7 +338,9 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 		}
 		switch *handoff.RequiredAction {
 		case controllerPublicationSurface:
-			runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, requireInstall, interrupt, !fullProcess)
+			if runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, requireInstall, interrupt, !fullProcess) {
+				return
+			}
 			interrupt = false
 		case "finalize-check":
 			runTypedFinalValidationStep(t, cfg, goShim, handoff.RequiredActionParameters)
@@ -285,7 +379,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 	t.Fatal("typed completion did not converge to the successor start boundary")
 }
 
-func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt, executeInProcess bool) {
+func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt, executeInProcess bool) bool {
 	t.Helper()
 	var command controller.PublicationParentCommand
 	if err := json.Unmarshal([]byte(parameters["controller_command_json"]), &command); err != nil {
@@ -293,7 +387,14 @@ func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[
 	}
 	if interrupt && command.Action == "complete" {
 		interruptTypedPublication(t, cfg, parameters, requireInstall)
-		return
+		return false
+	}
+	if command.Action == controller.PublicationOperationAccept {
+		store, err := controller.Open(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("GLM_TYPED_COMPLETION_HANDOFF_PRIMARY", store.Identity().PrimaryRoot)
 	}
 	var exit int
 	var output, diagnostics string
@@ -302,20 +403,66 @@ func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[
 	} else {
 		exit, output, diagnostics = runTypedPublicationStagedCLI(t, cfg, parameters, typedSemanticSlotValues(t, parameters, requireInstall))
 	}
-	if exit != 0 {
+	expectHandoffFailure := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT") != ""
+	if exit != 0 && !expectHandoffFailure {
 		t.Fatalf("execute typed publication %s: %s", command.Action, diagnostics)
 	}
-	var envelope struct {
-		Terminal struct {
-			Status  string `json:"status"`
-			Failure any    `json:"failure"`
-		} `json:"terminal"`
-	}
+	var envelope typedPublicationEnvelope
 	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
 		t.Fatal(err)
 	}
 	if envelope.Terminal.Status == "blocked" {
 		t.Fatalf("completion blocked at its first failed boundary: %#v", envelope.Terminal.Failure)
+	}
+	if envelope.Terminal.Status != "completed" && !expectHandoffFailure {
+		return false
+	}
+	if expectHandoffFailure {
+		assertTypedCompletionFailure(t, cfg, exit, envelope, diagnostics)
+	} else if envelope.Status != "parent_action_terminal" || !envelope.Handoff.Consistent ||
+		stringPointerValue(envelope.Handoff.RequiredAction) != canonicalStartAction {
+		t.Fatalf("completion lacks a canonical successor handoff: %s", output)
+	}
+	assertTypedPublicationProof(t, envelope)
+	return true
+}
+
+func assertTypedPublicationProof(t *testing.T, envelope typedPublicationEnvelope) {
+	t.Helper()
+	terminal := envelope.Terminal
+	if terminal.Status != "completed" || terminal.FinalOID == "" || terminal.SourceOID != terminal.FinalOID || terminal.RemoteOID != terminal.FinalOID ||
+		terminal.TransitionID == "" || terminal.StopBoundary != "next-task-not-started" {
+		t.Fatalf("completion lacks its final publication proof: %#v", terminal)
+	}
+}
+
+func assertTypedCompletionFailure(t *testing.T, cfg config.AppConfig, exit int, envelope typedPublicationEnvelope, diagnostics string) {
+	t.Helper()
+	if exit == 0 || envelope.Status != "parent_action_terminal_handoff_failed" || envelope.Handoff.RequiredAction != nil ||
+		strings.Join(envelope.Recovery.Command, " ") != "glm-worker --handoff recovery" ||
+		envelope.Recovery.WorkingDir != os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_PRIMARY") {
+		t.Fatalf("handoff I/O failure lost its read-only recovery: exit=%d recovery=%#v %s", exit, envelope.Recovery, diagnostics)
+	}
+	if os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT") != "io" &&
+		!strings.Contains(diagnostics, "parent evidence scope changed during projection") {
+		t.Fatalf("handoff did not fail at the read-scope guard: %s", diagnostics)
+	}
+	assertTypedCompletionRecovery(t, cfg, envelope.Recovery.WorkingDir)
+}
+
+func assertTypedCompletionRecovery(t *testing.T, cfg config.AppConfig, root string) {
+	t.Helper()
+	cfg.RepoRoot = root
+	var output bytes.Buffer
+	if err := Execute(Command{Mode: ModeHandoff, Payload: "recovery"}, cfg, nil, &output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var handoff parentHandoffRecoveryOutput
+	if err := json.Unmarshal(output.Bytes(), &handoff); err != nil {
+		t.Fatal(err)
+	}
+	if !handoff.Consistent || stringPointerValue(handoff.RequiredAction) != canonicalStartAction {
+		t.Fatalf("read-only recovery lost the successor boundary: %s", output.String())
 	}
 }
 

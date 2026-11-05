@@ -64,11 +64,20 @@ func applyReportResubmissionAvailability(cfg config.AppConfig, st *state.StateSt
 }
 
 func printParentHandoffLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	return printParentHandoffLeased(st, stdout, func() (parentHandoffOutput, error) {
+		return buildParentHandoffWithConfig(cfg, st), nil
+	})
+}
+
+func printParentHandoffLeased(st *state.StateStore, stdout io.Writer, project func() (parentHandoffOutput, error)) error {
 	scope, err := parentevidence.CaptureReadScope(st)
 	if err != nil {
 		return err
 	}
-	value := buildParentHandoffWithConfig(cfg, st)
+	value, err := project()
+	if err != nil {
+		return err
+	}
 	digest, _ := parentevidence.Digest(value)
 	return parentevidence.FinishReadInScope(st, scope, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
 		return parentevidence.WriteMeasuredJSON(stdout, value)

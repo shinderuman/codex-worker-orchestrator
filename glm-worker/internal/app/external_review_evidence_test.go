@@ -73,22 +73,38 @@ func TestParentEvidenceRejectsProjectionFromPreviousLease(t *testing.T) {
 }
 
 func TestStandaloneParentReadRejectsProjectionFromPreviousLease(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*state.StateStore) error
+	}{
+		{"task", func(st *state.StateStore) error { return st.Write("task.id", "another-task") }},
+		{"status", func(st *state.StateStore) error { return st.SetTaskStatus(state.TaskStatusComplete) }},
+		{"lease", (*state.StateStore).AdvanceParentEvidenceLease},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertStaleHandoffReadRejected(t, tc.change)
+		})
+	}
+}
+
+func assertStaleHandoffReadRejected(t *testing.T, change func(*state.StateStore) error) {
+	t.Helper()
 	fixture := newParentEvidenceFixture(t)
 	scope, err := parentevidence.CaptureReadScope(fixture.st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.st.AdvanceParentEvidenceLease(); err != nil {
+	if err := change(fixture.st); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer
-	err = parentevidence.FinishReadInScope(fixture.st, scope, state.ParentEvidenceSurfaceStatus, "old-digest", func() (int, error) {
+	err = parentevidence.FinishReadInScope(fixture.st, scope, state.ParentEvidenceSurfaceHandoff, "old-digest", func() (int, error) {
 		return stdout.WriteString("must not be delivered")
 	})
 	if err == nil || !strings.Contains(err.Error(), "scope changed") || stdout.Len() != 0 {
 		t.Fatalf("stale standalone projection err=%v released=%q", err, stdout.String())
 	}
-	if _, delivered, err := fixture.st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceStatus, "old-digest"); err != nil || delivered {
-		t.Fatalf("old standalone body claimed in new lease: delivered=%v err=%v", delivered, err)
+	if _, delivered, err := fixture.st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceHandoff, "old-digest"); err != nil || delivered {
+		t.Fatalf("old standalone body claimed in changed scope: delivered=%v err=%v", delivered, err)
 	}
 }
