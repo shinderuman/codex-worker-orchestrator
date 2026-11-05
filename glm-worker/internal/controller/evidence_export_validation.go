@@ -201,6 +201,10 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 // readValidationRunFile keeps recorded evidence inside its validation store and
 // rejects symlink substitution or a file replaced/modified during the read.
 func readValidationRunFile(store *state.StateStore, runID, filename string) ([]byte, error) {
+	return readValidationRunFileWithRead(store, runID, filename, io.ReadAll)
+}
+
+func readValidationRunFileWithRead(store *state.StateStore, runID, filename string, read func(*os.File) ([]byte, error)) ([]byte, error) {
 	if !qualitygate.ValidRunID(runID) {
 		return nil, fmt.Errorf("invalid validation run ID")
 	}
@@ -232,7 +236,7 @@ func readValidationRunFile(store *state.StateStore, runID, filename string) ([]b
 		return nil, err
 	}
 	opened, statErr := file.Stat()
-	data, readErr := io.ReadAll(file)
+	data, readErr := read(file)
 	closedErr := file.Close()
 	after, afterErr := root.Lstat(relative)
 	if statErr != nil || readErr != nil || closedErr != nil || afterErr != nil {
@@ -253,7 +257,7 @@ func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateSto
 	relativeDir := filepath.Join(qualitygate.RunDirectory, runID)
 	relativeLog := filepath.Join(relativeDir, "probe.log")
 	expected := store.Path(relativeLog)
-	if record.Log != expected || record.TaskID == "" || record.TaskID != c.taskID ||
+	if record.Log != expected || record.TaskID != c.taskID ||
 		!filepath.IsAbs(record.Repository) || record.Repository != record.WorkingDir ||
 		record.ProbeID == "" || record.ArgvDigest == "" || record.TaskAuthorityDigest == "" ||
 		record.InstallEvidenceDigest == "" || record.Head == "" {
