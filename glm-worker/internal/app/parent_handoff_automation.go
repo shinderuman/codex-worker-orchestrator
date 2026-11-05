@@ -19,11 +19,19 @@ type projectContinuationAutomation struct {
 	WakeAtUTC    string `json:"wake_at_utc"`
 }
 
-func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
-	if bound, err := controller.ParentContinuationConfig(cfg); err == nil && bound.RepoRoot != cfg.RepoRoot {
-		cfg = bound
-		st = state.AttachStateStore(cfg)
+// bindParentHandoffReadState resolves the canonical Runtime before capturing a
+// parent-evidence read scope. A Controller transition can change the Task-keyed
+// session without changing the workspace root.
+func bindParentHandoffReadState(cfg config.AppConfig, st *state.StateStore) (config.AppConfig, *state.StateStore) {
+	bound, err := controller.ParentContinuationConfig(cfg)
+	if err == nil && (bound.RepoRoot != cfg.RepoRoot || bound.RepoHash != cfg.RepoHash) {
+		return bound, state.AttachStateStore(bound)
 	}
+	return cfg, st
+}
+
+func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
+	cfg, st = bindParentHandoffReadState(cfg, st)
 	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
 	if applyAvailableSummaryRecoveryHandoff(cfg, st, &output) {
 		return output
@@ -64,6 +72,7 @@ func applyReportResubmissionAvailability(cfg config.AppConfig, st *state.StateSt
 }
 
 func printParentHandoffLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	cfg, st = bindParentHandoffReadState(cfg, st)
 	return printParentHandoffLeased(st, stdout, func() (parentHandoffOutput, error) {
 		return buildParentHandoffWithConfig(cfg, st), nil
 	})
@@ -85,6 +94,7 @@ func printParentHandoffLeased(st *state.StateStore, stdout io.Writer, project fu
 }
 
 func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	cfg, st = bindParentHandoffReadState(cfg, st)
 	scope, err := parentevidence.CaptureReadScope(st)
 	if err != nil {
 		return err
