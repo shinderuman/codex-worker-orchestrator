@@ -12,6 +12,11 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 )
 
+type claudeEmptyState struct {
+	path  string
+	state any
+}
+
 func RetireFiles(targetPath string) error {
 	lock, err := acquireSettingsMergeLock(targetPath)
 	if err != nil {
@@ -144,11 +149,6 @@ func verifyClaudeManagedValues(target map[string]any, managed managedState) erro
 	return nil
 }
 
-type claudeEmptyState struct {
-	path string
-	state any
-}
-
 func claudeEmptyStates(targetPath string) []claudeEmptyState {
 	return []claudeEmptyState{
 		{statePathFor(targetPath), overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}},
@@ -194,7 +194,6 @@ func planClaudeEmptyState(entry claudeEmptyState, before fileRestore) (plannedWr
 }
 
 func cleanupClaudeRetireStates(targetPath string, inputs map[string]fileRestore) error {
-	// Verify both postimages before deleting either ownership record.
 	for _, entry := range claudeEmptyStates(targetPath) {
 		if err := verifyClaudeEmptyState(entry, inputs[entry.path]); err != nil {
 			return err
