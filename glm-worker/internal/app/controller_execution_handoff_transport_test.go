@@ -44,21 +44,39 @@ func TestProjectedMaterializationUsesParentActionStaging(t *testing.T) {
 	}
 }
 
-func TestProjectedUserTerminationUsesDeclaredReasonStaging(t *testing.T) {
+func TestUserTerminationProjectionRequiresCanonicalHandoffSelection(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
 	t.Setenv("PATH", filepath.Dir(binary)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cfg, store, input, runtime, _ := userExecutionTerminationFixture(t)
-	handoff := buildParentHandoffWithConfig(cfg, runtime)
-	command := projectedTransportCommand(t, handoff, "user-terminate-execution", "execution_termination.reason")
+
+	termination := parentHandoffOutput{Consistent: false}
+	applyExecutionTerminationHandoff(cfg, &termination)
+	command := projectedTransportCommand(t, termination, "user-terminate-execution", "execution_termination.reason")
 	if command.ExecutionTermination == nil || command.ExecutionTermination.ExpectedGeneration != input.ExpectedGeneration ||
 		command.ExecutionTermination.SourceAttemptID != input.SourceAttemptID || command.ExecutionTermination.Reason != "" {
-		t.Fatalf("termination handoff lost exact user decision boundary: %#v", command)
+		t.Fatalf("previewed termination lost exact user decision boundary: %#v", command)
 	}
-	exerciseProjectedExecutionTransport(t, cfg, store, handoff, "execution_termination.reason", "explicitly terminate this unfinished execution")
+
+	handoff := buildParentHandoffWithConfig(cfg, runtime)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("pending external advancement must remain the selected handoff: %#v", handoff)
+	}
+	var publication controllerPublicationCommand
+	if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &publication); err != nil ||
+		publication.Action != controller.PublicationOperationAdoptMutable {
+		t.Fatalf("canonical upstream operation was not selected: %#v %v", publication, err)
+	}
+	before, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, output, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", controllerExecutionSurface)
+	if code == 0 {
+		t.Fatalf("non-selected termination was incorrectly prepared: %s %s", output, diagnostics)
+	}
 	after, err := store.LoadHead()
-	if err != nil || after.UserTerminationRef == nil || after.ExecutionTaskRef != nil || after.LiveLeaseID != "" ||
-		runtime.TaskStatus() != state.TaskStatusUserTerminated {
-		t.Fatalf("typed user termination did not preserve terminated authority: %#v %v", after, err)
+	if err != nil || !reflect.DeepEqual(before, after) || runtime.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("refused termination changed source authority: %#v %v", after, err)
 	}
 }
 
