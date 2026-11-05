@@ -57,6 +57,37 @@ func (s *StateStore) ReenterEquivalentReviewFromController(
 		worker.PacketStatus != string(packet.StatusImplemented) || worker.SessionID == "" {
 		return false, fmt.Errorf("equivalent review reentry lacks verified model-call provenance")
 	}
+	// The values supplied by the workflow are not an authority by themselves.
+	// Re-read the canonical model log and require these to be its final
+	// Worker/independent Reviewer pair, not detached or fabricated call IDs.
+	calls, err := s.ReadModelCallLogs(taskID)
+	if err != nil {
+		return false, err
+	}
+	var recordedWorker, recordedReviewer ModelCallLog
+	for _, call := range calls {
+		if call.CallType != CallTypeTask {
+			continue
+		}
+		switch call.Role {
+		case WorkerRole:
+			recordedWorker = call
+			recordedReviewer = ModelCallLog{}
+		case ReviewerRole:
+			recordedReviewer = call
+		}
+	}
+	if recordedWorker.CallID != worker.CallID || recordedWorker.SessionID != worker.SessionID ||
+		recordedWorker.PacketStatus != worker.PacketStatus || recordedWorker.Outcome != worker.Outcome ||
+		recordedWorker.ResponseSHA256 != worker.ResponseSHA256 ||
+		recordedReviewer.CallID != reviewer.CallID || recordedReviewer.SessionID != reviewer.SessionID ||
+		recordedReviewer.ModelAlias != reviewer.ModelAlias ||
+		recordedReviewer.ReadOnly != reviewer.ReadOnly ||
+		recordedReviewer.PacketStatus != reviewer.PacketStatus ||
+		recordedReviewer.ResponseSHA256 != reviewer.ResponseSHA256 ||
+		recordedReviewer.Outcome != reviewer.Outcome {
+		return false, fmt.Errorf("equivalent Review model-call provenance no longer matches the canonical log")
+	}
 	state, err := s.loadParentReviewState()
 	if err != nil {
 		return false, err
