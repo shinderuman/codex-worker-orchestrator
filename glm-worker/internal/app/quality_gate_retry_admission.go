@@ -41,10 +41,10 @@ func qualityGateInvocationDigest(record qualitygate.RunRecord, args []string) (s
 	}
 	environment := qualityGateInvocationEnvironment(record.Toolchain.RequiredGoVersion)
 	body, err := json.Marshal(struct {
-		ExecutableSHA string
-		GoSHA         string
-		Arguments     []string
-		Environment   []string
+		ExecutableSHA  string
+		GoSHA          string
+		Arguments      []string
+		Environment    []string
 		HostToolchain  *qualitygate.RunToolchain
 		Backend        string
 		DarwinPackages []qualitygate.DarwinPackageRequirement

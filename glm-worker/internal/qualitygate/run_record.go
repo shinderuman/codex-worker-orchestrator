@@ -35,33 +35,33 @@ type RunToolchain struct {
 type RunRecord struct {
 	Execution                     *Execution                 `json:"execution,omitempty"`
 	DarwinPackages                []DarwinPackageRequirement `json:"darwin_packages,omitempty"`
-	ValidationRunID               string        `json:"validation_run_id"`
-	Form                          string        `json:"form"`
-	Repository                    string        `json:"repository"`
-	WorkingDir                    string        `json:"working_dir"`
-	Head                          string        `json:"head"`
-	IndexDigest                   string        `json:"index_digest"`
-	WorktreeDigest                string        `json:"worktree_digest"`
-	WorktreeDigestExcludingParent string        `json:"worktree_digest_excluding_parent,omitempty"`
-	IgnoredInputsAbsent           *bool         `json:"ignored_inputs_absent,omitempty"`
-	TaskID                        string        `json:"task_id,omitempty"`
-	ProbeID                       string        `json:"probe_id,omitempty"`
-	ArgvDigest                    string        `json:"argv_digest,omitempty"`
-	InvocationDigest              string        `json:"invocation_digest,omitempty"`
-	TaskAuthorityDigest           string        `json:"task_authority_digest,omitempty"`
-	InstallEvidenceDigest         string        `json:"install_evidence_digest,omitempty"`
-	Toolchain                     *RunToolchain `json:"toolchain,omitempty"`
-	StartedAt                     time.Time     `json:"started_at"`
-	CompletedAt                   *time.Time    `json:"completed_at,omitempty"`
-	Status                        string        `json:"status"`
-	RunnerPID                     int           `json:"runner_pid,omitempty"`
-	ExitCode                      int           `json:"exit_code,omitempty"`
-	ExitSource                    string        `json:"exit_source,omitempty"`
-	DurationMS                    int64         `json:"duration_ms,omitempty"`
-	Log                           string        `json:"log,omitempty"`
-	TestTimings                   string        `json:"test_timings,omitempty"`
-	ResourceSamples               string        `json:"resource_samples,omitempty"`
-	ResourceSamplesError          string        `json:"resource_samples_error,omitempty"`
+	ValidationRunID               string                     `json:"validation_run_id"`
+	Form                          string                     `json:"form"`
+	Repository                    string                     `json:"repository"`
+	WorkingDir                    string                     `json:"working_dir"`
+	Head                          string                     `json:"head"`
+	IndexDigest                   string                     `json:"index_digest"`
+	WorktreeDigest                string                     `json:"worktree_digest"`
+	WorktreeDigestExcludingParent string                     `json:"worktree_digest_excluding_parent,omitempty"`
+	IgnoredInputsAbsent           *bool                      `json:"ignored_inputs_absent,omitempty"`
+	TaskID                        string                     `json:"task_id,omitempty"`
+	ProbeID                       string                     `json:"probe_id,omitempty"`
+	ArgvDigest                    string                     `json:"argv_digest,omitempty"`
+	InvocationDigest              string                     `json:"invocation_digest,omitempty"`
+	TaskAuthorityDigest           string                     `json:"task_authority_digest,omitempty"`
+	InstallEvidenceDigest         string                     `json:"install_evidence_digest,omitempty"`
+	Toolchain                     *RunToolchain              `json:"toolchain,omitempty"`
+	StartedAt                     time.Time                  `json:"started_at"`
+	CompletedAt                   *time.Time                 `json:"completed_at,omitempty"`
+	Status                        string                     `json:"status"`
+	RunnerPID                     int                        `json:"runner_pid,omitempty"`
+	ExitCode                      int                        `json:"exit_code,omitempty"`
+	ExitSource                    string                     `json:"exit_source,omitempty"`
+	DurationMS                    int64                      `json:"duration_ms,omitempty"`
+	Log                           string                     `json:"log,omitempty"`
+	TestTimings                   string                     `json:"test_timings,omitempty"`
+	ResourceSamples               string                     `json:"resource_samples,omitempty"`
+	ResourceSamplesError          string                     `json:"resource_samples_error,omitempty"`
 }
 
 const (
