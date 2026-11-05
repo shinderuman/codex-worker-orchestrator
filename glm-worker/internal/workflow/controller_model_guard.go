@@ -175,7 +175,7 @@ func (*Workflow) commitControllerModelCall(
 		}
 		return cause
 	}
-	outcome := "success"
+	outcome := acceptedResultCallOutcome
 	if runErr != nil {
 		outcome = "error"
 	}
