@@ -19,9 +19,6 @@ type projectContinuationAutomation struct {
 	WakeAtUTC    string `json:"wake_at_utc"`
 }
 
-// bindParentHandoffReadState resolves the canonical Runtime before capturing a
-// parent-evidence read scope. A Controller transition can change the Task-keyed
-// session without changing the workspace root.
 func bindParentHandoffReadState(cfg config.AppConfig, st *state.StateStore) (config.AppConfig, *state.StateStore) {
 	bound, err := controller.ParentContinuationConfig(cfg)
 	if err == nil && (bound.RepoRoot != cfg.RepoRoot || bound.RepoHash != cfg.RepoHash) {
@@ -35,8 +32,6 @@ func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) pa
 	return projectBoundParentHandoff(cfg, st)
 }
 
-// projectBoundParentHandoff must not rebind its Runtime: leased callers already
-// captured their read scope from this exact StateStore.
 func projectBoundParentHandoff(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
 	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
 	if applyAvailableSummaryRecoveryHandoff(cfg, st, &output) {
