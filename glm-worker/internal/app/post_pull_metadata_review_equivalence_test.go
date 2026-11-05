@@ -295,7 +295,7 @@ func TestPostPullMetadataEquivalentReviewReentersThroughMaterializeAndAcceptsNew
 	manifest := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
 		Version: parentevidence.ManifestVersion,
 		Reason:  "re-prove independent HIGH target against materialized source",
-		Source: []parentevidence.SourceRequest{{
+		Source:  []parentevidence.SourceRequest{{
 			Question:    "inspect original target on new source",
 			Path:        "IMPLEMENTATION_TASKS/root.md",
 			LineStart:   1,
