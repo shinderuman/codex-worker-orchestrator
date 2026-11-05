@@ -411,7 +411,7 @@ func validateResumePersistedKeys(data []byte) error {
 	if err := json.Unmarshal(data, &persistedKeys); err != nil {
 		return fmt.Errorf("resume stateを読めません: %w", err)
 	}
-	for _, key := range []string{"stop_parent_files", "reset_at_cst"} {
+	for _, key := range []string{"stop_parent_files", "reset_at_cst", "risk_floor_reemit"} {
 		if _, legacy := persistedKeys[key]; legacy {
 			return fmt.Errorf("resume stateを読めません: legacy %s key", key)
 		}

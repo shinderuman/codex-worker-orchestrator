@@ -58,6 +58,9 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	}
 	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
 	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
+	if checkpoint.Role == state.ReviewerRole {
+		w.lastReviewerRawPacket = append([]byte(nil), execution.runResult.StructuredOutput...)
+	}
 	return result, nil
 }
 
