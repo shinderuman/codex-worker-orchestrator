@@ -54,9 +54,9 @@ func run(repoRoot, binDir, codexDir string, stdout io.Writer) error {
 	attempt := func(label string, fn func() error) {
 		if err := fn(); err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", label, err))
-			fmt.Fprintf(stdout, "uninstall %s: failed: %v\n", label, err)
+			_, _ = fmt.Fprintf(stdout, "uninstall %s: failed: %v\n", label, err)
 		} else {
-			fmt.Fprintf(stdout, "uninstall %s: completed or unchanged\n", label)
+			_, _ = fmt.Fprintf(stdout, "uninstall %s: completed or unchanged\n", label)
 		}
 	}
 	attempt("repository hooks", func() error {
@@ -71,7 +71,7 @@ func run(repoRoot, binDir, codexDir string, stdout io.Writer) error {
 	attempt("CLI binaries", func() error {
 		results, err := cliinstall.Retire(binDir)
 		for _, result := range results {
-			fmt.Fprintf(stdout, "%s: %s\n", result.Name, result.Status)
+			_, _ = fmt.Fprintf(stdout, "%s: %s\n", result.Name, result.Status)
 		}
 		return err
 	})
