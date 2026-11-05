@@ -2,7 +2,9 @@ package workflow
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -124,7 +126,10 @@ func equivalentNextOnlyPlan(repo, oldHead, newHead string, added map[string]bool
 	if err := verifyEquivalentNextSchedule(oldNext, newNext, added); err != nil {
 		return err
 	}
-	return verifyEquivalentActiveClosure(repo, oldHead, oldOutside, added)
+	if err := verifyEquivalentActiveClosure(repo, oldHead, oldOutside, added); err != nil {
+		return err
+	}
+	return verifyHistoricalMetadataReferences(repo, oldHead, added)
 }
 
 func readReviewPlanAt(repo, commit string) (string, []string, error) {
@@ -170,6 +175,22 @@ func verifyEquivalentActiveClosure(repo, oldHead, oldOutside string, added map[s
 	for path := range added {
 		if strings.Contains(string(active), path) {
 			return fmt.Errorf("new Task %s changes ACTIVE reference closure", path)
+		}
+	}
+	return nil
+}
+
+func verifyHistoricalMetadataReferences(repo, oldHead string, added map[string]bool) error {
+	for path := range added {
+		cmd := gitexec.Command("git", repo, "grep", "-F", "-q", "-e", path, oldHead, "--",
+			state.ParentRulesFile, state.ParentPlanFile, state.ParentTasksDir)
+		err := cmd.Run()
+		if err == nil {
+			return fmt.Errorf("new Task %s resolves a pre-existing metadata reference", path)
+		}
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+			return fmt.Errorf("cannot prove original metadata reference closure: %w", err)
 		}
 	}
 	return nil
