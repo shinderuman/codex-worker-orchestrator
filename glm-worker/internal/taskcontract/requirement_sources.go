@@ -102,7 +102,8 @@ func parseRequirementSource(value string) (RequirementSource, error) {
 }
 
 func validateRequirementSourcePath(sourcePath string) error {
-	if sourcePath == "" || strings.HasPrefix(sourcePath, "/") ||
+	if sourcePath == "" || sourcePath == "." || sourcePath == ".." ||
+		strings.HasPrefix(sourcePath, "../") || strings.HasPrefix(sourcePath, "/") ||
 		strings.Contains(sourcePath, "\\") || strings.Contains(sourcePath, ":") ||
 		path.Clean(sourcePath) != sourcePath || sourcePath == ".git" ||
 		strings.HasPrefix(sourcePath, ".git/") {
@@ -124,6 +125,12 @@ func RequirementSourcesRetirementError(tasks map[string][]byte, retiring string)
 			return fmt.Errorf("task %s: %w", taskPath, err)
 		}
 		for _, source := range sources {
+			if source.Kind == RequirementSourceTask ||
+				(source.Kind == RequirementSourceFile && strings.HasPrefix(source.Path, TasksDir+"/")) {
+				if _, exists := tasks[source.Path]; !exists && source.Path != retiring {
+					return fmt.Errorf("task %s line %d requires missing task source %s", taskPath, source.Line, source.Path)
+				}
+			}
 			if source.Path == retiring && (source.Kind == RequirementSourceTask || source.Kind == RequirementSourceFile) {
 				return fmt.Errorf("task %s line %d still requires retiring source %s; parent must preserve or transfer the requirement before retirement", taskPath, source.Line, retiring)
 			}
