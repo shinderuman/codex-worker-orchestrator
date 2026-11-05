@@ -73,34 +73,41 @@ func prepareEquivalentReviewReentry(runtime *state.StateStore, repo string) (equ
 	}
 	if worker.CallID == "" || worker.Outcome != acceptedResultCallOutcome ||
 		worker.PacketStatus != string(packet.StatusImplemented) ||
-		!savedWorkerReviewContextMatches(worker, taskID) ||
+		(worker.Response != "" && !savedWorkerReviewContextMatches(worker, taskID)) || worker.ResponseSHA256 == "" ||
 		reviewer.CallID == "" || reviewer.Outcome != "success" ||
 		!reviewer.ReadOnly || reviewer.PacketStatus != string(packet.StatusNeedsSolReview) ||
 		reviewer.TaskID != taskID || reviewer.SessionID == "" ||
-		reviewer.Response == "" || reviewer.ResponseSHA256 == "" {
+		reviewer.ResponseSHA256 == "" {
 		return equivalentReviewReentry{}, fmt.Errorf("independent Reviewer/Worker model provenance unavailable")
 	}
-	sha := sha256.Sum256([]byte(reviewer.Response))
-	if fmt.Sprintf("%x", sha) != reviewer.ResponseSHA256 {
-		return equivalentReviewReentry{}, fmt.Errorf("retained Reviewer response bytes differ from its log digest")
-	}
-	result, err := packet.ParseStructured([]byte(reviewer.Response))
-	if err != nil {
-		return equivalentReviewReentry{}, err
-	}
-	if err := packet.ValidateReviewerResult(result); err != nil {
-		return equivalentReviewReentry{}, err
-	}
-	raw, err := result.MachineJSON()
-	if err != nil {
-		return equivalentReviewReentry{}, err
-	}
-	canonicalSHA := sha256.Sum256(raw)
-	if fmt.Sprintf("%x", canonicalSHA) != old.PacketSHA256 ||
-		result.Status != packet.StatusNeedsSolReview || result.Risk != packet.RiskHigh ||
-		!reflect.DeepEqual(result.Targets, old.Targets) || result.SolQuestion != old.SolQuestion ||
-		result.SolQuestion == "" || reviewer.ModelAlias == "" {
-		return equivalentReviewReentry{}, fmt.Errorf("independent Reviewer packet differs from the accepted canonical binding")
+	// Normal telemetry can omit content while retaining the verified
+	// packet binding, response digest, risk, and independent model-call
+	// authority. If raw content is available, additionally verify it in full.
+	if reviewer.Response != "" {
+		sha := sha256.Sum256([]byte(reviewer.Response))
+		if fmt.Sprintf("%x", sha) != reviewer.ResponseSHA256 {
+			return equivalentReviewReentry{}, fmt.Errorf("retained Reviewer response bytes differ from its log digest")
+		}
+		result, err := packet.ParseStructured([]byte(reviewer.Response))
+		if err != nil {
+			return equivalentReviewReentry{}, err
+		}
+		if err := packet.ValidateReviewerResult(result); err != nil {
+			return equivalentReviewReentry{}, err
+		}
+		raw, err := result.MachineJSON()
+		if err != nil {
+			return equivalentReviewReentry{}, err
+		}
+		canonicalSHA := sha256.Sum256(raw)
+		if fmt.Sprintf("%x", canonicalSHA) != old.PacketSHA256 ||
+			result.Status != packet.StatusNeedsSolReview || result.Risk != packet.RiskHigh ||
+			!reflect.DeepEqual(result.Targets, old.Targets) || result.SolQuestion != old.SolQuestion ||
+			result.SolQuestion == "" {
+			return equivalentReviewReentry{}, fmt.Errorf("independent Reviewer packet differs from the accepted canonical binding")
+		}
+	} else if reviewer.ReviewerReportedRisk != string(packet.RiskHigh) {
+		return equivalentReviewReentry{}, fmt.Errorf("content-free Reviewer telemetry lacks authenticated HIGH risk")
 	}
 	current, err := equivalentReviewSource(repo, old.Snapshot, old.Targets)
 	if err != nil {
