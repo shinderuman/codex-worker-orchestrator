@@ -1,34 +1,16 @@
 package taskcontract
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
 
 func TestParseRequirementSourcesClassifiesCurrentAndPinnedWithoutHistoricalNarrative(t *testing.T) {
-	tick := string(rune(96))
 	sha := strings.Repeat("a", 40)
 	old := "IMPLEMENTATION_TASKS/retired.md"
 	current := "IMPLEMENTATION_TASKS/current.md"
-	body := strings.Join([]string{
-		"## Original instruction",
-		"",
-		strings.Repeat(tick, 4) + "text",
-		"- requirement-source: " + tick + "task:" + old + tick,
-		strings.Repeat(tick, 4),
-		"",
-		"## Resolved references",
-		"",
-		"- Historical locator: " + tick + old + tick,
-		"- requirement-source: " + tick + "task:" + current + tick,
-		"- requirement-source: " + tick + "git:" + sha + ":" + old + tick,
-		"- arbitrary task filename " + tick + old + tick + " in prose",
-		"",
-		"## Contract",
-		"",
-		"No further requirements.",
-		"",
-	}, "\n")
+	body := fmt.Sprintf("## Original instruction\n\n\`\`\`\`text\n- requirement-source: \`task:%s\`\n\`\`\`\`\n\n## Resolved references\n\n- Historical locator: \`%s\`\n- requirement-source: \`task:%s\`\n- requirement-source: \`git:%s:%s\`\n- arbitrary task filename \`%s\` in prose\n\n## Contract\n\nNo further requirements.\n", old, old, current, sha, old, old)
 	got, err := ParseRequirementSources([]byte(body))
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +25,6 @@ func TestParseRequirementSourcesClassifiesCurrentAndPinnedWithoutHistoricalNarra
 }
 
 func TestParseRequirementSourcesRejectsMalformedSourceAndDuplicate(t *testing.T) {
-	tick := string(rune(96))
 	tests := []string{
 		"task:../outside.md",
 		"task:IMPLEMENTATION_TASKS/../../outside.md",
@@ -54,7 +35,7 @@ func TestParseRequirementSourcesRejectsMalformedSourceAndDuplicate(t *testing.T)
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			body := "## Resolved references\n- requirement-source: " + tick + value + tick + "\n"
+			body := fmt.Sprintf("## Resolved references\n- requirement-source: \`%s\`\n", value)
 			if _, err := ParseRequirementSources([]byte(body)); err == nil {
 				t.Fatalf("accepted invalid source: %s", value)
 			}
@@ -64,39 +45,35 @@ func TestParseRequirementSourcesRejectsMalformedSourceAndDuplicate(t *testing.T)
 	if _, err := ParseRequirementSources([]byte(body)); err == nil {
 		t.Fatal("accepted unquoted requirement source")
 	}
-	line := "- requirement-source: " + tick + "task:IMPLEMENTATION_TASKS/a.md" + tick + "\n"
+	line := "- requirement-source: \`task:IMPLEMENTATION_TASKS/a.md\`\n"
 	if _, err := ParseRequirementSources([]byte("## Resolved references\n" + line + line)); err == nil {
 		t.Fatal("accepted duplicate requirement source")
 	}
 }
 
 func TestRequirementSourceRetirementBlocksCurrentOnly(t *testing.T) {
-	tick := string(rune(96))
 	target := "IMPLEMENTATION_TASKS/retiring.md"
 	other := "IMPLEMENTATION_TASKS/other.md"
 	tasks := map[string][]byte{
 		target: []byte("## Original instruction\nimmutable\n"),
-		other: []byte("## Resolved references\n- Historical locator: " + tick + target + tick + "\n"),
+		other:  []byte(fmt.Sprintf("## Resolved references\n- Historical locator: \`%s\`\n", target)),
 	}
 	if err := RequirementSourcesRetirementError(tasks, target); err != nil {
 		t.Fatal("historical-only locator blocked retirement:", err)
 	}
-	tasks[other] = []byte("## Original instruction\n" + tick + target + tick +
-		"\n## Resolved references\n- requirement-source: " + tick + "task:" + target + tick + "\n")
+	tasks[other] = []byte(fmt.Sprintf("## Original instruction\n\`%s\`\n## Resolved references\n- requirement-source: \`task:%s\`\n", target, target))
 	if err := RequirementSourcesRetirementError(tasks, target); err == nil {
 		t.Fatal("current task requirement silently retired")
 	}
-	tasks[other] = []byte("## Resolved references\n- requirement-source: " + tick + "file:" + target + tick + "\n")
+	tasks[other] = []byte(fmt.Sprintf("## Resolved references\n- requirement-source: \`file:%s\`\n", target))
 	if err := RequirementSourcesRetirementError(tasks, target); err == nil {
 		t.Fatal("current file alias silently retired")
 	}
-	tasks[other] = []byte("## Resolved references\n- requirement-source: " + tick +
-		"git:" + strings.Repeat("a", 40) + ":" + target + tick + "\n")
+	tasks[other] = []byte(fmt.Sprintf("## Resolved references\n- requirement-source: \`git:%s:%s\`\n", strings.Repeat("a", 40), target))
 	if err := RequirementSourcesRetirementError(tasks, target); err != nil {
 		t.Fatal("fixed Git source should not be a live retirement edge:", err)
 	}
-	tasks[other] = []byte("## Resolved references\n- requirement-source: " + tick +
-		"task:IMPLEMENTATION_TASKS/missing.md" + tick + "\n")
+	tasks[other] = []byte("## Resolved references\n- requirement-source: \`task:IMPLEMENTATION_TASKS/missing.md\`\n")
 	if err := RequirementSourcesRetirementError(tasks, target); err == nil {
 		t.Fatal("missing current requirement source accepted")
 	}

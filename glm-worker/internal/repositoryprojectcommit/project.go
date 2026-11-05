@@ -11,6 +11,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
+const requirementBlobType = "blob"
+
 type Task struct {
 	Path    string
 	Content []byte
@@ -171,8 +173,6 @@ func (p Project) verifyCommittedRequirementSource(source taskcontract.Requiremen
 	}
 	return nil
 }
-
-const requirementBlobType = "blob"
 
 func (p Project) verifyRequirementBlob(commit, sourcePath string) error {
 	kind, err := gitOutput(p.RepoRoot, "cat-file", "-t", commit+":"+sourcePath)
