@@ -202,7 +202,9 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 // readValidationRunFile keeps recorded evidence inside its validation store and
 // rejects symlink substitution or a file replaced/modified during the read.
 func readValidationRunFile(store *state.StateStore, runID, filename string) ([]byte, error) {
-	return readValidationRunFileWithRead(store, runID, filename, io.ReadAll)
+	return readValidationRunFileWithRead(store, runID, filename, func(file *os.File) ([]byte, error) {
+		return io.ReadAll(file)
+	})
 }
 
 func readValidationRunFileWithRead(store *state.StateStore, runID, filename string, read func(*os.File) ([]byte, error)) ([]byte, error) {
