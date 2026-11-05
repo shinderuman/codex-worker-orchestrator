@@ -12,14 +12,7 @@ func TestCanonicalCompletionExecutionOverridesStartWithTypedOperation(t *testing
 		t.Run(actionName, func(t *testing.T) {
 			action := actionName
 			output := parentHandoffOutput{Consistent: true, RequiredAction: &action, AllowedActions: []string{action}}
-			operation := controller.ParentCompletionOperation{
-				Surface: controller.ExecutionOperationSurface,
-				Operation: controller.PublicationOperationParentOnlyMaterialize,
-				Execution: &controller.CompletionExecutionCommand{
-					Action: controller.PublicationOperationParentOnlyMaterialize,
-					ExpectedGeneration: 42,
-				},
-			}
+			operation := controller.ParentCompletionOperation{Execution: &controller.CompletionExecutionCommand{Action: controller.PublicationOperationParentOnlyMaterialize, ExpectedGeneration: 42}}
 			applyCompletionExecutionHandoff(&output, operation)
 			if output.RequiredAction == nil || *output.RequiredAction != controllerExecutionSurface {
 				t.Fatalf("typed operation was not admitted: %#v", output)

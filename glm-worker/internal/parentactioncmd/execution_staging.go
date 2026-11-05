@@ -39,20 +39,9 @@ func executionStagedTemplate(cfg config.AppConfig) (parentaction.StagedTemplate,
 	var payload strings.Builder
 	slots := []parentaction.PreparedSlot{}
 	if semantic := handoff.Parameters["semantic_slot"]; semantic != "" {
-		var operation struct {
-			Action string `json:"action"`
-		}
-		if err := json.Unmarshal([]byte(command), &operation); err != nil {
-			return parentaction.StagedTemplate{}, false, fmt.Errorf("typed execution command is invalid: %w", err)
-		}
-		var prefix, placeholder string
-		switch {
-		case semantic == runtimeDispositionReasonSlot && operation.Action == "dispose-runtime":
-			prefix, placeholder = runtimeDispositionReasonPrefix, parentaction.RuntimeDispositionReasonPlaceholder
-		case semantic == executionTerminationReasonSlot && operation.Action == "user-terminate-execution":
-			prefix, placeholder = executionTerminationReasonPrefix, parentaction.ExecutionTerminationReasonPlaceholder
-		default:
-			return parentaction.StagedTemplate{}, false, fmt.Errorf("typed execution semantic slot %s is not declared for action %s", semantic, operation.Action)
+		prefix, placeholder, err := projectedExecutionReason(semantic, command)
+		if err != nil {
+			return parentaction.StagedTemplate{}, false, err
 		}
 		payload.WriteString(prefix + placeholder + "\n")
 		slots = append(slots, parentaction.PreparedSlot{Name: semantic, Placeholder: placeholder})
@@ -74,39 +63,66 @@ func mergeExecutionStagedPayload(payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("execution command cannot declare multiple termination reasons")
 	}
 	for slot, reason := range fields.Semantic {
-		var action string
-		if err := json.Unmarshal(command["action"], &action); err != nil {
-			return nil, fmt.Errorf("typed execution action is invalid: %w", err)
-		}
-		var field string
-		switch {
-		case slot == runtimeDispositionReasonSlot && action == "dispose-runtime":
-			field = "runtime_disposition"
-		case slot == executionTerminationReasonSlot && action == "user-terminate-execution":
-			field = "execution_termination"
-		default:
-			return nil, fmt.Errorf("execution reason %s is not bound to action %s", slot, action)
-		}
-		var target map[string]json.RawMessage
-		if err := json.Unmarshal(command[field], &target); err != nil || target == nil {
-			return nil, fmt.Errorf("execution reason %s lacks its machine-bound operation", slot)
-		}
-		var previous string
-		if raw := target["reason"]; len(raw) != 0 {
-			if err := json.Unmarshal(raw, &previous); err != nil || previous != "" {
-				return nil, fmt.Errorf("execution reason %s would overwrite machine authority", slot)
-			}
-		}
-		target["reason"], err = json.Marshal(reason)
-		if err != nil {
-			return nil, err
-		}
-		command[field], err = json.Marshal(target)
-		if err != nil {
+		if err := bindExecutionReason(command, slot, reason); err != nil {
 			return nil, err
 		}
 	}
 	return json.Marshal(command)
+}
+
+func projectedExecutionReason(semantic, command string) (string, string, error) {
+	var operation struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal([]byte(command), &operation); err != nil {
+		return "", "", fmt.Errorf("typed execution command is invalid: %w", err)
+	}
+	switch {
+	case semantic == runtimeDispositionReasonSlot && operation.Action == "dispose-runtime":
+		return runtimeDispositionReasonPrefix, parentaction.RuntimeDispositionReasonPlaceholder, nil
+	case semantic == executionTerminationReasonSlot && operation.Action == "user-terminate-execution":
+		return executionTerminationReasonPrefix, parentaction.ExecutionTerminationReasonPlaceholder, nil
+	default:
+		return "", "", fmt.Errorf("typed execution semantic slot %s is not declared for action %s", semantic, operation.Action)
+	}
+}
+
+func executionReasonTarget(slot, action string) (string, error) {
+	switch {
+	case slot == runtimeDispositionReasonSlot && action == "dispose-runtime":
+		return "runtime_disposition", nil
+	case slot == executionTerminationReasonSlot && action == "user-terminate-execution":
+		return "execution_termination", nil
+	default:
+		return "", fmt.Errorf("execution reason %s is not bound to action %s", slot, action)
+	}
+}
+
+func bindExecutionReason(command map[string]json.RawMessage, slot, reason string) error {
+	var action string
+	if err := json.Unmarshal(command["action"], &action); err != nil {
+		return fmt.Errorf("typed execution action is invalid: %w", err)
+	}
+	field, err := executionReasonTarget(slot, action)
+	if err != nil {
+		return err
+	}
+	var target map[string]json.RawMessage
+	if err := json.Unmarshal(command[field], &target); err != nil || target == nil {
+		return fmt.Errorf("execution reason %s lacks its machine-bound operation", slot)
+	}
+	if raw := target["reason"]; len(raw) != 0 {
+		var previous string
+		if err := json.Unmarshal(raw, &previous); err != nil || previous != "" {
+			return fmt.Errorf("execution reason %s would overwrite machine authority", slot)
+		}
+	}
+	target["reason"], err = json.Marshal(reason)
+	if err != nil {
+		return err
+	}
+	command[field], err = json.Marshal(target)
+	return err
 }
 
 func validateExecutionStagedBinding(cfg config.AppConfig, payload []byte) error {

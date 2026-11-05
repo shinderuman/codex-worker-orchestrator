@@ -19,11 +19,7 @@ func TestControllerTransportReturnsTerminalAndWaitSurvivesTaskHandover(t *testin
 	bin := t.TempDir()
 	handoff := `{"projection":"recovery","consistent":true,"controller":{"canonical_active":true,"head":{"repository_identity":"repo"}},"task_id":null,"task_status":null,"required_action":"start","allowed_actions":["start"]}`
 	command := `{"action":"adopt","expected_generation":1}`
-	projected, err := json.Marshal(map[string]any{
-		"consistent": true,
-		"required_action": controllerExecutionAction,
-		"required_action_parameters": map[string]string{"controller_command_json": command},
-	})
+	projected, err := json.Marshal(map[string]any{"consistent": true, "required_action": controllerExecutionAction, "required_action_parameters": map[string]string{"controller_command_json": command}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,10 +34,7 @@ esac
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	prepared, err := parentaction.PrepareStaged(cfg.RepoRoot, controllerExecutionAction, parentaction.StagedTemplate{
-		Payload: []byte("COMMAND_TEMPLATE: " + command + "\n"),
-		Slots: []parentaction.PreparedSlot{},
-	})
+	prepared, err := parentaction.PrepareStaged(cfg.RepoRoot, controllerExecutionAction, parentaction.StagedTemplate{Payload: []byte("COMMAND_TEMPLATE: " + command + "\n"), Slots: []parentaction.PreparedSlot{}})
 	if err != nil {
 		t.Fatal(err)
 	}

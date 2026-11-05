@@ -11,7 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// Session calls use the byte-preserving stdin prompt transport of isolated Decisions.
 func TestSessionPromptTransportPreservesPayload(t *testing.T) {
 	fixture := newRunnerSessionFixture(t)
 	scriptPath := filepath.Join(t.TempDir(), "capture-claude")
@@ -22,9 +21,9 @@ func TestSessionPromptTransportPreservesPayload(t *testing.T) {
 	fixture.runner.config.ClaudeBin = scriptPath
 
 	cases := []struct {
-		name string
-		role state.SessionRole
-		prompt string
+		name    string
+		role    state.SessionRole
+		prompt  string
 		resumed bool
 	}{
 		{"worker-new", state.WorkerRole, "日本語\n\\\"quoted\\\" 'single' `backtick` $HOME\x00tail", false},

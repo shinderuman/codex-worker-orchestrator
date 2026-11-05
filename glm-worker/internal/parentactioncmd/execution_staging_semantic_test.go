@@ -22,10 +22,7 @@ func TestExecutionReasonStagingBindsOnlyDeclaredTypedOperations(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			command, err := json.Marshal(map[string]any{
-				"action": tc.action, "expected_generation": 7,
-				tc.field: map[string]any{"expected_generation": 7, "reason": "", "source_attempt_id": "exact-source"},
-			})
+			command, err := json.Marshal(map[string]any{"action": tc.action, "expected_generation": 7, tc.field: map[string]any{"expected_generation": 7, "reason": "", "source_attempt_id": "exact-source"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,13 +71,7 @@ func TestExecutionTerminationMachineBindingPreventsTamperingAndReplay(t *testing
 	cfg := newControllerActionTestConfig(t, true)
 	bin := t.TempDir()
 	command := "{\"action\":\"user-terminate-execution\",\"expected_generation\":1,\"execution_termination\":{\"expected_generation\":1,\"reason\":\"\"}}"
-	projection, err := json.Marshal(map[string]any{
-		"consistent": true, "required_action": controllerExecutionAction,
-		"required_action_parameters": map[string]string{
-			"controller_command_json": command,
-			"semantic_slot": executionTerminationReasonSlot,
-		},
-	})
+	projection, err := json.Marshal(map[string]any{"consistent": true, "required_action": controllerExecutionAction, "required_action_parameters": map[string]string{"controller_command_json": command, "semantic_slot": executionTerminationReasonSlot}})
 	if err != nil {
 		t.Fatal(err)
 	}
