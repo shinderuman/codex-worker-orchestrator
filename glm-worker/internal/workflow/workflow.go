@@ -513,8 +513,6 @@ func (w *Workflow) riskFloorEscalationResult(reviewResult packet.Result) (packet
 		targets = derived
 	}
 
-	// Store the exact structured reviewer output in the existing task artifact owner,
-	// rather than embedding an unbounded copy in the machine-facing issues field.
 	dir, err := w.state.PrepareArtifactDir()
 	if err != nil {
 		return packet.Result{}, err
