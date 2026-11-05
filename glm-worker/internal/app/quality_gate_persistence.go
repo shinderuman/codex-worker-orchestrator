@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -80,7 +81,7 @@ func markQualityGateInterruptedLocked(st *state.StateStore, record qualitygate.R
 	return record, nil
 }
 
-func findRunningQualityGateRun(st *state.StateStore, form, repository, workingDir string, snapshot state.GitSnapshot) (qualitygate.RunRecord, bool) {
+func findRunningQualityGateRun(st *state.StateStore, form, repository, workingDir string, snapshot state.GitSnapshot, darwinTests ...qualitygate.DarwinTest) (qualitygate.RunRecord, bool) {
 	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
 	if err != nil {
 		return qualitygate.RunRecord{}, false
@@ -93,7 +94,7 @@ func findRunningQualityGateRun(st *state.StateStore, form, repository, workingDi
 		if err != nil || record.Status != qualitygate.StatusRunning {
 			continue
 		}
-		if sameQualityGateSnapshot(record, form, repository, workingDir, snapshot) {
+		if sameQualityGateSnapshot(record, form, repository, workingDir, snapshot) && slices.Equal(record.DarwinTests, darwinTests) {
 			return record, true
 		}
 	}

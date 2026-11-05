@@ -1,8 +1,6 @@
 package qualitygate
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -123,16 +121,11 @@ func GoTestArguments(form string) []string {
 	return append(args, "-json", "-timeout=45m", "./...")
 }
 
-func DarwinSupplementArguments(form string) []string {
-	args := GoTestArguments(form)
-	if len(args) > 0 {
-		args[len(args)-1] = "./internal/observationexec"
-	}
-	return args
-}
-
 func VerifyExecution(record RunRecord) error {
 	if record.Execution == nil || record.Execution.Backend == BackendNative {
+		if len(record.DarwinTests) != 0 {
+			return fmt.Errorf("required Darwin test evidence is missing")
+		}
 		if record.Toolchain != nil && record.Toolchain.Backend == BackendDockerARM64 {
 			return fmt.Errorf("Docker実行の補完証拠が欠落しています")
 		}
@@ -184,14 +177,14 @@ func verifyNativeSupplement(record RunRecord) error {
 	if n.Toolchain.RequiredGoVersion != record.Toolchain.RequiredGoVersion {
 		return fmt.Errorf("macOS補完のGo version契約が一致しません")
 	}
-	if !slices.Equal(n.Arguments, DarwinSupplementArguments(record.Form)) || n.Toolchain.Command != "go "+strings.Join(n.Arguments, " ") || !executionToolchainRecorded(n.Toolchain) {
+	if !slices.Equal(n.Arguments, DarwinSupplementArguments(record.Form, record.DarwinTests...)) || n.Toolchain.Command != "go "+strings.Join(n.Arguments, " ") || !executionToolchainRecorded(n.Toolchain) {
 		return fmt.Errorf("macOS補完検証が正規形式に一致しません")
 	}
 	data, err := os.ReadFile(n.Log)
 	if err != nil {
 		return fmt.Errorf("macOS補完logを取得できません: %w", err)
 	}
-	return VerifyDarwinCoverage(data)
+	return VerifyDarwinCoverage(data, record.DarwinTests...)
 }
 
 func nativeSupplementComplete(n *NativeSupplement) bool {
@@ -200,29 +193,6 @@ func nativeSupplementComplete(n *NativeSupplement) bool {
 
 func executionToolchainRecorded(t *RunToolchain) bool {
 	return t != nil && t.EnvironmentRecorded && t.GoCache != "" && t.Parallelism > 0 && t.Command != "" && t.GoFlags == "" && (t.TestCache == testCacheExecuted || t.TestCache == "mixed" || t.TestCache == "cached")
-}
-
-func VerifyDarwinCoverage(log []byte) error {
-	required := map[string]bool{"TestConfinementProfileBoundsHostCredentialReads": false, "TestConfinementRuntimeDeniesCredentialReads": false, "TestRunIsolatedGoTestConfinementBlocksWritesOutsideAllowedRoots": false, "TestConfinementAdmissionDeclaresPlatformSupport": false}
-	for _, line := range bytes.Split(log, []byte("\n")) {
-		var event struct {
-			Action  string
-			Test    string
-			Package string
-		}
-		if json.Unmarshal(line, &event) != nil || !strings.HasSuffix(event.Package, "/internal/observationexec") {
-			continue
-		}
-		if _, ok := required[event.Test]; ok && event.Action == "pass" {
-			required[event.Test] = true
-		}
-	}
-	for name, passed := range required {
-		if !passed {
-			return fmt.Errorf("required Darwin test did not PASS: %s", name)
-		}
-	}
-	return nil
 }
 
 func hostToolchainMatches(t *RunToolchain) bool {

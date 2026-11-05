@@ -177,6 +177,81 @@ func TestPublicationRefusesFinalValidationFormsWithoutCurrentRun(t *testing.T) {
 	}
 }
 
+func TestPublicationRefusesLinuxPassForRequiredDarwinTest(t *testing.T) {
+	t.Parallel()
+	fixture, policy := newPublicationTestFixture(t)
+	source := publicationTestEdit(t, fixture, "validated.txt", "Darwin validation required\n")
+	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
+	tests := []qualitygate.DarwinTest{{Package: "./internal/qualitygate", Name: "TestDarwinSysctlDecoding"}}
+	accepted, candidate := acceptFinalValidationSource(t, fixture, policy, source, []FinalValidationRequest{
+		{Form: "go-test", WorkingDir: ".", DarwinTests: tests},
+	})
+	for _, tc := range []struct {
+		name  string
+		tests []qualitygate.DarwinTest
+	}{
+		{"declaration missing", nil},
+		{"Darwin evidence missing", tests},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, func(record *qualitygate.RunRecord) {
+				record.DarwinTests = tc.tests
+			})
+			runtime, err := publishFinalValidationCompletion(t, fixture, accepted, candidate)
+			assertFinalValidationRefused(t, fixture, policy, runtime, err, "go-test")
+		})
+	}
+}
+
+func TestTaskDarwinAcceptanceCannotBeOmittedFromFinalValidation(t *testing.T) {
+	root := t.TempDir()
+	path := "task.md"
+	body := []byte("# task\n\n## Darwin acceptance\n\n- `./internal/qualitygate:TestDarwinSysctlDecoding`\n")
+	if err := os.WriteFile(filepath.Join(root, path), body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	admission := Admission{
+		Workspace: WorkspaceIdentity{Root: root},
+		Attempt: AttemptRecord{SemanticTaskRef: SemanticTaskRef{
+			TaskPath: path, ContractDigest: digestBytes(body),
+		}},
+	}
+	store := &Store{}
+	if err := store.applyTaskDarwinAcceptance(admission, []FinalValidationRequest{{Form: "go-test-race"}}); err == nil {
+		t.Fatal("accepted a Task without its required go-test form")
+	}
+	forms := []FinalValidationRequest{{Form: "go-test"}, {Form: "go-test-race"}}
+	if err := store.applyTaskDarwinAcceptance(admission, forms); err != nil {
+		t.Fatal(err)
+	}
+	want := []qualitygate.DarwinTest{{Package: "./internal/qualitygate", Name: "TestDarwinSysctlDecoding"}}
+	if !reflect.DeepEqual(forms[0].DarwinTests, want) || len(forms[1].DarwinTests) != 0 {
+		t.Fatalf("wrong Darwin coverage routing: %#v", forms)
+	}
+}
+
+func TestPublicationRequiresCoverageForChangedDarwinTaggedPackage(t *testing.T) {
+	t.Parallel()
+	fixture, policy := newPublicationTestFixture(t)
+	file := "glm-worker/internal/example/fixture.go"
+	source := publicationTestEdit(t, fixture, file, "//go:build darwin && !cgo\n\npackage example\n")
+	seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
+	_, err := fixture.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+		Message: "Darwin source change", Policy: policy,
+		Evidence: publicationTestEvidence(t, fixture.store, source, policy),
+		RequiredValidations: &RequiredValidationDeclaration{Forms: []FinalValidationRequest{
+			{Form: "go-test", WorkingDir: ".", DarwinTests: []qualitygate.DarwinTest{{Package: "./internal/example", Name: "TestUnrelated"}}},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), file+" requires a Task Darwin acceptance test") {
+		t.Fatalf("candidate with uncovered Darwin source was admitted: %v", err)
+	}
+	head, err := fixture.store.LoadHead()
+	if err != nil || head.AcceptedCandidateRef != nil || head.PendingTransitionID != "" {
+		t.Fatalf("refused candidate changed the controller: %v", err)
+	}
+}
+
 func TestPublicationRefusesWhenOnlyAnotherFormHasCurrentRun(t *testing.T) {
 	t.Parallel()
 	fixture, policy := newPublicationTestFixture(t)

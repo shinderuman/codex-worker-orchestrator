@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -15,8 +16,9 @@ import (
 )
 
 type FinalValidationRequest struct {
-	Form       string `json:"form"`
-	WorkingDir string `json:"working_dir"`
+	Form        string                   `json:"form"`
+	WorkingDir  string                   `json:"working_dir"`
+	DarwinTests []qualitygate.DarwinTest `json:"darwin_tests,omitempty"`
 }
 
 type FinalValidationEvidence struct {
@@ -64,6 +66,9 @@ func (s *Store) resolveAdoptedValidations(admission Admission, input CandidateAc
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := s.applyTaskDarwinAcceptance(admission, forms); err != nil {
+		return nil, nil, err
+	}
 	if declared != nil && !declaredFormCovered(forms, *declared) {
 		return nil, nil, fmt.Errorf("declared validation set drops the Runtime obligation %s@%s", declared.Form, declared.WorkingDir)
 	}
@@ -83,7 +88,9 @@ func (s *Store) resolveAdoptedValidations(admission Admission, input CandidateAc
 func declaredFormCovered(forms []FinalValidationRequest, declared FinalValidationRequest) bool {
 	for _, request := range forms {
 		if request.Form == declared.Form && filepath.Clean(request.WorkingDir) == filepath.Clean(declared.WorkingDir) {
-			return true
+			return !slices.ContainsFunc(declared.DarwinTests, func(test qualitygate.DarwinTest) bool {
+				return !slices.Contains(request.DarwinTests, test)
+			})
 		}
 	}
 	return false
@@ -112,13 +119,14 @@ func (s *Store) taskDeclaredFinalValidationFor(task SemanticTaskRef, missingObli
 		return nil, nil
 	}
 	var stored struct {
-		Form       string
-		WorkingDir string
+		Form        string
+		WorkingDir  string
+		DarwinTests []qualitygate.DarwinTest `json:"darwin_tests,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return nil, fmt.Errorf("declared final validation obligation is unreadable: %w", err)
 	}
-	normalized, err := normalizeRequiredValidations([]FinalValidationRequest{{Form: stored.Form, WorkingDir: stored.WorkingDir}})
+	normalized, err := normalizeRequiredValidations([]FinalValidationRequest{{Form: stored.Form, WorkingDir: stored.WorkingDir, DarwinTests: stored.DarwinTests}})
 	if err != nil {
 		return nil, fmt.Errorf("declared final validation obligation is invalid: %w", err)
 	}
@@ -141,6 +149,12 @@ func normalizeRequiredValidations(requests []FinalValidationRequest) ([]FinalVal
 		previous, exists := byForm[request.Form]
 		if exists && previous.WorkingDir != request.WorkingDir {
 			return nil, fmt.Errorf("required final validation %s declares two working directories: %s and %s", request.Form, previous.WorkingDir, request.WorkingDir)
+		}
+		tests := append(slices.Clone(previous.DarwinTests), request.DarwinTests...)
+		var err error
+		request.DarwinTests, err = qualitygate.NormalizeDarwinTests(tests)
+		if err != nil {
+			return nil, err
 		}
 		byForm[request.Form] = request
 	}
@@ -362,6 +376,7 @@ func finalValidationMatchesSource(record qualitygate.RunRecord, repoRoot string,
 		record.IndexDigest == source.IndexDigest &&
 		record.WorktreeDigest == source.CleanWorktreeDig &&
 		record.WorktreeDigestExcludingParent == source.CleanWorktreeDig &&
+		slices.Equal(record.DarwinTests, request.DarwinTests) &&
 		finalValidationModuleMatches(repoRoot, request.WorkingDir, record.WorkingDir)
 }
 

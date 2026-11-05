@@ -44,12 +44,13 @@ type qualityGateResourceSampler interface {
 }
 
 type qualityGateStartIdentity struct {
-	Form       string
-	GoArgs     []string
-	Repository string
-	WorkingDir string
-	TaskID     string
-	Snapshot   state.GitSnapshot
+	Form        string
+	GoArgs      []string
+	DarwinTests []qualitygate.DarwinTest
+	Repository  string
+	WorkingDir  string
+	TaskID      string
+	Snapshot    state.GitSnapshot
 }
 
 const (

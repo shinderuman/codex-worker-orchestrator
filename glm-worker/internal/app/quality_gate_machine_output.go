@@ -8,6 +8,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -32,7 +33,12 @@ func dispatchQualityGateMachineOutput(cmd Command, cfg config.AppConfig, stdout,
 	}
 	var execErr error
 	if storeErr == nil && configErr == nil {
-		execErr = runQualityGateWithDiagnostics(cmd.Payload, st, output, diagnostics)
+		tests, err := candidateDarwinTests(cfg, cmd.Payload)
+		if err != nil {
+			execErr = err
+		} else {
+			execErr = runQualityGateWithDiagnostics(cmd.Payload, st, output, diagnostics, tests...)
+		}
 	}
 	restoreWarnings()
 	diagnosticViolation := diagnostics.finish()
@@ -44,6 +50,14 @@ func dispatchQualityGateMachineOutput(cmd Command, cfg config.AppConfig, stdout,
 		return err
 	}
 	return output.release()
+}
+
+func candidateDarwinTests(cfg config.AppConfig, form string) ([]qualitygate.DarwinTest, error) {
+	if _, starts := qualityGateForms[form]; !starts || cfg.RepositoryLockPath == "" {
+		return nil, nil
+	}
+	request, _, err := controller.AcceptedCandidateValidationRequest(cfg, form)
+	return request.DarwinTests, err
 }
 
 func (o *streamingStructuredLinesOutput) Write(p []byte) (int, error) {

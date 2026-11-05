@@ -103,3 +103,32 @@ func TestDockerPassRequiresBothPlatformsAndMatchingSource(t *testing.T) {
 		})
 	}
 }
+
+func TestDeclaredDarwinTestRequiresExactPackagePass(t *testing.T) {
+	test := DarwinTest{Package: "./internal/qualitygate", Name: "TestDarwinSysctlDecoding"}
+	for _, tc := range []struct {
+		name, event string
+	}{
+		{"valid", `{"Action":"pass","Package":"example/internal/qualitygate","Test":"TestDarwinSysctlDecoding"}`},
+		{"missing", ""},
+		{"compile failure", `{"Action":"build-fail","ImportPath":"example/internal/qualitygate"}`},
+		{"test failure", `{"Action":"fail","Package":"example/internal/qualitygate","Test":"TestDarwinSysctlDecoding"}`},
+		{"skipped", `{"Action":"skip","Package":"example/internal/qualitygate","Test":"TestDarwinSysctlDecoding"}`},
+		{"wrong package", `{"Action":"pass","Package":"example/nested/internal/qualitygate","Test":"TestDarwinSysctlDecoding"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := completeDockerExecution(t)
+			record.DarwinTests = []DarwinTest{test}
+			native := record.Execution.NativeSupplement
+			native.Arguments = DarwinSupplementArguments(record.Form, test)
+			native.Toolchain.Command = "go " + strings.Join(native.Arguments, " ")
+			log := append(darwinCoverageLog(t), tc.event...)
+			if err := os.WriteFile(native.Log, log, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := VerifyExecution(record); (err == nil) != (tc.name == "valid") {
+				t.Fatalf("Darwin evidence verification: %v", err)
+			}
+		})
+	}
+}

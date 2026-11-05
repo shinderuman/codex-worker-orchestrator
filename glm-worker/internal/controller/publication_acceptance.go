@@ -144,6 +144,9 @@ func (s *Store) planCandidateAcceptance(admission Admission, input CandidateAcce
 }
 
 func (s *Store) buildAcceptedCandidate(admission Admission, input CandidateAcceptanceInput, record TransitionRecord, implementationTree string, requiredValidations []FinalValidationRequest, requiredProbes []SmokeProbeDeclaration) (AcceptedCandidate, error) {
+	if err := s.requireChangedDarwinPackageCoverage(admission, implementationTree); err != nil {
+		return AcceptedCandidate{}, err
+	}
 	files, finalTree, err := s.finalizeCandidateTree(admission, implementationTree)
 	if err != nil {
 		return AcceptedCandidate{}, err

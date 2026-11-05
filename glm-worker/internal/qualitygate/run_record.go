@@ -34,6 +34,7 @@ type RunToolchain struct {
 
 type RunRecord struct {
 	Execution                     *Execution    `json:"execution,omitempty"`
+	DarwinTests                   []DarwinTest  `json:"darwin_tests,omitempty"`
 	ValidationRunID               string        `json:"validation_run_id"`
 	Form                          string        `json:"form"`
 	Repository                    string        `json:"repository"`

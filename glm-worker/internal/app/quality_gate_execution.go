@@ -20,11 +20,11 @@ func runQualityGate(payload string, st *state.StateStore, stdout io.Writer) erro
 	return runQualityGateWithDiagnostics(payload, st, stdout, io.Discard)
 }
 
-func runQualityGateWithDiagnostics(payload string, st *state.StateStore, stdout, diagnostics io.Writer) error {
+func runQualityGateWithDiagnostics(payload string, st *state.StateStore, stdout, diagnostics io.Writer, darwinTests ...qualitygate.DarwinTest) error {
 	if action, runID, ok := splitQualityGateAction(payload); ok {
 		return runQualityGateAction(action, runID, st, stdout)
 	}
-	return startQualityGate(payload, st, stdout, diagnostics)
+	return startQualityGate(payload, st, stdout, diagnostics, darwinTests...)
 }
 
 func runQualityGateAction(action, runID string, st *state.StateStore, stdout io.Writer) error {
@@ -43,16 +43,17 @@ func runQualityGateAction(action, runID string, st *state.StateStore, stdout io.
 	}
 }
 
-func startQualityGate(form string, st *state.StateStore, stdout, diagnostics io.Writer) error {
+func startQualityGate(form string, st *state.StateStore, stdout, diagnostics io.Writer, darwinTests ...qualitygate.DarwinTest) error {
 	identity, err := prepareQualityGateStart(form, st)
 	if err != nil {
 		return err
 	}
+	identity.DarwinTests = darwinTests
 	lock, err := acquireQualityGateStartLock(st)
 	if err != nil {
 		return err
 	}
-	if existing, found := findRunningQualityGateRun(st, identity.Form, identity.Repository, identity.WorkingDir, identity.Snapshot); found {
+	if existing, found := findRunningQualityGateRun(st, identity.Form, identity.Repository, identity.WorkingDir, identity.Snapshot, darwinTests...); found {
 		_ = lock.Close()
 		_ = emitQualityGateStarted(diagnostics, existing.ValidationRunID, true)
 		final, err := waitQualityGateRun(st, existing.ValidationRunID)
@@ -155,6 +156,7 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.Run
 	}
 	return qualitygate.RunRecord{
 		Execution:                     execution,
+		DarwinTests:                   identity.DarwinTests,
 		ValidationRunID:               runID,
 		Form:                          identity.Form,
 		Repository:                    identity.Repository,

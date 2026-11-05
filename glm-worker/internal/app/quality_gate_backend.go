@@ -28,6 +28,9 @@ func newQualityGateExecution(identity qualityGateStartIdentity, required string)
 		return nil, nil, fmt.Errorf("quality gate Go toolchain does not match required go%s: observed=%q", required, host.GoVersion)
 	}
 	if backend == qualitygate.BackendNative {
+		if len(identity.DarwinTests) != 0 {
+			return nil, nil, fmt.Errorf("required Darwin tests need the canonical Darwin ARM64 supplement")
+		}
 		return nil, host, nil
 	}
 	if host.GOOS != runtime.GOOS || host.GOARCH != runtime.GOARCH {
@@ -68,7 +71,7 @@ func runQualityGateExecution(st *state.StateStore, record *qualitygate.RunRecord
 }
 
 func runDarwinQualitySupplement(ctx context.Context, st *state.StateStore, record *qualitygate.RunRecord) error {
-	args := qualitygate.DarwinSupplementArguments(record.Form)
+	args := qualitygate.DarwinSupplementArguments(record.Form, record.DarwinTests...)
 	if len(args) == 0 {
 		return fmt.Errorf("supplement requires a canonical Go test form")
 	}
@@ -95,7 +98,7 @@ func runDarwinQualitySupplement(ctx context.Context, st *state.StateStore, recor
 		n.Log = path
 	}
 	if runErr == nil && writeErr == nil {
-		writeErr = qualitygate.VerifyDarwinCoverage(log.Bytes())
+		writeErr = qualitygate.VerifyDarwinCoverage(log.Bytes(), record.DarwinTests...)
 	}
 	if writeErr != nil {
 		n.Status = qualitygate.StatusFail

@@ -46,10 +46,12 @@ func qualityGateInvocationDigest(record qualitygate.RunRecord, args []string) (s
 		Environment   []string
 		HostToolchain *qualitygate.RunToolchain
 		Backend       string
+		DarwinTests   []qualitygate.DarwinTest
 	}{
 		ExecutableSHA: executableSHA, GoSHA: goSHA, Arguments: args,
 		Environment: environment, HostToolchain: qualityGateHostToolchain(record),
-		Backend: qualityGateBackend(record),
+		Backend:     qualityGateBackend(record),
+		DarwinTests: record.DarwinTests,
 	})
 	if err != nil {
 		return "", err
