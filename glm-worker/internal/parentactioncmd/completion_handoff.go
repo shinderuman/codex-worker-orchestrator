@@ -44,6 +44,17 @@ func readCompletionTerminalHandoff(cfg config.AppConfig, result completionWorkfl
 	if err := validateCompletionHandoffProjection(store, expected, handoff); err != nil {
 		return nil, recovery, err
 	}
+	// The canonical handoff describes the successor, not an action required
+	// to finish the already published task. Only remove successor actions
+	// after the source-bound publication and controller authority checks.
+	terminalRecord, err := store.LoadTerminalTaskRecord(*expected.MetadataLineageRef)
+	if err != nil {
+		return nil, recovery, err
+	}
+	handoff, err = scopeCompletedPublicationHandoff(handoff, terminalRecord.TaskRef.TaskPath)
+	if err != nil {
+		return nil, recovery, err
+	}
 	return handoff, nil, nil
 }
 
@@ -85,4 +96,52 @@ func validateCompletionHandoffProjection(store *controller.Store, expected contr
 		return fmt.Errorf("controller authority changed during completion handoff")
 	}
 	return nil
+}
+
+ 
+// scopeCompletedPublicationHandoff prevents a completed publication's terminal
+// response from advertising the *next* task as an action for the completed
+// task. A fresh canonical handoff remains the authority when that successor
+// is explicitly started. An incomplete or ambiguous handoff is left intact.
+func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string) (json.RawMessage, error) {
+	var canonical struct {
+		Version       json.RawMessage `json:"version"`
+		Consistent    bool            `json:"consistent"`
+		ParentRequest struct {
+			Continuation struct {
+				State  string `json:"state"`
+				Task   string `json:"task"`
+				Reason string `json:"reason"`
+			} `json:"continuation"`
+		} `json:"parent_request"`
+	}
+	if err := json.Unmarshal(raw, &canonical); err != nil {
+		return nil, fmt.Errorf("decode verified completion handoff: %w", err)
+	}
+	continuation := canonical.ParentRequest.Continuation
+	if !canonical.Consistent || completedTask == "" ||
+		continuation.State != "continue-now" || continuation.Task == "" ||
+		continuation.Task == completedTask ||
+		(continuation.Reason != "active-task-not-started" && continuation.Reason != "post-local-completion-active") {
+		return raw, nil
+	}
+	// Only the successor identity is relevant at the completed-task boundary.
+	// In particular do not expose required_action/action_specs/parent_request,
+	// which belong to a separate, unstarted task. Do not infer permission to
+	// start that task from publication success.
+	return json.Marshal(struct {
+		Version    json.RawMessage `json:"version,omitempty"`
+		Consistent bool            `json:"consistent"`
+		Successor  struct {
+			Task  string `json:"task"`
+			State string `json:"state"`
+		} `json:"successor"`
+	}{
+		Version:    canonical.Version,
+		Consistent: true,
+		Successor: struct {
+			Task  string `json:"task"`
+			State string `json:"state"`
+		}{Task: continuation.Task, State: "not-started"},
+	})
 }
