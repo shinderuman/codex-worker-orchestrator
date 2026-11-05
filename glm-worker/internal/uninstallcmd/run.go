@@ -58,7 +58,7 @@ func run(repoRoot, binDir, codexDir string, stdout io.Writer) error {
         cmd.Stderr = io.Discard
         return cmd.Run()
     })
-    attempt("Codex", func() error { return codexinstall.Retire(codexDir, os.Stdout) })
+    attempt("Codex", func() error { return codexinstall.Retire(codexDir, stdout) })
     attempt("Claude", func() error { return settingsmerge.RetireFiles(location.SettingsPath) })
     attempt("CLI binaries", func() error {
         results, err := cliinstall.Retire(binDir)
