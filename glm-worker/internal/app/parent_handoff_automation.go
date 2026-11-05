@@ -32,6 +32,12 @@ func bindParentHandoffReadState(cfg config.AppConfig, st *state.StateStore) (con
 
 func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
 	cfg, st = bindParentHandoffReadState(cfg, st)
+	return projectBoundParentHandoff(cfg, st)
+}
+
+// projectBoundParentHandoff must not rebind its Runtime: leased callers already
+// captured their read scope from this exact StateStore.
+func projectBoundParentHandoff(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
 	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
 	if applyAvailableSummaryRecoveryHandoff(cfg, st, &output) {
 		return output
@@ -74,7 +80,7 @@ func applyReportResubmissionAvailability(cfg config.AppConfig, st *state.StateSt
 func printParentHandoffLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	cfg, st = bindParentHandoffReadState(cfg, st)
 	return printParentHandoffLeased(st, stdout, func() (parentHandoffOutput, error) {
-		return buildParentHandoffWithConfig(cfg, st), nil
+		return projectBoundParentHandoff(cfg, st), nil
 	})
 }
 
@@ -99,7 +105,7 @@ func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.
 	if err != nil {
 		return err
 	}
-	full := buildParentHandoffWithConfig(cfg, st)
+	full := projectBoundParentHandoff(cfg, st)
 	value := projectParentHandoffRecovery(full)
 	applyParentGuardRecovery(st, &value)
 	applyParentQualityGateRecovery(st, &value)
