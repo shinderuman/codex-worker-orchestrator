@@ -58,6 +58,9 @@ func seedPostPullReviewSnapshots(t *testing.T, cfg config.AppConfig, runtime *st
 	if err := runtime.Write("repo-root", cfg.RepoRoot); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Write("last-request", "original scripted implementation task"); err != nil {
+		t.Fatal(err)
+	}
 	snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
 	if err != nil {
 		t.Fatal(err)
@@ -92,6 +95,19 @@ func seedPostPullModelCalls(t *testing.T, runtime *state.StateStore, result pack
 	if err != nil {
 		t.Fatal(err)
 	}
+	workerPacket := packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskHigh,
+		Summary:             "scripted worker implementation",
+		RequirementCoverage: "original task covered",
+		Tests:               "synthetic fixture verified",
+		Unverified:          "none",
+	}
+	workerResponse, err := workerPacket.MachineJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerSHA := sha256.Sum256(workerResponse)
 	worker := state.ModelCallLog{
 		TaskID:         taskID,
 		CallID:         "original-worker-call",
@@ -100,7 +116,8 @@ func seedPostPullModelCalls(t *testing.T, runtime *state.StateStore, result pack
 		SessionID:      "original-worker-session",
 		Outcome:        postPullTestSuccessOutcome,
 		PacketStatus:   string(packet.StatusImplemented),
-		ResponseSHA256: "original-worker-response-digest",
+		Response:       string(workerResponse),
+		ResponseSHA256: fmt.Sprintf("%x", workerSHA),
 	}
 	machine, err := result.MachineJSON()
 	if err != nil {
