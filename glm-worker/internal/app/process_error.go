@@ -170,15 +170,15 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 
 func scheduledPauseProcessError(paused *runner.ScheduledPauseError) processErrorBody {
 	return processErrorBody{
-		Kind: errorKindScheduledPause,
+		Kind:    errorKindScheduledPause,
 		Message: "configured GLM pause window; task stopped and resumable",
 		Detail: map[string]any{
-			"phase": paused.Phase,
-			"task_id": paused.TaskID,
-			"repo_root": paused.RepoRoot,
-			"resume_at": paused.ResumeAt.Format(time.RFC3339),
+			"phase":            paused.Phase,
+			"task_id":          paused.TaskID,
+			"repo_root":        paused.RepoRoot,
+			"resume_at":        paused.ResumeAt.Format(time.RFC3339),
 			"resume_available": true,
-			"cleanup_warning": paused.CleanupWarning,
+			"cleanup_warning":  paused.CleanupWarning,
 		},
 	}
 }

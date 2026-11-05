@@ -33,7 +33,10 @@ func prepareScheduledPauseStop(t *testing.T, resumeAt time.Time) (*state.StateSt
 		t.Fatal(err)
 	}
 	return st, &runner.ScheduledPauseError{
-		Phase: checkpoint.Phase, TaskID: taskID, RepoRoot: cfg.RepoRoot, ResumeAt: resumeAt,
+		Phase:    checkpoint.Phase,
+		TaskID:   taskID,
+		RepoRoot: cfg.RepoRoot,
+		ResumeAt: resumeAt,
 	}
 }
 

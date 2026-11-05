@@ -42,7 +42,7 @@ type ResumeCheckpoint struct {
 	DecisionBoundaryApplied bool        `json:"decision_boundary_applied,omitempty"`
 	ExecutionMilestoneID    string      `json:"execution_milestone_id,omitempty"`
 
-WorkerResult      *packet.Result `json:"worker_result,omitempty"`
+	WorkerResult      *packet.Result `json:"worker_result,omitempty"`
 	CompletedResult   *packet.Result `json:"completed_result,omitempty"`
 	ReviewNumber      int            `json:"review_number,omitempty"`
 	AutoFixes         int            `json:"auto_fixes,omitempty"`
