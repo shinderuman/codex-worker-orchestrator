@@ -669,3 +669,96 @@ func removeSnapshotPath(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+func TestCaptureGitSnapshotParentExclusionMatchesFilteredVariant(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutate    func(t *testing.T, dir string)
+		wantEqual bool
+	}{
+		{
+			name: "非parent変更は両digest一致",
+			mutate: func(t *testing.T, dir string) {
+				mutateUnstagedTracked(t, dir)
+				mutateUntrackedAdded(t, dir)
+			},
+			wantEqual: true,
+		},
+		{
+			name: "未track親rule fileはdigest分離",
+			mutate: func(t *testing.T, dir string) {
+				if err := os.WriteFile(filepath.Join(dir, ParentRulesFile), []byte("rules\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantEqual: false,
+		},
+		{
+			name: "親task dirの未track fileはdigest分離",
+			mutate: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, ParentTasksDir), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, ParentTasksDir, "task.md"), []byte("task\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantEqual: false,
+		},
+		{
+			name: "track済み親rule file変更はdigest分離",
+			mutate: func(t *testing.T, dir string) {
+				if err := os.WriteFile(filepath.Join(dir, ParentRulesFile), []byte("base\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				gitRun(t, dir, "add", ParentRulesFile)
+				gitRun(t, dir, "commit", "--quiet", "-m", "parent rules")
+				if err := os.WriteFile(filepath.Join(dir, ParentRulesFile), []byte("edited\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantEqual: false,
+		},
+		{
+			name: "top-levelの親task名fileはdigest分離",
+			mutate: func(t *testing.T, dir string) {
+				if err := os.WriteFile(filepath.Join(dir, ParentTasksDir), []byte("not a directory\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantEqual: false,
+		},
+		{
+			name: "親rule名directory配下のfileはdigest分離",
+			mutate: func(t *testing.T, dir string) {
+				if err := os.MkdirAll(filepath.Join(dir, ParentRulesFile), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, ParentRulesFile, "child.txt"), []byte("child\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantEqual: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := initCommittedRepo(t)
+			tt.mutate(t, dir)
+			snap, err := CaptureGitSnapshot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			filtered, err := captureWorktreeDigestVariant(dir, ParentExcludePathspecs())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if snap.WorktreeDigestExcludingParent != filtered {
+				t.Fatalf("excluding-parent digestがfiltered variantと一致しません: got=%q filtered=%q", snap.WorktreeDigestExcludingParent, filtered)
+			}
+			if equal := snap.WorktreeDigest == snap.WorktreeDigestExcludingParent; equal != tt.wantEqual {
+				t.Fatalf("full==excluding=%v want %v (full=%q excluding=%q)", equal, tt.wantEqual, snap.WorktreeDigest, snap.WorktreeDigestExcludingParent)
+			}
+		})
+	}
+}

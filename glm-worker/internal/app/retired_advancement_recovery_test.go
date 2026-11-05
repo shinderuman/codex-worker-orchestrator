@@ -45,7 +45,7 @@ func TestExternalAdvancementInterruptedRecoveryHandoff(t *testing.T) {
 	if containsParentAction(handoff.AllowedActions, "start") || containsParentAction(handoff.AllowedActions, "start-milestones") {
 		t.Fatal("pending synchronization admitted a new Task")
 	}
-	executeStagedParentAction(t, cfg, handoff.RequiredActionParameters["controller_command_json"])
+	executeStagedParentActionThroughChild(t, cfg, handoff.RequiredActionParameters["controller_command_json"])
 	handoff = executeParentHandoff(t, cfg)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != "start" {
 		t.Fatalf("recovered synchronization: %#v", handoff)

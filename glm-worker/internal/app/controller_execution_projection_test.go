@@ -14,6 +14,11 @@ import (
 )
 
 func TestExecutionPreparationDoesNotConsumeParentEvidenceLease(t *testing.T) {
+	t.Parallel()
+	runIsolatedScenario(t, isolatedScenarioKeyExecutionPreparationLease, "default")
+}
+
+func executionPreparationLeaseBody(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
 	t.Setenv("PATH", filepath.Dir(binary)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	f := reentryReviewRepairAppFixtureWithPreparation(t, false)
@@ -46,7 +51,7 @@ func assertReviewedParentExecutionCLI(t *testing.T, cfg config.AppConfig) {
 		NextCommand []string          `json:"next_command"`
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		code, output, diagnostics := runTypedParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+		code, output, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", controllerExecutionSurface)
 		if code != 0 {
 			t.Fatalf("prepare after parent handoff: %s", diagnostics)
 		}
@@ -57,7 +62,7 @@ func assertReviewedParentExecutionCLI(t *testing.T, cfg config.AppConfig) {
 			t.Fatalf("source repair unexpectedly required additional operator input: %s", output)
 		}
 	}
-	code, output, diagnostics := runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
+	code, output, diagnostics := runParentActionCLIInProcess(t, cfg, prepared.NextCommand[1:]...)
 	if code != 0 {
 		t.Fatalf("execute after preparation: %s %s", diagnostics, output)
 	}
@@ -73,7 +78,7 @@ func assertReviewedParentExecutionCLI(t *testing.T, cfg config.AppConfig) {
 
 func runTypedRuntimeDispositionCLI(t *testing.T, cfg config.AppConfig, reason string) {
 	t.Helper()
-	code, output, diagnostics := runTypedParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+	code, output, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", controllerExecutionSurface)
 	if code != 0 {
 		t.Fatalf("prepare Runtime disposition: %s", diagnostics)
 	}
@@ -92,7 +97,7 @@ func runTypedRuntimeDispositionCLI(t *testing.T, cfg config.AppConfig, reason st
 	if err := os.WriteFile(prepared.Path, []byte(strings.Replace(string(body), prepared.Slots[0].Placeholder, reason, 1)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if code, output, diagnostics := runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...); code != 0 {
+	if code, output, diagnostics := runParentActionCLIInProcess(t, cfg, prepared.NextCommand[1:]...); code != 0 {
 		t.Fatalf("Runtime disposition failed: %s %s", output, diagnostics)
 	}
 }

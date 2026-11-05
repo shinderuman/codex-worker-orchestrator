@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -163,15 +164,62 @@ func DigestIndexListing(output []byte) string {
 }
 
 func captureSnapshotWorktreeDigest(repoRoot string) (string, string, error) {
-	full, err := captureWorktreeDigestVariant(repoRoot, nil)
+	diffOutput, err := gitSnapshotOutput(repoRoot, []string{"diff", "--binary", "--no-ext-diff", "--no-textconv"})
 	if err != nil {
 		return "", "", err
+	}
+	untrackedOutput, err := gitSnapshotOutput(repoRoot, []string{"ls-files", "-z", "--others", "--exclude-standard"})
+	if err != nil {
+		return "", "", err
+	}
+	full, err := buildWorktreeDigest(diffOutput, untrackedOutput, repoRoot)
+	if err != nil {
+		return "", "", err
+	}
+	if !worktreeOutputTouchesParentManagedPaths(diffOutput, untrackedOutput) {
+		return full, full, nil
 	}
 	excluding, err := captureWorktreeDigestVariant(repoRoot, ParentExcludePathspecs())
 	if err != nil {
 		return "", "", err
 	}
 	return full, excluding, nil
+}
+
+func worktreeOutputTouchesParentManagedPaths(diffOutput, untrackedOutput []byte) bool {
+	for _, path := range strings.Split(strings.TrimRight(string(untrackedOutput), "\x00"), "\x00") {
+		if path != "" && parentManagedPathTouched(path) {
+			return true
+		}
+	}
+	for _, line := range bytes.Split(diffOutput, []byte("\n")) {
+		if diffHeaderTouchesParentManagedPaths(line) {
+			return true
+		}
+	}
+	return false
+}
+
+func diffHeaderTouchesParentManagedPaths(line []byte) bool {
+	if !bytes.HasPrefix(line, []byte("diff --git ")) {
+		return false
+	}
+	for _, name := range parentManagedFiles {
+		if bytes.Contains(line, []byte(name)) {
+			return true
+		}
+	}
+	return bytes.Contains(line, []byte(ParentTasksDir))
+}
+
+func parentManagedPathTouched(path string) bool {
+	segment, _, _ := strings.Cut(path, "/")
+	for _, name := range parentManagedFiles {
+		if segment == name {
+			return true
+		}
+	}
+	return segment == ParentTasksDir
 }
 
 func ParentExcludePathspecs() []string {

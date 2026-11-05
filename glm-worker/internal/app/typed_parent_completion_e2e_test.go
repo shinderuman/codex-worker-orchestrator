@@ -32,17 +32,16 @@ type typedCompletionRunner struct {
 	workerRounds int
 }
 
-func typedCompletionScenarios() []struct {
+type typedCompletionScenario struct {
 	name         string
 	sourceChange bool
 	interrupt    bool
-} {
-	return []struct {
-		name         string
-		sourceChange bool
-		interrupt    bool
-	}{
-		{name: "no-code"},
+	fullProcess  bool
+}
+
+func typedCompletionScenarios() []typedCompletionScenario {
+	return []typedCompletionScenario{
+		{name: "no-code", fullProcess: true},
 		{name: "no-code-publication-reentry", interrupt: true},
 		{name: "runtime-change", sourceChange: true},
 		{name: "runtime-change-publication-reentry", sourceChange: true, interrupt: true},
@@ -50,6 +49,9 @@ func typedCompletionScenarios() []struct {
 }
 
 func appFixtureCostTarget(t *testing.T) bool {
+	if os.Getenv(isolatedScenarioEnv) != "" {
+		return true
+	}
 	for _, name := range []string{
 		"TestTypedParentCompletionWorkflowThroughProductionBoundary",
 		"TestParentOnlyTaskCompletionThroughProductionBoundary",
@@ -79,20 +81,27 @@ func runMeasuredCompletionFixtureGit(t *testing.T, repo string, args ...string) 
 }
 
 func TestTypedParentCompletionWorkflowThroughProductionBoundary(t *testing.T) {
-	binary := typedCompletionWorkerBinary(t)
+	t.Parallel()
 	for _, scenario := range typedCompletionScenarios() {
 		t.Run(scenario.name, func(t *testing.T) {
-			started := time.Now()
-			cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange)
-			logAppFixturePhase(t, "typed/fixture", started)
-			started = time.Now()
-			driveTypedCompletionToStart(t, cfg, goShim, scenario.sourceChange, scenario.interrupt)
-			logAppFixturePhase(t, "typed/production-cli", started)
-			started = time.Now()
-			assertTypedCompletionTerminalState(t, cfg, runtime)
-			logAppFixturePhase(t, "typed/terminal-assertions", started)
+			t.Parallel()
+			runIsolatedScenario(t, isolatedScenarioKeyTypedCompletion, scenario.name)
 		})
 	}
+}
+
+func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario) {
+	t.Helper()
+	binary := typedCompletionWorkerBinary(t)
+	started := time.Now()
+	cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange)
+	logAppFixturePhase(t, "typed/fixture", started)
+	started = time.Now()
+	driveTypedCompletionToStart(t, cfg, goShim, scenario.sourceChange, scenario.interrupt, scenario.fullProcess)
+	logAppFixturePhase(t, "typed/production-cli", started)
+	started = time.Now()
+	assertTypedCompletionTerminalState(t, cfg, runtime)
+	logAppFixturePhase(t, "typed/terminal-assertions", started)
 }
 
 func typedCompletionWorkerBinary(t *testing.T) string {
@@ -178,7 +187,54 @@ func runTypedParentActionCLI(t *testing.T, cfg config.AppConfig, args ...string)
 	return code, stdout.String(), stderr.String()
 }
 
-func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim string, requireInstall, interrupt bool) {
+func runParentActionCLIInProcess(t *testing.T, cfg config.AppConfig, args ...string) (int, string, string) {
+	t.Helper()
+	workerDir := writeRetirementCLIShimDir(t)
+	if worker, err := exec.LookPath("glm-worker"); err == nil {
+		workerDir = filepath.Dir(worker)
+	}
+	previousDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(cfg.RepoRoot); err != nil {
+		t.Fatal(err)
+	}
+	savedEnv := os.Environ()
+	defer func() {
+		restoreErr := applyProcessEnvironment(savedEnv)
+		dirErr := os.Chdir(previousDir)
+		if restoreErr != nil || dirErr != nil {
+			t.Fatalf("in-process parent action環境の復元に失敗: %v %v", restoreErr, dirErr)
+		}
+	}()
+	if err := applyProcessEnvironment(parentActionChildEnv(t, cfg, workerDir)); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	started := time.Now()
+	code := parentactioncmd.Run(args, &stdout, &stderr)
+	if appFixtureCostTarget(t) {
+		t.Logf("app-fixture-cost kind=cli-inprocess args=%q elapsed=%s exit=%d", args, time.Since(started), code)
+	}
+	return code, stdout.String(), stderr.String()
+}
+
+func applyProcessEnvironment(env []string) error {
+	os.Clearenv()
+	for _, item := range env {
+		name, value, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		if err := os.Setenv(name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim string, requireInstall, interrupt, fullProcess bool) {
 	t.Helper()
 	for step := 0; step < 12; step++ {
 		handoff := executeParentHandoff(t, cfg)
@@ -190,7 +246,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 		}
 		switch *handoff.RequiredAction {
 		case controllerPublicationSurface:
-			runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, requireInstall, interrupt)
+			runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, requireInstall, interrupt, !fullProcess)
 			interrupt = false
 		case "finalize-check":
 			runTypedFinalValidationStep(t, cfg, goShim, handoff.RequiredActionParameters)
@@ -199,7 +255,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 			if recovered == "" {
 				t.Fatalf("recovery handoff lost its typed command: %#v", handoff)
 			}
-			exit, output, diagnostics := runTypedParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+			exit, output, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", controllerExecutionSurface)
 			if exit != 0 {
 				t.Fatal(diagnostics)
 			}
@@ -213,7 +269,11 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 			if len(prepared.Slots) != 0 {
 				t.Fatalf("mechanical recovery requested semantic inputs: %#v", prepared.Slots)
 			}
-			if code, _, diagnostics := runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...); code != 0 {
+			if fullProcess {
+				if code, _, diagnostics := runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...); code != 0 {
+					t.Fatal(diagnostics)
+				}
+			} else if code, _, diagnostics := runParentActionCLIInProcess(t, cfg, prepared.NextCommand[1:]...); code != 0 {
 				t.Fatal(diagnostics)
 			}
 		case canonicalStartAction:
@@ -225,7 +285,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 	t.Fatal("typed completion did not converge to the successor start boundary")
 }
 
-func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt bool) {
+func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt, executeInProcess bool) {
 	t.Helper()
 	var command controller.PublicationParentCommand
 	if err := json.Unmarshal([]byte(parameters["controller_command_json"]), &command); err != nil {
@@ -235,7 +295,13 @@ func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[
 		interruptTypedPublication(t, cfg, parameters, requireInstall)
 		return
 	}
-	exit, output, diagnostics := runTypedPublicationCLI(t, cfg, parameters, typedSemanticSlotValues(t, parameters, requireInstall))
+	var exit int
+	var output, diagnostics string
+	if executeInProcess {
+		exit, output, diagnostics = runTypedPublicationInProcessCLI(t, cfg, parameters, typedSemanticSlotValues(t, parameters, requireInstall))
+	} else {
+		exit, output, diagnostics = runTypedPublicationStagedCLI(t, cfg, parameters, typedSemanticSlotValues(t, parameters, requireInstall))
+	}
 	if exit != 0 {
 		t.Fatalf("execute typed publication %s: %s", command.Action, diagnostics)
 	}
@@ -278,7 +344,28 @@ func interruptTypedPublication(t *testing.T, cfg config.AppConfig, parameters ma
 
 func runTypedPublicationCLI(t *testing.T, cfg config.AppConfig, parameters map[string]string, semantic map[string]string, prepareOptions ...string) (int, string, string) {
 	t.Helper()
-	exit, output, diagnostics := runTypedParentActionCLI(t, cfg, append([]string{"prepare", controllerPublicationSurface}, prepareOptions...)...)
+	return runTypedPublicationStaging(t, cfg, parameters, semantic, false, false, prepareOptions...)
+}
+
+func runTypedPublicationStagedCLI(t *testing.T, cfg config.AppConfig, parameters map[string]string, semantic map[string]string, prepareOptions ...string) (int, string, string) {
+	t.Helper()
+	return runTypedPublicationStaging(t, cfg, parameters, semantic, true, false, prepareOptions...)
+}
+
+func runTypedPublicationInProcessCLI(t *testing.T, cfg config.AppConfig, parameters map[string]string, semantic map[string]string, prepareOptions ...string) (int, string, string) {
+	t.Helper()
+	return runTypedPublicationStaging(t, cfg, parameters, semantic, true, true, prepareOptions...)
+}
+
+func runTypedPublicationStaging(t *testing.T, cfg config.AppConfig, parameters map[string]string, semantic map[string]string, prepareInProcess, executeInProcess bool, prepareOptions ...string) (int, string, string) {
+	t.Helper()
+	var exit int
+	var output, diagnostics string
+	if prepareInProcess {
+		exit, output, diagnostics = runParentActionCLIInProcess(t, cfg, append([]string{"prepare", controllerPublicationSurface}, prepareOptions...)...)
+	} else {
+		exit, output, diagnostics = runTypedParentActionCLI(t, cfg, append([]string{"prepare", controllerPublicationSurface}, prepareOptions...)...)
+	}
 	if exit != 0 {
 		t.Fatalf("prepare typed publication: %s", diagnostics)
 	}
@@ -310,6 +397,9 @@ func runTypedPublicationCLI(t *testing.T, cfg config.AppConfig, parameters map[s
 	}
 	if err := os.WriteFile(prepared.Path, []byte(staged), 0600); err != nil {
 		t.Fatal(err)
+	}
+	if executeInProcess {
+		return runParentActionCLIInProcess(t, cfg, prepared.NextCommand[1:]...)
 	}
 	return runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
 }

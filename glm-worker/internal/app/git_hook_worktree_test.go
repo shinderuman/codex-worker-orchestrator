@@ -77,6 +77,11 @@ func metadataHookLiveLane(t *testing.T, alternate string) (config.AppConfig, str
 }
 
 func TestMetadataCommitHookKeepsPrimaryIndexOutOfLiveLane(t *testing.T) {
+	t.Parallel()
+	runIsolatedScenario(t, isolatedScenarioKeyMetadataCommitHook, "default")
+}
+
+func metadataCommitHookBody(t *testing.T) {
 	for _, alternate := range []string{"relative", "absolute", "alternate", "unpinned"} {
 		t.Run(alternate, func(t *testing.T) {
 			cfg, laneRoot, other, env := metadataHookLiveLane(t, alternate)

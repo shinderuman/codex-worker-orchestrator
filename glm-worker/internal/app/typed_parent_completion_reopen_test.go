@@ -41,7 +41,7 @@ func TestTypedCompletionCanRejectAfterAcceptWithoutCreatingCandidate(t *testing.
 	if code, _, _ := runTypedParentActionCLI(t, cfg, append(spec.PrepareCommand[1:], "--operation", "publish")...); code == 0 {
 		t.Fatal("prepare selected a publication operation outside the live acceptance boundary")
 	}
-	code, result, diagnostics := runTypedPublicationCLI(t, cfg, machine.RequiredActionParameters, map[string]string{"message": "parent rejects before candidate fixation"}, "--operation", controller.PublicationOperationReopen)
+	code, result, diagnostics := runTypedPublicationInProcessCLI(t, cfg, machine.RequiredActionParameters, map[string]string{"message": "parent rejects before candidate fixation"}, "--operation", controller.PublicationOperationReopen)
 	if code != 0 {
 		t.Fatal(diagnostics)
 	}

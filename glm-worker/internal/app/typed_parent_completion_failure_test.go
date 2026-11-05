@@ -47,7 +47,7 @@ func typedCompletionFailureFixture(t *testing.T, native bool) typedCompletionFai
 		}
 	}
 	handoff := executeParentHandoff(t, cfg)
-	code, output, diagnostics := runTypedPublicationCLI(t, cfg, handoff.RequiredActionParameters, typedSemanticSlotValues(t, handoff.RequiredActionParameters, true))
+	code, output, diagnostics := runTypedPublicationStagedCLI(t, cfg, handoff.RequiredActionParameters, typedSemanticSlotValues(t, handoff.RequiredActionParameters, true))
 	store, err := controller.Open(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -64,61 +64,68 @@ func typedCompletionFailureFixture(t *testing.T, native bool) typedCompletionFai
 }
 
 func TestTypedCompletionRetriesFixedSource(t *testing.T) {
+	t.Parallel()
 	for _, native := range []bool{false, true} {
 		t.Run(fmt.Sprintf("native-install-%t", native), func(t *testing.T) {
-			f := typedCompletionFailureFixture(t, native)
-			if native && f.code == 0 {
-				t.Fatal("native install failure was not returned")
-			}
-			if !native {
-				if f.code != 0 {
-					t.Fatal(f.diagnostics)
-				}
-				var result struct {
-					Terminal struct {
-						Status string `json:"status"`
-					} `json:"terminal"`
-				}
-				if err := json.Unmarshal([]byte(f.output), &result); err != nil {
-					t.Fatal(err)
-				}
-				if result.Terminal.Status != "blocked" {
-					t.Fatal("failed validation was treated as complete")
-				}
-			}
-			head, err := f.store.LoadHead()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if f.candidate.BundleCheckRef != nil || head.IntegrationTip != f.candidate.BaseOID {
-				t.Fatal("failure froze a Bundle or promoted the candidate")
-			}
-			var command controller.PublicationParentCommand
-			if err := json.Unmarshal([]byte(f.handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil {
-				t.Fatal(err)
-			}
-			expected := controller.PublicationOperationValidationFailure
-			if native {
-				expected = controller.PublicationOperationInstall
-			}
-			if command.Action != expected || command.CandidateID != f.candidate.CandidateID || command.SourceOID != f.candidate.CommitOID {
-				t.Fatal("failure has no source-bound typed disposition")
-			}
-			if err := os.Remove(f.flag); err != nil {
-				t.Fatal(err)
-			}
-			if code, _, diagnostic := runTypedPublicationCLI(t, f.cfg, f.handoff.RequiredActionParameters, map[string]string{"failure_disposition": "retry"}); code != 0 {
-				t.Fatal(diagnostic)
-			}
-			assertTypedCompletionTerminalState(t, f.cfg, f.runtime)
-			head, err = f.store.LoadHead()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if head.IntegrationTip != f.candidate.CommitOID {
-				t.Fatal("retry replaced the fixed candidate")
-			}
+			t.Parallel()
+			runIsolatedScenario(t, isolatedScenarioKeyTypedRetries, fmt.Sprintf("%t", native))
 		})
+	}
+}
+
+func typedCompletionRetryScenarioBody(t *testing.T, native bool) {
+	t.Helper()
+	f := typedCompletionFailureFixture(t, native)
+	if native && f.code == 0 {
+		t.Fatal("native install failure was not returned")
+	}
+	if !native {
+		if f.code != 0 {
+			t.Fatal(f.diagnostics)
+		}
+		var result struct {
+			Terminal struct {
+				Status string `json:"status"`
+			} `json:"terminal"`
+		}
+		if err := json.Unmarshal([]byte(f.output), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Terminal.Status != "blocked" {
+			t.Fatal("failed validation was treated as complete")
+		}
+	}
+	head, err := f.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.candidate.BundleCheckRef != nil || head.IntegrationTip != f.candidate.BaseOID {
+		t.Fatal("failure froze a Bundle or promoted the candidate")
+	}
+	var command controller.PublicationParentCommand
+	if err := json.Unmarshal([]byte(f.handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil {
+		t.Fatal(err)
+	}
+	expected := controller.PublicationOperationValidationFailure
+	if native {
+		expected = controller.PublicationOperationInstall
+	}
+	if command.Action != expected || command.CandidateID != f.candidate.CandidateID || command.SourceOID != f.candidate.CommitOID {
+		t.Fatal("failure has no source-bound typed disposition")
+	}
+	if err := os.Remove(f.flag); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, diagnostic := runTypedPublicationInProcessCLI(t, f.cfg, f.handoff.RequiredActionParameters, map[string]string{"failure_disposition": "retry"}); code != 0 {
+		t.Fatal(diagnostic)
+	}
+	assertTypedCompletionTerminalState(t, f.cfg, f.runtime)
+	head, err = f.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.IntegrationTip != f.candidate.CommitOID {
+		t.Fatal("retry replaced the fixed candidate")
 	}
 }
 
@@ -134,7 +141,7 @@ func TestTypedCompletionReentersWithoutOldProof(t *testing.T) {
 	if command.Action != controller.PublicationOperationValidationFailure || command.SourceOID != f.candidate.CommitOID {
 		t.Fatal("validation failure lost its candidate source")
 	}
-	if code, _, diagnostic := runTypedPublicationCLI(t, f.cfg, f.handoff.RequiredActionParameters, map[string]string{"failure_disposition": "reenter"}); code != 0 {
+	if code, _, diagnostic := runTypedPublicationInProcessCLI(t, f.cfg, f.handoff.RequiredActionParameters, map[string]string{"failure_disposition": "reenter"}); code != 0 {
 		t.Fatal(diagnostic)
 	}
 	head, err := f.store.LoadHead()

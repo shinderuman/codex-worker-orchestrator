@@ -182,6 +182,11 @@ func TestMetadataPullRebindRebindsSourceAndInvalidatesEvidence(t *testing.T) {
 }
 
 func TestReboundCandidatePublishesOnceOnPulledSource(t *testing.T) {
+	t.Parallel()
+	runIsolatedScenario(t, isolatedScenarioKeyReboundCandidatePublish, "default")
+}
+
+func reboundCandidatePublishBody(t *testing.T) {
 	f := candidateBehindMetadataPull(t)
 	rebindStaleCandidateThroughStagedAction(t, f.cfg)
 	driveReboundExecutionSteps(t, f.cfg, f.store)
@@ -241,7 +246,7 @@ func publishFreshRoundOnceOnPulledSource(t *testing.T, cfg config.AppConfig, scr
 	if completionCommand.Action != controller.PublicationOperationAccept {
 		t.Fatalf("fresh completion action: %#v", completionCommand)
 	}
-	runTypedPublicationStep(t, freshCfg, completionHandoff.RequiredActionParameters, true, false)
+	runTypedPublicationStep(t, freshCfg, completionHandoff.RequiredActionParameters, true, false, true)
 	assertTypedCompletionTerminalState(t, freshCfg, freshState)
 	published, err := store.LoadHead()
 	if err != nil {
@@ -284,7 +289,7 @@ func awaitingAdmissionBehindPull(t *testing.T) pulledAdmissionFixture {
 	return pulledAdmissionFixture{cfg: cfg, runtime: runtime, scripted: scripted, store: store, policy: policy, tip: tip}
 }
 
-func adoptPulledAdvancementThroughStagedAction(t *testing.T, f pulledAdmissionFixture) {
+func adoptPulledAdvancementThroughStagedAction(t *testing.T, f pulledAdmissionFixture, executeInProcess bool) {
 	t.Helper()
 	handoff := executeParentHandoff(t, f.cfg)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
@@ -297,7 +302,11 @@ func adoptPulledAdvancementThroughStagedAction(t *testing.T, f pulledAdmissionFi
 	if command.Action != controller.PublicationOperationAdoptMutable {
 		t.Fatalf("pulled admission advertised %q instead of the typed adopt-mutable", command.Action)
 	}
-	executeStagedParentAction(t, f.cfg, handoff.RequiredActionParameters["controller_command_json"])
+	if executeInProcess {
+		executeStagedParentAction(t, f.cfg, handoff.RequiredActionParameters["controller_command_json"])
+	} else {
+		executeStagedParentActionThroughChild(t, f.cfg, handoff.RequiredActionParameters["controller_command_json"])
+	}
 	head, err := f.store.LoadHead()
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +321,7 @@ func adoptPulledAdvancementThroughStagedAction(t *testing.T, f pulledAdmissionFi
 
 func TestAwaitingAdmissionPullExecutesStagedAdoptMutable(t *testing.T) {
 	f := awaitingAdmissionBehindPull(t)
-	adoptPulledAdvancementThroughStagedAction(t, f)
+	adoptPulledAdvancementThroughStagedAction(t, f, false)
 	resume := executeParentHandoff(t, f.cfg)
 	if !resume.Consistent || resume.RequiredAction == nil || *resume.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("post-adoption handoff lost the execution resume surface: %v %#v", stringPointerValue(resume.Inconsistency), resume)
@@ -324,8 +333,13 @@ func TestAwaitingAdmissionPullExecutesStagedAdoptMutable(t *testing.T) {
 }
 
 func TestAdoptedAdmissionPublishesOnceOnPulledSource(t *testing.T) {
+	t.Parallel()
+	runIsolatedScenario(t, isolatedScenarioKeyAdoptedAdmissionPublish, "default")
+}
+
+func adoptedAdmissionPublishBody(t *testing.T) {
 	f := awaitingAdmissionBehindPull(t)
-	adoptPulledAdvancementThroughStagedAction(t, f)
+	adoptPulledAdvancementThroughStagedAction(t, f, true)
 	driveReboundExecutionSteps(t, f.cfg, f.store)
 	if f.runtime.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("adopted advancement did not reopen the runtime review: %s", f.runtime.TaskStatus())
@@ -349,7 +363,7 @@ func advanceRemoteBeyondPulledPrimary(t *testing.T, primary string, policy contr
 
 func prepareStagedPublication(t *testing.T, cfg config.AppConfig) (string, controllerPublicationCommand) {
 	t.Helper()
-	exit, output, diagnostics := runParentActionCLI(t, cfg, "prepare", controllerPublicationSurface)
+	exit, output, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", controllerPublicationSurface)
 	if exit != 0 {
 		t.Fatalf("prepare staged parent action: %s", diagnostics)
 	}
@@ -427,7 +441,7 @@ func TestRemoteAheadAdvancementHandoffFailsClosedUntilSynced(t *testing.T) {
 	if blocked.Inconsistency == nil || !strings.Contains(*blocked.Inconsistency, "does not match the configured remote tip") {
 		t.Fatalf("remote-ahead handoff lost the refusal cause: %v", stringPointerValue(blocked.Inconsistency))
 	}
-	exit, _, diagnostics = runParentActionCLI(t, f.cfg, "prepare", controllerPublicationSurface)
+	exit, _, diagnostics = runParentActionCLIInProcess(t, f.cfg, "prepare", controllerPublicationSurface)
 	if exit == 0 || !strings.Contains(diagnostics, "does not match the configured remote tip") {
 		t.Fatalf("remote-ahead preparation did not fail closed with its cause: %s", diagnostics)
 	}
@@ -441,7 +455,7 @@ func TestRemoteAheadAdvancementHandoffFailsClosedUntilSynced(t *testing.T) {
 	if !resynced.Consistent || resynced.RequiredAction == nil || *resynced.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("resynchronized handoff: %v %#v", stringPointerValue(resynced.Inconsistency), resynced)
 	}
-	executeStagedParentAction(t, f.cfg, resynced.RequiredActionParameters["controller_command_json"])
+	executeStagedParentActionThroughChild(t, f.cfg, resynced.RequiredActionParameters["controller_command_json"])
 	adopted, err := f.store.LoadHead()
 	if err != nil || adopted.IntegrationTip != raced || adopted.LiveLeaseID != "" || adopted.AcceptedCandidateRef != nil || adopted.PendingTransitionID != "" {
 		t.Fatalf("resynchronized adopt-mutable did not converge on the remote tip: %v %#v", err, adopted)

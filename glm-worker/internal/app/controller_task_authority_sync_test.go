@@ -152,7 +152,7 @@ func TestTaskAuthoritySyncHandoffGuidesAndRevisesLiveLaneContract(t *testing.T) 
 	if primaryHead.ID != command.SourceSnapshotID {
 		t.Fatal("sync guidance did not observe the current primary snapshot")
 	}
-	executeStagedControllerAction(t, f.cfg, controllerExecutionSurface, payload)
+	executeStagedControllerAction(t, f.cfg, controllerExecutionSurface, payload, true)
 
 	head, err := f.store.LoadHead()
 	if err != nil {

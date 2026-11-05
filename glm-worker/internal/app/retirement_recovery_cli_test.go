@@ -170,7 +170,7 @@ func interruptCompletionBeforePush(t *testing.T, cfg config.AppConfig, store *co
 
 func runStagedRetirementRecovery(t *testing.T, cfg config.AppConfig, command string) (int, string) {
 	t.Helper()
-	exit, out, diagnostics := runParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+	exit, out, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", controllerExecutionSurface)
 	if exit != 0 {
 		t.Fatalf("prepare recovery: exit=%d %s", exit, diagnostics)
 	}

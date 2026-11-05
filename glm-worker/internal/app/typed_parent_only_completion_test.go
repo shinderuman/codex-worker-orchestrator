@@ -27,131 +27,185 @@ type parentOnlyWorkflowTasks struct {
 	successor string
 }
 
-func TestParentOnlyTaskCompletionThroughProductionBoundary(t *testing.T) {
-	scenarios := []struct {
-		name         string
-		sourceChange bool
-		interrupt    bool
-	}{
-		{name: "metadata-only"},
+type parentOnlyCompletionScenario struct {
+	name         string
+	sourceChange bool
+	interrupt    bool
+	fullProcess  bool
+}
+
+func parentOnlyCompletionScenarios() []parentOnlyCompletionScenario {
+	return []parentOnlyCompletionScenario{
+		{name: "metadata-only", fullProcess: true},
 		{name: "declared-validation", sourceChange: true},
 		{name: "publication-recovery", sourceChange: true, interrupt: true},
 	}
-	for _, scenario := range scenarios {
+}
+
+func TestParentOnlyTaskCompletionThroughProductionBoundary(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range parentOnlyCompletionScenarios() {
 		t.Run(scenario.name, func(t *testing.T) {
-			started := time.Now()
-			cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, scenario.sourceChange)
-			logAppFixturePhase(t, "parent-only/fixture", started)
-			started = time.Now()
-			handoff := executeParentHandoff(t, cfg)
-			if handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
-				t.Fatalf("parent-only materialization handoff: %#v", handoff)
-			}
-			runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters)
-			head, err := store.LoadHead()
-			if err != nil || head.ExecutionTaskRef == nil || head.ExecutionTaskRef.TaskPath != tasks.parent {
-				t.Fatalf("parent-only export target: %v", err)
-			}
-			assertParentOnlyEvidenceExport(t, cfg, store, head.LiveAttemptID, true)
-			driveParentOnlyCompletion(t, cfg, goShim, scenario.sourceChange, scenario.interrupt)
-			logAppFixturePhase(t, "parent-only/production-cli", started)
-			started = time.Now()
-			assertParentOnlyTerminalState(t, cfg, store, policy, tasks, scenario.sourceChange)
-			assertParentOnlyEvidenceExport(t, cfg, store, head.LiveAttemptID, false)
-			logAppFixturePhase(t, "parent-only/terminal-assertions", started)
+			t.Parallel()
+			runIsolatedScenario(t, isolatedScenarioKeyParentOnlyCompletion, scenario.name)
 		})
 	}
 }
 
+func parentOnlyCompletionScenarioBody(t *testing.T, scenario parentOnlyCompletionScenario) {
+	t.Helper()
+	started := time.Now()
+	cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, scenario.sourceChange)
+	logAppFixturePhase(t, "parent-only/fixture", started)
+	started = time.Now()
+	handoff := executeParentHandoff(t, cfg)
+	if handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("parent-only materialization handoff: %#v", handoff)
+	}
+	runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters, scenario.fullProcess)
+	head, err := store.LoadHead()
+	if err != nil || head.ExecutionTaskRef == nil || head.ExecutionTaskRef.TaskPath != tasks.parent {
+		t.Fatalf("parent-only export target: %v", err)
+	}
+	assertParentOnlyEvidenceExport(t, cfg, store, head.LiveAttemptID, true)
+	driveParentOnlyCompletion(t, cfg, goShim, scenario.sourceChange, scenario.interrupt, scenario.fullProcess)
+	logAppFixturePhase(t, "parent-only/production-cli", started)
+	started = time.Now()
+	assertParentOnlyTerminalState(t, cfg, store, policy, tasks, scenario.sourceChange)
+	assertParentOnlyEvidenceExport(t, cfg, store, head.LiveAttemptID, false)
+	logAppFixturePhase(t, "parent-only/terminal-assertions", started)
+}
+
 func TestParentOnlyReentryThroughProductionBoundary(t *testing.T) {
+	t.Parallel()
 	for _, route := range []string{"reenter", "parent-source-rebind"} {
 		t.Run(route, func(t *testing.T) {
-			failFlag := filepath.Join(t.TempDir(), "fail-final-gate")
-			if err := os.WriteFile(failFlag, []byte("fail\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			started := time.Now()
-			cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, true, failFlag)
-			logAppFixturePhase(t, "parent-only-reentry/fixture", started)
-			started = time.Now()
-			acceptParentOnlyThroughProductionBoundary(t, cfg)
-			logAppFixturePhase(t, "parent-only-reentry/accept-and-failed-gate", started)
-
-			head, err := store.LoadHead()
-			if err != nil || head.AcceptedCandidateRef == nil {
-				t.Fatalf("parent-only candidate missing: %v", err)
-			}
-			candidate, err := store.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
-			if err != nil {
-				t.Fatal(err)
-			}
-			handoff := executeParentHandoff(t, cfg)
-			commandJSON := handoff.RequiredActionParameters["controller_command_json"]
-			if commandJSON == "" {
-				t.Fatalf("parent-only failed-gate handoff omitted a controller command: %#v", handoff)
-			}
-			var failure controller.PublicationParentCommand
-			if err := json.Unmarshal([]byte(commandJSON), &failure); err != nil {
-				t.Fatal(err)
-			}
-			if failure.Action != controller.PublicationOperationValidationFailure {
-				t.Fatalf("failed parent-only gate did not advertise failure disposition: %#v", failure)
-			}
-			if exit, _, diagnostics := runTypedPublicationCLI(t, cfg, handoff.RequiredActionParameters, map[string]string{"failure_disposition": "reenter"}); exit != 0 {
-				t.Fatalf("parent-only gate failure reentry: %s", diagnostics)
-			}
-			if err := os.Remove(failFlag); err != nil {
-				t.Fatal(err)
-			}
-			if route == "parent-source-rebind" {
-				writeAppTestFile(t, cfg.RepoRoot, "evaluation-result.md", "corrected parent evaluation product\n")
-				snapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
-				if err != nil {
-					t.Fatal(err)
-				}
-				head, err := store.LoadHead()
-				if err != nil {
-					t.Fatal(err)
-				}
-				payload := map[string]any{"action": "rebind-parent-source", "expected_generation": head.ControllerGeneration, "candidate_id": candidate.CandidateID, "source_snapshot_id": snapshot.ID}
-				data, err := json.Marshal(payload)
-				if err != nil {
-					t.Fatal(err)
-				}
-				var output bytes.Buffer
-				handled, err := runControllerOperations([]string{"--authority", controllerExecutionSurface}, func() (config.AppConfig, error) { return cfg, nil }, strings.NewReader(string(data)), &output)
-				if !handled || err != nil {
-					t.Fatalf("native parent source rebind: %v", err)
-				}
-			}
-			materialize := executeParentHandoff(t, cfg)
-			runParentOnlyExecutionStep(t, cfg, materialize.RequiredActionParameters)
-			bound, err := controller.WorkflowConfig(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			smokeStore := state.AttachStateStore(bound)
-			currentID, err := smokeStore.Read("task.id")
-			if err != nil || currentID == "" || currentID == candidate.AttemptID {
-				t.Fatalf("reentry smoke identity: %q err=%v", currentID, err)
-			}
-			if err := smokeStore.Write("task.id", candidate.AttemptID); err != nil {
-				t.Fatal(err)
-			}
-			stale := executeParentHandoff(t, cfg)
-			if stale.Consistent || stale.Inconsistency == nil {
-				t.Fatalf("predecessor smoke identity accepted: %#v", stale)
-			}
-			if err := smokeStore.Write("task.id", currentID); err != nil {
-				t.Fatal(err)
-			}
-			started = time.Now()
-			driveParentOnlyCompletion(t, cfg, goShim, true, false)
-			logAppFixturePhase(t, "parent-only-reentry/production-cli", started)
-			started = time.Now()
-			assertParentOnlyTerminalState(t, cfg, store, policy, tasks, true)
-			logAppFixturePhase(t, "parent-only-reentry/terminal-assertions", started)
+			t.Parallel()
+			runIsolatedScenario(t, isolatedScenarioKeyParentOnlyReentry, route)
 		})
+	}
+}
+
+func parentOnlyReentryRouteBody(t *testing.T, route string) {
+	t.Helper()
+	decomposed := route != "reenter"
+	failFlag := filepath.Join(t.TempDir(), "fail-final-gate")
+	if err := os.WriteFile(failFlag, []byte("fail\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, true, failFlag)
+	logAppFixturePhase(t, "parent-only-reentry/fixture", started)
+	started = time.Now()
+	acceptParentOnlyThroughProductionBoundary(t, cfg, decomposed)
+	logAppFixturePhase(t, "parent-only-reentry/accept-and-failed-gate", started)
+
+	candidate := parentOnlyReentryCandidate(t, store)
+	handoff := executeParentHandoff(t, cfg)
+	assertParentOnlyFailedGateHandoff(t, handoff)
+	reenterParentOnlyFailedGate(t, cfg, handoff, decomposed, failFlag)
+	if route == "parent-source-rebind" {
+		rebindParentSourceThroughNativeOperations(t, cfg, store, candidate)
+	}
+	assertParentOnlyReentryMaterialization(t, cfg, candidate, decomposed)
+	started = time.Now()
+	driveParentOnlyCompletion(t, cfg, goShim, true, false, !decomposed)
+	logAppFixturePhase(t, "parent-only-reentry/production-cli", started)
+	started = time.Now()
+	assertParentOnlyTerminalState(t, cfg, store, policy, tasks, true)
+	logAppFixturePhase(t, "parent-only-reentry/terminal-assertions", started)
+}
+
+func parentOnlyReentryCandidate(t *testing.T, store *controller.Store) controller.AcceptedCandidate {
+	t.Helper()
+	head, err := store.LoadHead()
+	if err != nil || head.AcceptedCandidateRef == nil {
+		t.Fatalf("parent-only candidate missing: %v", err)
+	}
+	candidate, err := store.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return candidate
+}
+
+func assertParentOnlyFailedGateHandoff(t *testing.T, handoff parentHandoffOutput) {
+	t.Helper()
+	commandJSON := handoff.RequiredActionParameters["controller_command_json"]
+	if commandJSON == "" {
+		t.Fatalf("parent-only failed-gate handoff omitted a controller command: %#v", handoff)
+	}
+	var failure controller.PublicationParentCommand
+	if err := json.Unmarshal([]byte(commandJSON), &failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Action != controller.PublicationOperationValidationFailure {
+		t.Fatalf("failed parent-only gate did not advertise failure disposition: %#v", failure)
+	}
+}
+
+func reenterParentOnlyFailedGate(t *testing.T, cfg config.AppConfig, handoff parentHandoffOutput, decomposed bool, failFlag string) {
+	t.Helper()
+	var exit int
+	var diagnostics string
+	if decomposed {
+		exit, _, diagnostics = runTypedPublicationInProcessCLI(t, cfg, handoff.RequiredActionParameters, map[string]string{"failure_disposition": "reenter"})
+	} else {
+		exit, _, diagnostics = runTypedPublicationStagedCLI(t, cfg, handoff.RequiredActionParameters, map[string]string{"failure_disposition": "reenter"})
+	}
+	if exit != 0 {
+		t.Fatalf("parent-only gate failure reentry: %s", diagnostics)
+	}
+	if err := os.Remove(failFlag); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func rebindParentSourceThroughNativeOperations(t *testing.T, cfg config.AppConfig, store *controller.Store, candidate controller.AcceptedCandidate) {
+	t.Helper()
+	writeAppTestFile(t, cfg.RepoRoot, "evaluation-result.md", "corrected parent evaluation product\n")
+	snapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{"action": "rebind-parent-source", "expected_generation": head.ControllerGeneration, "candidate_id": candidate.CandidateID, "source_snapshot_id": snapshot.ID}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	handled, err := runControllerOperations([]string{"--authority", controllerExecutionSurface}, func() (config.AppConfig, error) { return cfg, nil }, strings.NewReader(string(data)), &output)
+	if !handled || err != nil {
+		t.Fatalf("native parent source rebind: %v", err)
+	}
+}
+
+func assertParentOnlyReentryMaterialization(t *testing.T, cfg config.AppConfig, candidate controller.AcceptedCandidate, decomposed bool) {
+	t.Helper()
+	materialize := executeParentHandoff(t, cfg)
+	runParentOnlyExecutionStep(t, cfg, materialize.RequiredActionParameters, decomposed)
+	bound, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	smokeStore := state.AttachStateStore(bound)
+	currentID, err := smokeStore.Read("task.id")
+	if err != nil || currentID == "" || currentID == candidate.AttemptID {
+		t.Fatalf("reentry smoke identity: %q err=%v", currentID, err)
+	}
+	if err := smokeStore.Write("task.id", candidate.AttemptID); err != nil {
+		t.Fatal(err)
+	}
+	stale := executeParentHandoff(t, cfg)
+	if stale.Consistent || stale.Inconsistency == nil {
+		t.Fatalf("predecessor smoke identity accepted: %#v", stale)
+	}
+	if err := smokeStore.Write("task.id", currentID); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -161,7 +215,7 @@ func TestParentOnlyReviewStateIntegrity(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, _, _, _, _ := parentOnlyCompletionFixture(t, true, failFlag)
-	acceptParentOnlyThroughProductionBoundary(t, cfg)
+	acceptParentOnlyThroughProductionBoundary(t, cfg, true)
 	bound, err := controller.WorkflowConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +241,7 @@ func TestParentOnlyReviewStateIntegrity(t *testing.T) {
 	}
 }
 
-func acceptParentOnlyThroughProductionBoundary(t *testing.T, cfg config.AppConfig) {
+func acceptParentOnlyThroughProductionBoundary(t *testing.T, cfg config.AppConfig, executeInProcess bool) {
 	t.Helper()
 	for step := 0; step < 6; step++ {
 		handoff := executeParentHandoff(t, cfg)
@@ -196,14 +250,20 @@ func acceptParentOnlyThroughProductionBoundary(t *testing.T, cfg config.AppConfi
 		}
 		switch *handoff.RequiredAction {
 		case controllerExecutionSurface:
-			runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters)
+			runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters, executeInProcess)
 		case controllerPublicationSurface:
 			var command controller.PublicationParentCommand
 			if err := json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command); err != nil {
 				t.Fatal(err)
 			}
 			if command.Action == controller.PublicationOperationAccept {
-				exit, output, diagnostics := runTypedPublicationCLI(t, cfg, handoff.RequiredActionParameters, parentOnlySemanticSlots(t, handoff.RequiredActionParameters, true))
+				var exit int
+				var output, diagnostics string
+				if executeInProcess {
+					exit, output, diagnostics = runTypedPublicationInProcessCLI(t, cfg, handoff.RequiredActionParameters, parentOnlySemanticSlots(t, handoff.RequiredActionParameters, true))
+				} else {
+					exit, output, diagnostics = runTypedPublicationStagedCLI(t, cfg, handoff.RequiredActionParameters, parentOnlySemanticSlots(t, handoff.RequiredActionParameters, true))
+				}
 				if exit != 0 {
 					t.Fatalf("parent-only completion boundary: %s", diagnostics)
 				}
@@ -217,7 +277,7 @@ func acceptParentOnlyThroughProductionBoundary(t *testing.T, cfg config.AppConfi
 				}
 				return
 			}
-			runParentOnlyPublicationStep(t, cfg, handoff.RequiredActionParameters, true)
+			runParentOnlyPublicationStep(t, cfg, handoff.RequiredActionParameters, true, executeInProcess)
 		default:
 			t.Fatalf("unexpected parent-only acceptance action %q", *handoff.RequiredAction)
 		}
@@ -363,7 +423,7 @@ func prepareParentOnlyGoShim(t *testing.T, failFlags ...string) string {
 	return shim
 }
 
-func driveParentOnlyCompletion(t *testing.T, cfg config.AppConfig, goShim string, sourceChange, interrupt bool) {
+func driveParentOnlyCompletion(t *testing.T, cfg config.AppConfig, goShim string, sourceChange, interrupt, fullProcess bool) {
 	t.Helper()
 	for step := 0; step < 12; step++ {
 		handoff := executeParentHandoff(t, cfg)
@@ -375,14 +435,14 @@ func driveParentOnlyCompletion(t *testing.T, cfg config.AppConfig, goShim string
 		}
 		switch *handoff.RequiredAction {
 		case controllerExecutionSurface:
-			runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters)
+			runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters, !fullProcess)
 		case controllerPublicationSurface:
 			if interrupt {
 				interruptParentOnlyPublication(t, cfg, handoff.RequiredActionParameters, sourceChange)
 				interrupt = false
 				continue
 			}
-			runParentOnlyPublicationStep(t, cfg, handoff.RequiredActionParameters, sourceChange)
+			runParentOnlyPublicationStep(t, cfg, handoff.RequiredActionParameters, sourceChange, !fullProcess)
 		case controller.FinalValidationSurface:
 			runTypedFinalValidationStep(t, cfg, goShim, handoff.RequiredActionParameters)
 		case canonicalStartAction:
@@ -395,7 +455,7 @@ func driveParentOnlyCompletion(t *testing.T, cfg config.AppConfig, goShim string
 	t.Fatal("parent-only completion did not converge to the successor start boundary")
 }
 
-func runParentOnlyExecutionStep(t *testing.T, cfg config.AppConfig, parameters map[string]string) {
+func runParentOnlyExecutionStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, executeInProcess bool) {
 	t.Helper()
 	payload := parameters["controller_command_json"]
 	if payload == "" {
@@ -408,12 +468,12 @@ func runParentOnlyExecutionStep(t *testing.T, cfg config.AppConfig, parameters m
 	if command.Action != controller.PublicationOperationParentOnlyMaterialize && command.Action != "materialize" && command.Action != "cleanup" && command.Action != "recover" {
 		t.Fatalf("parent-only completion advertised unexpected execution action %q", command.Action)
 	}
-	executeParentOnlyControllerAction(t, cfg, payload)
+	executeParentOnlyControllerAction(t, cfg, payload, executeInProcess)
 }
 
-func executeParentOnlyControllerAction(t *testing.T, cfg config.AppConfig, payload string) {
+func executeParentOnlyControllerAction(t *testing.T, cfg config.AppConfig, payload string, executeInProcess bool) {
 	t.Helper()
-	exit, output, diagnostics := runTypedParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+	exit, output, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", controllerExecutionSurface)
 	if exit != 0 {
 		t.Fatalf("prepare parent-only controller action: %s", diagnostics)
 	}
@@ -435,7 +495,11 @@ func executeParentOnlyControllerAction(t *testing.T, cfg config.AppConfig, paylo
 	} else {
 		assertStagedPublicationTemplate(t, body, payload)
 	}
-	exit, output, diagnostics = runTypedParentActionCLI(t, cfg, controllerExecutionSurface, prepared.Token)
+	if executeInProcess {
+		exit, output, diagnostics = runParentActionCLIInProcess(t, cfg, controllerExecutionSurface, prepared.Token)
+	} else {
+		exit, output, diagnostics = runTypedParentActionCLI(t, cfg, controllerExecutionSurface, prepared.Token)
+	}
 	if exit == 0 {
 		return
 	}
@@ -466,13 +530,19 @@ func executeParentOnlyControllerAction(t *testing.T, cfg config.AppConfig, paylo
 	}
 }
 
-func runParentOnlyPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, sourceChange bool) {
+func runParentOnlyPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, sourceChange, executeInProcess bool) {
 	t.Helper()
 	var command controller.PublicationParentCommand
 	if err := json.Unmarshal([]byte(parameters["controller_command_json"]), &command); err != nil {
 		t.Fatal(err)
 	}
-	exit, output, diagnostics := runTypedPublicationCLI(t, cfg, parameters, parentOnlySemanticSlots(t, parameters, sourceChange))
+	var exit int
+	var output, diagnostics string
+	if executeInProcess {
+		exit, output, diagnostics = runTypedPublicationInProcessCLI(t, cfg, parameters, parentOnlySemanticSlots(t, parameters, sourceChange))
+	} else {
+		exit, output, diagnostics = runTypedPublicationStagedCLI(t, cfg, parameters, parentOnlySemanticSlots(t, parameters, sourceChange))
+	}
 	if exit != 0 {
 		t.Fatalf("execute parent-only publication %s: %s", command.Action, diagnostics)
 	}

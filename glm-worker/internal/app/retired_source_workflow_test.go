@@ -106,12 +106,17 @@ func mustCommandOutput(t *testing.T, repo string, args ...string) []byte {
 
 func executeStagedParentAction(t *testing.T, cfg config.AppConfig, payload string) {
 	t.Helper()
-	executeStagedControllerAction(t, cfg, controllerPublicationSurface, payload)
+	executeStagedControllerAction(t, cfg, controllerPublicationSurface, payload, true)
 }
 
-func executeStagedControllerAction(t *testing.T, cfg config.AppConfig, surface string, payload string) {
+func executeStagedParentActionThroughChild(t *testing.T, cfg config.AppConfig, payload string) {
 	t.Helper()
-	exit, output, diagnostics := runParentActionCLI(t, cfg, "prepare", surface)
+	executeStagedControllerAction(t, cfg, controllerPublicationSurface, payload, false)
+}
+
+func executeStagedControllerAction(t *testing.T, cfg config.AppConfig, surface string, payload string, executeInProcess bool) {
+	t.Helper()
+	exit, output, diagnostics := runParentActionCLIInProcess(t, cfg, "prepare", surface)
 	if exit != 0 {
 		t.Fatalf("prepare staged parent action: %s", diagnostics)
 	}
@@ -131,7 +136,11 @@ func executeStagedControllerAction(t *testing.T, cfg config.AppConfig, surface s
 	} else if err := os.WriteFile(prepared.Path, []byte(strings.Replace(string(body), "__GLM_PARENT_ACTION_PAYLOAD__", payload, 1)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	exit, _, diagnostics = runParentActionCLI(t, cfg, surface, prepared.Token)
+	if executeInProcess {
+		exit, _, diagnostics = runParentActionCLIInProcess(t, cfg, surface, prepared.Token)
+	} else {
+		exit, _, diagnostics = runParentActionCLI(t, cfg, surface, prepared.Token)
+	}
 	if exit != 0 {
 		t.Fatalf("execute staged parent action: %s", diagnostics)
 	}

@@ -34,6 +34,11 @@ type WorkspaceSnapshot struct {
 	RefDigest      string `json:"ref_digest"`
 }
 
+type workspaceGitPaths struct {
+	commonDir string
+	gitDir    string
+}
+
 func ResolveRepositoryIdentity(repoRoot string) (RepositoryIdentity, error) {
 	root, err := canonicalPath(repoRoot)
 	if err != nil {
@@ -63,31 +68,39 @@ func ResolveWorkspaceIdentity(repoRoot string, repository RepositoryIdentity) (W
 	if err != nil {
 		return WorkspaceIdentity{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
-	commonRaw, err := gitTrimmed(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	paths, err := resolveWorkspaceGitPaths(root)
 	if err != nil {
-		return WorkspaceIdentity{}, fmt.Errorf("resolve workspace common dir: %w", err)
+		return WorkspaceIdentity{}, err
 	}
-	commonDir, err := canonicalPath(commonRaw)
-	if err != nil {
-		return WorkspaceIdentity{}, fmt.Errorf("canonicalize workspace common dir: %w", err)
-	}
-	if digestStrings("git-common-lineage-v1", commonDir) != repository.LineageID {
+	if digestStrings("git-common-lineage-v1", paths.commonDir) != repository.LineageID {
 		return WorkspaceIdentity{}, fmt.Errorf("workspace belongs to a different repository lineage")
 	}
-	gitDirRaw, err := gitTrimmed(root, "rev-parse", "--path-format=absolute", "--git-dir")
-	if err != nil {
-		return WorkspaceIdentity{}, fmt.Errorf("resolve workspace git dir: %w", err)
-	}
-	gitDir, err := canonicalPath(gitDirRaw)
-	if err != nil {
-		return WorkspaceIdentity{}, fmt.Errorf("canonicalize workspace git dir: %w", err)
-	}
 	return resolveExecutionWorkspaceNonce(WorkspaceIdentity{
-		ID:           digestStrings("workspace-v1", repository.LineageID, root, gitDir),
+		ID:           digestStrings("workspace-v1", repository.LineageID, root, paths.gitDir),
 		RepositoryID: repository.LineageID,
 		Root:         root,
-		GitDir:       gitDir,
+		GitDir:       paths.gitDir,
 	})
+}
+
+func resolveWorkspaceGitPaths(root string) (workspaceGitPaths, error) {
+	output, err := gitexec.Command("git", root, "rev-parse", "--path-format=absolute", "--git-common-dir", "--git-dir").Output()
+	if err != nil {
+		return workspaceGitPaths{}, fmt.Errorf("resolve workspace git paths: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != 2 {
+		return workspaceGitPaths{}, fmt.Errorf("resolve workspace git paths: unexpected output %q", string(output))
+	}
+	commonDir, err := canonicalPath(lines[0])
+	if err != nil {
+		return workspaceGitPaths{}, fmt.Errorf("canonicalize workspace common dir: %w", err)
+	}
+	gitDir, err := canonicalPath(lines[1])
+	if err != nil {
+		return workspaceGitPaths{}, fmt.Errorf("canonicalize workspace git dir: %w", err)
+	}
+	return workspaceGitPaths{commonDir: commonDir, gitDir: gitDir}, nil
 }
 
 func CaptureWorkspaceSnapshot(repoRoot string) (WorkspaceSnapshot, error) {

@@ -46,3 +46,16 @@ func TestPublicationPolicyRefFormatFailureIsRetryable(t *testing.T) {
 		t.Fatalf("transient failure poisoned the ref format validation cache: %v", err)
 	}
 }
+
+func TestPublicationPolicyRemoteRemovalIsRejected(t *testing.T) {
+	t.Parallel()
+	fixture, policy := newPublicationTestFixture(t)
+	repo := fixture.store.identity.PrimaryRoot
+	if err := validatePublicationPolicy(repo, policy); err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, repo, "remote", "remove", policy.Remote)
+	if err := validatePublicationPolicy(repo, policy); err == nil {
+		t.Fatal("removed remote was still accepted by policy validation")
+	}
+}

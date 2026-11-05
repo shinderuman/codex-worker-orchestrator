@@ -23,6 +23,7 @@ func TestProbeWithDeadlineTerminatesHungProcessGroup(t *testing.T) {
 	r.config.EnvAllowlist = append(r.config.EnvAllowlist, "GLM_PROBE_PID")
 
 	deadline := time.Now().Add(2 * time.Second)
+	shortenProcessGroupTerminationGrace(t)
 	_, err := r.ProbeWithDeadline("opus", deadline)
 	if !errors.Is(err, ErrProbeDeadlineExceeded) {
 		t.Fatalf("ErrProbeDeadlineExceededを期待: %v", err)
@@ -49,6 +50,7 @@ func TestProbeDefaultDeadlinePropagatesToTargetTermination(t *testing.T) {
 	r.config.ClaudeBin = commandPath
 	r.config.EnvAllowlist = append(r.config.EnvAllowlist, "GLM_PROBE_PID")
 	r.probeTimeout = 2 * time.Second
+	shortenProcessGroupTerminationGrace(t)
 
 	startedAt := time.Now()
 	_, err := r.Probe("opus")
