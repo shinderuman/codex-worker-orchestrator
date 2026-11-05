@@ -35,7 +35,7 @@ type statusOutput struct {
 	Progress            *workflow.ExecutionProgressProjection `json:"progress,omitempty"`
 	Probes              *statusProbes                         `json:"probes"`
 	RateLimited         statusRateLimit                       `json:"rate_limited"`
-	ScheduledPause      statusScheduledPause                  `json:"scheduled_pause"`
+	ScheduledPause      *statusScheduledPause                 `json:"scheduled_pause,omitempty"`
 	ProviderUnavailable statusProviderUnavailable             `json:"provider_unavailable"`
 	ResumeAvailable     bool                                  `json:"resume_available"`
 	Telemetry           *string                               `json:"telemetry"`
@@ -211,7 +211,7 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 		}
 	}
 	if checkpoint.StopKind == state.ResumeStopScheduledPause {
-		output.ScheduledPause = statusScheduledPause{
+		output.ScheduledPause = &statusScheduledPause{
 			Paused: true, Phase: checkpoint.Phase,
 			ResumeAt: machinecli.StringPtr(checkpoint.ScheduledResumeAt),
 		}
