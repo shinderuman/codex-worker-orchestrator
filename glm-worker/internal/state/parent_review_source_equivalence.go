@@ -46,31 +46,53 @@ func (s *StateStore) ReenterEquivalentReviewFromController(
 }
 
 func validateAcceptedEquivalentReview(completion, original *ParentCompletionOutcome, current SnapshotDigest) (*ParentReviewBinding, error) {
-	if !reflect.DeepEqual(completion, original) || completion.Source == nil || completion.Review == nil ||
-		completion.Risk != string(packet.RiskHigh) || !completeParentReviewSnapshot(current) ||
-		completion.Review.SourceEquivalence != nil {
+	if !validEquivalentAcceptedOutcome(completion, original, current) {
 		return nil, fmt.Errorf("equivalent review reentry lacks its original accepted HIGH binding")
 	}
 	binding := completion.Review
-	if binding.ID == "" || binding.PacketSHA256 == "" || binding.Packet == "" || binding.Proof == nil ||
-		!sameParentReviewSnapshot(binding.Snapshot, *completion.Source) ||
-		!sameParentReviewSnapshot(binding.Proof.Snapshot, binding.Snapshot) {
+	if !validEquivalentReviewProof(binding, *completion.Source) {
 		return nil, fmt.Errorf("equivalent review reentry lacks accepted independent review proof")
 	}
 	return binding, nil
 }
 
+func validEquivalentAcceptedOutcome(completion, original *ParentCompletionOutcome, current SnapshotDigest) bool {
+	if completion == nil || original == nil {
+		return false
+	}
+	return reflect.DeepEqual(completion, original) && completion.Source != nil &&
+		completion.Review != nil && completion.Risk == string(packet.RiskHigh) &&
+		completeParentReviewSnapshot(current) && completion.Review.SourceEquivalence == nil
+}
+
+func validEquivalentReviewProof(binding *ParentReviewBinding, source SnapshotDigest) bool {
+	if binding.Proof == nil {
+		return false
+	}
+	return binding.ID != "" && binding.PacketSHA256 != "" && binding.Packet != "" &&
+		sameParentReviewSnapshot(binding.Snapshot, source) &&
+		sameParentReviewSnapshot(binding.Proof.Snapshot, binding.Snapshot)
+}
+
 func validateEquivalentCallIdentity(taskID string, reviewer, worker ModelCallLog) error {
-	if reviewer.CallID == "" || reviewer.TaskID != taskID || reviewer.Role != ReviewerRole ||
-		reviewer.CallType != CallTypeTask || reviewer.Outcome != "success" ||
-		reviewer.PacketStatus != string(packet.StatusNeedsSolReview) ||
-		!reviewer.ReadOnly || reviewer.SessionID == "" || reviewer.ModelAlias == "" ||
-		reviewer.ResponseSHA256 == "" || worker.CallID == "" || worker.TaskID != taskID ||
-		worker.Role != WorkerRole || worker.CallType != CallTypeTask ||
-		worker.PacketStatus != string(packet.StatusImplemented) || worker.SessionID == "" {
+	if !validEquivalentReviewerIdentity(taskID, reviewer) || !validEquivalentWorkerIdentity(taskID, worker) {
 		return fmt.Errorf("equivalent review reentry lacks verified model-call provenance")
 	}
 	return nil
+}
+
+func validEquivalentReviewerIdentity(taskID string, reviewer ModelCallLog) bool {
+	return reviewer.CallID != "" && reviewer.TaskID == taskID && reviewer.Role == ReviewerRole &&
+		reviewer.CallType == CallTypeTask && reviewer.Outcome == "success" &&
+		reviewer.PacketStatus == string(packet.StatusNeedsSolReview) &&
+		reviewer.ReadOnly && reviewer.SessionID != "" && reviewer.ModelAlias != "" &&
+		reviewer.ResponseSHA256 != ""
+}
+
+func validEquivalentWorkerIdentity(taskID string, worker ModelCallLog) bool {
+	return worker.CallID != "" && worker.TaskID == taskID && worker.Role == WorkerRole &&
+		worker.CallType == CallTypeTask && worker.PacketStatus == string(packet.StatusImplemented) &&
+		worker.SessionID != ""
 }
 
 func (s *StateStore) verifyEquivalentModelCallLog(taskID string, reviewer, worker ModelCallLog) error {
@@ -91,17 +113,23 @@ func (s *StateStore) verifyEquivalentModelCallLog(taskID string, reviewer, worke
 			recordedReviewer = call
 		}
 	}
-	if recordedWorker.CallID != worker.CallID || recordedWorker.SessionID != worker.SessionID ||
-		recordedWorker.PacketStatus != worker.PacketStatus || recordedWorker.Outcome != worker.Outcome ||
-		recordedWorker.ResponseSHA256 != worker.ResponseSHA256 ||
-		recordedReviewer.CallID != reviewer.CallID || recordedReviewer.SessionID != reviewer.SessionID ||
-		recordedReviewer.ModelAlias != reviewer.ModelAlias || recordedReviewer.ReadOnly != reviewer.ReadOnly ||
-		recordedReviewer.PacketStatus != reviewer.PacketStatus ||
-		recordedReviewer.ResponseSHA256 != reviewer.ResponseSHA256 ||
-		recordedReviewer.Outcome != reviewer.Outcome {
+	if !sameEquivalentWorkerEvidence(recordedWorker, worker) || !sameEquivalentReviewerEvidence(recordedReviewer, reviewer) {
 		return fmt.Errorf("equivalent Review model-call provenance no longer matches the canonical log")
 	}
 	return nil
+}
+
+func sameEquivalentWorkerEvidence(a, b ModelCallLog) bool {
+	return a.CallID == b.CallID && a.SessionID == b.SessionID &&
+		a.PacketStatus == b.PacketStatus && a.Outcome == b.Outcome &&
+		a.ResponseSHA256 == b.ResponseSHA256
+}
+
+func sameEquivalentReviewerEvidence(a, b ModelCallLog) bool {
+	return a.CallID == b.CallID && a.SessionID == b.SessionID &&
+		a.ModelAlias == b.ModelAlias && a.ReadOnly == b.ReadOnly &&
+		a.PacketStatus == b.PacketStatus && a.ResponseSHA256 == b.ResponseSHA256 &&
+		a.Outcome == b.Outcome
 }
 
 func (s *StateStore) applyEquivalentReviewReentry(
