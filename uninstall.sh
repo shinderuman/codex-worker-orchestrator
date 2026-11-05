@@ -10,7 +10,6 @@ if ! command -v go >/dev/null 2>&1; then
     exit 1
 fi
 
-# Only the small uninstall command is compiled; never download a toolchain or modules.
 (
     cd "$repo_root/glm-worker"
     GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off go run ./cmd/uninstall \
