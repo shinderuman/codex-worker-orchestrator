@@ -147,6 +147,24 @@ func TestExecutionLeaseRejectsLinkedWorkspaceAndStaleSnapshot(t *testing.T) {
 	}
 }
 
+func TestResolveWorkspaceIdentityRejectsRemovedWorktreeAfterPriorResolution(t *testing.T) {
+	t.Parallel()
+	repo := newControllerRepo(t)
+	lane := filepath.Join(filepath.Dir(repo), "lane")
+	runControllerGit(t, repo, "worktree", "add", "-q", "--detach", lane, "HEAD")
+	repository, err := ResolveRepositoryIdentity(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveWorkspaceIdentity(lane, repository); err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, repo, "worktree", "remove", "--force", lane)
+	if _, err := ResolveWorkspaceIdentity(lane, repository); err == nil {
+		t.Fatal("削除済みworktreeの解決が成功しました")
+	}
+}
+
 func TestOnlyPrimaryWorktreeCanBootstrapMutationAuthority(t *testing.T) {
 	t.Parallel()
 	repo, linked := newControllerLinkedWorktree(t)

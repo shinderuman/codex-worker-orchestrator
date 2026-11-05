@@ -84,6 +84,7 @@ func TestRootPromotionAppliesStructuralTreeTransitions(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			fixture, _, accepted, candidate := primaryPromotionFixtureWithTreeEdit(t, tc.remotePath, tc.remoteContent, func(root string) {
 				tc.edit(t, root)
 			})

@@ -205,6 +205,11 @@ func dispatchCompletedIncidentWorkflow(t *testing.T, cfg config.AppConfig, reque
 }
 
 func TestUserTerminatedHistoryExternalAdvancementRecurrenceThroughCLI(t *testing.T) {
+	t.Parallel()
+	runIsolatedScenario(t, isolatedScenarioKeyUserTerminatedAdvancement, "default")
+}
+
+func userTerminatedAdvancementBody(t *testing.T) {
 	binary, err := buildMultiRepoWorkerBinary(t)
 	if err != nil {
 		t.Fatal(err)

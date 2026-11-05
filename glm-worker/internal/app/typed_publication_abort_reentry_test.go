@@ -12,6 +12,11 @@ import (
 )
 
 func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
+	t.Parallel()
+	runIsolatedScenario(t, isolatedScenarioKeyTypedPublicationAbort, "default")
+}
+
+func typedPublicationAbortBody(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
 	cfg, _, _ := typedCompletionWorkflowFixture(t, binary, false)
 	initial := executeParentHandoff(t, cfg)

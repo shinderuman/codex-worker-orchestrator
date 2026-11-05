@@ -94,6 +94,11 @@ func appTestGitOutput(t *testing.T, root string, args ...string) []byte {
 }
 
 func TestCompletionCLIRecoversProcessDeathAndPublishedACKWithCanonicalGitGuard(t *testing.T) {
+	t.Parallel()
+	runIsolatedScenario(t, isolatedScenarioKeyCompletionCLIProcessDeath, "default")
+}
+
+func completionCLIProcessDeathBody(t *testing.T) {
 	cfg, store, promoted, policy, candidate := promotedWorkflowFixture(t)
 	planned := interruptCompletionBeforePush(t, cfg, store, promoted, policy, candidate)
 	installCompletionGuard(t, cfg)

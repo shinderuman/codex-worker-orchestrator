@@ -101,7 +101,7 @@ func TestCompletionInvalidPlanMetadataRejectedAndReenteredByStagedCLI(t *testing
 	if handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("lint abort did not expose normal publication handoff: %#v", handoff)
 	}
-	code, _, diagnostic := runTypedPublicationCLI(t, cfg, handoff.RequiredActionParameters, map[string]string{}, "--operation", "reenter")
+	code, _, diagnostic := runTypedPublicationStagedCLI(t, cfg, handoff.RequiredActionParameters, map[string]string{}, "--operation", "reenter")
 	if code != 0 {
 		t.Fatalf("actual lint rejection was not repairable through staged CLI: %s", diagnostic)
 	}

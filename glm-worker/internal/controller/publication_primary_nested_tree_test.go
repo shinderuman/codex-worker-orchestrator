@@ -15,6 +15,7 @@ func TestRootPromotionReplacesNestedDirectory(t *testing.T) {
 			name = "symlink"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			outside := t.TempDir()
 			writeSuspensionTestFile(t, outside, "target", "outside remains\n")
 			target := filepath.Join(outside, "target")
@@ -42,6 +43,7 @@ func TestRootPromotionRecoversNestedReplacement(t *testing.T) {
 	for _, symlink := range []bool{false, true} {
 		for removed := 1; removed <= 5; removed++ {
 			t.Run(fmt.Sprintf("symlink=%t/removed=%d", symlink, removed), func(t *testing.T) {
+				t.Parallel()
 				outside := t.TempDir()
 				writeSuspensionTestFile(t, outside, "target", "outside remains\n")
 				target := filepath.Join(outside, "target")
@@ -98,6 +100,7 @@ func TestRootPromotionNestedRecoveryPreservesForeignPaths(t *testing.T) {
 	t.Parallel()
 	for _, mutation := range []string{"nonempty directory", "empty directory", "nested empty directory", "ancestor symlink", "unknown leaf", "owned directory replaced by file"} {
 		t.Run(mutation, func(t *testing.T) {
+			t.Parallel()
 			outside := t.TempDir()
 			writeSuspensionTestFile(t, outside, "target", "outside remains\n")
 			fixture, policy, accepted, candidate := nestedPrimaryPromotionFixture(t, false, filepath.Join(outside, "target"))

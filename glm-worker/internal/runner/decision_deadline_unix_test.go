@@ -28,6 +28,7 @@ while :; do sleep 0.2; done
 	t.Setenv("GLM_DECIDE_PID", pidPath)
 	r.config.EnvAllowlist = append(r.config.EnvAllowlist, "GLM_DECIDE_PID")
 	r.decisionTimeout = 2 * time.Second
+	shortenProcessGroupTerminationGrace(t)
 
 	_, err := r.Decide("opus", "low", "schema-json", "prompt-json")
 	var callFailure *DecisionCallError

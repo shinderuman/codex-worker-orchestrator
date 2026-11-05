@@ -132,6 +132,15 @@ func waitStopStubFile(t *testing.T, path string) {
 	t.Fatalf("stubがfile %s を書きません", path)
 }
 
+func shortenProcessGroupTerminationGrace(t *testing.T) {
+	t.Helper()
+	originalGrace, originalSettle, originalGap := stopTermGrace, killSettleTimeout, processGroupPollGap
+	stopTermGrace, killSettleTimeout, processGroupPollGap = 150*time.Millisecond, time.Second, 10*time.Millisecond
+	t.Cleanup(func() {
+		stopTermGrace, killSettleTimeout, processGroupPollGap = originalGrace, originalSettle, originalGap
+	})
+}
+
 func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 	t.Parallel()
 	stub := stopTestStub(t)
@@ -139,11 +148,7 @@ func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 	grandchildFile := filepath.Join(t.TempDir(), "grandchild.pid")
 	readyFile := filepath.Join(t.TempDir(), "grandchild.ready")
 
-	originalGrace, originalSettle, originalGap := stopTermGrace, killSettleTimeout, processGroupPollGap
-	stopTermGrace, killSettleTimeout, processGroupPollGap = 150*time.Millisecond, time.Second, 10*time.Millisecond
-	t.Cleanup(func() {
-		stopTermGrace, killSettleTimeout, processGroupPollGap = originalGrace, originalSettle, originalGap
-	})
+	shortenProcessGroupTerminationGrace(t)
 
 	runner := &ClaudeRunner{}
 	stop := NewStopController()
