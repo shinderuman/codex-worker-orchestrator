@@ -16,6 +16,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/post-pull-mechanical-source-resynchronization.md`](IMPLEMENTATION_TASKS/post-pull-mechanical-source-resynchronization.md)
 - [`IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md`](IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md)
+- [`IMPLEMENTATION_TASKS/post-install-probe-bundle-evidence-fidelity.md`](IMPLEMENTATION_TASKS/post-install-probe-bundle-evidence-fidelity.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
 - [`IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md`](IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md)
 - [`IMPLEMENTATION_TASKS/communication-transport-unification.md`](IMPLEMENTATION_TASKS/communication-transport-unification.md)
