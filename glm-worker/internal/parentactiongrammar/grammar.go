@@ -48,9 +48,6 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	if spec, handled := projectExecutionUnitAction(action); handled {
 		return spec, true
 	}
-	if action == "resync-source" {
-		return direct(action), true
-	}
 	if action == FinalizeCheckAction {
 		return projectFinalizeCheck(requiredParameters)
 	}
@@ -65,6 +62,7 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	case state.ParentActionApproveSurface:
 		return projectApproveSurface(requiredParameters)
 	case state.ParentActionAccept,
+		state.ParentAction("resync-source"),
 		state.ParentActionResume,
 		state.ParentActionResubmitReport:
 		return direct(action), true

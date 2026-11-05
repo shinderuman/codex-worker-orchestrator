@@ -196,8 +196,6 @@ func executeInterfaceParentAction(
 		return executeGitEvidenceAction(cfg, args, stdout), true
 	case parentActionExecutionObservationExecute:
 		return executeObservationExecuteAction(cfg, args, stdout), true
-	case parentActionExecutionSourceResynchronization:
-		return executeSourceResynchronization(cfg, args, stdout, stderr), true
 	default:
 		return nil, false
 	}
@@ -212,6 +210,9 @@ func executeSpecialParentAction(
 ) error {
 	if execution == parentActionExecutionPreflightDecision {
 		return executePreflightedDecision(cfg, args, stdout, stderr)
+	}
+	if execution == parentActionExecutionSourceResynchronization {
+		return executeSourceResynchronization(cfg, args, stdout, stderr)
 	}
 	return fmt.Errorf("%s", usage)
 }
