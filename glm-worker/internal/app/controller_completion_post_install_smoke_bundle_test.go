@@ -79,7 +79,7 @@ func probeExportAnalysisRun(t *testing.T, members map[string][]byte, runID strin
 func runRealPostInstallProbeForBundle(t *testing.T) (config.AppConfig, *controller.Store, *state.StateStore, qualitygate.RunRecord, []byte) {
 	t.Helper()
 	cfg, store, candidate, generation := appProbeFixture(t, []string{
-		"/bin/sh", "-c", `printf 'probe stdout\\n'; printf 'probe stderr\\n' >&2`,
+		"/bin/sh", "-c", `printf 'probe stdout\n'; printf 'probe stderr\n' >&2`,
 	})
 	runtime := state.AttachStateStore(controller.WorkflowTaskConfig(cfg, store.Identity(), candidate.TaskRef))
 	taskID := "producer-probe-bundle-task"
