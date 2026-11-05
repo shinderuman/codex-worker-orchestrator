@@ -39,6 +39,9 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 				return fmt.Errorf("post-pull Controller projection: %w", err)
 			}
 			if !sourceResynchronizationAllowed(operation, len(steps) != 0) {
+				if len(steps) == 0 && operation.Operation == controller.PublicationOperationRecover {
+					return fmt.Errorf("post-pull source resynchronization requires the projected Controller recovery before retry")
+				}
 				if err := verifyStoppedSourceResynchronization(cfg, len(steps) == 0); err != nil {
 					return err
 				}
@@ -137,7 +140,7 @@ func verifyStoppedSourceResynchronization(cfg config.AppConfig, firstStep bool) 
 	if head.Status != controller.ControllerStatusActive {
 		return fmt.Errorf("post-pull source resynchronization stopped: Controller is fail-closed")
 	}
-	if !firstStep || head.LiveLeaseID == "" || head.IntegrationTip == "" {
+	if !firstStep || head.IntegrationTip == "" {
 		return nil
 	}
 	primary, err := controller.CaptureWorkspaceSnapshot(store.Identity().PrimaryRoot)
@@ -145,7 +148,7 @@ func verifyStoppedSourceResynchronization(cfg config.AppConfig, firstStep bool) 
 		return err
 	}
 	if primary.Head != head.IntegrationTip {
-		return fmt.Errorf("post-pull primary advanced beyond Controller source while execution is not quiescent; resynchronization requires the existing Controller admission")
+		return fmt.Errorf("post-pull primary differs from Controller integration source; resynchronization requires an admitted typed Controller transition")
 	}
 	return nil
 }
