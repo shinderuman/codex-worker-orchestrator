@@ -176,4 +176,3 @@ func assertConcurrentRetireAbsent(t *testing.T, path string) {
 		t.Fatalf("expected absent %s: %v", path, err)
 	}
 }
-
