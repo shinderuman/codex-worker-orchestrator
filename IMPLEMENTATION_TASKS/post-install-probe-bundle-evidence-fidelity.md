@@ -10,6 +10,7 @@ none
 
 ## Resolved references
 
+- [Audit #1428](https://github.com/shinderuman/codex-worker-orchestrator/issues/1428)でも2つのpost-install smoke runについて同じ`gate.log`/`resource-samples.json`各2件の欠測を記録している。初回観測ではなく、以前から再発していたform別収集漏れである。
 - [Audit #1506](https://github.com/shinderuman/codex-worker-orchestrator/issues/1506)、Bundle `6a3c98f2-e67d-4868-80c0-14361b08b054`。post-install smoke run `72148a799c2d6c6de32e7974ffa01c4c` は`form=post-install-smoke`、実行結果PASS、5.352秒、`RunRecord.Log`は`probe.log`。
 - 現行`glm-worker/internal/controller/evidence_export_validation.go:collectGateRun`はformを区別せず`gate.log`と`resource-samples.json`を収集対象とする。今回のmanifestにはこの2件が`missing:true`で記録され、実`probe.log`はZIPに収録されない。
 - 通常Go test/raceの`gate.log`・`resource-samples.json`・`test-timings.json`の収集は正規に動作しており、変更してはならない。
