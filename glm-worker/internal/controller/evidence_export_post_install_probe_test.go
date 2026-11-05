@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,10 +17,12 @@ func exportProbeFixtureRecord(f *evidenceExportFixture) qualitygate.RunRecord {
 	started := time.Unix(6100, 0).UTC()
 	completed := started.Add(5 * time.Second)
 	runID := "12121212121212121212121212121212"
+	head := strings.Repeat("a", 40)
+	workspace := filepath.Join(f.store.dir, "validation-"+head+"-"+smokeProbeForm)
 	return qualitygate.RunRecord{
 		ValidationRunID: runID, Form: smokeProbeForm,
-		Repository: f.repo, WorkingDir: f.repo, TaskID: f.runtimeTask,
-		Head: "source-oid", ProbeID: "runtime-status", ArgvDigest: "argv-digest",
+		Repository: workspace, WorkingDir: workspace, TaskID: f.runtimeTask,
+		Head: head, ProbeID: "runtime-status", ArgvDigest: "argv-digest",
 		TaskAuthorityDigest: "task-contract", InstallEvidenceDigest: "install-proof",
 		StartedAt: started, CompletedAt: &completed, Status: qualitygate.StatusPass,
 		ExitCode: 0, ExitSource: state.ValidationExitSourceTarget, DurationMS: 5000,
@@ -152,6 +155,8 @@ func TestExportPostInstallProbeRejectsUnboundOrTamperedLog(t *testing.T) {
 		{name: "missing-task", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.TaskID = "" }},
 		{name: "foreign-repository", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Repository = "/foreign/repository" }},
 		{name: "different-working-dir", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.WorkingDir = "/foreign/workdir" }},
+		{name: "foreign-checkout", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Repository = "/foreign/repository"; record.WorkingDir = record.Repository }},
+		{name: "invalid-source-oid", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Head = "../forged-source" }},
 		{name: "external-log-path", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Log = "/tmp/untrusted-probe.log" }},
 		{name: "alternate-run-log", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Log = filepath.Join(filepath.Dir(record.Log), qualitygate.RunLog) }},
 		{name: "missing-probe-id", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.ProbeID = "" }},
