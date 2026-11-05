@@ -43,10 +43,7 @@ func prepareEquivalentReviewReentry(runtime *state.StateStore, repo string) (equ
 }
 
 func validOriginalEquivalentReview(completion *state.ParentCompletionOutcome) error {
-	if completion == nil || completion.Terminal != state.SessionRotationTerminalAccept ||
-		completion.Risk != string(packet.RiskHigh) || completion.Review == nil ||
-		completion.Source == nil || completion.Review.Proof == nil ||
-		completion.Review.SourceEquivalence != nil {
+	if !eligibleEquivalentCompletion(completion) {
 		return fmt.Errorf("no completed independent HIGH review is available")
 	}
 	old := completion.Review
@@ -65,15 +62,41 @@ func validOriginalEquivalentReview(completion *state.ParentCompletionOutcome) er
 		return err
 	}
 	digest := sha256.Sum256(raw)
-	if fmt.Sprintf("%x", digest) != old.PacketSHA256 ||
-		result.Status != packet.StatusNeedsSolReview || result.Risk != packet.RiskHigh ||
-		!reflect.DeepEqual(result.Targets, old.Targets) || result.SolQuestion != old.SolQuestion {
+	if !sameEquivalentReviewerPacket(result, old, digest) {
 		return fmt.Errorf("original canonical Reviewer packet has changed")
 	}
 	if !sameReviewSource(*completion.Source, old.Snapshot) {
 		return fmt.Errorf("original accepted source and Review differ")
 	}
 	return nil
+}
+
+func eligibleEquivalentCompletion(completion *state.ParentCompletionOutcome) bool {
+	if completion == nil || completion.Review == nil || completion.Source == nil {
+		return false
+	}
+	return completion.Terminal == state.SessionRotationTerminalAccept &&
+		completion.Risk == string(packet.RiskHigh) && completion.Review.Proof != nil &&
+		completion.Review.SourceEquivalence == nil
+}
+
+func sameEquivalentReviewerPacket(result packet.Result, binding *state.ParentReviewBinding, digest [sha256.Size]byte) bool {
+	return fmt.Sprintf("%x", digest) == binding.PacketSHA256 &&
+		result.Status == packet.StatusNeedsSolReview && result.Risk == packet.RiskHigh &&
+		reflect.DeepEqual(result.Targets, binding.Targets) && result.SolQuestion == binding.SolQuestion
+}
+
+func validLatestEquivalentWorker(worker state.ModelCallLog, taskID string) bool {
+	return worker.CallID != "" && worker.TaskID == taskID &&
+		worker.Outcome == acceptedResultCallOutcome && worker.PacketStatus == string(packet.StatusImplemented) &&
+		(worker.Response == "" || savedWorkerReviewContextMatches(worker, taskID)) &&
+		worker.ResponseSHA256 != ""
+}
+
+func validLatestEquivalentReviewer(reviewer state.ModelCallLog, taskID string) bool {
+	return reviewer.CallID != "" && reviewer.Outcome == acceptedResultCallOutcome &&
+		reviewer.ReadOnly && reviewer.PacketStatus == string(packet.StatusNeedsSolReview) &&
+		reviewer.TaskID == taskID && reviewer.SessionID != "" && reviewer.ResponseSHA256 != ""
 }
 
 func retainedReviewSnapshotsMatch(runtime *state.StateStore, completion *state.ParentCompletionOutcome) error {
@@ -89,7 +112,7 @@ func retainedReviewSnapshotsMatch(runtime *state.StateStore, completion *state.P
 		return fmt.Errorf("original Worker snapshot is missing: %w", err)
 	}
 	if !sameReviewSource(snapshotFromGit(end), completion.Review.Snapshot) {
-		return fmt.Errorf("Worker source differs from the independently reviewed source")
+		return fmt.Errorf("worker source differs from the independently reviewed source")
 	}
 	return nil
 }
@@ -120,14 +143,7 @@ func latestEquivalentReviewCalls(runtime *state.StateStore) (state.ModelCallLog,
 			reviewer = call
 		}
 	}
-	if worker.CallID == "" || worker.TaskID != taskID ||
-		worker.Outcome != acceptedResultCallOutcome ||
-		worker.PacketStatus != string(packet.StatusImplemented) ||
-		(worker.Response != "" && !savedWorkerReviewContextMatches(worker, taskID)) ||
-		worker.ResponseSHA256 == "" || reviewer.CallID == "" ||
-		reviewer.Outcome != acceptedResultCallOutcome || !reviewer.ReadOnly ||
-		reviewer.PacketStatus != string(packet.StatusNeedsSolReview) ||
-		reviewer.TaskID != taskID || reviewer.SessionID == "" || reviewer.ResponseSHA256 == "" {
+	if !validLatestEquivalentWorker(worker, taskID) || !validLatestEquivalentReviewer(reviewer, taskID) {
 		return state.ModelCallLog{}, state.ModelCallLog{}, fmt.Errorf("independent Reviewer/Worker model provenance unavailable")
 	}
 	return worker, reviewer, nil
@@ -156,10 +172,7 @@ func validateRetainedReviewerCall(reviewer state.ModelCallLog, binding *state.Pa
 		return err
 	}
 	digest := sha256.Sum256(raw)
-	if fmt.Sprintf("%x", digest) != binding.PacketSHA256 ||
-		result.Status != packet.StatusNeedsSolReview || result.Risk != packet.RiskHigh ||
-		!reflect.DeepEqual(result.Targets, binding.Targets) ||
-		result.SolQuestion != binding.SolQuestion || result.SolQuestion == "" {
+	if !sameEquivalentReviewerPacket(result, binding, digest) || result.SolQuestion == "" {
 		return fmt.Errorf("independent Reviewer packet differs from the accepted canonical binding")
 	}
 	return nil
