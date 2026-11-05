@@ -188,7 +188,14 @@ func reenterWithEquivalentReview(runtime *state.StateStore, repo string, authori
 	if err != nil {
 		return false, fmt.Errorf("temporary equivalence diagnosis: %w", err)
 	}
-	return runtime.ReenterEquivalentReviewFromController(authority, evidence.completion, evidence.reviewer, evidence.worker, evidence.source)
+	reentered, err := runtime.ReenterEquivalentReviewFromController(authority, evidence.completion, evidence.reviewer, evidence.worker, evidence.source)
+	if err != nil {
+		return false, err
+	}
+	if !reentered {
+		return false, fmt.Errorf("temporary equivalent completion rejected by state status %s", runtime.TaskStatus())
+	}
+	return true, nil
 }
 
 func admittedEquivalentReview(runtime *state.StateStore, attempt controller.AttemptRecord, repoRoot string) (bool, error) {
