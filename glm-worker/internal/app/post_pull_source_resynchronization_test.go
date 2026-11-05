@@ -134,7 +134,7 @@ func TestPostPullRefusesUnpublishedLocalMetadataWithoutPush(t *testing.T) {
 	runControllerActivationGit(t, primary, "add", "IMPLEMENTATION_HISTORY.md")
 	runControllerActivationGit(t, primary, "commit", "-qm", "unpushed parent metadata")
 	exit, output, diagnostics := runParentActionCLI(t, cfg, "resync-source")
-	if exit == 0 || !strings.Contains(diagnostics, "post-pull source requires primary, local ref and observed remote tip") {
+	if exit == 0 || !strings.Contains(diagnostics, "external source remote commit differs") {
 		t.Fatalf("unpushed local metadata must not be adopted or published: exit=%d %s %s", exit, output, diagnostics)
 	}
 	assertPostPullRemoteOID(t, primary, policy, remote)
