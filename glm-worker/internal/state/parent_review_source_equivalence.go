@@ -39,7 +39,7 @@ func (s *StateStore) ReenterEquivalentReviewFromController(
 		return false, fmt.Errorf("equivalent review reentry lacks its original accepted HIGH binding")
 	}
 	binding := completion.Review
-	if binding.ID == "" || binding.PacketSHA256 == "" || binding.Proof == nil ||
+	if binding.ID == "" || binding.PacketSHA256 == "" || len(binding.Packet) == 0 || binding.Proof == nil ||
 		!sameParentReviewSnapshot(binding.Snapshot, *completion.Source) ||
 		!sameParentReviewSnapshot(binding.Proof.Snapshot, binding.Snapshot) {
 		return false, fmt.Errorf("equivalent review reentry lacks accepted independent review proof")
