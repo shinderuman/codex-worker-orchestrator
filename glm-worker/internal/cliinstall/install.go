@@ -122,8 +122,23 @@ func retireUnlocked(binDir string) ([]Result, error) {
 		return results, nil
 	}
 	for _, target := range removals {
+		name := filepath.Base(target)
+		matched, err := targetMatchesOwnership(target, state.Binaries[name])
+		if err != nil {
+			return results, err
+		}
+		if !matched {
+			_, exists, err := lstat(target)
+			if err != nil {
+				return results, err
+			}
+			if exists {
+				return results, fmt.Errorf("CLI retirement incomplete: managed binary changed before removal: %s", target)
+			}
+			continue
+		}
 		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("remove owned binary %s: %w", target, err)
+			return results, fmt.Errorf("remove owned binary %s: %w", target, err)
 		}
 	}
 	if err := removeState(statePath); err != nil {
