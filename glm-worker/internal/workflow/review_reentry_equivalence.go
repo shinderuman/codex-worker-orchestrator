@@ -33,6 +33,27 @@ func prepareEquivalentReviewReentry(runtime *state.StateStore, repo string) (equ
 		return equivalentReviewReentry{}, fmt.Errorf("no completed independent HIGH review is available")
 	}
 	old := completion.Review
+	if len(old.Packet) == 0 {
+		return equivalentReviewReentry{}, fmt.Errorf("original canonical Reviewer packet was not retained")
+	}
+	originalPacket, err := packet.ParseStructured(old.Packet)
+	if err != nil {
+		return equivalentReviewReentry{}, err
+	}
+	if err := packet.ValidateReviewerResult(originalPacket); err != nil {
+		return equivalentReviewReentry{}, err
+	}
+	machine, err := originalPacket.MachineJSON()
+	if err != nil {
+		return equivalentReviewReentry{}, err
+	}
+	originalSHA := sha256.Sum256(machine)
+	if fmt.Sprintf("%x", originalSHA) != old.PacketSHA256 ||
+		originalPacket.Status != packet.StatusNeedsSolReview || originalPacket.Risk != packet.RiskHigh ||
+		!reflect.DeepEqual(originalPacket.Targets, old.Targets) ||
+		originalPacket.SolQuestion != old.SolQuestion {
+		return equivalentReviewReentry{}, fmt.Errorf("original canonical Reviewer packet has changed")
+	}
 	if !sameReviewSource(*completion.Source, old.Snapshot) {
 		return equivalentReviewReentry{}, fmt.Errorf("original accepted source and Review differ")
 	}
