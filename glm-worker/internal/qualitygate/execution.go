@@ -130,7 +130,6 @@ func DarwinSupplementArguments(form string, additional ...string) []string {
 	}
 	args[len(args)-1] = "./internal/observationexec"
 	if len(additional) > 0 {
-		// An acceptance-specific supplement must execute tests, not reuse cache.
 		args = append(args[:len(args)-1], "-count=1", "./internal/observationexec")
 		args = append(args, additional...)
 	}

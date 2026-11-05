@@ -91,13 +91,13 @@ func TestDarwinAcceptanceRequiresPackageAndTestPass(t *testing.T) {
 	if err := VerifyDarwinAcceptance(success, required); err != nil {
 		t.Fatal(err)
 	}
-	for name, log := range map[string][]byte{
-		"missing test":    darwinAcceptanceEvent(t, "pass", pkg, ""),
-		"skipped test":    append(darwinAcceptanceEvent(t, "skip", pkg, "TestDarwinSysctlDecoding"), darwinAcceptanceEvent(t, "pass", pkg, "")...),
-		"missing package": darwinAcceptanceEvent(t, "pass", pkg, "TestDarwinSysctlDecoding"),
-		"compile failure": []byte("FAIL\n"),
-		"wrong package":   append(darwinAcceptanceEvent(t, "pass", "github.com/example/internal/other", "TestDarwinSysctlDecoding"), darwinAcceptanceEvent(t, "pass", "github.com/example/internal/other", "")...),
-	} {
+	cases := make(map[string][]byte)
+	cases["missing test"] = darwinAcceptanceEvent(t, "pass", pkg, "")
+	cases["skipped test"] = append(darwinAcceptanceEvent(t, "skip", pkg, "TestDarwinSysctlDecoding"), darwinAcceptanceEvent(t, "pass", pkg, "")...)
+	cases["missing package"] = darwinAcceptanceEvent(t, "pass", pkg, "TestDarwinSysctlDecoding")
+	cases["compile failure"] = []byte("FAIL\n")
+	cases["wrong package"] = append(darwinAcceptanceEvent(t, "pass", "github.com/example/internal/other", "TestDarwinSysctlDecoding"), darwinAcceptanceEvent(t, "pass", "github.com/example/internal/other", "")...)
+	for name, log := range cases {
 		t.Run(name, func(t *testing.T) {
 			if err := VerifyDarwinAcceptance(log, required); err == nil {
 				t.Fatal("incomplete Darwin acceptance passed")
@@ -149,13 +149,13 @@ func TestDockerSupplementRejectsDarwinAcceptanceEvidenceGaps(t *testing.T) {
 }
 
 func TestDarwinGoTestFunctionNames(t *testing.T) {
-	for name, expected := range map[string]bool{
-		"TestDarwinSysctlDecoding": true,
-		"TestMain":                false,
-		"Testhelper":              false,
-		"Test":                    false,
-		"Test_Example":            true,
-	} {
+	cases := make(map[string]bool)
+	cases["TestDarwinSysctlDecoding"] = true
+	cases["TestMain"] = false
+	cases["Testhelper"] = false
+	cases["Test"] = false
+	cases["Test_Example"] = true
+	for name, expected := range cases {
 		if got := goTestFunctionName(name); got != expected {
 			t.Errorf("%s: expected %t, got %t", name, expected, got)
 		}
