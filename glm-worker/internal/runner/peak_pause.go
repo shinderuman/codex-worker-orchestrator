@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// ScheduledPauseError is distinct from a user interruption and provider quota
-// exhaustion. The workflow persists this error as a resumable stop.
 type ScheduledPauseError struct {
 	Phase          string
 	TaskID         string
@@ -20,9 +18,6 @@ func (e *ScheduledPauseError) Error() string {
 	return fmt.Sprintf("GLM invocation paused by configured schedule until %s", e.ResumeAt.Format(time.RFC3339))
 }
 
-// runManagedCommand is the common process admission and in-flight interruption
-// point for worker, reviewer, auto-fix, probe and decision calls. An enabled
-// schedule is checked immediately before Start, never by a model prompt.
 func (r *ClaudeRunner) runManagedCommand(command *exec.Cmd, deadline time.Time, probe bool) error {
 	active, next := r.config.PeakPause.Evaluate(time.Now())
 	if active {

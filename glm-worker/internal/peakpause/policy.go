@@ -1,5 +1,3 @@
-// Package peakpause provides opt-in, account-local GLM invocation time windows.
-// It does not contain provider-specific schedules or quota assumptions.
 package peakpause
 
 import (
@@ -75,9 +73,6 @@ func (p Policy) Enabled() bool {
 	return p.location != nil && len(p.windows) != 0
 }
 
-// Evaluate returns whether now is inside a configured pause window and the
-// boundary at which that state next changes. Overlapping windows are coalesced.
-// A zero boundary means that no future window could be found.
 func (p Policy) Evaluate(now time.Time) (bool, time.Time) {
 	if !p.Enabled() {
 		return false, time.Time{}

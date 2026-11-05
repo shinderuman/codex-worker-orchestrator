@@ -42,14 +42,14 @@ type ResumeCheckpoint struct {
 	DecisionBoundaryApplied bool        `json:"decision_boundary_applied,omitempty"`
 	ExecutionMilestoneID    string      `json:"execution_milestone_id,omitempty"`
 
-	WorkerResult    *packet.Result `json:"worker_result,omitempty"`
-	CompletedResult *packet.Result `json:"completed_result,omitempty"`
-	ReviewNumber    int            `json:"review_number,omitempty"`
-	AutoFixes       int            `json:"auto_fixes,omitempty"`
-	StopKind        ResumeStopKind `json:"stop_kind"`
-	ResetAtCST      string         `json:"-"`
-	ResetAtRFC3339  string         `json:"reset_at_rfc3339,omitempty"`
-	ScheduledResumeAt string `json:"scheduled_resume_at,omitempty"`
+WorkerResult      *packet.Result `json:"worker_result,omitempty"`
+	CompletedResult   *packet.Result `json:"completed_result,omitempty"`
+	ReviewNumber      int            `json:"review_number,omitempty"`
+	AutoFixes         int            `json:"auto_fixes,omitempty"`
+	StopKind          ResumeStopKind `json:"stop_kind"`
+	ResetAtCST        string         `json:"-"`
+	ResetAtRFC3339    string         `json:"reset_at_rfc3339,omitempty"`
+	ScheduledResumeAt string         `json:"scheduled_resume_at,omitempty"`
 
 	ResultCorrection bool `json:"result_correction,omitempty"`
 	SummaryRecovered bool `json:"summary_recovered,omitempty"`
