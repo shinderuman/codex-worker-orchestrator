@@ -83,12 +83,16 @@ func TestParentWaitAdmissionSurfacesRecoveryErrorWithoutFalseRelease(t *testing.
 		script string
 	}{
 		{
-			name:   "invalid-json",
-			script: "#!/bin/sh\\nprintf '%s\\\\n' '{not-json'\\n",
+			name: "invalid-json",
+			script: `#!/bin/sh
+printf '%s\n' '{not-json'
+`,
 		},
 		{
-			name:   "worker-failed",
-			script: "#!/bin/sh\\nexit 2\\n",
+			name: "worker-failed",
+			script: `#!/bin/sh
+exit 2
+`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
