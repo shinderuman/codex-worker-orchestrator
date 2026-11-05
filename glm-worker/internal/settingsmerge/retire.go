@@ -22,25 +22,9 @@ func RetireFiles(targetPath string) error {
 }
 
 func retireFilesUnlocked(targetPath string) error {
-	for _, path := range []string{targetPath, statePathFor(targetPath), ManagedStatePath(targetPath), mergeTransactionPath(targetPath)} {
-		if err := rejectMergeSymlinks(path); err != nil {
-			return err
-		}
-	}
-	if err := recoverSettingsTransaction(targetPath, writeAtomic); err != nil {
+	inputs, err := captureClaudeRetireInputs(targetPath)
+	if err != nil {
 		return err
-	}
-	paths := []string{targetPath, statePathFor(targetPath), ManagedStatePath(targetPath)}
-	inputs := make(map[string]fileRestore, len(paths))
-	for _, path := range paths {
-		if err := rejectMergeSymlinks(path); err != nil {
-			return err
-		}
-		snapshot, err := captureMergeTransactionFile(path)
-		if err != nil {
-			return err
-		}
-		inputs[path] = snapshot
 	}
 	previousOverride, err := overrideStateFromSnapshot(inputs[statePathFor(targetPath)])
 	if err != nil {
@@ -58,7 +42,54 @@ func retireFilesUnlocked(targetPath string) error {
 		return err
 	}
 	before := cloneMap(target)
+	if err := restoreClaudeRetireValues(target, previousOverride, managed); err != nil {
+		return err
+	}
+	plans, err := planClaudeRetire(targetPath, target, before, mode, inputs)
+	if err != nil {
+		return err
+	}
+	if len(plans) != 0 {
+		if err := commitRecoverableTransaction(targetPath, plans, inputs, writeAtomic); err != nil {
+			return err
+		}
+	}
+	return cleanupClaudeRetireStates(targetPath, inputs)
+}
 
+func captureClaudeRetireInputs(targetPath string) (map[string]fileRestore, error) {
+	paths := []string{targetPath, statePathFor(targetPath), ManagedStatePath(targetPath)}
+	for _, path := range append(paths, mergeTransactionPath(targetPath)) {
+		if err := rejectMergeSymlinks(path); err != nil {
+			return nil, err
+		}
+	}
+	if err := recoverSettingsTransaction(targetPath, writeAtomic); err != nil {
+		return nil, err
+	}
+	inputs := make(map[string]fileRestore, len(paths))
+	for _, path := range paths {
+		snapshot, err := captureMergeTransactionFile(path)
+		if err != nil {
+			return nil, err
+		}
+		inputs[path] = snapshot
+	}
+	return inputs, nil
+}
+
+func restoreClaudeRetireValues(target map[string]any, previousOverride overrideState, managed managedState) error {
+	if err := verifyClaudeOverrideValues(target, previousOverride); err != nil {
+		return err
+	}
+	restoreEnvBaselines(target, previousOverride)
+	if err := verifyClaudeManagedValues(target, managed); err != nil {
+		return err
+	}
+	return restorePreviousManagedValues(target, managed.Values, map[string]managedLeaf{})
+}
+
+func verifyClaudeOverrideValues(target map[string]any, previousOverride overrideState) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -72,25 +103,35 @@ func retireFilesUnlocked(targetPath string) error {
 		return err
 	}
 	env, _ := target["env"].(map[string]any)
-	deleted := make(map[string]bool, len(override.Deletes))
-	for _, key := range override.Deletes {
-		deleted[key] = true
-	}
 	for key := range previousOverride.Env {
-		value, exists := env[key]
-		if expected, ok := override.Sets[key]; ok {
-			if !exists || !reflect.DeepEqual(value, expected) {
-				return fmt.Errorf("refusing user-modified Claude override env key %q", key)
-			}
-		} else if deleted[key] {
-			if exists {
-				return fmt.Errorf("refusing externally restored Claude override env key %q", key)
-			}
-		} else {
-			return fmt.Errorf("cannot verify applied Claude override for %q (override source changed)", key)
+		if err := verifyClaudeOverrideKey(key, env, override); err != nil {
+			return err
 		}
 	}
-	restoreEnvBaselines(target, previousOverride)
+	return nil
+}
+
+func verifyClaudeOverrideKey(key string, env map[string]any, override claudeoverride.EnvOverride) error {
+	value, exists := env[key]
+	if expected, ok := override.Sets[key]; ok {
+		if !exists || !reflect.DeepEqual(value, expected) {
+			return fmt.Errorf("refusing user-modified Claude override env key %q", key)
+		}
+		return nil
+	}
+	for _, deleted := range override.Deletes {
+		if deleted != key {
+			continue
+		}
+		if exists {
+			return fmt.Errorf("refusing externally restored Claude override env key %q", key)
+		}
+		return nil
+	}
+	return fmt.Errorf("cannot verify applied Claude override for %q (override source changed)", key)
+}
+
+func verifyClaudeManagedValues(target map[string]any, managed managedState) error {
 	for _, record := range managed.Values {
 		value, exists, err := managedValueAt(target, record.Path)
 		if err != nil {
@@ -100,71 +141,94 @@ func retireFilesUnlocked(targetPath string) error {
 			return fmt.Errorf("refusing user-modified managed Claude setting %s", managedPathDisplay(record.Path))
 		}
 	}
-	if err := restorePreviousManagedValues(target, managed.Values, map[string]managedLeaf{}); err != nil {
-		return err
+	return nil
+}
+
+type claudeEmptyState struct {
+	path string
+	state any
+}
+
+func claudeEmptyStates(targetPath string) []claudeEmptyState {
+	return []claudeEmptyState{
+		{statePathFor(targetPath), overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}},
+		{ManagedStatePath(targetPath), managedState{Version: managedStateVersion, Values: []managedValueState{}}},
 	}
+}
+
+func planClaudeRetire(
+	targetPath string, target, before map[string]any, mode os.FileMode, inputs map[string]fileRestore,
+) ([]plannedWrite, error) {
 	plans := make([]plannedWrite, 0, 3)
 	if !reflect.DeepEqual(before, target) {
 		data, err := marshalObject(target)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		plans = append(plans, plannedWrite{path: targetPath, data: data, mode: mode})
 	}
-	emptyOverride := overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}
-	emptyManaged := managedState{Version: managedStateVersion, Values: []managedValueState{}}
-	for _, entry := range []struct {
-		path  string
-		state any
-	}{
-		{statePathFor(targetPath), emptyOverride},
-		{ManagedStatePath(targetPath), emptyManaged},
-	} {
-		if !inputs[entry.path].existed {
-			continue
-		}
-		data, err := marshalObject(entry.state)
+	for _, entry := range claudeEmptyStates(targetPath) {
+		plan, needed, err := planClaudeEmptyState(entry, inputs[entry.path])
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if !bytes.Equal(inputs[entry.path].data, data) {
-			plans = append(plans, plannedWrite{path: entry.path, data: data, mode: 0o600})
+		if needed {
+			plans = append(plans, plan)
 		}
 	}
-	if len(plans) != 0 {
-		if err := commitRecoverableTransaction(targetPath, plans, inputs, writeAtomic); err != nil {
+	return plans, nil
+}
+
+func planClaudeEmptyState(entry claudeEmptyState, before fileRestore) (plannedWrite, bool, error) {
+	if !before.existed {
+		return plannedWrite{}, false, nil
+	}
+	data, err := marshalObject(entry.state)
+	if err != nil {
+		return plannedWrite{}, false, err
+	}
+	if bytes.Equal(before.data, data) {
+		return plannedWrite{}, false, nil
+	}
+	return plannedWrite{path: entry.path, data: data, mode: 0o600}, true, nil
+}
+
+func cleanupClaudeRetireStates(targetPath string, inputs map[string]fileRestore) error {
+	// Verify both postimages before deleting either ownership record.
+	for _, entry := range claudeEmptyStates(targetPath) {
+		if err := verifyClaudeEmptyState(entry, inputs[entry.path]); err != nil {
 			return err
 		}
 	}
-	for _, entry := range []struct {
-		path  string
-		state any
-	}{
-		{statePathFor(targetPath), emptyOverride},
-		{ManagedStatePath(targetPath), emptyManaged},
-	} {
-		if !inputs[entry.path].existed {
-			continue
-		}
-		data, err := marshalObject(entry.state)
-		if err != nil {
-			return err
-		}
-		current, err := captureMergeTransactionFile(entry.path)
-		if err != nil {
-			return err
-		}
-		if !current.existed || !bytes.Equal(current.data, data) {
-			return fmt.Errorf("Claude ownership state changed before cleanup: %s", entry.path)
-		}
-		if err := os.Remove(entry.path); err != nil {
-			return err
+	for _, entry := range claudeEmptyStates(targetPath) {
+		if inputs[entry.path].existed {
+			if err := os.Remove(entry.path); err != nil {
+				return err
+			}
 		}
 	}
 	dir := filepath.Join(filepath.Dir(targetPath), managedStateDir)
 	if err := os.Remove(dir); err != nil && !errors.Is(err, os.ErrNotExist) &&
 		!errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EEXIST) {
 		return err
+	}
+	return nil
+}
+
+func verifyClaudeEmptyState(entry claudeEmptyState, before fileRestore) error {
+	if !before.existed {
+		return nil
+	}
+	data, err := marshalObject(entry.state)
+	if err != nil {
+		return err
+	}
+	current, err := captureMergeTransactionFile(entry.path)
+	if err != nil {
+		return err
+	}
+	if !current.existed || !bytes.Equal(current.data, data) {
+		return fmt.Errorf("claude ownership state changed before cleanup: %s", entry.path)
 	}
 	return nil
 }
