@@ -147,3 +147,17 @@ func TestDockerSupplementRejectsDarwinAcceptanceEvidenceGaps(t *testing.T) {
 		t.Fatal("wrong Darwin supplement command was accepted")
 	}
 }
+
+func TestDarwinGoTestFunctionNames(t *testing.T) {
+	for name, expected := range map[string]bool{
+		"TestDarwinSysctlDecoding": true,
+		"TestMain": false,
+		"Testhelper": false,
+		"Test": false,
+		"Test_Example": true,
+	} {
+		if got := goTestFunctionName(name); got != expected {
+			t.Errorf("%s: expected %t, got %t", name, expected, got)
+		}
+	}
+}

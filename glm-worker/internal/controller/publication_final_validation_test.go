@@ -562,3 +562,34 @@ func TestCandidateAcceptanceRejectsUnknownValidationForm(t *testing.T) {
 		t.Fatalf("unknown validation form accepted: %v", err)
 	}
 }
+
+func TestPublicationRejectsMissingDarwinAcceptanceWithUnchangedRemoteAndRuntime(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		mutate func(*qualitygate.RunRecord)
+	}{
+		{name: "omitted Darwin coverage", mutate: func(*qualitygate.RunRecord) {}},
+		{name: "unrelated Darwin package", mutate: func(record *qualitygate.RunRecord) {
+			record.DarwinPackages = []qualitygate.DarwinPackageRequirement{{Package: "./internal/other"}}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fixture, policy := newPublicationTestFixture(t)
+			source := publicationTestEdit(t, fixture, "glm-worker/internal/qualitygate/resource_samples_darwin.go", "package qualitygate\nconst darwinValue = 1\n")
+			fixture.source = source
+			source = publicationTestEdit(t, fixture, "glm-worker/internal/qualitygate/resource_samples_darwin_test.go", "//go:build darwin\n\npackage qualitygate\nimport \"testing\"\nfunc TestDarwinSysctlDecoding(t *testing.T) {}\n")
+			acceptedCompletionRuntime(t, fixture.store, source)
+			seedDeclaredFinalValidation(t, fixture.store, source, "go-test")
+			promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, nil)
+			required, err := qualitygate.ChangedDarwinPackagesAtCommit(fixture.store.identity.PrimaryRoot, candidate.CommitOID)
+			if err != nil || len(required) != 1 || required[0].Package != "./internal/qualitygate" {
+				t.Fatalf("candidate Darwin source was not detected: %#v %v", required, err)
+			}
+			seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, tc.mutate)
+			runtime, err := publishFinalValidationCompletion(t, fixture, promoted, candidate)
+			assertFinalValidationRefused(t, fixture, policy, runtime, err, "go-test")
+		})
+	}
+}

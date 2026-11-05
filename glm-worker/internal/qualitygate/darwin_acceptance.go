@@ -81,7 +81,7 @@ func ChangedDarwinPackages(repository string) ([]DarwinPackageRequirement, error
 			}
 			for _, decl := range parsed.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
-				if ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
+				if ok && fn.Recv == nil && goTestFunctionName(fn.Name.Name) {
 					tests[fn.Name.Name] = true
 				}
 			}
@@ -97,6 +97,15 @@ func ChangedDarwinPackages(repository string) ([]DarwinPackageRequirement, error
 		result = append(result, requirement)
 	}
 	return result, nil
+}
+
+// TestMain is a special runner hook, not a test with a pass event.
+func goTestFunctionName(name string) bool {
+	if name == "TestMain" || !strings.HasPrefix(name, "Test") || len(name) == 4 {
+		return false
+	}
+	r := []rune(strings.TrimPrefix(name, "Test"))[0]
+	return r < 'a' || r > 'z'
 }
 
 func darwinSourceFile(path, name string) bool {
