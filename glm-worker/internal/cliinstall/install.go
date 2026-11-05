@@ -107,6 +107,13 @@ func retireUnlocked(binDir string) ([]Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A modified managed executable must not lose its ownership record.
+	// Reject the whole retire plan before removing any other binaries.
+	for _, result := range results {
+		if result.Status == "preserved" {
+			return results, fmt.Errorf("CLI retirement incomplete: installer-owned %s was modified or replaced", result.Name)
+		}
+	}
 	if len(state.Binaries) == 0 {
 		if len(state.ExpectedBinaries) == 0 {
 			return results, nil
@@ -237,6 +244,13 @@ func planRetire(binDir string, state installState) ([]Result, []string, error) {
 
 func planRetireBinary(binDir, name, digest string) (Result, string, bool, error) {
 	target := filepath.Join(binDir, name)
+	_, exists, err := lstat(target)
+	if err != nil {
+		return Result{}, "", false, err
+	}
+	if !exists {
+		return Result{Name: name, Status: "already-absent"}, target, false, nil
+	}
 	owned, err := targetMatchesOwnership(target, digest)
 	if err != nil {
 		return Result{}, "", false, err
