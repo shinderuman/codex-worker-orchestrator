@@ -9,9 +9,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 )
 
-// This bounded evaluation uses the current repository corpus rather than
-// estimating model-visible savings from the search engine's snippet length.
-// The production worker/reviewer renderers are the measured output surfaces.
 func TestRepoSearchContextBudgetCurrentCorpus(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git is unavailable: %v", err)
@@ -60,8 +57,6 @@ func TestRepoSearchContextBudgetCurrentCorpus(t *testing.T) {
 	reviewerCandidates := excludeChangedPaths(report.Results, changed)
 	reviewer := renderReviewerDiffFirstNavigation(changed, reviewerSearchHit, "cache", reviewerCandidates)
 
-	// Changing every source snippet must leave both model-visible navigation
-	// surfaces byte-identical: the current consumers never render snippets.
 	changedSnippets := append([]reposearch.Result(nil), report.Results...)
 	for i := range changedSnippets {
 		changedSnippets[i].Snippet = "UNIQUE_SOURCE_SNIPPET_SENTINEL_" + changedSnippets[i].Path
