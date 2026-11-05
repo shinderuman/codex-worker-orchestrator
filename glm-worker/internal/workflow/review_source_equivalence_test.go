@@ -38,7 +38,7 @@ func reviewEquivalenceFixture(t *testing.T) (string, state.SnapshotDigest) {
 	reviewEquivalenceGit(t, root, "config", "user.name", "Equivalence Fixture")
 	reviewEquivalenceGit(t, root, "config", "user.email", "fixture@example.invalid")
 	reviewEquivalenceWrite(t, root, state.ParentRulesFile, "# rules\ncontract unchanged\n")
-	reviewEquivalenceWrite(t, root, state.ParentPlanFile, strings.ReplaceAll(reviewEquivalenceOldPlan, "`", "`"))
+	reviewEquivalenceWrite(t, root, state.ParentPlanFile, reviewEquivalenceOldPlan)
 	reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/active.md", "# ACTIVE\nReview source and tests\n")
 	reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/old-next.md", "# NEXT\n")
 	reviewEquivalenceWrite(t, root, "review.go", "package sample\nfunc ReviewTarget() {}\n")
