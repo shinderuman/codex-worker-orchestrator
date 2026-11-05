@@ -172,7 +172,7 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 		}
 	}
 	c.commit(EvidenceExportEntry{
-		Path: c.validationEntry("quality-gate/"+runID+"/"+qualitygate.RunFile),
+		Path:   c.validationEntry("quality-gate/" + runID + "/" + qualitygate.RunFile),
 		Source: evidenceExportSourceGateRun, Basis: basis,
 		SHA256: digestBytes(recordBytes), Bytes: int64(len(recordBytes)), CollectedAt: c.observedAt,
 	}, recordBytes)
