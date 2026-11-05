@@ -107,44 +107,52 @@ func retireUnlocked(binDir string) ([]Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, result := range results {
-		if result.Status == "preserved" {
-			return results, fmt.Errorf("CLI retirement incomplete: installer-owned %s was modified or replaced", result.Name)
-		}
+	if err := requireRetireOwnership(results); err != nil {
+		return results, err
 	}
 	if len(state.Binaries) == 0 {
 		if len(state.ExpectedBinaries) == 0 {
 			return results, nil
 		}
-		if err := removeState(statePath); err != nil {
-			return nil, err
-		}
-		return results, nil
+		return results, removeState(statePath)
 	}
+	if err := removeRetiredBinaries(removals, state); err != nil {
+		return results, err
+	}
+	return results, removeState(statePath)
+}
+
+func requireRetireOwnership(results []Result) error {
+	for _, result := range results {
+		if result.Status == "preserved" {
+			return fmt.Errorf("CLI retirement incomplete: installer-owned %s was modified or replaced", result.Name)
+		}
+	}
+	return nil
+}
+
+func removeRetiredBinaries(removals []string, state installState) error {
 	for _, target := range removals {
 		name := filepath.Base(target)
 		matched, err := targetMatchesOwnership(target, state.Binaries[name])
 		if err != nil {
-			return results, err
+			return err
 		}
 		if !matched {
 			_, exists, err := lstat(target)
 			if err != nil {
-				return results, err
+				return err
 			}
 			if exists {
-				return results, fmt.Errorf("CLI retirement incomplete: managed binary changed before removal: %s", target)
+				return fmt.Errorf("CLI retirement incomplete: managed binary changed before removal: %s", target)
 			}
 			continue
 		}
 		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return results, fmt.Errorf("remove owned binary %s: %w", target, err)
+			return fmt.Errorf("remove owned binary %s: %w", target, err)
 		}
 	}
-	if err := removeState(statePath); err != nil {
-		return nil, err
-	}
-	return results, nil
+	return nil
 }
 
 func planInstall(buildDir, binDir string, state installState) ([]action, installState, error) {
