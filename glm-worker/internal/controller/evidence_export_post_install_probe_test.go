@@ -147,15 +147,18 @@ func TestExportPostInstallProbePreservesActualLogAndOtherValidationForms(t *test
 
 func TestExportPostInstallProbeRejectsUnboundOrTamperedLog(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		mutate func(*qualitygate.RunRecord, *evidenceExportFixture)
+		name            string
+		mutate          func(*qualitygate.RunRecord, *evidenceExportFixture)
 		wantExportError bool
 	}{
 		{name: "foreign-task", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.TaskID = "foreign-task" }, wantExportError: true},
 		{name: "missing-task", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.TaskID = "" }},
 		{name: "foreign-repository", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Repository = "/foreign/repository" }},
 		{name: "different-working-dir", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.WorkingDir = "/foreign/workdir" }},
-		{name: "foreign-checkout", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Repository = "/foreign/repository"; record.WorkingDir = record.Repository }},
+		{name: "foreign-checkout", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) {
+			record.Repository = "/foreign/repository"
+			record.WorkingDir = record.Repository
+		}},
 		{name: "invalid-source-oid", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Head = "../forged-source" }},
 		{name: "external-log-path", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Log = "/tmp/untrusted-probe.log" }},
 		{name: "alternate-run-log", mutate: func(record *qualitygate.RunRecord, _ *evidenceExportFixture) { record.Log = filepath.Join(filepath.Dir(record.Log), qualitygate.RunLog) }},
