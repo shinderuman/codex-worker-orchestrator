@@ -452,3 +452,56 @@ if git -C "$linked" config --local --get-all core.hooksPath >/dev/null 2>&1; the
 	printf '%s\n' 'linked-worktree retire left linked core.hooksPath configured' >&2
 	exit 1
 fi
+
+repo="$tmp/retire-modified-hook"
+new_repo "$repo"
+sh "$helper" install "$repo" "$guard_bin"
+state=$(state_path "$repo")
+managed=$(managed_hooks_path "$repo")
+printf '#!/bin/sh\nexit 99\n' >"$managed/pre-push"
+if sh "$helper" retire "$repo" "$guard_bin" >"$tmp/retire-modified.out" 2>"$tmp/retire-modified.err"; then
+    printf '%s\n' 'modified managed hook was removed' >&2
+    exit 1
+fi
+test -f "$state"
+test -f "$managed/pre-push"
+test "$(git -C "$repo" config --local --get-all core.hooksPath)" = "$managed"
+grep -Fq 'managed hook changed after install' "$tmp/retire-modified.err"
+
+repo="$tmp/retire-symlink-hook"
+new_repo "$repo"
+sh "$helper" install "$repo" "$guard_bin"
+state=$(state_path "$repo")
+managed=$(managed_hooks_path "$repo")
+printf '%s\n' outside >"$tmp/outside-hook-file"
+rm "$managed/pre-push"
+ln -s "$tmp/outside-hook-file" "$managed/pre-push"
+if sh "$helper" retire "$repo" "$guard_bin" >/dev/null 2>&1; then
+    printf '%s\n' 'symlinked managed hook was removed' >&2
+    exit 1
+fi
+test -f "$state"
+test "$(cat "$tmp/outside-hook-file")" = outside
+
+repo="$tmp/retire-interrupted"
+new_repo "$repo"
+sh "$helper" install "$repo" "$guard_bin"
+state=$(state_path "$repo")
+managed=$(managed_hooks_path "$repo")
+rm "$managed/pre-push"
+sh "$helper" retire "$repo" "$guard_bin"
+test ! -e "$state"
+test ! -e "$managed"
+
+repo="$tmp/retire-unknown-entry"
+new_repo "$repo"
+sh "$helper" install "$repo" "$guard_bin"
+state=$(state_path "$repo")
+managed=$(managed_hooks_path "$repo")
+printf '%s\n' outside >"$managed/unrelated"
+if sh "$helper" retire "$repo" "$guard_bin" >/dev/null 2>&1; then
+    printf '%s\n' 'unknown entry was removed' >&2
+    exit 1
+fi
+test -f "$state"
+test -f "$managed/unrelated"
