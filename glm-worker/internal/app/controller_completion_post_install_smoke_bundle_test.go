@@ -15,12 +15,15 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func exportPostInstallProbeZIP(t *testing.T, cfg config.AppConfig, store *controller.Store) (controller.EvidenceExport, map[string][]byte) {
+func exportPostInstallProbeZIP(t *testing.T, cfg config.AppConfig, store *controller.Store, taskID string) (controller.EvidenceExport, map[string][]byte) {
 	t.Helper()
-	export, result, err := store.ExportEvidence(controller.EvidenceExportRequest{})
+	export, result, err := store.ExportEvidence(controller.EvidenceExportRequest{TaskID: taskID})
 	if err != nil {
 		head, headErr := store.LoadHead()
 		t.Fatalf("producer Bundle export failed: %v; headErr=%v liveAttempt=%q executionTask=%#v stateBase=%q", err, headErr, head.LiveAttemptID, head.ExecutionTaskRef, cfg.StateBase)
+	}
+	if result.Target.RuntimeTaskID != taskID {
+		t.Fatalf("export selected runtime TaskID %q, expected %q", result.Target.RuntimeTaskID, taskID)
 	}
 	path, err := writeEvidenceExportArchive(cfg, export, result.ArchiveName)
 	if err != nil {
@@ -188,7 +191,7 @@ func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
 	cfg, store, runtime, record, actual := runRealPostInstallProbeForBundle(t)
 	prefix := "live/validation/quality-gate/" + record.ValidationRunID + "/"
 	logEntry := prefix + "probe.log"
-	export, members := exportPostInstallProbeZIP(t, cfg, store)
+	export, members := exportPostInstallProbeZIP(t, cfg, store, record.TaskID)
 	checkRealPostInstallProbeZIP(t, export, members, record, actual)
 
 	t.Run("modified-probe-log", func(t *testing.T) {
