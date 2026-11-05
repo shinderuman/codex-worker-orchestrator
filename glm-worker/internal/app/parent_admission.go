@@ -119,7 +119,7 @@ func resumeActionDenied(st *state.StateStore) error {
 	if checkpoint.StopKind == state.ResumeStopResultFormat {
 		return &workflow.WorkerError{Message: "terminal result correction needs the one-shot report resubmission; use glm-parent-action resubmit-report instead of --resume"}
 	}
-	return &workflow.WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability, user interruption or a recoverable guard failure"}
+	return &workflow.WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, scheduled pause, provider unavailability, user interruption or a recoverable guard failure"}
 }
 
 func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) error {
@@ -150,6 +150,8 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 
 func resumeDeniedMessage(resumeKind string) (string, bool) {
 	switch resumeKind {
+	case "scheduled-pause":
+		return "previous task is paused by the configured schedule; use --resume after the pause boundary", true
 	case "rate-limited":
 		return "previous task is rate-limited; use --resume", true
 	case "provider-unavailable":

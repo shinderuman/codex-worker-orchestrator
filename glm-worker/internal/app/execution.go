@@ -384,6 +384,15 @@ func executeZaiSelfResumeLoop(
 	err := initial()
 	lastBoundary := ""
 	for {
+		var scheduled *runner.ScheduledPauseError
+		if errors.As(err, &scheduled) {
+			if waitErr := waitForScheduledPause(st, controller, scheduled, now, wait); waitErr != nil {
+				return waitErr
+			}
+			lastAttemptStartedAt = now()
+			err = resume()
+			continue
+		}
 		var limitErr runner.ZaiRateLimitError
 		if !errors.As(err, &limitErr) {
 			return err
@@ -559,6 +568,41 @@ func validateZaiFiveHourSelfResumeState(st *state.StateStore, limitErr runner.Za
 	}
 	if limitErr.Limit.ResetAtRFC3339 == "" || checkpoint.ResetAtRFC3339 != limitErr.Limit.ResetAtRFC3339 {
 		return fmt.Errorf("reset boundary changed: got %q want %q", checkpoint.ResetAtRFC3339, limitErr.Limit.ResetAtRFC3339)
+	}
+	return nil
+}
+
+func waitForScheduledPause(
+	st *state.StateStore,
+	controller *runner.StopController,
+	paused *runner.ScheduledPauseError,
+	now func() time.Time,
+	wait func(time.Time, *runner.StopController) bool,
+) error {
+	validate := func() error {
+		if st.TaskStatus() != state.TaskStatusScheduledPause {
+			return fmt.Errorf("scheduled-pause task status changed: %s", st.TaskStatus())
+		}
+		taskID, err := st.TaskID()
+		if err != nil || taskID != paused.TaskID {
+			return fmt.Errorf("scheduled-pause task identity changed: %q / %v", taskID, err)
+		}
+		checkpoint, err := st.LoadResumeCheckpoint()
+		if err != nil || checkpoint.StopKind != state.ResumeStopScheduledPause ||
+			checkpoint.ScheduledResumeAt != paused.ResumeAt.Format(time.RFC3339) {
+			return fmt.Errorf("scheduled-pause checkpoint or resume boundary changed: %v", err)
+		}
+		return nil
+	}
+	if err := validate(); err != nil {
+		return errors.Join(paused, err)
+	}
+	if paused.ResumeAt.After(now()) && wait(paused.ResumeAt, controller) {
+		controller.NotifyInterrupted(paused.TaskID, "")
+		return &runner.InterruptedCallError{Phase: paused.Phase, TaskID: paused.TaskID, RepoRoot: paused.RepoRoot}
+	}
+	if err := validate(); err != nil {
+		return errors.Join(paused, err)
 	}
 	return nil
 }

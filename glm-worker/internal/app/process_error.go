@@ -30,6 +30,7 @@ const (
 	errorKindWorkerError               = "worker_error"
 	errorKindQualityGateRecoverable    = "quality_gate_recoverable"
 	errorKindRateLimited               = "rate_limited"
+	errorKindScheduledPause            = "scheduled_pause"
 	errorKindProviderUnavailable       = "provider_unavailable"
 	errorKindGuardRecoverable          = "guard_recoverable"
 	errorKindInterrupted               = "interrupted"
@@ -108,6 +109,7 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 	var workerErr *workflow.WorkerError
 	var qualityGateRecoverable *workflow.QualityGateRecoverableError
 	var rateLimit runner.ZaiRateLimitError
+	var scheduled *runner.ScheduledPauseError
 	var providerUnavailable *runner.ProviderUnavailableError
 	var guardRecoverable *workflow.GuardRecoverableError
 	var interrupted *runner.InterruptedCallError
@@ -122,6 +124,19 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 		}, true
 	case errors.As(err, &qualityGateRecoverable):
 		return qualityGateRecoverableProcessError(qualityGateRecoverable), true
+	case errors.As(err, &scheduled):
+		return processErrorBody{
+			Kind: errorKindScheduledPause,
+			Message: "configured GLM pause window; task stopped and resumable",
+			Detail: map[string]any{
+				"phase": scheduled.Phase,
+				"task_id": scheduled.TaskID,
+				"repo_root": scheduled.RepoRoot,
+				"resume_at": scheduled.ResumeAt.Format(time.RFC3339),
+				"resume_available": true,
+				"cleanup_warning": scheduled.CleanupWarning,
+			},
+		}, true
 	case errors.As(err, &rateLimit):
 		return processErrorBody{
 			Kind:    errorKindRateLimited,

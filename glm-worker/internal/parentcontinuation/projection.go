@@ -297,7 +297,7 @@ func interruptedResumeValid(st *state.StateStore, status state.TaskStatus, planK
 
 func temporaryBlockReason(status state.TaskStatus) string {
 	switch status {
-	case state.TaskStatusRateLimited, state.TaskStatusProviderUnavailable:
+	case state.TaskStatusRateLimited, state.TaskStatusScheduledPause, state.TaskStatusProviderUnavailable:
 		return string(status)
 	default:
 		return ""
