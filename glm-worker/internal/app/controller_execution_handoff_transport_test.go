@@ -27,7 +27,7 @@ func TestProjectedMaterializationUsesParentActionStaging(t *testing.T) {
 	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
 	reentered, err := store.ReenterAcceptedCandidate(controller.PublicationInput{
 		ExpectedGeneration: accepted.Head.ControllerGeneration,
-		CandidateID: candidate.CandidateID,
+		CandidateID:         candidate.CandidateID,
 	})
 	if err != nil {
 		t.Fatal(err)
