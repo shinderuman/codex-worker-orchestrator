@@ -30,6 +30,10 @@ none
 
 修正版親コマンドの正規Publication完了後にterminal handoffが失敗し、Codexが追加の読み取り専用復旧を要する障害を原因に基づいて解消する。Git公開成功とterminal handoff成功を分けたまま、正常経路を一度の親actionで終端まで完了可能にする。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - 実行された修正版親コマンドのbinary/source identityを確認し、成功済みPublication、Task complete、handoffのcapture/validate、実際の失敗、recoveryの順序を一次証拠と現行sourceで再構成する。前回の旧binary事例と今回の修正版再発を区別し、同じ失敗文字列・同じ根本原因だと推定で確定しない。

@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md`](IMPLEMENTATION_TASKS/parent-inflight-wait-admission.md)
+- [`IMPLEMENTATION_TASKS/post-publication-fixed-parent-handoff-regression.md`](IMPLEMENTATION_TASKS/post-publication-fixed-parent-handoff-regression.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/post-publication-fixed-parent-handoff-regression.md`](IMPLEMENTATION_TASKS/post-publication-fixed-parent-handoff-regression.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md`](IMPLEMENTATION_TASKS/codex-efficiency-next-checkpoint.md)
 - [`IMPLEMENTATION_TASKS/post-pull-mechanical-source-resynchronization.md`](IMPLEMENTATION_TASKS/post-pull-mechanical-source-resynchronization.md)
 - [`IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md`](IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md)
