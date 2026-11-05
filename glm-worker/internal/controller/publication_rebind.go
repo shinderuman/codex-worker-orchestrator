@@ -26,8 +26,8 @@ func (s *Store) rebindUnpublishedCandidate(input PublicationInput, sourceOID str
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if c.State == candidateObserved || c.ImplementationRef != nil {
-		return ExecutionOperationResult{}, fmt.Errorf("remote-observed candidate is immutable")
+	if err := requireRebindCandidateMutable(c); err != nil {
+		return ExecutionOperationResult{}, err
 	}
 	remote, err := s.unpublishedRebindRemote(head, c)
 	if err != nil {
@@ -260,4 +260,11 @@ func (s *Store) requirePulledCandidateSource(head RepositoryControllerHead, poli
 		return fmt.Errorf("post-pull candidate remote tip differs from pulled source")
 	}
 	return s.requirePulledSource(head, policy, sourceOID)
+}
+
+func requireRebindCandidateMutable(c AcceptedCandidate) error {
+	if c.State == candidateObserved || c.ImplementationRef != nil {
+		return fmt.Errorf("remote-observed candidate is immutable")
+	}
+	return nil
 }
