@@ -16,12 +16,9 @@ import (
 )
 
 type executionTransportStage struct {
-	Path        string `json:"path"`
-	Slots       []struct {
-		Name        string `json:"name"`
-		Placeholder string `json:"placeholder"`
-	} `json:"slots"`
-	NextCommand []string `json:"next_command"`
+	Path        string                               `json:"path"`
+	Slots       []struct{ Name, Placeholder string } `json:"slots"`
+	NextCommand []string                             `json:"next_command"`
 }
 
 func TestProjectedMaterializationUsesParentActionStaging(t *testing.T) {
