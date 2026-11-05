@@ -100,7 +100,7 @@ func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string)
 		Version        json.RawMessage `json:"version"`
 		Consistent     bool            `json:"consistent"`
 		RequiredAction string          `json:"required_action"`
-		ParentRequest struct {
+		ParentRequest  struct {
 			Continuation struct {
 				State  string `json:"state"`
 				Task   string `json:"task"`
