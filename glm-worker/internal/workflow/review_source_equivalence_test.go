@@ -152,7 +152,7 @@ func TestEquivalentReviewSourceRejectsChangedPlanAndUnprovableIndex(t *testing.T
 	})
 	t.Run("new Task is referenced by an existing NEXT Task", func(t *testing.T) {
 		root, _ := reviewEquivalenceFixture(t)
-		reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/old-next.md", "# NEXT\\nDepends on IMPLEMENTATION_TASKS/new-next.md\\n")
+		reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/old-next.md", "# NEXT\nDepends on IMPLEMENTATION_TASKS/new-next.md\n")
 		reviewEquivalenceGit(t, root, "add", ".")
 		reviewEquivalenceGit(t, root, "commit", "-qm", "unresolved indirect metadata reference")
 		s, err := state.CaptureGitSnapshot(root)
