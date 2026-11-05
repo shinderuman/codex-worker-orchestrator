@@ -21,23 +21,22 @@ func prepareScheduledPauseStop(t *testing.T, resumeAt time.Time) (*state.StateSt
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkpoint := state.ResumeCheckpoint{
-		Stage: state.ResumeStageReview,
-		Phase: "reviewer-1",
-		Role:  state.ReviewerRole,
-		Model: "sonnet",
-	}
+	checkpoint := state.ResumeCheckpoint{}
+	checkpoint.Stage = state.ResumeStageReview
+	checkpoint.Phase = "reviewer-1"
+	checkpoint.Role = state.ReviewerRole
+	checkpoint.Model = "sonnet"
 	checkpoint.SetStopKind(state.ResumeStopScheduledPause)
 	checkpoint.ScheduledResumeAt = resumeAt.Format(time.RFC3339)
 	if err := st.EnterStop(checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	return st, &runner.ScheduledPauseError{
-		Phase:    checkpoint.Phase,
-		TaskID:   taskID,
-		RepoRoot: cfg.RepoRoot,
-		ResumeAt: resumeAt,
-	}
+	paused := &runner.ScheduledPauseError{}
+	paused.Phase = checkpoint.Phase
+	paused.TaskID = taskID
+	paused.RepoRoot = cfg.RepoRoot
+	paused.ResumeAt = resumeAt
+	return st, paused
 }
 
 func TestScheduledPauseSelfResumeAtExactBoundary(t *testing.T) {
