@@ -17,8 +17,8 @@ func TestRepoSearchContextBudgetParentLocatorProjection(t *testing.T) {
 		{Path: "glm-worker/internal/reposearch/score.go", Line: 63, Score: 2.0, Snippet: "duplicate source line"},
 	}
 	request := repoSearchRequest{
-		Question:     "cache",
-		Scopes:       []string{"glm-worker/internal/reposearch"},
+		Question:    "cache",
+		Scopes:      []string{"glm-worker/internal/reposearch"},
 		BudgetBytes: 4096,
 	}
 	report := reposearch.Report{Candidates: 2}
