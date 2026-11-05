@@ -216,16 +216,22 @@ func (s *reviewNextPlanSections) addLine(line string) error {
 }
 
 func reviewPlanTaskPath(row string) (string, bool) {
-	if !strings.HasPrefix(row, "- [\x60IMPLEMENTATION_TASKS/") {
-		return "", false
+	if strings.HasPrefix(row, "- [\x60IMPLEMENTATION_TASKS/") {
+		rest := strings.TrimPrefix(row, "- [\x60")
+		path, after, ok := strings.Cut(rest, "\x60](")
+		if !ok || !strings.HasPrefix(path, state.ParentTasksDir+"/") ||
+			!strings.HasSuffix(path, ".md") || after != path+")" {
+			return "", false
+		}
+		return path, true
 	}
-	rest := strings.TrimPrefix(row, "- [\x60")
-	path, after, ok := strings.Cut(rest, "\x60](")
-	if !ok || !strings.HasPrefix(path, state.ParentTasksDir+"/") ||
-		!strings.HasSuffix(path, ".md") || after != path+")" {
-		return "", false
+	if strings.HasPrefix(row, "- \x60IMPLEMENTATION_TASKS/") && strings.HasSuffix(row, "\x60") {
+		path := strings.TrimSuffix(strings.TrimPrefix(row, "- \x60"), "\x60")
+		if strings.HasPrefix(path, state.ParentTasksDir+"/") && strings.HasSuffix(path, ".md") {
+			return path, true
+		}
 	}
-	return path, true
+	return "", false
 }
 
 func reviewPlanActivePath(planWithoutNext string) (string, bool) {
