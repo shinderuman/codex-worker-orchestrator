@@ -44,7 +44,7 @@ func ChangedDarwinPackages(repository string) ([]DarwinPackageRequirement, error
 			if !strings.HasPrefix(path, "glm-worker/") || !strings.HasSuffix(path, ".go") {
 				continue
 			}
-			if darwinSourceFile(filepath.Join(repository, filepath.FromSlash(path)), path) {
+			if darwinChangedPath(repository, path) {
 				changed[filepath.ToSlash(filepath.Dir(strings.TrimPrefix(path, "glm-worker/")))] = true
 			}
 		}
@@ -96,6 +96,9 @@ func ChangedDarwinPackages(repository string) ([]DarwinPackageRequirement, error
 		sort.Strings(requirement.Tests)
 		result = append(result, requirement)
 	}
+	if len(result) == 0 {
+		return nil, nil
+	}
 	return result, nil
 }
 
@@ -106,6 +109,20 @@ func goTestFunctionName(name string) bool {
 	}
 	r := []rune(strings.TrimPrefix(name, "Test"))[0]
 	return r < 'a' || r > 'z'
+}
+
+func darwinChangedPath(repository, path string) bool {
+	absolute := filepath.Join(repository, filepath.FromSlash(path))
+	if darwinSourceFile(absolute, filepath.Base(path)) {
+		return true
+	}
+	if _, err := os.Stat(absolute); err == nil {
+		return false
+	}
+	// A deleted Darwin-only source must not disappear from the required
+	// candidate test scope while its package still exists.
+	previous, err := darwinGitOutput(repository, "show", "HEAD^:"+path)
+	return err == nil && darwinSourceBytes(filepath.Base(path), previous)
 }
 
 func darwinSourceFile(path, name string) bool {
@@ -185,7 +202,7 @@ func ChangedDarwinPackagesAtCommit(repository, commit string) ([]DarwinPackageRe
 			}
 			for _, decl := range parsed.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
-				if ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
+				if ok && fn.Recv == nil && goTestFunctionName(fn.Name.Name) {
 					tests[fn.Name.Name] = true
 				}
 			}
@@ -199,6 +216,9 @@ func ChangedDarwinPackagesAtCommit(repository, commit string) ([]DarwinPackageRe
 		}
 		sort.Strings(item.Tests)
 		required = append(required, item)
+	}
+	if len(required) == 0 {
+		return nil, nil
 	}
 	return required, nil
 }
