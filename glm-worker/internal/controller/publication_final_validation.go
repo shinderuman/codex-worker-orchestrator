@@ -175,8 +175,11 @@ func validFinalValidationWorkingDir(dir string) bool {
 
 func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalValidationEvidence, error) {
 	requests, err := normalizeRequiredValidations(c.RequiredValidations)
-	if err != nil || len(requests) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	if len(requests) == 0 {
+		return nil, s.requireDarwinAcceptanceValidationForm(c)
 	}
 	source, err := s.finalValidationSource(c)
 	if err != nil {
@@ -218,6 +221,11 @@ func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []Fi
 	requests, err := normalizeRequiredValidations(c.RequiredValidations)
 	if err != nil {
 		return err
+	}
+	if len(requests) == 0 {
+		if err := s.requireDarwinAcceptanceValidationForm(c); err != nil {
+			return err
+		}
 	}
 	forms := finalValidationForms(requests)
 	byForm, obligated, err := finalValidationRecordShape(forms, recorded)
@@ -405,4 +413,15 @@ func finalValidationSamePath(left, right string) bool {
 		return false
 	}
 	return filepath.Clean(resolvedLeft) == filepath.Clean(resolvedRight)
+}
+
+func (s *Store) requireDarwinAcceptanceValidationForm(c AcceptedCandidate) error {
+	required, err := qualitygate.ChangedDarwinPackagesAtCommit(s.identity.PrimaryRoot, c.CommitOID)
+	if err != nil {
+		return err
+	}
+	if len(required) > 0 {
+		return fmt.Errorf("final validation go-test is required for candidate Darwin-tagged acceptance")
+	}
+	return nil
 }

@@ -593,3 +593,13 @@ func TestPublicationRejectsMissingDarwinAcceptanceWithUnchangedRemoteAndRuntime(
 		})
 	}
 }
+
+func TestPublicationRequiresFinalValidationFormForDarwinSource(t *testing.T) {
+	t.Parallel()
+	fixture, policy := newPublicationTestFixture(t)
+	source := publicationTestEdit(t, fixture, "glm-worker/internal/qualitygate/resource_samples_darwin.go", "package qualitygate\nconst requiredValue = 1\n")
+	acceptedCompletionRuntime(t, fixture.store, source)
+	promoted, candidate := acceptFinalValidationSource(t, fixture, policy, source, []FinalValidationRequest{})
+	runtime, err := publishFinalValidationCompletion(t, fixture, promoted, candidate)
+	assertFinalValidationRefused(t, fixture, policy, runtime, err, "go-test")
+}
