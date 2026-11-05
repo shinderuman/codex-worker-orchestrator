@@ -287,17 +287,25 @@ func VerifyTerminalPass(record RunRecord) error {
 	if _, err := os.Stat(record.Log); err != nil {
 		return fmt.Errorf("quality gate log evidence is unavailable: %w", err)
 	}
-	if len(record.DarwinPackages) > 0 && (record.Execution == nil || record.Execution.Backend == BackendNative) {
-		if record.Toolchain == nil || record.Toolchain.GOOS != platformDarwin || record.Toolchain.GOARCH != platformARM64 || !record.Toolchain.MatchesRequiredGoVersion() {
-			return fmt.Errorf("Darwin acceptance lacks the required native toolchain")
-		}
-		log, err := os.ReadFile(record.Log)
-		if err != nil {
-			return err
-		}
-		return VerifyDarwinAcceptance(log, record.DarwinPackages)
+	return verifyNativeDarwinAcceptance(record)
+}
+
+func verifyNativeDarwinAcceptance(record RunRecord) error {
+	if len(record.DarwinPackages) == 0 || (record.Execution != nil && record.Execution.Backend != BackendNative) {
+		return nil
 	}
-	return nil
+	if !darwinNativeToolchainComplete(record.Toolchain) {
+		return fmt.Errorf("darwin acceptance lacks the required native toolchain")
+	}
+	log, err := os.ReadFile(record.Log)
+	if err != nil {
+		return err
+	}
+	return VerifyDarwinAcceptance(log, record.DarwinPackages)
+}
+
+func darwinNativeToolchainComplete(t *RunToolchain) bool {
+	return t != nil && t.GOOS == platformDarwin && t.GOARCH == platformARM64 && t.MatchesRequiredGoVersion()
 }
 
 func environmentValue(env []string, key string) string {

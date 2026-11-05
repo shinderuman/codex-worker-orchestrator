@@ -159,7 +159,7 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.Run
 		return qualitygate.RunRecord{}, err
 	}
 	if len(darwinPackages) > 0 && execution == nil && (runtime.GOOS != "darwin" || runtime.GOARCH != "arm64") {
-		return qualitygate.RunRecord{}, fmt.Errorf("Darwin-tagged acceptance requires a Darwin ARM64 validation host")
+		return qualitygate.RunRecord{}, fmt.Errorf("darwin-tagged acceptance requires a Darwin ARM64 validation host")
 	}
 	return qualitygate.RunRecord{
 		Execution:                     execution,

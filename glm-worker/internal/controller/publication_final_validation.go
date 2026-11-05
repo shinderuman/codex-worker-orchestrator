@@ -181,36 +181,15 @@ func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalVali
 	if len(requests) == 0 {
 		return nil, s.requireDarwinAcceptanceValidationForm(c)
 	}
-	source, err := s.finalValidationSource(c)
-	if err != nil {
-		return nil, err
-	}
-	requiredDarwin, err := qualitygate.ChangedDarwinPackagesAtCommit(s.identity.PrimaryRoot, c.CommitOID)
+	source, requiredDarwin, err := s.darwinFinalValidationSource(c)
 	if err != nil {
 		return nil, err
 	}
 	evidence := make([]FinalValidationEvidence, 0, len(requests))
 	for _, request := range requests {
-		repoRoot, err := s.finalValidationWorkspace(c, request)
+		record, err := s.collectFinalValidationRun(c, request, source, requiredDarwin)
 		if err != nil {
 			return nil, err
-		}
-		module, err := s.finalValidationRunStore(c.TaskRef)
-		if err != nil {
-			return nil, err
-		}
-		record, ok, err := latestFinalValidationRun(module, repoRoot, request.Form)
-		if err != nil {
-			return nil, err
-		}
-		if !ok || !finalValidationMatchesSource(record, repoRoot, source, request) {
-			return nil, fmt.Errorf("final validation %s has no terminal PASS run for the current candidate source", request.Form)
-		}
-		if !reflect.DeepEqual(record.DarwinPackages, requiredDarwin) {
-			return nil, fmt.Errorf("final validation %s did not cover candidate Darwin acceptance", request.Form)
-		}
-		if err := qualitygate.VerifyTerminalPass(record); err != nil {
-			return nil, fmt.Errorf("final validation %s run %s is not a terminal PASS: %w", request.Form, record.ValidationRunID, err)
 		}
 		evidence = append(evidence, FinalValidationEvidence{Form: request.Form, ValidationRunID: record.ValidationRunID})
 	}
@@ -232,39 +211,13 @@ func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []Fi
 	if err != nil || !obligated {
 		return err
 	}
-	source, err := s.finalValidationSource(c)
-	if err != nil {
-		return err
-	}
-	requiredDarwin, err := qualitygate.ChangedDarwinPackagesAtCommit(s.identity.PrimaryRoot, c.CommitOID)
+	source, requiredDarwin, err := s.darwinFinalValidationSource(c)
 	if err != nil {
 		return err
 	}
 	for _, request := range requests {
-		repoRoot, err := s.finalValidationWorkspace(c, request)
-		if err != nil {
+		if err := s.verifyFinalValidationRecord(c, request, byForm[request.Form], source, requiredDarwin); err != nil {
 			return err
-		}
-		module, err := s.finalValidationRunStore(c.TaskRef)
-		if err != nil {
-			return err
-		}
-		if err := verifyFinalValidationRun(module, repoRoot, byForm[request.Form], request, source); err != nil {
-			return err
-		}
-		saved, err := qualitygate.Read(module, byForm[request.Form])
-		if err != nil {
-			return err
-		}
-		if !reflect.DeepEqual(saved.DarwinPackages, requiredDarwin) {
-			return fmt.Errorf("final validation %s omitted candidate Darwin acceptance", request.Form)
-		}
-		latest, _, err := latestFinalValidationRun(module, repoRoot, request.Form)
-		if err != nil {
-			return err
-		}
-		if latest.ValidationRunID != byForm[request.Form] {
-			return fmt.Errorf("final validation %s has a newer run; saved readiness is stale", request.Form)
 		}
 	}
 	return nil
@@ -422,6 +375,76 @@ func (s *Store) requireDarwinAcceptanceValidationForm(c AcceptedCandidate) error
 	}
 	if len(required) > 0 {
 		return fmt.Errorf("final validation go-test is required for candidate Darwin-tagged acceptance")
+	}
+	return nil
+}
+
+func (s *Store) darwinFinalValidationSource(c AcceptedCandidate) (finalValidationSource, []qualitygate.DarwinPackageRequirement, error) {
+	source, err := s.finalValidationSource(c)
+	if err != nil {
+		return finalValidationSource{}, nil, err
+	}
+	required, err := qualitygate.ChangedDarwinPackagesAtCommit(s.identity.PrimaryRoot, c.CommitOID)
+	return source, required, err
+}
+
+func (s *Store) collectFinalValidationRun(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource, required []qualitygate.DarwinPackageRequirement) (qualitygate.RunRecord, error) {
+	root, err := s.finalValidationWorkspace(c, request)
+	if err != nil {
+		return qualitygate.RunRecord{}, err
+	}
+	store, err := s.finalValidationRunStore(c.TaskRef)
+	if err != nil {
+		return qualitygate.RunRecord{}, err
+	}
+	record, ok, err := latestFinalValidationRun(store, root, request.Form)
+	if err != nil {
+		return qualitygate.RunRecord{}, err
+	}
+	if !ok || !finalValidationMatchesSource(record, root, source, request) {
+		return qualitygate.RunRecord{}, fmt.Errorf("final validation %s has no terminal PASS run for the current candidate source", request.Form)
+	}
+	if err := verifyDarwinFinalValidationRecord(record, required); err != nil {
+		return qualitygate.RunRecord{}, err
+	}
+	if err := qualitygate.VerifyTerminalPass(record); err != nil {
+		return qualitygate.RunRecord{}, fmt.Errorf("final validation %s run %s is not a terminal PASS: %w", request.Form, record.ValidationRunID, err)
+	}
+	return record, nil
+}
+
+func (s *Store) verifyFinalValidationRecord(c AcceptedCandidate, request FinalValidationRequest, runID string, source finalValidationSource, required []qualitygate.DarwinPackageRequirement) error {
+	root, err := s.finalValidationWorkspace(c, request)
+	if err != nil {
+		return err
+	}
+	store, err := s.finalValidationRunStore(c.TaskRef)
+	if err != nil {
+		return err
+	}
+	if err := verifyFinalValidationRun(store, root, runID, request, source); err != nil {
+		return err
+	}
+	record, err := qualitygate.Read(store, runID)
+	if err != nil {
+		return err
+	}
+	if err := verifyDarwinFinalValidationRecord(record, required); err != nil {
+		return err
+	}
+	latest, _, err := latestFinalValidationRun(store, root, request.Form)
+	if err != nil {
+		return err
+	}
+	if latest.ValidationRunID != runID {
+		return fmt.Errorf("final validation %s has a newer run; saved readiness is stale", request.Form)
+	}
+	return nil
+}
+
+func verifyDarwinFinalValidationRecord(record qualitygate.RunRecord, required []qualitygate.DarwinPackageRequirement) error {
+	if !reflect.DeepEqual(record.DarwinPackages, required) {
+		return fmt.Errorf("final validation %s omitted candidate Darwin acceptance", record.Form)
 	}
 	return nil
 }

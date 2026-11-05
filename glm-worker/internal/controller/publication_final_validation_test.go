@@ -566,7 +566,7 @@ func TestCandidateAcceptanceRejectsUnknownValidationForm(t *testing.T) {
 func TestPublicationRejectsMissingDarwinAcceptanceWithUnchangedRemoteAndRuntime(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name string
+		name   string
 		mutate func(*qualitygate.RunRecord)
 	}{
 		{name: "omitted Darwin coverage", mutate: func(*qualitygate.RunRecord) {}},

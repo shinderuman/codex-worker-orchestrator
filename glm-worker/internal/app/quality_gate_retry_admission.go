@@ -45,8 +45,8 @@ func qualityGateInvocationDigest(record qualitygate.RunRecord, args []string) (s
 		GoSHA         string
 		Arguments     []string
 		Environment   []string
-		HostToolchain *qualitygate.RunToolchain
-		Backend       string
+		HostToolchain  *qualitygate.RunToolchain
+		Backend        string
 		DarwinPackages []qualitygate.DarwinPackageRequirement
 	}{
 		ExecutableSHA: executableSHA, GoSHA: goSHA, Arguments: args,
