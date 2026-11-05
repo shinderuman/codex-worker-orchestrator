@@ -77,19 +77,70 @@ func TestParentWaitAdmissionRetainsWorkerAndDeliversInterruption(t *testing.T) {
 	}
 }
 
+// primary ownerの解放後に新しいowner epochへ切り替わった場合、
+// 古いwaiterはWorkerを奪わず、古いhandoffも返さない。
+func TestParentWaitAdmissionSupersededWhileWorkerRemainsInFlight(t *testing.T) {
+	cfg, st := newParentActionTestState(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	initial := seedParentWaitOwnerEpoch(t, st)
+	writeParentWaitWorkerStub(t)
+
+	worker, err := repolock.Acquire(st.LockPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = worker.Close() }()
+
+	var stdout parentWaitOutputBuffer
+	var stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- executeParentWait(cfg, []string{"wait"}, &stdout, &stderr) }()
+	waitForParentRecoveryWaiter(t, st, done)
+	assertParentWaitStillBlocked(t, done, &stdout)
+
+	next := seedParentWaitOwnerEpoch(t, st)
+	if next == initial {
+		t.Fatal("owner epoch was not rotated")
+	}
+	assertParentWaitStillBlocked(t, done, &stdout)
+	if err := worker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("superseded wait did not return after worker release")
+	}
+	var result parentWaitOutput
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != parentWaitStatusSuperseded || len(result.Handoff) != 0 {
+		t.Fatalf("superseded wait returned stale handoff: %#v", result)
+	}
+}
+
 func TestParentWaitAdmissionSurfacesRecoveryErrorWithoutFalseRelease(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		script string
 	}{
 		{
-			name: "invalid-json",
+			name:   "invalid-json",
 			script: `#!/bin/sh
 printf '%s\n' '{not-json'
 `,
 		},
 		{
-			name: "worker-failed",
+			name:   "worker-failed",
 			script: `#!/bin/sh
 exit 2
 `,
