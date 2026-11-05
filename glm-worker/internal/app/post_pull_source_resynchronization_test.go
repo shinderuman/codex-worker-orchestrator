@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -87,10 +86,3 @@ func TestPostPullSourceResynchronizationRefusesRemoteRace(t *testing.T) {
 	}
 }
 
-func TestPostPullSourceResynchronizationNeverPromotesOrPublishes(t *testing.T) {
-	for _, operation := range []string{controller.PublicationOperationPromote, controller.PublicationOperationPublish, controller.PublicationOperationAccept} {
-		if operation == "" {
-			t.Fatal("invalid operation")
-		}
-	}
-}
