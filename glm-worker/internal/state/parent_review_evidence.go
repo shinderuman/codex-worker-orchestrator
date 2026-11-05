@@ -17,6 +17,7 @@ type ParentReviewBinding struct {
 	Snapshot     SnapshotDigest                `json:"snapshot"`
 	Coverage     *ParentReviewEvidenceCoverage `json:"coverage,omitempty"`
 	Proof        *ParentReviewEvidenceProof    `json:"proof,omitempty"`
+	SourceEquivalence *ParentReviewSourceEquivalence `json:"source_equivalence,omitempty"`
 }
 
 type ParentReviewEvidenceProof struct {
@@ -86,6 +87,11 @@ func validateParentReviewBindingIdentity(state ParentReviewState) error {
 	}
 	if _, err := hex.DecodeString(binding.PacketSHA256); err != nil {
 		return fmt.Errorf("parent review packet digest is invalid")
+	}
+	if eq := binding.SourceEquivalence; eq != nil {
+		if eq.OriginalReviewID != binding.ID || eq.ReviewerCallID == "" || eq.ReviewerResponseSHA256 == "" || eq.WorkerCallID == "" || !completeParentReviewSnapshot(eq.OriginalSnapshot) || eq.OriginalSnapshot.Head == binding.Snapshot.Head || state.Open.Risk != string(packet.RiskHigh) || state.Open.Role != string(ReviewerRole) {
+			return fmt.Errorf("equivalent review source provenance is invalid")
+		}
 	}
 	return nil
 }
@@ -162,6 +168,10 @@ func (s *StateStore) CurrentParentReviewBinding() (*ParentReviewBinding, error) 
 		proof := *binding.Proof
 		proof.Claims = append([]ParentReviewEvidenceClaim(nil), proof.Claims...)
 		binding.Proof = &proof
+	}
+	if binding.SourceEquivalence != nil {
+		equivalence := *binding.SourceEquivalence
+		binding.SourceEquivalence = &equivalence
 	}
 	return &binding, nil
 }
