@@ -51,7 +51,7 @@ func validateEquivalentReviewAdvancement(repo string, original, current state.Sn
 	if err := equivalentNextOnlyPlan(repo, original.Head, current.Head, added); err != nil {
 		return err
 	}
-	if err := equivalentPreAdvancementIndex(repo, original.Head, original.IndexDigest, changed); err != nil {
+	if err := equivalentPreAdvancementIndex(repo, original.Head, current.Head, original.IndexDigest, changed); err != nil {
 		return err
 	}
 	if err := verifyEquivalentReviewTargets(targets, changed); err != nil {
@@ -248,7 +248,7 @@ func reviewPlanActivePath(planWithoutNext string) (string, bool) {
 	return active, active != ""
 }
 
-func equivalentPreAdvancementIndex(repo, oldHead, oldDigest string, changed map[string]string) error {
+func equivalentPreAdvancementIndex(repo, oldHead, newHead, oldDigest string, changed map[string]string) error {
 	index, err := reviewSourceGit(repo, "ls-files", "-s")
 	if err != nil {
 		return err
@@ -257,7 +257,7 @@ func equivalentPreAdvancementIndex(repo, oldHead, oldDigest string, changed map[
 	if err != nil {
 		return err
 	}
-	if err := restorePreviousMetadataEntries(repo, oldHead, changed, lines); err != nil {
+	if err := restorePreviousMetadataEntries(repo, oldHead, newHead, changed, lines); err != nil {
 		return err
 	}
 	names := make([]string, 0, len(lines))
@@ -290,8 +290,15 @@ func parseEquivalentIndex(index []byte) (map[string]string, error) {
 	return lines, nil
 }
 
-func restorePreviousMetadataEntries(repo, oldHead string, changed map[string]string, lines map[string]string) error {
+func restorePreviousMetadataEntries(repo, oldHead, newHead string, changed map[string]string, lines map[string]string) error {
 	for path, status := range changed {
+		expectedCurrent, err := oldMetadataIndexEntry(repo, newHead, path)
+		if err != nil {
+			return err
+		}
+		if lines[path] != expectedCurrent {
+			return fmt.Errorf("staged metadata differs from committed fast-forward at %s", path)
+		}
 		delete(lines, path)
 		if status == "A" {
 			continue
