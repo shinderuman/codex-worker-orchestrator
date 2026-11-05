@@ -72,7 +72,7 @@ func TestScheduledPauseWakeRejectsChangedCheckpoint(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		checkpoint.ScheduledResumeAt = now.Add(2*time.Hour).Format(time.RFC3339)
+		checkpoint.ScheduledResumeAt = now.Add(2 * time.Hour).Format(time.RFC3339)
 		if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 			t.Fatal(err)
 		}
