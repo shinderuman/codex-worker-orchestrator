@@ -73,6 +73,31 @@ func TestExportPostInstallProbePreservesActualLogAndOtherValidationForms(t *test
 	record := exportProbeFixtureRecord(fixture)
 	payload := []byte("post-install stdout\npost-install stderr\n")
 	writeExportProbeFixture(t, fixture, record, payload)
+	goRace := regressionFixtureRun(fixture.repo, "34343434343434343434343434343434", time.Unix(6150, 0).UTC())
+	goRace.Form = "go-test-race"
+	goRace.TaskID = fixture.runtimeTask
+	writeEvidenceGateRun(t, fixture.runtime, goRace)
+	resources := gateRunResourceFixture(goRace.ValidationRunID)
+	resources.Form = goRace.Form
+	resourceBytes, err := qualitygate.EncodeResourceSamples(resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSourceBound", Action: "pass", ElapsedMS: 100}})
+	timings.Form = goRace.Form
+	timings.ValidationRunID = goRace.ValidationRunID
+	timingBytes, err := qualitygate.EncodeTestTimings(timings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string][]byte{
+		qualitygate.ResourceSamplesFile: resourceBytes,
+		qualitygate.TestTimingsFile: timingBytes,
+	} {
+		if err := os.WriteFile(fixture.runtime.Path(filepath.Join(qualitygate.RunDirectory, goRace.ValidationRunID, name)), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -101,10 +126,18 @@ func TestExportPostInstallProbePreservesActualLogAndOtherValidationForms(t *test
 	for _, existing := range []string{
 		"live/validation/quality-gate/" + evidenceExportGateRunID + "/" + qualitygate.RunLog,
 		"live/validation/install-smoke/" + evidenceExportSmokeRunID + "/" + evidenceExportValidationSmokeLog,
+		"live/validation/quality-gate/" + goRace.ValidationRunID + "/" + qualitygate.RunLog,
+		"live/validation/quality-gate/" + goRace.ValidationRunID + "/" + qualitygate.ResourceSamplesFile,
+		"live/validation/quality-gate/" + goRace.ValidationRunID + "/" + qualitygate.TestTimingsFile,
 	} {
 		if entry := exportEntryByPath(t, export.Manifest, existing); entry.Missing || entry.Unreadable != "" {
 			t.Fatalf("ordinary validation evidence regressed: %#v", entry)
 		}
+	}
+	goRaceRun := findExportProbeAnalysis(t, export, goRace)
+	if goRaceRun.Form != "go-test-race" || goRaceRun.Log == "" || goRaceRun.ResourceSamples == "" ||
+		goRaceRun.TestTimings == "" || goRaceRun.Binding != evidenceValidationBindingTaskRecord {
+		t.Fatalf("Go race validation lost source-bound artifacts: %#v", goRaceRun)
 	}
 }
 
