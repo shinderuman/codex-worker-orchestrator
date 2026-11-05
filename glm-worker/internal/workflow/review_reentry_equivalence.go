@@ -36,7 +36,7 @@ func prepareEquivalentReviewReentry(runtime *state.StateStore, repo string) (equ
 	if len(old.Packet) == 0 {
 		return equivalentReviewReentry{}, fmt.Errorf("original canonical Reviewer packet was not retained")
 	}
-	originalPacket, err := packet.ParseStructured(old.Packet)
+	originalPacket, err := packet.ParseStructured([]byte(old.Packet))
 	if err != nil {
 		return equivalentReviewReentry{}, err
 	}
