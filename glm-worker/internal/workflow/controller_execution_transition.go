@@ -208,7 +208,11 @@ func completeMaterializedReview(cfg config.AppConfig, store *controller.Store, r
 		return verifyRetainedMaterializedReview(runtimeCfg, result.Admission.Attempt)
 	}
 	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
-	if review, err := wf.state.CurrentParentReviewBinding(); err == nil && review != nil && review.SourceEquivalence != nil {
+	review, err := wf.state.CurrentParentReviewBinding()
+	if err != nil {
+		return fmt.Errorf("materialized parent Review binding is unreadable: %w", err)
+	}
+	if review != nil && review.SourceEquivalence != nil {
 		if err := wf.admitCanonicalReenteredReview(); err != nil {
 			return err
 		}
