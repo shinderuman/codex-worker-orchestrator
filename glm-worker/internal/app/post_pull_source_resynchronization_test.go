@@ -156,7 +156,7 @@ func TestPostPullRetiredMetadataRejectsConcurrentRemoteChange(t *testing.T) {
 	pullExternalSourceChange(t, cfg, policy, map[string]string{"IMPLEMENTATION_HISTORY.md": "pulled metadata\n"}, nil)
 	remote := advanceRemoteBeyondPulledPrimary(t, store.Identity().PrimaryRoot, policy, "new-remote-only.txt", "competing remote\n")
 	exit, output, diagnostics := runParentActionCLI(t, cfg, "resync-source")
-	if exit == 0 || !strings.Contains(diagnostics, "observed remote tip") {
+	if exit == 0 || !strings.Contains(diagnostics, "remote commit differs") {
 		t.Fatalf("retired remote race must be refused: exit=%d %s %s", exit, output, diagnostics)
 	}
 	assertPostPullRemoteOID(t, store.Identity().PrimaryRoot, policy, remote)
