@@ -194,6 +194,34 @@ func TestCanonicalWorkflow606F11DispatchAndRootResume(t *testing.T) {
 	if blockerCfg.RepoHash == cfg.RepoHash {
 		t.Fatal("blocker reused root session")
 	}
+	// A worker launched from the Controller's non-primary lane can initially
+	// carry the prior Task's session key at an unchanged workspace path.
+	// Its handoff must capture and validate the selected Runtime in one scope.
+	unbound := cfg
+	unbound.RepoRoot = blockerCfg.RepoRoot
+	bound, boundState := bindParentHandoffReadState(unbound, state.AttachStateStore(unbound))
+	if bound.RepoRoot != blockerCfg.RepoRoot || bound.RepoHash != blockerCfg.RepoHash ||
+		boundState.ReadOr("task.id", "") != state.AttachStateStore(blockerCfg).ReadOr("task.id", "") {
+		t.Fatalf("handoff read scope did not follow the Controller-selected Task: cfg=%s bound=%s", blockerCfg.RepoHash, bound.RepoHash)
+	}
+	var scoped bytes.Buffer
+	if err := printParentHandoffLeasedWithConfig(unbound, state.AttachStateStore(unbound), &scoped); err != nil {
+		t.Fatalf("canonical handoff failed across Task-key rebinding: %v", err)
+	}
+	var scopedHandoff parentHandoffOutput
+	if err := json.Unmarshal(scoped.Bytes(), &scopedHandoff); err != nil || !scopedHandoff.Consistent ||
+		scopedHandoff.TaskID == nil || *scopedHandoff.TaskID != boundState.ReadOr("task.id", "") {
+		t.Fatalf("canonical handoff lost the selected Runtime: %v %s", err, scoped.String())
+	}
+	var recovery bytes.Buffer
+	if err := printParentHandoffRecoveryLeasedWithConfig(unbound, state.AttachStateStore(unbound), &recovery); err != nil {
+		t.Fatalf("read-only handoff recovery failed across Task-key rebinding: %v", err)
+	}
+	var recoveryHandoff parentHandoffRecoveryOutput
+	if err := json.Unmarshal(recovery.Bytes(), &recoveryHandoff); err != nil || !recoveryHandoff.Consistent ||
+		recoveryHandoff.TaskID == nil || *recoveryHandoff.TaskID != boundState.ReadOr("task.id", "") {
+		t.Fatalf("read-only handoff recovery lost the selected Runtime: %v %s", err, recovery.String())
+	}
 	blockerState := state.AttachStateStore(blockerCfg)
 	handoff := buildParentHandoffWithConfig(blockerCfg, blockerState)
 	if !handoff.Consistent || handoff.ParentRequest == nil || !handoff.ParentRequest.TaskAttribution.Matches || handoff.ParentRequest.TaskAttribution.ActiveTask != blockerTask {
