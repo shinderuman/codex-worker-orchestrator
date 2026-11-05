@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -190,13 +189,13 @@ func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, m
 	newTask := "IMPLEMENTATION_TASKS/post-pull-next.md"
 	writeAppTestFile(t, repo, newTask, "# NEXT\n\n## Contract\n\nMetadata-only successor.\n\n## Dependencies\n\nnone\n\n## External feasibility\n\nstatus: not-applicable\n")
 	nextLine := "- `" + newTask + "`\n"
-	writeAppTestFile(t, repo, state.ParentPlanFile, strings.Replace(string(before), "## NEXT\n", "## NEXT\n\n" + nextLine, 1))
+	writeAppTestFile(t, repo, state.ParentPlanFile, strings.Replace(string(before), "## NEXT\n", "## NEXT\n\n"+nextLine, 1))
 	if mutate != nil {
 		mutate(repo)
 	}
 	runControllerActivationGit(t, repo, "add", "--all")
 	runControllerActivationGit(t, repo, "commit", "-qm", "add next-only task after independent HIGH review")
-	runControllerActivationGit(t, repo, "push", "-q", f.candidate.Policy.Remote, "HEAD:" + f.candidate.Policy.RemoteRef)
+	runControllerActivationGit(t, repo, "push", "-q", f.candidate.Policy.Remote, "HEAD:"+f.candidate.Policy.RemoteRef)
 	snapshot, err := controller.CaptureWorkspaceSnapshot(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +306,7 @@ func TestPostPullMetadataEquivalentReviewReentersThroughMaterializeAndAcceptsNew
 	manifest := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
 		Version: parentevidence.ManifestVersion,
 		Reason:  "re-prove independent HIGH target against materialized source",
-		Source:  []parentevidence.SourceRequest{{
+		Source: []parentevidence.SourceRequest{{
 			Question:    "inspect original target on new source",
 			Path:        "IMPLEMENTATION_TASKS/root.md",
 			LineStart:   1,
@@ -351,9 +350,3 @@ func TestPostPullMetadataChangedDependencyFallsBackToFreshReview(t *testing.T) {
 	}
 }
 
-func TestPostPullMetadataSourceGoFmtDiagnostic(t *testing.T) {
-	output, err := exec.Command("gofmt", "-d", "post_pull_metadata_review_equivalence_test.go").CombinedOutput()
-	if err != nil || len(output) != 0 {
-		t.Fatalf("post-pull metadata test gofmt difference: %s; err=%v", output, err)
-	}
-}
