@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -199,8 +199,6 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 	return nil
 }
 
-// readValidationRunFile keeps recorded evidence inside its validation store and
-// rejects symlink substitution or a file replaced/modified during the read.
 func readValidationRunFile(store *state.StateStore, runID, filename string) ([]byte, error) {
 	return readValidationRunFileWithRead(store, runID, filename, func(file *os.File) ([]byte, error) {
 		return io.ReadAll(file)
@@ -211,50 +209,12 @@ func readValidationRunFileWithRead(store *state.StateStore, runID, filename stri
 	if !qualitygate.ValidRunID(runID) {
 		return nil, fmt.Errorf("invalid validation run ID")
 	}
-	root, err := os.OpenRoot(store.Path("."))
-	if err != nil {
-		return nil, err
+	if filename != qualitygate.RunFile && filename != "probe.log" {
+		return nil, fmt.Errorf("invalid validation run artifact")
 	}
-	defer root.Close()
-	dir := filepath.Join(qualitygate.RunDirectory, runID)
-	for _, component := range []string{qualitygate.RunDirectory, dir} {
-		info, err := root.Lstat(component)
-		if err != nil {
-			return nil, err
-		}
-		if !info.IsDir() {
-			return nil, fmt.Errorf("validation run source directory is not an ordinary directory")
-		}
-	}
-	relative := filepath.Join(dir, filename)
-	before, err := root.Lstat(relative)
-	if err != nil {
-		return nil, err
-	}
-	if !before.Mode().IsRegular() {
-		return nil, fmt.Errorf("validation run source is not a regular file")
-	}
-	file, err := root.Open(relative)
-	if err != nil {
-		return nil, err
-	}
-	opened, statErr := file.Stat()
-	data, readErr := read(file)
-	closedErr := file.Close()
-	after, afterErr := root.Lstat(relative)
-	if statErr != nil || readErr != nil || closedErr != nil || afterErr != nil {
-		return nil, fmt.Errorf("validation run source failed or changed during read: %w",
-			errors.Join(statErr, readErr, closedErr, afterErr))
-	}
-	if !opened.Mode().IsRegular() || !after.Mode().IsRegular() ||
-		evidenceExportFileChanged(before, opened) || evidenceExportFileChanged(opened, after) {
-		return nil, fmt.Errorf("validation run source changed during read")
-	}
-	return data, nil
+	return readValidationFileNoFollow(store.Path("."), runID, filename, read)
 }
 
-// collectPostInstallProbeLog resolves the source from the bound validation store,
-// not from RunRecord.Log. A probe has no Go gate log or resource sampler.
 func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateStore, record qualitygate.RunRecord, runID, basis string) string {
 	entry := c.validationEntry("quality-gate/" + runID + "/probe.log")
 	relativeDir := filepath.Join(qualitygate.RunDirectory, runID)
