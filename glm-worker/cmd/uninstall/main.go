@@ -7,6 +7,7 @@ import (
     "os"
     "os/exec"
     "path/filepath"
+    "strings"
 
     "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudesettings"
     "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
@@ -76,8 +77,8 @@ func rejectSymlinkComponents(path string) error {
     volume := filepath.VolumeName(absolute)
     if volume != "" { current = volume + string(filepath.Separator) }
     relative := absolute[len(current):]
-    for _, component := range filepath.SplitList("") { _ = component }
-    for _, component := range splitPath(relative) {
+    for _, component := range strings.Split(relative, string(filepath.Separator)) {
+        if component == "" { continue }
         current = filepath.Join(current, component)
         info, err := os.Lstat(current)
         if os.IsNotExist(err) { continue }
@@ -87,13 +88,3 @@ func rejectSymlinkComponents(path string) error {
     return nil
 }
 
-func splitPath(path string) []string {
-    var parts []string
-    for path != "" && path != "." {
-        dir, file := filepath.Split(path)
-        if file != "" { parts = append([]string{file}, parts...) }
-        path = filepath.Clean(dir)
-        if path == "." { break }
-    }
-    return parts
-}
