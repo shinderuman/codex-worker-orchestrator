@@ -111,6 +111,7 @@ func retainedAutoFixStopProvenance(status TaskStatus, checkpoint ResumeCheckpoin
 func StoppedTaskStatus(status TaskStatus) bool {
 	switch status {
 	case TaskStatusRateLimited,
+		TaskStatusScheduledPause,
 		TaskStatusProviderUnavailable,
 		TaskStatusInterrupted,
 		TaskStatusGuardRecoverable,

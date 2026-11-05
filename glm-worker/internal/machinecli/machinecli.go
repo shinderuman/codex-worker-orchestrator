@@ -63,6 +63,7 @@ func TaskStatusPtr(status state.TaskStatus) *string {
 		state.TaskStatusAwaitingParentCompletion,
 		state.TaskStatusComplete,
 		state.TaskStatusRateLimited,
+		state.TaskStatusScheduledPause,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
 		state.TaskStatusQualityGateRecoverable,

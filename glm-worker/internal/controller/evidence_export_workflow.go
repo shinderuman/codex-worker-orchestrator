@@ -572,7 +572,7 @@ func workflowLifecycleStops(lifecycle []state.TaskLifecycleRecord) map[string]in
 	counts := map[string]int{}
 	for _, record := range lifecycle {
 		switch record.To {
-		case string(state.TaskStatusRateLimited), string(state.TaskStatusProviderUnavailable),
+		case string(state.TaskStatusRateLimited), string(state.TaskStatusScheduledPause), string(state.TaskStatusProviderUnavailable),
 			string(state.TaskStatusInterrupted), string(state.TaskStatusUserTerminated):
 			counts[record.To]++
 		}

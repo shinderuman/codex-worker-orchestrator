@@ -13,6 +13,7 @@ func TestResumePromptNormalStopsShareGenericContinuation(t *testing.T) {
 	var baseline string
 	for _, kind := range []state.ResumeStopKind{
 		state.ResumeStopRateLimited,
+		state.ResumeStopScheduledPause,
 		state.ResumeStopProviderUnavailable,
 		state.ResumeStopInterrupted,
 	} {

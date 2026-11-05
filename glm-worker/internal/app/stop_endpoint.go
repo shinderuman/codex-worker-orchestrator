@@ -219,6 +219,7 @@ func stopFinishedResult(status state.TaskStatus) string {
 		state.TaskStatusWaitingDecision,
 		state.TaskStatusWaitingSolReview,
 		state.TaskStatusRateLimited,
+		state.TaskStatusScheduledPause,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
 		state.TaskStatusQualityGateRecoverable,
