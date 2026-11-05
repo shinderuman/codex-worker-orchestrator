@@ -36,6 +36,9 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 				return fmt.Errorf("post-pull Controller projection: %w", err)
 			}
 			if !sourceResynchronizationAllowed(operation, len(steps) != 0) {
+				if err := verifyStoppedSourceResynchronization(cfg, len(steps) == 0); err != nil {
+					return err
+				}
 				status := "no-mechanical-step"
 				if sourceAdvanced {
 					status = "source-resynchronized"
@@ -114,4 +117,29 @@ func sourceResynchronizationAllowed(operation controller.ParentCompletionOperati
 		}
 	}
 	return false
+}
+
+func verifyStoppedSourceResynchronization(cfg config.AppConfig, firstStep bool) error {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	if head.Status != controller.ControllerStatusActive {
+		return fmt.Errorf("post-pull source resynchronization stopped: Controller is fail-closed")
+	}
+	if !firstStep || head.LiveLeaseID == "" || head.IntegrationTip == "" {
+		return nil
+	}
+	primary, err := controller.CaptureWorkspaceSnapshot(store.Identity().PrimaryRoot)
+	if err != nil {
+		return err
+	}
+	if primary.Head != head.IntegrationTip {
+		return fmt.Errorf("post-pull primary advanced beyond Controller source while execution is not quiescent; resynchronization requires the existing Controller admission")
+	}
+	return nil
 }
