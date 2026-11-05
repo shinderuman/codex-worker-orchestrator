@@ -442,6 +442,7 @@ func terminalHandoffProjectionFields() []string {
 		"last_material",
 		"session_rotation",
 		"parent_request",
+		"successor",
 		"action_specs",
 	}
 }

@@ -44,6 +44,14 @@ func readCompletionTerminalHandoff(cfg config.AppConfig, result completionWorkfl
 	if err := validateCompletionHandoffProjection(store, expected, handoff); err != nil {
 		return nil, recovery, err
 	}
+	terminalRecord, err := store.LoadTerminalTaskRecord(*expected.MetadataLineageRef)
+	if err != nil {
+		return nil, recovery, err
+	}
+	handoff, err = scopeCompletedPublicationHandoff(handoff, terminalRecord.TaskRef.TaskPath)
+	if err != nil {
+		return nil, recovery, err
+	}
 	return handoff, nil, nil
 }
 
@@ -85,4 +93,46 @@ func validateCompletionHandoffProjection(store *controller.Store, expected contr
 		return fmt.Errorf("controller authority changed during completion handoff")
 	}
 	return nil
+}
+
+func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string) (json.RawMessage, error) {
+	var canonical struct {
+		Version        json.RawMessage `json:"version"`
+		Consistent     bool            `json:"consistent"`
+		RequiredAction string          `json:"required_action"`
+		ParentRequest  struct {
+			Continuation struct {
+				State  string `json:"state"`
+				Task   string `json:"task"`
+				Reason string `json:"reason"`
+			} `json:"continuation"`
+		} `json:"parent_request"`
+	}
+	if err := json.Unmarshal(raw, &canonical); err != nil {
+		return nil, fmt.Errorf("decode verified completion handoff: %w", err)
+	}
+	continuation := canonical.ParentRequest.Continuation
+	if !canonical.Consistent || completedTask == "" ||
+		continuation.State != "continue-now" || continuation.Task == "" ||
+		continuation.Task == completedTask ||
+		(continuation.Reason != "active-task-not-started" &&
+			continuation.Reason != "post-local-completion-active" &&
+			(continuation.Reason != "current-task" || canonical.RequiredAction != "start")) {
+		return raw, nil
+	}
+	return json.Marshal(struct {
+		Version    json.RawMessage `json:"version,omitempty"`
+		Consistent bool            `json:"consistent"`
+		Successor  struct {
+			Task  string `json:"task"`
+			State string `json:"state"`
+		} `json:"successor"`
+	}{
+		Version:    canonical.Version,
+		Consistent: true,
+		Successor: struct {
+			Task  string `json:"task"`
+			State string `json:"state"`
+		}{Task: continuation.Task, State: "not-started"},
+	})
 }

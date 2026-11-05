@@ -420,8 +420,8 @@ func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[
 	if expectHandoffFailure {
 		assertTypedCompletionFailure(t, cfg, exit, envelope, diagnostics)
 	} else if envelope.Status != "parent_action_terminal" || !envelope.Handoff.Consistent ||
-		stringPointerValue(envelope.Handoff.RequiredAction) != canonicalStartAction {
-		t.Fatalf("completion lacks a canonical successor handoff: %s", output)
+		envelope.Handoff.RequiredAction != nil {
+		t.Fatalf("completed publication advertised a successor action: %s", output)
 	}
 	assertTypedPublicationProof(t, envelope)
 	return true
