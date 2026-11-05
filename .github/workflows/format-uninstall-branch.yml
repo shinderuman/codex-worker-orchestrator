@@ -5,6 +5,10 @@ on:
     branches:
       - web-gpt/installation-managed-uninstall
 
+concurrency:
+  group: uninstall-format-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
