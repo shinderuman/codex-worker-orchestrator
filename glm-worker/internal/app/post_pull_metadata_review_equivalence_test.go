@@ -349,4 +349,3 @@ func TestPostPullMetadataChangedDependencyFallsBackToFreshReview(t *testing.T) {
 		t.Fatal("falling back to ordinary Review itself manufactured a model call")
 	}
 }
-
