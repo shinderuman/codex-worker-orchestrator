@@ -129,13 +129,13 @@ func TestParentWaitAdmissionSurfacesRecoveryErrorWithoutFalseRelease(t *testing.
 		script string
 	}{
 		{
-			name:   "invalid-json",
+			name: "invalid-json",
 			script: `#!/bin/sh
 printf '%s\n' '{not-json'
 `,
 		},
 		{
-			name:   "worker-failed",
+			name: "worker-failed",
 			script: `#!/bin/sh
 exit 2
 `,
