@@ -10,15 +10,15 @@ import (
 )
 
 type ParentReviewBinding struct {
-	ID           string                        `json:"id"`
-	PacketSHA256 string                        `json:"packet_sha256"`
-	Packet       string                        `json:"packet,omitempty"`
-	Targets      []string                      `json:"targets"`
-	SolQuestion  string                        `json:"sol_question"`
-	Snapshot     SnapshotDigest                `json:"snapshot"`
-	Coverage     *ParentReviewEvidenceCoverage `json:"coverage,omitempty"`
-	Proof        *ParentReviewEvidenceProof    `json:"proof,omitempty"`
-	SourceEquivalence *ParentReviewSourceEquivalence `json:"source_equivalence,omitempty"`
+	ID                 string                          `json:"id"`
+	PacketSHA256       string                          `json:"packet_sha256"`
+	Packet             string                          `json:"packet,omitempty"`
+	Targets            []string                        `json:"targets"`
+	SolQuestion        string                          `json:"sol_question"`
+	Snapshot           SnapshotDigest                  `json:"snapshot"`
+	Coverage           *ParentReviewEvidenceCoverage   `json:"coverage,omitempty"`
+	Proof              *ParentReviewEvidenceProof      `json:"proof,omitempty"`
+	SourceEquivalence  *ParentReviewSourceEquivalence  `json:"source_equivalence,omitempty"`
 }
 
 type ParentReviewEvidenceProof struct {
@@ -90,30 +90,46 @@ func validateParentReviewBindingIdentity(state ParentReviewState) error {
 	if _, err := hex.DecodeString(binding.PacketSHA256); err != nil {
 		return fmt.Errorf("parent review packet digest is invalid")
 	}
+	if err := validateRetainedParentReviewPacket(binding); err != nil {
+		return err
+	}
+	return validateParentReviewSourceEquivalence(state.Open, binding)
+}
 
-	if len(binding.Packet) != 0 {
-		result, err := packet.ParseStructured([]byte(binding.Packet))
-		if err != nil {
-			return fmt.Errorf("saved parent review packet is unreadable: %w", err)
-		}
-		machine, err := result.MachineJSON()
-		if err != nil {
-			return err
-		}
-		sum := sha256.Sum256(machine)
-		if hex.EncodeToString(sum[:]) != binding.PacketSHA256 || len(result.Targets) != len(binding.Targets) || result.SolQuestion != binding.SolQuestion {
-			return fmt.Errorf("saved parent review packet differs from canonical binding")
-		}
-		for i, target := range result.Targets {
-			if target != binding.Targets[i] {
-				return fmt.Errorf("saved parent review targets differ from canonical binding")
-			}
+func validateRetainedParentReviewPacket(binding *ParentReviewBinding) error {
+	if binding.Packet == "" {
+		return nil
+	}
+	result, err := packet.ParseStructured([]byte(binding.Packet))
+	if err != nil {
+		return fmt.Errorf("saved parent review packet is unreadable: %w", err)
+	}
+	machine, err := result.MachineJSON()
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(machine)
+	if hex.EncodeToString(sum[:]) != binding.PacketSHA256 || len(result.Targets) != len(binding.Targets) || result.SolQuestion != binding.SolQuestion {
+		return fmt.Errorf("saved parent review packet differs from canonical binding")
+	}
+	for i, target := range result.Targets {
+		if target != binding.Targets[i] {
+			return fmt.Errorf("saved parent review targets differ from canonical binding")
 		}
 	}
-	if eq := binding.SourceEquivalence; eq != nil {
-		if eq.OriginalReviewID != binding.ID || eq.ReviewerCallID == "" || eq.ReviewerResponseSHA256 == "" || eq.WorkerCallID == "" || !completeParentReviewSnapshot(eq.OriginalSnapshot) || eq.OriginalSnapshot.Head == binding.Snapshot.Head || state.Open.Risk != string(packet.RiskHigh) || state.Open.Role != string(ReviewerRole) {
-			return fmt.Errorf("equivalent review source provenance is invalid")
-		}
+	return nil
+}
+
+func validateParentReviewSourceEquivalence(open *ParentReviewOpenState, binding *ParentReviewBinding) error {
+	if binding.SourceEquivalence == nil {
+		return nil
+	}
+	eq := binding.SourceEquivalence
+	if eq.OriginalReviewID != binding.ID || eq.ReviewerCallID == "" || eq.ReviewerResponseSHA256 == "" ||
+		eq.WorkerCallID == "" || !completeParentReviewSnapshot(eq.OriginalSnapshot) ||
+		eq.OriginalSnapshot.Head == binding.Snapshot.Head ||
+		open.Risk != string(packet.RiskHigh) || open.Role != string(ReviewerRole) {
+		return fmt.Errorf("equivalent review source provenance is invalid")
 	}
 	return nil
 }
