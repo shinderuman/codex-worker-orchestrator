@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -40,15 +41,33 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 
 func runSourceResynchronization(cfg config.AppConfig, stdout, stderr io.Writer) error {
 	started := time.Now()
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return err
+	}
+	origin, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	if origin.RootTaskRef == nil || origin.Status != controller.ControllerStatusActive || origin.PendingTransitionID != "" {
+		return fmt.Errorf("post-pull resynchronization requires active Task authority without pending transition")
+	}
 	steps := make([]sourceResynchronizationStep, 0, 4)
 	sourceAdvanced := false
 	const maxSteps = 12
 	for range maxSteps {
+		head, err := store.LoadHead()
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(origin.RootTaskRef, head.RootTaskRef) || !reflect.DeepEqual(origin.ExecutionTaskRef, head.ExecutionTaskRef) {
+			return fmt.Errorf("post-pull resynchronization refuses a different Task authority")
+		}
 		operation, err := projectControllerCompletion(cfg)
 		if err != nil {
 			return fmt.Errorf("post-pull Controller projection: %w", err)
 		}
-		if !sourceResynchronizationAllowed(operation, len(steps) != 0) {
+		if !sourceResynchronizationAllowed(operation, sourceAdvanced) {
 			return finishSourceResynchronization(cfg, stdout, started, operation, steps, sourceAdvanced)
 		}
 		stepStarted := time.Now()
@@ -65,7 +84,7 @@ func runSourceResynchronization(cfg config.AppConfig, stdout, stderr io.Writer) 
 }
 
 func finishSourceResynchronization(cfg config.AppConfig, stdout io.Writer, started time.Time, operation controller.ParentCompletionOperation, steps []sourceResynchronizationStep, advanced bool) error {
-	if len(steps) == 0 && operation.Operation == controller.PublicationOperationRecover {
+	if operation.Operation == controller.PublicationOperationRecover {
 		return fmt.Errorf("post-pull source resynchronization requires the projected Controller recovery before retry")
 	}
 	if err := verifyStoppedSourceResynchronization(cfg, len(steps) == 0); err != nil {
@@ -85,7 +104,7 @@ func finishSourceResynchronization(cfg config.AppConfig, stdout io.Writer, start
 }
 
 func performProjectedSourceOperation(cfg config.AppConfig, operation controller.ParentCompletionOperation, stderr io.Writer) error {
-	command, err := projectedSourceCommand(operation)
+	command, err := projectedSourceCommand(cfg, operation)
 	if err != nil {
 		return err
 	}
@@ -101,13 +120,36 @@ func performProjectedSourceOperation(cfg config.AppConfig, operation controller.
 	return err
 }
 
-func projectedSourceCommand(operation controller.ParentCompletionOperation) (any, error) {
+func projectedSourceCommand(cfg config.AppConfig, operation controller.ParentCompletionOperation) (any, error) {
 	switch operation.Surface {
 	case controller.PublicationOperationSurface:
 		if operation.Command == nil || operation.Command.Action != operation.Operation {
 			return nil, fmt.Errorf("post-pull publication projection has no matching typed command")
 		}
-		return operation.Command, nil
+		command := *operation.Command
+		switch command.Action {
+		case controller.PublicationOperationAdopt, controller.PublicationOperationAdoptSource:
+			command.Action = controller.PublicationOperationResyncRetired
+		case controller.PublicationOperationAdoptMutable:
+			command.Action = controller.PublicationOperationResyncMutable
+			store, err := controller.Open(cfg)
+			if err != nil {
+				return nil, err
+			}
+			primary, err := controller.CaptureWorkspaceSnapshot(store.Identity().PrimaryRoot)
+			if err != nil {
+				return nil, err
+			}
+			command.SourceOID = primary.Head
+		case controller.PublicationOperationRebind:
+			command.Action = controller.PublicationOperationResyncRebind
+		default:
+			return nil, fmt.Errorf("post-pull operation %s has no non-pushing Controller owner", command.Action)
+		}
+		if command.SourceOID == "" {
+			return nil, fmt.Errorf("post-pull source OID is missing")
+		}
+		return &command, nil
 	case controller.ExecutionOperationSurface:
 		if operation.Execution == nil || operation.Execution.Action != operation.Operation {
 			return nil, fmt.Errorf("post-pull execution projection has no matching typed command")
@@ -134,12 +176,10 @@ func sourceResynchronizationAllowed(operation controller.ParentCompletionOperati
 		if sourceResynchronizationAdvancesSource(operation.Operation) {
 			return true
 		}
-		return started && operation.Operation == controller.PublicationOperationRecover
+		return false
 	case controller.ExecutionOperationSurface:
 		switch operation.Operation {
 		case "cleanup", "materialize":
-			return true
-		case controller.PublicationOperationRecover:
 			return started
 		}
 	}
