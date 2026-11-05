@@ -29,9 +29,29 @@ type postPullMetadataReviewFixture struct {
 	taskID    string
 }
 
+const postPullTestSuccessOutcome = "success"
+
 func newPostPullMetadataReviewFixture(t *testing.T) postPullMetadataReviewFixture {
 	t.Helper()
 	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
+	source := seedPostPullReviewSnapshots(t, cfg, runtime)
+	result := postPullScriptedReviewResult()
+	if err := packet.ValidateReviewerResult(result); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{
+		Role: string(state.ReviewerRole), Model: "scripted-reviewer",
+	}, source); err != nil {
+		t.Fatal(err)
+	}
+	taskID := seedPostPullModelCalls(t, runtime, result)
+	original := acceptPostPullOriginalReview(t, runtime)
+	return postPullMetadataReviewFixture{cfg: cfg, store: store, runtime: runtime, accepted: accepted,
+		candidate: candidate, original: original, taskID: taskID}
+}
+
+func seedPostPullReviewSnapshots(t *testing.T, cfg config.AppConfig, runtime *state.StateStore) state.SnapshotDigest {
+	t.Helper()
 	if err := runtime.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
@@ -48,31 +68,39 @@ func newPostPullMetadataReviewFixture(t *testing.T) postPullMetadataReviewFixtur
 	if err := runtime.SaveReviewStartSnapshot(snapshot); err != nil {
 		t.Fatal(err)
 	}
-	source := state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
-	result := packet.Result{
-		Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh,
-		Summary: "independent reviewer evidence", RequirementCoverage: "original requirements preserved",
-		Invariants: "source remains fixed", TestEvidence: "scripted regression proof",
-		Issues: "unresolved HIGH issue retained", ResidualRisk: "HIGH pending parent decision",
-		SolQuestion: "Inspect the original target and decide whether to accept.",
-		Targets: []string{"IMPLEMENTATION_TASKS/root.md:1"},
+	return state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
+}
+
+func postPullScriptedReviewResult() packet.Result {
+	return packet.Result{
+		Status:              packet.StatusNeedsSolReview,
+		Risk:                packet.RiskHigh,
+		Summary:             "independent reviewer evidence",
+		RequirementCoverage: "original requirements preserved",
+		Invariants:          "source remains fixed",
+		TestEvidence:        "scripted regression proof",
+		Issues:              "unresolved HIGH issue retained",
+		ResidualRisk:        "HIGH pending parent decision",
+		SolQuestion:         "Inspect the original target and decide whether to accept.",
+		Targets:             []string{"IMPLEMENTATION_TASKS/root.md:1"},
 	}
-	if err := packet.ValidateReviewerResult(result); err != nil {
-		t.Fatal(err)
-	}
-	if err := runtime.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{
-		Role: string(state.ReviewerRole), Model: "scripted-reviewer",
-	}, source); err != nil {
-		t.Fatal(err)
-	}
+}
+
+func seedPostPullModelCalls(t *testing.T, runtime *state.StateStore, result packet.Result) string {
+	t.Helper()
 	taskID, err := runtime.TaskID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	worker := state.ModelCallLog{
-		TaskID: taskID, CallID: "original-worker-call", CallType: state.CallTypeTask,
-		Role: state.WorkerRole, SessionID: "original-worker-session", Outcome: "success",
-		PacketStatus: string(packet.StatusImplemented), ResponseSHA256: "original-worker-response-digest",
+		TaskID:         taskID,
+		CallID:         "original-worker-call",
+		CallType:       state.CallTypeTask,
+		Role:           state.WorkerRole,
+		SessionID:      "original-worker-session",
+		Outcome:        postPullTestSuccessOutcome,
+		PacketStatus:   string(packet.StatusImplemented),
+		ResponseSHA256: "original-worker-response-digest",
 	}
 	machine, err := result.MachineJSON()
 	if err != nil {
@@ -80,14 +108,26 @@ func newPostPullMetadataReviewFixture(t *testing.T) postPullMetadataReviewFixtur
 	}
 	hash := sha256.Sum256(machine)
 	reviewer := state.ModelCallLog{
-		TaskID: taskID, CallID: "original-reviewer-call", CallType: state.CallTypeTask,
-		Role: state.ReviewerRole, ModelAlias: "scripted-reviewer", SessionID: "original-reviewer-session",
-		ReadOnly: true, Outcome: "success", PacketStatus: string(packet.StatusNeedsSolReview),
-		Response: string(machine), ResponseSHA256: fmt.Sprintf("%x", hash),
+		TaskID:               taskID,
+		CallID:               "original-reviewer-call",
+		CallType:             state.CallTypeTask,
+		Role:                 state.ReviewerRole,
+		ModelAlias:           "scripted-reviewer",
+		SessionID:            "original-reviewer-session",
+		ReadOnly:             true,
+		Outcome:              postPullTestSuccessOutcome,
+		PacketStatus:         string(packet.StatusNeedsSolReview),
+		Response:             string(machine),
+		ResponseSHA256:       fmt.Sprintf("%x", hash),
 		ReviewerReportedRisk: string(packet.RiskHigh),
 	}
 	runtime.RecordModelCallLog(worker)
 	runtime.RecordModelCallLog(reviewer)
+	return taskID
+}
+
+func acceptPostPullOriginalReview(t *testing.T, runtime *state.StateStore) *state.ParentCompletionOutcome {
+	t.Helper()
 	binding, err := runtime.CurrentParentReviewBinding()
 	if err != nil || binding == nil {
 		t.Fatalf("original HIGH Review binding: %#v %v", binding, err)
@@ -104,8 +144,7 @@ func newPostPullMetadataReviewFixture(t *testing.T) postPullMetadataReviewFixtur
 	if err != nil || original == nil || original.Review == nil || original.Source == nil {
 		t.Fatalf("original completion missing packet: %#v %v", original, err)
 	}
-	return postPullMetadataReviewFixture{cfg: cfg, store: store, runtime: runtime, accepted: accepted,
-		candidate: candidate, original: original, taskID: taskID}
+	return original
 }
 
 func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, mutate func(string)) controller.ExecutionOperationResult {
@@ -174,6 +213,21 @@ func countPostPullReviewerCalls(t *testing.T, runtime *state.StateStore, taskID 
 	return count
 }
 
+func assertPostPullReviewPreserved(t *testing.T, binding *state.ParentReviewBinding, original *state.ParentCompletionOutcome) {
+	t.Helper()
+	if binding.ID != original.Review.ID || binding.Packet != original.Review.Packet ||
+		binding.PacketSHA256 != original.Review.PacketSHA256 ||
+		!reflect.DeepEqual(binding.Targets, original.Review.Targets) {
+		t.Fatalf("materialization modified original HIGH packet: %#v", binding)
+	}
+	if binding.SourceEquivalence.ReviewerCallID != "original-reviewer-call" ||
+		binding.SourceEquivalence.WorkerCallID != "original-worker-call" ||
+		binding.SourceEquivalence.OriginalSnapshot != *original.Source ||
+		binding.Proof != nil || binding.Coverage != nil {
+		t.Fatalf("original Review provenance or stale parent proof was corrupted: %#v", binding)
+	}
+}
+
 func TestPostPullMetadataEquivalentReviewReentersThroughMaterializeAndAcceptsNewEvidence(t *testing.T) {
 	f := newPostPullMetadataReviewFixture(t)
 	callsBefore := countPostPullReviewerCalls(t, f.runtime, f.taskID)
@@ -182,15 +236,7 @@ func TestPostPullMetadataEquivalentReviewReentersThroughMaterializeAndAcceptsNew
 	if err != nil || binding == nil || binding.SourceEquivalence == nil {
 		t.Fatalf("materialized Review did not preserve source equivalence: %#v %v", binding, err)
 	}
-	if binding.ID != f.original.Review.ID || binding.Packet != f.original.Review.Packet ||
-		binding.PacketSHA256 != f.original.Review.PacketSHA256 ||
-		!reflect.DeepEqual(binding.Targets, f.original.Review.Targets) ||
-		binding.SourceEquivalence.ReviewerCallID != "original-reviewer-call" ||
-		binding.SourceEquivalence.WorkerCallID != "original-worker-call" ||
-		binding.SourceEquivalence.OriginalSnapshot != *f.original.Source ||
-		binding.Proof != nil || binding.Coverage != nil {
-		t.Fatalf("original packet, issues, call IDs or parent evidence were corrupted: %#v", binding)
-	}
+	assertPostPullReviewPreserved(t, binding, f.original)
 	open, err := f.runtime.CurrentParentReview()
 	if err != nil || open == nil || open.Risk != string(packet.RiskHigh) ||
 		open.PacketStatus != string(packet.StatusNeedsSolReview) {
