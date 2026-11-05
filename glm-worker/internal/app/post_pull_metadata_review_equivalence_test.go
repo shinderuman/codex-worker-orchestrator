@@ -229,8 +229,9 @@ func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, m
 	if err != nil {
 		if live.Admission != nil {
 			actual, snapshotErr := state.CaptureGitSnapshot(live.Admission.Workspace.Root)
-			t.Fatalf("materialize did not rebind accepted Review: %v; original=%#v; lane=%#v; lane_snapshot_error=%v",
-				err, f.original.Review.Snapshot, actual, snapshotErr)
+			t.Fatalf("materialize did not rebind accepted Review: %v; predecessor=%q; parent_source=%t; runtime_status=%s; original=%#v; lane=%#v; lane_snapshot_error=%v",
+				err, live.Admission.Attempt.PredecessorAttemptID, live.ParentSourceReview,
+				f.runtime.TaskStatus(), f.original.Review.Snapshot, actual, snapshotErr)
 		}
 		t.Fatal(err)
 	}
