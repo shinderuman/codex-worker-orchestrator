@@ -603,30 +603,7 @@ func createPrivateFile(path string) (*os.File, error) {
 }
 
 func (r *ClaudeRunner) runCommand(command *exec.Cmd) error {
-	if r.stop == nil {
-		return command.Run()
-	}
-	if err := command.Start(); err != nil {
-		return err
-	}
-	waitDone := make(chan error, 1)
-	go func() {
-		waitDone <- command.Wait()
-	}()
-	select {
-	case err := <-waitDone:
-		return err
-	case <-r.stop.Requested():
-
-		select {
-		case err := <-waitDone:
-			return err
-		default:
-		}
-		warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
-		<-waitDone
-		return &InterruptedCallError{CleanupWarning: warning}
-	}
+	return r.runManagedCommand(command, time.Time{}, false)
 }
 
 func parseClaudeJSONResult(path string) (claudeJSONResult, error) {

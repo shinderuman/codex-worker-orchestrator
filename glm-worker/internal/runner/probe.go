@@ -95,26 +95,7 @@ func (r *ClaudeRunner) runProbeCommand(command *exec.Cmd, deadline time.Time) er
 	if err := r.probeCommandPreflight(deadline); err != nil {
 		return err
 	}
-	if err := command.Start(); err != nil {
-		return err
-	}
-	waitDone := make(chan error, 1)
-	go func() {
-		waitDone <- command.Wait()
-	}()
-
-	stopRequested := r.probeStopRequested()
-	deadlineReached, stopTimer := probeDeadlineChannel(deadline)
-	defer stopTimer()
-
-	select {
-	case err := <-waitDone:
-		return err
-	case <-stopRequested:
-		return finishInterruptedProbeCommand(command, waitDone)
-	case <-deadlineReached:
-		return finishDeadlineProbeCommand(command, waitDone)
-	}
+	return r.runManagedCommand(command, deadline, true)
 }
 
 func (r *ClaudeRunner) probeCommandPreflight(deadline time.Time) error {
