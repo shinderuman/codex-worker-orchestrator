@@ -98,7 +98,6 @@ func validateCompletionHandoffProjection(store *controller.Store, expected contr
 	return nil
 }
 
- 
 // scopeCompletedPublicationHandoff prevents a completed publication's terminal
 // response from advertising the *next* task as an action for the completed
 // task. A fresh canonical handoff remains the authority when that successor
@@ -107,6 +106,7 @@ func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string)
 	var canonical struct {
 		Version       json.RawMessage `json:"version"`
 		Consistent    bool            `json:"consistent"`
+		RequiredAction string         `json:"required_action"`
 		ParentRequest struct {
 			Continuation struct {
 				State  string `json:"state"`
@@ -122,7 +122,9 @@ func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string)
 	if !canonical.Consistent || completedTask == "" ||
 		continuation.State != "continue-now" || continuation.Task == "" ||
 		continuation.Task == completedTask ||
-		(continuation.Reason != "active-task-not-started" && continuation.Reason != "post-local-completion-active") {
+		(continuation.Reason != "active-task-not-started" &&
+			continuation.Reason != "post-local-completion-active" &&
+			!(continuation.Reason == "current-task" && canonical.RequiredAction == "start")) {
 		return raw, nil
 	}
 	// Only the successor identity is relevant at the completed-task boundary.

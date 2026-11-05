@@ -92,9 +92,8 @@ func TestCompletionHandoffOpenFailureRetainsRecoveryCommand(t *testing.T) {
 	}
 }
 
- 
 func TestScopeCompletedPublicationHandoff(t *testing.T) {
-	raw := json.RawMessage(`{"version":1,"consistent":true,"required_action":"start","action_specs":{"start":{"args":["next"]}},"parent_request":{"continuation":{"state":"continue-now","task":"IMPLEMENTATION_TASKS/next.md","reason":"active-task-not-started"}}}`)
+	raw := json.RawMessage(`{"version":1,"consistent":true,"required_action":"start","action_specs":{"start":{"args":["next"]}},"parent_request":{"continuation":{"state":"continue-now","task":"IMPLEMENTATION_TASKS/next.md","reason":"current-task"}}}`)
 	scoped, err := scopeCompletedPublicationHandoff(raw, "IMPLEMENTATION_TASKS/completed.md")
 	if err != nil {
 		t.Fatal(err)
@@ -136,6 +135,7 @@ func TestScopeCompletedPublicationHandoffPreservesNonSuccessorAuthority(t *testi
 	}{
 		{"same-task", json.RawMessage(`{"consistent":true,"required_action":"controller-publication","parent_request":{"continuation":{"state":"continue-now","task":"current","reason":"active-task-not-started"}}}`), "current"},
 		{"blocked", json.RawMessage(`{"consistent":true,"required_action":"recover","parent_request":{"continuation":{"state":"blocked","task":"next","reason":"failure"}}}`), "current"},
+		{"current-task-requires-publication", json.RawMessage(`{"consistent":true,"required_action":"controller-publication","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"current-task"}}}`), "current"},
 		{"unknown-reason", json.RawMessage(`{"consistent":true,"required_action":"recover","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"failure"}}}`), "current"},
 		{"inconsistent", json.RawMessage(`{"consistent":false,"required_action":"recover","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"active-task-not-started"}}}`), "current"},
 		{"missing-identity", json.RawMessage(`{"consistent":true,"required_action":"recover","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"active-task-not-started"}}}`), ""},
