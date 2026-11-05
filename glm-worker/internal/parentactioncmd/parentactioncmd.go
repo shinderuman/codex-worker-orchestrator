@@ -186,9 +186,13 @@ func stagedTemplateForAction(cfg config.AppConfig, action string, options []stri
 		return publicationStagedTemplate(cfg, selected)
 	case controllerExecutionAction:
 		staged, selected, err := executionStagedTemplate(cfg)
-		if err != nil || selected {
+		if err != nil {
 			return staged, err
 		}
+		if !selected {
+			return parentaction.StagedTemplate{}, fmt.Errorf("controller-execution has no machine-admitted typed operation")
+		}
+		return staged, nil
 	}
 	return parentaction.StagedTemplate{}, nil
 }

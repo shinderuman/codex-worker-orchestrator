@@ -77,7 +77,10 @@ func decodeControllerStaging(cfg config.AppConfig, action string, payload []byte
 		}
 		return command, validatePreparedCompletionBinding(cfg, payload, command)
 	}
-	if action == controllerExecutionAction && !json.Valid(payload) {
+	if action == controllerExecutionAction {
+		if json.Valid(payload) {
+			return nil, fmt.Errorf("controller-execution requires a machine-projected staging template")
+		}
 		command, err := mergeExecutionStagedPayload(payload)
 		if err != nil {
 			return nil, err

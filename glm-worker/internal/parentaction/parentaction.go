@@ -51,6 +51,7 @@ const (
 	PublicationMessagePlaceholder             = "__GLM_PUBLICATION_MESSAGE__"
 	PublicationRequireInstallPlaceholder      = "__GLM_PUBLICATION_REQUIRE_INSTALL__"
 	RuntimeDispositionReasonPlaceholder       = "__GLM_RUNTIME_DISPOSITION_REASON__"
+	ExecutionTerminationReasonPlaceholder     = "__GLM_EXECUTION_TERMINATION_REASON__"
 	PublicationFailureDispositionPlaceholder  = "__GLM_PUBLICATION_FAILURE_DISPOSITION__"
 	PublicationRequiredValidationsPlaceholder = "__GLM_PUBLICATION_REQUIRED_VALIDATIONS__"
 
@@ -204,7 +205,7 @@ func payloadComplete(payload []byte) bool {
 	if len(payload) == 0 {
 		return false
 	}
-	for _, marker := range []string{placeholder, decisionPlaceholder, executionUnitPlaceholder, observationOperationPlaceholder, observationReferencePlaceholder, observationWorkingDirPlaceholder, observationDeadlinePlaceholder, PublicationMessagePlaceholder, PublicationRequireInstallPlaceholder, RuntimeDispositionReasonPlaceholder, PublicationFailureDispositionPlaceholder, PublicationRequiredValidationsPlaceholder} {
+	for _, marker := range []string{placeholder, decisionPlaceholder, executionUnitPlaceholder, observationOperationPlaceholder, observationReferencePlaceholder, observationWorkingDirPlaceholder, observationDeadlinePlaceholder, PublicationMessagePlaceholder, PublicationRequireInstallPlaceholder, RuntimeDispositionReasonPlaceholder, ExecutionTerminationReasonPlaceholder, PublicationFailureDispositionPlaceholder, PublicationRequiredValidationsPlaceholder} {
 		if bytes.Contains(payload, []byte(marker)) {
 			return false
 		}
