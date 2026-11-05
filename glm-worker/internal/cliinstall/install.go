@@ -107,8 +107,6 @@ func retireUnlocked(binDir string) ([]Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A modified managed executable must not lose its ownership record.
-	// Reject the whole retire plan before removing any other binaries.
 	for _, result := range results {
 		if result.Status == "preserved" {
 			return results, fmt.Errorf("CLI retirement incomplete: installer-owned %s was modified or replaced", result.Name)
