@@ -215,7 +215,7 @@ func completeMaterializedReview(cfg config.AppConfig, store *controller.Store, r
 		if err := wf.admitCanonicalReenteredReview(); err != nil {
 			return err
 		}
-		admitted, err := admittedEquivalentReview(wf.state, result.Admission.Attempt)
+		admitted, err := admittedEquivalentReview(wf.state, result.Admission.Attempt, runtimeCfg.RepoRoot)
 		if err != nil || !admitted {
 			return fmt.Errorf("equivalent Review failed current source admission: %v", err)
 		}
