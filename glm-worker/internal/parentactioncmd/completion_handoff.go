@@ -44,9 +44,6 @@ func readCompletionTerminalHandoff(cfg config.AppConfig, result completionWorkfl
 	if err := validateCompletionHandoffProjection(store, expected, handoff); err != nil {
 		return nil, recovery, err
 	}
-	// The canonical handoff describes the successor, not an action required
-	// to finish the already published task. Only remove successor actions
-	// after the source-bound publication and controller authority checks.
 	terminalRecord, err := store.LoadTerminalTaskRecord(*expected.MetadataLineageRef)
 	if err != nil {
 		return nil, recovery, err
@@ -98,15 +95,11 @@ func validateCompletionHandoffProjection(store *controller.Store, expected contr
 	return nil
 }
 
-// scopeCompletedPublicationHandoff prevents a completed publication's terminal
-// response from advertising the *next* task as an action for the completed
-// task. A fresh canonical handoff remains the authority when that successor
-// is explicitly started. An incomplete or ambiguous handoff is left intact.
 func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string) (json.RawMessage, error) {
 	var canonical struct {
-		Version       json.RawMessage `json:"version"`
-		Consistent    bool            `json:"consistent"`
-		RequiredAction string         `json:"required_action"`
+		Version        json.RawMessage `json:"version"`
+		Consistent     bool            `json:"consistent"`
+		RequiredAction string          `json:"required_action"`
 		ParentRequest struct {
 			Continuation struct {
 				State  string `json:"state"`
@@ -124,13 +117,9 @@ func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string)
 		continuation.Task == completedTask ||
 		(continuation.Reason != "active-task-not-started" &&
 			continuation.Reason != "post-local-completion-active" &&
-			!(continuation.Reason == "current-task" && canonical.RequiredAction == "start")) {
+			(continuation.Reason != "current-task" || canonical.RequiredAction != "start")) {
 		return raw, nil
 	}
-	// Only the successor identity is relevant at the completed-task boundary.
-	// In particular do not expose required_action/action_specs/parent_request,
-	// which belong to a separate, unstarted task. Do not infer permission to
-	// start that task from publication success.
 	return json.Marshal(struct {
 		Version    json.RawMessage `json:"version,omitempty"`
 		Consistent bool            `json:"consistent"`
