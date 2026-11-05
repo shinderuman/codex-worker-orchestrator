@@ -51,13 +51,8 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 		return err
 	}
 	if args[0] == controllerPublicationAction {
-		var result completionWorkflowResult
-		if err := json.Unmarshal(terminalJSON, &result); err != nil {
+		if handled, err := finishPublicationTerminalHandoff(cfg, stdout, stderr, terminalJSON); handled || err != nil {
 			return err
-		}
-		if result.Status == completionWorkflowCompleted {
-			handoff, recovery, err := readCompletionTerminalHandoff(cfg, result, stderr)
-			return finishTerminalEnvelope(cfg, stdout, terminalJSON, handoff, recovery, err)
 		}
 	}
 	handoffJSON, err := readTerminalHandoff(cfg, stderr, false)

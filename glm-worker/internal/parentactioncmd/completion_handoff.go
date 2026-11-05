@@ -15,6 +15,37 @@ type terminalHandoffRecovery struct {
 	WorkingDir string   `json:"working_dir"`
 }
 
+func finishPublicationTerminalHandoff(cfg config.AppConfig, stdout, stderr io.Writer, terminal json.RawMessage) (bool, error) {
+	result, err := publicationTerminalCompletion(terminal)
+	if err != nil || result.Status != completionWorkflowCompleted {
+		return false, err
+	}
+	handoff, recovery, err := readCompletionTerminalHandoff(cfg, result, stderr)
+	return true, finishTerminalEnvelope(cfg, stdout, terminal, handoff, recovery, err)
+}
+
+func publicationTerminalCompletion(terminal json.RawMessage) (completionWorkflowResult, error) {
+	var output struct {
+		completionWorkflowResult
+		Head *controller.RepositoryControllerHead `json:"head"`
+	}
+	if err := json.Unmarshal(terminal, &output); err != nil {
+		return completionWorkflowResult{}, err
+	}
+	result := output.completionWorkflowResult
+	head := output.Head
+	if result.Status != "" || result.TransitionID == "" || head == nil ||
+		head.MetadataLineageRef == nil || head.MetadataLineageRef.LogicalIdentity != result.TransitionID {
+		return result, nil
+	}
+	result.Status = completionWorkflowCompleted
+	result.SourceOID = head.ObservedPrefix
+	result.FinalOID = head.IntegrationTip
+	result.RemoteOID = head.ObservedRemoteTip
+	result.ControllerGeneration = head.ControllerGeneration
+	return result, nil
+}
+
 func readCompletionTerminalHandoff(cfg config.AppConfig, result completionWorkflowResult, stderr io.Writer) (json.RawMessage, *terminalHandoffRecovery, error) {
 	recovery := &terminalHandoffRecovery{
 		Command:    []string{"glm-worker", "--handoff", "recovery"},

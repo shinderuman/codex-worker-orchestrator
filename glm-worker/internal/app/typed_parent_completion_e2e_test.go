@@ -64,6 +64,7 @@ func typedCompletionScenarios() []typedCompletionScenario {
 		{name: "no-code-publication-reentry", interrupt: true},
 		{name: "runtime-change", sourceChange: true},
 		{name: "runtime-change-publication-reentry", sourceChange: true, interrupt: true},
+		{name: "no-code-handoff-successor-telemetry", fullProcess: true, handoffFault: "telemetry"},
 		{name: "no-code-handoff-io-failure", fullProcess: true, handoffFault: "io"},
 		{name: "no-code-handoff-task-change", fullProcess: true, handoffFault: "task"},
 		{name: "no-code-handoff-lease-change", fullProcess: true, handoffFault: "lease"},
@@ -182,8 +183,11 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 			os.Exit(1)
 		}
 		if fault := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT"); fault != "" {
-			_ = WriteProcessError(os.Stderr, typedCompletionHandoffFault(fault))
-			os.Exit(1)
+			if err := typedCompletionHandoffFault(fault); err != nil {
+				_ = WriteProcessError(os.Stderr, err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		}
 	}
 	launchQualityGateRunner = func(st *state.StateStore, record qualitygate.RunRecord) (qualityGateRunnerWait, error) {
@@ -232,6 +236,9 @@ func typedCompletionHandoffFault(fault string) error {
 	if state.AttachStateStore(cfg).Present() {
 		return fmt.Errorf("successor already has Runtime state")
 	}
+	if fault == "telemetry" {
+		return typedCompletionHandoffWithSuccessorTelemetry(cfg)
+	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		return err
@@ -240,6 +247,20 @@ func typedCompletionHandoffFault(fault string) error {
 	return printParentHandoffLeased(st, os.Stdout, func() (parentHandoffOutput, error) {
 		value := buildParentHandoffWithConfig(cfg, st)
 		return value, changeTypedCompletionHandoffScope(st, fault)
+	})
+}
+
+func typedCompletionHandoffWithSuccessorTelemetry(cfg config.AppConfig) error {
+	st := state.AttachStateStore(cfg)
+	return printParentHandoffLeased(st, os.Stdout, func() (parentHandoffOutput, error) {
+		value := buildParentHandoffWithConfig(cfg, st)
+		st.RecordParentActionAttempt(state.ParentActionAttemptRecord{
+			AttemptID: "parallel-export", Action: "export-bundle", EnteredAt: time.Now().UTC(), Outcome: "started",
+		})
+		if !st.Present() || st.ReadOr("task.id", "") != "" || st.TaskStatus() != state.TaskStatusNone {
+			return parentHandoffOutput{}, fmt.Errorf("successor telemetry did not create a directory without starting the Task")
+		}
+		return value, nil
 	})
 }
 
@@ -403,7 +424,8 @@ func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[
 	} else {
 		exit, output, diagnostics = runTypedPublicationStagedCLI(t, cfg, parameters, typedSemanticSlotValues(t, parameters, requireInstall))
 	}
-	expectHandoffFailure := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT") != ""
+	handoffFault := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT")
+	expectHandoffFailure := handoffFault != "" && handoffFault != "telemetry"
 	if exit != 0 && !expectHandoffFailure {
 		t.Fatalf("execute typed publication %s: %s", command.Action, diagnostics)
 	}
