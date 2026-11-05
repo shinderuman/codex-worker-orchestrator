@@ -217,16 +217,7 @@ func readValidationRunFileWithRead(store *state.StateStore, runID, filename stri
 
 func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateStore, record qualitygate.RunRecord, runID, basis string) string {
 	entry := c.validationEntry("quality-gate/" + runID + "/probe.log")
-	relativeDir := filepath.Join(qualitygate.RunDirectory, runID)
-	relativeLog := filepath.Join(relativeDir, "probe.log")
-	expected := store.Path(relativeLog)
-	controllerRoot, rootErr := canonicalPath(c.store.dir)
-	_, oidErr := hex.DecodeString(record.Head)
-	if rootErr != nil || len(record.Head) != 40 || oidErr != nil ||
-		record.Repository != filepath.Join(controllerRoot, "validation-"+record.Head+"-"+smokeProbeForm) ||
-		record.WorkingDir != record.Repository || record.Log != expected || record.TaskID != c.taskID ||
-		record.ProbeID == "" || record.ArgvDigest == "" || record.TaskAuthorityDigest == "" ||
-		record.InstallEvidenceDigest == "" {
+	if !postInstallProbeSourceBinds(store, record, c.store.dir, c.taskID, runID) {
 		c.recordUnreadable(entry, "post-install probe log locator or run source binding differs from the validation store")
 		return ""
 	}
@@ -248,6 +239,27 @@ func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateSto
 		SHA256: digestBytes(data), Bytes: int64(len(data)), CollectedAt: c.observedAt,
 	}, data)
 	return entry
+}
+
+func postInstallProbeSourceBinds(store *state.StateStore, record qualitygate.RunRecord, controllerDir, taskID, runID string) bool {
+	if record.TaskID != taskID || record.ProbeID == "" || record.ArgvDigest == "" ||
+		record.TaskAuthorityDigest == "" || record.InstallEvidenceDigest == "" {
+		return false
+	}
+	expected := store.Path(filepath.Join(qualitygate.RunDirectory, runID, "probe.log"))
+	if record.Log != expected {
+		return false
+	}
+	controllerRoot, err := canonicalPath(controllerDir)
+	if err != nil {
+		return false
+	}
+	_, oidErr := hex.DecodeString(record.Head)
+	if len(record.Head) != 40 || oidErr != nil {
+		return false
+	}
+	return record.Repository == filepath.Join(controllerRoot, "validation-"+record.Head+"-"+smokeProbeForm) &&
+		record.WorkingDir == record.Repository
 }
 
 func (c *evidenceLiveCollector) collectGateRunTimings(store *state.StateStore, runID, form, basis string) (string, *qualitygate.TestTimings) {
