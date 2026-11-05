@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
@@ -15,6 +16,7 @@ import (
 type sourceResynchronizationStep struct {
 	Surface   string `json:"surface"`
 	Operation string `json:"operation"`
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // executeSourceResynchronization is invoked after an externally authorized
@@ -27,6 +29,7 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 		return err
 	}
 	return withParentWaitLease(cfg, func() error {
+		startedAt := time.Now()
 		steps := make([]sourceResynchronizationStep, 0, 4)
 		sourceAdvanced := false
 		const maxSteps = 12
@@ -51,9 +54,11 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 					Steps         []sourceResynchronizationStep `json:"steps"`
 					NextSurface   string                        `json:"next_surface,omitempty"`
 					NextOperation string                        `json:"next_operation"`
+					ProcessingDurationMS int64                `json:"processing_duration_ms"`
 				}{
 					Status: status, SourceAdopted: sourceAdvanced, Steps: steps,
 					NextSurface: operation.Surface, NextOperation: operation.Operation,
+					ProcessingDurationMS: time.Since(startedAt).Milliseconds(),
 				})
 			}
 			var command any
@@ -75,6 +80,7 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 			if err != nil {
 				return err
 			}
+			stepStarted := time.Now()
 			var result bytes.Buffer
 			if err := runWorker(cfg.RepoRoot, []string{"--authority", operation.Surface}, bytes.NewReader(encoded), &result, stderr, nil); err != nil {
 				return fmt.Errorf("post-pull %s/%s failed; use the projected Controller recovery before retry: %w", operation.Surface, operation.Operation, err)
@@ -82,7 +88,7 @@ func executeSourceResynchronization(cfg config.AppConfig, args []string, stdout,
 			if _, err := decodeSingleMachineJSON(result.Bytes(), "post-pull Controller transition"); err != nil {
 				return err
 			}
-			steps = append(steps, sourceResynchronizationStep{Surface: operation.Surface, Operation: operation.Operation})
+			steps = append(steps, sourceResynchronizationStep{Surface: operation.Surface, Operation: operation.Operation, DurationMS: time.Since(stepStarted).Milliseconds()})
 			if sourceResynchronizationAdvancesSource(operation.Operation) {
 				sourceAdvanced = true
 			}
