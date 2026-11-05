@@ -11,6 +11,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type reviewNextPlanSections struct {
+	outside strings.Builder
+	next    []string
+	found   bool
+	inNext  bool
+}
+
 func equivalentReviewSource(repo string, original state.SnapshotDigest, targets []string) (state.SnapshotDigest, error) {
 	snapshot, err := state.CaptureGitSnapshot(repo)
 	if err != nil {
@@ -166,13 +173,6 @@ func verifyEquivalentActiveClosure(repo, oldHead, oldOutside string, added map[s
 		}
 	}
 	return nil
-}
-
-type reviewNextPlanSections struct {
-	outside strings.Builder
-	next    []string
-	found   bool
-	inNext  bool
 }
 
 func splitReviewNextPlan(plan string) (string, []string, error) {
