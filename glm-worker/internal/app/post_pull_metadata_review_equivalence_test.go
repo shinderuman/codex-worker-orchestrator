@@ -33,7 +33,7 @@ const postPullTestSuccessOutcome = "success"
 
 func newPostPullMetadataReviewFixture(t *testing.T) postPullMetadataReviewFixture {
 	t.Helper()
-	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t)
+	cfg, store, accepted, candidate, runtime := sealedCandidateReentryFixture(t, true)
 	source := seedPostPullReviewSnapshots(t, cfg, runtime)
 	result := postPullScriptedReviewResult()
 	if err := packet.ValidateReviewerResult(result); err != nil {
@@ -335,7 +335,6 @@ func TestPostPullMetadataChangedDependencyFallsBackToFreshReview(t *testing.T) {
 	originalCalls := countPostPullReviewerCalls(t, f.runtime, f.taskID)
 	f.advanceNextAndMaterialize(t, func(repo string) {
 		writeAppTestFile(t, repo, "new-dependent-source.go", "package regression\n")
-		writeAppTestFile(t, repo, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n\ngo 1.25.4\n")
 	})
 	binding, err := f.runtime.CurrentParentReviewBinding()
 	if err != nil {
