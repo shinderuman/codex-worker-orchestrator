@@ -6,6 +6,17 @@ import (
 )
 
 func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOperationResult, error) {
+	return s.rebindUnpublishedCandidate(input, "")
+}
+
+func (s *Store) RebindPulledUnpublishedCandidate(input PublicationInput, sourceOID string) (ExecutionOperationResult, error) {
+	if sourceOID == "" {
+		return ExecutionOperationResult{}, fmt.Errorf("post-pull candidate source OID is missing")
+	}
+	return s.rebindUnpublishedCandidate(input, sourceOID)
+}
+
+func (s *Store) rebindUnpublishedCandidate(input PublicationInput, sourceOID string) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
@@ -21,6 +32,14 @@ func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOpe
 	remote, err := s.unpublishedRebindRemote(head, c)
 	if err != nil {
 		return ExecutionOperationResult{}, err
+	}
+	if sourceOID != "" {
+		if remote != sourceOID {
+			return ExecutionOperationResult{}, fmt.Errorf("post-pull candidate remote tip differs from pulled source")
+		}
+		if err := s.requirePulledSource(head, c.Policy, sourceOID); err != nil {
+			return ExecutionOperationResult{}, err
+		}
 	}
 	c, err = s.reboundCandidate(c, remote, ref)
 	if err != nil {

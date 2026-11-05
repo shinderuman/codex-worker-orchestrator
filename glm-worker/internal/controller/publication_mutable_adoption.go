@@ -15,11 +15,27 @@ func (e *ProjectedAdvancementRefusal) Unwrap() error {
 }
 
 func (s *Store) AdoptMutableExternalAdvancement(admission Admission, policy PublicationPolicy) (ExecutionOperationResult, error) {
+	return s.adoptMutableExternalAdvancement(admission, policy, "")
+}
+
+func (s *Store) AdoptPulledMutableExternalAdvancement(admission Admission, policy PublicationPolicy, sourceOID string) (ExecutionOperationResult, error) {
+	if sourceOID == "" {
+		return ExecutionOperationResult{}, fmt.Errorf("post-pull mutable source OID is missing")
+	}
+	return s.adoptMutableExternalAdvancement(admission, policy, sourceOID)
+}
+
+func (s *Store) adoptMutableExternalAdvancement(admission Admission, policy PublicationPolicy, sourceOID string) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
+	if sourceOID != "" {
+		if err := s.requirePulledSource(admission.Head, policy, sourceOID); err != nil {
+			return ExecutionOperationResult{}, err
+		}
+	}
 	op, err := s.planMutableAdvancement(admission, policy)
 	if err != nil {
 		return ExecutionOperationResult{}, err

@@ -15,6 +15,14 @@ type RetiredSourceAdvancementInput struct {
 type externalSourceChange struct{ Path string }
 
 func (s *Store) AdoptRetiredExternalSource(input RetiredSourceAdvancementInput) (ExecutionOperationResult, error) {
+	return s.adoptRetiredExternalSource(input, false)
+}
+
+func (s *Store) AdoptPulledRetiredSource(input RetiredSourceAdvancementInput) (ExecutionOperationResult, error) {
+	return s.adoptRetiredExternalSource(input, true)
+}
+
+func (s *Store) adoptRetiredExternalSource(input RetiredSourceAdvancementInput, pulledOnly bool) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
@@ -38,6 +46,11 @@ func (s *Store) AdoptRetiredExternalSource(input RetiredSourceAdvancementInput) 
 	}
 	if err := s.validateRetiredSourceBoundary(input.Policy, input.SourceOID); err != nil {
 		return ExecutionOperationResult{}, err
+	}
+	if pulledOnly {
+		if err := s.requirePulledSource(head, input.Policy, input.SourceOID); err != nil {
+			return ExecutionOperationResult{}, err
+		}
 	}
 	op, err := s.planRetiredSourceAdvancement(head, input.Policy, input.SourceOID)
 	if err != nil {
