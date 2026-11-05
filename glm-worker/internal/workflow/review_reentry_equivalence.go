@@ -186,7 +186,7 @@ func sameReviewSource(a, b state.SnapshotDigest) bool {
 func reenterWithEquivalentReview(runtime *state.StateStore, repo string, authority state.ControllerReentryAuthority) (bool, error) {
 	evidence, err := prepareEquivalentReviewReentry(runtime, repo)
 	if err != nil {
-		return false, nil
+		return false, fmt.Errorf("temporary equivalence diagnosis: %w", err)
 	}
 	return runtime.ReenterEquivalentReviewFromController(authority, evidence.completion, evidence.reviewer, evidence.worker, evidence.source)
 }
