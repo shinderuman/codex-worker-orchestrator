@@ -58,6 +58,7 @@ type RunRecord struct {
 	ExitSource                    string        `json:"exit_source,omitempty"`
 	DurationMS                    int64         `json:"duration_ms,omitempty"`
 	Log                           string        `json:"log,omitempty"`
+	LogSHA256                     string        `json:"log_sha256,omitempty"`
 	TestTimings                   string        `json:"test_timings,omitempty"`
 	ResourceSamples               string        `json:"resource_samples,omitempty"`
 	ResourceSamplesError          string        `json:"resource_samples_error,omitempty"`
