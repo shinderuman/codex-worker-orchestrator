@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -257,10 +258,13 @@ func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateSto
 	relativeDir := filepath.Join(qualitygate.RunDirectory, runID)
 	relativeLog := filepath.Join(relativeDir, "probe.log")
 	expected := store.Path(relativeLog)
-	if record.Log != expected || record.TaskID != c.taskID ||
-		!filepath.IsAbs(record.Repository) || record.Repository != record.WorkingDir ||
+	controllerRoot, rootErr := canonicalPath(c.store.dir)
+	_, oidErr := hex.DecodeString(record.Head)
+	if rootErr != nil || len(record.Head) != 40 || oidErr != nil ||
+		record.Repository != filepath.Join(controllerRoot, "validation-"+record.Head+"-"+smokeProbeForm) ||
+		record.WorkingDir != record.Repository || record.Log != expected || record.TaskID != c.taskID ||
 		record.ProbeID == "" || record.ArgvDigest == "" || record.TaskAuthorityDigest == "" ||
-		record.InstallEvidenceDigest == "" || record.Head == "" {
+		record.InstallEvidenceDigest == "" {
 		c.recordUnreadable(entry, "post-install probe log locator or run source binding differs from the validation store")
 		return ""
 	}
