@@ -120,6 +120,29 @@ func TestEquivalentReviewSourceRejectsChangedPlanAndUnprovableIndex(t *testing.T
 			t.Fatal("unattributed staged source accepted")
 		}
 	})
+	t.Run("unattributed staged Plan edit", func(t *testing.T) {
+		root, old := reviewEquivalenceFixture(t)
+		reviewEquivalenceCommitNext(t, root)
+		planPath := filepath.Join(root, state.ParentPlanFile)
+		plan, err := os.ReadFile(planPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reviewEquivalenceWrite(t, root, state.ParentPlanFile, string(plan)+"\nchanged staged Plan\n")
+		reviewEquivalenceGit(t, root, "add", state.ParentPlanFile)
+		if _, err := equivalentReviewSource(root, old, []string{"review.go:1"}); err == nil {
+			t.Fatal("staged metadata changed beyond the committed fast-forward")
+		}
+	})
+	t.Run("unattributed staged added Task edit", func(t *testing.T) {
+		root, old := reviewEquivalenceFixture(t)
+		reviewEquivalenceCommitNext(t, root)
+		reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/new-next.md", "# different staged Task\n")
+		reviewEquivalenceGit(t, root, "add", "IMPLEMENTATION_TASKS/new-next.md")
+		if _, err := equivalentReviewSource(root, old, []string{"review.go:1"}); err == nil {
+			t.Fatal("staged new Task does not match the committed advancement")
+		}
+	})
 	t.Run("unknown review target", func(t *testing.T) {
 		root, old := reviewEquivalenceFixture(t)
 		reviewEquivalenceCommitNext(t, root)
