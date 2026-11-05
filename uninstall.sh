@@ -5,6 +5,15 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 codex_dir="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 
+case "$codex_dir" in
+/*) ;;
+*) codex_dir="$(pwd)/$codex_dir" ;;
+esac
+case "$bin_dir" in
+/*) ;;
+*) bin_dir="$(pwd)/$bin_dir" ;;
+esac
+
 if ! command -v go >/dev/null 2>&1; then
     printf '%s\n' 'uninstall: Go toolchain is required to run the ownership-safe local uninstaller' >&2
     exit 1
