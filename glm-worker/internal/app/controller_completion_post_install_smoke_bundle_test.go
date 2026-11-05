@@ -19,7 +19,8 @@ func exportPostInstallProbeZIP(t *testing.T, cfg config.AppConfig, store *contro
 	t.Helper()
 	export, result, err := store.ExportEvidence(controller.EvidenceExportRequest{})
 	if err != nil {
-		t.Fatal(err)
+		head, headErr := store.LoadHead()
+		t.Fatalf("producer Bundle export failed: %v; headErr=%v liveAttempt=%q executionTask=%#v stateBase=%q", err, headErr, head.LiveAttemptID, head.ExecutionTaskRef, cfg.StateBase)
 	}
 	path, err := writeEvidenceExportArchive(cfg, export, result.ArchiveName)
 	if err != nil {
@@ -105,6 +106,11 @@ func runRealPostInstallProbeForBundle(t *testing.T) (config.AppConfig, *controll
 		t.Fatalf("post-install probe producer result = %#v", out)
 	}
 	record := latestAppProbeRun(t, cfg, store, candidate, "docker-worker-path")
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("producer fixture: candidate=%#v attempt=%q headExecution=%#v headLive=%q runtimeRoot=%q recordTaskID=%q", candidate.TaskRef, candidate.AttemptID, head.ExecutionTaskRef, head.LiveAttemptID, runtime.Path("."), record.TaskID)
 	actual, err := os.ReadFile(record.Log)
 	if err != nil {
 		t.Fatal(err)
