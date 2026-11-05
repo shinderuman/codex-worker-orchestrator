@@ -40,14 +40,22 @@ func newPostPullMetadataReviewFixture(t *testing.T) postPullMetadataReviewFixtur
 		t.Fatal(err)
 	}
 	if err := runtime.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{
-		Role: string(state.ReviewerRole), Model: "scripted-reviewer",
+		Role:  string(state.ReviewerRole),
+		Model: "scripted-reviewer",
 	}, source); err != nil {
 		t.Fatal(err)
 	}
 	taskID := seedPostPullModelCalls(t, runtime, result)
 	original := acceptPostPullOriginalReview(t, runtime)
-	return postPullMetadataReviewFixture{cfg: cfg, store: store, runtime: runtime, accepted: accepted,
-		candidate: candidate, original: original, taskID: taskID}
+	return postPullMetadataReviewFixture{
+		cfg: cfg,
+		store: store,
+		runtime: runtime,
+		accepted: accepted,
+		candidate: candidate,
+		original: original,
+		taskID: taskID,
+	}
 }
 
 func seedPostPullReviewSnapshots(t *testing.T, cfg config.AppConfig, runtime *state.StateStore) state.SnapshotDigest {
@@ -71,7 +79,11 @@ func seedPostPullReviewSnapshots(t *testing.T, cfg config.AppConfig, runtime *st
 	if err := runtime.SaveReviewStartSnapshot(snapshot); err != nil {
 		t.Fatal(err)
 	}
-	return state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
+	return state.SnapshotDigest{
+		Head: snapshot.Head,
+		IndexDigest: snapshot.IndexDigest,
+		WorktreeDigest: snapshot.WorktreeDigest,
+	}
 }
 
 func postPullScriptedReviewResult() packet.Result {
@@ -150,7 +162,9 @@ func acceptPostPullOriginalReview(t *testing.T, runtime *state.StateStore) *stat
 		t.Fatalf("original HIGH Review binding: %#v %v", binding, err)
 	}
 	if err := runtime.MarkParentReviewEvidence(binding.ID, "original-parent-evidence", []state.ParentReviewEvidenceClaim{{
-		Kind: "source", Digest: "original-target-digest", Locator: "IMPLEMENTATION_TASKS/root.md:1-1",
+		Kind:    "source",
+		Digest:  "original-target-digest",
+		Locator: "IMPLEMENTATION_TASKS/root.md:1-1",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +201,8 @@ func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, m
 		t.Fatal(err)
 	}
 	rebound, err := f.store.RebindParentSourceCandidate(controller.PublicationInput{
-		ExpectedGeneration: f.accepted.Head.ControllerGeneration, CandidateID: f.candidate.CandidateID,
+		ExpectedGeneration: f.accepted.Head.ControllerGeneration,
+		CandidateID:        f.candidate.CandidateID,
 	}, snapshot.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -197,13 +212,15 @@ func (f postPullMetadataReviewFixture) advanceNextAndMaterialize(t *testing.T, m
 		t.Fatal(err)
 	}
 	entered, err := f.store.ReenterAcceptedCandidate(controller.PublicationInput{
-		ExpectedGeneration: rebound.Head.ControllerGeneration, CandidateID: c.CandidateID,
+		ExpectedGeneration: rebound.Head.ControllerGeneration,
+		CandidateID:        c.CandidateID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	live, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{
-		Action: "materialize", ExpectedGeneration: entered.Head.ControllerGeneration,
+		Action:             "materialize",
+		ExpectedGeneration: entered.Head.ControllerGeneration,
 		SuspensionID: entered.Suspension.SnapshotID,
 	})
 	if err != nil {
@@ -275,7 +292,10 @@ func TestPostPullMetadataEquivalentReviewReentersThroughMaterializeAndAcceptsNew
 		Reason: "re-prove independent HIGH target against materialized source",
 		Source: []parentevidence.SourceRequest{{
 			Question: "inspect original target on new source",
-			Path: "IMPLEMENTATION_TASKS/root.md", LineStart: 1, LineEnd: 1, BudgetBytes: 4096,
+			Path:        "IMPLEMENTATION_TASKS/root.md",
+			LineStart:   1,
+			LineEnd:     1,
+			BudgetBytes: 4096,
 		}},
 	})
 	if err := printParentEvidence(Command{EvidenceManifest: manifest}, laneCfg, f.runtime, &bytes.Buffer{}); err != nil {
