@@ -625,5 +625,40 @@ if grep -Fq 'brew install' "$standard_stderr"; then
 	printf '%s\n' 'install missing standard command: unexpected Homebrew hint' >&2
 	exit 1
 fi
+run_uninstall() {
+    HOME="$home" \
+        GOMODCACHE="$go_mod_cache" \
+        CODEX_HOME="$home/.codex" \
+        GLM_WORKER_BIN_DIR="$home/.local/bin" \
+        GLM_WORKER_HOME="$home/.glm-worker" \
+        CLAUDE_CONFIG_DIR='' \
+        CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
+        XDG_CONFIG_HOME="$home/.config" \
+        "$repo/uninstall.sh"
+}
+
+test -f "$home/.codex/codex-worker-orchestrator/install-state.json"
+test -f "$home/.claude/.codex-worker-orchestrator/settings.json.managed-settings-state.json"
+test -f "$home/.local/bin/.codex-worker-orchestrator/cli-install-state.json"
+run_uninstall
+for binary in glm-worker glm-parent-action glm-publication-guard glm-codex-context commentlint harnesslint; do
+    test ! -e "$home/.local/bin/$binary"
+done
+test ! -e "$home/.codex/codex-worker-orchestrator/install-state.json"
+test ! -e "$home/.codex/instructions/codex-worker-orchestrator.md"
+test ! -e "$home/.claude/.codex-worker-orchestrator/settings.json.managed-settings-state.json"
+test ! -e "$home/.local/bin/.codex-worker-orchestrator/cli-install-state.json"
+test "$(shasum -a 256 "$home/.codex/AGENTS.md")" = "$global_agents_hash"
+test "$(shasum -a 256 "$home/.local/bin/merge-json")" = "$stale_merge_json_hash"
+grep -q '^local_key = "keep"
+ "$home/.codex/config.toml"
+grep -q '"permissions"' "$home/.claude/settings.json"
+test -d "$home/.glm-worker/sessions"
+test -f "$home_quality_tools/codex-worker-orchestrator-shellcheck-0.11.0"
+run_uninstall
+run_install
+test -f "$home/.codex/codex-worker-orchestrator/install-state.json"
+test -x "$home/.local/bin/glm-worker"
+
 sh "$source_root/tests/install_claude_settings_location_smoke.sh"
 printf '%s\n' 'install smoke: pass'
