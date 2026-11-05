@@ -15,12 +15,12 @@ case "$bin_dir" in
 esac
 
 if ! command -v go >/dev/null 2>&1; then
-    printf '%s\n' 'uninstall: Go toolchain is required to run the ownership-safe local uninstaller' >&2
-    exit 1
+	printf '%s\n' 'uninstall: Go toolchain is required to run the ownership-safe local uninstaller' >&2
+	exit 1
 fi
 
 (
-    cd "$repo_root/glm-worker"
-    GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off go run ./cmd/uninstall \
-        -repo-root "$repo_root" -bin-dir "$bin_dir" -codex-dir "$codex_dir"
+	cd "$repo_root/glm-worker"
+	GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off go run ./cmd/uninstall \
+		-repo-root "$repo_root" -bin-dir "$bin_dir" -codex-dir "$codex_dir"
 )

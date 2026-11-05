@@ -626,15 +626,15 @@ if grep -Fq 'brew install' "$standard_stderr"; then
 	exit 1
 fi
 run_uninstall() {
-    HOME="$home" \
-        GOMODCACHE="$go_mod_cache" \
-        CODEX_HOME="$home/.codex" \
-        GLM_WORKER_BIN_DIR="$home/.local/bin" \
-        GLM_WORKER_HOME="$home/.glm-worker" \
-        CLAUDE_CONFIG_DIR='' \
-        CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
-        XDG_CONFIG_HOME="$home/.config" \
-        "$repo/uninstall.sh"
+	HOME="$home" \
+		GOMODCACHE="$go_mod_cache" \
+		CODEX_HOME="$home/.codex" \
+		GLM_WORKER_BIN_DIR="$home/.local/bin" \
+		GLM_WORKER_HOME="$home/.glm-worker" \
+		CLAUDE_CONFIG_DIR='' \
+		CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
+		XDG_CONFIG_HOME="$home/.config" \
+		"$repo/uninstall.sh"
 }
 
 test -f "$home/.codex/codex-worker-orchestrator/install-state.json"
@@ -642,7 +642,7 @@ test -f "$home/.claude/.codex-worker-orchestrator/settings.json.managed-settings
 test -f "$home/.local/bin/.codex-worker-orchestrator/cli-install-state.json"
 run_uninstall
 for binary in glm-worker glm-parent-action glm-publication-guard glm-codex-context commentlint harnesslint; do
-    test ! -e "$home/.local/bin/$binary"
+	test ! -e "$home/.local/bin/$binary"
 done
 test ! -e "$home/.codex/codex-worker-orchestrator/install-state.json"
 test ! -e "$home/.codex/instructions/codex-worker-orchestrator.md"
