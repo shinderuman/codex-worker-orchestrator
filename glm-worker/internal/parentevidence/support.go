@@ -21,10 +21,9 @@ type DuplicateProjectionError struct {
 type ReadDecision int
 
 type ReadScope struct {
-	storePresent bool
-	taskID       string
-	taskStatus   state.TaskStatus
-	leaseEpoch   int64
+	taskID     string
+	taskStatus state.TaskStatus
+	leaseEpoch int64
 }
 
 type RenderResult struct {
@@ -64,33 +63,25 @@ func StatusHasLease(status state.TaskStatus) bool {
 
 func CaptureReadScope(st *state.StateStore) (ReadScope, error) {
 	if !StorePresent(st) {
-		return ReadScope{}, nil
+		return ReadScope{taskStatus: state.TaskStatusNone}, nil
 	}
 	epoch, err := st.ParentEvidenceLeaseEpoch()
 	if err != nil {
 		return ReadScope{}, err
 	}
 	return ReadScope{
-		storePresent: true,
-		taskID:       st.ReadOr("task.id", ""),
-		taskStatus:   st.TaskStatus(),
-		leaseEpoch:   epoch,
+		taskID:     st.ReadOr("task.id", ""),
+		taskStatus: st.TaskStatus(),
+		leaseEpoch: epoch,
 	}, nil
 }
 
 func ValidateReadScope(st *state.StateStore, scope ReadScope) error {
-	present := StorePresent(st)
-	if present != scope.storePresent {
-		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
-	}
-	if !present {
-		return nil
-	}
-	epoch, err := st.ParentEvidenceLeaseEpoch()
+	current, err := CaptureReadScope(st)
 	if err != nil {
 		return err
 	}
-	if epoch != scope.leaseEpoch || st.ReadOr("task.id", "") != scope.taskID || st.TaskStatus() != scope.taskStatus {
+	if current != scope {
 		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
 	}
 	return nil

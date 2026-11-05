@@ -91,3 +91,22 @@ func TestCompletionHandoffOpenFailureRetainsRecoveryCommand(t *testing.T) {
 		t.Fatalf("handoff open failure lost read-only recovery: %#v", recovery)
 	}
 }
+
+func TestDirectPublicationHandoffFailurePreservesReadOnlyRecovery(t *testing.T) {
+	cfg := config.AppConfig{RepoRoot: t.TempDir(), StateBase: t.TempDir()}
+	terminal := json.RawMessage(`{"transition_id":"publication","head":{"metadata_lineage_ref":{"logical_identity":"publication"},"controller_generation":7,"observed_prefix":"published","integration_tip":"published","observed_remote_tip":"published"}}`)
+	var stdout bytes.Buffer
+	handled, err := finishPublicationTerminalHandoff(cfg, &stdout, nil, terminal)
+	if !handled || err == nil {
+		t.Fatalf("direct Publication terminal lost its handoff failure: handled=%v error=%v", handled, err)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	want := &terminalHandoffRecovery{Command: []string{"glm-worker", "--handoff", "recovery"}, WorkingDir: cfg.RepoRoot}
+	if envelope.Status != "parent_action_terminal_handoff_failed" || !bytes.Equal(envelope.Terminal, terminal) ||
+		!reflect.DeepEqual(envelope.HandoffRecovery, want) || len(envelope.Handoff) != 0 {
+		t.Fatalf("direct Publication lost proof or read-only recovery: %s", stdout.String())
+	}
+}
