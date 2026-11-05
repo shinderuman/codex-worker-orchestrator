@@ -56,12 +56,8 @@ func runSourceResynchronization(cfg config.AppConfig, stdout, stderr io.Writer) 
 	sourceAdvanced := false
 	const maxSteps = 12
 	for range maxSteps {
-		head, err := store.LoadHead()
-		if err != nil {
+		if err := requireSameResynchronizationTask(store, origin); err != nil {
 			return err
-		}
-		if !reflect.DeepEqual(origin.RootTaskRef, head.RootTaskRef) || !reflect.DeepEqual(origin.ExecutionTaskRef, head.ExecutionTaskRef) {
-			return fmt.Errorf("post-pull resynchronization refuses a different Task authority")
 		}
 		operation, err := projectControllerCompletion(cfg)
 		if err != nil {
@@ -120,36 +116,21 @@ func performProjectedSourceOperation(cfg config.AppConfig, operation controller.
 	return err
 }
 
+func requireSameResynchronizationTask(store *controller.Store, origin controller.RepositoryControllerHead) error {
+	head, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(origin.RootTaskRef, head.RootTaskRef) || !reflect.DeepEqual(origin.ExecutionTaskRef, head.ExecutionTaskRef) {
+		return fmt.Errorf("post-pull resynchronization refuses a different Task authority")
+	}
+	return nil
+}
+
 func projectedSourceCommand(cfg config.AppConfig, operation controller.ParentCompletionOperation) (any, error) {
 	switch operation.Surface {
 	case controller.PublicationOperationSurface:
-		if operation.Command == nil || operation.Command.Action != operation.Operation {
-			return nil, fmt.Errorf("post-pull publication projection has no matching typed command")
-		}
-		command := *operation.Command
-		switch command.Action {
-		case controller.PublicationOperationAdopt, controller.PublicationOperationAdoptSource:
-			command.Action = controller.PublicationOperationResyncRetired
-		case controller.PublicationOperationAdoptMutable:
-			command.Action = controller.PublicationOperationResyncMutable
-			store, err := controller.Open(cfg)
-			if err != nil {
-				return nil, err
-			}
-			primary, err := controller.CaptureWorkspaceSnapshot(store.Identity().PrimaryRoot)
-			if err != nil {
-				return nil, err
-			}
-			command.SourceOID = primary.Head
-		case controller.PublicationOperationRebind:
-			command.Action = controller.PublicationOperationResyncRebind
-		default:
-			return nil, fmt.Errorf("post-pull operation %s has no non-pushing Controller owner", command.Action)
-		}
-		if command.SourceOID == "" {
-			return nil, fmt.Errorf("post-pull source OID is missing")
-		}
-		return &command, nil
+		return projectedSourcePublicationCommand(cfg, operation)
 	case controller.ExecutionOperationSurface:
 		if operation.Execution == nil || operation.Execution.Action != operation.Operation {
 			return nil, fmt.Errorf("post-pull execution projection has no matching typed command")
@@ -158,6 +139,44 @@ func projectedSourceCommand(cfg config.AppConfig, operation controller.ParentCom
 	default:
 		return nil, fmt.Errorf("post-pull transition has no Controller owner")
 	}
+}
+
+func projectedSourcePublicationCommand(cfg config.AppConfig, operation controller.ParentCompletionOperation) (any, error) {
+	if operation.Command == nil || operation.Command.Action != operation.Operation {
+		return nil, fmt.Errorf("post-pull publication projection has no matching typed command")
+	}
+	command := *operation.Command
+	switch command.Action {
+	case controller.PublicationOperationAdopt, controller.PublicationOperationAdoptSource:
+		command.Action = controller.PublicationOperationResyncRetired
+	case controller.PublicationOperationAdoptMutable:
+		command.Action = controller.PublicationOperationResyncMutable
+		sourceOID, err := projectedPulledPrimaryOID(cfg)
+		if err != nil {
+			return nil, err
+		}
+		command.SourceOID = sourceOID
+	case controller.PublicationOperationRebind:
+		command.Action = controller.PublicationOperationResyncRebind
+	default:
+		return nil, fmt.Errorf("post-pull operation %s has no non-pushing Controller owner", command.Action)
+	}
+	if command.SourceOID == "" {
+		return nil, fmt.Errorf("post-pull source OID is missing")
+	}
+	return &command, nil
+}
+
+func projectedPulledPrimaryOID(cfg config.AppConfig) (string, error) {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return "", err
+	}
+	primary, err := controller.CaptureWorkspaceSnapshot(store.Identity().PrimaryRoot)
+	if err != nil {
+		return "", err
+	}
+	return primary.Head, nil
 }
 
 func sourceResynchronizationAdvancesSource(action string) bool {
