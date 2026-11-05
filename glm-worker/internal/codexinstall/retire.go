@@ -69,6 +69,22 @@ func retireLocked(codexDir string, output io.Writer) error {
         if err != nil { return err }
         backups = append(backups, backup)
     }
+    for _, record := range state.Files {
+        file := backupsAt(backups, filepath.Join(codexDir, filepath.FromSlash(record.Path)))
+        if file.Exists && digestBytes(file.Content) != record.SHA256 {
+            return fmt.Errorf("Codex managed file changed during retire preparation: %s", record.Path)
+        }
+    }
+    if record, ok := state.Config[managedConfigKey]; ok {
+        config := backupsAt(backups, filepath.Join(codexDir, "config.toml"))
+        if config.Path != "" && config.Exists {
+            assignment, found, err := findTopLevelAssignment(config.Content, managedConfigKey)
+            if err != nil { return err }
+            if found && digestBytes([]byte(assignment.Line)) != record.LineSHA256 {
+                return fmt.Errorf("Codex managed config changed during retire preparation")
+            }
+        }
+    }
     if !bytes.Equal(backupsAt(backups, statePath(codexDir)).Content, stateBackup.Content) {
         return fmt.Errorf("Codex ownership state changed during retire preparation")
     }
