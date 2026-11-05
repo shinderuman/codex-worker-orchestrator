@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -209,6 +210,51 @@ func TestExportPostInstallProbeRejectsModifiedContentAndFalseDigest(t *testing.T
 				t.Fatalf("modified probe evidence became canonical: %#v", run)
 			}
 		})
+	}
+}
+
+func TestExportPostInstallProbeRejectsSymlinkedRunRecord(t *testing.T) {
+	fixture := newEvidenceExportFixture(t)
+	record := exportProbeFixtureRecord(fixture)
+	writeExportProbeFixture(t, fixture, record, []byte("real probe"))
+	runPath := fixture.runtime.Path(qualitygate.RunRelativePath(record.ValidationRunID))
+	backup := runPath + ".original"
+	if err := os.Rename(runPath, backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(backup, runPath); err != nil {
+		t.Fatal(err)
+	}
+	export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordEntry := exportEntryByPath(t, export.Manifest, "live/validation/quality-gate/"+record.ValidationRunID+"/"+qualitygate.RunFile)
+	if recordEntry.Unreadable == "" || exportHasEntry(export.Manifest, exportProbeManifestPath(record)) {
+		t.Fatalf("symlinked run.json supplied trusted probe evidence: %#v", recordEntry)
+	}
+}
+
+func TestReadValidationRunFileRejectsReplacementDuringRead(t *testing.T) {
+	fixture := newEvidenceExportFixture(t)
+	record := exportProbeFixtureRecord(fixture)
+	writeExportProbeFixture(t, fixture, record, []byte("original probe bytes"))
+	_, err := readValidationRunFileWithRead(fixture.runtime, record.ValidationRunID, "probe.log", func(file *os.File) ([]byte, error) {
+		original, readErr := io.ReadAll(file)
+		if readErr != nil {
+			return nil, readErr
+		}
+		replacement := record.Log + ".replacement"
+		if writeErr := os.WriteFile(replacement, []byte("replacement probe bytes"), 0o600); writeErr != nil {
+			return nil, writeErr
+		}
+		if renameErr := os.Rename(replacement, record.Log); renameErr != nil {
+			return nil, renameErr
+		}
+		return original, nil
+	})
+	if err == nil {
+		t.Fatal("validation evidence read accepted a file replaced during collection")
 	}
 }
 
