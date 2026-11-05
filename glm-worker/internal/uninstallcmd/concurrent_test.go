@@ -52,13 +52,10 @@ func TestConcurrentInstallUninstallCanBothSucceedWithSplitOwnership(t *testing.T
 	writeConcurrentRetireFile(t, filepath.Join(codexDir, "AGENTS.md"), []byte("user-owned instruction\n"), 0o644)
 	writeConcurrentRetireFile(t, filepath.Join(codexDir, "config.toml"), []byte("local_key = \"keep\"\n"), 0o644)
 
-	// install.sh completes the CLI owner before starting the Codex owner.
 	if _, err := cliinstall.Install(buildDir, binDir); err != nil {
 		t.Fatalf("install CLI phase: %v", err)
 	}
 
-	// uninstall starts after install CLI, but pauses after retiring Claude
-	// and before retiring CLI. Channels, not sleeps, control the interleaving.
 	gate := &concurrentRetireGate{
 		reached: make(chan struct{}),
 		release: make(chan struct{}),
@@ -80,7 +77,6 @@ func TestConcurrentInstallUninstallCanBothSucceedWithSplitOwnership(t *testing.T
 		t.Fatal("uninstall did not reach the post-Claude boundary")
 	}
 
-	// While uninstall is paused, install completes Codex, Claude and hook.
 	if err := codexinstall.Install(repo, codexDir, io.Discard); err != nil {
 		t.Fatalf("install Codex phase: %v", err)
 	}
@@ -99,8 +95,6 @@ func TestConcurrentInstallUninstallCanBothSucceedWithSplitOwnership(t *testing.T
 		t.Fatal("uninstall did not finish after the gate was released")
 	}
 
-	// Both logical commands completed successfully, but only CLI was retired.
-	// This is a reproducible known race, not an acceptance of split deployment.
 	assertConcurrentRetireAbsent(t, filepath.Join(binDir, "glm-publication-guard"))
 	assertConcurrentRetireAbsent(t, filepath.Join(binDir, ".codex-worker-orchestrator", "cli-install-state.json"))
 	assertConcurrentRetirePresent(t, filepath.Join(codexDir, "codex-worker-orchestrator", "install-state.json"))
