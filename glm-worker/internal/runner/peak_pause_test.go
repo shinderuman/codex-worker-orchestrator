@@ -26,7 +26,7 @@ func TestPeakPauseRejectsGLMCommandBeforeLaunch(t *testing.T) {
 	cmd := newProcessGroupCmd("sh", "-c", "echo started > "+marker)
 	err := r.runCommand(cmd)
 	var paused *ScheduledPauseError
-	if !errors.As(err, &paused) || !paused.ResumeAt.After(time.Now()) {
+	if !errors.As(err, &paused) || !paused.ResumeAt.After(time.Now()) || paused.Started {
 		t.Fatalf("scheduled pause error = %v", err)
 	}
 	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {

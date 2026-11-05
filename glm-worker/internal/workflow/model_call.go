@@ -823,7 +823,7 @@ func (w *Workflow) persistScheduledPauseStop(checkpoint state.ResumeCheckpoint, 
 		checkpoint.StopDirtyFiles = files
 	}
 	_ = state.CaptureStopPatches(w.config, w.state)
-	if w.state.ReadOr(string(checkpoint.Role)+".id", "") != "" {
+	if paused.Started && w.state.ReadOr(string(checkpoint.Role)+".id", "") != "" {
 		if err := w.state.MarkReady(checkpoint.Role); err != nil {
 			return err
 		}

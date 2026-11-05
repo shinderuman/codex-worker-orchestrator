@@ -23,7 +23,7 @@ func TestPeakPauseStopsRunningProcessAtBoundary(t *testing.T) {
 	command := newProcessGroupCmd("sh", "-c", "sleep 20")
 	err := r.runCommand(command)
 	var paused *ScheduledPauseError
-	if !errors.As(err, &paused) || !paused.ResumeAt.Equal(resume) {
+	if !errors.As(err, &paused) || !paused.ResumeAt.Equal(resume) || !paused.Started {
 		t.Fatalf("running GLM command was not interrupted at boundary: %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {

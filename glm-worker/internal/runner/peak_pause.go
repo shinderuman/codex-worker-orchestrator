@@ -11,6 +11,7 @@ type ScheduledPauseError struct {
 	TaskID         string
 	RepoRoot       string
 	ResumeAt       time.Time
+	Started        bool
 	CleanupWarning string
 }
 
@@ -78,7 +79,7 @@ func (r *ClaudeRunner) onPauseBoundary(command *exec.Cmd, waitDone <-chan error)
 	}
 	warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
 	<-waitDone
-	return true, next, &ScheduledPauseError{ResumeAt: next, CleanupWarning: warning}
+	return true, next, &ScheduledPauseError{ResumeAt: next, Started: true, CleanupWarning: warning}
 }
 
 func pauseBoundaryChannel(next time.Time) (<-chan time.Time, func()) {
