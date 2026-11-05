@@ -11,8 +11,6 @@ import (
     "syscall"
 )
 
-// Retire removes only files and the config assignment recorded by the installer.
-// It intentionally does not restore an earlier instruction file snapshot.
 func Retire(codexDir string, output io.Writer) error {
     codexDir = filepath.Clean(codexDir)
     if codexDir == "." { return fmt.Errorf("Codex directory must be explicit") }
@@ -104,7 +102,6 @@ func retireLocked(codexDir string, output io.Writer) error {
     if err := os.Remove(statePath(codexDir)); err != nil { return fail(err) }
     if err := removeInstallTransactionJournal(codexDir, "finish Codex retirement"); err != nil { return err }
 
-    // Only remove empty managed directories. Never descend recursively.
     dirs := make(map[string]bool)
     for _, record := range state.Files {
         dir := filepath.Dir(filepath.Join(codexDir, filepath.FromSlash(record.Path)))
