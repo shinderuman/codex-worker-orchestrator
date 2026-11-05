@@ -26,6 +26,7 @@ type TerminalMetadata = repositoryproject.TerminalMetadata
 
 type Project struct {
 	Head         string
+	RepoRoot     string
 	Plan         []byte
 	Schedule     taskcontract.PlanSchedule
 	RootTaskPath string
@@ -68,6 +69,7 @@ func Load(root, revision string) (Project, error) {
 	}
 	return Project{
 		Head:         head,
+		RepoRoot:     root,
 		Plan:         plan,
 		Schedule:     schedule,
 		RootTaskPath: rootTaskPath,
@@ -122,7 +124,39 @@ func (p Project) RetireTerminalMetadata(taskPath string, blocker bool) (Terminal
 	for _, task := range p.Tasks {
 		contents[task.Path] = task.Content
 	}
-	return repositoryproject.RetireTerminalMetadata(p.Plan, contents, taskPath, blocker)
+	metadata, err := repositoryproject.RetireTerminalMetadata(p.Plan, contents, taskPath, blocker)
+	if err != nil {
+		return TerminalMetadata{}, err
+	}
+	// A pinned source is not a live task edge, but it must resolve to an
+	// actual immutable Git blob before the committed publication can retire
+	// the original requirement owner.
+	for _, task := range p.Tasks {
+		if task.Path == taskPath {
+			continue
+		}
+		sources, err := taskcontract.ParseRequirementSources(task.Content)
+		if err != nil {
+			return TerminalMetadata{}, fmt.Errorf("task %s: %w", task.Path, err)
+		}
+		for _, source := range sources {
+			if source.Kind != taskcontract.RequirementSourceGit {
+				continue
+			}
+			if p.RepoRoot == "" {
+				return TerminalMetadata{}, fmt.Errorf("task %s has pinned requirement source but repository root is unavailable", task.Path)
+			}
+			kind, err := gitOutput(p.RepoRoot, "cat-file", "-t", source.Commit)
+			if err != nil || kind != "commit" {
+				return TerminalMetadata{}, fmt.Errorf("task %s has unavailable pinned requirement commit %s", task.Path, source.Commit)
+			}
+			kind, err = gitOutput(p.RepoRoot, "cat-file", "-t", source.Commit+":"+source.Path)
+			if err != nil || kind != "blob" {
+				return TerminalMetadata{}, fmt.Errorf("task %s has unavailable pinned requirement blob %s:%s", task.Path, source.Commit, source.Path)
+			}
+		}
+	}
+	return metadata, nil
 }
 
 func parseTaskCorpusEntry(record string) (taskcontract.TaskCorpusEntry, bool, error) {
