@@ -76,7 +76,8 @@ func probeExportAnalysisRun(t *testing.T, members map[string][]byte, runID strin
 	return controller.EvidenceAnalysisValidationRun{}
 }
 
-func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
+func runRealPostInstallProbeForBundle(t *testing.T) (config.AppConfig, *controller.Store, *state.StateStore, qualitygate.RunRecord, []byte) {
+	t.Helper()
 	cfg, store, candidate, generation := appProbeFixture(t, []string{
 		"/bin/sh", "-c", `printf 'probe stdout\\n'; printf 'probe stderr\\n' >&2`,
 	})
@@ -104,42 +105,64 @@ func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
 		t.Fatalf("post-install probe producer result = %#v", out)
 	}
 	record := latestAppProbeRun(t, cfg, store, candidate, "docker-worker-path")
-	if record.TaskID != taskID || record.Form != controller.PublicationOperationPostInstallSmoke ||
-		record.Status != qualitygate.StatusPass || record.LogSHA256 == "" {
-		t.Fatalf("producer did not persist a source-bound PASS run: %#v", record)
-	}
 	actual, err := os.ReadFile(record.Log)
 	if err != nil {
 		t.Fatal(err)
+	}
+	requirePostInstallProbeProducerRecord(t, record, taskID, actual)
+	return cfg, store, runtime, record, actual
+}
+
+func requirePostInstallProbeProducerRecord(t *testing.T, record qualitygate.RunRecord, taskID string, actual []byte) {
+	t.Helper()
+	if record.TaskID != taskID || record.Form != controller.PublicationOperationPostInstallSmoke ||
+		record.Status != qualitygate.StatusPass || record.LogSHA256 == "" {
+		t.Fatalf("producer did not persist a source-bound PASS run: %#v", record)
 	}
 	if string(actual) != "probe stdout\nprobe stderr\n" {
 		t.Fatalf("probe output differs: %q", actual)
 	}
 	sum := sha256.Sum256(actual)
-	digest := hex.EncodeToString(sum[:])
-	if record.LogSHA256 != digest {
-		t.Fatalf("producer log digest = %s, expected %s", record.LogSHA256, digest)
+	if record.LogSHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("producer log digest = %s, expected %x", record.LogSHA256, sum)
 	}
+}
+
+func checkRealPostInstallProbeZIP(t *testing.T, export controller.EvidenceExport, members map[string][]byte, record qualitygate.RunRecord, actual []byte) {
+	t.Helper()
 	prefix := "live/validation/quality-gate/" + record.ValidationRunID + "/"
 	logEntry := prefix + "probe.log"
-	export, members := exportPostInstallProbeZIP(t, cfg, store)
 	if string(members[logEntry]) != string(actual) {
 		t.Fatalf("Bundle ZIP probe log differs from executed process: %q", members[logEntry])
 	}
 	entry := probeExportManifestEntry(t, export, logEntry)
+	sum := sha256.Sum256(actual)
 	if entry.Missing || entry.Unreadable != "" || entry.Changing ||
-		entry.Source != "quality-gate-run" || entry.Basis != "runtime-validation-store" ||
-		entry.Bytes != int64(len(actual)) || entry.SHA256 != digest {
-		t.Fatalf("producer Bundle log manifest mismatch: %#v", entry)
+		entry.Source != "quality-gate-run" || entry.Basis != "runtime-validation-store" {
+		t.Fatalf("producer Bundle log provenance mismatch: %#v", entry)
 	}
+	if entry.Bytes != int64(len(actual)) || entry.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("producer Bundle size/SHA mismatch: %#v", entry)
+	}
+	checkBundledProbeRunRecord(t, members, prefix, record)
+	checkBundledProbeAnalysis(t, export, members, prefix, record)
+}
+
+func checkBundledProbeRunRecord(t *testing.T, members map[string][]byte, prefix string, record qualitygate.RunRecord) {
+	t.Helper()
 	var bundledRecord qualitygate.RunRecord
 	if err := json.Unmarshal(members[prefix+qualitygate.RunFile], &bundledRecord); err != nil {
 		t.Fatal(err)
 	}
 	if bundledRecord.ValidationRunID != record.ValidationRunID || bundledRecord.Log != record.Log ||
-		bundledRecord.LogSHA256 != record.LogSHA256 || bundledRecord.TaskID != taskID {
+		bundledRecord.LogSHA256 != record.LogSHA256 || bundledRecord.TaskID != record.TaskID {
 		t.Fatalf("Bundle run record differs from producer: %#v", bundledRecord)
 	}
+}
+
+func checkBundledProbeAnalysis(t *testing.T, export controller.EvidenceExport, members map[string][]byte, prefix string, record qualitygate.RunRecord) {
+	t.Helper()
+	logEntry := prefix + "probe.log"
 	analysis := probeExportAnalysisRun(t, members, record.ValidationRunID)
 	if analysis.Form != record.Form || analysis.Result != qualitygate.StatusPass ||
 		analysis.Log != logEntry || analysis.Binding != "task-record" ||
@@ -153,6 +176,14 @@ func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
+	cfg, store, runtime, record, actual := runRealPostInstallProbeForBundle(t)
+	prefix := "live/validation/quality-gate/" + record.ValidationRunID + "/"
+	logEntry := prefix + "probe.log"
+	export, members := exportPostInstallProbeZIP(t, cfg, store)
+	checkRealPostInstallProbeZIP(t, export, members, record, actual)
 
 	t.Run("modified-probe-log", func(t *testing.T) {
 		if err := os.WriteFile(record.Log, []byte("tampered probe output\n"), 0o600); err != nil {
