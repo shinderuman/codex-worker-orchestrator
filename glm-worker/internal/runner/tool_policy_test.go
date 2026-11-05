@@ -18,7 +18,6 @@ func TestBuildRunArgsUsesExplicitWorkerToolPolicy(t *testing.T) {
 		"worker-model",
 		false,
 		"high",
-		"prompt",
 		runInputs{isolationArgs: "{}", schema: "{}"},
 	)
 

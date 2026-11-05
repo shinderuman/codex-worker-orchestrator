@@ -18,7 +18,6 @@ func TestBuildRunArgsDisallowsMutableWorkerDirectLintCommands(t *testing.T) {
 		"model",
 		false,
 		"high",
-		"prompt",
 		runInputs{systemFile: "WORKER.md", schema: "{}"},
 	)
 
@@ -56,7 +55,6 @@ func TestBuildRunArgsDeniesGoTestOnlyUnderDockerPolicy(t *testing.T) {
 		"model",
 		false,
 		"high",
-		"prompt",
 		runInputs{systemFile: "WORKER.md", schema: "{}"},
 	)
 
@@ -90,7 +88,6 @@ func TestBuildRunArgsKeepsReadOnlyBashDenyCanonical(t *testing.T) {
 		"model",
 		true,
 		"high",
-		"prompt",
 		runInputs{systemFile: "WORKER.md", schema: "{}"},
 	)
 

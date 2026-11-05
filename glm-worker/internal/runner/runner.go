@@ -117,6 +117,7 @@ type preparedSessionCall struct {
 	versionScope  claudeVersionScope
 	inputs        runInputs
 	args          []string
+	prompt        string
 }
 
 const isolationPolicyVersion = "claude-isolation-2"
@@ -307,7 +308,7 @@ func (r *ClaudeRunner) runSession(
 	defer prepared.stopResources()
 	ingester, stderrPath, runErr, err := r.executeRunCommand(
 		recorder, role, phase, model, prepared.taskID, prepared.sessionID, prepared.callID, prepared.ready,
-		prepared.args, prepared.inputs, outputPath, deadline, admit,
+		prepared.args, prepared.prompt, prepared.inputs, outputPath, deadline, admit,
 	)
 	if err != nil {
 		return prepared.result, err
@@ -343,7 +344,7 @@ func (r *ClaudeRunner) assembleSessionCall(
 	if err != nil {
 		return preparedSessionCall{result: result}, err
 	}
-	args := r.buildRunArgs(role, taskID, sessionID, ready, model, readOnly, effort, prompt, inputs)
+	args := r.buildRunArgs(role, taskID, sessionID, ready, model, readOnly, effort, inputs)
 	callID, callIDErr := state.NewUUID()
 	if callIDErr != nil {
 		state.WarnTaskEventSkip("call ID生成", callIDErr)
@@ -362,6 +363,7 @@ func (r *ClaudeRunner) assembleSessionCall(
 		versionScope:  versionScope,
 		inputs:        inputs,
 		args:          args,
+		prompt:        prompt,
 	}, nil
 }
 
@@ -432,7 +434,7 @@ func (r *ClaudeRunner) buildRunArgs(
 	ready bool,
 	model string,
 	readOnly bool,
-	effort, prompt string,
+	effort string,
 	inputs runInputs,
 ) []string {
 	args := []string{"-p", "--safe-mode", "--setting-sources", ""}
@@ -470,7 +472,7 @@ func (r *ClaudeRunner) buildRunArgs(
 		args = append(args, "--disallowedTools")
 		args = append(args, disallowedTools...)
 	}
-	return append(args, "--append-system-prompt-file", inputs.systemFile, prompt)
+	return append(args, "--append-system-prompt-file", inputs.systemFile)
 }
 
 func (r *ClaudeRunner) executeRunCommand(
@@ -479,6 +481,7 @@ func (r *ClaudeRunner) executeRunCommand(
 	phase, model, taskID, sessionID, callID string,
 	ready bool,
 	args []string,
+	prompt string,
 	inputs runInputs,
 	outputPath string,
 	deadline time.Time,
@@ -489,17 +492,10 @@ func (r *ClaudeRunner) executeRunCommand(
 	if err != nil {
 		return nil, stderrPath, nil, err
 	}
-	devNull, err := os.Open(os.DevNull)
-	if err != nil {
-		_ = stderr.Close()
-		return nil, stderrPath, nil, fmt.Errorf("/dev/nullを開けません: %w", err)
-	}
-	defer func() { _ = devNull.Close() }()
-
 	ingester := r.newTaskEventIngester(taskID, callID, role, phase, model, sessionID, ready)
 	command := newProcessGroupCmd(r.config.ClaudeBin, args...)
 	command.Dir = r.config.RepoRoot
-	command.Stdin = devNull
+	command.Stdin = strings.NewReader(prompt)
 	command.Stdout = ingester
 	command.Stderr = stderr
 	additions := claudeInvocationEnvDefaults()
