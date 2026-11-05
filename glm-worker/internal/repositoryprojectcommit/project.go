@@ -128,47 +128,58 @@ func (p Project) RetireTerminalMetadata(taskPath string, blocker bool) (Terminal
 	if err != nil {
 		return TerminalMetadata{}, err
 	}
-	// A pinned source is not a live task edge, but it must resolve to an
-	// actual immutable Git blob before the committed publication can retire
-	// the original requirement owner.
+	if err := p.validateCommittedRequirementSources(taskPath); err != nil {
+		return TerminalMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func (p Project) validateCommittedRequirementSources(retiring string) error {
 	for _, task := range p.Tasks {
-		if task.Path == taskPath {
+		if task.Path == retiring {
 			continue
 		}
 		sources, err := taskcontract.ParseRequirementSources(task.Content)
 		if err != nil {
-			return TerminalMetadata{}, fmt.Errorf("task %s: %w", task.Path, err)
+			return fmt.Errorf("task %s: %w", task.Path, err)
 		}
 		for _, source := range sources {
-			if source.Kind == taskcontract.RequirementSourceFile {
-				// File-based current authorities must exist in the committed
-				// source tree, not only in a mutable worktree.
-				if p.RepoRoot == "" || p.Head == "" {
-					return TerminalMetadata{}, fmt.Errorf("task %s has current file requirement source without committed Git identity", task.Path)
-				}
-				kind, err := gitOutput(p.RepoRoot, "cat-file", "-t", p.Head+":"+source.Path)
-				if err != nil || kind != "blob" {
-					return TerminalMetadata{}, fmt.Errorf("task %s has missing committed requirement file %s at %s", task.Path, source.Path, p.Head)
-				}
-				continue
-			}
-			if source.Kind != taskcontract.RequirementSourceGit {
-				continue
-			}
-			if p.RepoRoot == "" {
-				return TerminalMetadata{}, fmt.Errorf("task %s has pinned requirement source but repository root is unavailable", task.Path)
-			}
-			kind, err := gitOutput(p.RepoRoot, "cat-file", "-t", source.Commit)
-			if err != nil || kind != "commit" {
-				return TerminalMetadata{}, fmt.Errorf("task %s has unavailable pinned requirement commit %s", task.Path, source.Commit)
-			}
-			kind, err = gitOutput(p.RepoRoot, "cat-file", "-t", source.Commit+":"+source.Path)
-			if err != nil || kind != "blob" {
-				return TerminalMetadata{}, fmt.Errorf("task %s has unavailable pinned requirement blob %s:%s", task.Path, source.Commit, source.Path)
+			if err := p.verifyCommittedRequirementSource(source); err != nil {
+				return fmt.Errorf("task %s line %d: %w", task.Path, source.Line, err)
 			}
 		}
 	}
-	return metadata, nil
+	return nil
+}
+
+func (p Project) verifyCommittedRequirementSource(source taskcontract.RequirementSource) error {
+	switch source.Kind {
+	case taskcontract.RequirementSourceFile:
+		if p.RepoRoot == "" || p.Head == "" {
+			return fmt.Errorf("current file requirement source without committed Git identity")
+		}
+		return p.verifyRequirementBlob(p.Head, source.Path)
+	case taskcontract.RequirementSourceGit:
+		if p.RepoRoot == "" {
+			return fmt.Errorf("pinned requirement source without repository root")
+		}
+		kind, err := gitOutput(p.RepoRoot, "cat-file", "-t", source.Commit)
+		if err != nil || kind != "commit" {
+			return fmt.Errorf("unavailable pinned requirement commit %s", source.Commit)
+		}
+		return p.verifyRequirementBlob(source.Commit, source.Path)
+	}
+	return nil
+}
+
+const requirementBlobType = "blob"
+
+func (p Project) verifyRequirementBlob(commit, sourcePath string) error {
+	kind, err := gitOutput(p.RepoRoot, "cat-file", "-t", commit+":"+sourcePath)
+	if err != nil || kind != requirementBlobType {
+		return fmt.Errorf("unavailable requirement blob %s:%s", commit, sourcePath)
+	}
+	return nil
 }
 
 func parseTaskCorpusEntry(record string) (taskcontract.TaskCorpusEntry, bool, error) {
@@ -183,7 +194,7 @@ func parseTaskCorpusEntry(record string) (taskcontract.TaskCorpusEntry, bool, er
 	if len(fields) < 2 {
 		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("committed task corpus entry %q is malformed", record)
 	}
-	regular := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
+	regular := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == requirementBlobType
 	return taskcontract.TaskCorpusEntry{Path: filepath.ToSlash(path), Regular: regular}, true, nil
 }
 

@@ -1,6 +1,7 @@
 package harnesslint
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,9 +14,7 @@ func TestRequirementSourceViolationsCurrentVsHistorical(t *testing.T) {
 	root := t.TempDir()
 	task := "IMPLEMENTATION_TASKS/child.md"
 	source := "review-evidence/october-2026/request.md"
-	writeTaskCorpusFile(t, root, task, "## Resolved references\n- Historical locator: " + tick +
-		"IMPLEMENTATION_TASKS/deleted.md" + tick + "\n" +
-		"- requirement-source: " + tick + "file:" + source + tick + "\n")
+	writeTaskCorpusFile(t, root, task, fmt.Sprintf("## Resolved references\n- Historical locator: %sIMPLEMENTATION_TASKS/deleted.md%s\n- requirement-source: %sfile:%s%s\n", tick, tick, tick, source, tick))
 	paths := []string{task}
 	violations, err := requirementSourceViolations(root, paths)
 	if err != nil || len(violations) != 1 || violations[0].Rule != requirementSourceRule ||
@@ -63,8 +62,7 @@ func TestRequirementSourceViolationsVerifyGitPinnedBlob(t *testing.T) {
 	sha := git("rev-parse", "HEAD")
 	task := "IMPLEMENTATION_TASKS/child.md"
 	tick := string(rune(96))
-	reference := "## Resolved references\n- requirement-source: " + tick +
-		"git:" + sha + ":" + source + tick + "\n"
+	reference := fmt.Sprintf("## Resolved references\n- requirement-source: %sgit:%s:%s%s\n", tick, sha, source, tick)
 	writeTaskCorpusFile(t, root, task, reference)
 	violations, err := requirementSourceViolations(root, []string{task})
 	if err != nil || len(violations) > 0 {

@@ -12,8 +12,6 @@ import (
 
 const requirementSourceRule = "task-requirement-source-closure"
 
-// requirementSourceViolations checks explicit, typed requirement references.
-// A filename mentioned in a historical narrative is not a live dependency.
 func requirementSourceViolations(root string, paths []string) ([]Violation, error) {
 	present := make(map[string]bool, len(paths))
 	for _, path := range paths {
@@ -24,37 +22,55 @@ func requirementSourceViolations(root string, paths []string) ([]Violation, erro
 		if !isTaskCorpusPath(taskPath) {
 			continue
 		}
-		content, err := readRegularFile(root, taskPath)
+		taskViolations, err := checkTaskRequirementSources(root, taskPath, present)
 		if err != nil {
 			return nil, err
 		}
-		sources, err := taskcontract.ParseRequirementSources(content)
-		if err != nil {
-			violations = append(violations, requirementSourceViolation(taskPath, 1, err.Error()))
-			continue
-		}
-		for _, source := range sources {
-			switch source.Kind {
-			case taskcontract.RequirementSourceTask, taskcontract.RequirementSourceFile:
-				if !present[source.Path] {
-					violations = append(violations, requirementSourceViolation(taskPath, source.Line,
-						fmt.Sprintf("current requirement source %s is missing; parent must transfer or fix the source", source.Path)))
-					continue
-				}
-				info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(source.Path)))
-				if err != nil || !info.Mode().IsRegular() {
-					violations = append(violations, requirementSourceViolation(taskPath, source.Line,
-						fmt.Sprintf("current requirement source %s is not a regular file", source.Path)))
-				}
-			case taskcontract.RequirementSourceGit:
-				if err := verifyPinnedRequirementSource(root, source); err != nil {
-					violations = append(violations, requirementSourceViolation(taskPath, source.Line,
-						fmt.Sprintf("pinned requirement source %s:%s is unavailable: %v", source.Commit, source.Path, err)))
-				}
-			}
+		violations = append(violations, taskViolations...)
+	}
+	return violations, nil
+}
+
+func checkTaskRequirementSources(root, taskPath string, present map[string]bool) ([]Violation, error) {
+	content, err := readRegularFile(root, taskPath)
+	if err != nil {
+		return nil, err
+	}
+	sources, err := taskcontract.ParseRequirementSources(content)
+	if err != nil {
+		return []Violation{requirementSourceViolation(taskPath, 1, err.Error())}, nil
+	}
+	var violations []Violation
+	for _, source := range sources {
+		message := requirementSourceProblem(root, source, present)
+		if message != "" {
+			violations = append(violations, requirementSourceViolation(taskPath, source.Line, message))
 		}
 	}
 	return violations, nil
+}
+
+func requirementSourceProblem(root string, source taskcontract.RequirementSource, present map[string]bool) string {
+	switch source.Kind {
+	case taskcontract.RequirementSourceTask, taskcontract.RequirementSourceFile:
+		return currentRequirementSourceProblem(root, source.Path, present)
+	case taskcontract.RequirementSourceGit:
+		if err := verifyPinnedRequirementSource(root, source); err != nil {
+			return fmt.Sprintf("pinned requirement source %s:%s is unavailable: %v", source.Commit, source.Path, err)
+		}
+	}
+	return ""
+}
+
+func currentRequirementSourceProblem(root, sourcePath string, present map[string]bool) string {
+	if !present[sourcePath] {
+		return fmt.Sprintf("current requirement source %s is missing; parent must transfer or fix the source", sourcePath)
+	}
+	info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(sourcePath)))
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Sprintf("current requirement source %s is not a regular file", sourcePath)
+	}
+	return ""
 }
 
 func verifyPinnedRequirementSource(root string, source taskcontract.RequirementSource) error {

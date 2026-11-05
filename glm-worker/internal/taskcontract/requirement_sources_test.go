@@ -10,14 +10,25 @@ func TestParseRequirementSourcesClassifiesCurrentAndPinnedWithoutHistoricalNarra
 	sha := strings.Repeat("a", 40)
 	old := "IMPLEMENTATION_TASKS/retired.md"
 	current := "IMPLEMENTATION_TASKS/current.md"
-	body := "## Original instruction\n\n" +
-		strings.Repeat(tick, 4) + "text\n- requirement-source: " + tick + "task:" + old + tick + "\n" + strings.Repeat(tick, 4) + "\n\n" +
-		"## Resolved references\n\n" +
-		"- Historical locator: " + tick + old + tick + "\n" +
-		"- requirement-source: " + tick + "task:" + current + tick + "\n" +
-		"- requirement-source: " + tick + "git:" + sha + ":" + old + tick + "\n" +
-		"- arbitrary task filename " + tick + old + tick + " in prose\n\n" +
-		"## Contract\n\nNo further requirements.\n"
+	body := strings.Join([]string{
+		"## Original instruction",
+		"",
+		strings.Repeat(tick, 4) + "text",
+		"- requirement-source: " + tick + "task:" + old + tick,
+		strings.Repeat(tick, 4),
+		"",
+		"## Resolved references",
+		"",
+		"- Historical locator: " + tick + old + tick,
+		"- requirement-source: " + tick + "task:" + current + tick,
+		"- requirement-source: " + tick + "git:" + sha + ":" + old + tick,
+		"- arbitrary task filename " + tick + old + tick + " in prose",
+		"",
+		"## Contract",
+		"",
+		"No further requirements.",
+		"",
+	}, "\n")
 	got, err := ParseRequirementSources([]byte(body))
 	if err != nil {
 		t.Fatal(err)
