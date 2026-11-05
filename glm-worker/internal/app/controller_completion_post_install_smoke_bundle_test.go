@@ -139,7 +139,7 @@ func requirePostInstallProbeProducerRecord(t *testing.T, record qualitygate.RunR
 
 func checkRealPostInstallProbeZIP(t *testing.T, export controller.EvidenceExport, members map[string][]byte, record qualitygate.RunRecord, actual []byte) {
 	t.Helper()
-	prefix := "live/validation/quality-gate/" + record.ValidationRunID + "/"
+	prefix := "bound/validation/quality-gate/" + record.ValidationRunID + "/"
 	logEntry := prefix + "probe.log"
 	if string(members[logEntry]) != string(actual) {
 		t.Fatalf("Bundle ZIP probe log differs from executed process: %q", members[logEntry])
@@ -189,7 +189,7 @@ func checkBundledProbeAnalysis(t *testing.T, export controller.EvidenceExport, m
 
 func TestPostInstallSmokeProducerToBundleZIP(t *testing.T) {
 	cfg, store, runtime, record, actual := runRealPostInstallProbeForBundle(t)
-	prefix := "live/validation/quality-gate/" + record.ValidationRunID + "/"
+	prefix := "bound/validation/quality-gate/" + record.ValidationRunID + "/"
 	logEntry := prefix + "probe.log"
 	export, members := exportPostInstallProbeZIP(t, cfg, store, record.TaskID)
 	checkRealPostInstallProbeZIP(t, export, members, record, actual)
