@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,9 +151,14 @@ func (c *evidenceLiveCollector) collectGateRuns(store *state.StateStore, basis, 
 }
 
 func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, basis, storeBinding string, binds func(qualitygate.RunRecord) (bool, error)) error {
-	record, err := qualitygate.Read(store, runID)
+	recordBytes, modified, err := readValidationRunFile(store, runID, qualitygate.RunFile)
 	if err != nil {
 		c.recordUnreadable(c.validationEntry("quality-gate/"+runID+"/run.json"), err.Error())
+		return nil
+	}
+	record, err := qualitygate.Decode(recordBytes)
+	if err != nil || record.ValidationRunID != runID {
+		c.recordUnreadable(c.validationEntry("quality-gate/"+runID+"/run.json"), "validation run record is invalid or its run identity differs")
 		return nil
 	}
 	if binds != nil {
@@ -164,7 +170,16 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 			return nil
 		}
 	}
-	c.addFileBasis(store.Path(qualitygate.RunRelativePath(runID)), c.validationEntry("quality-gate/"+runID+"/"+qualitygate.RunFile), evidenceExportSourceGateRun, basis, false)
+	c.commit(EvidenceExportEntry{
+		Path:   c.validationEntry("quality-gate/" + runID + "/" + qualitygate.RunFile),
+		Source: evidenceExportSourceGateRun, Basis: basis,
+		SHA256: digestBytes(recordBytes), Bytes: int64(len(recordBytes)), CollectedAt: c.observedAt,
+		Changing: modified.After(c.observedAt),
+	}, recordBytes)
+	if record.Form == smokeProbeForm {
+		c.collectPostInstallProbe(store, record, runID, basis, storeBinding)
+		return nil
+	}
 	logEntry := ""
 	if c.addValidationLog(store.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.RunLog)), c.validationEntry("quality-gate/"+runID+"/"+qualitygate.RunLog), evidenceExportSourceGateRun, basis) {
 		logEntry = c.validationEntry("quality-gate/" + runID + "/" + qualitygate.RunLog)
@@ -179,6 +194,126 @@ func (c *evidenceLiveCollector) collectGateRun(store *state.StateStore, runID, b
 		resourcesEntry: resourcesEntry, resources: resources, basis: basis, binding: c.gateRunBinding(record, storeBinding),
 	})
 	return nil
+}
+
+func readValidationRunFile(store *state.StateStore, runID, filename string) ([]byte, time.Time, error) {
+	return readValidationRunFileWithRead(store, runID, filename, func(file *os.File) ([]byte, error) {
+		return io.ReadAll(file)
+	})
+}
+
+func readValidationRunFileWithRead(store *state.StateStore, runID, filename string, read func(*os.File) ([]byte, error)) ([]byte, time.Time, error) {
+	if !qualitygate.ValidRunID(runID) {
+		return nil, time.Time{}, fmt.Errorf("invalid validation run ID")
+	}
+	if filename != qualitygate.RunFile && filename != "probe.log" {
+		return nil, time.Time{}, fmt.Errorf("invalid validation run artifact")
+	}
+	return readValidationFileNoFollow(store.Path("."), runID, filename, read)
+}
+
+func (c *evidenceLiveCollector) collectPostInstallProbeLog(store *state.StateStore, record qualitygate.RunRecord, runID, basis string) string {
+	entry := c.validationEntry("quality-gate/" + runID + "/probe.log")
+	data, modified, err := readValidationRunFile(store, runID, "probe.log")
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			c.recordMissing(entry)
+		} else {
+			c.recordUnreadable(entry, err.Error())
+		}
+		return ""
+	}
+	if record.LogSHA256 == "" || record.LogSHA256 != digestBytes(data) {
+		c.recordUnreadable(entry, "post-install probe log digest is missing or differs from the run record")
+		return ""
+	}
+	c.commit(EvidenceExportEntry{
+		Path: entry, Source: evidenceExportSourceGateRun, Basis: basis,
+		SHA256: digestBytes(data), Bytes: int64(len(data)), CollectedAt: c.observedAt,
+		Changing: modified.After(c.observedAt),
+	}, data)
+	return entry
+}
+
+func (c *evidenceLiveCollector) collectPostInstallProbe(store *state.StateStore, record qualitygate.RunRecord, runID, basis, storeBinding string) {
+	if err := c.verifyPostInstallProbeSource(store, record, runID); err != nil {
+		c.recordUnreadable(c.validationEntry("quality-gate/"+runID+"/probe.log"), err.Error())
+		return
+	}
+	logEntry := c.collectPostInstallProbeLog(store, record, runID, basis)
+	c.builder.validationRuns = append(c.builder.validationRuns, collectedValidationRun{
+		run: record, logEntry: logEntry, basis: basis, binding: c.gateRunBinding(record, storeBinding),
+	})
+}
+
+func (c *evidenceLiveCollector) verifyPostInstallProbeSource(store *state.StateStore, record qualitygate.RunRecord, runID string) error {
+	expected := store.Path(filepath.Join(qualitygate.RunDirectory, runID, "probe.log"))
+	if record.TaskID != c.taskID || record.Log != expected {
+		return fmt.Errorf("post-install probe runtime Task or log locator differs")
+	}
+	candidate, err := c.postInstallProbeCandidate()
+	if err != nil {
+		return err
+	}
+	return c.store.verifyExportedSmokeProbe(candidate, record)
+}
+
+func (c *evidenceLiveCollector) postInstallProbeCandidate() (AcceptedCandidate, error) {
+	if ref := c.builder.head.AcceptedCandidateRef; ref != nil {
+		candidate, err := c.store.LoadAcceptedCandidate(*ref)
+		if err != nil {
+			return candidate, err
+		}
+		if candidate.AttemptID == c.attempt.AttemptID && candidate.TaskRef.Equal(c.attempt.SemanticTaskRef) {
+			return candidate, nil
+		}
+	}
+	return c.publishedPostInstallProbeCandidate()
+}
+
+func (c *evidenceLiveCollector) publishedPostInstallProbeCandidate() (AcceptedCandidate, error) {
+	for ref := c.builder.head.MetadataLineageRef; ref != nil; {
+		record, err := c.store.LoadTerminalTaskRecord(*ref)
+		if err != nil {
+			return AcceptedCandidate{}, err
+		}
+		if record.AttemptID == c.attempt.AttemptID && record.TaskRef.Equal(c.attempt.SemanticTaskRef) {
+			candidate, err := c.store.LoadAcceptedCandidate(record.CandidateRef)
+			if err != nil {
+				return candidate, err
+			}
+			if !terminalCandidateMatches(record, candidate) {
+				return AcceptedCandidate{}, fmt.Errorf("post-install probe terminal candidate authority differs")
+			}
+			return candidate, nil
+		}
+		ref = record.Previous
+	}
+	return AcceptedCandidate{}, fmt.Errorf("post-install probe has no accepted candidate for the exported attempt")
+}
+
+func (s *Store) verifyExportedSmokeProbe(candidate AcceptedCandidate, record qualitygate.RunRecord) error {
+	workspace, err := s.smokeProbeWorkspace(candidate)
+	if err != nil {
+		return err
+	}
+	if record.Repository != workspace || record.WorkingDir != workspace {
+		return fmt.Errorf("post-install probe checkout differs from the accepted candidate")
+	}
+	source, err := s.finalValidationSource(candidate)
+	if err != nil {
+		return err
+	}
+	deployment, err := s.smokeProbeDeployment(candidate)
+	if err != nil {
+		return err
+	}
+	for _, probe := range candidate.RequiredSmokeProbes {
+		if smokeProbeMatchesSource(record, workspace, source, candidate, probe, deployment) {
+			return nil
+		}
+	}
+	return fmt.Errorf("post-install probe source, declaration, or deployment differs from the accepted candidate")
 }
 
 func (c *evidenceLiveCollector) collectGateRunTimings(store *state.StateStore, runID, form, basis string) (string, *qualitygate.TestTimings) {

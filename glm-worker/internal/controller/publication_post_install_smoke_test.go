@@ -122,6 +122,7 @@ func seedSmokeProbeRun(t *testing.T, store *Store, c AcceptedCandidate, probe Sm
 	}
 	record := qualitygate.RunRecord{
 		ValidationRunID:               runID,
+		TaskID:                        module.ReadOr("task.id", ""),
 		Form:                          smokeProbeForm,
 		Repository:                    root,
 		WorkingDir:                    root,
@@ -148,10 +149,12 @@ func seedSmokeProbeRun(t *testing.T, store *Store, c AcceptedCandidate, probe Sm
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(logPath, []byte("post-install smoke probe output\n"), 0o600); err != nil {
+	log := []byte("post-install smoke probe output\n")
+	if err := os.WriteFile(logPath, log, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	record.Log = logPath
+	record.LogSHA256 = digestBytes(log)
 	if mutate != nil {
 		mutate(&record)
 	}
