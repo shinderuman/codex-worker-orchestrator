@@ -30,6 +30,9 @@ func RetireTerminalMetadata(plan []byte, tasks map[string][]byte, target string,
 	if err := validateRetirementCorpus(schedule, tasks); err != nil {
 		return TerminalMetadata{}, err
 	}
+	if err := taskcontract.RequirementSourcesRetirementError(tasks, target); err != nil {
+		return TerminalMetadata{}, err
+	}
 	updatedTasks, changedPaths, err := retireInboundDependencies(tasks, target, []string{target, "IMPLEMENTATION_PLAN.local.md"})
 	if err != nil {
 		return TerminalMetadata{}, err
