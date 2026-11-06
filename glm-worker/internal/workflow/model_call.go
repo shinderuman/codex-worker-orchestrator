@@ -199,6 +199,11 @@ func (w *Workflow) resolveModelCallFailure(
 	if execution.runErr == nil {
 		return execution, nil
 	}
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(execution.runErr, &scheduled) {
+		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "scheduled_pause", "", execution.runErr, outputPath, callDiagnostics{})
+		return execution, w.persistScheduledPauseStop(checkpoint, scheduled)
+	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(execution.runErr, &interrupted) {
 		return execution, w.interruptFromCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
@@ -271,6 +276,10 @@ func (w *Workflow) resolveTransientModelFailure(
 	}
 	if errors.Is(recErr, errParentFileGuardStopped) {
 		return execution, recErr
+	}
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(recErr, &scheduled) {
+		return execution, w.persistScheduledPauseStop(checkpoint, scheduled)
 	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(recErr, &interrupted) {
@@ -717,6 +726,10 @@ func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt i
 	if probeErr == nil {
 		return true, "", startedAt, completedAt, nil
 	}
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(probeErr, &scheduled) {
+		return false, "", time.Time{}, time.Time{}, probeErr
+	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(probeErr, &interrupted) {
 		return false, "", time.Time{}, time.Time{}, probeErr
@@ -797,6 +810,33 @@ func (w *Workflow) interruptFromCall(
 func (w *Workflow) interruptBetweenCalls(checkpoint state.ResumeCheckpoint) error {
 	w.recordInterruptedEvent(checkpoint)
 	return w.persistInterruptedStop(checkpoint, nil)
+}
+
+func (w *Workflow) persistScheduledPauseStop(checkpoint state.ResumeCheckpoint, paused *runner.ScheduledPauseError) error {
+	if paused == nil || paused.ResumeAt.IsZero() {
+		return fmt.Errorf("scheduled pause requires a resume boundary")
+	}
+	checkpoint.SetStopKind(state.ResumeStopScheduledPause)
+	checkpoint.ScheduledResumeAt = paused.ResumeAt.Format(time.RFC3339)
+	_ = w.attachStopRepositoryBoundary(&checkpoint)
+	if files, err := state.CaptureStopDirtyFiles(w.config.RepoRoot); err == nil {
+		checkpoint.StopDirtyFiles = files
+	}
+	_ = state.CaptureStopPatches(w.config, w.state)
+	if paused.Started && w.state.ReadOr(string(checkpoint.Role)+".id", "") != "" {
+		if err := w.state.MarkReady(checkpoint.Role); err != nil {
+			return err
+		}
+	}
+	if err := w.state.EnterStop(checkpoint); err != nil {
+		return err
+	}
+	_ = w.state.SecureArtifactDir()
+	taskID, _ := w.state.TaskID()
+	return &runner.ScheduledPauseError{
+		Phase: checkpoint.Phase, TaskID: taskID, RepoRoot: w.config.RepoRoot,
+		ResumeAt: paused.ResumeAt, CleanupWarning: paused.CleanupWarning,
+	}
 }
 
 func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cause error) error {

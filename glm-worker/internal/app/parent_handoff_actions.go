@@ -108,6 +108,7 @@ func executionMilestoneReconsiderationStatus(status state.TaskStatus) bool {
 	switch status {
 	case state.TaskStatusWaitingSolReview,
 		state.TaskStatusRateLimited,
+		state.TaskStatusScheduledPause,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
 		state.TaskStatusInterrupted:

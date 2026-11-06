@@ -35,6 +35,7 @@ type statusOutput struct {
 	Progress            *workflow.ExecutionProgressProjection `json:"progress,omitempty"`
 	Probes              *statusProbes                         `json:"probes"`
 	RateLimited         statusRateLimit                       `json:"rate_limited"`
+	ScheduledPause      *statusScheduledPause                 `json:"scheduled_pause,omitempty"`
 	ProviderUnavailable statusProviderUnavailable             `json:"provider_unavailable"`
 	ResumeAvailable     bool                                  `json:"resume_available"`
 	Telemetry           *string                               `json:"telemetry"`
@@ -55,6 +56,12 @@ type statusRateLimit struct {
 	ResetAtCST     string  `json:"reset_at_cst,omitempty"`
 	ResetAtRFC3339 *string `json:"reset_at_rfc3339,omitempty"`
 	ResumeMode     string  `json:"resume_mode,omitempty"`
+}
+
+type statusScheduledPause struct {
+	Paused   bool    `json:"paused"`
+	Phase    string  `json:"phase,omitempty"`
+	ResumeAt *string `json:"resume_at,omitempty"`
 }
 
 type statusProviderUnavailable struct {
@@ -201,6 +208,12 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 			ResetAtCST:     checkpoint.ResetAtCST,
 			ResetAtRFC3339: machinecli.StringPtr(checkpoint.ResetAtRFC3339),
 			ResumeMode:     zaiSelfResumeMode(checkpoint.ResetAtRFC3339, zaiSelfResumeNow()),
+		}
+	}
+	if checkpoint.StopKind == state.ResumeStopScheduledPause {
+		output.ScheduledPause = &statusScheduledPause{
+			Paused: true, Phase: checkpoint.Phase,
+			ResumeAt: machinecli.StringPtr(checkpoint.ScheduledResumeAt),
 		}
 	}
 	if checkpoint.StopKind == state.ResumeStopProviderUnavailable {

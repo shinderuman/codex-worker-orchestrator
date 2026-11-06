@@ -269,6 +269,10 @@ func (w *Workflow) gateResumeSnapshots(checkpoint state.ResumeCheckpoint, pocRes
 }
 
 func (w *Workflow) handleResumeProbeError(checkpoint state.ResumeCheckpoint, err error) error {
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(err, &scheduled) {
+		return w.persistScheduledPauseStop(checkpoint, scheduled)
+	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(err, &interrupted) {
 		return w.interruptBetweenCalls(checkpoint)
@@ -308,6 +312,10 @@ func (w *Workflow) restoreResumeStop(previous state.ResumeCheckpoint, cause erro
 }
 
 func isResumeStopError(err error) bool {
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(err, &scheduled) {
+		return true
+	}
 	if errors.Is(err, errParentFileGuardStopped) {
 		return true
 	}

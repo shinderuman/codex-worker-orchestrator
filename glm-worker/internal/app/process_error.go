@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"io"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
@@ -30,6 +31,7 @@ const (
 	errorKindWorkerError               = "worker_error"
 	errorKindQualityGateRecoverable    = "quality_gate_recoverable"
 	errorKindRateLimited               = "rate_limited"
+	errorKindScheduledPause            = "scheduled_pause"
 	errorKindProviderUnavailable       = "provider_unavailable"
 	errorKindGuardRecoverable          = "guard_recoverable"
 	errorKindInterrupted               = "interrupted"
@@ -108,6 +110,7 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 	var workerErr *workflow.WorkerError
 	var qualityGateRecoverable *workflow.QualityGateRecoverableError
 	var rateLimit runner.ZaiRateLimitError
+	var scheduled *runner.ScheduledPauseError
 	var providerUnavailable *runner.ProviderUnavailableError
 	var guardRecoverable *workflow.GuardRecoverableError
 	var interrupted *runner.InterruptedCallError
@@ -122,6 +125,8 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 		}, true
 	case errors.As(err, &qualityGateRecoverable):
 		return qualityGateRecoverableProcessError(qualityGateRecoverable), true
+	case errors.As(err, &scheduled):
+		return scheduledPauseProcessError(scheduled), true
 	case errors.As(err, &rateLimit):
 		return processErrorBody{
 			Kind:    errorKindRateLimited,
@@ -160,6 +165,21 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 		return processErrorBody{Kind: kind, Message: stopEndpoint.Error()}, true
 	default:
 		return processErrorBody{}, false
+	}
+}
+
+func scheduledPauseProcessError(paused *runner.ScheduledPauseError) processErrorBody {
+	return processErrorBody{
+		Kind:    errorKindScheduledPause,
+		Message: "configured GLM pause window; task stopped and resumable",
+		Detail: map[string]any{
+			"phase":            paused.Phase,
+			"task_id":          paused.TaskID,
+			"repo_root":        paused.RepoRoot,
+			"resume_at":        paused.ResumeAt.Format(time.RFC3339),
+			"resume_available": true,
+			"cleanup_warning":  paused.CleanupWarning,
+		},
 	}
 }
 
