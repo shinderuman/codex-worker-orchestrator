@@ -22,7 +22,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
 - [`IMPLEMENTATION_TASKS/task-requirement-reference-closure.md`](IMPLEMENTATION_TASKS/task-requirement-reference-closure.md)
 - [`IMPLEMENTATION_TASKS/repo-search-result-context-budget.md`](IMPLEMENTATION_TASKS/repo-search-result-context-budget.md)
-- [`IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md`](IMPLEMENTATION_TASKS/repo-search-semantic-objective-query-separation.md)
 - [`IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`](IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md)
 - [`IMPLEMENTATION_TASKS/post-publication-parent-reverification-containment.md`](IMPLEMENTATION_TASKS/post-publication-parent-reverification-containment.md)
 - [`IMPLEMENTATION_TASKS/installation-managed-uninstall.md`](IMPLEMENTATION_TASKS/installation-managed-uninstall.md)
