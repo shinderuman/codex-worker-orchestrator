@@ -51,7 +51,12 @@ case "$common_dir" in
 /*) ;;
 *) common_dir="$repo_root/$common_dir" ;;
 esac
-managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"
+ownership_dir="$common_dir/codex-worker-orchestrator"
+if [ -L "$common_dir" ] || [ -L "$ownership_dir" ] || { [ -e "$ownership_dir" ] && [ ! -d "$ownership_dir" ]; }; then
+	printf 'git hook: unsafe ownership directory: %s\n' "$ownership_dir" >&2
+	exit 1
+fi
+managed_hooks_path="$ownership_dir/hooks"
 managed_state="version=2 baseline=absent value=$managed_hooks_path"
 pending_state="version=2 baseline=absent pending=$managed_hooks_path"
 install_lock_root="$common_dir/codex-worker-orchestrator/hooks-install.lock"
@@ -378,7 +383,86 @@ install_managed_hooks() {
 }
 
 remove_managed_hooks() {
-	rm -rf "$managed_hooks_path"
+	if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then
+		return 0
+	fi
+	for hook in $required_hooks; do
+		if [ -e "$managed_hooks_path/$hook" ] || [ -L "$managed_hooks_path/$hook" ]; then
+			if [ -L "$managed_hooks_path/$hook" ] || [ ! -f "$managed_hooks_path/$hook" ]; then
+				printf 'git hook: changed managed hook before removal: %s\n' "$hook" >&2
+				return 1
+			fi
+			rm -- "$managed_hooks_path/$hook" || return 1
+		fi
+	done
+	if [ -e "$managed_hooks_path/glm-publication-guard.path" ]; then
+		if [ -L "$managed_hooks_path/glm-publication-guard.path" ] || [ ! -f "$managed_hooks_path/glm-publication-guard.path" ]; then
+			return 1
+		fi
+		rm -- "$managed_hooks_path/glm-publication-guard.path" || return 1
+	fi
+	rmdir -- "$managed_hooks_path"
+}
+
+verify_retire_snapshot() {
+	if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then
+		return 0
+	fi
+	if [ ! -d "$managed_hooks_path" ] || [ -L "$managed_hooks_path" ]; then
+		printf '%s\n' 'git hook: unsafe managed snapshot path' >&2
+		return 1
+	fi
+	binding="$managed_hooks_path/glm-publication-guard.path"
+	if [ ! -e "$binding" ] && [ ! -L "$binding" ]; then
+		if [ -n "$(find "$managed_hooks_path" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+			printf '%s\n' 'git hook: incomplete snapshot without binding contains unexpected entries' >&2
+			return 1
+		fi
+		return 0
+	fi
+	if [ ! -f "$binding" ] || [ -L "$binding" ]; then
+		printf '%s\n' 'git hook: invalid managed snapshot binding' >&2
+		return 1
+	fi
+	binding_guard=$(sed -n '1p' "$binding")
+	binding_revision=$(sed -n '2p' "$binding")
+	binding_lines=$(awk 'END {print NR}' "$binding")
+	case "$binding_guard" in /*) ;; *) return 1 ;; esac
+	case "$binding_revision" in snapshot=*) snapshot_sha=${binding_revision#snapshot=} ;; *) return 1 ;; esac
+	if [ "$binding_lines" -ne 2 ] || ! git -C "$repo_root" cat-file -e "$snapshot_sha^{commit}" 2>/dev/null; then
+		printf '%s\n' 'git hook: invalid managed snapshot revision' >&2
+		return 1
+	fi
+	if [ -n "$publication_guard_path" ] && [ "$binding_guard" != "$publication_guard_path" ]; then
+		printf '%s\n' 'git hook: managed snapshot guard binding changed' >&2
+		return 1
+	fi
+	for item in "$managed_hooks_path"/*; do
+		if [ ! -e "$item" ] && [ ! -L "$item" ]; then
+			continue
+		fi
+		case "${item##*/}" in
+		post-merge | pre-commit | reference-transaction | pre-push | glm-publication-guard.path) ;;
+		*)
+			printf 'git hook: unknown snapshot entry %s\n' "$item" >&2
+			return 1
+			;;
+		esac
+	done
+	for hook in $required_hooks; do
+		installed="$managed_hooks_path/$hook"
+		if [ ! -e "$installed" ] && [ ! -L "$installed" ]; then
+			continue
+		fi
+		if [ ! -f "$installed" ] || [ -L "$installed" ] || [ ! -x "$installed" ]; then
+			printf 'git hook: invalid managed hook: %s\n' "$installed" >&2
+			return 1
+		fi
+		if ! git -C "$repo_root" show "$snapshot_sha:.githooks/$hook" | cmp -s - "$installed"; then
+			printf 'git hook: managed hook changed after install: %s\n' "$installed" >&2
+			return 1
+		fi
+	done
 }
 
 verify_managed_install() {
@@ -422,9 +506,14 @@ verify_managed_install() {
 
 if [ "$mode" = retire ]; then
 	if [ "$state_present" -eq 0 ]; then
+		if [ -e "$managed_hooks_path" ] || [ -L "$managed_hooks_path" ]; then
+			printf '%s\n' 'git hook: snapshot exists without ownership state; refusing' >&2
+			exit 1
+		fi
 		printf '%s\n' 'git hook: retire unchanged: core.hooksPath is not installer-owned'
 		exit 0
 	fi
+	verify_retire_snapshot || exit 1
 
 	if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$managed_hooks_path" ]; then
 		git -C "$repo_root" config --local --unset-all core.hooksPath
@@ -435,7 +524,8 @@ if [ "$mode" = retire ]; then
 		printf '%s\n' 'git hook: retire cleared pending ownership state'
 	fi
 	remove_managed_hooks
-	rm -f "$state_path"
+	rm -- "$state_path"
+	rmdir "$ownership_dir" 2>/dev/null || true
 	exit 0
 fi
 

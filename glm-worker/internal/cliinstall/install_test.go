@@ -97,7 +97,7 @@ func TestIdenticalUnownedBinaryIsNotClaimed(t *testing.T) {
 	}
 }
 
-func TestRetireRemovesOnlyStillOwnedBinaries(t *testing.T) {
+func TestRetireRejectsModifiedBinaryAndKeepsOwnershipState(t *testing.T) {
 	buildDir := t.TempDir()
 	binDir := t.TempDir()
 	writeBuildSet(t, buildDir, "v1")
@@ -108,8 +108,8 @@ func TestRetireRemovesOnlyStillOwnedBinaries(t *testing.T) {
 	writeExecutable(t, changed, "user-modified")
 
 	results, err := Retire(binDir)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), "retirement incomplete") {
+		t.Fatalf("Retire() error = %v", err)
 	}
 	if statusFor(results, "harnesslint") != "preserved" {
 		t.Fatalf("harnesslint retire status = %q", statusFor(results, "harnesslint"))
@@ -118,15 +118,28 @@ func TestRetireRemovesOnlyStillOwnedBinaries(t *testing.T) {
 		t.Fatalf("changed harnesslint = %q", got)
 	}
 	for _, name := range managedNames {
-		if name == "harnesslint" {
-			continue
-		}
-		if _, err := os.Lstat(filepath.Join(binDir, name)); !os.IsNotExist(err) {
-			t.Fatalf("owned %s was not removed: %v", name, err)
+		if _, err := os.Lstat(filepath.Join(binDir, name)); err != nil {
+			t.Fatalf("other managed binary %s removed on conflict: %v", name, err)
 		}
 	}
-	if _, err := os.Lstat(statePathForTest(binDir)); !os.IsNotExist(err) {
-		t.Fatalf("ownership state remains: %v", err)
+	if _, err := os.Stat(statePathForTest(binDir)); err != nil {
+		t.Fatalf("ownership state lost on conflict: %v", err)
+	}
+
+	writeExecutable(t, changed, "harnesslint-v1")
+	if _, err := Retire(binDir); err != nil {
+		t.Fatalf("Retire() after restoring managed content: %v", err)
+	}
+	for _, name := range managedNames {
+		if _, err := os.Lstat(filepath.Join(binDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("owned binary %s remains: %v", name, err)
+		}
+	}
+	if _, err := Retire(binDir); err != nil {
+		t.Fatalf("repeated Retire() = %v", err)
+	}
+	if _, err := Install(buildDir, binDir); err != nil {
+		t.Fatalf("reinstall after retire: %v", err)
 	}
 }
 
