@@ -245,7 +245,7 @@ func TestProjectedAdoptMutableReverifiesAdvancementAtExecution(t *testing.T) {
 	source := publicationTestEdit(t, f, "result.txt", "reviewed implementation\n")
 	seedAwaitingCompletionRuntime(t, f.store, source, true)
 	root := f.store.identity.PrimaryRoot
-	pullRetiredExternalSourceChange(t, f, policy, "IMPLEMENTATION_HISTORY.md", "cross-lane parent metadata record\n")
+	pulled := pullRetiredExternalSourceChange(t, f, policy, "IMPLEMENTATION_HISTORY.md", "cross-lane parent metadata record\n")
 
 	operation, err := f.store.ProjectParentCompletion()
 	if err != nil || operation.Operation != PublicationOperationAdoptMutable || operation.Command == nil {
@@ -256,6 +256,9 @@ func TestProjectedAdoptMutableReverifiesAdvancementAtExecution(t *testing.T) {
 	}
 
 	raced := advancePublicationTestRemote(t, f, policy, "unpulled-external.txt", "advancement beyond the pulled primary\n")
+	if _, err := f.store.planMutableAdvancement(source, policy, pulled); err == nil || !strings.Contains(err.Error(), "pulled source") {
+		t.Fatalf("post-pull planning must refuse a remote change after its initial guard: %v", err)
+	}
 	_, admissionErr := f.store.LiveMutableAdvancementAdmission(policy)
 	if admissionErr == nil {
 		t.Fatal("admission accepted a raced remote")

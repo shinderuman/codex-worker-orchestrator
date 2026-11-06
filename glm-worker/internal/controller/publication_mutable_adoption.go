@@ -15,12 +15,28 @@ func (e *ProjectedAdvancementRefusal) Unwrap() error {
 }
 
 func (s *Store) AdoptMutableExternalAdvancement(admission Admission, policy PublicationPolicy) (ExecutionOperationResult, error) {
+	return s.adoptMutableExternalAdvancement(admission, policy, "")
+}
+
+func (s *Store) AdoptPulledMutableExternalAdvancement(admission Admission, policy PublicationPolicy, sourceOID string) (ExecutionOperationResult, error) {
+	if sourceOID == "" {
+		return ExecutionOperationResult{}, fmt.Errorf("post-pull mutable source OID is missing")
+	}
+	return s.adoptMutableExternalAdvancement(admission, policy, sourceOID)
+}
+
+func (s *Store) adoptMutableExternalAdvancement(admission Admission, policy PublicationPolicy, sourceOID string) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	op, err := s.planMutableAdvancement(admission, policy)
+	if sourceOID != "" {
+		if err := s.requirePulledSource(admission.Head, policy, sourceOID); err != nil {
+			return ExecutionOperationResult{}, err
+		}
+	}
+	op, err := s.planMutableAdvancement(admission, policy, sourceOID)
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
@@ -199,15 +215,9 @@ func verifyUncommittedAdvancementDisjoint(repo, base, tip string) error {
 	return nil
 }
 
-func (s *Store) planMutableAdvancement(admission Admission, policy PublicationPolicy) (ExecutionOperation, error) {
-	remote, err := observePublicationRemote(s.identity.PrimaryRoot, policy)
+func (s *Store) planMutableAdvancement(admission Admission, policy PublicationPolicy, sourceOID string) (ExecutionOperation, error) {
+	remote, err := s.observeMutableAdvancementSource(admission.Head, policy, sourceOID)
 	if err != nil {
-		return ExecutionOperation{}, err
-	}
-	if remote == admission.Head.IntegrationTip {
-		return ExecutionOperation{}, fmt.Errorf("configured upstream has no advancement")
-	}
-	if err := s.ensurePublicationPrefix(admission.Head, remote); err != nil {
 		return ExecutionOperation{}, err
 	}
 	project, err := s.publicationProjectAdvancement(admission.Head, remote)
@@ -248,6 +258,23 @@ func (s *Store) planMutableAdvancement(admission Admission, policy PublicationPo
 		return ExecutionOperation{}, err
 	}
 	return op, nil
+}
+
+func (s *Store) observeMutableAdvancementSource(head RepositoryControllerHead, policy PublicationPolicy, sourceOID string) (string, error) {
+	remote, err := observePublicationRemote(s.identity.PrimaryRoot, policy)
+	if err != nil {
+		return "", err
+	}
+	if sourceOID != "" && remote != sourceOID {
+		return "", fmt.Errorf("post-pull mutable remote tip differs from pulled source")
+	}
+	if remote == head.IntegrationTip {
+		return "", fmt.Errorf("configured upstream has no advancement")
+	}
+	if err := s.ensurePublicationPrefix(head, remote); err != nil {
+		return "", err
+	}
+	return remote, nil
 }
 
 func (s *Store) mutableAdvancementArchive(admission Admission, remote string) (EvidenceObjectRef, error) {

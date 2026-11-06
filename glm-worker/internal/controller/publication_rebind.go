@@ -6,6 +6,17 @@ import (
 )
 
 func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOperationResult, error) {
+	return s.rebindUnpublishedCandidate(input, "")
+}
+
+func (s *Store) RebindPulledUnpublishedCandidate(input PublicationInput, sourceOID string) (ExecutionOperationResult, error) {
+	if sourceOID == "" {
+		return ExecutionOperationResult{}, fmt.Errorf("post-pull candidate source OID is missing")
+	}
+	return s.rebindUnpublishedCandidate(input, sourceOID)
+}
+
+func (s *Store) rebindUnpublishedCandidate(input PublicationInput, sourceOID string) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
@@ -15,11 +26,14 @@ func (s *Store) RebindUnpublishedCandidate(input PublicationInput) (ExecutionOpe
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	if c.State == candidateObserved || c.ImplementationRef != nil {
-		return ExecutionOperationResult{}, fmt.Errorf("remote-observed candidate is immutable")
+	if err := requireRebindCandidateMutable(c); err != nil {
+		return ExecutionOperationResult{}, err
 	}
 	remote, err := s.unpublishedRebindRemote(head, c)
 	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if err := s.requirePulledCandidateSource(head, c.Policy, remote, sourceOID); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	c, err = s.reboundCandidate(c, remote, ref)
@@ -236,4 +250,21 @@ func (s *Store) unpublishedRebindRemote(head RepositoryControllerHead, c Accepte
 		return "", fmt.Errorf("candidate is positively observed; publish/adopt its immutable lineage")
 	}
 	return remote, nil
+}
+
+func (s *Store) requirePulledCandidateSource(head RepositoryControllerHead, policy PublicationPolicy, remote, sourceOID string) error {
+	if sourceOID == "" {
+		return nil
+	}
+	if remote != sourceOID {
+		return fmt.Errorf("post-pull candidate remote tip differs from pulled source")
+	}
+	return s.requirePulledSource(head, policy, sourceOID)
+}
+
+func requireRebindCandidateMutable(c AcceptedCandidate) error {
+	if c.State == candidateObserved || c.ImplementationRef != nil {
+		return fmt.Errorf("remote-observed candidate is immutable")
+	}
+	return nil
 }

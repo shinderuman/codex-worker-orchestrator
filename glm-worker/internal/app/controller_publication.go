@@ -58,13 +58,16 @@ func executePublicationAction(cfg config.AppConfig, store *controller.Store, com
 		return store.PromoteAcceptedCandidate(input)
 	case "publish":
 		return store.PublishAcceptedCandidate(input)
-	case "rebind":
+	case "rebind", controller.PublicationOperationResyncRebind:
+		if command.Action == controller.PublicationOperationResyncRebind {
+			return store.RebindPulledUnpublishedCandidate(input, command.SourceOID)
+		}
 		return store.RebindUnpublishedCandidate(input)
 	case "revalidate":
 		return store.RevalidateAcceptedCandidate(input, command.Evidence)
 	case "reenter":
 		return store.ReenterAcceptedCandidate(input)
-	case controller.PublicationOperationAdoptSource, "adopt":
+	case controller.PublicationOperationAdoptSource, "adopt", controller.PublicationOperationResyncRetired:
 		return executeExternalAdvancement(store, command)
 	default:
 		return executeMutablePublication(cfg, store, command)
@@ -79,6 +82,9 @@ func executeParentCompletionDeployment(cfg config.AppConfig, store *controller.S
 }
 
 func executeExternalAdvancement(store *controller.Store, command controllerPublicationCommand) (any, error) {
+	if command.Action == controller.PublicationOperationResyncRetired {
+		return store.AdoptPulledRetiredSource(controller.RetiredSourceAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy, SourceOID: command.SourceOID})
+	}
 	if command.Action == controller.PublicationOperationAdoptSource {
 		return store.AdoptRetiredExternalSource(controller.RetiredSourceAdvancementInput{ExpectedGeneration: command.ExpectedGeneration, Policy: command.Policy, SourceOID: command.SourceOID})
 	}
@@ -90,10 +96,13 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 	if !mutablePublicationAction(command.Action) {
 		return nil, fmt.Errorf("unsupported controller publication action %q", command.Action)
 	}
-	if command.Action == controller.PublicationOperationAdoptMutable {
+	if command.Action == controller.PublicationOperationAdoptMutable || command.Action == controller.PublicationOperationResyncMutable {
 		admission, err := store.LiveMutableAdvancementAdmission(command.Policy)
 		if err != nil {
 			return nil, err
+		}
+		if command.Action == controller.PublicationOperationResyncMutable {
+			return store.AdoptPulledMutableExternalAdvancement(admission, command.Policy, command.SourceOID)
 		}
 		return store.AdoptMutableExternalAdvancement(admission, command.Policy)
 	}
@@ -117,7 +126,7 @@ func executeMutablePublication(cfg config.AppConfig, store *controller.Store, co
 
 func mutablePublicationAction(action string) bool {
 	switch action {
-	case publicationActionPreview, "accept", "adopt-mutable", controller.PublicationOperationAccept:
+	case publicationActionPreview, "accept", "adopt-mutable", controller.PublicationOperationResyncMutable, controller.PublicationOperationAccept:
 		return true
 	default:
 		return false

@@ -32,9 +32,14 @@ const (
 	parentActionExecutionPreflightDecision
 	parentActionExecutionObservationExecute
 	parentActionExecutionExportBundle
+	parentActionExecutionSourceResynchronization
 )
 
 var parentActionCommands = map[string]parentActionCommandDescriptor{
+	"resync-source": {
+		Action:  "resync-source",
+		Execute: parentActionExecutionSourceResynchronization,
+	},
 	"rotation-claim": {
 		Action:  "rotation-claim",
 		Execute: parentActionExecutionSessionRotation,
@@ -205,6 +210,9 @@ func executeSpecialParentAction(
 ) error {
 	if execution == parentActionExecutionPreflightDecision {
 		return executePreflightedDecision(cfg, args, stdout, stderr)
+	}
+	if execution == parentActionExecutionSourceResynchronization {
+		return executeSourceResynchronization(cfg, args, stdout, stderr)
 	}
 	return fmt.Errorf("%s", usage)
 }

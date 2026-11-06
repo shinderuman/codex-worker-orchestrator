@@ -15,6 +15,14 @@ type RetiredSourceAdvancementInput struct {
 type externalSourceChange struct{ Path string }
 
 func (s *Store) AdoptRetiredExternalSource(input RetiredSourceAdvancementInput) (ExecutionOperationResult, error) {
+	return s.adoptRetiredExternalSource(input, false)
+}
+
+func (s *Store) AdoptPulledRetiredSource(input RetiredSourceAdvancementInput) (ExecutionOperationResult, error) {
+	return s.adoptRetiredExternalSource(input, true)
+}
+
+func (s *Store) adoptRetiredExternalSource(input RetiredSourceAdvancementInput, pulledOnly bool) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
 	if err != nil {
 		return ExecutionOperationResult{}, err
@@ -37,6 +45,9 @@ func (s *Store) AdoptRetiredExternalSource(input RetiredSourceAdvancementInput) 
 		return ExecutionOperationResult{}, fmt.Errorf("external source requires an exact advanced commit")
 	}
 	if err := s.validateRetiredSourceBoundary(input.Policy, input.SourceOID); err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if err := s.requirePulledRetiredSource(head, input, pulledOnly); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	op, err := s.planRetiredSourceAdvancement(head, input.Policy, input.SourceOID)
@@ -176,4 +187,11 @@ func (s *Store) validateRetiredAdvancementBoundary(op ExecutionOperation) error 
 	}
 	_, err := s.QuiescentRuntimeAdmission(op.Source.Head)
 	return err
+}
+
+func (s *Store) requirePulledRetiredSource(head RepositoryControllerHead, input RetiredSourceAdvancementInput, pulledOnly bool) error {
+	if !pulledOnly {
+		return nil
+	}
+	return s.requirePulledSource(head, input.Policy, input.SourceOID)
 }

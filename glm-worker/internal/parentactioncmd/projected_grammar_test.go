@@ -19,6 +19,7 @@ func TestProjectedParentActionGrammarIsExecutable(t *testing.T) {
 		{action: string(state.ParentActionApproveSurface), parameters: map[string]string{parentactiongrammar.AcceptedScopeParameter: "current-diff"}},
 		{action: string(state.ParentActionAccept)},
 		{action: string(state.ParentActionResume)},
+		{action: "resync-source"},
 	}
 
 	for _, tc := range cases {

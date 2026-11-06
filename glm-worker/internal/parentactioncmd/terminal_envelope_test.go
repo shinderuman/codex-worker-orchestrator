@@ -34,6 +34,7 @@ func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T
 		{action: actionContinuationMetadataGuard, terminal: false, wantPresent: true},
 		{action: "evidence", terminal: false, wantPresent: true},
 		{action: "finalize-check", terminal: false, wantPresent: true},
+		{action: "resync-source", terminal: false, wantPresent: true},
 		{action: "definitely-unknown", terminal: false, wantPresent: false},
 	}
 

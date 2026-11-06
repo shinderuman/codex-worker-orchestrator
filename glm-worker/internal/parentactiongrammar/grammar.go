@@ -62,6 +62,7 @@ func Project(action string, requiredParameters map[string]string) (Spec, bool) {
 	case state.ParentActionApproveSurface:
 		return projectApproveSurface(requiredParameters)
 	case state.ParentActionAccept,
+		state.ParentAction("resync-source"),
 		state.ParentActionResume,
 		state.ParentActionResubmitReport:
 		return direct(action), true
