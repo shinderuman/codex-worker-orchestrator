@@ -14,7 +14,7 @@ import (
 )
 
 func TestControllerParentTransportPreservesPayloadAndRejectsReplay(t *testing.T) {
-	for _, action := range []string{"controller-semantic", "controller-execution", "controller-evidence"} {
+	for _, action := range []string{"controller-semantic", "controller-evidence"} {
 		t.Run(action, func(t *testing.T) {
 			cfg := newControllerActionTestConfig(t, true)
 			bin := t.TempDir()

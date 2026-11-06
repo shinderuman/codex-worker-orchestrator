@@ -3,6 +3,7 @@ package parentaction
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -21,8 +22,9 @@ type Prepared struct {
 }
 
 type StagedTemplate struct {
-	Payload []byte
-	Slots   []PreparedSlot
+	Payload      []byte
+	Slots        []PreparedSlot
+	BindTemplate bool
 }
 
 const (
@@ -32,6 +34,9 @@ const (
 	executionUnitPlaceholder = "__GLM_EXECUTION_UNIT__"
 	tokenHeaderKey           = "GLM_PARENT_ACTION_TOKEN:"
 	maxPayloadBytes          = 1 << 20
+	tokenNonceBytes          = 16
+	tokenNonceHexLen         = tokenNonceBytes * 2
+	fixedPayloadTokenHexLen  = tokenNonceHexLen + sha256.Size*2
 
 	decisionExecutionUnitPrefix = "EXECUTION_UNIT: "
 	decisionMilestonesPrefix    = "MILESTONES_JSON: "
@@ -51,6 +56,7 @@ const (
 	PublicationMessagePlaceholder             = "__GLM_PUBLICATION_MESSAGE__"
 	PublicationRequireInstallPlaceholder      = "__GLM_PUBLICATION_REQUIRE_INSTALL__"
 	RuntimeDispositionReasonPlaceholder       = "__GLM_RUNTIME_DISPOSITION_REASON__"
+	ExecutionTerminationReasonPlaceholder     = "__GLM_EXECUTION_TERMINATION_REASON__"
 	PublicationFailureDispositionPlaceholder  = "__GLM_PUBLICATION_FAILURE_DISPOSITION__"
 	PublicationRequiredValidationsPlaceholder = "__GLM_PUBLICATION_REQUIRED_VALIDATIONS__"
 
@@ -97,6 +103,9 @@ func prepareStaged(repoRoot, action string, staged StagedTemplate) (Prepared, er
 	token, err := newToken()
 	if err != nil {
 		return Prepared{}, err
+	}
+	if staged.BindTemplate {
+		token += payloadDigest(staged.Payload)
 	}
 	path := payloadPath(stageDir, action, token)
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -204,7 +213,7 @@ func payloadComplete(payload []byte) bool {
 	if len(payload) == 0 {
 		return false
 	}
-	for _, marker := range []string{placeholder, decisionPlaceholder, executionUnitPlaceholder, observationOperationPlaceholder, observationReferencePlaceholder, observationWorkingDirPlaceholder, observationDeadlinePlaceholder, PublicationMessagePlaceholder, PublicationRequireInstallPlaceholder, RuntimeDispositionReasonPlaceholder, PublicationFailureDispositionPlaceholder, PublicationRequiredValidationsPlaceholder} {
+	for _, marker := range []string{placeholder, decisionPlaceholder, executionUnitPlaceholder, observationOperationPlaceholder, observationReferencePlaceholder, observationWorkingDirPlaceholder, observationDeadlinePlaceholder, PublicationMessagePlaceholder, PublicationRequireInstallPlaceholder, RuntimeDispositionReasonPlaceholder, ExecutionTerminationReasonPlaceholder, PublicationFailureDispositionPlaceholder, PublicationRequiredValidationsPlaceholder} {
 		if bytes.Contains(payload, []byte(marker)) {
 			return false
 		}
@@ -290,7 +299,7 @@ func validPayloadAction(action string) bool {
 }
 
 func newToken() (string, error) {
-	var raw [16]byte
+	var raw [tokenNonceBytes]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("generate parent action token: %w", err)
 	}
@@ -298,11 +307,24 @@ func newToken() (string, error) {
 }
 
 func validToken(token string) bool {
-	if len(token) != 32 || strings.ToLower(token) != token {
+	if (len(token) != tokenNonceHexLen && len(token) != fixedPayloadTokenHexLen) || strings.ToLower(token) != token {
 		return false
 	}
-	decoded, err := hex.DecodeString(token)
-	return err == nil && len(decoded) == 16
+	_, err := hex.DecodeString(token)
+	return err == nil
+}
+
+func TokenBindsPayload(token string, payload []byte) bool {
+	return TokenHasBoundTemplate(token) && token[tokenNonceHexLen:] == payloadDigest(payload)
+}
+
+func TokenHasBoundTemplate(token string) bool {
+	return len(token) == fixedPayloadTokenHexLen
+}
+
+func payloadDigest(payload []byte) string {
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:])
 }
 
 func actionStageDir(repoRoot, action string) (string, error) {

@@ -173,6 +173,9 @@ func validatePrepareOptions(action string, options []string) error {
 	if action == controllerPublicationAction && len(options) == 2 && options[0] == parentactiongrammar.PublicationOperationOption {
 		return nil
 	}
+	if action == controllerExecutionAction && parentactiongrammar.ValidExecutionOperationSelection(options) {
+		return nil
+	}
 	return fmt.Errorf("%s", usage)
 }
 
@@ -185,10 +188,14 @@ func stagedTemplateForAction(cfg config.AppConfig, action string, options []stri
 		}
 		return publicationStagedTemplate(cfg, selected)
 	case controllerExecutionAction:
-		staged, selected, err := executionStagedTemplate(cfg)
-		if err != nil || selected {
+		staged, selected, err := executionStagedTemplate(cfg, options...)
+		if err != nil {
 			return staged, err
 		}
+		if !selected {
+			return parentaction.StagedTemplate{}, fmt.Errorf("controller-execution has no machine-admitted typed operation")
+		}
+		return staged, nil
 	}
 	return parentaction.StagedTemplate{}, nil
 }

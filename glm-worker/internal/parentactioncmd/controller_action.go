@@ -9,18 +9,20 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	if len(args) != 2 || !parentaction.IsControllerAction(args[0]) {
+	if !validControllerActionInvocation(args) {
 		return fmt.Errorf("usage: glm-parent-action <controller-semantic|controller-execution|controller-publication|controller-evidence> <token>")
 	}
+	options := args[2:]
 	payload, err := parentaction.Peek(cfg.RepoRoot, args[0], args[1])
 	if err != nil {
 		return err
 	}
-	command, err := decodeControllerStaging(cfg, args[0], payload)
+	command, err := decodeControllerStaging(cfg, args[0], args[1], payload, options)
 	if err != nil {
 		return err
 	}
@@ -58,6 +60,11 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 	})
 }
 
+func validControllerActionInvocation(args []string) bool {
+	return len(args) >= 2 && parentaction.IsControllerAction(args[0]) &&
+		(len(args) == 2 || (args[0] == controllerExecutionAction && parentactiongrammar.ValidExecutionOperationSelection(args[2:])))
+}
+
 func validateControllerCommandObject(payload []byte) error {
 	var command map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &command); err != nil {
@@ -69,7 +76,7 @@ func validateControllerCommandObject(payload []byte) error {
 	return nil
 }
 
-func decodeControllerStaging(cfg config.AppConfig, action string, payload []byte) ([]byte, error) {
+func decodeControllerStaging(cfg config.AppConfig, action, token string, payload []byte, options []string) ([]byte, error) {
 	if action == controllerPublicationAction {
 		command, err := mergePublicationStagedPayload(payload)
 		if err != nil {
@@ -77,12 +84,18 @@ func decodeControllerStaging(cfg config.AppConfig, action string, payload []byte
 		}
 		return command, validatePreparedCompletionBinding(cfg, payload, command)
 	}
-	if action == controllerExecutionAction && !json.Valid(payload) {
+	if action == controllerExecutionAction {
+		if parentaction.TokenHasBoundTemplate(token) != (len(options) != 0) {
+			return nil, fmt.Errorf("execution token and explicit operation selection must match")
+		}
+		if json.Valid(payload) {
+			return nil, fmt.Errorf("controller-execution requires a machine-projected staging template")
+		}
 		command, err := mergeExecutionStagedPayload(payload)
 		if err != nil {
 			return nil, err
 		}
-		return command, validateExecutionStagedBinding(cfg, payload)
+		return command, validateExecutionStagedBinding(cfg, token, payload, options)
 	}
 	return payload, validateControllerCommandObject(payload)
 }

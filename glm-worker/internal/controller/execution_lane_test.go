@@ -3,8 +3,27 @@ package controller
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestLatestSuspensionRejectsAmbiguousGeneration(t *testing.T) {
+	t.Parallel()
+	fixture := newFindingAcceptanceFixture(t)
+	episode := planSuspensionTestEpisode(t, fixture)
+	suspended, err := fixture.store.SuspendExecution(fixture.source, episode.EpisodeID, episode.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate := *suspended.Suspension
+	duplicate.SnapshotID = strings.Repeat("a", 64)
+	if err := writeJSONAtomic(fixture.store.suspensionPath(duplicate.SnapshotID), duplicate); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := fixture.store.suspendedExecutionSnapshot(suspended.Head, duplicate.SemanticTaskRef); err == nil || !strings.Contains(err.Error(), "latest source generation") {
+		t.Fatalf("ambiguous suspension source was accepted: %v", err)
+	}
+}
 
 func TestExecutionLaneSuspendsPreservedWorkAndMaterializesOnlyScheduledBlocker(t *testing.T) {
 	t.Parallel()

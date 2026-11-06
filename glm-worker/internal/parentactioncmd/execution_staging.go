@@ -13,10 +13,13 @@ import (
 const controllerExecutionAction = "controller-execution"
 const runtimeDispositionReasonPrefix = "RUNTIME_DISPOSITION_REASON: "
 const runtimeDispositionReasonSlot = "runtime_disposition.reason"
+const executionTerminationReasonPrefix = "EXECUTION_TERMINATION_REASON: "
+const executionTerminationReasonSlot = "execution_termination.reason"
 
-func executionStagedTemplate(cfg config.AppConfig) (parentaction.StagedTemplate, bool, error) {
+func executionStagedTemplate(cfg config.AppConfig, options ...string) (parentaction.StagedTemplate, bool, error) {
 	var projection, diagnostics bytes.Buffer
-	if err := runWorker(cfg.RepoRoot, []string{"--authority", "controller-execution-plan"}, nil, &projection, &diagnostics, nil); err != nil {
+	args := append([]string{"--authority", "controller-execution-plan"}, options...)
+	if err := runWorker(cfg.RepoRoot, args, nil, &projection, &diagnostics, nil); err != nil {
 		return parentaction.StagedTemplate{}, false, fmt.Errorf("execution operation projection failed: %w: %s", err, diagnostics.String())
 	}
 	var handoff struct {
@@ -37,18 +40,19 @@ func executionStagedTemplate(cfg config.AppConfig) (parentaction.StagedTemplate,
 	var payload strings.Builder
 	slots := []parentaction.PreparedSlot{}
 	if semantic := handoff.Parameters["semantic_slot"]; semantic != "" {
-		if semantic != runtimeDispositionReasonSlot {
-			return parentaction.StagedTemplate{}, false, fmt.Errorf("typed execution semantic slot %s is unsupported", semantic)
+		prefix, placeholder, err := projectedExecutionReason(semantic, command)
+		if err != nil {
+			return parentaction.StagedTemplate{}, false, err
 		}
-		payload.WriteString(runtimeDispositionReasonPrefix + parentaction.RuntimeDispositionReasonPlaceholder + "\n")
-		slots = append(slots, parentaction.PreparedSlot{Name: semantic, Placeholder: parentaction.RuntimeDispositionReasonPlaceholder})
+		payload.WriteString(prefix + placeholder + "\n")
+		slots = append(slots, parentaction.PreparedSlot{Name: semantic, Placeholder: placeholder})
 	}
 	payload.WriteString(publicationCommandTemplatePrefix + command + "\n")
-	return parentaction.StagedTemplate{Payload: []byte(payload.String()), Slots: slots}, true, nil
+	return parentaction.StagedTemplate{Payload: []byte(payload.String()), Slots: slots, BindTemplate: len(options) != 0}, true, nil
 }
 
 func mergeExecutionStagedPayload(payload []byte) ([]byte, error) {
-	fields, err := parseCompletionStaging(payload, map[string]string{"RUNTIME_DISPOSITION_REASON": runtimeDispositionReasonSlot})
+	fields, err := parseCompletionStaging(payload, map[string]string{"RUNTIME_DISPOSITION_REASON": runtimeDispositionReasonSlot, "EXECUTION_TERMINATION_REASON": executionTerminationReasonSlot})
 	if err != nil {
 		return nil, err
 	}
@@ -56,39 +60,93 @@ func mergeExecutionStagedPayload(payload []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if reason, ok := fields.Semantic[runtimeDispositionReasonSlot]; ok {
-		encoded, err := json.Marshal(reason)
-		if err != nil {
-			return nil, err
-		}
-		var disposition map[string]json.RawMessage
-		if err := json.Unmarshal(command["runtime_disposition"], &disposition); err != nil || disposition == nil {
-			return nil, fmt.Errorf("runtime disposition reason lacks its machine-bound operation")
-		}
-		disposition["reason"] = encoded
-		command["runtime_disposition"], err = json.Marshal(disposition)
-		if err != nil {
+	if len(fields.Semantic) > 1 {
+		return nil, fmt.Errorf("execution command cannot declare multiple termination reasons")
+	}
+	for slot, reason := range fields.Semantic {
+		if err := bindExecutionReason(command, slot, reason); err != nil {
 			return nil, err
 		}
 	}
 	return json.Marshal(command)
 }
 
-func validateExecutionStagedBinding(cfg config.AppConfig, payload []byte) error {
-	expected, selected, err := executionStagedTemplate(cfg)
+func projectedExecutionReason(semantic, command string) (string, string, error) {
+	var operation struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal([]byte(command), &operation); err != nil {
+		return "", "", fmt.Errorf("typed execution command is invalid: %w", err)
+	}
+	switch {
+	case semantic == runtimeDispositionReasonSlot && operation.Action == "dispose-runtime":
+		return runtimeDispositionReasonPrefix, parentaction.RuntimeDispositionReasonPlaceholder, nil
+	case semantic == executionTerminationReasonSlot && operation.Action == "user-terminate-execution":
+		return executionTerminationReasonPrefix, parentaction.ExecutionTerminationReasonPlaceholder, nil
+	default:
+		return "", "", fmt.Errorf("typed execution semantic slot %s is not declared for action %s", semantic, operation.Action)
+	}
+}
+
+func executionReasonTarget(slot, action string) (string, error) {
+	switch {
+	case slot == runtimeDispositionReasonSlot && action == "dispose-runtime":
+		return "runtime_disposition", nil
+	case slot == executionTerminationReasonSlot && action == "user-terminate-execution":
+		return "execution_termination", nil
+	default:
+		return "", fmt.Errorf("execution reason %s is not bound to action %s", slot, action)
+	}
+}
+
+func bindExecutionReason(command map[string]json.RawMessage, slot, reason string) error {
+	var action string
+	if err := json.Unmarshal(command["action"], &action); err != nil {
+		return fmt.Errorf("typed execution action is invalid: %w", err)
+	}
+	field, err := executionReasonTarget(slot, action)
+	if err != nil {
+		return err
+	}
+	var target map[string]json.RawMessage
+	if err := json.Unmarshal(command[field], &target); err != nil || target == nil {
+		return fmt.Errorf("execution reason %s lacks its machine-bound operation", slot)
+	}
+	if raw := target["reason"]; len(raw) != 0 {
+		var previous string
+		if err := json.Unmarshal(raw, &previous); err != nil || previous != "" {
+			return fmt.Errorf("execution reason %s would overwrite machine authority", slot)
+		}
+	}
+	target["reason"], err = json.Marshal(reason)
+	if err != nil {
+		return err
+	}
+	command[field], err = json.Marshal(target)
+	return err
+}
+
+func validateExecutionStagedBinding(cfg config.AppConfig, token string, payload []byte, options []string) error {
+	expected, selected, err := executionStagedTemplate(cfg, options...)
 	if err != nil {
 		return err
 	}
 	if !selected {
 		return fmt.Errorf("execution staging no longer matches the legal operation")
 	}
+	if len(options) != 0 && !parentaction.TokenBindsPayload(token, expected.Payload) {
+		return fmt.Errorf("execution operation differs from the prepared selection")
+	}
 	var normalized strings.Builder
 	for _, line := range strings.Split(string(payload), "\n") {
 		if line == "" {
 			continue
 		}
-		if strings.HasPrefix(line, runtimeDispositionReasonPrefix) {
+		switch {
+		case strings.HasPrefix(line, runtimeDispositionReasonPrefix):
 			line = runtimeDispositionReasonPrefix + parentaction.RuntimeDispositionReasonPlaceholder
+		case strings.HasPrefix(line, executionTerminationReasonPrefix):
+			line = executionTerminationReasonPrefix + parentaction.ExecutionTerminationReasonPlaceholder
 		}
 		normalized.WriteString(line + "\n")
 	}

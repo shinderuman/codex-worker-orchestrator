@@ -222,19 +222,60 @@ func (s *Store) suspendedExecutionSnapshot(head RepositoryControllerHead, task S
 		}
 		return nil, false, err
 	}
+	var selected *SuspensionSnapshot
+	ambiguous := false
 	for _, entry := range entries {
-		var snapshot SuspensionSnapshot
-		if err := readJSON(filepath.Join(s.dir, "suspensions", entry.Name()), &snapshot); err != nil {
+		snapshot, err := s.readTaskSuspension(head, task, entry.Name())
+		if err != nil {
 			return nil, false, err
 		}
-		if snapshot.SemanticTaskRef.TaskPath == task.TaskPath {
-			terminated, err := s.suspensionExecutionTerminated(head, snapshot)
-			if err != nil || !terminated {
-				return &snapshot, !terminated, err
-			}
+		if snapshot == nil {
+			continue
+		}
+		switch {
+		case selected == nil || snapshot.ControllerGeneration > selected.ControllerGeneration:
+			selected, ambiguous = snapshot, false
+		case snapshot.ControllerGeneration == selected.ControllerGeneration:
+			ambiguous = true
 		}
 	}
-	return nil, false, nil
+	if ambiguous {
+		return nil, false, fmt.Errorf("multiple suspensions share the latest source generation")
+	}
+	if selected == nil {
+		return nil, false, nil
+	}
+	return s.validateSelectedSuspension(head, task, *selected)
+}
+
+func (s *Store) readTaskSuspension(head RepositoryControllerHead, task SemanticTaskRef, name string) (*SuspensionSnapshot, error) {
+	var snapshot SuspensionSnapshot
+	if err := readJSON(filepath.Join(s.dir, "suspensions", name), &snapshot); err != nil {
+		return nil, err
+	}
+	if snapshot.SemanticTaskRef.TaskPath != task.TaskPath {
+		return nil, nil
+	}
+	terminated, err := s.suspensionExecutionTerminated(head, snapshot)
+	if err != nil || terminated {
+		return nil, err
+	}
+	return &snapshot, nil
+}
+
+func (s *Store) validateSelectedSuspension(head RepositoryControllerHead, task SemanticTaskRef, selected SuspensionSnapshot) (*SuspensionSnapshot, bool, error) {
+	if head.RootTaskRef == nil || selected.ControllerGeneration > head.ControllerGeneration ||
+		!s.metadataTaskBindingProven(selected.SemanticTaskRef, task) || !s.metadataTaskBindingProven(selected.RootTaskRef, *head.RootTaskRef) {
+		return nil, false, fmt.Errorf("suspension differs from the current Task authority")
+	}
+	verified, err := s.LoadSuspension(s.identity.PrimaryRoot, selected.SnapshotID)
+	if err != nil {
+		return nil, false, err
+	}
+	if verified != selected {
+		return nil, false, fmt.Errorf("suspension changed during selection")
+	}
+	return &verified, true, nil
 }
 
 func executionLaneName(identity RepositoryIdentity) string {

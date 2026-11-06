@@ -109,6 +109,22 @@ func staged(action string) Spec {
 	return Spec{Kind: "staged", PrepareCommand: []string{Binary, "prepare", action}}
 }
 
+func ValidExecutionOperationSelection(options []string) bool {
+	if len(options) < 2 || options[0] != "--operation" {
+		return false
+	}
+	switch options[1] {
+	case "suspend":
+		return len(options) == 4
+	case "gc-suspension":
+		return len(options) == 3
+	case "user-terminate-execution":
+		return len(options) == 2
+	default:
+		return false
+	}
+}
+
 func projectObservationExecute() Spec {
 	return Spec{
 		Kind:               "staged",

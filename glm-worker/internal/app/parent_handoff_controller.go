@@ -29,7 +29,6 @@ func applyCanonicalControllerHandoff(cfg config.AppConfig, output *parentHandoff
 		if applyLiveAdvancementHandoff(cfg, output, report) {
 			return
 		}
-		applyExecutionTerminationHandoff(cfg, output)
 		return
 	}
 	canonicalizeParentAction(output)
@@ -255,28 +254,6 @@ func applyTaskAuthoritySyncHandoff(cfg config.AppConfig, output *parentHandoffOu
 		"revised_task_contract_sha256":  plan.RevisedTaskRef.ContractDigest,
 	}
 	return true
-}
-
-func applyExecutionTerminationHandoff(cfg config.AppConfig, output *parentHandoffOutput) {
-	store, err := controller.Open(cfg)
-	if err != nil {
-		return
-	}
-	input, err := store.PreviewExecutionTermination()
-	if err != nil {
-		return
-	}
-	data, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "user-terminate-execution", ExpectedGeneration: input.ExpectedGeneration, ExecutionTermination: &input})
-	if err != nil {
-		return
-	}
-	action := controllerExecutionSurface
-	output.Consistent = true
-	output.Inconsistency = nil
-	output.ParentRequest = nil
-	output.RequiredAction = &action
-	output.AllowedActions = []string{action}
-	output.RequiredActionParameters = map[string]string{"controller_command_json": string(data), "semantic_slot": "execution_termination.reason"}
 }
 
 func applyCanonicalQuiescentHandoff(cfg config.AppConfig, output *parentHandoffOutput, head controller.RepositoryControllerHead) {

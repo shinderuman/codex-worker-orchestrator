@@ -103,7 +103,7 @@ func TestClaudeRunnerRequirementMarkersSurviveCompactBoundaryAndResume(t *testin
 	}
 	argumentsPath := filepath.Join(dir, "args")
 	commandPath := filepath.Join(dir, "fake-claude")
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" >%q\ncat %q\n", argumentsPath, fixturePath)
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" >%q\ncat >%q\ncat %q\n", argumentsPath, argumentsPath+".stdin", fixturePath)
 	if err := execfile.Write(commandPath, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -175,9 +175,16 @@ func assertPromptMarkers(t *testing.T, argumentsPath string, markers []string, r
 		t.Fatal(err)
 	}
 	arguments := string(data)
+	stdin, err := os.ReadFile(argumentsPath + ".stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, marker := range markers {
-		if !strings.Contains(arguments, marker) {
-			t.Fatalf("promptへmarker %sが輸送されていません: %q", marker, arguments)
+		if !strings.Contains(string(stdin), marker) {
+			t.Fatalf("stdin promptへmarker %sが輸送されていません: %q", marker, stdin)
+		}
+		if strings.Contains(arguments, marker) {
+			t.Fatalf("prompt marker %sがargvへ漏れました: %q", marker, arguments)
 		}
 	}
 	if strings.Contains(arguments, "--resume") != resumed {

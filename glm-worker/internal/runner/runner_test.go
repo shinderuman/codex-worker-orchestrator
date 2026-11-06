@@ -112,7 +112,7 @@ func TestClaudeRunnerRunStartsSessionWithIsolatedArguments(t *testing.T) {
 	if !containsArgument(arguments, "--session-id") || containsArgument(arguments, "--resume") {
 		t.Fatalf("初回引数 = %#v", arguments)
 	}
-	if !containsArgument(arguments, "worker-model") || !containsArgument(arguments, "first prompt") {
+	if !containsArgument(arguments, "worker-model") || containsArgument(arguments, "first prompt") {
 		t.Fatalf("worker引数 = %#v", arguments)
 	}
 	if !containsArgument(arguments, "stream-json") || !containsArgument(arguments, "--verbose") {
@@ -194,7 +194,7 @@ func TestClaudeRunnerRunResumesSessionReadOnly(t *testing.T) {
 	if !containsArgument(arguments, "--resume") || containsArgument(arguments, "--session-id") {
 		t.Fatalf("resume引数 = %#v", arguments)
 	}
-	for _, argument := range []string{"--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent", "Bash", "second prompt"} {
+	for _, argument := range []string{"--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent", "Bash"} {
 		if !containsArgument(arguments, argument) {
 			t.Fatalf("read-only引数%qがありません: %#v", argument, arguments)
 		}

@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,21 +18,24 @@ func TestControllerTransportReturnsTerminalAndWaitSurvivesTaskHandover(t *testin
 	cfg.RepositoryLockPath = filepath.Join(t.TempDir(), "repository.workflow.lock")
 	bin := t.TempDir()
 	handoff := `{"projection":"recovery","consistent":true,"controller":{"canonical_active":true,"head":{"repository_identity":"repo"}},"task_id":null,"task_status":null,"required_action":"start","allowed_actions":["start"]}`
-	stub := "#!/bin/sh\ncase \"$1\" in\n --authority) cat;;\n --handoff) printf '%s\\n' '" + handoff + "' ;;\n *) exit 9;;\nesac\n"
+	command := `{"action":"adopt","expected_generation":1}`
+	projected, err := json.Marshal(map[string]any{"consistent": true, "required_action": controllerExecutionAction, "required_action_parameters": map[string]string{"controller_command_json": command}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := fmt.Sprintf(`#!/bin/sh
+case "$1" in
+ --authority) if [ "$2" = controller-execution-plan ]; then printf '%%s\n' '%s'; else cat; fi;;
+ --handoff) printf '%%s\n' '%s';;
+ *) exit 9;;
+esac
+`, projected, handoff)
 	if err := execfile.Write(filepath.Join(bin, "glm-worker"), []byte(stub), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	prepared, err := parentaction.Prepare(cfg.RepoRoot, "controller-execution")
+	prepared, err := parentaction.PrepareStaged(cfg.RepoRoot, controllerExecutionAction, parentaction.StagedTemplate{Payload: []byte("COMMAND_TEMPLATE: " + command + "\n"), Slots: []parentaction.PreparedSlot{}})
 	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(prepared.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw = bytes.Replace(raw, []byte("__GLM_PARENT_ACTION_PAYLOAD__"), []byte(`{"action":"adopt","expected_generation":1}`), 1)
-	if err := os.WriteFile(prepared.Path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer

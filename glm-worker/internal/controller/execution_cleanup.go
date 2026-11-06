@@ -181,21 +181,8 @@ func (s *Store) GarbageCollectSuspension(expectedGeneration uint64, id string) (
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
-	snapshot, err := s.LoadSuspension(s.identity.PrimaryRoot, id)
+	snapshot, sealRef, err := s.suspensionGCAuthority(head, id)
 	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	if snapshot.SemanticTaskRef.Equal(snapshot.RootTaskRef) && head.ActiveEpisodeID != "" {
-		return ExecutionOperationResult{}, fmt.Errorf("root suspension is retained until episode closure")
-	}
-	sealRef, err := s.suspensionSealRef(snapshot)
-	if err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	if _, err := s.ProveCleanupDurability(sealRef); err != nil {
-		return ExecutionOperationResult{}, err
-	}
-	if err := s.proveSuspensionSuccessor(snapshot, sealRef, head); err != nil {
 		return ExecutionOperationResult{}, err
 	}
 	record, err := executionTransition(head, executionGC)
@@ -208,6 +195,39 @@ func (s *Store) GarbageCollectSuspension(expectedGeneration uint64, id string) (
 		return ExecutionOperationResult{}, err
 	}
 	return s.recoverExecutionOperationLocked(op)
+}
+
+func (s *Store) PreviewSuspensionGC(id string) (uint64, error) {
+	head, err := s.LoadHead()
+	if err != nil {
+		return 0, err
+	}
+	head, err = s.quiescentExecutionHead(head.ControllerGeneration)
+	if err != nil {
+		return 0, err
+	}
+	if _, _, err := s.suspensionGCAuthority(head, id); err != nil {
+		return 0, err
+	}
+	return head.ControllerGeneration, nil
+}
+
+func (s *Store) suspensionGCAuthority(head RepositoryControllerHead, id string) (SuspensionSnapshot, EvidenceObjectRef, error) {
+	snapshot, err := s.LoadSuspension(s.identity.PrimaryRoot, id)
+	if err != nil {
+		return snapshot, EvidenceObjectRef{}, err
+	}
+	if snapshot.SemanticTaskRef.Equal(snapshot.RootTaskRef) && head.ActiveEpisodeID != "" {
+		return snapshot, EvidenceObjectRef{}, fmt.Errorf("root suspension is retained until episode closure")
+	}
+	sealRef, err := s.suspensionSealRef(snapshot)
+	if err != nil {
+		return snapshot, sealRef, err
+	}
+	if _, err := s.ProveCleanupDurability(sealRef); err != nil {
+		return snapshot, sealRef, err
+	}
+	return snapshot, sealRef, s.proveSuspensionSuccessor(snapshot, sealRef, head)
 }
 
 func (s *Store) proveSuspensionSuccessor(snapshot SuspensionSnapshot, seal EvidenceObjectRef, head RepositoryControllerHead) error {

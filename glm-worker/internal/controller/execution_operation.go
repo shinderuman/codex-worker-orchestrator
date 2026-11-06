@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -69,14 +70,8 @@ func (s *Store) SuspendExecution(admission Admission, episodeID string, revision
 }
 
 func (s *Store) planExecutionSuspension(admission Admission, episodeID string, revision uint64) (ExecutionOperation, error) {
-	episode, err := s.LoadEpisodeRevision(episodeID, revision)
+	episode, err := s.executionSuspensionEpisode(admission.Head, admission.Lease, episodeID, revision)
 	if err != nil {
-		return ExecutionOperation{}, err
-	}
-	if episode.SourceAttemptID != admission.Attempt.AttemptID || episode.SourceLeaseID != admission.Lease.LeaseID || episode.SourceControllerGeneration != admission.Head.ControllerGeneration || episode.ProjectSnapshotID != admission.Head.ProjectSnapshotID {
-		return ExecutionOperation{}, fmt.Errorf("blocker suspension episode source is stale")
-	}
-	if _, err := s.scheduleEpisodeAgainstProject(episode); err != nil {
 		return ExecutionOperation{}, err
 	}
 	snapshot, err := s.captureSuspensionLocked(admission)
@@ -101,6 +96,38 @@ func (s *Store) planExecutionSuspension(admission Admission, episodeID string, r
 	op.SealRef = &sealRef
 	op.Evidence = publication
 	return op, nil
+}
+
+func (s *Store) PreviewExecutionSuspension(cfg config.AppConfig, episodeID string, revision uint64) (uint64, error) {
+	source, err := resolveSemanticAdmission(cfg, s, s.AdmitMutation)
+	if err != nil {
+		return 0, err
+	}
+	episode, err := s.executionSuspensionEpisode(source.Head, source.Lease, episodeID, revision)
+	if err != nil {
+		return 0, err
+	}
+	disposition, err := s.LoadFindingDisposition(episode.TriggerFindingID)
+	if err != nil {
+		return 0, err
+	}
+	if disposition.Kind != FindingDispositionIndependentBlocking || disposition.EpisodeID != episodeID || disposition.EpisodeRevision != revision {
+		return 0, fmt.Errorf("suspension requires the committed blocking disposition")
+	}
+	return source.Head.ControllerGeneration, nil
+}
+
+func (s *Store) executionSuspensionEpisode(head RepositoryControllerHead, lease ExecutionLease, episodeID string, revision uint64) (BlockerEpisodeRevision, error) {
+	episode, err := s.LoadEpisodeRevision(episodeID, revision)
+	if err != nil {
+		return episode, err
+	}
+	if lease.InFlightCallID != "" || episode.SourceAttemptID != head.LiveAttemptID || episode.SourceLeaseID != lease.LeaseID ||
+		episode.SourceControllerGeneration != head.ControllerGeneration || episode.ProjectSnapshotID != head.ProjectSnapshotID {
+		return episode, fmt.Errorf("blocker suspension episode source is stale or in flight")
+	}
+	_, err = s.scheduleEpisodeAgainstProject(episode)
+	return episode, err
 }
 
 func (s *Store) prepareExecutionOperation(op *ExecutionOperation, head RepositoryControllerHead) error {

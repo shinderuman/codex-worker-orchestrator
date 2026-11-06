@@ -27,10 +27,11 @@ type controllerSemanticCommand struct {
 }
 
 type controllerSemanticOutput struct {
-	Action   controllerSemanticAction             `json:"action"`
-	Finding  *controller.FindingRecord            `json:"finding,omitempty"`
-	Result   *controller.FindingDispositionResult `json:"result,omitempty"`
-	Schedule *controller.EpisodeScheduleResult    `json:"schedule,omitempty"`
+	Action        controllerSemanticAction             `json:"action"`
+	Finding       *controller.FindingRecord            `json:"finding,omitempty"`
+	Result        *controller.FindingDispositionResult `json:"result,omitempty"`
+	Schedule      *controller.EpisodeScheduleResult    `json:"schedule,omitempty"`
+	NextExecution *controllerExecutionProjection       `json:"next_execution,omitempty"`
 }
 
 const (
@@ -71,6 +72,7 @@ func runControllerSemantic(
 	if err != nil {
 		return true, err
 	}
+	output.NextExecution = projectResolvedBlockerExecution(cfg, output.Result)
 	return true, writeValidatedMachineJSON(stdout, output)
 }
 

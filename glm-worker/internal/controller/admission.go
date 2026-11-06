@@ -266,6 +266,10 @@ func newExecutionRecords(
 }
 
 func CurrentSemanticAdmission(cfg config.AppConfig, store *Store) (Admission, error) {
+	return resolveSemanticAdmission(cfg, store, store.AdmitMutationOrFailClosed)
+}
+
+func resolveSemanticAdmission(cfg config.AppConfig, store *Store, admit func(MutationAuthority, WorkspaceIdentity, WorkspaceSnapshot) (Admission, error)) (Admission, error) {
 	if err := store.ValidateConfigScope(cfg); err != nil {
 		return Admission{}, err
 	}
@@ -293,7 +297,7 @@ func CurrentSemanticAdmission(cfg config.AppConfig, store *Store) (Admission, er
 	if err != nil {
 		return Admission{}, err
 	}
-	return store.AdmitMutationOrFailClosed(authority, workspace, snapshot)
+	return admit(authority, workspace, snapshot)
 }
 
 func (s *Store) ValidateConfigScope(cfg config.AppConfig) error {
