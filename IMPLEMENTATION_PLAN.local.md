@@ -18,7 +18,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
-- [`IMPLEMENTATION_TASKS/task-requirement-reference-closure.md`](IMPLEMENTATION_TASKS/task-requirement-reference-closure.md)
 - [`IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`](IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md)
 - [`IMPLEMENTATION_TASKS/post-publication-parent-reverification-containment.md`](IMPLEMENTATION_TASKS/post-publication-parent-reverification-containment.md)
 - [`IMPLEMENTATION_TASKS/installation-managed-uninstall.md`](IMPLEMENTATION_TASKS/installation-managed-uninstall.md)

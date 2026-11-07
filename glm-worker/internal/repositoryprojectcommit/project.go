@@ -26,12 +26,15 @@ type TerminalMetadata = repositoryproject.TerminalMetadata
 
 type Project struct {
 	Head         string
+	RepoRoot     string
 	Plan         []byte
 	Schedule     taskcontract.PlanSchedule
 	RootTaskPath string
 	Tasks        []Task
 	graph        *repositoryproject.TaskGraph
 }
+
+const requirementBlobType = "blob"
 
 func Load(root, revision string) (Project, error) {
 	head, err := gitOutput(root, "rev-parse", "--verify", revision+"^{commit}")
@@ -68,6 +71,7 @@ func Load(root, revision string) (Project, error) {
 	}
 	return Project{
 		Head:         head,
+		RepoRoot:     root,
 		Plan:         plan,
 		Schedule:     schedule,
 		RootTaskPath: rootTaskPath,
@@ -122,7 +126,68 @@ func (p Project) RetireTerminalMetadata(taskPath string, blocker bool) (Terminal
 	for _, task := range p.Tasks {
 		contents[task.Path] = task.Content
 	}
-	return repositoryproject.RetireTerminalMetadata(p.Plan, contents, taskPath, blocker)
+	metadata, err := repositoryproject.RetireTerminalMetadata(p.Plan, contents, taskPath, blocker)
+	if err != nil {
+		return TerminalMetadata{}, err
+	}
+	if err := p.validateCommittedRequirementSources(taskPath); err != nil {
+		return TerminalMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func (p Project) validateCommittedRequirementSources(retiring string) error {
+	for _, task := range p.Tasks {
+		if task.Path == retiring {
+			continue
+		}
+		sources, err := taskcontract.ParseRequirementSources(task.Content)
+		if err != nil {
+			return fmt.Errorf("task %s: %w", task.Path, err)
+		}
+		for _, source := range sources {
+			if err := VerifyRequirementSource(p.RepoRoot, p.Head, source); err != nil {
+				return fmt.Errorf("task %s line %d: %w", task.Path, source.Line, err)
+			}
+		}
+	}
+	return nil
+}
+
+func VerifyRequirementSource(root, head string, source taskcontract.RequirementSource) error {
+	switch source.Kind {
+	case taskcontract.RequirementSourceFile:
+		if root == "" || head == "" {
+			return fmt.Errorf("current file requirement source without committed Git identity")
+		}
+		return verifyRequirementFile(root, head, source.Path)
+	case taskcontract.RequirementSourceGit:
+		if root == "" {
+			return fmt.Errorf("pinned requirement source without repository root")
+		}
+		kind, err := gitOutput(root, "cat-file", "-t", source.Commit)
+		if err != nil || kind != "commit" {
+			return fmt.Errorf("unavailable pinned requirement commit %s", source.Commit)
+		}
+		return verifyRequirementFile(root, source.Commit, source.Path)
+	}
+	return nil
+}
+
+func verifyRequirementFile(root, commit, sourcePath string) error {
+	output, err := gitOutput(root, "ls-tree", "-z", "--full-tree", commit, "--", ":(literal)"+sourcePath)
+	if err != nil {
+		return fmt.Errorf("inspect requirement file %s:%s: %w", commit, sourcePath, err)
+	}
+	metadata, recordedPath, found := strings.Cut(strings.TrimSuffix(output, "\x00"), "\t")
+	fields := strings.Fields(metadata)
+	if !found || recordedPath != sourcePath || len(fields) != 3 || !regularGitBlob(fields[0], fields[1]) {
+		return fmt.Errorf("unavailable regular requirement file %s:%s", commit, sourcePath)
+	}
+	if err := gitexec.Command("git", root, "cat-file", "blob", fields[2]).Run(); err != nil {
+		return fmt.Errorf("read requirement blob %s:%s: %w", commit, sourcePath, err)
+	}
+	return nil
 }
 
 func parseTaskCorpusEntry(record string) (taskcontract.TaskCorpusEntry, bool, error) {
@@ -137,8 +202,12 @@ func parseTaskCorpusEntry(record string) (taskcontract.TaskCorpusEntry, bool, er
 	if len(fields) < 2 {
 		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("committed task corpus entry %q is malformed", record)
 	}
-	regular := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
+	regular := regularGitBlob(fields[0], fields[1])
 	return taskcontract.TaskCorpusEntry{Path: filepath.ToSlash(path), Regular: regular}, true, nil
+}
+
+func regularGitBlob(mode, kind string) bool {
+	return (mode == "100644" || mode == "100755") && kind == requirementBlobType
 }
 
 func loadTasks(root, head string, entries []taskcontract.TaskCorpusEntry) ([]Task, map[string][]byte, error) {

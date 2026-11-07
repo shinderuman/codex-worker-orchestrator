@@ -97,6 +97,10 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	requirementViolations, err := requirementSourceViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
 	provenanceViolations, err := scopedControlProvenanceViolations(root)
 	if err != nil {
 		return nil, err
@@ -105,6 +109,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	violations = append(violations, taskViolations...)
 	violations = append(violations, activeTaskViolations...)
 	violations = append(violations, closureViolations...)
+	violations = append(violations, requirementViolations...)
 	return append(violations, provenanceViolations...), nil
 }
 
