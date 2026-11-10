@@ -205,3 +205,50 @@ func equalJSONValues(t *testing.T, raw json.RawMessage, value any) bool {
 	}
 	return reflect.DeepEqual(expected, value)
 }
+
+func TestExportBundleSelectsInstalledWorkerOverStalePATH(t *testing.T) {
+	capture := t.TempDir()
+	t.Setenv("EXPORT_BUNDLE_CAPTURE", capture)
+	stale := writeExportBundleWorkerStub(t, "stale worker", 0)
+	t.Setenv("PATH", filepath.Dir(stale)+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	binDir := t.TempDir()
+	t.Setenv("GLM_WORKER_BIN_DIR", binDir)
+	current := writeExportBundleWorkerStub(t, exportBundleWorkerJSON, 0)
+	payload, err := os.ReadFile(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(binDir, "glm-worker")
+	if err := os.WriteFile(installed, payload, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolveInstalledExportWorker()
+	if err != nil || resolved != installed {
+		t.Fatalf("export worker resolved to %q, error=%v; expected installed %q", resolved, err, installed)
+	}
+	var output bytes.Buffer
+	if err := executeExportBundleAction(config.AppConfig{RepoRoot: t.TempDir()}, []string{"export-bundle"}, &output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	assertExportBundleFlattenedOutput(t, output.Bytes())
+
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(stale, installed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveInstalledExportWorker(); err == nil {
+		t.Fatal("symlinked installed export worker was accepted")
+	}
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveInstalledExportWorker(); err == nil {
+		t.Fatal("non-executable installed export worker was accepted")
+	}
+}
