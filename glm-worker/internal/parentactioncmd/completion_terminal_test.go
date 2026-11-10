@@ -86,6 +86,10 @@ func TestCompletionHandoffOpenFailureRetainsRecoveryCommand(t *testing.T) {
 	if err == nil || handoff != nil {
 		t.Fatalf("handoff without repository authority: %s, %v", handoff, err)
 	}
+	var stageErr *completionHandoffStageError
+	if !errors.As(err, &stageErr) || stageErr.stage != "repository-identity" {
+		t.Fatalf("missing typed publication handoff failure stage: %v", err)
+	}
 	want := &terminalHandoffRecovery{Command: []string{"glm-worker", "--handoff", "recovery"}, WorkingDir: cfg.RepoRoot}
 	if !reflect.DeepEqual(recovery, want) {
 		t.Fatalf("handoff open failure lost read-only recovery: %#v", recovery)

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"strings"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,7 +61,7 @@ func TestRecordParentActionAttemptExitWritesLedger(t *testing.T) {
 	if records[0].Action != "start" || records[0].Outcome != state.ParentActionAttemptOutcomeSuccess || records[0].DurationMS <= 0 {
 		t.Fatalf("成功記録 = %#v", records[0])
 	}
-	if records[1].Outcome != state.ParentActionAttemptOutcomeFailed || records[1].Error == "" {
+	if records[1].Outcome != state.ParentActionAttemptOutcomeFailed || records[1].Error != "action-failed" {
 		t.Fatalf("失敗記録 = %#v", records[1])
 	}
 	for _, record := range records {
