@@ -14,6 +14,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 - [`IMPLEMENTATION_TASKS/evidence-export-retry-storm-recovery.md`](IMPLEMENTATION_TASKS/evidence-export-retry-storm-recovery.md)
 - [`IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md`](IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md)
+- [`IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md`](IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md)
 - [`IMPLEMENTATION_TASKS/resume-checkpoint-current-schema.md`](IMPLEMENTATION_TASKS/resume-checkpoint-current-schema.md)
 - [`IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`](IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
