@@ -52,7 +52,8 @@ var resolveExportBundleWorker = resolveInstalledExportWorker
 
 func resolveInstalledExportWorker() (string, error) {
 	binDir := os.Getenv("GLM_WORKER_BIN_DIR")
-	if binDir == "" {
+	explicitBinDir := binDir != ""
+	if !explicitBinDir {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
@@ -62,6 +63,9 @@ func resolveInstalledExportWorker() (string, error) {
 	worker := filepath.Join(binDir, "glm-worker")
 	info, err := os.Lstat(worker)
 	if errors.Is(err, os.ErrNotExist) {
+		if explicitBinDir {
+			return "", fmt.Errorf("configured export worker is missing: %s: %w", worker, err)
+		}
 		return resolveGLMWorker()
 	}
 	if err != nil {
