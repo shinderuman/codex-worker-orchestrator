@@ -2,8 +2,8 @@ package parentactioncmd
 
 import (
 	"bytes"
-	"errors"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
