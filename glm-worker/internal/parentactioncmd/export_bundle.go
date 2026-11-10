@@ -41,6 +41,11 @@ type parentExportBundleResult struct {
 	parentExportBundleExport
 }
 
+type exportBundleFailure struct {
+	stage string
+	cause error
+}
+
 const (
 	exportBundleAction = "export-task-bundle"
 	exportBundleUsage  = "usage: glm-parent-action export-bundle [--task-id <glm-worker task id>]"
@@ -52,10 +57,7 @@ const (
 	exportBundleFailureOutput           = "result-output"
 )
 
-type exportBundleFailure struct {
-	stage string
-	cause error
-}
+var resolveExportBundleWorker = resolveGLMWorker
 
 func (e *exportBundleFailure) Error() string { return e.cause.Error() }
 
@@ -64,8 +66,6 @@ func (e *exportBundleFailure) Unwrap() error { return e.cause }
 func exportBundleFailureAt(stage string, err error) error {
 	return &exportBundleFailure{stage: stage, cause: err}
 }
-
-var resolveExportBundleWorker = resolveGLMWorker
 
 func executeExportBundleAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	selection, err := parseExportBundleSelection(args)
