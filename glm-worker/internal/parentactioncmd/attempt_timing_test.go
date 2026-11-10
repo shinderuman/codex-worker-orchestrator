@@ -3,6 +3,8 @@ package parentactioncmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"strings"
 	"os"
 	"path/filepath"
 	"testing"
@@ -115,5 +117,27 @@ func TestRejectedStartAttemptDoesNotReuseResidualTaskIdentity(t *testing.T) {
 	records, err := st.ReadParentActionAttempts()
 	if err != nil || len(records) != 1 || records[0].TaskID != "" {
 		t.Fatalf("拒否されたstartが残留Taskへ帰属しました: %+v %v", records, err)
+	}
+}
+
+func TestPostPublicationHandoffAttemptRecordsSafeFailureStage(t *testing.T) {
+	cfg := newAttemptTimingConfig(t)
+	attempt := parentActionAttemptScope{attemptID: "01a0463c-d477-7410-9efd-cb34ff2e0b0e", enteredAt: time.Now().UTC().Add(-time.Second)}
+	sensitive := errors.New("private runtime path and error details")
+	cause := completionHandoffFailure("canonical-handoff-process", sensitive)
+	actionErr := fmt.Errorf("canonical handoff failed after parent action: %w", cause)
+	attempt.recordExit(cfg, controllerPublicationAction, actionErr)
+
+	records, err := state.AttachStateStore(cfg).ReadParentActionAttempts()
+	if err != nil || len(records) != 1 {
+		t.Fatalf("publication attempt ledger: records=%+v err=%v", records, err)
+	}
+	record := records[0]
+	if record.Action != controllerPublicationAction || record.Outcome != state.ParentActionAttemptOutcomeFailed ||
+		record.Error != "post-publication-handoff:canonical-handoff-process" || record.DurationMS < 0 {
+		t.Fatalf("publication failure stage not recorded: %+v", record)
+	}
+	if strings.Contains(record.Error, sensitive.Error()) || !errors.Is(actionErr, sensitive) {
+		t.Fatalf("failure signature leaked details or lost typed cause: %+v", record)
 	}
 }
