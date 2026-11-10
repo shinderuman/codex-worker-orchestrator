@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
@@ -46,7 +48,33 @@ const (
 	exportBundleUsage  = "usage: glm-parent-action export-bundle [--task-id <glm-worker task id>]"
 )
 
-var resolveExportBundleWorker = resolveGLMWorker
+var resolveExportBundleWorker = resolveInstalledExportWorker
+
+// Export must use the installed worker when present, rather than an older
+// sibling of a still-running parent-action executable. A source-only CLI
+// without an installation retains its existing worker resolution.
+func resolveInstalledExportWorker() (string, error) {
+	binDir := os.Getenv("GLM_WORKER_BIN_DIR")
+	if binDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		binDir = filepath.Join(home, ".local", "bin")
+	}
+	worker := filepath.Join(binDir, "glm-worker")
+	info, err := os.Lstat(worker)
+	if errors.Is(err, os.ErrNotExist) {
+		return resolveGLMWorker()
+	}
+	if err != nil {
+		return "", fmt.Errorf("inspect installed export worker: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return "", fmt.Errorf("installed export worker is not a regular executable: %s", worker)
+	}
+	return worker, nil
+}
 
 func executeExportBundleAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	selection, err := parseExportBundleSelection(args)
