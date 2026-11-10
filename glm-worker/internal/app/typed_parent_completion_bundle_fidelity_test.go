@@ -39,14 +39,7 @@ func assertTypedPostInstallBundleFidelity(t *testing.T, cfg config.AppConfig, ru
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.TaskID == "" || record.TaskID != runtime.ReadOr("task.id", "") ||
-		record.Head != candidate.CommitOID || record.TaskAuthorityDigest != candidate.TaskRef.ContractDigest ||
-		record.InstallEvidenceDigest != deployment.EvidenceDigest ||
-		record.Status != qualitygate.StatusPass || record.LogSHA256 == "" ||
-		deployment.SourceOID != candidate.CommitOID ||
-		filepath.Base(deployment.BinaryPath) != "glm-worker" {
-		t.Fatalf("CLI probe lost source/Task/deployment binding: %#v, deployment=%#v", record, deployment)
-	}
+	requireTypedProbeSource(t, runtime, candidate, record, deployment)
 	payload, err := os.ReadFile(record.Log)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +56,23 @@ func assertTypedPostInstallBundleFidelity(t *testing.T, cfg config.AppConfig, ru
 		t.Fatalf("CLI export selected a different Task/Attempt/source: %#v", manifest.Target)
 	}
 	checkRealPostInstallProbeZIP(t, controller.EvidenceExport{Manifest: manifest}, members, record, payload)
+	assertTypedPostInstallBundleTamperRejected(t, cfg, record)
+}
 
+func requireTypedProbeSource(t *testing.T, runtime *state.StateStore, candidate controller.AcceptedCandidate, record qualitygate.RunRecord, deployment controller.SmokeProbeDeployment) {
+	t.Helper()
+	if record.TaskID == "" || record.TaskID != runtime.ReadOr("task.id", "") ||
+		record.Head != candidate.CommitOID || record.TaskAuthorityDigest != candidate.TaskRef.ContractDigest ||
+		record.InstallEvidenceDigest != deployment.EvidenceDigest ||
+		record.Status != qualitygate.StatusPass || record.LogSHA256 == "" ||
+		deployment.SourceOID != candidate.CommitOID ||
+		filepath.Base(deployment.BinaryPath) != "glm-worker" {
+		t.Fatalf("CLI probe lost source/Task/deployment binding: %#v, deployment=%#v", record, deployment)
+	}
+}
+
+func assertTypedPostInstallBundleTamperRejected(t *testing.T, cfg config.AppConfig, record qualitygate.RunRecord) {
+	t.Helper()
 	if err := os.WriteFile(record.Log, []byte("tampered output"), 0o600); err != nil {
 		t.Fatal(err)
 	}
