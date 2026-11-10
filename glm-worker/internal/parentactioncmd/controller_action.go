@@ -53,7 +53,7 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 		if err := runResolvedWorker(worker, cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(command), stdout, stderr, nil); err != nil {
 			return err
 		}
-		_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
+		_, err = parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
 		return err
 	}
 	return recorder.Measure(args[0]+"-"+operation.Action, func() error {
