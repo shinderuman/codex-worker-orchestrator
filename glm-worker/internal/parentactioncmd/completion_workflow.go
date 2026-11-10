@@ -84,7 +84,7 @@ func driveCompletionWorkflow(cfg config.AppConfig, result completionWorkflowResu
 		if err != nil {
 			return writeCompletionWorkflowFailure(stdout, result, err)
 		}
-		done, err := completionTerminalBoundary(operation)
+		done, err := completionTerminalBoundary(operation, result)
 		if err != nil {
 			return writeCompletionWorkflowFailure(stdout, result, err)
 		}
@@ -103,10 +103,14 @@ func driveCompletionWorkflow(cfg config.AppConfig, result completionWorkflowResu
 	return writeCompletionWorkflowFailure(stdout, result, fmt.Errorf("completion exceeded its bounded machine transitions"))
 }
 
-func completionTerminalBoundary(operation controller.ParentCompletionOperation) (bool, error) {
+func completionTerminalBoundary(operation controller.ParentCompletionOperation, result completionWorkflowResult) (bool, error) {
 	switch operation.Operation {
 	case controller.PublicationOperationSuccessorStart, controller.PublicationOperationObserved:
 		return true, nil
+	case controller.PublicationOperationParentOnlyMaterialize:
+		return hasCompletionPublicationEvidence(result) && operation.Execution != nil &&
+			operation.Execution.Action == controller.PublicationOperationParentOnlyMaterialize &&
+			operation.Execution.ExpectedGeneration == result.ControllerGeneration, nil
 	case controller.PublicationOperationNone:
 		return false, fmt.Errorf("completion stopped before terminal publication: %s", operation.Reason)
 	default:

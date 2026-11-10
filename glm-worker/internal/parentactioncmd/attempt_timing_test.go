@@ -3,8 +3,10 @@ package parentactioncmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,7 +61,7 @@ func TestRecordParentActionAttemptExitWritesLedger(t *testing.T) {
 	if records[0].Action != "start" || records[0].Outcome != state.ParentActionAttemptOutcomeSuccess || records[0].DurationMS <= 0 {
 		t.Fatalf("成功記録 = %#v", records[0])
 	}
-	if records[1].Outcome != state.ParentActionAttemptOutcomeFailed || records[1].Error == "" {
+	if records[1].Outcome != state.ParentActionAttemptOutcomeFailed || records[1].Error != "action-failed" {
 		t.Fatalf("失敗記録 = %#v", records[1])
 	}
 	for _, record := range records {
@@ -115,5 +117,54 @@ func TestRejectedStartAttemptDoesNotReuseResidualTaskIdentity(t *testing.T) {
 	records, err := st.ReadParentActionAttempts()
 	if err != nil || len(records) != 1 || records[0].TaskID != "" {
 		t.Fatalf("拒否されたstartが残留Taskへ帰属しました: %+v %v", records, err)
+	}
+}
+
+func TestPostPublicationHandoffAttemptRecordsSafeFailureStage(t *testing.T) {
+	cfg := newAttemptTimingConfig(t)
+	attempt := parentActionAttemptScope{attemptID: "01a0463c-d477-7410-9efd-cb34ff2e0b0e", enteredAt: time.Now().UTC().Add(-time.Second)}
+	sensitive := errors.New("private runtime path and error details")
+	cause := completionHandoffFailure("canonical-handoff-process", sensitive)
+	actionErr := fmt.Errorf("canonical handoff failed after parent action: %w", cause)
+	attempt.recordExit(cfg, controllerPublicationAction, actionErr)
+
+	records, err := state.AttachStateStore(cfg).ReadParentActionAttempts()
+	if err != nil || len(records) != 1 {
+		t.Fatalf("publication attempt ledger: records=%+v err=%v", records, err)
+	}
+	record := records[0]
+	if record.Action != controllerPublicationAction || record.Outcome != state.ParentActionAttemptOutcomeFailed ||
+		record.Error != "post-publication-handoff:canonical-handoff-process" || record.DurationMS < 0 {
+		t.Fatalf("publication failure stage not recorded: %+v", record)
+	}
+	if strings.Contains(record.Error, sensitive.Error()) || !errors.Is(actionErr, sensitive) {
+		t.Fatalf("failure signature leaked details or lost typed cause: %+v", record)
+	}
+}
+
+func TestCompletionHandoffFailureDoesNotClassifyUnrelatedAction(t *testing.T) {
+	cfg := newAttemptTimingConfig(t)
+	attempt := parentActionAttemptScope{attemptID: "01a0463c-d477-7410-9efd-cb34ff2e0b0e", enteredAt: time.Now().UTC().Add(-time.Second)}
+	cause := completionHandoffFailure("controller-head-read", errors.New("sensitive error"))
+	attempt.recordExit(cfg, "export-bundle", cause)
+	attempt.recordExit(cfg, "decision", fmt.Errorf("other action: %w", cause))
+	attempt.recordExit(cfg, controllerPublicationAction, errors.New("failure before terminal handoff"))
+	attempt.recordExit(cfg, controllerPublicationAction, cause)
+	attempt.recordExit(cfg, controllerPublicationAction, nil)
+
+	records, err := state.AttachStateStore(cfg).ReadParentActionAttempts()
+	if err != nil || len(records) != 5 {
+		t.Fatalf("publication ledger boundaries: records=%+v err=%v", records, err)
+	}
+	for _, index := range []int{0, 1, 2} {
+		if records[index].Error != "action-failed" || records[index].Outcome != state.ParentActionAttemptOutcomeFailed {
+			t.Fatalf("unrelated or pre-handoff failure misclassified: %+v", records[index])
+		}
+	}
+	if records[3].Error != "post-publication-handoff:controller-head-read" || records[3].Outcome != state.ParentActionAttemptOutcomeFailed {
+		t.Fatalf("typed publication handoff failure lost: %+v", records[3])
+	}
+	if records[4].Error != "" || records[4].Outcome != state.ParentActionAttemptOutcomeSuccess {
+		t.Fatalf("successful publication falsely failed: %+v", records[4])
 	}
 }

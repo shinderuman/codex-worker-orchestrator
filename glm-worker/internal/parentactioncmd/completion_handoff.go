@@ -15,6 +15,23 @@ type terminalHandoffRecovery struct {
 	WorkingDir string   `json:"working_dir"`
 }
 
+type completionHandoffStageError struct {
+	stage string
+	cause error
+}
+
+func (e *completionHandoffStageError) Error() string {
+	return e.cause.Error()
+}
+
+func (e *completionHandoffStageError) Unwrap() error {
+	return e.cause
+}
+
+func completionHandoffFailure(stage string, err error) error {
+	return &completionHandoffStageError{stage: stage, cause: err}
+}
+
 func finishPublicationTerminalHandoff(cfg config.AppConfig, stdout, stderr io.Writer, terminal json.RawMessage) (bool, error) {
 	result, err := publicationTerminalCompletion(terminal)
 	if err != nil || result.Status != completionWorkflowCompleted {
@@ -53,27 +70,27 @@ func readCompletionTerminalHandoff(cfg config.AppConfig, result completionWorkfl
 	}
 	identity, err := controller.ResolveRepositoryIdentity(cfg.RepoRoot)
 	if err != nil {
-		return nil, recovery, err
+		return nil, recovery, completionHandoffFailure("repository-identity", err)
 	}
 	cfg.RepoRoot = identity.PrimaryRoot
 	recovery.WorkingDir = cfg.RepoRoot
 	store, err := controller.Open(cfg)
 	if err != nil {
-		return nil, recovery, err
+		return nil, recovery, completionHandoffFailure("controller-open", err)
 	}
 	expected, err := store.LoadHead()
 	if err != nil {
-		return nil, recovery, err
+		return nil, recovery, completionHandoffFailure("controller-head-read", err)
 	}
 	if err := validateCompletionHandoffHead(result, expected); err != nil {
-		return nil, recovery, err
+		return nil, recovery, completionHandoffFailure("published-head-validation", err)
 	}
 	handoff, err := readTerminalHandoff(cfg, stderr, false)
 	if err != nil {
-		return nil, recovery, err
+		return nil, recovery, completionHandoffFailure("canonical-handoff-process", err)
 	}
 	if err := validateCompletionHandoffProjection(store, expected, handoff); err != nil {
-		return nil, recovery, err
+		return nil, recovery, completionHandoffFailure("canonical-handoff-validation", err)
 	}
 	return handoff, nil, nil
 }
