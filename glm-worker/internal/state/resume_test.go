@@ -246,3 +246,14 @@ func TestLoadResumeCheckpointV6RequiresExplicitKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadResumeCheckpointRejectsUnknownCurrentSchemaField(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	data := `{"version":6,"stage":"worker","model":"opus","stop_kind":"rate-limited","report_only":false,"unexpected_field":true}`
+	if err := os.WriteFile(st.Path(resumeStateFile), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), `unknown field "unexpected_field"`) {
+		t.Fatalf("unknown field acceptance error = %v", err)
+	}
+}
