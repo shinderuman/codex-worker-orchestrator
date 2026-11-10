@@ -27,6 +27,8 @@ none
 - 前実装Task `post-install-probe-bundle-evidence-fidelity.md` は `21bc1a5bc0db5a163e406f909c2684d8a74f4d2d`で完了・退役し、synthetic positive/negative ZIP testを追加した。
 - [Audit #1535](https://github.com/shinderuman/codex-worker-orchestrator/issues/1535)：**修正Task自身**のpost-install run `9386529dab68aa848148885427069ed1` はPASS、source `21bc1a5...`。しかしZIPに `probe.log`がなく、`run.json`に`log_sha256`なし。Go gate用 `gate.log`と`resource-samples.json`が`missing:true`となる。
 - [Audit #1539](https://github.com/shinderuman/codex-worker-orchestrator/issues/1539)：**後続Task**のpost-install run `82dd705aa999e35b678492e9d79f3f40`（公開OID `543761685be4c2cb6ccfc06766a4105c3dbfcc21`）でも全く同じ欠測が継続。旧版だけの一回限りの録画ではなく、post-fix organic evidenceでも期待を満たさない。
+- [Audit #1542](https://github.com/shinderuman/codex-worker-orchestrator/issues/1542)：さらに後続の要求原文参照Taskで、post-install run `f8aadd725a5840441a699fb6308fe129`（公開OID `9b36afcb5ecda871f65a0c4c2aff7c5c14270fd6`）はPASSだが、`log_sha256`と`probe.log`収録なし、Go-only `gate.log`/resourcesは誤欠測。
+- [Audit #1543](https://github.com/shinderuman/codex-worker-orchestrator/issues/1543)：さらに後続のmanaged uninstall Taskでも、run `d98ccb92e69af20e475d3edebc032d0e`（公開OID `aefffcfe56b6e2bfd14fc42fdba8ef69a9c18854`）に同症状。双方の原本ZIP manifest/size/SHA256/CRCは整合し、artifact自体の欠落を否定しない。**4つの異なる修正後source上の実Runでの再発観測**であり、sourceとinstalled binary identityを単に同一と推定しない。
 - 修正前の [Audit #1534](https://github.com/shinderuman/codex-worker-orchestrator/issues/1534) は旧コードの既知失敗例であり、新規Findingとして数えない。
 - 既存positive fixture `TestPostInstallSmokeProducerToBundleZIP` などがPASSしたことと、installed sourceからの真正RunRecord・collectorによるlive収録を混同しない。原因は旧バイナリ起動/producer/collector/source bindingのいずれか未確定。
 
