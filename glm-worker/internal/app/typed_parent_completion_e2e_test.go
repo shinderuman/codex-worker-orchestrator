@@ -119,6 +119,9 @@ func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario)
 	binary := typedCompletionWorkerBinary(t)
 	started := time.Now()
 	cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange)
+	if scenario.sourceChange {
+		t.Setenv("GLM_WORKER_BIN_DIR", filepath.Dir(cfg.StateBase))
+	}
 	logAppFixturePhase(t, "typed/fixture", started)
 	store, err := controller.Open(cfg)
 	if err != nil {
@@ -136,6 +139,9 @@ func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario)
 	logAppFixturePhase(t, "typed/production-cli", started)
 	started = time.Now()
 	assertTypedCompletionTerminalState(t, cfg, runtime)
+	if scenario.sourceChange && !scenario.interrupt {
+		assertTypedPostInstallBundleFidelity(t, cfg, runtime)
+	}
 	receipts, err := os.ReadFile(filepath.Join(remote, "task-publication-receipts"))
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +213,7 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 		if err := command.Run(); err != nil {
 			return controller.InstalledRuntimeIdentity{}, err
 		}
-		binary := filepath.Join(os.Getenv("GLM_WORKER_HOME"), "typed-installed-worker")
+		binary := filepath.Join(os.Getenv("GLM_WORKER_HOME"), "glm-worker")
 		data, err := os.ReadFile(os.Getenv("GLM_TYPED_COMPLETION_WORKER_BINARY"))
 		if err != nil {
 			return controller.InstalledRuntimeIdentity{}, err
@@ -589,7 +595,7 @@ func typedSemanticSlotValues(t *testing.T, parameters map[string]string, require
 		semantic["message"] = "typed completion accepted"
 		semantic["require_install"] = fmt.Sprintf("%t", requireInstall)
 		if requireInstall {
-			semantic["required_validations"] = `{"forms":[{"form":"go-test","working_dir":"glm-worker"}],"probes":[{"probe_id":"typed-worker-path","verifies":"the deployed worker path executes the declared probe argv","argv":["/bin/sh","-c","exit 0"]}]}`
+			semantic["required_validations"] = `{"forms":[{"form":"go-test","working_dir":"glm-worker"}],"probes":[{"probe_id":"typed-worker-path","verifies":"the deployed worker path executes the declared probe argv","argv":["/bin/sh","-c","printf typed-probe-live-evidence"]}]}`
 		} else {
 			semantic["required_validations"] = `{"forms":[]}`
 		}
