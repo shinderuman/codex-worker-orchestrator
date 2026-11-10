@@ -8,13 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudesettings"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/installlock"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/pathalias"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 )
 
@@ -118,7 +118,7 @@ func rejectSymlinkComponents(path string) error {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			if runtime.GOOS == "darwin" && current == "/var" && isStandardDarwinVarAlias() {
+			if pathalias.IsStandardDarwinVar(current) {
 				continue
 			}
 			return fmt.Errorf("refusing symlink path component: %s", current)
@@ -127,20 +127,3 @@ func rejectSymlinkComponents(path string) error {
 	return nil
 }
 
-func isStandardDarwinVarAlias() bool {
-	target, err := os.Readlink("/var")
-	if err != nil || (target != "private/var" && target != "/private/var") {
-		return false
-	}
-	resolved, err := filepath.EvalSymlinks("/var")
-	if err != nil || resolved != "/private/var" {
-		return false
-	}
-	for _, path := range []string{"/private", "/private/var"} {
-		info, err := os.Lstat(path)
-		if err != nil || !info.IsDir() {
-			return false
-		}
-	}
-	return true
-}

@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"syscall"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/pathalias"
+
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 )
 
@@ -245,7 +247,7 @@ func rejectMergeSymlinks(path string) error {
 		if err != nil {
 			return err
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
+		if info.Mode()&os.ModeSymlink != 0 && !pathalias.IsStandardDarwinVar(current) {
 			return fmt.Errorf("refusing Claude symlink path: %s", current)
 		}
 	}

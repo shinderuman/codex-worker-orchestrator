@@ -116,3 +116,17 @@ func TestUninstallAcceptsCanonicalMacOSVarAlias(t *testing.T) {
 	}
 	assertConcurrentRetirePresent(t, filepath.Join(physicalBin, "glm-publication-guard"))
 }
+
+func TestUninstallRejectsUserAliasToPrivateVar(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("requires macOS /private/var")
+	}
+	alias := filepath.Join(t.TempDir(), "fake-var")
+	if err := os.Symlink("/private/var", alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := rejectSymlinkComponents(filepath.Join(alias, "folders")); err == nil ||
+		!strings.Contains(err.Error(), "refusing symlink path component") {
+		t.Fatalf("user alias to the same physical directory was accepted: %v", err)
+	}
+}
