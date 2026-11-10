@@ -15,7 +15,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/post-publication-parent-terminal-regression-observed.md`](IMPLEMENTATION_TASKS/post-publication-parent-terminal-regression-observed.md)
 - [`IMPLEMENTATION_TASKS/evidence-export-retry-storm-recovery.md`](IMPLEMENTATION_TASKS/evidence-export-retry-storm-recovery.md)
 - [`IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md`](IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md)
-- [`IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md`](IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)

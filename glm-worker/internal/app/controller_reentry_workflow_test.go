@@ -169,9 +169,10 @@ func TestPromotedTaskMetadataKeepsPublicationAndReentryAvailable(t *testing.T) {
 	}
 }
 
-func sealedCandidateReentryFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.ExecutionOperationResult, controller.AcceptedCandidate, *state.StateStore) {
+func sealedCandidateReentryFixture(t *testing.T, quality ...bool) (config.AppConfig, *controller.Store, controller.ExecutionOperationResult, controller.AcceptedCandidate, *state.StateStore) {
 	t.Helper()
-	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
+	useQuality := len(quality) > 0 && quality[0]
+	cfg, admission, store, policy := retiredWorkflowCorpus(t, useQuality)
 	evidence := canonicalWorkflowEvidence(t, cfg, store, admission, policy)
 	accepted, err := store.AcceptExecutionCandidate(admission, controller.CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "reentry corpus result", Policy: policy, Evidence: evidence})
 	if err != nil {
