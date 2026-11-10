@@ -158,6 +158,7 @@ func typedCompletionWorkerBinary(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_TYPED_COMPLETION_TEST_WORKER", "1")
+	t.Setenv("GLM_TYPED_COMPLETION_WORKER_BINARY", path)
 	return path
 }
 
@@ -207,7 +208,10 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 			return controller.InstalledRuntimeIdentity{}, err
 		}
 		binary := filepath.Join(os.Getenv("GLM_WORKER_HOME"), "typed-installed-worker")
-		data := []byte("#!/bin/sh\nexit 0\n")
+		data, err := os.ReadFile(os.Getenv("GLM_TYPED_COMPLETION_WORKER_BINARY"))
+		if err != nil {
+			return controller.InstalledRuntimeIdentity{}, err
+		}
 		if err := execfile.Write(binary, data, 0o755); err != nil {
 			return controller.InstalledRuntimeIdentity{}, err
 		}
