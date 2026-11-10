@@ -41,7 +41,7 @@ type pulledAdmissionFixture struct {
 func candidateBehindMetadataPull(t *testing.T) pulledCandidateFixture {
 	t.Helper()
 	binary := typedCompletionWorkerBinary(t)
-	cfg, runtime, _, policy, scripted := typedCompletionReviewFixture(t, binary, true)
+	cfg, runtime, _, policy, scripted := typedCompletionReviewFixture(t, binary, true, false)
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func publishFreshRoundOnceOnPulledSource(t *testing.T, cfg config.AppConfig, scr
 	if completionCommand.Action != controller.PublicationOperationAccept {
 		t.Fatalf("fresh completion action: %#v", completionCommand)
 	}
-	runTypedPublicationStep(t, freshCfg, completionHandoff.RequiredActionParameters, true, false, true)
+	runTypedPublicationStep(t, freshCfg, completionHandoff.RequiredActionParameters, true, false, true, false)
 	assertTypedCompletionTerminalState(t, freshCfg, freshState)
 	published, err := store.LoadHead()
 	if err != nil {
@@ -272,7 +272,7 @@ func publishFreshRoundOnceOnPulledSource(t *testing.T, cfg config.AppConfig, scr
 func awaitingAdmissionBehindPull(t *testing.T) pulledAdmissionFixture {
 	t.Helper()
 	binary := typedCompletionWorkerBinary(t)
-	cfg, runtime, _, policy, scripted := typedCompletionReviewFixture(t, binary, true)
+	cfg, runtime, _, policy, scripted := typedCompletionReviewFixture(t, binary, true, false)
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
