@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudesettings"
@@ -45,10 +46,17 @@ func run(repoRoot, binDir, codexDir string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("resolve Claude settings: %w", err)
 	}
-	for _, path := range []string{repoRoot, binDir, codexDir, location.SettingsPath} {
-		if err := rejectSymlinkComponents(path); err != nil {
+	// Validate exactly the paths handed to each owner. Do not replace /var with
+	// /private/var here: hook ownership bindings retain the installed path spelling.
+	for _, path := range []*string{&repoRoot, &binDir, &codexDir, &location.SettingsPath} {
+		absolute, err := filepath.Abs(*path)
+		if err != nil {
 			return err
 		}
+		if err := rejectSymlinkComponents(absolute); err != nil {
+			return err
+		}
+		*path = absolute
 	}
 
 	return installlock.With(func(lock *os.File) error {
@@ -110,8 +118,29 @@ func rejectSymlinkComponents(path string) error {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
+			if runtime.GOOS == "darwin" && current == "/var" && isStandardDarwinVarAlias() {
+				continue
+			}
 			return fmt.Errorf("refusing symlink path component: %s", current)
 		}
 	}
 	return nil
+}
+
+func isStandardDarwinVarAlias() bool {
+	target, err := os.Readlink("/var")
+	if err != nil || (target != "private/var" && target != "/private/var") {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks("/var")
+	if err != nil || resolved != "/private/var" {
+		return false
+	}
+	for _, path := range []string{"/private", "/private/var"} {
+		info, err := os.Lstat(path)
+		if err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
