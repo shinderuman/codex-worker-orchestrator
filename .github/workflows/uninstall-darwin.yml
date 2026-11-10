@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'glm-worker/internal/uninstallcmd/**'
+      - 'glm-worker/internal/pathalias/**'
       - 'glm-worker/internal/settingsmerge/**'
       - 'uninstall.sh'
       - 'tests/install_smoke.sh'
@@ -14,6 +15,7 @@ on:
       - 'web-gpt/**'
     paths:
       - 'glm-worker/internal/uninstallcmd/**'
+      - 'glm-worker/internal/pathalias/**'
       - 'glm-worker/internal/settingsmerge/**'
       - 'uninstall.sh'
       - 'tests/install_smoke.sh'
