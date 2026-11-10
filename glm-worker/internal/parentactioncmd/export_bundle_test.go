@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -139,8 +140,24 @@ func TestExportBundleRejectsFailedOrMalformedWorkerOutput(t *testing.T) {
 			stub := writeExportBundleWorkerStub(t, stubSpec.workerOutput, stubSpec.exitCode)
 			resolveExportBundleWorker = func() (string, error) { return stub, nil }
 			var stdout bytes.Buffer
-			if err := execute(config.AppConfig{RepoRoot: repo}, []string{"export-bundle"}, &stdout, io.Discard); err == nil {
+			err := execute(config.AppConfig{RepoRoot: repo}, []string{"export-bundle"}, &stdout, io.Discard)
+			if err == nil {
 				t.Fatalf("export-bundle accepted malformed worker output %q", stubSpec.workerOutput)
+			}
+			var failure *exportBundleFailure
+			if !errors.As(err, &failure) {
+				t.Fatalf("export failure has no classified stage: %v", err)
+			}
+			expectedStage := exportBundleFailureWorkerResponse
+			if stubSpec.exitCode != 0 {
+				expectedStage = exportBundleFailureWorkerExecution
+				var processError *workerProcessError
+				if !errors.As(err, &processError) || processError.exitCode() != stubSpec.exitCode {
+					t.Fatalf("worker exit status was lost by diagnostic wrapping: %v", err)
+				}
+			}
+			if failure.stage != expectedStage {
+				t.Fatalf("export failure stage = %q, want %q", failure.stage, expectedStage)
 			}
 			if stdout.Len() != 0 {
 				t.Fatalf("rejected export wrote partial stdout: %s", stdout.String())
@@ -204,4 +221,37 @@ func equalJSONValues(t *testing.T, raw json.RawMessage, value any) bool {
 		t.Fatal(err)
 	}
 	return reflect.DeepEqual(expected, value)
+}
+
+func TestExportBundleClassifiesSelectionAndWorkerResolutionFailures(t *testing.T) {
+	repo := t.TempDir()
+	cfg := config.AppConfig{RepoRoot: repo}
+	original := resolveExportBundleWorker
+	defer func() { resolveExportBundleWorker = original }()
+	privateCause := errors.New("sensitive worker resolver path")
+	resolveExportBundleWorker = func() (string, error) { return "", privateCause }
+
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		stage string
+	}{
+		{name: "invalid selection", args: []string{"export-bundle", "--attempt-id", "retired"}, stage: exportBundleFailureSelection},
+		{name: "worker unavailable", args: []string{"export-bundle"}, stage: exportBundleFailureWorkerResolution},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			err := execute(cfg, tc.args, &stdout, io.Discard)
+			var failure *exportBundleFailure
+			if !errors.As(err, &failure) || failure.stage != tc.stage {
+				t.Fatalf("failure = %v, want stage %s", err, tc.stage)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("failure emitted stdout: %s", stdout.String())
+			}
+			if tc.stage == exportBundleFailureWorkerResolution && !errors.Is(err, privateCause) {
+				t.Fatal("worker resolver error chain was lost")
+			}
+		})
+	}
 }

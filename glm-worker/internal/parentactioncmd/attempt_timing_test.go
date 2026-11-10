@@ -117,3 +117,22 @@ func TestRejectedStartAttemptDoesNotReuseResidualTaskIdentity(t *testing.T) {
 		t.Fatalf("拒否されたstartが残留Taskへ帰属しました: %+v %v", records, err)
 	}
 }
+
+func TestExportBundleAttemptLedgerStoresStageWithoutPrivateErrorText(t *testing.T) {
+	cfg := newAttemptTimingConfig(t)
+	attempt := parentActionAttemptScope{attemptID: "01a0463c-d477-7410-9efd-cb34ff2e0b0e", enteredAt: time.Now().UTC().Add(-time.Second)}
+	cause := errors.New("private stderr and workspace path")
+	attempt.recordExit(cfg, "export-bundle", exportBundleFailureAt(exportBundleFailureWorkerExecution, cause))
+	attempt.recordExit(cfg, "decision", cause)
+
+	records, err := state.AttachStateStore(cfg).ReadParentActionAttempts()
+	if err != nil || len(records) != 2 {
+		t.Fatalf("read attempt ledger: %#v %v", records, err)
+	}
+	if records[0].Outcome != state.ParentActionAttemptOutcomeFailed || records[0].Error != "export-bundle:worker-execution" {
+		t.Fatalf("classified export ledger = %#v", records[0])
+	}
+	if records[1].Error != "action-failed" {
+		t.Fatalf("non-export action changed failure semantics: %#v", records[1])
+	}
+}

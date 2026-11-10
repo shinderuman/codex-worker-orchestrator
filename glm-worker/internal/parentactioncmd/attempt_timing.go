@@ -1,6 +1,7 @@
 package parentactioncmd
 
 import (
+	"errors"
 	"os"
 	"time"
 
@@ -65,6 +66,12 @@ func (s parentActionAttemptScope) recordExit(cfg config.AppConfig, action string
 	if actionErr != nil {
 		record.Outcome = state.ParentActionAttemptOutcomeFailed
 		record.Error = "action-failed"
+		if action == "export-bundle" {
+			var exportFailure *exportBundleFailure
+			if errors.As(actionErr, &exportFailure) {
+				record.Error = "export-bundle:" + exportFailure.stage
+			}
+		}
 	}
 	if action == actionStart || action == "start-milestones" {
 		record.TaskID = ""
