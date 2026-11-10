@@ -50,9 +50,6 @@ const (
 
 var resolveExportBundleWorker = resolveInstalledExportWorker
 
-// Export must use the installed worker when present, rather than an older
-// sibling of a still-running parent-action executable. A source-only CLI
-// without an installation retains its existing worker resolution.
 func resolveInstalledExportWorker() (string, error) {
 	binDir := os.Getenv("GLM_WORKER_BIN_DIR")
 	if binDir == "" {
