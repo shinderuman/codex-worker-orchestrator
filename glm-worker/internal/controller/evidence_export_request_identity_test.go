@@ -73,9 +73,9 @@ func TestExportEvidenceRequestRuntimeUsesCanonicalTaskIdentity(t *testing.T) {
 	}
 	t.Run("foreign request authority fails closed", func(t *testing.T) {
 		foreign := binding
-		foreign.RequestID = "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+		foreign.RequestID = "01a0463c-d477-4410-9efd-cb34ff2e0b0e"
 		if foreign.RequestID == task.RequestID {
-			foreign.RequestID = "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+			foreign.RequestID = "01a0244a-4ee4-4e71-b2e1-dec3bdda2120"
 		}
 		if err := runtime.SaveControllerRuntimeBinding(foreign); err != nil {
 			t.Fatal(err)
