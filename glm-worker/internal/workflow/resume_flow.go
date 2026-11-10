@@ -3,6 +3,8 @@ package workflow
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
@@ -41,6 +43,9 @@ func (w *Workflow) executeResume() error {
 		return err
 	}
 	checkpoint.ClearStop()
+	if previousCheckpoint.RetainedReviewerCall != nil {
+		return w.resumeRetainedReviewerCall(checkpoint, previousCheckpoint)
+	}
 	if reuseCompletedResult && completedResult != nil {
 		if err := w.routeStoppedResultReuse(checkpoint, previousCheckpoint, stopKind, decl, completedResult); err != nil {
 			return err
@@ -396,12 +401,33 @@ func (w *Workflow) routeReviewResumeResult(checkpoint state.ResumeCheckpoint, re
 	if stopped, err := w.verifyReviewEndSnapshot(); err != nil || stopped {
 		return err
 	}
+	risk := w.resolveReviewResumeRisk(*checkpoint.WorkerResult, checkpoint)
+	return w.finishReviewResult(checkpoint, result, risk.high)
+}
+
+func (w *Workflow) finishReviewResult(checkpoint state.ResumeCheckpoint, result packet.Result, highRisk bool) error {
 	workerResult := *checkpoint.WorkerResult
-	reviewResult, stopped, err := w.resolveResumedReviewResult(checkpoint, workerResult, result)
-	if err != nil || stopped {
+	accepted, err := w.state.LoadResumeCheckpoint()
+	if err != nil {
 		return err
 	}
+	var reviewResult packet.Result
+	if accepted.RetainedReviewerCall != nil {
+		reviewResult, err = w.riskFloorEscalationResult(result)
+	} else {
+		reviewResult, err = w.enforceRiskFloor(highRisk, result)
+	}
+	if err != nil {
+		return w.retainReviewerCall(accepted, err)
+	}
 	if err := w.writeLastReview(reviewResult); err != nil {
+		if result.Status == packet.StatusPass && reviewResult.Status == packet.StatusNeedsSolReview {
+			cleanupErr := os.Remove(reviewResult.Artifacts[0])
+			return w.retainReviewerCall(accepted, errors.Join(err, cleanupErr))
+		}
+		return err
+	}
+	if err := w.clearAcceptedModelCheckpoint(accepted); err != nil {
 		return err
 	}
 	reviewResult = w.attachFailurePathAdvisory(checkpoint.Request, reviewResult, checkpoint.ReviewNumber)
@@ -414,14 +440,69 @@ func (w *Workflow) routeReviewResumeResult(checkpoint state.ResumeCheckpoint, re
 	)
 }
 
-func (w *Workflow) resolveResumedReviewResult(
-	checkpoint state.ResumeCheckpoint,
-	workerResult packet.Result,
-	result packet.Result,
-) (packet.Result, bool, error) {
-	highRiskFloor := w.resolveReviewResumeRisk(workerResult, checkpoint).high
-	resolved, err := w.enforceRiskFloor(highRiskFloor, result)
-	return resolved, false, err
+func (w *Workflow) verifyRetainedReviewerCall(checkpoint state.ResumeCheckpoint) error {
+	retained := checkpoint.RetainedReviewerCall
+	if retained.TaskID != w.state.ReadOr("task.id", "") || retained.SessionID != w.state.ReadOr("reviewer.id", "") {
+		return fmt.Errorf("retained reviewer call no longer matches the task/session")
+	}
+	logs, err := w.state.ReadModelCallLogs(retained.TaskID)
+	if err != nil {
+		return err
+	}
+	call := latestAcceptedResultTaskCall(logs)
+	if !retainedReviewerLogMatches(call, checkpoint) ||
+		call.StructuredOutputSHA256 != resultRecoveryDigest(retained.RawPacket) {
+		return fmt.Errorf("retained reviewer call differs from the latest accepted Reviewer log")
+	}
+	if checkpoint.ResultCorrection != strings.HasSuffix(call.Phase, resultCorrectionPhaseSuffix) {
+		return fmt.Errorf("retained reviewer call differs from the result correction phase")
+	}
+	return w.validateResultCorrectionBoundary(checkpoint)
+}
+
+func retainedReviewerLogMatches(call state.ModelCallLog, checkpoint state.ResumeCheckpoint) bool {
+	retained := checkpoint.RetainedReviewerCall
+	return call.CallID == retained.CallID && call.TaskID == retained.TaskID && call.SessionID == retained.SessionID &&
+		call.Role == state.ReviewerRole && call.Phase == checkpoint.Phase && call.ModelAlias == checkpoint.Model &&
+		call.Outcome == acceptedResultCallOutcome && call.ReadOnly && call.PacketStatus == string(packet.StatusPass)
+}
+
+func (w *Workflow) retainReviewerCall(checkpoint state.ResumeCheckpoint, cause error) error {
+	call := checkpoint.RetainedReviewerCall
+	if call == nil {
+		call = &state.RetainedReviewerCall{
+			CallID: w.lastCallID, TaskID: w.state.ReadOr("task.id", ""),
+			SessionID: w.state.ReadOr("reviewer.id", ""), RawPacket: w.lastReviewerRawPacket,
+		}
+	}
+	checkpoint.SetStopKind(state.ResumeStopGuardRecoverable)
+	checkpoint.GuardFailure = boundedText(cause.Error(), packet.MaxDiagnosticBytes)
+	checkpoint.RetainedReviewerCall = call
+	if err := w.captureStopRetention(&checkpoint); err != nil {
+		return errors.Join(cause, err)
+	}
+	if err := w.state.EnterStop(checkpoint); err != nil {
+		return errors.Join(cause, err)
+	}
+	return w.guardRecoverableError(checkpoint)
+}
+
+func (w *Workflow) resumeRetainedReviewerCall(checkpoint, previous state.ResumeCheckpoint) error {
+	call := previous.RetainedReviewerCall
+	result, err := w.parseModelCallResult(checkpoint, runner.RunResult{StructuredOutput: call.RawPacket})
+	if err != nil {
+		return w.restoreResumeStop(previous, fmt.Errorf("validate retained reviewer call: %w", err))
+	}
+	if result.Status != packet.StatusPass {
+		return w.restoreResumeStop(previous, fmt.Errorf("retained reviewer call has status %s, expected PASS", result.Status))
+	}
+	if err := packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(call.TaskID)); err != nil {
+		return w.restoreResumeStop(previous, err)
+	}
+	w.lastCallID = call.CallID
+	w.lastReviewerRawPacket = call.RawPacket
+	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
+	return w.routeReviewResumeResult(checkpoint, result)
 }
 
 func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {

@@ -211,6 +211,27 @@ func TestExhaustiveProofPersistsIntoAutoFixPrompt(t *testing.T) {
 	}
 }
 
+func TestReportOnlyFixDoesNotRepeatExhaustiveSearch(t *testing.T) {
+	t.Parallel()
+	repoRoot := initMutationRepo(t)
+	writePlanFileContent(t, repoRoot, planGuardSeed)
+	if err := os.WriteFile(filepath.Join(repoRoot, activeTaskGuardPath), []byte(taskWithExhaustiveRequirement(activeTaskGuardSeed)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, _, _, _ := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
+	review := resultFromBody(`{"status":"FIX_REQUIRED","risk":"HIGH","summary":"report requires correction","requirement_coverage":"existing source reviewed","invariants":"unchanged","test_evidence":"existing tests","issues":"coverage missing","residual_risk":"unknown","targets":["PACKET"]}`)
+	checkpoint, err := w.prepareAutoFixCheckpoint("needle inspection", review, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !checkpoint.ReportOnly || !checkpoint.ReadOnly || checkpoint.Phase != "worker-report-only-1" {
+		t.Fatalf("expected report-only recovery checkpoint: %#v", checkpoint)
+	}
+	if strings.Contains(checkpoint.Prompt, "EXHAUSTIVE_SEARCH_PROOF") {
+		t.Fatalf("report-only recovery must not repeat source enumeration: %s", checkpoint.Prompt)
+	}
+}
+
 func TestRenderExhaustiveProofStaysBoundedForLargeMatchSet(t *testing.T) {
 	t.Parallel()
 	report := reposearch.ExhaustiveReport{

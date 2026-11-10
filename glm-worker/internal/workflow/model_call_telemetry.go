@@ -117,6 +117,9 @@ func (w *Workflow) recordModelCall(
 			entry.CallID = callID
 		}
 	}
+	if checkpoint.Role == state.ReviewerRole && outcome == acceptedResultCallOutcome {
+		entry.StructuredOutputSHA256 = resultRecoveryDigest(runResult.StructuredOutput)
+	}
 	w.applyCallDiagnostics(&entry, checkpoint, outcome, callErr, diag)
 	w.state.RecordModelCallLog(entry)
 	w.lastCallID = entry.CallID
@@ -247,7 +250,7 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 		entry.PacketRejectReason = category
 		w.state.RecordPacketReject(category)
 	}
-	if checkpoint.Role == state.ReviewerRole && outcome == "success" && w.pendingSnapshot != nil {
+	if checkpoint.Role == state.ReviewerRole && outcome == acceptedResultCallOutcome && w.pendingSnapshot != nil {
 		entry.Snapshot = w.pendingSnapshot
 		w.pendingSnapshot = nil
 	}
