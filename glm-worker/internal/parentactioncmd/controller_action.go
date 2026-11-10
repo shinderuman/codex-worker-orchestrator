@@ -65,6 +65,9 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 }
 
 func resolveControllerActionWorker(cfg config.AppConfig, authority, action string, command []byte) (string, error) {
+	if authority == "controller-evidence" && action == exportBundleAction {
+		return resolveInstalledExportWorker()
+	}
 	if authority != controllerPublicationAction || action != controller.PublicationOperationPostInstallSmoke {
 		return resolveGLMWorker()
 	}
