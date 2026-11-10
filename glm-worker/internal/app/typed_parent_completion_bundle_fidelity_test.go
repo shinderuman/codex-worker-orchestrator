@@ -49,14 +49,19 @@ func assertTypedPostInstallBundleFidelity(t *testing.T, cfg config.AppConfig, ru
 		t.Fatalf("CLI probe did not persist its actual output/digest: %#v, %q", record, payload)
 	}
 	manifest, members := typedPostInstallExportFromParentCLI(t, cfg, record.TaskID)
-	if manifest.RepositoryIdentity != store.Identity().LineageID ||
-		manifest.Target.RuntimeTaskID != record.TaskID ||
+	requireTypedExportTarget(t, manifest, store.Identity().LineageID, record.TaskID, candidate)
+	checkRealPostInstallProbeZIP(t, controller.EvidenceExport{Manifest: manifest}, members, record, payload)
+	assertTypedPostInstallBundleTamperRejected(t, cfg, record)
+}
+
+func requireTypedExportTarget(t *testing.T, manifest controller.EvidenceExportManifest, lineage, taskID string, candidate controller.AcceptedCandidate) {
+	t.Helper()
+	if manifest.RepositoryIdentity != lineage ||
+		manifest.Target.RuntimeTaskID != taskID ||
 		manifest.Target.AttemptID != candidate.AttemptID ||
 		!manifest.Target.Task.Equal(candidate.TaskRef) {
 		t.Fatalf("CLI export selected a different Task/Attempt/source: %#v", manifest.Target)
 	}
-	checkRealPostInstallProbeZIP(t, controller.EvidenceExport{Manifest: manifest}, members, record, payload)
-	assertTypedPostInstallBundleTamperRejected(t, cfg, record)
 }
 
 func requireTypedProbeSource(t *testing.T, runtime *state.StateStore, candidate controller.AcceptedCandidate, record qualitygate.RunRecord, deployment controller.SmokeProbeDeployment) {
