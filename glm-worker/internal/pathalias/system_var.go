@@ -1,5 +1,3 @@
-// Package pathalias recognizes the macOS-owned /var alias without accepting
-// user-controlled symbolic links.
 package pathalias
 
 import (
@@ -8,7 +6,6 @@ import (
 	"runtime"
 )
 
-// IsStandardDarwinVar admits only the OS alias /var -> /private/var.
 func IsStandardDarwinVar(path string) bool {
 	if runtime.GOOS != "darwin" || path != "/var" {
 		return false

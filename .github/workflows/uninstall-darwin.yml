@@ -44,10 +44,17 @@ jobs:
       - name: Darwin uninstall regression
         working-directory: glm-worker
         run: go test -count=1 ./internal/uninstallcmd
+      - name: Darwin uninstall race regression
+        working-directory: glm-worker
+        run: go test -race -count=1 ./internal/uninstallcmd
       - name: Install quality tools for smoke
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
       - name: Actual macOS /var/folders install-uninstall-reinstall
+        run: ./tests/install_smoke.sh
+      - name: Actual macOS /private/tmp baseline install-uninstall-reinstall
+        env:
+          TMPDIR: /private/tmp
         run: ./tests/install_smoke.sh

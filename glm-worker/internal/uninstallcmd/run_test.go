@@ -79,9 +79,9 @@ func TestUninstallAcceptsCanonicalMacOSVarAlias(t *testing.T) {
 			t.Fatalf("install Claude: %v", err)
 		}
 		runConcurrentRetireCommand(t, "sh", filepath.Join(repo, "scripts", "manage-pull-hook.sh"),
-			"install", repo, filepath.Join(binDir, "glm-publication-guard"))
+			"install", repo, binDir+"/glm-publication-guard")
 	}
-	binDir := filepath.Join(root, "bin")
+	binDir := root + "//bin"
 	codexDir := filepath.Join(root, ".codex")
 	claudePath := filepath.Join(root, ".claude", "settings.json")
 	install(binDir, codexDir, claudePath)
@@ -128,5 +128,14 @@ func TestUninstallRejectsUserAliasToPrivateVar(t *testing.T) {
 	if err := rejectSymlinkComponents(filepath.Join(alias, "folders")); err == nil ||
 		!strings.Contains(err.Error(), "refusing symlink path component") {
 		t.Fatalf("user alias to the same physical directory was accepted: %v", err)
+	}
+}
+
+func TestUninstallRejectsParentTraversal(t *testing.T) {
+	root := t.TempDir()
+	path := root + "/nonexistent/../target"
+	if err := rejectSymlinkComponents(path); err == nil ||
+		!strings.Contains(err.Error(), "refusing parent path traversal") {
+		t.Fatalf("parent path traversal was accepted: %v", err)
 	}
 }

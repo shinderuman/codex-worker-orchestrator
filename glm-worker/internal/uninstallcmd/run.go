@@ -46,17 +46,10 @@ func run(repoRoot, binDir, codexDir string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("resolve Claude settings: %w", err)
 	}
-	// Validate exactly the paths handed to each owner. Do not replace /var with
-	// /private/var here: hook ownership bindings retain the installed path spelling.
-	for _, path := range []*string{&repoRoot, &binDir, &codexDir, &location.SettingsPath} {
-		absolute, err := filepath.Abs(*path)
-		if err != nil {
+	for _, path := range []string{repoRoot, binDir, codexDir, location.SettingsPath} {
+		if err := rejectSymlinkComponents(path); err != nil {
 			return err
 		}
-		if err := rejectSymlinkComponents(absolute); err != nil {
-			return err
-		}
-		*path = absolute
 	}
 
 	return installlock.With(func(lock *os.File) error {
@@ -76,7 +69,7 @@ func retireManagedOwners(repoRoot, binDir, codexDir, claudePath string, lock *os
 	}
 	attempt("repository hooks", func() error {
 		cmd := exec.Command("sh", filepath.Join(repoRoot, "scripts", "manage-pull-hook.sh"),
-			"retire", repoRoot, filepath.Join(binDir, "glm-publication-guard"))
+			"retire", repoRoot, binDir+string(filepath.Separator)+"glm-publication-guard")
 		cmd.ExtraFiles = []*os.File{lock}
 		cmd.Stdout = stdout
 		cmd.Stderr = stdout
@@ -95,6 +88,11 @@ func retireManagedOwners(repoRoot, binDir, codexDir, claudePath string, lock *os
 }
 
 func rejectSymlinkComponents(path string) error {
+	for _, component := range strings.Split(path, string(filepath.Separator)) {
+		if component == ".." {
+			return fmt.Errorf("refusing parent path traversal: %s", path)
+		}
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -126,4 +124,3 @@ func rejectSymlinkComponents(path string) error {
 	}
 	return nil
 }
-
