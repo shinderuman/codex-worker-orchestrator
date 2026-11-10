@@ -128,6 +128,9 @@ func TestResumeStopKindRejectsMalformedState(t *testing.T) {
 		doc  string
 		want string
 	}{
+		{name: "obsolete risk floor flag true", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":true}`, want: "legacy risk_floor_reemit key"},
+		{name: "obsolete risk floor flag false", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":false}`, want: "legacy risk_floor_reemit key"},
+		{name: "obsolete risk floor flag null", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":null}`, want: "legacy risk_floor_reemit key"},
 		{name: "unknown kind", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"future-stop"}`, want: "unknown resume stop kind"},
 		{name: "provider payload mismatch", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"interrupted","provider_unavailable_probes":1}`, want: "provider metadata is present"},
 		{name: "provider stop missing classification", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"provider-unavailable","provider_unavailable_probes":1,"provider_unavailable_started_at":"2026-07-22T06:00:00Z"}`, want: "provider classification"},

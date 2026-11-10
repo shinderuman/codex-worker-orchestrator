@@ -32,15 +32,7 @@ func (w *Workflow) reviewUntilStable(
 	if err != nil || stopped {
 		return err
 	}
-	reviewResult, err = w.enforceRiskFloor(highRisk, reviewResult)
-	if err != nil {
-		return err
-	}
-	if err := w.writeLastReview(reviewResult); err != nil {
-		return err
-	}
-	reviewResult = w.attachFailurePathAdvisory(request, reviewResult, reviewNumber)
-	return w.handleReviewResult(request, workerResult, reviewResult, reviewNumber, autoFixes)
+	return w.finishReviewResult(checkpoint, reviewResult, highRisk)
 }
 
 func (w *Workflow) prepareReviewInputSnapshot(
@@ -357,13 +349,15 @@ func (w *Workflow) prepareAutoFixCheckpoint(
 	prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
 	if reportOnly {
 		prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
-		phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
+		phase = fmt.Sprintf("%s%d", state.WorkerReportOnlyPhasePrefix, nextAutoFixes)
 	}
-	exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, nextAutoFixes)
-	if err != nil {
-		return state.ResumeCheckpoint{}, err
+	if !reportOnly {
+		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, nextAutoFixes)
+		if err != nil {
+			return state.ResumeCheckpoint{}, err
+		}
+		prompt += exhaustiveContext
 	}
-	prompt += exhaustiveContext
 	return state.ResumeCheckpoint{
 		Stage:          state.ResumeStageAutoFix,
 		Phase:          phase,
