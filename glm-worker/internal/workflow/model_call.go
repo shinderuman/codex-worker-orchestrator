@@ -52,13 +52,23 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	if err := packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID)); err != nil {
 		return w.handleInvalidModelResult(checkpoint, outputPath, execution, err)
 	}
-	if err := w.clearAcceptedModelCheckpoint(checkpoint); err != nil {
+	if err := w.clearAcceptedWorkerCheckpoint(checkpoint); err != nil {
 		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
 		return packet.Result{}, err
 	}
 	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
 	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
+	if checkpoint.Role == state.ReviewerRole {
+		w.lastReviewerRawPacket = append([]byte(nil), execution.runResult.StructuredOutput...)
+	}
 	return result, nil
+}
+
+func (w *Workflow) clearAcceptedWorkerCheckpoint(checkpoint state.ResumeCheckpoint) error {
+	if checkpoint.Role == state.ReviewerRole {
+		return nil
+	}
+	return w.clearAcceptedModelCheckpoint(checkpoint)
 }
 
 func (w *Workflow) clearAcceptedModelCheckpoint(checkpoint state.ResumeCheckpoint) error {

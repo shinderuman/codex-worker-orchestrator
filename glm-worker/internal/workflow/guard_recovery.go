@@ -122,7 +122,7 @@ func (w *Workflow) guardRecoverableError(checkpoint state.ResumeCheckpoint) erro
 		Failure:     checkpoint.GuardFailure,
 		TaskID:      taskID,
 		RepoRoot:    w.config.RepoRoot,
-		ResultSaved: checkpoint.CompletedResult != nil,
+		ResultSaved: checkpoint.CompletedResult != nil || checkpoint.RetainedReviewerCall != nil,
 	}
 }
 
@@ -163,6 +163,9 @@ func (w *Workflow) prepareStoppedResultReuse(checkpoint state.ResumeCheckpoint) 
 	}
 	if err := w.verifyGuardRecoveryHead(checkpoint); err != nil {
 		return false, err
+	}
+	if checkpoint.RetainedReviewerCall != nil {
+		return false, w.verifyRetainedReviewerCall(checkpoint)
 	}
 	reusable := w.guardRecoveryResultReusable(checkpoint)
 	if checkpoint.StopKind == state.ResumeStopQualityGate && !reusable {
