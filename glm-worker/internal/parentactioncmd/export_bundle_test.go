@@ -2,6 +2,7 @@ package parentactioncmd
 
 import (
 	"bytes"
+	"errors"
 	"encoding/json"
 	"io"
 	"os"
@@ -272,18 +273,18 @@ func TestExportBundleMissingExplicitInstalledWorkerFailsClosed(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("GLM_WORKER_BIN_DIR", tc.dir)
-			if worker, err := resolveInstalledExportWorker(); worker != "" || !os.IsNotExist(err) {
+			if worker, err := resolveInstalledExportWorker(); worker != "" || !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("explicit missing worker resolved to %q, err=%v", worker, err)
 			}
-			if worker, err := resolveControllerActionWorker(config.AppConfig{}, "controller-evidence", exportBundleAction, nil); worker != "" || !os.IsNotExist(err) {
+			if worker, err := resolveControllerActionWorker(config.AppConfig{}, "controller-evidence", exportBundleAction, nil); worker != "" || !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("direct export selected a fallback worker: %q, err=%v", worker, err)
 			}
 			var output bytes.Buffer
 			err := executeExportBundleAction(config.AppConfig{RepoRoot: t.TempDir()}, []string{"export-bundle"}, &output, io.Discard)
-			if !os.IsNotExist(err) || output.Len() != 0 {
+			if !errors.Is(err, os.ErrNotExist) || output.Len() != 0 {
 				t.Fatalf("missing explicit worker executed fallback: err=%v, stdout=%q", err, output.String())
 			}
-			if _, err := os.Stat(filepath.Join(capture, "argv")); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(capture, "argv")); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("stale PATH worker was invoked: %v", err)
 			}
 		})
