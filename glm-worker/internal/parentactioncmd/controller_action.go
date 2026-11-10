@@ -13,6 +13,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const controllerEvidenceAction = "controller-evidence"
+
 func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	if !validControllerActionInvocation(args) {
 		return fmt.Errorf("usage: glm-parent-action <controller-semantic|controller-execution|controller-publication|controller-evidence> <token>")
@@ -57,7 +59,7 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 		return err
 	}
 	return recorder.Measure(args[0]+"-"+operation.Action, func() error {
-		if args[0] == "controller-evidence" {
+		if args[0] == controllerEvidenceAction {
 			return run()
 		}
 		return withParentWaitLease(cfg, run)
@@ -65,7 +67,7 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 }
 
 func resolveControllerActionWorker(cfg config.AppConfig, authority, action string, command []byte) (string, error) {
-	if authority == "controller-evidence" && action == exportBundleAction {
+	if authority == controllerEvidenceAction && action == exportBundleAction {
 		return resolveInstalledExportWorker()
 	}
 	if authority != controllerPublicationAction || action != controller.PublicationOperationPostInstallSmoke {
