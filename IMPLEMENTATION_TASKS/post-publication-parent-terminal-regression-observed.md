@@ -29,6 +29,8 @@ none
 - [Audit #1534](https://github.com/shinderuman/codex-worker-orchestrator/issues/1534): `post-pull-mechanical-source-resynchronization.md`中に同action failed 3回 / success 1回。
 - [Audit #1535](https://github.com/shinderuman/codex-worker-orchestrator/issues/1535): `post-install-probe-bundle-evidence-fidelity.md`中に同action failed 256.168s。
 - [Audit #1539](https://github.com/shinderuman/codex-worker-orchestrator/issues/1539): 後続 `communication-transport-unification.md`では同actionの正常終了を実観測。**一度の後続成功は先の失敗原因の恒久解消を証明しない**。
+- [Audit #1542](https://github.com/shinderuman/codex-worker-orchestrator/issues/1542)：原文参照Task：公開candidate `9b36afcb5ecda871f65a0c4c2aff7c5c14270fd6` で親 `controller-publication` は**2回failed**、8.667s / 286.486s。両回の後でTaskはCOMPLETEかつ公開commitはmainの祖先となった。ただしraw error不収録のため、両方が同一handoff原因とは未断定。
+- [Audit #1543](https://github.com/shinderuman/codex-worker-orchestrator/issues/1543)：managed uninstall Task：公開candidate `aefffcfe56b6e2bfd14fc42fdba8ef69a9c18854` で最初の `controller-publication` **failed 304.915s**、再prepare後の2回目は**success 125.636s**。必要な正規復旧と不要な再実行の区別はraw stderr/terminalを取得して判定する。
 - 修正済みTask `post-publication-terminal-handoff-scope-failure.md` / `post-publication-fixed-parent-handoff-regression.md` はいずれも過去の完了実装であり、退役状態を巻き戻さない。後者の現実装の実効性と残存異常を調査する新たな作業であり、コード再適用を要求しない。
 - Bound action記録は失敗の存在と実行時間を証明するが、親raw stderr、terminal envelope、実際のbinary identityを必ずしも含まない。`action-failed` を確証のない `parent_action_terminal_handoff_failed` と同一視しない。
 
@@ -38,7 +40,7 @@ Publication成功・Task complete・必要なcanonical terminal handoffの三境
 
 ## Contract
 
-- 上記4 Auditの当該Task/Action/Sourceごとに、実行親binary/source identity、terminal結果と具体stderr、Task status/Controller generation/lease/primary/remote、実行後のcanonical handoffと復旧有無を原本から時系列に復元する。実原因が異なるAction failureは別因子として切り分け、後続成功も比較する。
+- 上記各Auditの当該Task/Action/Sourceごとに、実行親binary/source identity、terminal結果と具体stderr、Task status/Controller generation/lease/primary/remote、実行後のcanonical handoffと復旧有無を原本から時系列に復元する。実原因が異なるAction failureは別因子として切り分け、後続成功も比較する。
 - 原因を既存`glm-worker/internal/parentactioncmd`/Controller/`parentevidence`の適切な単一ownerで修正する。必要なstatus/lease/source/remote protectionを解除したり、失敗を黙ってsuccessful terminalへ変換しない。
 - すでにGitへ公開されたTaskでは公開OID・Task完了とtyped recoveryを保持し、repeat commandからの二重Push・重複完了Metadata・NEXT無許可開始を拒否する。まだ未公開なら通常fail-closedを維持する。
 - parent-sideの任意の成功後再検証を抑制する別Task`post-publication-parent-reverification-containment.md`を重複実装しない。API entrypointを増やすより既存のtyped正規経路を優先する。
