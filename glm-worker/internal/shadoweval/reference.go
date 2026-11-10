@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -48,6 +49,12 @@ func LoadReference(path string) (Reference, error) {
 	var reference Reference
 	if err := decoder.Decode(&reference); err != nil {
 		return Reference{}, fmt.Errorf("reference fileを解析できません: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return Reference{}, fmt.Errorf("reference fileに複数のJSON値があります")
+		}
+		return Reference{}, fmt.Errorf("reference fileの末尾が不正です: %w", err)
 	}
 	if err := validateReference(reference); err != nil {
 		return Reference{}, err

@@ -377,6 +377,10 @@ func TestLoadReferenceRejectsLegacySchemaAndMalformedLabels(t *testing.T) {
 	if _, err := LoadReference(writeReferenceFile(t, invalidDigest)); err == nil || !strings.Contains(err.Error(), "items_sha256") {
 		t.Fatalf("SHA-256形式不正はreject: %v", err)
 	}
+	trailingJSON := referenceFixture + "\n{}"
+	if _, err := LoadReference(writeReferenceFile(t, trailingJSON)); err == nil || !strings.Contains(err.Error(), "複数のJSON値") {
+		t.Fatalf("reference末尾の余分なJSONはreject: %v", err)
+	}
 	if _, err := LoadReference(filepath.Join(t.TempDir(), "missing.json")); err == nil || !strings.Contains(err.Error(), "reference fileを読めません") {
 		t.Fatalf("file欠落はreject: %v", err)
 	}
@@ -540,6 +544,27 @@ func candidateReadyDecision(callID string, disposition string, noise, confidence
 	decision.NoiseConfidence = confidence
 	decision.SolEscalationProbability = escalation
 	return decision
+}
+
+func TestParseDecisionsRejectsTrailingJSONAndSuppressesAllScores(t *testing.T) {
+	input := comparisonFixtureInput()
+	raw, err := json.Marshal(map[string]any{"decisions": comparisonFixtureDecisions()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decisions, problems := ParseDecisions(append(raw, []byte("\n{}")...), input)
+	if len(problems) == 0 || !strings.Contains(strings.Join(problems, " "), "複数のJSON値") {
+		t.Fatalf("decision末尾の余分なJSONはreject: %#v", problems)
+	}
+	comparison := BuildComparison(input, decisions, problems, &ShadowFailure{Kind: ShadowFailureSchemaInvalid}, comparisonFixtureReference(), NewRun(CallMetrics{}, nil))
+	if comparison.TypedSchemaValid || comparison.DispositionAgreementKnown.Denominator != 0 || comparison.CorrectnessRiskBrierKnown != nil {
+		t.Fatalf("不正JSONから品質スコアを生成しています: %#v", comparison)
+	}
+	for _, threshold := range comparison.Thresholds {
+		if threshold.Candidates != 0 || threshold.Coverage != 0 || threshold.EstimatedSolVisibleInputReduction != 0 {
+			t.Fatalf("不正JSONから削減候補を生成しています: %#v", threshold)
+		}
+	}
 }
 
 func TestBuildComparisonSchemaFailureKeepsFailureAndZeroesReductionClaims(t *testing.T) {
