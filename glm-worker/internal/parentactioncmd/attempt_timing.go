@@ -66,9 +66,11 @@ func (s parentActionAttemptScope) recordExit(cfg config.AppConfig, action string
 	if actionErr != nil {
 		record.Outcome = state.ParentActionAttemptOutcomeFailed
 		record.Error = "action-failed"
-		var stageErr *completionHandoffStageError
-		if errors.As(actionErr, &stageErr) {
-			record.Error = "post-publication-handoff:" + stageErr.stage
+		if action == controllerPublicationAction {
+			var stageErr *completionHandoffStageError
+			if errors.As(actionErr, &stageErr) {
+				record.Error = "post-publication-handoff:" + stageErr.stage
+			}
 		}
 	}
 	if action == actionStart || action == "start-milestones" {

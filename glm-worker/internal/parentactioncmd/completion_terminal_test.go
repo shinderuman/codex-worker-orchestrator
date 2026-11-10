@@ -114,3 +114,17 @@ func TestDirectPublicationHandoffFailurePreservesReadOnlyRecovery(t *testing.T) 
 		t.Fatalf("direct Publication lost proof or read-only recovery: %s", stdout.String())
 	}
 }
+
+func TestIncompletePublicationTerminalDoesNotClaimHandoffSuccess(t *testing.T) {
+	cfg := config.AppConfig{RepoRoot: t.TempDir(), StateBase: t.TempDir()}
+	for _, raw := range []json.RawMessage{
+		json.RawMessage(`{"status":"blocked","failure":"publication failed"}`),
+		json.RawMessage(`{"transition_id":"publication","head":{"controller_generation":7}}`),
+	} {
+		var stdout bytes.Buffer
+		handled, err := finishPublicationTerminalHandoff(cfg, &stdout, nil, raw)
+		if handled || err != nil || stdout.Len() != 0 {
+			t.Fatalf("non-completed publication entered completion handoff: handled=%v err=%v stdout=%s", handled, err, stdout.String())
+		}
+	}
+}
