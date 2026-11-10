@@ -371,27 +371,27 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 		return ResumeCheckpoint{}, err
 	}
 
-	var checkpoint ResumeCheckpoint
-	if err := decodeCurrentStateJSON(data, &checkpoint); err != nil {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
-	}
-
-	if checkpoint.Version != resumeStateVersion {
-		return ResumeCheckpoint{}, fmt.Errorf("unsupported resume state version: %d", checkpoint.Version)
-	}
-
 	var explicitKeys struct {
+		Version    int             `json:"version"`
 		ReportOnly *bool           `json:"report_only"`
 		StopKind   *ResumeStopKind `json:"stop_kind"`
 	}
 	if err := json.Unmarshal(data, &explicitKeys); err != nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
 	}
+	if explicitKeys.Version != resumeStateVersion {
+		return ResumeCheckpoint{}, fmt.Errorf("unsupported resume state version: %d", explicitKeys.Version)
+	}
 	if explicitKeys.ReportOnly == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にreport_only keyがありません")
 	}
 	if explicitKeys.StopKind == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にstop_kind keyがありません")
+	}
+
+	var checkpoint ResumeCheckpoint
+	if err := decodeCurrentStateJSON(data, &checkpoint); err != nil {
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
