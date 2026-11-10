@@ -227,6 +227,10 @@ func TestExportBundleSelectsInstalledWorkerOverStalePATH(t *testing.T) {
 	if err != nil || resolved != installed {
 		t.Fatalf("export worker resolved to %q, error=%v; expected installed %q", resolved, err, installed)
 	}
+	direct, err := resolveControllerActionWorker(config.AppConfig{}, "controller-evidence", exportBundleAction, nil)
+	if err != nil || direct != installed {
+		t.Fatalf("direct controller evidence resolved to %q, error=%v; expected installed %q", direct, err, installed)
+	}
 	var output bytes.Buffer
 	if err := executeExportBundleAction(config.AppConfig{RepoRoot: t.TempDir()}, []string{"export-bundle"}, &output, io.Discard); err != nil {
 		t.Fatal(err)
