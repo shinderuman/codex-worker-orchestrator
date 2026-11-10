@@ -343,7 +343,10 @@ func (s *Store) smokeProbeSatisfied(c AcceptedCandidate, probe SmokeProbeDeclara
 	if !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
 		return false, nil
 	}
-	return qualitygate.VerifyTerminalPass(record) == nil, nil
+	if err := qualitygate.VerifyTerminalPass(record); err != nil {
+		return false, nil
+	}
+	return verifySmokeProbeLog(module, record) == nil, nil
 }
 
 func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvidence, error) {
@@ -378,6 +381,9 @@ func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvid
 		}
 		if err := qualitygate.VerifyTerminalPass(record); err != nil {
 			return nil, fmt.Errorf("post-install smoke probe %s run %s is not a terminal PASS: %w", probe.ProbeID, record.ValidationRunID, err)
+		}
+		if err := verifySmokeProbeLog(module, record); err != nil {
+			return nil, fmt.Errorf("post-install smoke probe %s has incomplete evidence: %w", probe.ProbeID, err)
 		}
 		evidence = append(evidence, SmokeProbeEvidence{ProbeID: probe.ProbeID, ValidationRunID: record.ValidationRunID})
 	}
@@ -460,6 +466,9 @@ func verifySmokeProbeRun(module *state.StateStore, repoRoot string, source final
 	if err := qualitygate.VerifyTerminalPass(record); err != nil {
 		return fmt.Errorf("post-install smoke probe %s run %s is not a terminal PASS: %w", probe.ProbeID, runID, err)
 	}
+	if err := verifySmokeProbeLog(module, record); err != nil {
+		return fmt.Errorf("post-install smoke probe %s run %s has incomplete evidence: %w", probe.ProbeID, runID, err)
+	}
 	latest, found, err := latestSmokeProbeRun(module, repoRoot, probe.ProbeID)
 	if err != nil {
 		return err
@@ -499,6 +508,24 @@ func latestSmokeProbeRun(module *state.StateStore, repoRoot, probeID string) (qu
 		}
 	}
 	return latest, found, nil
+}
+
+func verifySmokeProbeLog(module *state.StateStore, record qualitygate.RunRecord) error {
+	if record.LogSHA256 == "" {
+		return fmt.Errorf("post-install smoke probe run %s has no log SHA256", record.ValidationRunID)
+	}
+	expected := module.Path(filepath.Join(qualitygate.RunDirectory, record.ValidationRunID, "probe.log"))
+	if record.Log != expected {
+		return fmt.Errorf("post-install smoke probe run %s has an unexpected log locator", record.ValidationRunID)
+	}
+	data, _, err := readValidationRunFile(module, record.ValidationRunID, "probe.log")
+	if err != nil {
+		return fmt.Errorf("post-install smoke probe run %s has unreadable log: %w", record.ValidationRunID, err)
+	}
+	if digestBytes(data) != record.LogSHA256 {
+		return fmt.Errorf("post-install smoke probe run %s log SHA256 differs from the persisted record", record.ValidationRunID)
+	}
+	return nil
 }
 
 func smokeProbeMatchesSource(record qualitygate.RunRecord, repoRoot string, source finalValidationSource, c AcceptedCandidate, probe SmokeProbeDeclaration, deployment SmokeProbeDeployment) bool {
