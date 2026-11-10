@@ -88,10 +88,8 @@ func retireManagedOwners(repoRoot, binDir, codexDir, claudePath string, lock *os
 }
 
 func rejectSymlinkComponents(path string) error {
-	for _, component := range strings.Split(path, string(filepath.Separator)) {
-		if component == ".." {
-			return fmt.Errorf("refusing parent path traversal: %s", path)
-		}
+	if hasParentTraversal(path) {
+		return fmt.Errorf("refusing parent path traversal: %s", path)
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -123,4 +121,13 @@ func rejectSymlinkComponents(path string) error {
 		}
 	}
 	return nil
+}
+
+func hasParentTraversal(path string) bool {
+	for _, component := range strings.Split(path, string(filepath.Separator)) {
+		if component == ".." {
+			return true
+		}
+	}
+	return false
 }
