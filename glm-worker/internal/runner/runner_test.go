@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -373,5 +375,67 @@ func TestZaiRateLimitErrorAutoResumeKey(t *testing.T) {
 	fallback := ZaiRateLimitError{}.AutoResumeKey()
 	if fallback != "glm-worker-resume-unknown-repo-unknown-task" {
 		t.Fatalf("fallback keyが違います: %s", fallback)
+	}
+}
+
+func TestClaudeRunnerReportOnlyResumeReadsExactTaskAndDisablesTools(t *testing.T) {
+	fixture := newRunnerSessionFixture(t)
+	original, _ := fixture.runFirst(t)
+	taskPath := "IMPLEMENTATION_TASKS/報告の 原要求.md"
+	task := filepath.Join(fixture.runner.config.RepoRoot, taskPath)
+	if err := os.MkdirAll(filepath.Dir(task), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const content = "# Task\n\n## Original instruction\n\n現在の原要求\n"
+	if err := os.WriteFile(task, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.runner.state.Write("active-task", taskPath); err != nil {
+		t.Fatal(err)
+	}
+
+	prepared, err := fixture.runner.assembleSessionCall(
+		state.WorkerRole, "worker-report-only-1-result-correct", "worker-model", true, "high", "報告を補正",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.stopResources()
+	if !prepared.ready || prepared.sessionID != original.SessionID || !containsArgument(prepared.args, "--tools") ||
+		argumentAfter(prepared.args, "--tools") != "" {
+		t.Fatalf("report-only再開引数が不正です: %#v", prepared.args)
+	}
+	if !strings.HasSuffix(prepared.prompt, content) {
+		t.Fatal("現在のTask原文が欠落しています")
+	}
+
+	if err := os.Remove(task); err != nil {
+		t.Fatal(err)
+	}
+	_, err = fixture.runner.assembleSessionCall(
+		state.WorkerRole, "worker-report-only-1-result-correct", "worker-model", true, "high", "報告を補正",
+	)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("欠落したTask原文でモデルを準備しました: %v", err)
+	}
+}
+
+func TestClaudeRunnerReportOnlyRejectsMissingTaskForHarness(t *testing.T) {
+	fixture := newRunnerSessionFixture(t)
+	if err := fixture.runner.state.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationActiveValue); err != nil {
+		t.Fatal(err)
+	}
+	const prompt = "同じ依頼の報告を補正"
+	if got, err := fixture.runner.reportOnlyTaskPrompt(prompt); err == nil || got != "" {
+		t.Fatalf("Taskが欠落したrepositoryの報告補正を許可しました: %q, %v", got, err)
+	}
+	binding := state.ControllerRuntimeBinding{
+		AttemptID: "attempt", RequestID: "12345678-aaaa-4bbb-8ccc-dddddddddddd", TaskContractDigest: "digest",
+	}
+	if err := fixture.runner.state.SaveControllerRuntimeBinding(binding); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := fixture.runner.reportOnlyTaskPrompt(prompt); err != nil || got != prompt {
+		t.Fatalf("正規Requestの報告補正を準備できません: %q, %v", got, err)
 	}
 }

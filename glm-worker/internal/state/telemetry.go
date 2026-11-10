@@ -72,6 +72,7 @@ type ModelCallLog struct {
 	Response                          string                        `json:"response,omitempty"`
 	ResponseBytes                     int                           `json:"response_bytes"`
 	ResponseSHA256                    string                        `json:"response_sha256"`
+	StructuredOutputSHA256            string                        `json:"structured_output_sha256,omitempty"`
 	Error                             string                        `json:"error,omitempty"`
 	TopLevelUsage                     TokenUsage                    `json:"top_level_usage"`
 	TreeUsage                         TokenUsage                    `json:"tree_usage"`
