@@ -343,10 +343,7 @@ func (s *Store) smokeProbeSatisfied(c AcceptedCandidate, probe SmokeProbeDeclara
 	if !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
 		return false, nil
 	}
-	if err := qualitygate.VerifyTerminalPass(record); err != nil {
-		return false, nil
-	}
-	return verifySmokeProbeLog(module, record) == nil, nil
+	return verifyTerminalSmokeProbePass(module, record) == nil, nil
 }
 
 func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvidence, error) {
@@ -379,11 +376,8 @@ func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvid
 		if !found || !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
 			return nil, fmt.Errorf("post-install smoke probe %s has no terminal PASS run for the current candidate source and verification deployment", probe.ProbeID)
 		}
-		if err := qualitygate.VerifyTerminalPass(record); err != nil {
-			return nil, fmt.Errorf("post-install smoke probe %s run %s is not a terminal PASS: %w", probe.ProbeID, record.ValidationRunID, err)
-		}
-		if err := verifySmokeProbeLog(module, record); err != nil {
-			return nil, fmt.Errorf("post-install smoke probe %s has incomplete evidence: %w", probe.ProbeID, err)
+		if err := verifyTerminalSmokeProbePass(module, record); err != nil {
+			return nil, fmt.Errorf("post-install smoke probe %s has no complete PASS evidence: %w", probe.ProbeID, err)
 		}
 		evidence = append(evidence, SmokeProbeEvidence{ProbeID: probe.ProbeID, ValidationRunID: record.ValidationRunID})
 	}
@@ -463,11 +457,8 @@ func verifySmokeProbeRun(module *state.StateStore, repoRoot string, source final
 	if record.Form != smokeProbeForm || !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
 		return fmt.Errorf("post-install smoke probe %s run %s does not match the current candidate source, declaration, and verification deployment", probe.ProbeID, runID)
 	}
-	if err := qualitygate.VerifyTerminalPass(record); err != nil {
-		return fmt.Errorf("post-install smoke probe %s run %s is not a terminal PASS: %w", probe.ProbeID, runID, err)
-	}
-	if err := verifySmokeProbeLog(module, record); err != nil {
-		return fmt.Errorf("post-install smoke probe %s run %s has incomplete evidence: %w", probe.ProbeID, runID, err)
+	if err := verifyTerminalSmokeProbePass(module, record); err != nil {
+		return fmt.Errorf("post-install smoke probe %s run %s has no complete PASS evidence: %w", probe.ProbeID, runID, err)
 	}
 	latest, found, err := latestSmokeProbeRun(module, repoRoot, probe.ProbeID)
 	if err != nil {
@@ -508,6 +499,13 @@ func latestSmokeProbeRun(module *state.StateStore, repoRoot, probeID string) (qu
 		}
 	}
 	return latest, found, nil
+}
+
+func verifyTerminalSmokeProbePass(module *state.StateStore, record qualitygate.RunRecord) error {
+	if err := qualitygate.VerifyTerminalPass(record); err != nil {
+		return err
+	}
+	return verifySmokeProbeLog(module, record)
 }
 
 func verifySmokeProbeLog(module *state.StateStore, record qualitygate.RunRecord) error {
