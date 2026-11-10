@@ -291,24 +291,24 @@ func TestExportBundleMissingExplicitInstalledWorkerFailsClosed(t *testing.T) {
 	}
 }
 
-func TestExportBundleSourceOnlyFallbackUsesLegacyResolver(t *testing.T) {
+func TestExportBundleSourceOnlyUsesCurrentWorkerResolver(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("GLM_WORKER_BIN_DIR", "")
-	stale := writeExportBundleWorkerStub(t, exportBundleWorkerJSON, 0)
-	t.Setenv("PATH", filepath.Dir(stale)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	sourceWorker := writeExportBundleWorkerStub(t, exportBundleWorkerJSON, 0)
+	t.Setenv("PATH", filepath.Dir(sourceWorker)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("EXPORT_BUNDLE_CAPTURE", t.TempDir())
 
-	legacy, err := resolveGLMWorker()
+	current, err := resolveGLMWorker()
 	if err != nil {
 		t.Fatal(err)
 	}
 	worker, err := resolveInstalledExportWorker()
-	if err != nil || worker != legacy {
-		t.Fatalf("source-only fallback worker=%q, err=%v, legacy=%q", worker, err, legacy)
+	if err != nil || worker != current {
+		t.Fatalf("source-only worker=%q, err=%v, current=%q", worker, err, current)
 	}
 	direct, err := resolveControllerActionWorker(config.AppConfig{}, "controller-evidence", exportBundleAction, nil)
-	if err != nil || direct != legacy {
-		t.Fatalf("source-only direct export worker=%q, err=%v, legacy=%q", direct, err, legacy)
+	if err != nil || direct != current {
+		t.Fatalf("source-only direct export worker=%q, err=%v, current=%q", direct, err, current)
 	}
 	var output bytes.Buffer
 	if err := executeExportBundleAction(config.AppConfig{RepoRoot: t.TempDir()}, []string{"export-bundle"}, &output, io.Discard); err != nil {
