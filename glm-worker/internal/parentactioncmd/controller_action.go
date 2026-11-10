@@ -46,7 +46,11 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 				return err
 			}
 		}
-		if err := runWorker(cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(command), stdout, stderr, nil); err != nil {
+		worker, err := resolveControllerActionWorker(cfg, args[0], operation.Action, command)
+		if err != nil {
+			return err
+		}
+		if err := runResolvedWorker(worker, cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(command), stdout, stderr, nil); err != nil {
 			return err
 		}
 		_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
@@ -58,6 +62,17 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 		}
 		return withParentWaitLease(cfg, run)
 	})
+}
+
+func resolveControllerActionWorker(cfg config.AppConfig, authority, action string, command []byte) (string, error) {
+	if authority != controllerPublicationAction || action != controller.PublicationOperationPostInstallSmoke {
+		return resolveGLMWorker()
+	}
+	var published completionPublicationCommand
+	if err := json.Unmarshal(command, &published); err != nil {
+		return "", err
+	}
+	return installedPostInstallWorker(cfg, published)
 }
 
 func validControllerActionInvocation(args []string) bool {
