@@ -16,8 +16,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// assertTypedPostInstallBundleFidelity checks the same CLI-driven producer and
-// exporter used by normal completion, rather than constructing a RunRecord.
 func assertTypedPostInstallBundleFidelity(t *testing.T, cfg config.AppConfig, runtime *state.StateStore) {
 	t.Helper()
 	store, err := controller.Open(cfg)
@@ -66,7 +64,6 @@ func assertTypedPostInstallBundleFidelity(t *testing.T, cfg config.AppConfig, ru
 	}
 	checkRealPostInstallProbeZIP(t, controller.EvidenceExport{Manifest: manifest}, members, record, payload)
 
-	// A later export must not silently turn a tampered probe into a complete log.
 	if err := os.WriteFile(record.Log, []byte("tampered output"), 0o600); err != nil {
 		t.Fatal(err)
 	}
