@@ -110,6 +110,7 @@ build_binaries() {
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-codex-context" ./cmd/glm-codex-context
 		go build -buildvcs=false -trimpath -o "$build_dir/codex-install" ./cmd/codex-install
 		go build -buildvcs=false -trimpath -o "$build_dir/repo-cli-install" ./cmd/repo-cli-install
+		go build -buildvcs=false -trimpath -o "$build_dir/install-lock" ./cmd/install-lock
 		go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint
 		go build -buildvcs=false -trimpath -o "$build_dir/harnesslint" ./cmd/harnesslint
 		go build -buildvcs=false -trimpath -o "$build_dir/merge-json" ./cmd/merge-json
@@ -174,10 +175,14 @@ printf '%s\n' 'preflight: building runtime binaries'
 build_binaries "$build_dir"
 "$build_dir/plancheck" "$repo_root"
 verify_claude_cli
+install_lock_dir=$("$build_dir/install-lock" --directory)
+exec 9<"$install_lock_dir"
+"$build_dir/install-lock" --acquire
 install_binaries "$build_dir"
 install_codex_configuration "$build_dir"
 merge_claude_settings "$build_dir"
 install_pull_hook
+exec 9<&-
 mkdir -p "$glm_worker_home/sessions"
 rm -rf "$build_dir"
 trap - EXIT HUP INT TERM

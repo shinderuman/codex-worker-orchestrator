@@ -21,6 +21,14 @@ cd codex-worker-orchestrator
 
 runtime binaryは既定で`$HOME/.local/bin`へ配置されます。別directoryを使う場合は`GLM_WORKER_BIN_DIR`を指定してください。
 
+## Uninstall
+
+```sh
+./uninstall.sh
+```
+
+`install.sh`と同じ`GLM_WORKER_BIN_DIR`、`CODEX_CONFIG_DIR` / `CODEX_HOME`、`CLAUDE_CONFIG_DIR` / `CLAUDE_SETTINGS_FILE`で撤去先を指定できます。既存の所有権記録で確認できたCLIバイナリ、Codex管理ファイルと管理設定キー、Claude管理設定と環境設定、repository固有のGit hooksのみ撤去します。別途導入したquality tools、ユーザーのCodex/Claude設定、credentials、sessions、telemetry、bundleは保持します。管理対象が外部変更されていた場合は撤去を拒否してエラーとし、修復後に再実行できます。同一OSユーザーでCLI、設定、hooksを変更する段階は排他されます。競合した操作は所有物を変更する前にエラーになります。ビルドなど変更前の準備は並行できます。排他に使う一時ディレクトリと保護ファイルは、インストールやアンインストールの実行中は削除しないでください。アンインストールに通常のinstall/buildやnetwork downloadは実行しませんが、ローカルGo toolchainと既存module cacheを使用します。
+
 ## Start
 
 セットアップ後は、対象repositoryのrootでCodexを開始して通常の作業要求を渡します。このrepository自身で作業する場合は、rootの[`AGENTS.md`](AGENTS.md)がproject instructionのbootstrapです。
