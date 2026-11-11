@@ -444,12 +444,11 @@ func TestDockerDiagnosticRejectsIgnoredInputBeforeExecution(t *testing.T) {
 	}
 }
 
-
 func TestSourceArchiveNestedExecutableModeMatchesSourceIdentity(t *testing.T) {
 	root := sourceFixture(t)
 	initNestedRepositoryFixture(t, root, "nested")
 	tool := filepath.Join(root, "nested", "tool.sh")
-	if err := os.WriteFile(tool, []byte("#!/bin/sh\\nexit 0\\n"), 0o644); err != nil {
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var previous state.GitSnapshot

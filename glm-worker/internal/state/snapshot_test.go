@@ -763,7 +763,6 @@ func TestCaptureGitSnapshotParentExclusionMatchesFilteredVariant(t *testing.T) {
 	}
 }
 
-
 func TestCaptureGitSnapshotTracksNestedRepositoryExecutableMode(t *testing.T) {
 	dir := initCommittedRepo(t)
 	nested := filepath.Join(dir, "nested")
@@ -772,7 +771,7 @@ func TestCaptureGitSnapshotTracksNestedRepositoryExecutableMode(t *testing.T) {
 	}
 	gitRun(t, nested, "init", "--quiet", ".")
 	tool := filepath.Join(nested, "tool.sh")
-	if err := os.WriteFile(tool, []byte("#!/bin/sh\\nexit 0\\n"), 0o644); err != nil {
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	original, err := CaptureGitSnapshot(dir)
