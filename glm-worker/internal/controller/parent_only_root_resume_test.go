@@ -141,6 +141,9 @@ func TestParentOnlyRootResumeRejectsUnpublishedEpisode(t *testing.T) {
 	head.RootTaskRef = &task
 	head.ActiveEpisodeID = "unpublished-episode"
 	head.ActiveEpisodeRevision = 1
+	if _, err := fixture.store.QuiescentRuntimeAdmission(head); err == nil || !strings.Contains(err.Error(), "completed child metadata target") {
+		t.Fatalf("unfinished blocker episode bypassed normal Runtime readiness: %v", err)
+	}
 	_, err = fixture.store.parentOnlyRootResumeEpisode(head, ParentOnlyMaterializeInput{
 		ExpectedGeneration: head.ControllerGeneration,
 		EpisodeID:          head.ActiveEpisodeID,
