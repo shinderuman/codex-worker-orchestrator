@@ -42,7 +42,7 @@ func TestTerminalRunErrorNonPauseClassificationUnchanged(t *testing.T) {
 	}
 
 	err = terminalRunError(RunResult{}, claudeJSONResult{}, errors.New("bad JSON"), processErr)
-	if err != processErr {
+	if !errors.Is(err, processErr) {
 		t.Fatalf("non-pause process error must retain precedence over parse error: %v", err)
 	}
 	err = terminalRunError(RunResult{}, claudeJSONResult{}, errors.New("bad JSON"), &ScheduledPauseError{ResumeAt: time.Now().Add(time.Hour)})
@@ -58,7 +58,6 @@ func TestFinishRunPreservesScheduledPauseOnOutputWriteFailure(t *testing.T) {
 	ingester := &streamEventIngester{
 		resultLine: []byte(`{"type":"result","subtype":"success","is_error":false,"result":"completed"}`),
 	}
-	// Writing to an existing directory fails independently of the command's pause.
 	_, err := r.finishRun(state.WorkerRole, t.TempDir(), filepath.Join(t.TempDir(), "stderr"),
 		ingester, RunResult{}, paused, claudeVersionScope{})
 	var gotPause *ScheduledPauseError
