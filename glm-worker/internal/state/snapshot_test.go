@@ -774,7 +774,6 @@ func TestCaptureGitSnapshotTracksNestedRepositoryExecutableMode(t *testing.T) {
 	if err := os.WriteFile(tool, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// File creation respects umask; normalize the baseline for a reversible mode check.
 	if err := os.Chmod(tool, 0o644); err != nil {
 		t.Fatal(err)
 	}

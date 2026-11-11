@@ -301,9 +301,8 @@ func hashUntrackedEntry(hasher hash.Hash, repoRoot, absPath, path string, mode o
 			return fmt.Errorf("untracked file %sを読めません: %w", absPath, err)
 		}
 		sum := sha256.Sum256(content)
-		// Keep source identity aligned with the permissions preserved by tar.FileInfoHeader.
-		// DirEntry.Type alone does not include executable or other permission bits.
-		fmt.Fprintf(hasher, "regular\x00%#o\x00", mode&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky))
+		hasher.Write([]byte("regular\x00"))
+		hasher.Write([]byte(fmt.Sprintf("%#o\x00", mode&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky))))
 		hasher.Write([]byte(hex.EncodeToString(sum[:])))
 	case mode&os.ModeSymlink != 0:
 		target, err := os.Readlink(absPath)
@@ -349,13 +348,9 @@ func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryW
 		if d.IsDir() {
 			return nil
 		}
-		info, err := d.Info()
+		mode, err := nestedRepositoryFileMode(d, path)
 		if err != nil {
-			return fmt.Errorf("nested repository内のfile modeを取得できません: %s: %w", path, err)
-		}
-		mode := info.Mode()
-		if !mode.IsRegular() && mode&os.ModeSymlink == 0 {
-			return fmt.Errorf("nested repository内の取り扱えないfile typeです: %s (%s)", path, mode.Type())
+			return err
 		}
 		relative, err := filepath.Rel(repoRoot, path)
 		if err != nil {
@@ -369,6 +364,19 @@ func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryW
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	return entries, nil
+}
+
+
+func nestedRepositoryFileMode(entry fs.DirEntry, path string) (os.FileMode, error) {
+	info, err := entry.Info()
+	if err != nil {
+		return 0, fmt.Errorf("nested repository内のfile modeを取得できません: %s: %w", path, err)
+	}
+	mode := info.Mode()
+	if !mode.IsRegular() && mode&os.ModeSymlink == 0 {
+		return 0, fmt.Errorf("nested repository内の取り扱えないfile typeです: %s (%s)", path, mode.Type())
+	}
+	return mode, nil
 }
 
 func joinWithinRoot(root, rel string) (string, error) {
