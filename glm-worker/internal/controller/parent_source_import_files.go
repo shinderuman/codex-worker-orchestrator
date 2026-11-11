@@ -145,9 +145,15 @@ func (s *Store) applyParentSourceFiles(op ExecutionOperation) error {
 }
 
 func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) error {
+	entries := append(append([]workspaceTreeEntry(nil), before...), after...)
+	for _, entry := range entries {
+		if err := validateSuspensionPath(entry.path); err != nil {
+			return err
+		}
+	}
 	beforeDirectories := sourceTreeDirectories(before)
 	afterDirectories := sourceTreeDirectories(after)
-	if err := validateSourceTreeReplacementDirectories(repo, before, after, beforeDirectories, afterDirectories); err != nil {
+	if err := validateSourceTreeReplacementDirectories(repo, entries, beforeDirectories, afterDirectories); err != nil {
 		return err
 	}
 	previous := sourceImportEntryMap(before)
@@ -172,13 +178,7 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 	return applySourceTreeAddedEntries(repo, previous, beforeDirectories, after)
 }
 
-func validateSourceTreeReplacementDirectories(repo string, before, after []workspaceTreeEntry, beforeDirectories, afterDirectories map[string]bool) error {
-	entries := append(append([]workspaceTreeEntry(nil), before...), after...)
-	for _, entry := range entries {
-		if err := validateSuspensionPath(entry.path); err != nil {
-			return err
-		}
-	}
+func validateSourceTreeReplacementDirectories(repo string, entries []workspaceTreeEntry, beforeDirectories, afterDirectories map[string]bool) error {
 	directories := make(map[string]bool, len(beforeDirectories)+len(afterDirectories))
 	for path := range beforeDirectories {
 		directories[path] = true
