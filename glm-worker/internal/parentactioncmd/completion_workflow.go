@@ -152,17 +152,22 @@ func completionTerminalBoundary(operation controller.ParentCompletionOperation, 
 			operation.Execution.Action == controller.PublicationOperationParentOnlyMaterialize &&
 			operation.Execution.ExpectedGeneration == result.ControllerGeneration, nil
 	case controller.PublicationOperationNone:
-		receipt := operation.CompletedRequest
-		if receipt != nil && receipt.RequestID != "" && result.RequestID == receipt.RequestID &&
-			hasCompletionPublicationEvidence(result) && result.FinalOID == receipt.FinalOID &&
-			result.RemoteOID == receipt.RemoteOID && result.TransitionID == receipt.TransitionID &&
-			result.ControllerGeneration == receipt.ControllerGeneration {
+		if completedRequestTerminalProofMatches(operation.CompletedRequest, result) {
 			return true, nil
 		}
 		return false, fmt.Errorf("completion stopped before terminal publication: %s", operation.Reason)
 	default:
 		return false, nil
 	}
+}
+
+func completedRequestTerminalProofMatches(receipt *controller.CompletedRequestPublication, result completionWorkflowResult) bool {
+	if receipt == nil || receipt.RequestID == "" {
+		return false
+	}
+	return result.RequestID == receipt.RequestID && hasCompletionPublicationEvidence(result) &&
+		result.FinalOID == receipt.FinalOID && result.RemoteOID == receipt.RemoteOID &&
+		result.TransitionID == receipt.TransitionID && result.ControllerGeneration == receipt.ControllerGeneration
 }
 
 func runCompletionStep(cfg config.AppConfig, operation controller.ParentCompletionOperation, result *completionWorkflowResult, stderr io.Writer) (bool, error) {

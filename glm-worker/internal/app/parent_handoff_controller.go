@@ -292,19 +292,28 @@ func quiescentStartHandoffAction(cfg config.AppConfig, head controller.Repositor
 		return "", err
 	}
 	if head.RootTaskRef == nil {
-		operation, err := store.ProjectParentCompletion()
-		if err != nil {
-			return "", err
-		}
-		if operation.Operation == controller.PublicationOperationNone && operation.CompletedRequest != nil {
-			receipt := operation.CompletedRequest
-			if receipt.RequestID == "" || receipt.FinalOID == "" || receipt.RemoteOID != receipt.FinalOID ||
-				receipt.TransitionID == "" || receipt.ControllerGeneration == 0 {
-				return "", errors.New("completed request handoff lacks finalized publication evidence")
-			}
-			return string(state.ParentActionNone), nil
-		}
+		return quiescentRequestStartHandoffAction(store, head, action)
 	}
+	return quiescentOrdinaryStartHandoffAction(store, head, action)
+}
+
+func quiescentRequestStartHandoffAction(store *controller.Store, head controller.RepositoryControllerHead, action string) (string, error) {
+	operation, err := store.ProjectParentCompletion()
+	if err != nil {
+		return "", err
+	}
+	if operation.Operation == controller.PublicationOperationNone && operation.CompletedRequest != nil {
+		receipt := operation.CompletedRequest
+		if receipt.RequestID == "" || receipt.FinalOID == "" || receipt.RemoteOID != receipt.FinalOID ||
+			receipt.TransitionID == "" || receipt.ControllerGeneration == 0 {
+			return "", errors.New("completed request handoff lacks finalized publication evidence")
+		}
+		return string(state.ParentActionNone), nil
+	}
+	return quiescentOrdinaryStartHandoffAction(store, head, action)
+}
+
+func quiescentOrdinaryStartHandoffAction(store *controller.Store, head controller.RepositoryControllerHead, action string) (string, error) {
 	authority, err := controller.ResolveCommittedTaskAuthority(store.Identity().PrimaryRoot)
 	if err != nil {
 		return "", err

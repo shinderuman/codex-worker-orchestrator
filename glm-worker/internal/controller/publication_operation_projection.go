@@ -25,8 +25,6 @@ type ParentCompletionOperation struct {
 	Reason            string                       `json:"reason,omitempty"`
 }
 
-// CompletedRequestPublication is a Controller-validated receipt for a finalized request.
-// It is observation evidence, not a new executable completion operation.
 type CompletedRequestPublication struct {
 	RequestID            string `json:"request_id"`
 	FinalOID             string `json:"final_oid"`
@@ -119,28 +117,7 @@ func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCo
 			return ParentCompletionOperation{}, err
 		}
 		if project.CompletedRequest != nil {
-			if err := s.requireCompletedRequest(head); err != nil {
-				return ParentCompletionOperation{}, err
-			}
-			task, completed, err := s.completedRequestTask(head)
-			if err != nil {
-				return ParentCompletionOperation{}, err
-			}
-			if !completed || task.RequestID != project.CompletedRequest.RequestID ||
-				task.ContractDigest != digestBytes([]byte(project.CompletedRequest.Content)) {
-				return ParentCompletionOperation{}, fmt.Errorf("completed request publication owner differs")
-			}
-			return ParentCompletionOperation{
-				Operation: PublicationOperationNone,
-				Reason:    "request completed; a new request must be supplied explicitly",
-				CompletedRequest: &CompletedRequestPublication{
-					RequestID:            task.RequestID,
-					FinalOID:             head.IntegrationTip,
-					RemoteOID:            head.ObservedRemoteTip,
-					TransitionID:         head.MetadataLineageRef.LogicalIdentity,
-					ControllerGeneration: head.ControllerGeneration,
-				},
-			}, nil
+			return s.projectCompletedRequestPublication(head, project)
 		}
 	}
 	if operation, ok, err := s.projectExternalAdvancement(head); err != nil || ok {
@@ -157,6 +134,31 @@ func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCo
 		return s.projectAcceptedCandidateOperation(head)
 	}
 	return s.projectQuiescentCompletion(head)
+}
+
+func (s *Store) projectCompletedRequestPublication(head RepositoryControllerHead, project ProjectSnapshot) (ParentCompletionOperation, error) {
+	if err := s.requireCompletedRequest(head); err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	task, completed, err := s.completedRequestTask(head)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	if !completed || task.RequestID != project.CompletedRequest.RequestID ||
+		task.ContractDigest != digestBytes([]byte(project.CompletedRequest.Content)) {
+		return ParentCompletionOperation{}, fmt.Errorf("completed request publication owner differs")
+	}
+	return ParentCompletionOperation{
+		Operation: PublicationOperationNone,
+		Reason:    "request completed; a new request must be supplied explicitly",
+		CompletedRequest: &CompletedRequestPublication{
+			RequestID:            task.RequestID,
+			FinalOID:             head.IntegrationTip,
+			RemoteOID:            head.ObservedRemoteTip,
+			TransitionID:         head.MetadataLineageRef.LogicalIdentity,
+			ControllerGeneration: head.ControllerGeneration,
+		},
+	}, nil
 }
 
 func (s *Store) projectAwaitingAcceptance(head RepositoryControllerHead) (ParentCompletionOperation, error) {
