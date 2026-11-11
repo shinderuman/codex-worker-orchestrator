@@ -397,21 +397,16 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 		return ResumeCheckpoint{}, err
 	}
 
-	var checkpoint ResumeCheckpoint
-	if err := json.Unmarshal(data, &checkpoint); err != nil {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
-	}
-
-	if checkpoint.Version != resumeStateVersion {
-		return ResumeCheckpoint{}, fmt.Errorf("unsupported resume state version: %d", checkpoint.Version)
-	}
-
 	var explicitKeys struct {
+		Version    int             `json:"version"`
 		ReportOnly *bool           `json:"report_only"`
 		StopKind   *ResumeStopKind `json:"stop_kind"`
 	}
 	if err := json.Unmarshal(data, &explicitKeys); err != nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
+	}
+	if explicitKeys.Version != resumeStateVersion {
+		return ResumeCheckpoint{}, fmt.Errorf("unsupported resume state version: %d", explicitKeys.Version)
 	}
 	if explicitKeys.ReportOnly == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にreport_only keyがありません")
@@ -419,8 +414,9 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	if explicitKeys.StopKind == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にstop_kind keyがありません")
 	}
-	if err := validateResumePersistedKeys(data); err != nil {
-		return ResumeCheckpoint{}, err
+	var checkpoint ResumeCheckpoint
+	if err := decodeCurrentStateJSON(data, &checkpoint); err != nil {
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
@@ -430,19 +426,6 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	}
 	checkpoint.ResetAtCST = rateLimitResetAtCST(checkpoint.ResetAtRFC3339)
 	return checkpoint, nil
-}
-
-func validateResumePersistedKeys(data []byte) error {
-	var persistedKeys map[string]json.RawMessage
-	if err := json.Unmarshal(data, &persistedKeys); err != nil {
-		return fmt.Errorf("resume stateを読めません: %w", err)
-	}
-	for _, key := range []string{"stop_parent_files", "reset_at_cst", "risk_floor_reemit"} {
-		if _, legacy := persistedKeys[key]; legacy {
-			return fmt.Errorf("resume stateを読めません: legacy %s key", key)
-		}
-	}
-	return nil
 }
 
 func rateLimitResetAtCST(resetAtRFC3339 string) string {

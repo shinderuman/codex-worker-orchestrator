@@ -74,7 +74,7 @@ func TestLoadResumeCheckpointRejectsLegacyDivergentStopParentFiles(t *testing.T)
 	if err := os.WriteFile(st.Path(resumeStateFile), []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), "legacy stop_parent_files key") {
+	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), `unknown field "stop_parent_files"`) {
 		t.Fatalf("legacy duplicate load error = %v", err)
 	}
 }

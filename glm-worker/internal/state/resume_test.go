@@ -128,9 +128,9 @@ func TestResumeStopKindRejectsMalformedState(t *testing.T) {
 		doc  string
 		want string
 	}{
-		{name: "obsolete risk floor flag true", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":true}`, want: "legacy risk_floor_reemit key"},
-		{name: "obsolete risk floor flag false", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":false}`, want: "legacy risk_floor_reemit key"},
-		{name: "obsolete risk floor flag null", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":null}`, want: "legacy risk_floor_reemit key"},
+		{name: "obsolete risk floor flag true", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":true}`, want: `unknown field "risk_floor_reemit"`},
+		{name: "obsolete risk floor flag false", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":false}`, want: `unknown field "risk_floor_reemit"`},
+		{name: "obsolete risk floor flag null", doc: `{"version":6,"stage":"reviewer","model":"sonnet","report_only":false,"stop_kind":"rate-limited","risk_floor_reemit":null}`, want: `unknown field "risk_floor_reemit"`},
 		{name: "unknown kind", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"future-stop"}`, want: "unknown resume stop kind"},
 		{name: "provider payload mismatch", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"interrupted","provider_unavailable_probes":1}`, want: "provider metadata is present"},
 		{name: "provider stop missing classification", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"provider-unavailable","provider_unavailable_probes":1,"provider_unavailable_started_at":"2026-07-22T06:00:00Z"}`, want: "provider classification"},
@@ -247,5 +247,16 @@ func TestLoadResumeCheckpointV6RequiresExplicitKeys(t *testing.T) {
 		if checkpoint.ReportOnly != wantReportOnly {
 			t.Fatalf("report_only = %v, want %v", checkpoint.ReportOnly, wantReportOnly)
 		}
+	}
+}
+
+func TestLoadResumeCheckpointRejectsUnknownCurrentSchemaField(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	data := `{"version":6,"stage":"worker","model":"opus","stop_kind":"rate-limited","report_only":false,"unexpected_field":true}`
+	if err := os.WriteFile(st.Path(resumeStateFile), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), `unknown field "unexpected_field"`) {
+		t.Fatalf("unknown field acceptance error = %v", err)
 	}
 }
