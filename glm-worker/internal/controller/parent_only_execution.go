@@ -128,6 +128,9 @@ func validateParentOnlyMaterializeHead(head RepositoryControllerHead, input Pare
 	if head.ControllerGeneration != input.ExpectedGeneration {
 		return fmt.Errorf("parent-only execution materialization generation is stale")
 	}
+	if (head.ActiveEpisodeID == "") != (head.ActiveEpisodeRevision == 0) {
+		return fmt.Errorf("parent-only execution materialization has incomplete episode identity")
+	}
 	if head.ActiveEpisodeID != input.EpisodeID || head.ActiveEpisodeRevision != input.EpisodeRevision {
 		return fmt.Errorf("parent-only execution materialization episode is stale")
 	}
