@@ -456,9 +456,6 @@ func writeStagingResponse(dir string, response dockertest.StagingResponse) error
 	return err
 }
 
-// encodeStagingResponse applies the client's byte budget to the final on-disk JSON,
-// not the unescaped stdout/stderr lengths. An oversized owner result is replaced
-// with a small, token-bound failure instead of leaving an unreadable response.
 func encodeStagingResponse(response dockertest.StagingResponse) ([]byte, error) {
 	var encoded bytes.Buffer
 	encoder := json.NewEncoder(&encoded)
