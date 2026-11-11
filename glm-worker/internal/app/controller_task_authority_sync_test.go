@@ -712,6 +712,13 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 		"\n## Amendments\n\n1. Preserve the parent-only attempt when accepting this amendment.\n"
 	writeAppTestFile(t, cfg.RepoRoot, tasks.parent, revisedContent)
 	revised := controller.SemanticTaskRef{TaskPath: tasks.parent, ContractDigest: taskAuthoritySyncDigest(t, []byte(revisedContent))}
+	writeAppTestFile(t, cfg.RepoRoot, "unrelated-change.txt", "must not join Task-only sync\n")
+	if _, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg); err == nil {
+		t.Fatal("parent-only Task sync admitted unrelated primary source edits")
+	}
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, "unrelated-change.txt")); err != nil {
+		t.Fatal(err)
+	}
 	sync := executeParentHandoff(t, cfg)
 	if !sync.Consistent || sync.RequiredAction == nil || *sync.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("parent-only Amendment did not produce an executable handoff: %#v", sync)
