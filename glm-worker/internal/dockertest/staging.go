@@ -118,8 +118,12 @@ func decodeStrictStagingJSON(data []byte, target any) error {
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}
-	if decoder.More() {
-		return fmt.Errorf("余分なJSON値があります")
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("余分なJSON値があります")
+		}
+		return fmt.Errorf("JSON文書の末尾が不正です: %w", err)
 	}
 	return nil
 }
