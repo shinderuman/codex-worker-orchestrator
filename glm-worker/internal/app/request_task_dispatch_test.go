@@ -315,3 +315,110 @@ func TestNormalTaskRequestReadOnlyReviewCannotAlterPlanNamedData(t *testing.T) {
 		t.Fatalf("read-only mutation did not fail closed: %+v", head)
 	}
 }
+
+
+func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
+	cfg := newRequestTaskAppConfig(t)
+	binary := typedCompletionWorkerBinary(t)
+	workerDir := t.TempDir()
+	if err := os.Symlink(binary, filepath.Join(workerDir, "glm-worker")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	runCanonicalGuardGit(t, cfg.RepoRoot, "init", "--bare", remote)
+	runCanonicalGuardGit(t, cfg.RepoRoot, "remote", "add", "origin", remote)
+	ref := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "symbolic-ref", "HEAD")))
+	runCanonicalGuardGit(t, cfg.RepoRoot, "push", "-u", "origin", "HEAD:"+ref)
+	hook := filepath.Join(remote, "hooks", "post-receive")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\ncat >> request-publication-receipts\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	scripted := &requestTaskDispatchRunner{t: t, request: "complete a request and publish it", complete: true}
+	factory := func(actual config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
+		scripted.cfg = actual
+		return scripted
+	}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: scripted.request}, cfg, factory, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(Command{Mode: ModeAccept}, cfg, factory, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	store, err := controller.Open(scripted.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.LoadHead()
+	if err != nil || before.ExecutionTaskRef == nil || before.ExecutionTaskRef.RequestID == "" {
+		t.Fatalf("request was not admitted for publication: head=%+v err=%v", before, err)
+	}
+	requestID := before.ExecutionTaskRef.RequestID
+	handoff := executeParentHandoff(t, scripted.cfg)
+	if !handoff.Consistent || stringPointerValue(handoff.RequiredAction) != controllerPublicationSurface {
+		t.Fatalf("request handoff did not admit publication: %#v", handoff)
+	}
+
+	exit, output, diagnostics := runTypedPublicationStagedCLI(t, scripted.cfg,
+		handoff.RequiredActionParameters, typedSemanticSlotValues(t, handoff.RequiredActionParameters, false))
+	if exit != 0 {
+		t.Fatalf("parent CLI publication failed: %s %s", output, diagnostics)
+	}
+	var terminal struct {
+		Status   string `json:"status"`
+		Handoff  struct {
+			Consistent     bool    `json:"consistent"`
+			RequiredAction *string `json:"required_action"`
+		} `json:"handoff"`
+		Terminal struct {
+			Status               string `json:"status"`
+			RequestID            string `json:"request_id"`
+			SourceOID            string `json:"source_oid"`
+			FinalOID             string `json:"final_oid"`
+			RemoteOID            string `json:"remote_oid"`
+			TransitionID         string `json:"transition_id"`
+			ControllerGeneration uint64 `json:"controller_generation"`
+			StopBoundary         string `json:"stop_boundary"`
+		} `json:"terminal"`
+	}
+	if err := json.Unmarshal([]byte(output), &terminal); err != nil {
+		t.Fatal(err)
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := terminal.Terminal
+	if terminal.Status != "parent_action_terminal" || !terminal.Handoff.Consistent ||
+		terminal.Handoff.RequiredAction != nil || proof.Status != "completed" ||
+		proof.RequestID != requestID || proof.SourceOID == "" ||
+		proof.SourceOID != proof.FinalOID || proof.RemoteOID != proof.FinalOID ||
+		proof.FinalOID != head.IntegrationTip || proof.RemoteOID != head.ObservedRemoteTip ||
+		head.MetadataLineageRef == nil || proof.TransitionID != head.MetadataLineageRef.LogicalIdentity ||
+		proof.ControllerGeneration != head.ControllerGeneration || proof.StopBoundary != "next-task-not-started" {
+		t.Fatalf("parent CLI did not hand off matching request publication: %s", output)
+	}
+	if head.RootTaskRef != nil || head.ExecutionTaskRef != nil || head.LiveLeaseID != "" || head.LiveAttemptID != "" {
+		t.Fatalf("published request started another request: %+v", head)
+	}
+	if state.AttachStateStore(scripted.cfg).TaskStatus() != state.TaskStatusComplete {
+		t.Fatal("request Runtime did not acknowledge successful publication")
+	}
+	receipt, err := store.ProjectParentCompletion()
+	if err != nil || receipt.Operation != controller.PublicationOperationNone || receipt.CompletedRequest == nil ||
+		receipt.CompletedRequest.RequestID != requestID || receipt.CompletedRequest.TransitionID != proof.TransitionID ||
+		receipt.CompletedRequest.ControllerGeneration != proof.ControllerGeneration ||
+		receipt.CompletedRequest.FinalOID != proof.FinalOID || receipt.CompletedRequest.RemoteOID != proof.RemoteOID {
+		t.Fatalf("controller projected different request terminal authority: %+v err=%v", receipt, err)
+	}
+	remoteOID := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "ls-remote", "origin", ref)))
+	if !strings.HasPrefix(remoteOID, proof.FinalOID+"\t") {
+		t.Fatalf("remote differs from terminal OID: %s", remoteOID)
+	}
+	receipts, err := os.ReadFile(filepath.Join(remote, "request-publication-receipts"))
+	if err != nil || len(strings.Split(strings.TrimSpace(string(receipts)), "\n")) != 1 {
+		t.Fatalf("request publication was not unique: %q err=%v", receipts, err)
+	}
+}

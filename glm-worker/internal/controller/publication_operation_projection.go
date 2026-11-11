@@ -14,15 +14,15 @@ import (
 type ParentCompletionOperation struct {
 	CompletedRequest  *CompletedRequestPublication `json:"completed_request,omitempty"`
 	Surface           string                       `json:"surface"`
-	Operation         string                      `json:"operation"`
-	Mode              string                      `json:"mode,omitempty"`
-	Command           *PublicationParentCommand   `json:"command,omitempty"`
-	Execution         *CompletionExecutionCommand `json:"execution,omitempty"`
-	AllowedOperations []string                    `json:"allowed_operations,omitempty"`
-	SemanticSlots     []string                    `json:"semantic_slots,omitempty"`
-	FinalValidation   *FinalValidationRequest     `json:"final_validation,omitempty"`
-	SmokeProbeIDs     []string                    `json:"smoke_probe_ids,omitempty"`
-	Reason            string                      `json:"reason,omitempty"`
+	Operation         string                       `json:"operation"`
+	Mode              string                       `json:"mode,omitempty"`
+	Command           *PublicationParentCommand    `json:"command,omitempty"`
+	Execution         *CompletionExecutionCommand  `json:"execution,omitempty"`
+	AllowedOperations []string                     `json:"allowed_operations,omitempty"`
+	SemanticSlots     []string                     `json:"semantic_slots,omitempty"`
+	FinalValidation   *FinalValidationRequest      `json:"final_validation,omitempty"`
+	SmokeProbeIDs     []string                     `json:"smoke_probe_ids,omitempty"`
+	Reason            string                       `json:"reason,omitempty"`
 }
 
 // CompletedRequestPublication is a Controller-validated receipt for a finalized request.

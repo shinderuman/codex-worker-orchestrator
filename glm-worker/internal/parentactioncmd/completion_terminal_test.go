@@ -293,7 +293,6 @@ func TestScopeCompletedPublicationHandoffKeepsExplicitControllerOperation(t *tes
 	}
 }
 
-
 func TestCompletionTerminalCompletedRequestRequiresMatchingPublicationAndOwner(t *testing.T) {
 	const oid = "1a63fcb4ba21c8daac932b86cde869c3309f54c9"
 	receipt := &controller.CompletedRequestPublication{
