@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"errors"
 	"io"
 	"os"
@@ -513,5 +514,126 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 		if strings.HasPrefix(entry.Name(), "response-") {
 			t.Fatalf("ownerがworker書込可能領域へresponseを書きました: %s", entry.Name())
 		}
+	}
+}
+
+func TestEncodeStagingResponseDisablesHTMLEscapingNearStreamCaps(t *testing.T) {
+	// Under the 16 MiB per-stream cap, repeated HTML-sensitive characters
+	// must not expand to six-byte JSON escapes.
+	output := strings.Repeat("<>&", dockerTestMaxOutputBytes/3)
+	response := dockertest.StagingResponse{
+		SchemaVersion: dockertest.StagingSchemaVersion,
+		Token:         "8600000000000000000",
+		ExitCode:      0,
+		Stdout:        output,
+		Stderr:        output,
+	}
+	data, err := encodeStagingResponse(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) > dockertest.StagingMaxResponseBytes || strings.Contains(string(data[:min(len(data), 2048)]), `\u003c`) {
+		t.Fatalf("HTML-safe encodingが出力を増幅しました: encodedBytes=%d", len(data))
+	}
+	decoded, err := dockertest.ParseStagingResponse(data)
+	if err != nil || decoded.ExitCode != 0 || decoded.Stdout != output || decoded.Stderr != output {
+		t.Fatalf("上限付近の正当responseが再現されません: parseError=%v code=%d", err, decoded.ExitCode)
+	}
+}
+
+func TestWriteStagingResponseBoundsEncodedExpansion(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+	}{
+		{name: "backslash-both-streams", output: strings.Repeat("\\", dockerTestMaxOutputBytes)},
+		{name: "control-char-one-stream", output: strings.Repeat("\x00", 12<<20)},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			token := fmt.Sprintf("870000000000000000%d", i)
+			response := dockertest.StagingResponse{
+				SchemaVersion: dockertest.StagingSchemaVersion,
+				Token:         token,
+				ExitCode:      0,
+				Stdout:        tc.output,
+			}
+			if i == 0 {
+				response.Stderr = tc.output
+			}
+			dir := t.TempDir()
+			if err := writeStagingResponse(dir, response); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, dockertest.StagingResponseFileName(token)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) > dockertest.StagingMaxResponseBytes || len(data) >= 1024 {
+				t.Fatalf("over-budget responseが小さなfailureに変換されません: %d bytes", len(data))
+			}
+			decoded, err := dockertest.ParseStagingResponse(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if decoded.Token != token || decoded.ExitCode != 1 || !strings.Contains(decoded.Failure, "符号化後size上限") ||
+				decoded.Stdout != "" || decoded.Stderr != "" {
+				t.Fatalf("over-budget responseのfail-closed = %#v", decoded)
+			}
+		})
+	}
+}
+
+func TestEncodeStagingResponseExactByteBudget(t *testing.T) {
+	token := "8800000000000000000"
+	empty := dockertest.StagingResponse{SchemaVersion: dockertest.StagingSchemaVersion, Token: token, ExitCode: 0}
+	header, err := encodeStagingResponse(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	length := dockertest.StagingMaxResponseBytes - len(header)
+	atLimit := empty
+	atLimit.Stdout = strings.Repeat("x", length)
+	data, err := encodeStagingResponse(atLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != dockertest.StagingMaxResponseBytes {
+		t.Fatalf("上限ちょうどのresponseが保存されません: %d want %d", len(data), dockertest.StagingMaxResponseBytes)
+	}
+	overLimit := atLimit
+	overLimit.Stdout += "x"
+	data, err = encodeStagingResponse(overLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := dockertest.ParseStagingResponse(data)
+	if err != nil || decoded.ExitCode != 1 || decoded.Stdout != "" || !strings.Contains(decoded.Failure, "符号化後size上限") {
+		t.Fatalf("上限+1 byteの応答 = %#v err=%v", decoded, err)
+	}
+}
+
+func TestDockerTestExecutorEncodedOverflowIsClientReadable(t *testing.T) {
+	guard := newDockerTestGuard(t)
+	run := func(_ context.Context, _ string, _ []string, stdout, stderr io.Writer) (int, error) {
+		output := strings.Repeat("\\", dockerTestMaxOutputBytes)
+		_, _ = io.WriteString(stdout, output)
+		_, _ = io.WriteString(stderr, output)
+		return 0, nil
+	}
+	startTestDockerTestExecutor(t, guard, run)
+	client := &dockertest.StagingClient{
+		StagingDir:   guard.dockerTestStagingDir,
+		ResponseDir:  guard.dockerTestResponseDir,
+		PollInterval: 5 * time.Millisecond,
+		Timeout:      15 * time.Second,
+	}
+	var stdout, stderr strings.Builder
+	code := client.Run(context.Background(), []string{"./..."}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "符号化後size上限") || strings.Contains(stderr.String(), "締切内") {
+		t.Fatalf("owner発行の過大responseがclientで失敗になりません: code %d out %q err %q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("過大responseからのstdoutが成功内容として出力されました: %d bytes", stdout.Len())
 	}
 }
