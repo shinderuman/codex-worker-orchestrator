@@ -101,7 +101,7 @@ func diffReadRegularLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte
 		return nil, fmt.Errorf("diff leaf %q changed while opening", leaf)
 	}
 	if opened.Size > maxDiffSourceBytes {
-		return nil, fmt.Errorf("diff leaf %q is %d bytes; source execution limit is %d bytes", leaf, opened.Size, maxDiffSourceBytes)
+		return nil, fmt.Errorf("diff leaf %q worktree identity (dev=%d ino=%d mode=%06o size=%d mtime=%v) exceeds source execution limit %d bytes", leaf, opened.Dev, opened.Ino, opened.Mode, opened.Size, opened.Mtim, maxDiffSourceBytes)
 	}
 	content, err := io.ReadAll(io.LimitReader(file, maxDiffSourceBytes+1))
 	if err != nil {
