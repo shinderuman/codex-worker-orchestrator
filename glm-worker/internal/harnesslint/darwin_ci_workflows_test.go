@@ -26,7 +26,7 @@ type darwinCIWorkflow struct {
 			Run             string            `yaml:"run"`
 			Env             map[string]string `yaml:"env"`
 			ContinueOnError bool              `yaml:"continue-on-error"`
-			With struct {
+			With            struct {
 				PersistCredentials *bool `yaml:"persist-credentials"`
 			} `yaml:"with"`
 		} `yaml:"steps"`
