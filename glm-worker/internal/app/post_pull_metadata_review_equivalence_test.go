@@ -344,9 +344,24 @@ func TestPostPullSameHeadReentryMaterializesFreshReview(t *testing.T) {
 		t.Fatal("same-HEAD reentry fixture has a different index or worktree")
 	}
 	callsBefore := countPostPullReviewerCalls(t, f.runtime, f.taskID)
-	reentered, err := f.store.ReenterAcceptedCandidate(controller.PublicationInput{
+	parentSource, err := controller.CaptureWorkspaceSnapshot(f.cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebound, err := f.store.RebindParentSourceCandidate(controller.PublicationInput{
 		ExpectedGeneration: f.accepted.Head.ControllerGeneration,
 		CandidateID:        f.candidate.CandidateID,
+	}, parentSource.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := f.store.LoadAcceptedCandidate(*rebound.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reentered, err := f.store.ReenterAcceptedCandidate(controller.PublicationInput{
+		ExpectedGeneration: rebound.Head.ControllerGeneration,
+		CandidateID:        candidate.CandidateID,
 	})
 	if err != nil {
 		t.Fatal(err)
