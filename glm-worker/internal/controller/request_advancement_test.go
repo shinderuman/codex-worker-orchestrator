@@ -125,7 +125,7 @@ func TestRequestPulledUnpublishedCandidateRebindPreservesAuthority(t *testing.T)
 			}
 			cleaned, err := f.store.CleanupExecution(CleanupExecutionInput{
 				ExpectedGeneration: reentered.Head.ControllerGeneration,
-				WorkspaceID: f.source.Workspace.ID, SealRef: current.SealRef,
+				WorkspaceID:        f.source.Workspace.ID, SealRef: current.SealRef,
 			})
 			if err != nil {
 				t.Fatal(err)
