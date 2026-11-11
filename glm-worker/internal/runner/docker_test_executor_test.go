@@ -3,8 +3,8 @@ package runner
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -547,7 +547,7 @@ func TestWriteStagingResponseBoundsEncodedExpansion(t *testing.T) {
 		output string
 	}{
 		{name: "backslash-both-streams", output: strings.Repeat("\\", dockerTestMaxOutputBytes)},
-		{name: "control-char-one-stream", output: strings.Repeat("\x00", 12<<20)},
+		{name: "control-char-one-stream", output: strings.Repeat("\x00", 12 << 20)},
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
