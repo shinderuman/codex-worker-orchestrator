@@ -361,7 +361,7 @@ func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
 		t.Fatalf("request handoff did not admit publication: %#v", handoff)
 	}
 
-	exit, output, diagnostics := runTypedPublicationStagedCLI(t, scripted.cfg,
+	exit, output, diagnostics := runTypedPublicationStagedCLI(t, cfg,
 		handoff.RequiredActionParameters, typedSemanticSlotValues(t, handoff.RequiredActionParameters, false))
 	if exit != 0 {
 		t.Fatalf("parent CLI publication failed: %s %s", output, diagnostics)
