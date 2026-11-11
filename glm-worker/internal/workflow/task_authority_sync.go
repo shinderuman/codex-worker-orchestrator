@@ -20,8 +20,9 @@ type TaskAuthoritySyncEvidence struct {
 }
 
 const (
-	TaskAuthorityRuntimeAttached  = "attached"
-	TaskAuthorityRuntimeUnstarted = "unstarted"
+	TaskAuthorityRuntimeAttached   = "attached"
+	TaskAuthorityRuntimeUnstarted  = "unstarted"
+	TaskAuthorityRuntimeParentOnly = "parent-only"
 )
 
 func (w *Workflow) CaptureTaskAuthoritySyncEvidence() ([]byte, error) {
@@ -54,6 +55,41 @@ func (w *Workflow) CaptureTaskAuthoritySyncEvidence() ([]byte, error) {
 	return json.Marshal(TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeAttached, TaskID: taskID, Binding: &binding})
 }
 
+// CaptureParentOnlyTaskAuthoritySyncEvidence recognizes only the smoke identity
+// belonging to the admitted parent-only attempt. It never creates a model Runtime.
+func (w *Workflow) CaptureParentOnlyTaskAuthoritySyncEvidence(admission controller.Admission) ([]byte, error) {
+	if admission.Attempt.ExecutionAuthority != controller.ExecutionAuthorityParentOnly {
+		return nil, fmt.Errorf("parent-only Task sync requires parent-only execution authority")
+	}
+	if err := w.verifyParentOnlySyncSmokeIdentity(admission.Attempt.AttemptID); err != nil {
+		return nil, err
+	}
+	return json.Marshal(TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeParentOnly, TaskID: admission.Attempt.AttemptID})
+}
+
+func (w *Workflow) verifyParentOnlySyncSmokeIdentity(taskID string) error {
+	observed, err := w.state.TaskID()
+	if err != nil || observed != taskID {
+		return fmt.Errorf("parent-only Task sync smoke identity differs from admitted attempt: %v", err)
+	}
+	if _, err := w.state.LoadControllerRuntimeBinding(); err == nil {
+		return fmt.Errorf("parent-only Task sync found an unexpected Runtime binding")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("parent-only Task sync cannot inspect Runtime binding: %w", err)
+	}
+	for _, name := range []string{
+		"task.status", "worker.id", "reviewer.id", "parent-review-state.json",
+		"resume-checkpoint.json", state.ExecutionMilestonesStateFile,
+	} {
+		if _, err := os.Lstat(w.state.Path(name)); err == nil {
+			return fmt.Errorf("parent-only Task sync found unexpected Runtime state %s", name)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("parent-only Task sync cannot inspect %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func (w *Workflow) CompleteTaskAuthoritySync(data []byte) error {
 	var source TaskAuthoritySyncEvidence
 	if err := json.Unmarshal(data, &source); err != nil {
@@ -61,6 +97,12 @@ func (w *Workflow) CompleteTaskAuthoritySync(data []byte) error {
 	}
 	if source.Runtime == TaskAuthorityRuntimeUnstarted {
 		return nil
+	}
+	if source.Runtime == TaskAuthorityRuntimeParentOnly {
+		if source.Binding != nil || source.TaskID == "" {
+			return fmt.Errorf("parent-only Task sync evidence is incomplete")
+		}
+		return w.verifyParentOnlySyncSmokeIdentity(source.TaskID)
 	}
 	if source.Runtime != TaskAuthorityRuntimeAttached || source.Binding == nil {
 		return fmt.Errorf("task authority sync evidence is incomplete")
