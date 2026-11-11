@@ -318,6 +318,7 @@ func TestNormalTaskRequestReadOnlyReviewCannotAlterPlanNamedData(t *testing.T) {
 
 func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
 	cfg := newRequestTaskAppConfig(t)
+	cfg.StateBase = filepath.Join(t.TempDir(), "sessions")
 	binary := typedCompletionWorkerBinary(t)
 	workerDir := t.TempDir()
 	if err := os.Symlink(binary, filepath.Join(workerDir, "glm-worker")); err != nil {
