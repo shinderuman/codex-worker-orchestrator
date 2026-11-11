@@ -62,7 +62,13 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if err := normalizeReboundTrees(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, &rebound, task); err != nil {
 		return ExecutionOperation{}, err
 	}
-	if err := verifyTaskOnlyTreeDelta(s.identity.PrimaryRoot, current.WorktreeTree, rebound.Current.WorktreeTree, task.TaskPath); err != nil {
+	if admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		// A parent-only attempt owns the primary worktree itself. The revised Task
+		// is already present in the captured worktree, unlike a separate GLM lane.
+		if current.WorktreeTree != rebound.Current.WorktreeTree {
+			return ExecutionOperation{}, fmt.Errorf("parent-only Task amendment would alter non-Task worktree contents")
+		}
+	} else if err := verifyTaskOnlyTreeDelta(s.identity.PrimaryRoot, current.WorktreeTree, rebound.Current.WorktreeTree, task.TaskPath); err != nil {
 		return ExecutionOperation{}, err
 	}
 	if err := s.writeProjectSnapshot(authority.Snapshot); err != nil {
