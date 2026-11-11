@@ -26,7 +26,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/darwin-ci-acceptance-closure.md`](IMPLEMENTATION_TASKS/darwin-ci-acceptance-closure.md)
 - [`IMPLEMENTATION_TASKS/review-source-equivalence-same-head.md`](IMPLEMENTATION_TASKS/review-source-equivalence-same-head.md)
 - [`IMPLEMENTATION_TASKS/validation-input-git-environment-isolation.md`](IMPLEMENTATION_TASKS/validation-input-git-environment-isolation.md)
-- [`IMPLEMENTATION_TASKS/mutable-advancement-baseline-rejection-proof.md`](IMPLEMENTATION_TASKS/mutable-advancement-baseline-rejection-proof.md)
 - [`IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md`](IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md)
 - [`IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md`](IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md)
 - [`IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md`](IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md)
