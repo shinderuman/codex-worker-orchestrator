@@ -25,6 +25,11 @@ func TestMarkdownPlanSpacingAllSupportedTaskItems(t *testing.T) {
 		{"plain-backtick", "- " + a, "- `" + b + "`"},
 		{"backtick-link", "- `" + a + "`", "- [`" + b + "`](" + b + ")"},
 		{"link-plain", "- [`" + a + "`](" + a + ")", "- " + b},
+		{"backtick-plain", "- `" + a + "`", "- " + b},
+		{"plain-link", "- " + a, "- [`" + b + "`](" + b + ")"},
+		{"link-backtick", "- [`" + a + "`](" + a + ")", "- `" + b + "`"},
+		{"indented-plain", "  -  " + a, "\t- \t" + b},
+		{"indented-mixed", " \t-  `" + a + "`", "\t - \t[`" + b + "`](" + b + ")"},
 	}
 	for _, tt := range forms {
 		t.Run(tt.name, func(t *testing.T) {
