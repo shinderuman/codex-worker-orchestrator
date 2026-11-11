@@ -92,6 +92,10 @@ func TestRequestPulledUnpublishedCandidateRebindPreservesAuthority(t *testing.T)
 				rebound, err = f.store.RebindUnpublishedCandidate(input)
 			} else {
 				runControllerGit(t, f.store.identity.PrimaryRoot, "pull", "--ff-only", policy.Remote, policy.RemoteRef)
+				projected, projectionErr := f.store.ProjectParentCompletion()
+				if projectionErr != nil || projected.Operation != PublicationOperationRebind || projected.Command == nil || projected.Command.CandidateID != candidate.CandidateID {
+					t.Fatalf("request pull did not select candidate rebind: %+v %v", projected, projectionErr)
+				}
 				rebound, err = f.store.RebindPulledUnpublishedCandidate(input, remote)
 			}
 			if err != nil {
