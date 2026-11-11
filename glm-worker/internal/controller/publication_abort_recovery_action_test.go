@@ -60,7 +60,6 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	if head.PendingTransitionID != "" || head.IntegrationTip != implementation.BaseOID || head.AcceptedCandidateRef == nil {
 		t.Fatalf("aborted journal changed publication authority: %#v", head)
 	}
-	// Missing or invalid evidence and a foreign lease cannot be converted into rebind authority.
 	missing := head
 	missing.AcceptedCandidateRef = nil
 	action, reason := fixture.store.publicationAbortRecoveryAction(op, missing, phase)
