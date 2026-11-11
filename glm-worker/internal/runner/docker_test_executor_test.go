@@ -518,7 +518,7 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 }
 
 func TestEncodeStagingResponseDisablesHTMLEscapingNearStreamCaps(t *testing.T) {
-	output := strings.Repeat("<>&", dockerTestMaxOutputBytes / 3)
+	output := strings.Repeat("<>&", dockerTestMaxOutputBytes/3)
 	response := dockertest.StagingResponse{
 		SchemaVersion: dockertest.StagingSchemaVersion,
 		Token:         "8600000000000000000",
@@ -545,7 +545,7 @@ func TestWriteStagingResponseBoundsEncodedExpansion(t *testing.T) {
 		output string
 	}{
 		{name: "backslash-both-streams", output: strings.Repeat("\\", dockerTestMaxOutputBytes)},
-		{name: "control-char-one-stream", output: strings.Repeat("\x00", 12 << 20)},
+		{name: "control-char-one-stream", output: strings.Repeat("\x00", 12<<20)},
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
