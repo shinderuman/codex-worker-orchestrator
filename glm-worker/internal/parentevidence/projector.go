@@ -2,6 +2,7 @@ package parentevidence
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -570,6 +572,9 @@ func captureDiffOnce(repoRoot string, paths []string) ([]DiffFile, string, error
 		if err != nil {
 			return nil, "", err
 		}
+		if len(content) > maxDiffPatchBytes-untracked.Len() {
+			return nil, "", fmt.Errorf("requested diff exceeds %d-byte aggregate patch execution limit at %q (HEAD %s, index %s, worktree %s)", maxDiffPatchBytes, path, file.HeadBlob, file.IndexBlob, file.WorktreeSHA)
+		}
 		files = append(files, file)
 		untracked.WriteString(content)
 	}
@@ -590,7 +595,7 @@ func collectDiffFile(repoRoot, path string) (DiffFile, string, error) {
 	}
 	worktreeSHA, worktreeMode, content, present, err := diffWorktreeObject(repoRoot, path)
 	if err != nil {
-		return DiffFile{}, "", err
+		return DiffFile{}, "", fmt.Errorf("capture diff %q (HEAD %s mode %s, index %s mode %s): %w", path, headBlob, headMode, indexBlob, indexMode, err)
 	}
 	if headBlob == "" && indexBlob == "" && !present {
 		return DiffFile{}, "", fmt.Errorf("diff path %q does not exist in HEAD, index or worktree", path)
@@ -604,13 +609,21 @@ func collectDiffFile(repoRoot, path string) (DiffFile, string, error) {
 		WorktreeSHA:  worktreeSHA,
 		WorktreeMode: worktreeMode,
 	}
-	return renderCapturedDiffFile(repoRoot, file, content, present)
+	rendered, patch, err := renderCapturedDiffFile(repoRoot, file, content, present)
+	if err != nil {
+		return DiffFile{}, "", fmt.Errorf("capture diff %q (HEAD %s, index %s, worktree %s mode %s): %w", path, headBlob, indexBlob, worktreeSHA, worktreeMode, err)
+	}
+	return rendered, patch, nil
 }
 
 func renderCapturedDiffFile(repoRoot string, file DiffFile, content []byte, present bool) (DiffFile, string, error) {
 	if file.HeadBlob == "" && file.IndexBlob == "" {
 		file.Status = "?"
-		return file, untrackedDiffSection(file.Path, file.WorktreeMode, content), nil
+		patch := untrackedDiffSection(file.Path, file.WorktreeMode, content)
+		if len(patch) > maxDiffPatchBytes {
+			return DiffFile{}, "", fmt.Errorf("untracked patch for %q exceeds %d-byte execution limit", file.Path, maxDiffPatchBytes)
+		}
+		return file, patch, nil
 	}
 	patch, err := capturedDiffPatch(repoRoot, file, content, present)
 	if err != nil {
@@ -988,14 +1001,24 @@ func clearPartBody(part *Part) {
 }
 
 func gitLiteralOutputIn(dir string, args ...string) ([]byte, error) {
-	command := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir = dir
 	command.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
+	stdout := &boundedDiffOutput{limit: maxDiffPatchBytes}
+	stderr := &boundedDiffOutput{limit: 8 * 1024}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	err := command.Run()
+	if stdout.exceeded {
+		return nil, fmt.Errorf("git %s output exceeds %d-byte execution limit", args[0], maxDiffPatchBytes)
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("git %s: %w", args[0], ctx.Err())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
-	return output, nil
+	return stdout.Bytes(), nil
 }
