@@ -110,7 +110,13 @@ func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(foreign, "foreign.txt"), []byte("foreign only\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(foreign, "add", "foreign.txt")
+	if err := os.WriteFile(filepath.Join(foreign, ".gitignore"), []byte("foreign.log\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(foreign, "foreign.log"), []byte("ignored only by foreign repository\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(foreign, "add", "foreign.txt", ".gitignore")
 	foreignIndex := filepath.Join(foreign, ".git", "index")
 	originalForeignIndex, err := os.ReadFile(foreignIndex)
 	if err != nil {
@@ -119,6 +125,12 @@ func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) 
 	t.Setenv("GIT_DIR", filepath.Join(foreign, ".git"))
 	t.Setenv("GIT_WORK_TREE", foreign)
 	t.Setenv("GIT_INDEX_FILE", foreignIndex)
+
+	// The target is clean even though the inherited Git location contains ignored files.
+	cleanRoot, err := NoIgnoredInputs(root)
+	if err != nil || !cleanRoot {
+		t.Fatalf("foreign-only ignored files polluted clean target: clean=%v err=%v", cleanRoot, err)
+	}
 
 	if err := os.WriteFile(filepath.Join(root, "top.log"), []byte("ignored in target\n"), 0o644); err != nil {
 		t.Fatal(err)
