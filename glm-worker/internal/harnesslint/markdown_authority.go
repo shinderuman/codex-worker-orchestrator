@@ -127,12 +127,10 @@ func planSectionBounds(data []byte, heading string) (int, int, bool) {
 func compactPlanUnfencedSpacing(data []byte) []byte {
 	var result, unfenced []byte
 	var fence markdownFence
-	firstSpan := true
 	for _, line := range bytes.SplitAfter(data, []byte("\n")) {
 		if updateMarkdownFence(strings.TrimSpace(string(line)), &fence) {
-			result = append(result, compactPlanPlainSpacing(unfenced, firstSpan)...)
+			result = append(result, compactPlanPlainSpacing(unfenced)...)
 			unfenced = nil
-			firstSpan = false
 			result = append(result, line...)
 			continue
 		}
@@ -142,14 +140,11 @@ func compactPlanUnfencedSpacing(data []byte) []byte {
 			unfenced = append(unfenced, line...)
 		}
 	}
-	return append(result, compactPlanPlainSpacing(unfenced, firstSpan)...)
+	return append(result, compactPlanPlainSpacing(unfenced)...)
 }
 
-func compactPlanPlainSpacing(data []byte, atSectionStart bool) []byte {
-	result := data
-	if atSectionStart {
-		result = planHeadingBlankLines.ReplaceAll(result, []byte("\n"))
-	}
+func compactPlanPlainSpacing(data []byte) []byte {
+	result := planHeadingBlankLines.ReplaceAll(data, []byte("\n"))
 	result = planExtraBlankLines.ReplaceAll(result, []byte("\n\n"))
 	for {
 		next := planSeparatedTaskItems.ReplaceAll(result, []byte("$1$2"))
