@@ -17,16 +17,30 @@ func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.
 	if command.SourceSnapshotID == "" || command.RevisedTask == nil {
 		return controller.ExecutionOperationResult{}, fmt.Errorf("task authority sync requires exact source snapshot and revised Task identity")
 	}
-	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
+	liveParentOnly, err := store.LiveParentOnlyExecution()
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
+	}
+	var admission controller.Admission
+	var runtimeCfg config.AppConfig
+	if liveParentOnly {
+		admission, err = store.ParentOnlyTaskAuthoritySyncAdmission(cfg)
+		if err != nil {
+			return controller.ExecutionOperationResult{}, err
+		}
+		runtimeCfg = controller.WorkflowTaskConfig(cfg, store.Identity(), admission.Attempt.SemanticTaskRef)
+	} else {
+		runtimeCfg, err = controller.ParentContinuationConfig(cfg)
+		if err != nil {
+			return controller.ExecutionOperationResult{}, err
+		}
+		admission, err = controller.CurrentSemanticAdmission(cfg, store)
+		if err != nil {
+			return controller.ExecutionOperationResult{}, err
+		}
 	}
 	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
 	before, err := wf.CaptureTaskAuthoritySyncEvidence()
-	if err != nil {
-		return controller.ExecutionOperationResult{}, err
-	}
-	admission, err := controller.CurrentSemanticAdmission(cfg, store)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
