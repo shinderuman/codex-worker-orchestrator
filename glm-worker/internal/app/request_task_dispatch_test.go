@@ -368,8 +368,9 @@ func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
 	var terminal struct {
 		Status   string `json:"status"`
 		Handoff  struct {
-			Consistent     bool    `json:"consistent"`
-			RequiredAction *string `json:"required_action"`
+			Consistent     bool     `json:"consistent"`
+			RequiredAction *string  `json:"required_action"`
+			AllowedActions []string `json:"allowed_actions"`
 		} `json:"handoff"`
 		Terminal struct {
 			Status               string `json:"status"`
@@ -391,7 +392,8 @@ func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
 	}
 	proof := terminal.Terminal
 	if terminal.Status != "parent_action_terminal" || !terminal.Handoff.Consistent ||
-		stringPointerValue(terminal.Handoff.RequiredAction) != string(state.ParentActionNone) || proof.Status != "completed" ||
+		stringPointerValue(terminal.Handoff.RequiredAction) != string(state.ParentActionNone) ||
+		containsParentAction(terminal.Handoff.AllowedActions, "start") || proof.Status != "completed" ||
 		proof.RequestID != requestID || proof.SourceOID == "" ||
 		proof.SourceOID != proof.FinalOID || proof.RemoteOID != proof.FinalOID ||
 		proof.FinalOID != head.IntegrationTip || proof.RemoteOID != head.ObservedRemoteTip ||
