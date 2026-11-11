@@ -44,7 +44,6 @@ const StagingClientTimeoutDefault = StagingRequestTimeoutDefault + 5*time.Minute
 
 const StagingClientPollIntervalDefault = 250 * time.Millisecond
 
-// StagingMaxResponseBytes is the shared encoded JSON response file limit for owner and client.
 const StagingMaxResponseBytes = 64 << 20
 
 const stagingTokenCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-"
