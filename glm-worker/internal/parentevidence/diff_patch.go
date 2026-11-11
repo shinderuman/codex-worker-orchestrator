@@ -13,10 +13,8 @@ import (
 	"time"
 )
 
-const (
-	maxDiffSourceBytes int64 = 1 << 20 // Independent of the requested display budget.
-	maxDiffPatchBytes       = 2 << 20 // Bounds each patch and the complete requested diff.
-)
+const maxDiffSourceBytes int64 = 1 << 20 // Independent of the requested display budget.
+const maxDiffPatchBytes = 2 << 20 // Bounds each patch and the complete requested diff.
 
 type boundedDiffOutput struct {
 	bytes.Buffer
