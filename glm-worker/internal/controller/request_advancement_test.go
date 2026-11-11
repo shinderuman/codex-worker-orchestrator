@@ -89,7 +89,6 @@ func TestRequestPulledUnpublishedCandidateRebindPreservesAuthority(t *testing.T)
 			input := PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}
 			var rebound ExecutionOperationResult
 			if locallyPromoted {
-				// A local-only candidate cannot fast-forward-pull a remote that branched at its old base.
 				rebound, err = f.store.RebindUnpublishedCandidate(input)
 			} else {
 				runControllerGit(t, f.store.identity.PrimaryRoot, "pull", "--ff-only", policy.Remote, policy.RemoteRef)
@@ -196,7 +195,7 @@ func TestRequestAdvancementRejectsForeignAuthorityAndHarness(t *testing.T) {
 		edit func(*RepositoryControllerHead)
 	}{
 		{name: "request digest", edit: func(h *RepositoryControllerHead) { h.ExecutionTaskRef.ContractDigest = strings.Repeat("f", 64) }},
-		{name: "request identity", edit: func(h *RepositoryControllerHead) { h.ExecutionTaskRef.RequestID = h.ExecutionTaskRef.RequestID + "-forged" }},
+		{name: "request identity", edit: func(h *RepositoryControllerHead) { h.ExecutionTaskRef.RequestID += "-forged" }},
 		{name: "stale integration", edit: func(h *RepositoryControllerHead) { h.IntegrationTip = remote }},
 		{name: "missing root", edit: func(h *RepositoryControllerHead) { h.RootTaskRef = nil }},
 	} {
