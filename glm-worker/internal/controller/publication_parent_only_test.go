@@ -661,3 +661,102 @@ func TestParentOnlyCompletionRecoversPublishedWithoutAnotherPush(t *testing.T) {
 		t.Fatalf("publication recovery repeated a successful push: %q %v", count, err)
 	}
 }
+
+func parentOnlyResumingRootFixture(t *testing.T) (parentOnlyTaskFixture, SemanticTaskRef, RepositoryControllerHead) {
+	t.Helper()
+	fixture, task := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
+	old := admitParentOnlyExecutionFixture(t, fixture)
+	head := old.Head
+	child := SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/completed-child.md", ContractDigest: digestStrings("completed-child")}
+	episode := BlockerEpisodeRevision{
+		SchemaVersion: controllerSchemaVersion, EpisodeID: "parent-only-root-resume", Revision: 1,
+		ProjectSnapshotID: head.ProjectSnapshotID, RootTaskRef: task, ScopeRootTaskRef: child,
+		AdmittedClosure: []SemanticTaskRef{child}, AdmittedOrder: []SemanticTaskRef{child},
+		SatisfiedTaskRefs: []SemanticTaskRef{child}, State: EpisodeStateResumingRoot,
+		SourceControllerGeneration: head.ControllerGeneration, CreatedAt: time.Now().UTC(),
+	}
+	episode.RevisionID = blockerEpisodeRevisionID(episode)
+	if err := fixture.store.writeEpisodeRecord(BlockerEpisodeRecord{
+		SchemaVersion: controllerSchemaVersion, EpisodeID: episode.EpisodeID,
+		RepositoryIdentity: fixture.store.Identity().LineageID, RootTaskRef: task,
+		ScopeRootTaskRef: child, CreatedAt: episode.CreatedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.store.writeEpisodeRevision(episode); err != nil {
+		t.Fatal(err)
+	}
+	head.ControllerGeneration++
+	head.LiveAttemptID = ""
+	head.LiveLeaseID = ""
+	head.ExecutionTaskRef = nil
+	head.ActiveEpisodeID = episode.EpisodeID
+	head.ActiveEpisodeRevision = episode.Revision
+	if err := fixture.store.writeHeadCAS(old.Head.ControllerGeneration, head); err != nil {
+		t.Fatal(err)
+	}
+	return fixture, task, head
+}
+
+func TestParentOnlyResumingRootClosesEpisodeWithTypedMaterialization(t *testing.T) {
+	t.Parallel()
+	fixture, root, prior := parentOnlyResumingRootFixture(t)
+	operation, err := fixture.store.ProjectParentCompletion()
+	if err != nil || operation.Operation != PublicationOperationParentOnlyMaterialize ||
+		operation.Surface != ExecutionOperationSurface || operation.Execution == nil ||
+		operation.Execution.ExpectedGeneration != prior.ControllerGeneration {
+		t.Fatalf("resuming-root parent-only projection: %#v %v", operation, err)
+	}
+	if _, err := fixture.store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{ExpectedGeneration: prior.ControllerGeneration - 1}); err == nil {
+		t.Fatal("stale generation materialized a parent-only Root")
+	}
+	result, err := fixture.store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{ExpectedGeneration: prior.ControllerGeneration})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Admission == nil || !result.Admission.Attempt.SemanticTaskRef.Equal(root) ||
+		result.Head.ActiveEpisodeID != "" || result.Head.ActiveEpisodeRevision != 0 {
+		t.Fatalf("Root resume lost authority or left episode active: %#v", result)
+	}
+	closed, err := fixture.store.LoadEpisodeRevision(prior.ActiveEpisodeID, prior.ActiveEpisodeRevision+1)
+	if err != nil || closed.State != EpisodeStateClosed {
+		t.Fatalf("parent-only Root closure was not committed: %#v %v", closed, err)
+	}
+	if _, err := fixture.store.RecoverExecutionOperation(result.TransitionID); err != nil {
+		t.Fatalf("resuming-root materialization did not recover idempotently: %v", err)
+	}
+	writeParentOnlyProduct(t, fixture, "root-result.txt", "parent-only Root resumed\n")
+	admission := parentOnlyCompletionAdmission(t, fixture)
+	accepted, err := fixture.store.AcceptParentCompletion(admission, CandidateAcceptanceInput{
+		Message: "Root resume completion", Policy: fixture.policy, RequiredValidations: declaredNoValidations(),
+	})
+	if err != nil || accepted.CandidateRef == nil {
+		t.Fatalf("resumed parent-only Root did not reach completion: %v", err)
+	}
+	runtime := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), root))
+	if _, err := runtime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("parent-only Root resume created a model Runtime: %v", err)
+	}
+}
+
+func TestParentOnlyResumingRootRejectsUnresolvedEpisode(t *testing.T) {
+	t.Parallel()
+	fixture, _, head := parentOnlyResumingRootFixture(t)
+	episode, err := fixture.store.LoadEpisodeRevision(head.ActiveEpisodeID, head.ActiveEpisodeRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episode.State = EpisodeStateReplanning
+	episode.SatisfiedTaskRefs = nil
+	episode.RevisionID = blockerEpisodeRevisionID(episode)
+	if err := fixture.store.writeEpisodeRevision(episode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{ExpectedGeneration: head.ControllerGeneration}); err == nil {
+		t.Fatal("unresolved episode was admitted as a parent-only Root resume")
+	}
+	after, err := fixture.store.LoadHead()
+	if err != nil || after.ControllerGeneration != head.ControllerGeneration || after.LiveAttemptID != "" {
+		t.Fatalf("denied resume changed Controller authority: %#v %v", after, err)
+	}
+}
