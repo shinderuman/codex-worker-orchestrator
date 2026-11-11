@@ -70,7 +70,7 @@ func diffReadLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte, error
 	case unix.S_IFREG:
 		return diffReadRegularLeaf(parent, leaf, info)
 	case unix.S_IFLNK:
-		for size := 256; size <= int(maxDiffSourceBytes); size *= 2 {
+		for size := 256; ; {
 			buffer := make([]byte, size)
 			n, err := unix.Readlinkat(int(parent.Fd()), leaf, buffer)
 			if err != nil {
@@ -79,8 +79,14 @@ func diffReadLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte, error
 			if n < len(buffer) {
 				return buffer[:n], nil
 			}
+			if size == int(maxDiffSourceBytes)+1 {
+				return nil, fmt.Errorf("diff symlink %q exceeds source execution limit %d bytes", leaf, maxDiffSourceBytes)
+			}
+			size *= 2
+			if size > int(maxDiffSourceBytes) {
+				size = int(maxDiffSourceBytes) + 1
+			}
 		}
-		return nil, fmt.Errorf("diff symlink %q exceeds source execution limit %d bytes", leaf, maxDiffSourceBytes)
 	default:
 		return nil, fmt.Errorf("unsupported diff worktree type for %q: %o", leaf, info.Mode)
 	}
