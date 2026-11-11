@@ -366,7 +366,6 @@ func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryW
 	return entries, nil
 }
 
-
 func nestedRepositoryFileMode(entry fs.DirEntry, path string) (os.FileMode, error) {
 	info, err := entry.Info()
 	if err != nil {
