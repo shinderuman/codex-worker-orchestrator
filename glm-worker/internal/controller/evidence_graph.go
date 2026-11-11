@@ -15,6 +15,7 @@ type evidenceGraphWalker struct {
 	validatedTaskChains    map[string]uint64
 	validatedEpisodeChains map[string]uint64
 	taskRevisionAncestry   map[string]taskRevisionAncestry
+	episodeRevisions       map[string]EpisodeIndexRevision
 }
 
 type taskRevisionAncestry struct {
@@ -198,7 +199,11 @@ func (w *evidenceGraphWalker) walkTaskRevisionChain(
 			if err != nil {
 				return err
 			}
-			return w.rememberTaskRevisionAncestry(pending)
+			if err := w.rememberTaskRevisionAncestry(pending); err != nil {
+			return err
+		}
+		rememberValidatedRevisionChain(w.validatedTaskChains, validated)
+		return nil
 		}
 		if err := w.addRef(current); err != nil {
 			return err
@@ -305,9 +310,17 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 		if err := w.addRef(current); err != nil {
 			return err
 		}
-		revision, err := w.store.LoadEpisodeIndexRevision(current)
-		if err != nil {
-			return err
+		revision, ok := w.episodeRevisions[key]
+		if !ok {
+			var err error
+			revision, err = w.store.LoadEpisodeIndexRevision(current)
+			if err != nil {
+				return err
+			}
+			if w.episodeRevisions == nil {
+				w.episodeRevisions = map[string]EpisodeIndexRevision{}
+			}
+			w.episodeRevisions[key] = revision
 		}
 		if revision.EpisodeID != subject || revision.ControllerGeneration >= upper {
 			return evidenceGraphError(current, "episode index revision chain authority is inconsistent")
