@@ -762,3 +762,51 @@ func TestCaptureGitSnapshotParentExclusionMatchesFilteredVariant(t *testing.T) {
 		})
 	}
 }
+
+
+func TestCaptureGitSnapshotTracksNestedRepositoryExecutableMode(t *testing.T) {
+	dir := initCommittedRepo(t)
+	nested := filepath.Join(dir, "nested")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, nested, "init", "--quiet", ".")
+	tool := filepath.Join(nested, "tool.sh")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\\nexit 0\\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	original, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tool, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := NestedUntrackedRepositoryEntries(dir, "nested/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Path != "nested/tool.sh" || entries[0].Mode.Perm() != 0o755 {
+		t.Fatalf("nested entryの実modeが取得されていません: %+v", entries)
+	}
+	executable, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.WorktreeDigest == executable.WorktreeDigest {
+		t.Fatalf("0644 -> 0755でWorktreeDigestが変化しません: %q", original.WorktreeDigest)
+	}
+	if original.Head != executable.Head || original.IndexDigest != executable.IndexDigest {
+		t.Fatalf("chmod以外のHEAD/indexが変化しています: before=%+v after=%+v", original, executable)
+	}
+	if err := os.Chmod(tool, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reverted, err := CaptureGitSnapshot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executable.WorktreeDigest == reverted.WorktreeDigest || original.WorktreeDigest != reverted.WorktreeDigest {
+		t.Fatalf("0755 -> 0644の復元がdigestへ反映されません: original=%q executable=%q reverted=%q", original.WorktreeDigest, executable.WorktreeDigest, reverted.WorktreeDigest)
+	}
+}

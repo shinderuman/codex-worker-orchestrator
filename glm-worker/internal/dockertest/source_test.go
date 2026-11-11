@@ -443,3 +443,45 @@ func TestDockerDiagnosticRejectsIgnoredInputBeforeExecution(t *testing.T) {
 		t.Fatalf("拒否したsource条件が診断にありません: %s", diagnosticOutput.String())
 	}
 }
+
+
+func TestSourceArchiveNestedExecutableModeMatchesSourceIdentity(t *testing.T) {
+	root := sourceFixture(t)
+	initNestedRepositoryFixture(t, root, "nested")
+	tool := filepath.Join(root, "nested", "tool.sh")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\\nexit 0\\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var previous state.GitSnapshot
+	for _, permission := range []os.FileMode{0o644, 0o755, 0o644} {
+		if err := os.Chmod(tool, permission); err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := state.CaptureGitSnapshot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if previous.WorktreeDigest != "" {
+			if previous.Head != snapshot.Head || previous.IndexDigest != snapshot.IndexDigest {
+				t.Fatalf("chmod以外にHEAD/indexが変化しました: before=%+v after=%+v", previous, snapshot)
+			}
+			if previous.WorktreeDigest == snapshot.WorktreeDigest {
+				t.Fatalf("nested mode変更%#oがsource identityへ反映されません", permission)
+			}
+		}
+		archive, _, err := sourceArchive(context.Background(), root, t.TempDir(), snapshot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		restored := t.TempDir()
+		extractFixtureArchive(t, archive, restored)
+		info, err := os.Stat(filepath.Join(restored, "nested", "tool.sh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != permission {
+			t.Fatalf("Docker転送tarのmodeがsourceと一致しません: got=%#o want=%#o", info.Mode().Perm(), permission)
+		}
+		previous = snapshot
+	}
+}
