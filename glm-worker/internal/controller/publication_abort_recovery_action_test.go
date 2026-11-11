@@ -28,9 +28,16 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	if !errors.As(err, &initial) || initial.Action != PublicationOperationReenter {
 		t.Fatalf("definite push rejection did not preserve reentry: %v", err)
 	}
-	op, phase, err := fixture.store.LoadTransition(initial.TransitionID)
-	if err != nil || phase.Completion == nil || phase.Completion.AbortRemoteOID != implementation.BaseOID {
-		t.Fatalf("abort journal did not retain the original remote: %v", err)
+	_, phase, err := fixture.store.LoadTransition(initial.TransitionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var op ExecutionOperation
+	if err := readJSON(fixture.store.executionOperationPath(initial.TransitionID), &op); err != nil {
+		t.Fatal(err)
+	}
+	if phase.Completion == nil || phase.Completion.AbortRemoteOID != implementation.BaseOID {
+		t.Fatalf("abort journal did not retain the original remote: %#v", phase.Completion)
 	}
 	if err := os.Remove(hook); err != nil {
 		t.Fatal(err)
