@@ -191,6 +191,13 @@ func (s *Store) parentOnlyCompletionReview(admission Admission) (WorkspaceSnapsh
 	if err := s.parentOnlyCurrentTaskContract(admission.Head, admission.Attempt, authority); err != nil {
 		return WorkspaceSnapshot{}, err
 	}
+	digest, regular, err := worktreeRegularFileDigest(s.identity.PrimaryRoot, admission.Attempt.SemanticTaskRef.TaskPath)
+	if err != nil {
+		return WorkspaceSnapshot{}, err
+	}
+	if !regular || digest != admission.Attempt.SemanticTaskRef.ContractDigest {
+		return WorkspaceSnapshot{}, fmt.Errorf("parent-only completion requires the revised Task contract to be admitted by sync-task-authority")
+	}
 	runtime, _, err := s.boundAttemptRuntime(admission)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
