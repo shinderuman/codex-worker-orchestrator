@@ -661,3 +661,25 @@ func TestParentOnlyCompletionRecoversPublishedWithoutAnotherPush(t *testing.T) {
 		t.Fatalf("publication recovery repeated a successful push: %q %v", count, err)
 	}
 }
+
+func TestParentOnlyMaterializationRejectsStaleEpisodeIdentity(t *testing.T) {
+	t.Parallel()
+	fixture, _ := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
+	head, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []ParentOnlyMaterializeInput{
+		{ExpectedGeneration: head.ControllerGeneration + 1},
+		{ExpectedGeneration: head.ControllerGeneration, EpisodeID: "unscheduled-episode", EpisodeRevision: 1},
+		{ExpectedGeneration: head.ControllerGeneration, EpisodeRevision: 1},
+	} {
+		if _, err := fixture.store.AdmitParentOnlyExecution(input); err == nil {
+			t.Fatalf("parent-only materialization admitted stale generation or episode: %#v", input)
+		}
+	}
+	after, err := fixture.store.LoadHead()
+	if err != nil || after.ControllerGeneration != head.ControllerGeneration || after.PendingTransitionID != "" {
+		t.Fatalf("rejected materialization changed controller authority: %#v %v", after, err)
+	}
+}
