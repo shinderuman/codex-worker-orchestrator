@@ -41,28 +41,47 @@ type parentExportBundleResult struct {
 	parentExportBundleExport
 }
 
+type exportBundleFailure struct {
+	stage string
+	cause error
+}
+
 const (
 	exportBundleAction = "export-task-bundle"
 	exportBundleUsage  = "usage: glm-parent-action export-bundle [--task-id <glm-worker task id>]"
+
+	exportBundleFailureSelection        = "selection"
+	exportBundleFailureWorkerResolution = "worker-resolution"
+	exportBundleFailureWorkerExecution  = "worker-execution"
+	exportBundleFailureWorkerResponse   = "worker-response"
+	exportBundleFailureOutput           = "result-output"
 )
 
 var resolveExportBundleWorker = resolveGLMWorker
 
+func (e *exportBundleFailure) Error() string { return e.cause.Error() }
+
+func (e *exportBundleFailure) Unwrap() error { return e.cause }
+
+func exportBundleFailureAt(stage string, err error) error {
+	return &exportBundleFailure{stage: stage, cause: err}
+}
+
 func executeExportBundleAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	selection, err := parseExportBundleSelection(args)
 	if err != nil {
-		return err
+		return exportBundleFailureAt(exportBundleFailureSelection, err)
 	}
 	payload, err := json.Marshal(parentExportBundleRequest{
 		Action: exportBundleAction,
 		TaskID: selection.taskID,
 	})
 	if err != nil {
-		return fmt.Errorf("encode export bundle request: %w", err)
+		return exportBundleFailureAt(exportBundleFailureSelection, fmt.Errorf("encode export bundle request: %w", err))
 	}
 	worker, err := resolveExportBundleWorker()
 	if err != nil {
-		return err
+		return exportBundleFailureAt(exportBundleFailureWorkerResolution, err)
 	}
 	var workerOutput bytes.Buffer
 	if err := runResolvedWorker(
@@ -74,16 +93,19 @@ func executeExportBundleAction(cfg config.AppConfig, args []string, stdout, stde
 		stderr,
 		nil,
 	); err != nil {
-		return err
+		return exportBundleFailureAt(exportBundleFailureWorkerExecution, err)
 	}
 	export, err := decodeExportBundleWorkerOutput(workerOutput.Bytes())
 	if err != nil {
-		return err
+		return exportBundleFailureAt(exportBundleFailureWorkerResponse, err)
 	}
-	return json.NewEncoder(stdout).Encode(parentExportBundleResult{
+	if err := json.NewEncoder(stdout).Encode(parentExportBundleResult{
 		Action:                   exportBundleAction,
 		parentExportBundleExport: *export,
-	})
+	}); err != nil {
+		return exportBundleFailureAt(exportBundleFailureOutput, err)
+	}
+	return nil
 }
 
 func parseExportBundleSelection(args []string) (parentExportBundleSelection, error) {

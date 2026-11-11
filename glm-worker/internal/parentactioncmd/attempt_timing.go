@@ -66,10 +66,16 @@ func (s parentActionAttemptScope) recordExit(cfg config.AppConfig, action string
 	if actionErr != nil {
 		record.Outcome = state.ParentActionAttemptOutcomeFailed
 		record.Error = "action-failed"
-		if action == controllerPublicationAction {
+		switch action {
+		case controllerPublicationAction:
 			var stageErr *completionHandoffStageError
 			if errors.As(actionErr, &stageErr) {
 				record.Error = "post-publication-handoff:" + stageErr.stage
+			}
+		case "export-bundle":
+			var exportFailure *exportBundleFailure
+			if errors.As(actionErr, &exportFailure) {
+				record.Error = "export-bundle:" + exportFailure.stage
 			}
 		}
 	}

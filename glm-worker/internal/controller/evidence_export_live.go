@@ -240,7 +240,7 @@ func (c *evidenceLiveCollector) section(mode string, attempt AttemptRecord, work
 
 func (s *Store) resolveExportRuntime(attempt AttemptRecord) (*state.StateStore, string, error) {
 	runtimeCfg := s.config
-	runtimeCfg.RepoHash = digestStrings(s.identity.LineageID, attempt.SemanticTaskRef.TaskPath)
+	runtimeCfg.RepoHash = digestStrings(s.identity.LineageID, attempt.SemanticTaskRef.Identity())
 	runtime := state.AttachStateStore(runtimeCfg)
 	info, err := os.Lstat(runtime.Path("."))
 	if errors.Is(err, os.ErrNotExist) {

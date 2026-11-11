@@ -215,6 +215,7 @@ type evidenceExportLiveCandidate struct {
 	attempt       AttemptRecord
 	exists        bool
 	runtimeTaskID string
+	runtimeErr    error
 }
 
 type evidenceExportTaskMatch struct {
@@ -317,9 +318,36 @@ func (s *Store) resolveEvidenceExportTarget(head RepositoryControllerHead, reque
 		return EvidenceExportTarget{}, AttemptRecord{}, err
 	}
 	if request.TaskID != "" {
-		return s.resolveTaskIDExportTarget(head, request.TaskID, live)
+		return s.resolveExplicitEvidenceExportTarget(head, request.TaskID, live)
+	}
+	if live.runtimeErr != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, live.runtimeErr
 	}
 	return s.resolveDefaultExportTarget(head, live)
+}
+
+func (s *Store) resolveExplicitEvidenceExportTarget(head RepositoryControllerHead, taskID string, live evidenceExportLiveCandidate) (EvidenceExportTarget, AttemptRecord, error) {
+	target, attempt, err := s.resolveTaskIDExportTarget(head, taskID, live)
+	if live.runtimeErr == nil {
+		return target, attempt, err
+	}
+	if err != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, errors.Join(err, live.runtimeErr)
+	}
+	if attempt.AttemptSealID == "" || attempt.SemanticTaskRef.Identity() == live.attempt.SemanticTaskRef.Identity() {
+		return EvidenceExportTarget{}, AttemptRecord{}, live.runtimeErr
+	}
+	lease, err := s.loadLease(head.LiveLeaseID)
+	if err != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, err
+	}
+	if err := validateLiveRecordIdentity(head, *head.ExecutionTaskRef, live.attempt, lease); err != nil {
+		return EvidenceExportTarget{}, AttemptRecord{}, err
+	}
+	if lease.ControllerGeneration != head.ControllerGeneration {
+		return EvidenceExportTarget{}, AttemptRecord{}, fmt.Errorf("execution lease generation is stale: lease=%d controller=%d", lease.ControllerGeneration, head.ControllerGeneration)
+	}
+	return target, attempt, nil
 }
 
 func (s *Store) liveExportCandidate(head RepositoryControllerHead) (evidenceExportLiveCandidate, error) {
@@ -339,7 +367,7 @@ func (s *Store) liveExportCandidate(head RepositoryControllerHead) (evidenceExpo
 	}
 	_, taskID, err := s.resolveExportRuntime(attempt)
 	if err != nil && !errors.Is(err, errEvidenceExportRuntimeAbsent) {
-		return evidenceExportLiveCandidate{}, err
+		candidate.runtimeErr = err
 	}
 	candidate.runtimeTaskID = taskID
 	return candidate, nil
@@ -377,10 +405,10 @@ func (s *Store) resolveTaskIDExportTarget(head RepositoryControllerHead, taskID 
 }
 
 func evidenceExportTaskIDTargetMatch(taskID string, matches []evidenceExportTaskMatch) (evidenceExportTaskMatch, error) {
-	taskPath := matches[0].attempt.SemanticTaskRef.TaskPath
+	taskIdentity := matches[0].attempt.SemanticTaskRef.Identity()
 	latest := matches[0]
 	for _, match := range matches[1:] {
-		if match.attempt.SemanticTaskRef.TaskPath != taskPath {
+		if match.attempt.SemanticTaskRef.Identity() != taskIdentity {
 			return evidenceExportTaskMatch{}, fmt.Errorf("evidence export task id %s binds attempts of different tasks", taskID)
 		}
 		if attemptOrderLess(latest.attempt, match.attempt) {
