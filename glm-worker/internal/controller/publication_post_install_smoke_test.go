@@ -213,11 +213,15 @@ func TestPostInstallSmokeProbeUnmetStatesStayOutstanding(t *testing.T) {
 		{name: "stale-argv", status: qualitygate.StatusPass, mutate: func(record *qualitygate.RunRecord) {
 			record.ArgvDigest = strings.Repeat("a", 64)
 		}},
+		{name: "runtime-task-mismatch", status: qualitygate.StatusPass, mutate: func(record *qualitygate.RunRecord) {
+			record.TaskID = "a5416758-ea22-4e38-8a76-afbc9c248398"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture, policy := newPublicationTestFixture(t)
 			policy.RequireInstall = true
 			source := publicationTestEdit(t, fixture, "unmet.txt", "unmet probe implementation\n")
+			acceptedCompletionRuntime(t, fixture.store, source)
 			accepted, candidate := acceptProbedCandidate(t, fixture, policy, source, []SmokeProbeDeclaration{dockerRoutingProbe()})
 			seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, nil)
 			seedSmokeProbeRun(t, fixture.store, candidate, dockerRoutingProbe(), tc.status, tc.mutate)
@@ -331,6 +335,7 @@ func TestPostInstallSmokeDeploymentRevisionReopensProbeObligation(t *testing.T) 
 	fixture, policy := newPublicationTestFixture(t)
 	policy.RequireInstall = true
 	source := publicationTestEdit(t, fixture, "redeployed.txt", "redeployed implementation\n")
+	acceptedCompletionRuntime(t, fixture.store, source)
 	_, candidate := acceptProbedCandidate(t, fixture, policy, source, []SmokeProbeDeclaration{dockerRoutingProbe()})
 	seedFinalValidationRun(t, fixture.store, "go-test", qualitygate.StatusPass, nil)
 	seedSmokeProbeRun(t, fixture.store, candidate, dockerRoutingProbe(), qualitygate.StatusPass, nil)

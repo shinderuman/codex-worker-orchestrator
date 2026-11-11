@@ -12,7 +12,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md`](IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md)
 - [`IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md`](IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md)
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
 - [`IMPLEMENTATION_TASKS/repository-review-artifact-cleanup.md`](IMPLEMENTATION_TASKS/repository-review-artifact-cleanup.md)

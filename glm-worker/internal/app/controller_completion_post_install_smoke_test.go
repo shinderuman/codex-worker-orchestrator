@@ -51,6 +51,13 @@ func sealAppInstallProof(t *testing.T, store *controller.Store, c controller.Acc
 func appProbeFixture(t *testing.T, argv []string) (config.AppConfig, *controller.Store, controller.AcceptedCandidate, uint64) {
 	t.Helper()
 	cfg, admission, store, policy := retiredWorkflowCorpus(t, false)
+	runtime, err := state.NewStateStore(controller.WorkflowTaskConfig(cfg, store.Identity(), admission.Attempt.SemanticTaskRef))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runtime.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
 	policy.RequireInstall = true
 	tree, err := store.PreviewCandidateTree(admission, policy)
 	if err != nil {
@@ -396,4 +403,58 @@ func TestPostInstallSmokePreservesUnprovenDirtyCheckout(t *testing.T) {
 	if err != nil || string(data) != "retained" {
 		t.Fatalf("unproven dirty checkout was discarded: %q %v", data, err)
 	}
+}
+
+func TestPostInstallSmokeReadinessRequiresPersistedProbeLogDigest(t *testing.T) {
+	t.Parallel()
+	cfg, store, candidate, generation := appProbeFixture(t, []string{"/bin/sh", "-c", "printf validated-probe"})
+	input := controller.PublicationInput{ExpectedGeneration: generation, CandidateID: candidate.CandidateID}
+	if _, err := executeParentCompletionPostInstallSmoke(cfg, store, input, controllerPublicationCommand{SourceOID: candidate.CommitOID}); err != nil {
+		t.Fatal(err)
+	}
+	record := latestAppProbeRun(t, cfg, store, candidate, "docker-worker-path")
+	module := state.AttachStateStore(controller.WorkflowTaskConfig(cfg, store.Identity(), candidate.TaskRef))
+	original, err := os.ReadFile(record.Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(want int) {
+		t.Helper()
+		pending, err := store.OutstandingSmokeProbes(candidate)
+		if err != nil || len(pending) != want {
+			t.Fatalf("probe readiness with modified evidence: pending=%#v err=%v want=%d", pending, err, want)
+		}
+	}
+	check(0)
+	legacy := record
+	legacy.LogSHA256 = ""
+	if err := writePostInstallSmokeRecord(module, legacy); err != nil {
+		t.Fatal(err)
+	}
+	check(1)
+	if err := writePostInstallSmokeRecord(module, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record.Log, []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check(1)
+	if err := os.Remove(record.Log); err != nil {
+		t.Fatal(err)
+	}
+	external := filepath.Join(t.TempDir(), "foreign.log")
+	if err := os.WriteFile(external, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, record.Log); err != nil {
+		t.Fatal(err)
+	}
+	check(1)
+	if err := os.Remove(record.Log); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record.Log, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check(0)
 }

@@ -255,3 +255,113 @@ func TestExportBundleClassifiesSelectionAndWorkerResolutionFailures(t *testing.T
 		})
 	}
 }
+
+func TestExportBundleSelectsInstalledWorkerOverStalePATH(t *testing.T) {
+	capture := t.TempDir()
+	t.Setenv("EXPORT_BUNDLE_CAPTURE", capture)
+	stale := writeExportBundleWorkerStub(t, "stale worker", 0)
+	t.Setenv("PATH", filepath.Dir(stale)+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	binDir := t.TempDir()
+	t.Setenv("GLM_WORKER_BIN_DIR", binDir)
+	current := writeExportBundleWorkerStub(t, exportBundleWorkerJSON, 0)
+	payload, err := os.ReadFile(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(binDir, "glm-worker")
+	if err := os.WriteFile(installed, payload, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolveInstalledExportWorker()
+	if err != nil || resolved != installed {
+		t.Fatalf("export worker resolved to %q, error=%v; expected installed %q", resolved, err, installed)
+	}
+	direct, err := resolveControllerActionWorker(config.AppConfig{}, "controller-evidence", exportBundleAction, nil)
+	if err != nil || direct != installed {
+		t.Fatalf("direct controller evidence resolved to %q, error=%v; expected installed %q", direct, err, installed)
+	}
+	var output bytes.Buffer
+	if err := executeExportBundleAction(config.AppConfig{RepoRoot: t.TempDir()}, []string{"export-bundle"}, &output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	assertExportBundleFlattenedOutput(t, output.Bytes())
+
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(stale, installed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveInstalledExportWorker(); err == nil {
+		t.Fatal("symlinked installed export worker was accepted")
+	}
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveInstalledExportWorker(); err == nil {
+		t.Fatal("non-executable installed export worker was accepted")
+	}
+}
+
+func TestExportBundleMissingExplicitInstalledWorkerFailsClosed(t *testing.T) {
+	stale := writeExportBundleWorkerStub(t, exportBundleWorkerJSON, 0)
+	t.Setenv("PATH", filepath.Dir(stale)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	capture := t.TempDir()
+	t.Setenv("EXPORT_BUNDLE_CAPTURE", capture)
+
+	for _, tc := range []struct {
+		name string
+		dir  string
+	}{
+		{name: "missing worker file", dir: t.TempDir()},
+		{name: "missing install directory", dir: filepath.Join(t.TempDir(), "missing")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GLM_WORKER_BIN_DIR", tc.dir)
+			if worker, err := resolveInstalledExportWorker(); worker != "" || !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("explicit missing worker resolved to %q, err=%v", worker, err)
+			}
+			if worker, err := resolveControllerActionWorker(config.AppConfig{}, "controller-evidence", exportBundleAction, nil); worker != "" || !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("direct export selected a fallback worker: %q, err=%v", worker, err)
+			}
+			var output bytes.Buffer
+			err := executeExportBundleAction(config.AppConfig{RepoRoot: t.TempDir()}, []string{"export-bundle"}, &output, io.Discard)
+			if !errors.Is(err, os.ErrNotExist) || output.Len() != 0 {
+				t.Fatalf("missing explicit worker executed fallback: err=%v, stdout=%q", err, output.String())
+			}
+			if _, err := os.Stat(filepath.Join(capture, "argv")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("stale PATH worker was invoked: %v", err)
+			}
+		})
+	}
+}
+
+func TestExportBundleSourceOnlyUsesCurrentWorkerResolver(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GLM_WORKER_BIN_DIR", "")
+	sourceWorker := writeExportBundleWorkerStub(t, exportBundleWorkerJSON, 0)
+	t.Setenv("PATH", filepath.Dir(sourceWorker)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("EXPORT_BUNDLE_CAPTURE", t.TempDir())
+
+	current, err := resolveGLMWorker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := resolveInstalledExportWorker()
+	if err != nil || worker != current {
+		t.Fatalf("source-only worker=%q, err=%v, current=%q", worker, err, current)
+	}
+	direct, err := resolveControllerActionWorker(config.AppConfig{}, "controller-evidence", exportBundleAction, nil)
+	if err != nil || direct != current {
+		t.Fatalf("source-only direct export worker=%q, err=%v, current=%q", direct, err, current)
+	}
+	var output bytes.Buffer
+	if err := executeExportBundleAction(config.AppConfig{RepoRoot: t.TempDir()}, []string{"export-bundle"}, &output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	assertExportBundleFlattenedOutput(t, output.Bytes())
+}

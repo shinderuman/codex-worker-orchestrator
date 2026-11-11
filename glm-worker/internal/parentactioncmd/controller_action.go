@@ -13,6 +13,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const controllerEvidenceAction = "controller-evidence"
+
 func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	if !validControllerActionInvocation(args) {
 		return fmt.Errorf("usage: glm-parent-action <controller-semantic|controller-execution|controller-publication|controller-evidence> <token>")
@@ -46,18 +48,36 @@ func executeControllerAction(cfg config.AppConfig, args []string, stdout, stderr
 				return err
 			}
 		}
-		if err := runWorker(cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(command), stdout, stderr, nil); err != nil {
+		worker, err := resolveControllerActionWorker(cfg, args[0], operation.Action, command)
+		if err != nil {
 			return err
 		}
-		_, err := parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
+		if err := runResolvedWorker(worker, cfg.RepoRoot, []string{"--authority", args[0]}, bytes.NewReader(command), stdout, stderr, nil); err != nil {
+			return err
+		}
+		_, err = parentaction.ConsumeExpected(cfg.RepoRoot, args[0], args[1], payload)
 		return err
 	}
 	return recorder.Measure(args[0]+"-"+operation.Action, func() error {
-		if args[0] == "controller-evidence" {
+		if args[0] == controllerEvidenceAction {
 			return run()
 		}
 		return withParentWaitLease(cfg, run)
 	})
+}
+
+func resolveControllerActionWorker(cfg config.AppConfig, authority, action string, command []byte) (string, error) {
+	if authority == controllerEvidenceAction && action == exportBundleAction {
+		return resolveInstalledExportWorker()
+	}
+	if authority != controllerPublicationAction || action != controller.PublicationOperationPostInstallSmoke {
+		return resolveGLMWorker()
+	}
+	var published completionPublicationCommand
+	if err := json.Unmarshal(command, &published); err != nil {
+		return "", err
+	}
+	return installedPostInstallWorker(cfg, published)
 }
 
 func validControllerActionInvocation(args []string) bool {

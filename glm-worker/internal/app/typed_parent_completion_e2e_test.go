@@ -127,6 +127,9 @@ func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario)
 	binary := typedCompletionWorkerBinary(t)
 	started := time.Now()
 	cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange, scenario.parentOnlySuccessor)
+	if scenario.sourceChange {
+		t.Setenv("GLM_WORKER_BIN_DIR", filepath.Dir(cfg.StateBase))
+	}
 	logAppFixturePhase(t, "typed/fixture", started)
 	store, err := controller.Open(cfg)
 	if err != nil {
@@ -150,6 +153,9 @@ func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario)
 			t.Fatalf("completed publication did not stop before the parent-only successor: %v, %v", successor.Operation, err)
 		}
 	}
+	if scenario.sourceChange && !scenario.interrupt {
+		assertTypedPostInstallBundleFidelity(t, cfg, runtime)
+	}
 	receipts, err := os.ReadFile(filepath.Join(remote, "task-publication-receipts"))
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +178,7 @@ func typedCompletionWorkerBinary(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("GLM_TYPED_COMPLETION_TEST_WORKER", "1")
+	t.Setenv("GLM_TYPED_COMPLETION_WORKER_BINARY", path)
 	return path
 }
 
@@ -220,8 +227,11 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 		if err := command.Run(); err != nil {
 			return controller.InstalledRuntimeIdentity{}, err
 		}
-		binary := filepath.Join(os.Getenv("GLM_WORKER_HOME"), "typed-installed-worker")
-		data := []byte("#!/bin/sh\nexit 0\n")
+		binary := filepath.Join(os.Getenv("GLM_WORKER_HOME"), "glm-worker")
+		data, err := os.ReadFile(os.Getenv("GLM_TYPED_COMPLETION_WORKER_BINARY"))
+		if err != nil {
+			return controller.InstalledRuntimeIdentity{}, err
+		}
 		if err := execfile.Write(binary, data, 0o755); err != nil {
 			return controller.InstalledRuntimeIdentity{}, err
 		}
@@ -601,7 +611,7 @@ func typedSemanticSlotValues(t *testing.T, parameters map[string]string, require
 		semantic["message"] = "typed completion accepted"
 		semantic["require_install"] = fmt.Sprintf("%t", requireInstall)
 		if requireInstall {
-			semantic["required_validations"] = `{"forms":[{"form":"go-test","working_dir":"glm-worker"}],"probes":[{"probe_id":"typed-worker-path","verifies":"the deployed worker path executes the declared probe argv","argv":["/bin/sh","-c","exit 0"]}]}`
+			semantic["required_validations"] = `{"forms":[{"form":"go-test","working_dir":"glm-worker"}],"probes":[{"probe_id":"typed-worker-path","verifies":"the deployed worker path executes the declared probe argv","argv":["/bin/sh","-c","printf typed-probe-live-evidence"]}]}`
 		} else {
 			semantic["required_validations"] = `{"forms":[]}`
 		}

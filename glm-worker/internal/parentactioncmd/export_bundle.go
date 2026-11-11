@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
@@ -57,7 +59,34 @@ const (
 	exportBundleFailureOutput           = "result-output"
 )
 
-var resolveExportBundleWorker = resolveGLMWorker
+var resolveExportBundleWorker = resolveInstalledExportWorker
+
+func resolveInstalledExportWorker() (string, error) {
+	binDir := os.Getenv("GLM_WORKER_BIN_DIR")
+	explicitBinDir := binDir != ""
+	if !explicitBinDir {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		binDir = filepath.Join(home, ".local", "bin")
+	}
+	worker := filepath.Join(binDir, "glm-worker")
+	info, err := os.Lstat(worker)
+	if errors.Is(err, os.ErrNotExist) {
+		if explicitBinDir {
+			return "", fmt.Errorf("configured export worker is missing: %s: %w", worker, err)
+		}
+		return resolveGLMWorker()
+	}
+	if err != nil {
+		return "", fmt.Errorf("inspect installed export worker: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return "", fmt.Errorf("installed export worker is not a regular executable: %s", worker)
+	}
+	return worker, nil
+}
 
 func (e *exportBundleFailure) Error() string { return e.cause.Error() }
 

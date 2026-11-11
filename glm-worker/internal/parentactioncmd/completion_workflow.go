@@ -63,7 +63,19 @@ func runCompletionPublication(cfg config.AppConfig, command completionPublicatio
 		return nil, err
 	}
 	var output bytes.Buffer
-	if err := runWorker(cfg.RepoRoot, []string{"--authority", controllerPublicationAction}, bytes.NewReader(body), &output, stderr, nil); err != nil {
+	worker := ""
+	if command.Action == controller.PublicationOperationPostInstallSmoke {
+		worker, err = installedPostInstallWorker(cfg, command)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		worker, err = resolveGLMWorker()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := runResolvedWorker(worker, cfg.RepoRoot, []string{"--authority", controllerPublicationAction}, bytes.NewReader(body), &output, stderr, nil); err != nil {
 		return nil, err
 	}
 	raw, err := decodeSingleMachineJSON(output.Bytes(), "completion publication")
@@ -76,6 +88,32 @@ func runCompletionPublication(cfg config.AppConfig, command completionPublicatio
 		}
 	}
 	return raw, nil
+}
+
+func installedPostInstallWorker(cfg config.AppConfig, command completionPublicationCommand) (string, error) {
+	store, err := controller.Open(cfg)
+	if err != nil {
+		return "", err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return "", err
+	}
+	if head.ControllerGeneration != command.ExpectedGeneration || head.AcceptedCandidateRef == nil {
+		return "", fmt.Errorf("post-install smoke has no current accepted candidate at the requested generation")
+	}
+	candidate, err := store.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil {
+		return "", err
+	}
+	if candidate.CandidateID != command.CandidateID || candidate.CommitOID != command.SourceOID {
+		return "", fmt.Errorf("post-install smoke worker selection differs from the accepted candidate")
+	}
+	deployment, err := store.PostInstallSmokeDeployment(candidate)
+	if err != nil {
+		return "", err
+	}
+	return deployment.BinaryPath, nil
 }
 
 func driveCompletionWorkflow(cfg config.AppConfig, result completionWorkflowResult, stdout, stderr io.Writer) error {

@@ -47,10 +47,14 @@ func executeParentCompletionPostInstallSmoke(cfg config.AppConfig, store *contro
 	if len(probes) == 0 {
 		return nil, fmt.Errorf("candidate has no outstanding post-install smoke probes")
 	}
+	taskID, err := runtime.TaskID()
+	if err != nil {
+		return nil, fmt.Errorf("read post-install smoke probe runtime Task ID: %w", err)
+	}
 	runs := make([]postInstallSmokeRunOutput, 0, len(probes))
 	failed := ""
 	for _, probe := range probes {
-		record, runErr := runPostInstallSmokeProbe(store, candidate, probe, root, runtime)
+		record, runErr := runPostInstallSmokeProbe(store, candidate, probe, root, taskID, runtime)
 		if runErr != nil {
 			return nil, runErr
 		}
@@ -87,8 +91,8 @@ func preparePostInstallSmoke(cfg config.AppConfig, store *controller.Store, inpu
 	return candidate, root, release, nil
 }
 
-func runPostInstallSmokeProbe(store *controller.Store, candidate controller.AcceptedCandidate, probe controller.SmokeProbeDeclaration, root string, runtime *state.StateStore) (qualitygate.RunRecord, error) {
-	record, err := store.NewSmokeProbeRunRecord(candidate, probe, root, runtime.ReadOr("task.id", ""))
+func runPostInstallSmokeProbe(store *controller.Store, candidate controller.AcceptedCandidate, probe controller.SmokeProbeDeclaration, root, taskID string, runtime *state.StateStore) (qualitygate.RunRecord, error) {
+	record, err := store.NewSmokeProbeRunRecord(candidate, probe, root, taskID)
 	if err != nil {
 		return record, err
 	}
