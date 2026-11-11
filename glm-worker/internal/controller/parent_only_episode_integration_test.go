@@ -183,7 +183,7 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 		t.Fatal("amended Root smoke identity lost its live attempt")
 	}
 
-	// Acceptance itself collects the Bundle and must never fabricate Runtime evidence.
+	// Promotion captures the Bundle observation without creating model Runtime evidence.
 	fixture := parentOnlyTaskFixture{store: store, repo: repo, policy: policy}
 	completion := parentOnlyCompletionAdmission(t, fixture)
 	rootAccepted, err := store.AcceptParentCompletion(completion, CandidateAcceptanceInput{
