@@ -71,15 +71,15 @@ func TestParentOnlyRootResumeUsesTypedMaterializationAndClosesEpisode(t *testing
 		CreatedAt:         time.Now().UTC(),
 	}
 	episode.RevisionID = blockerEpisodeRevisionID(episode)
+	if err := fixture.store.writeEpisodeRevision(episode); err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.store.writeEpisodeRecord(BlockerEpisodeRecord{
 		SchemaVersion: controllerSchemaVersion, EpisodeID: episode.EpisodeID,
 		RepositoryIdentity: fixture.store.Identity().LineageID,
 		RootTaskRef:        root.Task, ScopeRootTaskRef: retiredChild,
 		CreatedAt: episode.CreatedAt,
 	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.writeEpisodeRevision(episode); err != nil {
 		t.Fatal(err)
 	}
 	head := published.Head
