@@ -157,6 +157,12 @@ func TestRequestMutableAndSuspendedExternalAdvancement(t *testing.T) {
 		t.Fatalf("request external pull could not adopt live source: %v", err)
 	}
 	assertRequestAdvancementAuthority(t, f.store, adopted.Head, remote)
+	root := f.store.identity.PrimaryRoot
+	originalTree := controllerGitOutput(t, root, "rev-parse", source.Head.IntegrationTip+"^{tree}")
+	diverged := controllerGitOutput(t, root, "commit-tree", originalTree, "-p", source.Head.IntegrationTip, "-m", "divergent request advancement")
+	if _, err := f.store.publicationProjectAdvancement(adopted.Head, diverged); err == nil {
+		t.Fatal("request advancement accepted a sibling of the integration tip")
+	}
 	if adopted.Suspension == nil || adopted.Head.LiveLeaseID != "" {
 		t.Fatalf("request live source was not suspended: %+v", adopted)
 	}
