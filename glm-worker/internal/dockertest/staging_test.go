@@ -223,6 +223,7 @@ func publishTestStagingResponseAfterRequest(staging, responses, token, body stri
 func TestStagingClientReproducesOwnerResponse(t *testing.T) {
 	t.Parallel()
 	client, staging, responses := newStagingClientFixture(t)
+	client.Timeout = 2 * time.Second
 	token := stagingClientToken()
 	body := `{"schema_version":1,"token":"` + token + `","exit_code":3,"stdout":"container-out\n","stderr":"goquality-diagnostic {\"form\":\"diagnostic-go-test\",\"child_exit\":3,\"exit\":3}\n"}`
 	written := publishTestStagingResponseAfterRequest(staging, responses, token, body)
@@ -242,6 +243,7 @@ func TestStagingClientReproducesOwnerResponse(t *testing.T) {
 func TestStagingClientIgnoresForeignResponses(t *testing.T) {
 	t.Parallel()
 	client, staging, responses := newStagingClientFixture(t)
+	client.Timeout = 500 * time.Millisecond
 	token := stagingClientToken()
 	foreign := `{"schema_version":1,"token":"9999999999999999999","exit_code":0,"stdout":"forged\n","stderr":""}`
 	written := publishTestStagingResponseAfterRequest(staging, responses, token, foreign)
@@ -262,8 +264,10 @@ func TestStagingClientRandomTokensAcrossConcurrentCalls(t *testing.T) {
 	client.Timeout = 3 * time.Second
 	client.PollInterval = 5 * time.Millisecond
 	other := &StagingClient{
-		StagingDir: staging, ResponseDir: responses,
-		Timeout: 3 * time.Second, PollInterval: 5 * time.Millisecond,
+		StagingDir:   staging,
+		ResponseDir:  responses,
+		Timeout:      3 * time.Second,
+		PollInterval: 5 * time.Millisecond,
 	}
 	type result struct {
 		code int
