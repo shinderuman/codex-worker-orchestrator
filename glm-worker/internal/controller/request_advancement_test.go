@@ -233,3 +233,65 @@ func TestRequestAdvancementRejectsForeignAuthorityAndHarness(t *testing.T) {
 		t.Fatalf("rejected request authority changed controller head: %+v", current)
 	}
 }
+
+func TestRequestPostPullRebindRefusesStaleAndDivergedSource(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		move func(*testing.T, string, PublicationPolicy, string)
+	}{
+		{
+			name: "stale source OID",
+			move: func(_ *testing.T, _ string, _ PublicationPolicy, _ string) {},
+		},
+		{
+			name: "divergent primary",
+			move: func(t *testing.T, root string, _ PublicationPolicy, _ string) {
+				runControllerGit(t, root, "commit", "--allow-empty", "-qm", "divergent local history")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, policy := newRequestAdvancementFixture(t)
+			source := publicationTestEdit(t, f, "candidate.txt", "request implementation\n")
+			f.source = source
+			accepted, err := f.store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{
+				RequiredValidations: declaredNoValidations(), Message: "request implementation",
+				Policy: policy, Evidence: publicationTestEvidence(t, f.store, source, policy),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := f.store.LoadAcceptedCandidate(*accepted.CandidateRef)
+			if err != nil {
+				t.Fatal(err)
+			}
+			remote := advancePublicationTestRemote(t, f, policy, "external.txt", "external change\n")
+			root := f.store.identity.PrimaryRoot
+			if tc.name == "divergent primary" {
+				tc.move(t, root, policy, remote)
+			} else {
+				runControllerGit(t, root, "pull", "--ff-only", policy.Remote, policy.RemoteRef)
+			}
+			sourceOID := remote
+			if tc.name == "stale source OID" {
+				sourceOID = accepted.Head.IntegrationTip
+			}
+			if _, err := f.store.RebindPulledUnpublishedCandidate(PublicationInput{
+				ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
+			}, sourceOID); err == nil {
+				t.Fatalf("invalid pull binding admitted: %s", tc.name)
+			}
+			after, err := f.store.LoadHead()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.ControllerGeneration != accepted.Head.ControllerGeneration ||
+				after.IntegrationTip != accepted.Head.IntegrationTip ||
+				after.ProjectSnapshotID != accepted.Head.ProjectSnapshotID ||
+				after.AcceptedCandidateRef == nil ||
+				after.AcceptedCandidateRef.Digest != accepted.Head.AcceptedCandidateRef.Digest {
+				t.Fatalf("rejected request rebind changed controller authority: %+v", after)
+			}
+		})
+	}
+}
