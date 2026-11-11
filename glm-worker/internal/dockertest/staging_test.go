@@ -108,10 +108,10 @@ func newStagingClientFixture(t *testing.T) (*StagingClient, string, string) {
 		t.Fatal(err)
 	}
 	client := &StagingClient{
-		StagingDir:   staging,
-		ResponseDir:  responses,
-		PollInterval: 10 * time.Millisecond,
-		Timeout:      120 * time.Millisecond,
+		StagingDir:    staging,
+		ResponseDir:   responses,
+		PollInterval:  10 * time.Millisecond,
+		Timeout:       120 * time.Millisecond,
 		generateToken: func() (string, error) { return stagingClientToken(), nil },
 	}
 	return client, staging, responses
