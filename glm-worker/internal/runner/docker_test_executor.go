@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -447,7 +448,7 @@ func (e *dockerTestExecutor) recordAttempt(reason string) {
 }
 
 func writeStagingResponse(dir string, response dockertest.StagingResponse) error {
-	data, err := json.Marshal(response)
+	data, err := encodeStagingResponse(response)
 	if err != nil {
 		return err
 	}
@@ -461,6 +462,34 @@ func writeStagingResponse(dir string, response dockertest.StagingResponse) error
 	defer func() { _ = file.Close() }()
 	_, err = file.Write(data)
 	return err
+}
+
+func encodeStagingResponse(response dockertest.StagingResponse) ([]byte, error) {
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(response); err != nil {
+		return nil, err
+	}
+	data := bytes.TrimSuffix(encoded.Bytes(), []byte("\n"))
+	if len(data) <= dockertest.StagingMaxResponseBytes {
+		return data, nil
+	}
+	encoded.Reset()
+	failure := dockertest.StagingResponse{
+		SchemaVersion: dockertest.StagingSchemaVersion,
+		Token:         response.Token,
+		ExitCode:      1,
+		Failure:       "staging responseが符号化後size上限を超えました",
+	}
+	if err := encoder.Encode(failure); err != nil {
+		return nil, err
+	}
+	data = bytes.TrimSuffix(encoded.Bytes(), []byte("\n"))
+	if len(data) > dockertest.StagingMaxResponseBytes {
+		return nil, fmt.Errorf("staging responseのfailureもsize上限を超えました")
+	}
+	return data, nil
 }
 
 func appendGitAuthorityAttempt(path, reason string) {

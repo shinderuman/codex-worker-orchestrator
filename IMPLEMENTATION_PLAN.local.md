@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/staging-response-encoded-byte-budget.md`](IMPLEMENTATION_TASKS/staging-response-encoded-byte-budget.md)
+- [`IMPLEMENTATION_TASKS/scheduled-pause-error-preservation.md`](IMPLEMENTATION_TASKS/scheduled-pause-error-preservation.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/scheduled-pause-error-preservation.md`](IMPLEMENTATION_TASKS/scheduled-pause-error-preservation.md)
 - [`IMPLEMENTATION_TASKS/publication-abort-recovery-action.md`](IMPLEMENTATION_TASKS/publication-abort-recovery-action.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-diff-execution-bounds.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-execution-bounds.md)
 - [`IMPLEMENTATION_TASKS/quality-wiring-package-bindings.md`](IMPLEMENTATION_TASKS/quality-wiring-package-bindings.md)

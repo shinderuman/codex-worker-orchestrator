@@ -568,3 +568,88 @@ func TestStagingClientRejectsReuseAfterAbandonedRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestStagingClientFailsImmediatelyOnOversizedResponse(t *testing.T) {
+	client, staging, responses := newStagingClientFixture(t)
+	client.Timeout = 10 * time.Second
+	client.PollInterval = time.Millisecond
+	token := stagingClientToken()
+	path := filepath.Join(responses, StagingResponseFileName(token))
+	pending := filepath.Join(responses, ".oversized-pending")
+	file, err := os.Create(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(StagingMaxResponseBytes + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	written := publishTestStagingResponseAfterRequest(staging, responses, token, "{")
+	published := make(chan error, 1)
+	go func() {
+		if err := <-written; err != nil {
+			published <- err
+			return
+		}
+		published <- os.Rename(pending, path)
+	}()
+	var stdout, stderr strings.Builder
+	start := time.Now()
+	code := client.Run(context.Background(), []string{"./..."}, &stdout, &stderr)
+	if err := <-published; err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 || !strings.Contains(stderr.String(), "符号化後size上限") {
+		t.Fatalf("過大responseの即時拒否 = code %d out %q err %q", code, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stderr.String(), "締切内") || stdout.Len() != 0 {
+		t.Fatalf("過大responseがpending/成功出力になりました: out %q err %q", stdout.String(), stderr.String())
+	}
+	if elapsed := time.Since(start); elapsed >= 5*time.Second {
+		t.Fatalf("過大response拒否に%vかかりました（timeout待機の疑い）", elapsed)
+	}
+	if _, err := os.Stat(filepath.Join(staging, StagingRequestFileName(token))); !os.IsNotExist(err) {
+		t.Fatalf("fail-closed後にrequestが残っています: %v", err)
+	}
+}
+
+func TestStagingClientKeepsPartialResponsePendingAndCancellable(t *testing.T) {
+	t.Run("deadline", func(t *testing.T) {
+		client, staging, responses := newStagingClientFixture(t)
+		token := stagingClientToken()
+		written := publishTestStagingResponseAfterRequest(staging, responses, token, `{"schema_version":1,"token":"`+token+`"`)
+		var stdout, stderr strings.Builder
+		code := client.Run(context.Background(), []string{"./..."}, &stdout, &stderr)
+		if err := <-written; err != nil {
+			t.Fatal(err)
+		}
+		if code != 1 || !strings.Contains(stderr.String(), "締切内に得られませんでした") || strings.Contains(stderr.String(), "size上限") {
+			t.Fatalf("部分responseのdeadline待機 = code %d out %q err %q", code, stdout.String(), stderr.String())
+		}
+	})
+	t.Run("cancel", func(t *testing.T) {
+		client, staging, responses := newStagingClientFixture(t)
+		client.Timeout = 5 * time.Second
+		token := stagingClientToken()
+		written := publishTestStagingResponseAfterRequest(staging, responses, token, "{")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		published := make(chan error, 1)
+		go func() {
+			published <- <-written
+			cancel()
+		}()
+		var stdout, stderr strings.Builder
+		code := client.Run(ctx, []string{"./..."}, &stdout, &stderr)
+		if err := <-published; err != nil {
+			t.Fatal(err)
+		}
+		if code != 1 || !strings.Contains(stderr.String(), "取消しました") || strings.Contains(stderr.String(), "size上限") {
+			t.Fatalf("部分responseのcancel = code %d out %q err %q", code, stdout.String(), stderr.String())
+		}
+	})
+}
