@@ -14,6 +14,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const maxDiffSourceBytes int64 = 1 << 20
+
 func diffWorktreeObject(repoRoot, path string) (string, string, []byte, bool, error) {
 	parent, err := diffOpenParent(repoRoot, path)
 	if errors.Is(err, unix.ENOENT) {
@@ -70,7 +72,7 @@ func diffReadLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte, error
 	case unix.S_IFREG:
 		return diffReadRegularLeaf(parent, leaf, info)
 	case unix.S_IFLNK:
-		for size := 256; ; size *= 2 {
+		for size := 256; size <= int(maxDiffSourceBytes); size *= 2 {
 			buffer := make([]byte, size)
 			n, err := unix.Readlinkat(int(parent.Fd()), leaf, buffer)
 			if err != nil {
@@ -80,6 +82,7 @@ func diffReadLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte, error
 				return buffer[:n], nil
 			}
 		}
+		return nil, fmt.Errorf("diff symlink %q exceeds source execution limit %d bytes", leaf, maxDiffSourceBytes)
 	default:
 		return nil, fmt.Errorf("unsupported diff worktree type for %q: %o", leaf, info.Mode)
 	}
@@ -99,9 +102,15 @@ func diffReadRegularLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte
 	if opened.Mode&unix.S_IFMT != unix.S_IFREG || !sameDiffObject(info, opened) {
 		return nil, fmt.Errorf("diff leaf %q changed while opening", leaf)
 	}
-	content, err := io.ReadAll(file)
+	if opened.Size > maxDiffSourceBytes {
+		return nil, fmt.Errorf("diff leaf %q is %d bytes; source execution limit is %d bytes", leaf, opened.Size, maxDiffSourceBytes)
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxDiffSourceBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read diff leaf %q: %w", leaf, err)
+	}
+	if int64(len(content)) > maxDiffSourceBytes {
+		return nil, fmt.Errorf("diff leaf %q exceeds source execution limit %d bytes during read", leaf, maxDiffSourceBytes)
 	}
 	return content, nil
 }
