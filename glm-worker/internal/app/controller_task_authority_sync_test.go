@@ -753,7 +753,8 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if actual, err := runtime.TaskID(); err != nil || actual != taskID {
 		t.Fatalf("parent-only Amendment lost smoke attempt identity: %q %v", actual, err)
 	}
-	writeAppTestFile(t, cfg.RepoRoot, "evaluation-result.md", "parent evaluation product\n")
+	// Completion must use the exact post-sync snapshot. Introducing another
+	// unrecorded product here would invalidate the live lease.
 	next := executeParentHandoff(t, cfg)
 	if !next.Consistent || next.RequiredAction == nil || *next.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("parent-only Amendment did not proceed to completion: %#v", next)
