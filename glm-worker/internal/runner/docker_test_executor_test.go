@@ -464,6 +464,71 @@ func TestDockerTestExecutorKeepsPublishedResponseImmutable(t *testing.T) {
 	}
 }
 
+func TestDockerTestConcurrentStagingClientsNeverExchangeResults(t *testing.T) {
+	guard := newDockerTestGuard(t)
+	recorder := &stagingRunRecorder{}
+	run := func(_ context.Context, root string, args []string, stdout, _ io.Writer) (int, error) {
+		recorder.capture(root, args)
+		_, _ = io.WriteString(stdout, "executed:"+args[0])
+		if args[0] == "./internal/dockertest" {
+			return 5, nil
+		}
+		return 0, nil
+	}
+	startTestDockerTestExecutor(t, guard, run)
+
+	type result struct {
+		code   int
+		stdout string
+		stderr string
+	}
+	packages := []string{"./internal/runner", "./internal/dockertest"}
+	results := make([]result, len(packages))
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i, pkg := range packages {
+		wg.Add(1)
+		go func(i int, pkg string) {
+			defer wg.Done()
+			<-start
+			client := &dockertest.StagingClient{
+				StagingDir: guard.dockerTestStagingDir, ResponseDir: guard.dockerTestResponseDir,
+				Timeout: 5 * time.Second, PollInterval: 5 * time.Millisecond,
+			}
+			var stdout, stderr strings.Builder
+			code := client.Run(context.Background(), []string{pkg}, &stdout, &stderr)
+			results[i] = result{code: code, stdout: stdout.String(), stderr: stderr.String()}
+		}(i, pkg)
+	}
+	close(start)
+	wg.Wait()
+
+	executed := 0
+	for i, pkg := range packages {
+		got := results[i]
+		expectedCode := 0
+		if pkg == "./internal/dockertest" {
+			expectedCode = 5
+		}
+		if got.stdout == "executed:"+pkg && got.code == expectedCode {
+			executed++
+			continue
+		}
+		// Owner intentionally rejects concurrently visible requests. Such a
+		// rejection must not carry another package's successful output.
+		if got.code == 1 && got.stdout == "" && strings.Contains(got.stderr, "並行staging requestを拒否") {
+			continue
+		}
+		t.Fatalf("%s result was confused with another request: %#v", pkg, got)
+	}
+	if executed == 0 {
+		t.Fatalf("owner did not process either request: %#v", results)
+	}
+	if records := recorder.snapshot(); len(records) != executed {
+		t.Fatalf("owner executed unexpected request count: %#v / %#v", records, results)
+	}
+}
+
 func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 	guard := newDockerTestGuard(t)
 	recorder := &stagingRunRecorder{}
