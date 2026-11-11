@@ -276,20 +276,8 @@ func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]strin
 			return true
 		}
 		key, ok := qualityWiringSelectorCallKey(call, receiver, importName)
-		if !ok {
+		if !ok || !qualityWiringBoundSelector(call, key, receiverObject, bindings) {
 			return true
-		}
-		selector := call.Fun.(*ast.SelectorExpr)
-		base := selector.X.(*ast.Ident)
-		switch {
-		case strings.HasPrefix(key, "workflow."):
-			if receiverObject == nil || bindings.Uses[base] != receiverObject {
-				return true
-			}
-		case strings.HasPrefix(key, harnesslintName+"."):
-			if _, ok := bindings.Uses[base].(*types.PkgName); !ok {
-				return true
-			}
 		}
 		for candidate, requiredKey := range required {
 			if key == requiredKey {
@@ -298,6 +286,20 @@ func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]strin
 		}
 		return true
 	})
+}
+
+func qualityWiringBoundSelector(call *ast.CallExpr, key string, receiverObject types.Object, bindings *types.Info) bool {
+	selector := call.Fun.(*ast.SelectorExpr)
+	base := selector.X.(*ast.Ident)
+	switch {
+	case strings.HasPrefix(key, "workflow."):
+		return receiverObject != nil && bindings.Uses[base] == receiverObject
+	case strings.HasPrefix(key, harnesslintName+"."):
+		_, ok := bindings.Uses[base].(*types.PkgName)
+		return ok
+	default:
+		return false
+	}
 }
 
 func qualityWiringWorkflowReceiver(function *ast.FuncDecl) string {
