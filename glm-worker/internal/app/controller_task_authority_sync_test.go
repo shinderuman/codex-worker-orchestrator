@@ -716,7 +716,11 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	rejectForgedParentOnlySync(t, cfg, store, before, revised)
 	sync := executeParentHandoff(t, cfg)
 	if !sync.Consistent || sync.RequiredAction == nil || *sync.RequiredAction != controllerExecutionSurface {
-		t.Fatalf("parent-only Amendment did not produce an executable handoff: %#v", sync)
+		reason := ""
+		if sync.Inconsistency != nil {
+			reason = *sync.Inconsistency
+		}
+		t.Fatalf("parent-only Amendment did not produce an executable handoff: reason=%q, handoff=%#v", reason, sync)
 	}
 	payload := sync.RequiredActionParameters["controller_command_json"]
 	var command workflow.ControllerExecutionCommand
