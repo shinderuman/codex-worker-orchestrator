@@ -24,6 +24,9 @@ func TestParseStagingRequestRejectsProtocolViolations(t *testing.T) {
 		{name: "terminator-arg", body: `{"schema_version":1,"token":"100","args":["--"]}`},
 		{name: "args-not-array", body: `{"schema_version":1,"token":"100","args":"./..."}`},
 		{name: "trailing-json", body: `{"schema_version":1,"token":"100","args":["./..."]}{}{"schema_version":1}`},
+		{name: "trailing-close-bracket", body: `{"schema_version":1,"token":"100","args":["./..."]}]`},
+		{name: "trailing-close-brace", body: `{"schema_version":1,"token":"100","args":["./..."]}}`},
+		{name: "trailing-garbage", body: `{"schema_version":1,"token":"100","args":["./..."]}garbage`},
 		{name: "non-object", body: `[]`},
 	}
 	for _, tc := range cases {
@@ -37,6 +40,9 @@ func TestParseStagingRequestRejectsProtocolViolations(t *testing.T) {
 	}
 	if request.Token != "100" || len(request.Args) != 4 {
 		t.Fatalf("正当requestのparse結果 = %#v", request)
+	}
+	if _, err := ParseStagingRequest([]byte(" \n\t" + `{"schema_version":1,"token":"100","args":["./..."]}` + "\n\t ")); err != nil {
+		t.Fatalf("末尾空白を含む正当requestが拒否されました: %v", err)
 	}
 }
 
@@ -82,10 +88,16 @@ func TestParseStagingResponseRejectsProtocolViolations(t *testing.T) {
 	if _, err := ParseStagingResponse([]byte(`{"schema_version":1,"token":"100","exit_code":0,"stdout":"","stderr":""}`)); err != nil {
 		t.Fatalf("正当responseが拒否されました: %v", err)
 	}
+	if _, err := ParseStagingResponse([]byte(" \n\t" + `{"schema_version":1,"token":"100","exit_code":0,"stdout":"","stderr":""}` + "\n\t ")); err != nil {
+		t.Fatalf("末尾空白を含む正当responseが拒否されました: %v", err)
+	}
 	for name, body := range map[string]string{
 		"unknown-field":   `{"schema_version":1,"token":"100","exit_code":0,"promote":true}`,
 		"schema-mismatch": `{"schema_version":3,"token":"100","exit_code":0}`,
-		"trailing-value":  `{"schema_version":1,"token":"100","exit_code":0}1`,
+		"trailing-value":         `{"schema_version":1,"token":"100","exit_code":0}1`,
+		"trailing-close-bracket": `{"schema_version":1,"token":"100","exit_code":0}]`,
+		"trailing-close-brace":   `{"schema_version":1,"token":"100","exit_code":0}}`,
+		"trailing-garbage":       `{"schema_version":1,"token":"100","exit_code":0}garbage`,
 	} {
 		if _, err := ParseStagingResponse([]byte(body)); err == nil {
 			t.Fatalf("%s: responseが受理されました", name)
