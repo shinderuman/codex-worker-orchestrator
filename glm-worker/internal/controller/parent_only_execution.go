@@ -78,6 +78,8 @@ func (s *Store) planParentOnlyExecution(input ParentOnlyMaterializeInput) (Execu
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
+	attempt.EpisodeID, attempt.EpisodeRevision = head.ActiveEpisodeID, head.ActiveEpisodeRevision
+	lease.EpisodeID, lease.EpisodeRevision = head.ActiveEpisodeID, head.ActiveEpisodeRevision
 	record, err := executionTransition(head, executionParentOnlyMaterialize)
 	if err != nil {
 		return ExecutionOperation{}, head, err
@@ -252,7 +254,9 @@ func parentOnlyPlanMatchesJournal(op ExecutionOperation) bool {
 }
 
 func parentOnlyAttemptLeaseBindingMatches(op ExecutionOperation) bool {
-	return op.Attempt.ExecutionBaseOID == op.Lease.ExpectedBaseOID && op.Attempt.WorkspaceSnapshotID == op.Lease.ExpectedWorkspaceSnapshotID && op.Lease.AttemptID == op.Attempt.AttemptID && op.Lease.WorkspaceID == op.Workspace.ID && op.Lease.SemanticTaskRef.Equal(op.Attempt.SemanticTaskRef)
+	return op.Attempt.ExecutionBaseOID == op.Lease.ExpectedBaseOID && op.Attempt.WorkspaceSnapshotID == op.Lease.ExpectedWorkspaceSnapshotID && op.Lease.AttemptID == op.Attempt.AttemptID && op.Lease.WorkspaceID == op.Workspace.ID && op.Lease.SemanticTaskRef.Equal(op.Attempt.SemanticTaskRef) &&
+		op.Attempt.EpisodeID == op.Lease.EpisodeID && op.Attempt.EpisodeRevision == op.Lease.EpisodeRevision &&
+		op.Attempt.EpisodeID == op.Transition.SourceEpisodeID && op.Attempt.EpisodeRevision == op.Transition.SourceEpisodeRevision
 }
 
 func (s *Store) applyParentOnlyExecution(op ExecutionOperation) error {
@@ -410,7 +414,10 @@ func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 		return false
 	}
 	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
-	return err == nil && authority.ExecutionMode == ExecutionAuthorityParentOnly && attempt.SemanticTaskRef.Equal(authority.Task)
+	return err == nil && authority.ExecutionMode == ExecutionAuthorityParentOnly &&
+		head.ExecutionTaskRef != nil && head.RootTaskRef != nil &&
+		attempt.SemanticTaskRef.Equal(*head.ExecutionTaskRef) && attempt.RootTaskRef.Equal(*head.RootTaskRef) &&
+		attempt.SemanticTaskRef.TaskPath == authority.Task.TaskPath
 }
 
 func (s *Store) LiveParentOnlyExecution() (bool, error) {

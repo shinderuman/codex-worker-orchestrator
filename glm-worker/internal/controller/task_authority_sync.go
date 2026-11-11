@@ -44,6 +44,9 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if !authority.Task.Equal(task) {
 		return ExecutionOperation{}, fmt.Errorf("task authority sync changes Task authority")
 	}
+	if (admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly) != (authority.ExecutionMode == ExecutionAuthorityParentOnly) {
+		return ExecutionOperation{}, fmt.Errorf("Task authority sync cannot change parent-only execution designation")
+	}
 	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
 	if err != nil {
 		return ExecutionOperation{}, err
