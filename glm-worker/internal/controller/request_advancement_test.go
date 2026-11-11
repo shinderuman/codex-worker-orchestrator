@@ -86,12 +86,17 @@ func TestRequestPulledUnpublishedCandidateRebindPreservesAuthority(t *testing.T)
 				}
 			}
 			remote := advancePublicationTestRemote(t, f, policy, "external.txt", "upstream advancement\n")
-			runControllerGit(t, f.store.identity.PrimaryRoot, "pull", "--ff-only", policy.Remote, policy.RemoteRef)
-			rebound, err := f.store.RebindPulledUnpublishedCandidate(PublicationInput{
-				ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
-			}, remote)
+			input := PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}
+			var rebound ExecutionOperationResult
+			if locallyPromoted {
+				// A local-only candidate cannot fast-forward-pull a remote that branched at its old base.
+				rebound, err = f.store.RebindUnpublishedCandidate(input)
+			} else {
+				runControllerGit(t, f.store.identity.PrimaryRoot, "pull", "--ff-only", policy.Remote, policy.RemoteRef)
+				rebound, err = f.store.RebindPulledUnpublishedCandidate(input, remote)
+			}
 			if err != nil {
-				t.Fatalf("request rebind after fast-forward pull: %v", err)
+				t.Fatalf("request rebind after external fast-forward: %v", err)
 			}
 			assertRequestAdvancementAuthority(t, f.store, rebound.Head, remote)
 			current, err := f.store.LoadAcceptedCandidate(*rebound.CandidateRef)
