@@ -436,6 +436,9 @@ func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 	if head.LiveAttemptID != "" && head.LiveAttemptID != taskID {
 		return false
 	}
+	if head.LiveAttemptID == "" && head.AcceptedCandidateRef == nil {
+		return false
+	}
 	if head.AcceptedCandidateRef != nil {
 		candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 		if err != nil || candidate.AttemptID != taskID {
