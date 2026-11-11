@@ -87,8 +87,6 @@ func TestWorkerDockerDenyRuleCommandCoverage(t *testing.T) {
 		t.Fatalf("Docker deny rules = %#v, want %#v", workerDockerDisallowedBashRules, wantRules)
 	}
 
-	// Check the emitted Bash wildcard patterns against concrete command strings.
-	// CLI enforcement still requires a real Claude CLI policy integration check.
 	cases := []struct {
 		name    string
 		command string
