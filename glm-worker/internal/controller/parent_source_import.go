@@ -340,10 +340,8 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	if err := s.writeAttempt(*op.Attempt); err != nil {
 		return err
 	}
-	if op.Transition.Kind == executionTaskAuthoritySync && op.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
-		if err := s.bindParentOnlySmokeTaskID(*op.Attempt); err != nil {
-			return err
-		}
+	if err := s.bindParentOnlySourceSyncSmoke(op); err != nil {
+		return err
 	}
 	actual := map[string]string{op.Transition.Effects[0].Key(): trees.WorktreeTree}
 	_, _, err = s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, op.Evidence, func(head *RepositoryControllerHead) error {
@@ -356,6 +354,13 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 		return nil
 	})
 	return err
+}
+
+func (s *Store) bindParentOnlySourceSyncSmoke(op ExecutionOperation) error {
+	if op.Transition.Kind != executionTaskAuthoritySync || op.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return nil
+	}
+	return s.bindParentOnlySmokeTaskID(*op.Attempt)
 }
 
 func (s *Store) validateParentSourceImportProject(op ExecutionOperation) error {
