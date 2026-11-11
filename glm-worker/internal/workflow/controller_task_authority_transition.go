@@ -52,6 +52,15 @@ func VerifyTaskAuthoritySyncRuntime(before []byte, admission controller.Admissio
 	if err := json.Unmarshal(before, &evidence); err != nil {
 		return fmt.Errorf("decode task authority sync runtime evidence: %w", err)
 	}
+	if admission.Attempt.ExecutionAuthority == controller.ExecutionAuthorityParentOnly {
+		if evidence.Runtime != TaskAuthorityRuntimeParentOnly || evidence.TaskID == "" || evidence.TaskID != admission.Attempt.AttemptID || evidence.Binding != nil {
+			return fmt.Errorf("parent-only Task authority sync requires exact smoke attempt identity without Runtime binding")
+		}
+		return nil
+	}
+	if evidence.Runtime == TaskAuthorityRuntimeParentOnly {
+		return fmt.Errorf("ordinary Task authority sync cannot accept parent-only smoke evidence")
+	}
 	if evidence.Runtime == TaskAuthorityRuntimeUnstarted {
 		if evidence.TaskID != "" || evidence.Binding != nil {
 			return fmt.Errorf("unstarted task authority sync must not claim retained runtime identity")

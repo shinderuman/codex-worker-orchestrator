@@ -22,9 +22,39 @@ type TaskAuthoritySyncEvidence struct {
 const (
 	TaskAuthorityRuntimeAttached  = "attached"
 	TaskAuthorityRuntimeUnstarted = "unstarted"
+	TaskAuthorityRuntimeParentOnly = "parent-only"
 )
 
 func (w *Workflow) CaptureTaskAuthoritySyncEvidence() ([]byte, error) {
+	if w.state.Exists("task.id") {
+		exists, err := controller.Exists(w.config)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			store, err := controller.Open(w.config)
+			if err != nil {
+				return nil, err
+			}
+			live, err := store.LiveParentOnlyExecution()
+			if err != nil {
+				return nil, err
+			}
+			if live {
+				taskID, err := w.state.TaskID()
+				if err != nil {
+					return nil, err
+				}
+				if !store.ParentOnlySmokeIdentityMatches(taskID) {
+					return nil, fmt.Errorf("parent-only smoke identity differs from live Task or attempt authority")
+				}
+				if _, err := w.state.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+					return nil, fmt.Errorf("parent-only Task authority sync must not carry a Runtime binding: %v", err)
+				}
+				return json.Marshal(TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeParentOnly, TaskID: taskID})
+			}
+		}
+	}
 	if !w.state.Exists("task.id") {
 		unstarted, err := w.state.UnstartedTaskRuntime()
 		if err != nil {
@@ -60,6 +90,34 @@ func (w *Workflow) CompleteTaskAuthoritySync(data []byte) error {
 		return err
 	}
 	if source.Runtime == TaskAuthorityRuntimeUnstarted {
+		return nil
+	}
+	if source.Runtime == TaskAuthorityRuntimeParentOnly {
+		if source.TaskID == "" || source.Binding != nil {
+			return fmt.Errorf("parent-only Task authority sync evidence is incomplete")
+		}
+		store, err := controller.Open(w.config)
+		if err != nil {
+			return err
+		}
+		head, err := store.LoadHead()
+		if err != nil {
+			return err
+		}
+		live, err := store.LiveParentOnlyExecution()
+		if err != nil {
+			return err
+		}
+		if !live || head.LiveAttemptID != source.TaskID || head.ExecutionTaskRef == nil {
+			return fmt.Errorf("parent-only Task authority sync changed live attempt authority")
+		}
+		taskID, err := w.state.TaskID()
+		if err != nil || taskID != source.TaskID {
+			return fmt.Errorf("parent-only smoke identity changed during Task authority sync: %v", err)
+		}
+		if _, err := w.state.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("parent-only Task authority sync created a Runtime binding: %v", err)
+		}
 		return nil
 	}
 	if source.Runtime != TaskAuthorityRuntimeAttached || source.Binding == nil {
