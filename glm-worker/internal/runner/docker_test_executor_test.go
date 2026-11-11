@@ -492,8 +492,10 @@ func TestDockerTestConcurrentStagingClientsNeverExchangeResults(t *testing.T) {
 			defer wg.Done()
 			<-start
 			client := &dockertest.StagingClient{
-				StagingDir: guard.dockerTestStagingDir, ResponseDir: guard.dockerTestResponseDir,
-				Timeout: 5 * time.Second, PollInterval: 5 * time.Millisecond,
+				StagingDir:   guard.dockerTestStagingDir,
+				ResponseDir:  guard.dockerTestResponseDir,
+				Timeout:      5 * time.Second,
+				PollInterval: 5 * time.Millisecond,
 			}
 			var stdout, stderr strings.Builder
 			code := client.Run(context.Background(), []string{pkg}, &stdout, &stderr)
