@@ -77,7 +77,7 @@ func TestDiffAggregatePatchExecutionLimit(t *testing.T) {
 	repo, st := newReviewCoverageStore(t)
 	paths := []string{"one.txt", "two.txt", "three.txt"}
 	for _, path := range paths {
-		if err := os.WriteFile(filepath.Join(repo, path), []byte(strings.Repeat("a\n", 250*1024)), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(repo, path), []byte(strings.Repeat("a\n", 400*1024)), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
