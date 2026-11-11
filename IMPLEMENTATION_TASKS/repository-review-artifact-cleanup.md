@@ -86,7 +86,6 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`
 - `IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`
 
 ## Fulfilled dependencies
@@ -97,5 +96,6 @@ status: not-applicable
 - `IMPLEMENTATION_TASKS/machine-git-evidence-raw-diff-contract.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-diff-identity.md`
 - `IMPLEMENTATION_TASKS/task-requirement-reference-closure.md`
-
 - `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
+
+- `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`

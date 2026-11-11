@@ -17,7 +17,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md`](IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
-- [`IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`](IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md)
 - [`IMPLEMENTATION_TASKS/repository-review-artifact-cleanup.md`](IMPLEMENTATION_TASKS/repository-review-artifact-cleanup.md)
 - [`IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`](IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md)
 - [`IMPLEMENTATION_TASKS/022-final-verification.md`](IMPLEMENTATION_TASKS/022-final-verification.md)
