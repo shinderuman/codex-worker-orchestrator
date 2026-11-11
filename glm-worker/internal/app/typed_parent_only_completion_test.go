@@ -728,6 +728,11 @@ func TestParentOnlyAmendmentSyncThroughProductionBoundary(t *testing.T) {
 		t.Fatalf("parent-only materialization not projected: %#v", start)
 	}
 	runParentOnlyExecutionStep(t, cfg, start.RequiredActionParameters, true)
+	// Only the Task file may change during authority sync. The product is
+	// restored after the revised contract is admitted.
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, "evaluation-result.md")); err != nil {
+		t.Fatal(err)
+	}
 	before, err := store.LoadHead()
 	if err != nil {
 		t.Fatal(err)
@@ -791,6 +796,7 @@ func TestParentOnlyAmendmentSyncThroughProductionBoundary(t *testing.T) {
 	if _, err := runtime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("parent-only sync created a model Runtime binding: %v", err)
 	}
+	writeAppTestFile(t, cfg.RepoRoot, "evaluation-result.md", "parent evaluation product\n")
 	after := executeParentHandoff(t, cfg)
 	if !after.Consistent || after.RequiredAction == nil || *after.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("amended parent-only attempt did not return to completion: %#v", after)
