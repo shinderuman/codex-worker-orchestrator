@@ -76,6 +76,16 @@ func TestRepoSearchDistinguishesRealUnmergedIndexStages(t *testing.T) {
 		errors.Is(err, ErrUnsupportedIndexFlags) {
 		t.Fatalf("exhaustive unmerged index returned result or wrong error: %#v %v", report, err)
 	}
+
+	gitRun(t, dir, "merge", "--abort")
+	if report, err := Search(context.Background(), dir, "main", opts); err != nil ||
+		report.CacheStatus != CacheStatusRebuilt || !reflect.DeepEqual(resultPaths(report), []string{"conflict.txt"}) {
+		t.Fatalf("resolved repository did not recover search: %#v %v", report, err)
+	}
+	if report, err := ExhaustiveSearch(context.Background(), dir, "main", ExhaustiveOptions{}); err != nil ||
+		len(report.Matches) != 1 || report.Matches[0].Path != "conflict.txt" {
+		t.Fatalf("resolved repository did not recover exhaustive search: %#v %v", report, err)
+	}
 }
 
 func TestRepoSearchUnmergedEntryIsNotHiddenByUnsupportedMode(t *testing.T) {
@@ -106,11 +116,11 @@ func TestRepoSearchRejectsAssumeUnchangedInsteadOfServingStaleCache(t *testing.T
 	gitRun(t, dir, "update-index", "--assume-unchanged", "data.txt")
 	writeTestFile(t, filepath.Join(dir, "data.txt"), "newneedle\n")
 	for _, options := range []Options{opts, {DisableCache: true}} {
-		if report, err := Search(context.Background(), dir, "newneedle", options); !errors.Is(err, ErrUnsupportedIndexFlags) {
+		if report, err := Search(context.Background(), dir, "newneedle", options); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 			t.Fatalf("unsupported index returned stale/success result: %#v %v", report, err)
 		}
 	}
-	if report, err := ExhaustiveSearch(context.Background(), dir, "newneedle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) {
+	if report, err := ExhaustiveSearch(context.Background(), dir, "newneedle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 		t.Fatalf("exhaustive search ignored unsupported index: %#v %v", report, err)
 	}
 	gitRun(t, dir, "update-index", "--no-assume-unchanged", "data.txt")
@@ -131,11 +141,11 @@ func TestRepoSearchRejectsSkipWorktreeBeforeCacheOrExhaustiveSearch(t *testing.T
 	}
 	gitRun(t, dir, "update-index", "--skip-worktree", "data.txt")
 	for _, options := range []Options{opts, {DisableCache: true}} {
-		if _, err := Search(context.Background(), dir, "needle", options); !errors.Is(err, ErrUnsupportedIndexFlags) {
+		if _, err := Search(context.Background(), dir, "needle", options); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 			t.Fatalf("skip-worktree accepted: %v", err)
 		}
 	}
-	if _, err := ExhaustiveSearch(context.Background(), dir, "needle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) {
+	if _, err := ExhaustiveSearch(context.Background(), dir, "needle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 		t.Fatalf("exhaustive skip-worktree accepted: %v", err)
 	}
 	gitRun(t, dir, "update-index", "--no-skip-worktree", "data.txt")
