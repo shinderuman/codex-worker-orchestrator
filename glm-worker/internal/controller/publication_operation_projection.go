@@ -354,10 +354,17 @@ func parentOnlyMaterializationHeadReady(head RepositoryControllerHead) bool {
 	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
 		return false
 	}
-	resumingRoot := head.ActiveEpisodeID != "" && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
+	return IsPristine(head) || parentOnlyRetiredOrResuming(head)
+}
+
+func parentOnlyRetiredOrResuming(head RepositoryControllerHead) bool {
+	return retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil) ||
+		parentOnlyResumingRootHead(head)
+}
+
+func parentOnlyResumingRootHead(head RepositoryControllerHead) bool {
+	return head.ActiveEpisodeID != "" && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
 		head.ExecutionTaskRef == nil && head.LiveAttemptID == "" && head.LiveLeaseID == "" && head.PendingTransitionID == ""
-	quiescentRetired := retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil) || resumingRoot
-	return IsPristine(head) || quiescentRetired
 }
 
 func (s *Store) parentOnlyMaterializationCommand(head RepositoryControllerHead, task SemanticTaskRef) (*CompletionExecutionCommand, error) {
