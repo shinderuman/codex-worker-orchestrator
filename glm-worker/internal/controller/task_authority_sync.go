@@ -48,14 +48,8 @@ func (s *Store) ParentOnlyTaskAuthoritySyncAdmission(cfg config.AppConfig) (Admi
 	if err != nil {
 		return Admission{}, err
 	}
-	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly ||
-		lease.Purpose != parentOnlyExecutionPurpose ||
-		validateLiveRecordIdentity(head, *head.ExecutionTaskRef, attempt, lease) != nil ||
-		lease.ControllerGeneration != head.ControllerGeneration ||
-		lease.InFlightCallID != "" || head.ActiveEpisodeID != "" ||
-		head.AcceptedCandidateRef != nil ||
-		(head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip) {
-		return Admission{}, fmt.Errorf("parent-only Task sync requires an idle, exact live parent-only attempt")
+	if err := validateParentOnlySyncBinding(head, attempt, lease); err != nil {
+		return Admission{}, err
 	}
 	workspace, err := s.parentOnlyWorkspace()
 	if err != nil {
@@ -83,6 +77,19 @@ func (s *Store) ParentOnlyTaskAuthoritySyncAdmission(cfg config.AppConfig) (Admi
 	return Admission{Head: head, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
 }
 
+func validateParentOnlySyncBinding(head RepositoryControllerHead, attempt AttemptRecord, lease ExecutionLease) error {
+	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly ||
+		lease.Purpose != parentOnlyExecutionPurpose ||
+		validateLiveRecordIdentity(head, *head.ExecutionTaskRef, attempt, lease) != nil ||
+		lease.ControllerGeneration != head.ControllerGeneration ||
+		lease.InFlightCallID != "" || head.ActiveEpisodeID != "" ||
+		head.AcceptedCandidateRef != nil ||
+		(head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip) {
+		return fmt.Errorf("parent-only Task sync requires an idle, exact live parent-only attempt")
+	}
+	return nil
+}
+
 func (s *Store) SyncTaskAuthority(admission Admission, sourceSnapshotID string, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperationResult, error) {
 	return s.executeParentSourceRevision(admission, func() (ExecutionOperation, error) {
 		return s.planTaskAuthoritySync(admission, sourceSnapshotID, runtimeRef, task)
@@ -93,10 +100,8 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if err := s.validateTaskAuthoritySyncSource(admission, task); err != nil {
 		return ExecutionOperation{}, err
 	}
-	if admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
-		if err := s.validateParentOnlyTaskSyncEvidence(runtimeRef, admission.Attempt.AttemptID); err != nil {
-			return ExecutionOperation{}, err
-		}
+	if err := s.verifyTaskSyncSourceEvidence(admission, runtimeRef); err != nil {
+		return ExecutionOperation{}, err
 	}
 	source, authority, err := s.captureTaskSourceRevision(sourceSnapshotID, admission.Head.IntegrationTip, task.TaskPath)
 	if err != nil {
@@ -105,8 +110,8 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if !authority.Task.Equal(task) {
 		return ExecutionOperation{}, fmt.Errorf("task authority sync changes Task authority")
 	}
-	if (admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly) != (authority.ExecutionMode == ExecutionAuthorityParentOnly) {
-		return ExecutionOperation{}, fmt.Errorf("Task authority sync cannot change parent-only execution designation")
+	if err := validateTaskSyncExecutionMode(admission.Attempt.ExecutionAuthority, authority.ExecutionMode); err != nil {
+		return ExecutionOperation{}, err
 	}
 	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
 	if err != nil {
@@ -130,6 +135,20 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 		return ExecutionOperation{}, err
 	}
 	return s.buildTaskAuthoritySync(admission, source, authority, rebound, runtimeRef, task)
+}
+
+func (s *Store) verifyTaskSyncSourceEvidence(admission Admission, runtimeRef EvidenceObjectRef) error {
+	if admission.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return nil
+	}
+	return s.validateParentOnlyTaskSyncEvidence(runtimeRef, admission.Attempt.AttemptID)
+}
+
+func validateTaskSyncExecutionMode(sourceAuthority, revisedAuthority string) error {
+	if (sourceAuthority == ExecutionAuthorityParentOnly) != (revisedAuthority == ExecutionAuthorityParentOnly) {
+		return fmt.Errorf("task authority sync cannot change parent-only execution designation")
+	}
+	return nil
 }
 
 func (s *Store) buildTaskAuthoritySync(admission Admission, source ParentSourceRevision, authority TaskAuthority, rebound ReboundSuspension, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperation, error) {
