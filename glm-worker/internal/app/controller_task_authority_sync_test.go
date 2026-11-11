@@ -706,57 +706,14 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 		t.Fatalf("parent-only execution unexpectedly attached a model Runtime: %v", err)
 	}
 
-	glmContent := parentOnlyAppTaskContent(controller.ExecutionAuthorityGLM)
-	writeAppTestFile(t, cfg.RepoRoot, tasks.parent, glmContent)
-	glmSnapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	glmTask := controller.SemanticTaskRef{TaskPath: tasks.parent, ContractDigest: taskAuthoritySyncDigest(t, []byte(glmContent))}
-	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
-		Action: "sync-task-authority", ExpectedGeneration: before.ControllerGeneration,
-		SourceSnapshotID: glmSnapshot.ID, RevisedTask: &glmTask,
-	}); err == nil || !strings.Contains(err.Error(), "designation") {
-		t.Fatalf("parent-only Amendment illegally switched to GLM authority: %v", err)
-	}
-	unchanged, err := store.LoadHead()
-	if err != nil || unchanged.ControllerGeneration != before.ControllerGeneration || unchanged.PendingTransitionID != "" {
-		t.Fatalf("rejected GLM promotion changed controller authority: %#v %v", unchanged, err)
-	}
+	rejectParentOnlyModePromotion(t, cfg, store, tasks.parent, before)
 
 	revisedContent := parentOnlyAppTaskContent(controller.ExecutionAuthorityParentOnly) +
 		"\n## Amendments\n\n1. Preserve the parent-only attempt when accepting this amendment.\n"
 	writeAppTestFile(t, cfg.RepoRoot, tasks.parent, revisedContent)
 	revised := controller.SemanticTaskRef{TaskPath: tasks.parent, ContractDigest: taskAuthoritySyncDigest(t, []byte(revisedContent))}
-	writeAppTestFile(t, cfg.RepoRoot, "unrelated-change.txt", "must not join Task-only sync\n")
-	if _, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg); err == nil {
-		t.Fatal("parent-only Task sync admitted unrelated primary source edits")
-	}
-	if err := os.Remove(filepath.Join(cfg.RepoRoot, "unrelated-change.txt")); err != nil {
-		t.Fatal(err)
-	}
-	source, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tampered := source
-	tampered.Attempt.BaselineTrees.WorktreeTree = "forged-baseline"
-	if _, err := store.SyncTaskAuthority(tampered, source.Snapshot.ID, controller.EvidenceObjectRef{}, revised); err == nil || !strings.Contains(err.Error(), "source authority changed") {
-		t.Fatalf("forged parent-only admission baseline was accepted: %v", err)
-	}
-	proof, err := store.PutEvidenceObject("runtime-artifact", "application/json",
-		before.LiveAttemptID+":"+controller.TaskAuthoritySyncProducer+":"+source.Snapshot.ID,
-		true, []byte(`{"runtime":"parent-only","task_id":"forged-attempt"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.SyncTaskAuthority(source, source.Snapshot.ID, proof, revised); err == nil || !strings.Contains(err.Error(), "smoke identity") {
-		t.Fatalf("forged parent-only smoke evidence was accepted: %v", err)
-	}
-	unchanged, err = store.LoadHead()
-	if err != nil || unchanged.ControllerGeneration != before.ControllerGeneration || unchanged.PendingTransitionID != "" {
-		t.Fatalf("forged smoke proof prepared a transition: %#v %v", unchanged, err)
-	}
+	rejectUnrelatedParentOnlySource(t, cfg, store)
+	rejectForgedParentOnlySync(t, cfg, store, before, revised)
 	sync := executeParentHandoff(t, cfg)
 	if !sync.Consistent || sync.RequiredAction == nil || *sync.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("parent-only Amendment did not produce an executable handoff: %#v", sync)
@@ -792,6 +749,76 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 		after.ExecutionTaskRef == nil || !after.ExecutionTaskRef.Equal(revised) {
 		t.Fatalf("parent-only Amendment did not retain same-attempt revised Task authority: %#v", after)
 	}
+	assertParentOnlyRevisedSmoke(t, cfg, runtime, taskID)
+	next := executeParentHandoff(t, cfg)
+	if !next.Consistent || next.RequiredAction == nil || *next.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("parent-only Amendment did not proceed to completion: %#v", next)
+	}
+	driveParentOnlyCompletion(t, cfg, goShim, false, false, true)
+	assertParentOnlyTerminalState(t, cfg, store, policy, tasks, false)
+}
+
+func rejectParentOnlyModePromotion(t *testing.T, cfg config.AppConfig, store *controller.Store, taskPath string, before controller.RepositoryControllerHead) {
+	t.Helper()
+	glmContent := parentOnlyAppTaskContent(controller.ExecutionAuthorityGLM)
+	writeAppTestFile(t, cfg.RepoRoot, taskPath, glmContent)
+	glmSnapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	glmTask := controller.SemanticTaskRef{TaskPath: taskPath, ContractDigest: taskAuthoritySyncDigest(t, []byte(glmContent))}
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
+		Action: "sync-task-authority", ExpectedGeneration: before.ControllerGeneration,
+		SourceSnapshotID: glmSnapshot.ID, RevisedTask: &glmTask,
+	}); err == nil || !strings.Contains(err.Error(), "designation") {
+		t.Fatalf("parent-only Amendment illegally switched to GLM authority: %v", err)
+	}
+	unchanged, err := store.LoadHead()
+	if err != nil || unchanged.ControllerGeneration != before.ControllerGeneration || unchanged.PendingTransitionID != "" {
+		t.Fatalf("rejected GLM promotion changed controller authority: %#v %v", unchanged, err)
+	}
+
+}
+
+func rejectUnrelatedParentOnlySource(t *testing.T, cfg config.AppConfig, store *controller.Store) {
+	t.Helper()
+	writeAppTestFile(t, cfg.RepoRoot, "unrelated-change.txt", "must not join Task-only sync\n")
+	if _, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg); err == nil {
+		t.Fatal("parent-only Task sync admitted unrelated primary source edits")
+	}
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, "unrelated-change.txt")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func rejectForgedParentOnlySync(t *testing.T, cfg config.AppConfig, store *controller.Store, before controller.RepositoryControllerHead, revised controller.SemanticTaskRef) {
+	t.Helper()
+	source, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := source
+	tampered.Attempt.BaselineTrees.WorktreeTree = "forged-baseline"
+	if _, err := store.SyncTaskAuthority(tampered, source.Snapshot.ID, controller.EvidenceObjectRef{}, revised); err == nil || !strings.Contains(err.Error(), "source authority changed") {
+		t.Fatalf("forged parent-only admission baseline was accepted: %v", err)
+	}
+	proof, err := store.PutEvidenceObject("runtime-artifact", "application/json",
+		before.LiveAttemptID+":"+controller.TaskAuthoritySyncProducer+":"+source.Snapshot.ID,
+		true, []byte(`{"runtime":"parent-only","task_id":"forged-attempt"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SyncTaskAuthority(source, source.Snapshot.ID, proof, revised); err == nil || !strings.Contains(err.Error(), "smoke identity") {
+		t.Fatalf("forged parent-only smoke evidence was accepted: %v", err)
+	}
+	unchanged, err := store.LoadHead()
+	if err != nil || unchanged.ControllerGeneration != before.ControllerGeneration || unchanged.PendingTransitionID != "" {
+		t.Fatalf("forged smoke proof prepared a transition: %#v %v", unchanged, err)
+	}
+}
+
+func assertParentOnlyRevisedSmoke(t *testing.T, cfg config.AppConfig, runtime *state.StateStore, taskID string) {
+	t.Helper()
 	if _, err := runtime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("parent-only Amendment manufactured a Runtime: %v", err)
 	}
@@ -809,12 +836,6 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if _, err := revisedRuntime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("amended Task state created a GLM Runtime binding: %v", err)
 	}
-	next := executeParentHandoff(t, cfg)
-	if !next.Consistent || next.RequiredAction == nil || *next.RequiredAction != controllerPublicationSurface {
-		t.Fatalf("parent-only Amendment did not proceed to completion: %#v", next)
-	}
-	driveParentOnlyCompletion(t, cfg, goShim, false, false, true)
-	assertParentOnlyTerminalState(t, cfg, store, policy, tasks, false)
 }
 
 func TestParentOnlyTaskAuthoritySyncEvidenceRejectsRuntimeSpoofing(t *testing.T) {
