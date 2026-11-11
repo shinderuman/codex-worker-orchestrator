@@ -399,7 +399,7 @@ func TestParentOnlyCompletionFailClosedBoundaries(t *testing.T) {
 			runControllerGit(t, f.repo, "add", ".")
 			runControllerGit(t, f.repo, "commit", "-q", "-m", "amend contract")
 			return handBuiltParentOnlyAdmission(t, f)
-		}, want: "committed task contract changed"},
+		}, want: "committed repository HEAD moved"},
 		{name: "repository HEAD moved mid-flight", seed: func(t *testing.T, f parentOnlyTaskFixture, _ Admission) Admission {
 			writeParentOnlyProduct(t, f, "unrelated-committed.txt", "committed elsewhere\n")
 			runControllerGit(t, f.repo, "add", ".")
