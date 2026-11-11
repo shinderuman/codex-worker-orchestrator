@@ -22,11 +22,16 @@ func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.
 		return controller.ExecutionOperationResult{}, err
 	}
 	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
-	before, err := wf.CaptureTaskAuthoritySyncEvidence()
+	admission, err := controller.CurrentSemanticAdmission(cfg, store)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
-	admission, err := controller.CurrentSemanticAdmission(cfg, store)
+	var before []byte
+	if admission.Attempt.ExecutionAuthority == controller.ExecutionAuthorityParentOnly {
+		before, err = wf.CaptureParentOnlyTaskAuthoritySyncEvidence(admission)
+	} else {
+		before, err = wf.CaptureTaskAuthoritySyncEvidence()
+	}
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
@@ -51,6 +56,16 @@ func VerifyTaskAuthoritySyncRuntime(before []byte, admission controller.Admissio
 	var evidence TaskAuthoritySyncEvidence
 	if err := json.Unmarshal(before, &evidence); err != nil {
 		return fmt.Errorf("decode task authority sync runtime evidence: %w", err)
+	}
+	if evidence.Runtime == TaskAuthorityRuntimeParentOnly {
+		if admission.Attempt.ExecutionAuthority != controller.ExecutionAuthorityParentOnly || evidence.Binding != nil || evidence.TaskID == "" ||
+			evidence.TaskID != admission.Attempt.AttemptID {
+			return fmt.Errorf("parent-only Task sync evidence differs from the live attempt")
+		}
+		return nil
+	}
+	if admission.Attempt.ExecutionAuthority == controller.ExecutionAuthorityParentOnly {
+		return fmt.Errorf("parent-only Task sync must not present model Runtime evidence")
 	}
 	if evidence.Runtime == TaskAuthorityRuntimeUnstarted {
 		if evidence.TaskID != "" || evidence.Binding != nil {
