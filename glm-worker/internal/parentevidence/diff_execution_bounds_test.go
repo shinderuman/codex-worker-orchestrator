@@ -148,3 +148,32 @@ func TestDiffBoundedBinaryRetainsIdentityAndSmallBudgetRefines(t *testing.T) {
 		t.Fatalf("tiny display budget lost identity or delivered patch: %#v", refined)
 	}
 }
+
+func TestDiffSingleUntrackedPatchLimit(t *testing.T) {
+	repo, st := newReviewCoverageStore(t)
+	const path = "dense-lines.txt"
+	if err := os.WriteFile(filepath.Join(repo, path), bytes.Repeat([]byte{'\n'}, int(maxDiffSourceBytes)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	projector := NewProjector(repo, st, "untracked-patch-limit", Providers{})
+	projector.Project(Manifest{
+		Version: ManifestVersion, Reason: "bounded single untracked patch",
+		Diff: []DiffRequest{{Question: "untracked dense lines", Paths: []string{path}, BudgetBytes: 1}},
+	})
+	part := projector.Output().Parts[0]
+	if part.Status != PartError || part.Digest != "" ||
+		!strings.Contains(part.Reason, "execution limit") ||
+		!strings.Contains(part.Reason, path) {
+		t.Fatalf("single untracked patch escaped execution cap: %#v", part)
+	}
+}
+
+func TestBoundedDiffOutputRejectsOverflowWithoutBufferGrowth(t *testing.T) {
+	output := &boundedDiffOutput{limit: 4}
+	if n, err := output.Write([]byte("abcd")); n != 4 || err != nil {
+		t.Fatalf("exact-limit write: n=%d err=%v", n, err)
+	}
+	if n, err := output.Write([]byte("excess")); n != 0 || err == nil || !output.exceeded || output.Len() != 4 {
+		t.Fatalf("overflow write: n=%d err=%v exceeded=%v bytes=%d", n, err, output.exceeded, output.Len())
+	}
+}
