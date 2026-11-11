@@ -204,7 +204,7 @@ func (s *Store) requestAdvancementProject(head RepositoryControllerHead, tip str
 		head.RootTaskRef.RequestID == "" || !head.RootTaskRef.Equal(*head.ExecutionTaskRef) {
 		return ProjectSnapshot{}, fmt.Errorf("request advancement requires held request Task authority")
 	}
-	if err := requireRequestAdvancementRepository(s.identity.PrimaryRoot, tip); err != nil {
+	if err := requireRequestAdvancementRepository(s.identity.PrimaryRoot, head.IntegrationTip, tip); err != nil {
 		return ProjectSnapshot{}, err
 	}
 	source, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
@@ -222,7 +222,14 @@ func (s *Store) requestAdvancementProject(head RepositoryControllerHead, tip str
 	return next, nil
 }
 
-func requireRequestAdvancementRepository(repo, tip string) error {
+func requireRequestAdvancementRepository(repo, base, tip string) error {
+	descendant, err := isPublicationDescendant(repo, base, tip)
+	if err != nil {
+		return err
+	}
+	if !descendant {
+		return fmt.Errorf("request advancement is not a fast-forward of the controller integration authority")
+	}
 	if err := RequireRequestRepository(repo); err != nil {
 		return err
 	}
