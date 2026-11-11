@@ -101,3 +101,22 @@ func TestFinishRunPreservesPauseWhenRetryExhaustedEventArrives(t *testing.T) {
 		t.Fatalf("pause and retry-exhausted errors were not retained: %v", err)
 	}
 }
+
+func TestFinishRunPreservesAllErrorsWhenPauseRetryAndWriteFail(t *testing.T) {
+	t.Parallel()
+	paused := &ScheduledPauseError{ResumeAt: time.Now().Add(time.Hour), Started: true}
+	r := &ClaudeRunner{}
+	ingester := &streamEventIngester{
+		resultLine: []byte(`{"type":"result","subtype":"error_max_structured_output_retries","is_error":true}`),
+	}
+	_, err := r.finishRun(state.WorkerRole, t.TempDir(),
+		filepath.Join(t.TempDir(), "stderr"), ingester, RunResult{}, paused, claudeVersionScope{})
+	var gotPause *ScheduledPauseError
+	var structured *StructuredOutputError
+	var writeErr *os.PathError
+	if !errors.As(err, &gotPause) || gotPause != paused ||
+		!errors.As(err, &structured) || !structured.RetryExhausted() ||
+		!errors.As(err, &writeErr) {
+		t.Fatalf("pause, retry exhaustion and write failure must remain inspectable: %v", err)
+	}
+}
