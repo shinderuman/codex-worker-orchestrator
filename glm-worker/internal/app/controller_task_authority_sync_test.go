@@ -777,7 +777,20 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 		t.Fatalf("parent-only Amendment manufactured a Runtime: %v", err)
 	}
 	if actual, err := runtime.TaskID(); err != nil || actual != taskID {
-		t.Fatalf("parent-only Amendment lost smoke attempt identity: %q %v", actual, err)
+		t.Fatalf("parent-only Amendment lost old smoke attempt identity: %q %v", actual, err)
+	}
+	// Task digest changes the state-store namespace. The amended Task must also
+	// carry the same smoke attempt identity with no model Runtime binding.
+	revisedConfig, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revisedRuntime := state.AttachStateStore(revisedConfig)
+	if current, err := revisedRuntime.TaskID(); err != nil || current != taskID {
+		t.Fatalf("amended Task state lacks the same smoke attempt identity: %q %v", current, err)
+	}
+	if _, err := revisedRuntime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("amended Task state created a GLM Runtime binding: %v", err)
 	}
 	// Completion must use the exact post-sync snapshot. Introducing another
 	// unrecorded product here would invalidate the live lease.
