@@ -95,12 +95,8 @@ func (p Policy) Evaluate(now time.Time) (bool, time.Time) {
 
 func (p Policy) intervalsAround(now time.Time) []interval {
 	local := now.In(p.location)
-	// Keep the civil date in UTC: time.Date/AddDate in the target location
-	// may normalize a nonexistent midnight to a different calendar day.
 	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
 	ranges := make([]interval, 0, 16*len(p.windows))
-	// A weekly occurrence can disappear entirely during a clock jump. Look
-	// far enough ahead to find the next week's occurrence in that case.
 	for offset := -1; offset <= 15; offset++ {
 		day := midnight.AddDate(0, 0, offset)
 		for _, window := range p.windows {
@@ -112,9 +108,6 @@ func (p Policy) intervalsAround(now time.Time) []interval {
 	return ranges
 }
 
-// civilWindowIntervals intersects the selected wall-clock minutes with each
-// constant-UTC-offset segment. Missing local minutes have no matching instant;
-// repeated local minutes match both segments, which can yield separate intervals.
 func civilWindowIntervals(day time.Time, window Window, location *time.Location) []interval {
 	civilStart := day.Add(time.Duration(window.startMinute) * time.Minute)
 	civilEnd := day.Add(time.Duration(window.endMinute) * time.Minute)
@@ -122,7 +115,6 @@ func civilWindowIntervals(day time.Time, window Window, location *time.Location)
 		civilEnd = civilEnd.Add(24 * time.Hour)
 	}
 
-	// The margin covers UTC offsets and date-line changes in IANA time zones.
 	const margin = 48 * time.Hour
 	limit := civilEnd.Add(margin)
 	var ranges []interval
@@ -134,7 +126,6 @@ func civilWindowIntervals(day time.Time, window Window, location *time.Location)
 		if segmentEnd.IsZero() || segmentEnd.After(limit) {
 			segmentEnd = limit
 		}
-		// For this offset, UTC = the UTC-encoded civil clock minus the offset.
 		shift := time.Duration(offset) * time.Second
 		start := civilStart.Add(-shift)
 		end := civilEnd.Add(-shift)

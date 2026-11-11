@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+type pauseCase struct {
+	name   string
+	at     string
+	paused bool
+	next   string
+}
+
 func TestFromEnvironmentIsOptIn(t *testing.T) {
 	t.Setenv("GLM_WORKER_PEAK_PAUSE_ENABLED", "")
 	t.Setenv("GLM_WORKER_PEAK_PAUSE_TIMEZONE", "bad/timezone")
@@ -149,17 +156,9 @@ func TestSkippedCivilDateDoesNotInheritPreviousWeekday(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Samoa skipped Friday, 2011-12-30 when it moved across the date line.
 	assertPauseCases(t, policy, []pauseCase{
 		{"skipped Friday", "2011-12-29T15:00:00Z", false, "2012-01-05T22:00:00Z"},
 	})
-}
-
-type pauseCase struct {
-	name   string
-	at     string
-	paused bool
-	next   string
 }
 
 func assertPauseCases(t *testing.T, policy Policy, cases []pauseCase) {
