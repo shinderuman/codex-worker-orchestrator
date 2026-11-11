@@ -133,6 +133,7 @@ func TestDarwinCIWorkflowPathClosure(t *testing.T) {
 				"glm-worker/internal/mergejsoncmd/run.go",
 				"glm-worker/internal/claudeoverride/override.go",
 				"scripts/manage-pull-hook.sh",
+				".githooks/pre-commit",
 				"install.sh",
 				"uninstall.sh",
 				"tests/install_smoke.sh",
