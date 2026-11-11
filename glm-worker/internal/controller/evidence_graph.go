@@ -14,6 +14,19 @@ type evidenceGraphWalker struct {
 	publishedTaskHeads     map[string]EvidenceObjectRef
 	validatedTaskChains    map[string]uint64
 	validatedEpisodeChains map[string]uint64
+	taskRevisionAncestry   map[string]taskRevisionAncestry
+	episodeRevisions       map[string]EpisodeIndexRevision
+}
+
+type taskRevisionAncestry struct {
+	depth int
+	jumps []string
+}
+
+type pendingTaskRevision struct {
+	subject  string
+	ref      EvidenceObjectRef
+	previous *EvidenceObjectRef
 }
 
 func (s *Store) validateEvidenceGraphRoots(
@@ -174,34 +187,125 @@ func (w *evidenceGraphWalker) walkTaskRevisionChain(
 		w.validatedTaskChains = map[string]uint64{}
 	}
 	validated := map[string]uint64{}
+	pending := []pendingTaskRevision{}
 	current := ref
 	upper := maxGeneration + 1
 	for {
 		key := revisionChainCacheKey(subject, current)
+		if _, cycle := validated[key]; cycle {
+			return evidenceGraphError(current, "task index revision chain contains a cycle")
+		}
 		if done, err := reuseValidatedRevisionChain(w.validatedTaskChains, key, current, upper, validated, "task index revision chain authority is inconsistent"); done {
-			return err
+			if err != nil {
+				return err
+			}
+			return w.finishTaskRevisionChain(validated, pending)
 		}
-		if err := w.addRef(current); err != nil {
-			return err
-		}
-		revision, err := w.store.LoadTaskIndexRevision(current)
+		revision, err := w.loadGraphTaskRevision(subject, current, upper)
 		if err != nil {
 			return err
 		}
-		if taskEvidenceSubjectID(revision.TaskRef) != subject || revision.ControllerGeneration >= upper {
-			return evidenceGraphError(current, "task index revision chain authority is inconsistent")
-		}
-		if err := w.walkTaskRevisionEvidence(subject, revision); err != nil {
-			return err
-		}
 		validated[key] = revision.ControllerGeneration
+		pending = append(pending, pendingTaskRevision{subject: subject, ref: current, previous: revision.PreviousRevision})
 		if revision.PreviousRevision == nil {
-			rememberValidatedRevisionChain(w.validatedTaskChains, validated)
-			return nil
+			return w.finishTaskRevisionChain(validated, pending)
 		}
 		upper = revision.ControllerGeneration
 		current = *revision.PreviousRevision
 	}
+}
+
+func (w *evidenceGraphWalker) loadGraphTaskRevision(subject string, ref EvidenceObjectRef, upper uint64) (TaskIndexRevision, error) {
+	if err := w.addRef(ref); err != nil {
+		return TaskIndexRevision{}, err
+	}
+	revision, err := w.store.LoadTaskIndexRevision(ref)
+	if err != nil {
+		return TaskIndexRevision{}, err
+	}
+	if taskEvidenceSubjectID(revision.TaskRef) != subject || revision.ControllerGeneration >= upper {
+		return TaskIndexRevision{}, evidenceGraphError(ref, "task index revision chain authority is inconsistent")
+	}
+	if err := w.walkTaskRevisionEvidence(subject, revision); err != nil {
+		return TaskIndexRevision{}, err
+	}
+	return revision, nil
+}
+
+func (w *evidenceGraphWalker) finishTaskRevisionChain(validated map[string]uint64, pending []pendingTaskRevision) error {
+	if err := w.rememberTaskRevisionAncestry(pending); err != nil {
+		return err
+	}
+	rememberValidatedRevisionChain(w.validatedTaskChains, validated)
+	return nil
+}
+
+func (w *evidenceGraphWalker) rememberTaskRevisionAncestry(pending []pendingTaskRevision) error {
+	if w.taskRevisionAncestry == nil {
+		w.taskRevisionAncestry = map[string]taskRevisionAncestry{}
+	}
+	for i := len(pending) - 1; i >= 0; i-- {
+		item := pending[i]
+		entry := taskRevisionAncestry{}
+		if item.previous != nil {
+			parentKey := revisionChainCacheKey(item.subject, *item.previous)
+			parent, ok := w.taskRevisionAncestry[parentKey]
+			if !ok {
+				return evidenceGraphError(item.ref, "task index revision ancestry is incomplete")
+			}
+			entry.depth = parent.depth + 1
+			entry.jumps = append(entry.jumps, parentKey)
+			for step := 1; ; step++ {
+				middle := w.taskRevisionAncestry[entry.jumps[step-1]]
+				if len(middle.jumps) < step {
+					break
+				}
+				entry.jumps = append(entry.jumps, middle.jumps[step-1])
+			}
+		}
+		w.taskRevisionAncestry[revisionChainCacheKey(item.subject, item.ref)] = entry
+	}
+	return nil
+}
+
+func (w *evidenceGraphWalker) validateIndexedPublishedTaskRevision(subject string, publishedRef, targetRef EvidenceObjectRef) error {
+	unreachable := func() error {
+		return evidenceGraphError(targetRef, fmt.Sprintf("episode task index head for subject %s is not reachable from published task authority", subject))
+	}
+	publishedKey := revisionChainCacheKey(subject, publishedRef)
+	if _, ok := w.taskRevisionAncestry[publishedKey]; !ok {
+		publishedRevision, err := w.store.LoadTaskIndexRevision(publishedRef)
+		if err != nil {
+			return err
+		}
+		if err := w.walkTaskRevisionChain(subject, publishedRef, publishedRevision.ControllerGeneration); err != nil {
+			return err
+		}
+	}
+	targetKey := revisionChainCacheKey(subject, targetRef)
+	published, ok := w.taskRevisionAncestry[publishedKey]
+	if !ok {
+		return evidenceGraphError(publishedRef, "published task index ancestry is incomplete")
+	}
+	target, ok := w.taskRevisionAncestry[targetKey]
+	if !ok || target.depth > published.depth {
+		return unreachable()
+	}
+	currentKey := publishedKey
+	for distance, step := published.depth-target.depth, 0; distance != 0; distance, step = distance>>1, step+1 {
+		if distance&1 == 0 {
+			continue
+		}
+		current := w.taskRevisionAncestry[currentKey]
+		if step >= len(current.jumps) {
+			return unreachable()
+		}
+		currentKey = current.jumps[step]
+	}
+	if currentKey != targetKey {
+		return unreachable()
+	}
+	return nil
 }
 
 func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
@@ -220,17 +324,8 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 		if done, err := reuseValidatedRevisionChain(w.validatedEpisodeChains, key, current, upper, validated, "episode index revision chain authority is inconsistent"); done {
 			return err
 		}
-		if err := w.addRef(current); err != nil {
-			return err
-		}
-		revision, err := w.store.LoadEpisodeIndexRevision(current)
+		revision, err := w.loadGraphEpisodeRevision(subject, current, upper)
 		if err != nil {
-			return err
-		}
-		if revision.EpisodeID != subject || revision.ControllerGeneration >= upper {
-			return evidenceGraphError(current, "episode index revision chain authority is inconsistent")
-		}
-		if err := w.walkEpisodeRevisionEvidence(subject, revision); err != nil {
 			return err
 		}
 		validated[key] = revision.ControllerGeneration
@@ -243,8 +338,34 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 	}
 }
 
+func (w *evidenceGraphWalker) loadGraphEpisodeRevision(subject string, ref EvidenceObjectRef, upper uint64) (EpisodeIndexRevision, error) {
+	if err := w.addRef(ref); err != nil {
+		return EpisodeIndexRevision{}, err
+	}
+	key := revisionChainCacheKey(subject, ref)
+	revision, ok := w.episodeRevisions[key]
+	if !ok {
+		var err error
+		revision, err = w.store.LoadEpisodeIndexRevision(ref)
+		if err != nil {
+			return EpisodeIndexRevision{}, err
+		}
+		if w.episodeRevisions == nil {
+			w.episodeRevisions = map[string]EpisodeIndexRevision{}
+		}
+		w.episodeRevisions[key] = revision
+	}
+	if revision.EpisodeID != subject || revision.ControllerGeneration >= upper {
+		return EpisodeIndexRevision{}, evidenceGraphError(ref, "episode index revision chain authority is inconsistent")
+	}
+	if err := w.walkEpisodeRevisionEvidence(subject, revision); err != nil {
+		return EpisodeIndexRevision{}, err
+	}
+	return revision, nil
+}
+
 func revisionChainCacheKey(subject string, ref EvidenceObjectRef) string {
-	return subject + "\x00" + evidenceRefKey(ref)
+	return subject + "\x00" + evidenceRefKey(ref) + "\x00" + ref.MediaType
 }
 
 func episodeRevisionChainCacheKey(subject string, ref EvidenceObjectRef, published map[string]EvidenceObjectRef) string {
@@ -260,6 +381,8 @@ func episodeRevisionChainCacheKey(subject string, ref EvidenceObjectRef, publish
 		key.WriteString(head.SubjectID)
 		key.WriteByte('\x00')
 		key.WriteString(evidenceRefKey(head.RevisionRef))
+		key.WriteByte('\x00')
+		key.WriteString(head.RevisionRef.MediaType)
 	}
 	return key.String()
 }
@@ -342,7 +465,7 @@ func (w *evidenceGraphWalker) walkEpisodeTaskIndexHeads(revision EpisodeIndexRev
 		if !ok {
 			return evidenceGraphError(head.RevisionRef, "episode task index head is not published task authority")
 		}
-		if err := w.store.validatePublishedTaskRevision(head.SubjectID, publishedRef, head.RevisionRef); err != nil {
+		if err := w.validateIndexedPublishedTaskRevision(head.SubjectID, publishedRef, head.RevisionRef); err != nil {
 			return err
 		}
 		if err := w.walkTaskRevisionChain(head.SubjectID, head.RevisionRef, revision.ControllerGeneration); err != nil {
