@@ -619,11 +619,8 @@ func collectDiffFile(repoRoot, path string) (DiffFile, string, error) {
 func renderCapturedDiffFile(repoRoot string, file DiffFile, content []byte, present bool) (DiffFile, string, error) {
 	if file.HeadBlob == "" && file.IndexBlob == "" {
 		file.Status = "?"
-		patch := untrackedDiffSection(file.Path, file.WorktreeMode, content)
-		if len(patch) > maxDiffPatchBytes {
-			return DiffFile{}, "", fmt.Errorf("untracked patch for %q exceeds %d-byte execution limit", file.Path, maxDiffPatchBytes)
-		}
-		return file, patch, nil
+		patch, err := untrackedDiffSection(file.Path, file.WorktreeMode, content)
+		return file, patch, err
 	}
 	patch, err := capturedDiffPatch(repoRoot, file, content, present)
 	if err != nil {
@@ -691,35 +688,62 @@ func supportedDiffGitMode(mode string) bool {
 	return mode == "100644" || mode == "100755" || mode == "120000"
 }
 
-func untrackedDiffSection(path, mode string, content []byte) string {
+func untrackedDiffSection(path, mode string, content []byte) (string, error) {
+	if int64(len(content)) > maxDiffSourceBytes {
+		return "", fmt.Errorf("untracked source %q exceeds %d-byte execution limit", path, maxDiffSourceBytes)
+	}
 	name := "a/" + path + " b/" + path
 	dst := "b/" + path
 	if strings.ContainsAny(path, " \t\n\\\"") {
 		name = strconv.Quote("a/"+path) + " " + strconv.Quote("b/"+path)
 		dst = strconv.Quote(dst)
 	}
+	limitError := fmt.Errorf("untracked patch for %q exceeds %d-byte execution limit", path, maxDiffPatchBytes)
+	header := fmt.Sprintf("diff --git %s\nnew untracked file mode %s\n--- /dev/null\n+++ %s\n", name, mode, dst)
+	if len(header) > maxDiffPatchBytes {
+		return "", limitError
+	}
 	var body strings.Builder
-	fmt.Fprintf(&body, "diff --git %s\nnew untracked file mode %s\n--- /dev/null\n+++ %s\n", name, mode, dst)
+	body.WriteString(header)
 	if !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
-		fmt.Fprintf(&body, "untracked content (base64): %s\n", base64.StdEncoding.EncodeToString(content))
-		return body.String()
+		const prefix = "untracked content (base64): "
+		encodedBytes := base64.StdEncoding.EncodedLen(len(content))
+		if len(prefix)+encodedBytes+1 > maxDiffPatchBytes-body.Len() {
+			return "", limitError
+		}
+		body.WriteString(prefix)
+		body.WriteString(base64.StdEncoding.EncodeToString(content))
+		body.WriteByte('\n')
+		return body.String(), nil
 	}
-	lines := strings.Split(string(content), "\n")
-	if len(content) == 0 {
-		lines = nil
-	} else if content[len(content)-1] == '\n' {
-		lines = lines[:len(lines)-1]
+	lineCount := bytes.Count(content, []byte{'\n'})
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		lineCount++
 	}
-	fmt.Fprintf(&body, "@@ -0,0 +1,%d @@\n", len(lines))
-	for _, line := range lines {
-		fmt.Fprintf(&body, "+%s\n", line)
+	hunk := fmt.Sprintf("@@ -0,0 +1,%d @@\n", lineCount)
+	if len(hunk) > maxDiffPatchBytes-body.Len() {
+		return "", limitError
+	}
+	body.WriteString(hunk)
+	for remaining := string(content); remaining != ""; {
+		line, rest, _ := strings.Cut(remaining, "\n")
+		if len(line)+2 > maxDiffPatchBytes-body.Len() {
+			return "", limitError
+		}
+		body.WriteByte('+')
+		body.WriteString(line)
+		body.WriteByte('\n')
+		remaining = rest
 	}
 	if len(content) > 0 && content[len(content)-1] != '\n' {
-		body.WriteString("\\ No newline at end of file\n")
+		const marker = "\\ No newline at end of file\n"
+		if len(marker) > maxDiffPatchBytes-body.Len() {
+			return "", limitError
+		}
+		body.WriteString(marker)
 	}
-	return body.String()
+	return body.String(), nil
 }
-
 func (p *Projector) projectSource(request SourceRequest) Part {
 	part := Part{
 		Kind:    "source",
