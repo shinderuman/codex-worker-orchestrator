@@ -681,6 +681,11 @@ func TestTaskAuthoritySyncRejectsForeignMilestoneLineage(t *testing.T) {
 
 func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, false)
+	// Amendment admission must observe a Task-only primary worktree revision.
+	// The completion fixture also seeds an untracked product; restore it after sync.
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, "evaluation-result.md")); err != nil {
+		t.Fatal(err)
+	}
 	start := executeParentHandoff(t, cfg)
 	if !start.Consistent || start.RequiredAction == nil || *start.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("parent-only start handoff: %#v", start)
@@ -748,6 +753,7 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if actual, err := runtime.TaskID(); err != nil || actual != taskID {
 		t.Fatalf("parent-only Amendment lost smoke attempt identity: %q %v", actual, err)
 	}
+	writeAppTestFile(t, cfg.RepoRoot, "evaluation-result.md", "parent evaluation product\n")
 	next := executeParentHandoff(t, cfg)
 	if !next.Consistent || next.RequiredAction == nil || *next.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("parent-only Amendment did not proceed to completion: %#v", next)
