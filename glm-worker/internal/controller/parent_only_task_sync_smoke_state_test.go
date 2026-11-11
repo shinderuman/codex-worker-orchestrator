@@ -49,7 +49,14 @@ func TestParentOnlyDirectTaskSyncRejectsInvalidLiveSmokeState(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fixture, task := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
+			assertParentOnlyDirectTaskSyncRejected(t, tc.damage)
+		})
+	}
+}
+
+func assertParentOnlyDirectTaskSyncRejected(t *testing.T, damage func(*testing.T, *state.StateStore, SemanticTaskRef, string)) {
+	t.Helper()
+	fixture, task := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
 			started := admitParentOnlyExecutionFixture(t, fixture)
 			smoke := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.Identity(), task))
 			taskPath := filepath.Join(fixture.repo, task.TaskPath)
@@ -89,7 +96,7 @@ func TestParentOnlyDirectTaskSyncRejectsInvalidLiveSmokeState(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			tc.damage(t, smoke, task, started.Attempt.AttemptID)
+			damage(t, smoke, task, started.Attempt.AttemptID)
 			if _, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config); err == nil || !strings.Contains(err.Error(), "smoke") {
 				t.Fatalf("Controller admission accepted invalid actual smoke state: %v", err)
 			}
@@ -117,6 +124,4 @@ func TestParentOnlyDirectTaskSyncRejectsInvalidLiveSmokeState(t *testing.T) {
 				!reflect.DeepEqual(sourceBefore, sourceAfter) {
 				t.Fatalf("rejected direct sync mutated Controller authority or source: before=%#v after=%#v", headBefore, headAfter)
 			}
-		})
-	}
 }
