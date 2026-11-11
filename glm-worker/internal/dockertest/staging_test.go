@@ -269,23 +269,28 @@ func TestStagingClientRandomTokensAcrossConcurrentCalls(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(entries) == 2 {
-			published = make(map[string]StagingRequest, 2)
-			for _, entry := range entries {
-				token, ok := StagingTokenFromRequestFileName(entry.Name())
-				if !ok {
-					t.Fatalf("unexpected staging entry %q", entry.Name())
-				}
-				raw, err := os.ReadFile(filepath.Join(staging, entry.Name()))
-				if err != nil {
-					t.Fatal(err)
-				}
-				request, err := ParseStagingRequest(raw)
-				if err != nil || request.Token != token {
-					t.Fatalf("bad published request: %v %#v", err, request)
-				}
-				published[token] = request
+		current := make(map[string]StagingRequest, 2)
+		for _, entry := range entries {
+			// Exclusive temporary files can coexist briefly with published files.
+			if !IsStagingRequestFileName(entry.Name()) {
+				continue
 			}
+			token, ok := StagingTokenFromRequestFileName(entry.Name())
+			if !ok {
+				t.Fatalf("invalid published name %q", entry.Name())
+			}
+			raw, err := os.ReadFile(filepath.Join(staging, entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, err := ParseStagingRequest(raw)
+			if err != nil || request.Token != token {
+				t.Fatalf("bad published request: %v %#v", err, request)
+			}
+			current[token] = request
+		}
+		if len(current) == 2 {
+			published = current
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
