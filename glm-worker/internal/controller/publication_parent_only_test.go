@@ -678,10 +678,11 @@ func TestParentOnlyMaterializationRejectsStaleEpisodeIdentity(t *testing.T) {
 			t.Fatalf("parent-only materialization admitted stale generation or episode: %#v", input)
 		}
 	}
-	for _, invalid := range []RepositoryControllerHead{
-		func() RepositoryControllerHead { h := head; h.ActiveEpisodeRevision = 1; return h }(),
-		func() RepositoryControllerHead { h := head; h.ActiveEpisodeID = "unpaired"; return h }(),
-	} {
+	orphanRevision := head
+	orphanRevision.ActiveEpisodeRevision = 1
+	orphanID := head
+	orphanID.ActiveEpisodeID = "unpaired"
+	for _, invalid := range []RepositoryControllerHead{orphanRevision, orphanID} {
 		if err := validateParentOnlyMaterializeHead(invalid, ParentOnlyMaterializeInput{
 			ExpectedGeneration: invalid.ControllerGeneration,
 			EpisodeID: invalid.ActiveEpisodeID,
