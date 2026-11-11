@@ -2,8 +2,10 @@ package shadoweval
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -18,12 +20,13 @@ type ReferenceLabel struct {
 type Reference struct {
 	Schema         string           `json:"schema"`
 	TaskID         string           `json:"bundle_task_id"`
+	ItemsSHA256    string           `json:"items_sha256"`
 	Basis          string           `json:"basis"`
 	Labels         []ReferenceLabel `json:"labels"`
 	UnknownCallIDs []string         `json:"unknown_call_ids"`
 }
 
-const ReferenceSchema = "system-one-shadow-reference/v1"
+const ReferenceSchema = "system-one-shadow-reference/v2"
 
 var referenceOwnerCategories = map[string]bool{
 	"worker":            true,
@@ -47,6 +50,12 @@ func LoadReference(path string) (Reference, error) {
 	if err := decoder.Decode(&reference); err != nil {
 		return Reference{}, fmt.Errorf("reference fileを解析できません: %w", err)
 	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return Reference{}, fmt.Errorf("reference fileに複数のJSON値があります")
+		}
+		return Reference{}, fmt.Errorf("reference fileの末尾が不正です: %w", err)
+	}
 	if err := validateReference(reference); err != nil {
 		return Reference{}, err
 	}
@@ -59,6 +68,12 @@ func validateReference(reference Reference) error {
 	}
 	if reference.TaskID == "" {
 		return fmt.Errorf("reference bundle_task_idが空です")
+	}
+	if len(reference.ItemsSHA256) != 64 {
+		return fmt.Errorf("reference items_sha256が64桁のSHA-256ではありません")
+	}
+	if _, err := hex.DecodeString(reference.ItemsSHA256); err != nil {
+		return fmt.Errorf("reference items_sha256がhexではありません: %w", err)
 	}
 	seen := make(map[string]bool, len(reference.Labels)+len(reference.UnknownCallIDs))
 	for index, label := range reference.Labels {
@@ -112,6 +127,9 @@ func ValidateReferenceAgainstInput(reference Reference, input ShadowInput) error
 		if !known[callID] {
 			return fmt.Errorf("referenceのunknown_call_id %sが入力itemsに存在しません", callID)
 		}
+	}
+	if reference.ItemsSHA256 != input.ItemsSHA256 {
+		return fmt.Errorf("referenceのitems_sha256が対象inputと一致しません")
 	}
 	return nil
 }

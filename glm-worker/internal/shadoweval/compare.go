@@ -136,13 +136,14 @@ func BuildComparison(
 	if comparison.ReferenceUnknown < 0 {
 		comparison.ReferenceUnknown = 0
 	}
-	comparison.DispositionAgreementKnown = dispositionAgreement(input, byCall, labels)
-	comparison.CorrectnessRiskBrierKnown = correctnessBrier(input, byCall, labels)
-	comparison.CalibrationNote = fmt.Sprintf("correctness brier over %d known label(s)", len(labels))
-	if failure == nil {
+	if comparison.TypedSchemaValid {
+		comparison.DispositionAgreementKnown = dispositionAgreement(input, byCall, labels)
+		comparison.CorrectnessRiskBrierKnown = correctnessBrier(input, byCall, labels)
+		comparison.CalibrationNote = fmt.Sprintf("correctness brier over %d known label(s)", len(labels))
 		comparison.Thresholds = thresholdRows(input, byCall, labels)
 		comparison.ReductionGroups = reductionGroups(input, byCall)
 	} else {
+		comparison.CalibrationNote = "unavailable: shadow decision validation failed"
 		comparison.Thresholds = zeroedThresholdRows()
 		comparison.ReductionGroups = []ReductionGroup{}
 	}

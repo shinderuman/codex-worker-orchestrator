@@ -14,8 +14,9 @@ import (
 )
 
 const referenceFixture = `{
-  "schema": "system-one-shadow-reference/v1",
+  "schema": "system-one-shadow-reference/v2",
   "bundle_task_id": "task-1",
+  "items_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "basis": "historical canonical Sol decision",
   "labels": [
     {"call_id": "call-a", "correctness_finding": true, "owner": "test-scenario", "disposition": "fix", "locator": "rollouts rows 1-10"},
@@ -368,19 +369,37 @@ func TestLoadReferenceRejectsLegacySchemaAndMalformedLabels(t *testing.T) {
 	if _, err := LoadReference(writeReferenceFile(t, unknownField)); err == nil || !strings.Contains(err.Error(), "解析できません") {
 		t.Fatalf("schema外fieldはreject: %v", err)
 	}
+	missingDigest := strings.Replace(referenceFixture, `  "items_sha256": "`+strings.Repeat("0", 64)+`",`, "", 1)
+	if _, err := LoadReference(writeReferenceFile(t, missingDigest)); err == nil || !strings.Contains(err.Error(), "items_sha256") {
+		t.Fatalf("source不明referenceはreject: %v", err)
+	}
+	invalidDigest := strings.Replace(referenceFixture, strings.Repeat("0", 64), strings.Repeat("z", 64), 1)
+	if _, err := LoadReference(writeReferenceFile(t, invalidDigest)); err == nil || !strings.Contains(err.Error(), "items_sha256") {
+		t.Fatalf("SHA-256形式不正はreject: %v", err)
+	}
+	trailingJSON := referenceFixture + "\n{}"
+	if _, err := LoadReference(writeReferenceFile(t, trailingJSON)); err == nil || !strings.Contains(err.Error(), "複数のJSON値") {
+		t.Fatalf("reference末尾の余分なJSONはreject: %v", err)
+	}
 	if _, err := LoadReference(filepath.Join(t.TempDir(), "missing.json")); err == nil || !strings.Contains(err.Error(), "reference fileを読めません") {
 		t.Fatalf("file欠落はreject: %v", err)
 	}
 }
 
 func TestValidateReferenceAgainstInputBindsTaskAndCallIDs(t *testing.T) {
-	reference, err := LoadReference(writeReferenceFile(t, referenceFixture))
-	if err != nil {
-		t.Fatal(err)
-	}
 	input := ShadowInput{Schema: InputSchema, TaskID: "task-1", Items: []InputItem{
 		{CallID: "call-a"}, {CallID: "call-b"}, {CallID: "call-c"}, {CallID: "call-d"},
 	}}
+	digest, err := ItemsSHA256(input.Items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ItemsSHA256 = digest
+	referenceContent := strings.Replace(referenceFixture, strings.Repeat("0", 64), digest, 1)
+	reference, err := LoadReference(writeReferenceFile(t, referenceContent))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := ValidateReferenceAgainstInput(reference, input); err != nil {
 		t.Fatalf("一致する組み合わせは通過すべき: %v", err)
 	}
@@ -392,6 +411,16 @@ func TestValidateReferenceAgainstInputBindsTaskAndCallIDs(t *testing.T) {
 	shortInput := ShadowInput{Schema: InputSchema, TaskID: "task-1", Items: []InputItem{{CallID: "call-a"}}}
 	if err := ValidateReferenceAgainstInput(reference, shortInput); err == nil || !strings.Contains(err.Error(), "入力itemsに存在しません") {
 		t.Fatalf("label不一致はreject: %v", err)
+	}
+	stale := input
+	stale.Items = append([]InputItem(nil), input.Items...)
+	stale.Items[0].Summary = "modified evidence, same call IDs"
+	stale.ItemsSHA256, err = ItemsSHA256(stale.Items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateReferenceAgainstInput(reference, stale); err == nil || !strings.Contains(err.Error(), "items_sha256が対象inputと一致しません") {
+		t.Fatalf("source driftはreject: %v", err)
 	}
 }
 
@@ -517,6 +546,27 @@ func candidateReadyDecision(callID string, disposition string, noise, confidence
 	return decision
 }
 
+func TestParseDecisionsRejectsTrailingJSONAndSuppressesAllScores(t *testing.T) {
+	input := comparisonFixtureInput()
+	raw, err := json.Marshal(map[string]any{"decisions": comparisonFixtureDecisions()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decisions, problems := ParseDecisions(append(raw, []byte("\n{}")...), input)
+	if len(problems) == 0 || !strings.Contains(strings.Join(problems, " "), "複数のJSON値") {
+		t.Fatalf("decision末尾の余分なJSONはreject: %#v", problems)
+	}
+	comparison := BuildComparison(input, decisions, problems, &ShadowFailure{Kind: ShadowFailureSchemaInvalid}, comparisonFixtureReference(), NewRun(CallMetrics{}, nil))
+	if comparison.TypedSchemaValid || comparison.DispositionAgreementKnown.Denominator != 0 || comparison.CorrectnessRiskBrierKnown != nil {
+		t.Fatalf("不正JSONから品質スコアを生成しています: %#v", comparison)
+	}
+	for _, threshold := range comparison.Thresholds {
+		if threshold.Candidates != 0 || threshold.Coverage != 0 || threshold.EstimatedSolVisibleInputReduction != 0 {
+			t.Fatalf("不正JSONから削減候補を生成しています: %#v", threshold)
+		}
+	}
+}
+
 func TestBuildComparisonSchemaFailureKeepsFailureAndZeroesReductionClaims(t *testing.T) {
 	input := comparisonFixtureInput()
 	decisions := comparisonFixtureDecisions()
@@ -544,8 +594,24 @@ func TestBuildComparisonSchemaFailureKeepsFailureAndZeroesReductionClaims(t *tes
 	if len(comparison.ReductionGroups) != 0 {
 		t.Fatalf("reduction groups = %#v", comparison.ReductionGroups)
 	}
+	if comparison.DispositionAgreementKnown.Denominator != 0 || comparison.CorrectnessRiskBrierKnown != nil {
+		t.Fatalf("schema invalidでも品質評価を主張しています: agreement=%#v brier=%v", comparison.DispositionAgreementKnown, comparison.CorrectnessRiskBrierKnown)
+	}
 	if len(comparison.DecisionsWithReference) != 4 {
 		t.Fatalf("対応付け行 = %#v", comparison.DecisionsWithReference)
+	}
+}
+
+func TestBuildComparisonDoesNotTrustPartialDecisionsWithoutFailureMarker(t *testing.T) {
+	input := comparisonFixtureInput()
+	comparison := BuildComparison(input, comparisonFixtureDecisions(), []string{"incomplete output"}, nil, comparisonFixtureReference(), NewRun(CallMetrics{}, nil))
+	if comparison.TypedSchemaValid || comparison.DispositionAgreementKnown.Denominator != 0 || comparison.CorrectnessRiskBrierKnown != nil {
+		t.Fatalf("validation errors must suppress partial quality claims: %#v", comparison)
+	}
+	for _, row := range comparison.Thresholds {
+		if row.Candidates != 0 || row.Coverage != 0 {
+			t.Fatalf("validation errors must suppress reduction candidates: %#v", row)
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -111,6 +112,12 @@ func decodeDecisionsEnvelope(raw json.RawMessage) ([]json.RawMessage, error) {
 	}
 	if err := decoder.Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("decision出力の構造が不正です: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("decision出力に複数のJSON値があります")
+		}
+		return nil, fmt.Errorf("decision出力の末尾が不正です: %w", err)
 	}
 	return envelope.Decisions, nil
 }
