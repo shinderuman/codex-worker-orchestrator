@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -179,6 +180,11 @@ func (s *Store) validateTaskAuthoritySync(op ExecutionOperation) error {
 	if !parentSourceRuntimeIdentity(op, TaskAuthoritySyncProducer) {
 		return fmt.Errorf("task authority sync runtime producer identity differs")
 	}
+	if op.Source.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if err := s.validateParentOnlyTaskSyncEvidence(op); err != nil {
+			return err
+		}
+	}
 	if err := s.validateParentSourceImportProject(op); err != nil {
 		return err
 	}
@@ -187,6 +193,25 @@ func (s *Store) validateTaskAuthoritySync(op ExecutionOperation) error {
 		return err
 	}
 	return s.validateParentSourceArchive(*op.ParentSource, op.Source.Head.IntegrationTip, tree)
+}
+
+func (s *Store) validateParentOnlyTaskSyncEvidence(op ExecutionOperation) error {
+	data, err := s.LoadEvidenceObject(*op.RuntimeBeforeRef)
+	if err != nil {
+		return err
+	}
+	var evidence struct {
+		Runtime string          `json:"runtime"`
+		TaskID  string          `json:"task_id"`
+		Binding json.RawMessage `json:"binding"`
+	}
+	if err := decodeControllerJSON(data, &evidence); err != nil {
+		return fmt.Errorf("decode parent-only Task sync smoke evidence: %w", err)
+	}
+	if evidence.Runtime != "parent-only" || evidence.TaskID != op.Source.Attempt.AttemptID || len(evidence.Binding) != 0 {
+		return fmt.Errorf("parent-only Task sync requires exact smoke identity without model Runtime binding")
+	}
+	return nil
 }
 
 func (e *TaskAuthoritySyncRequiredError) Error() string {
