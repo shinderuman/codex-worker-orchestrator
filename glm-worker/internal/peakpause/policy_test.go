@@ -130,6 +130,27 @@ func TestDSTFallBackRepeatedMinutes(t *testing.T) {
 	})
 }
 
+func TestDSTHalfHourTransitions(t *testing.T) {
+	spring, err := Parse("Australia/Lord_Howe", "sun@02:10-02:40")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPauseCases(t, spring, []pauseCase{
+		{"before half-hour jump", "2027-10-02T15:25:00Z", false, "2027-10-02T15:30:00Z"},
+		{"spring half-hour jump", "2027-10-02T15:35:00Z", true, "2027-10-02T15:40:00Z"},
+		{"spring exclusive end", "2027-10-02T15:40:00Z", false, "2027-10-09T15:10:00Z"},
+	})
+	fall, err := Parse("Australia/Lord_Howe", "sun@01:40-01:50")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPauseCases(t, fall, []pauseCase{
+		{"first half-hour occurrence", "2027-04-03T14:40:00Z", true, "2027-04-03T14:50:00Z"},
+		{"between repeated minutes", "2027-04-03T15:00:00Z", false, "2027-04-03T15:10:00Z"},
+		{"second half-hour occurrence", "2027-04-03T15:10:00Z", true, "2027-04-03T15:20:00Z"},
+	})
+}
+
 func TestDSTOvernightWeekdayAndAdjacentMerge(t *testing.T) {
 	overnight, err := Parse("America/New_York", "sat@23:30-01:30")
 	if err != nil {
