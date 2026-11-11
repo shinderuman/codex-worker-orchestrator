@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"reflect"
 	"os"
 	"path/filepath"
 	"strings"
@@ -341,5 +342,81 @@ func TestCandidateOwnPromotionKeepsSourceContinuity(t *testing.T) {
 	}
 	if remote := observeTestRemote(t, f.store.identity.PrimaryRoot, policy); remote != head.IntegrationTip {
 		t.Fatalf("promotion advanced the remote: %s", remote)
+	}
+}
+
+func TestPulledAdvancementRejectsMissingLosslessBaseline(t *testing.T) {
+	t.Parallel()
+	for _, missing := range []string{"index", "worktree"} {
+		t.Run(missing, func(t *testing.T) {
+			t.Parallel()
+			f, policy := newPublicationTestFixture(t)
+			bindPublicationUpstream(t, f.store, policy)
+			source := publicationTestEdit(t, f, "result.txt", "reviewed implementation\n")
+			seedAwaitingCompletionRuntime(t, f.store, source, true)
+			switch missing {
+			case "index":
+				source.Attempt.BaselineTrees.IndexTree = ""
+			case "worktree":
+				source.Attempt.BaselineTrees.WorktreeTree = ""
+			}
+			if err := f.store.writeAttempt(source.Attempt); err != nil {
+				t.Fatal(err)
+			}
+			root := f.store.identity.PrimaryRoot
+			tip := pullRetiredExternalSourceChange(t, f, policy, "IMPLEMENTATION_HISTORY.md", "external parent metadata\n")
+			beforeHead, err := f.store.LoadHead()
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeAttempt, err := f.store.loadAttempt(source.Attempt.AttemptID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeLease, err := f.store.loadLease(source.Lease.LeaseID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeSource, err := CaptureWorkspaceSnapshot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, admissionErr := f.store.LiveMutableAdvancementAdmission(policy)
+			if admissionErr == nil || !strings.Contains(admissionErr.Error(), "lossless execution baseline") {
+				t.Fatalf("missing %s baseline admitted: %v", missing, admissionErr)
+			}
+			projected, projectionErr := f.store.ProjectParentCompletion()
+			var refusal *ProjectedAdvancementRefusal
+			if !errors.As(projectionErr, &refusal) || !strings.Contains(projectionErr.Error(), admissionErr.Error()) {
+				t.Fatalf("missing %s baseline lost typed projection refusal: %#v %v", missing, projected, projectionErr)
+			}
+			if projected.Operation == PublicationOperationAdoptMutable || projected.Command != nil {
+				t.Fatalf("missing %s baseline projected executable action: %#v", missing, projected)
+			}
+			if _, err := f.store.AdoptMutableExternalAdvancement(source, policy); err == nil || !strings.Contains(err.Error(), "lossless execution baseline") {
+				t.Fatalf("missing %s baseline directly adopted: %v", missing, err)
+			}
+
+			afterHead, err := f.store.LoadHead()
+			if err != nil || !reflect.DeepEqual(afterHead, beforeHead) {
+				t.Fatalf("refused %s baseline changed head: %v %#v", missing, err, afterHead)
+			}
+			afterAttempt, err := f.store.loadAttempt(source.Attempt.AttemptID)
+			if err != nil || !reflect.DeepEqual(afterAttempt, beforeAttempt) {
+				t.Fatalf("refused %s baseline changed attempt: %v %#v", missing, err, afterAttempt)
+			}
+			afterLease, err := f.store.loadLease(source.Lease.LeaseID)
+			if err != nil || !reflect.DeepEqual(afterLease, beforeLease) {
+				t.Fatalf("refused %s baseline changed lease: %v %#v", missing, err, afterLease)
+			}
+			afterSource, err := CaptureWorkspaceSnapshot(root)
+			if err != nil || !reflect.DeepEqual(afterSource, beforeSource) {
+				t.Fatalf("refused %s baseline changed source: %v %#v", missing, err, afterSource)
+			}
+			if remote := observeTestRemote(t, root, policy); remote != tip {
+				t.Fatalf("refused %s baseline moved remote from %s to %s", missing, tip, remote)
+			}
+		})
 	}
 }
