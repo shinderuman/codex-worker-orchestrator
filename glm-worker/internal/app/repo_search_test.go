@@ -298,6 +298,54 @@ func TestRepoSearchUnsupportedFlagCannotBeDeliveredAsEmptyResult(t *testing.T) {
 	}
 }
 
+func TestRepoSearchUnmergedConflictIsNotDeliveredAsEmptyResult(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	t.Setenv("GLM_WORKER_HOME", t.TempDir())
+	root := newRepoSearchGitRepo(t, "unmerged")
+	run := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, output)
+		}
+	}
+	run("checkout", "-b", "conflict-side")
+	if err := os.WriteFile(filepath.Join(root, "corpus.md"), []byte("side\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "side")
+	run("checkout", "-")
+	if err := os.WriteFile(filepath.Join(root, "corpus.md"), []byte("main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run("commit", "-am", "main")
+	merge := exec.Command("git", "-C", root, "merge", "--no-edit", "conflict-side")
+	if output, err := merge.CombinedOutput(); err == nil {
+		t.Fatalf("expected merge conflict; git merge output: %s", output)
+	}
+
+	cfg := config.AppConfig{RepoRoot: root, RepoSearch: true}
+	request := repoSearchRequest{Question: "unmerged", Scopes: []string{"corpus.md"}, BudgetBytes: 4096}
+	var stdout bytes.Buffer
+	if err := printRepoSearch(request, cfg, nil, &stdout); !errors.Is(err, reposearch.ErrUnmergedIndexEntry) ||
+		errors.Is(err, reposearch.ErrUnsupportedIndexFlags) {
+		t.Fatalf("standalone search misdiagnosed unmerged index: %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("standalone search delivered success/empty output: %s", stdout.String())
+	}
+	part := projectParentEvidenceSearch(cfg, parentevidence.SearchRequest{
+		Question: "unmerged", Scopes: []string{"corpus.md"}, BudgetBytes: 4096,
+	})
+	if part.Status != parentevidence.PartError || part.Search != nil ||
+		!strings.Contains(part.Reason, reposearch.ErrUnmergedIndexEntry.Error()) ||
+		strings.Contains(part.Reason, reposearch.ErrUnsupportedIndexFlags.Error()) {
+		t.Fatalf("parent evidence misdiagnosed unmerged index: %#v", part)
+	}
+}
+
 func newRepoSearchGitRepo(t *testing.T, marker string) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "repo")
