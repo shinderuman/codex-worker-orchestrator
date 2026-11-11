@@ -51,6 +51,9 @@ func (s *Store) ParentOnlyTaskAuthoritySyncAdmission(cfg config.AppConfig) (Admi
 	if err := validateParentOnlySyncBinding(head, attempt, lease); err != nil {
 		return Admission{}, err
 	}
+	if err := s.verifyParentOnlySmokeTaskID(attempt); err != nil {
+		return Admission{}, fmt.Errorf("parent-only Task sync smoke state is invalid: %w", err)
+	}
 	return s.parentOnlySyncSourceAdmission(head, attempt, lease)
 }
 func (s *Store) parentOnlySyncSourceAdmission(head RepositoryControllerHead, attempt AttemptRecord, lease ExecutionLease) (Admission, error) {
