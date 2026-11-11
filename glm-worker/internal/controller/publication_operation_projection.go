@@ -322,13 +322,7 @@ func (s *Store) projectLiveParentOnlyCompletion(head RepositoryControllerHead) (
 }
 
 func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
-	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
-		return ParentCompletionOperation{}, false, nil
-	}
-	resumingRoot := head.ActiveEpisodeID != "" && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
-		head.ExecutionTaskRef == nil && head.LiveAttemptID == "" && head.LiveLeaseID == "" && head.PendingTransitionID == ""
-	quiescentRetired := retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil) || resumingRoot
-	if !IsPristine(head) && !quiescentRetired {
+	if !parentOnlyMaterializationHeadReady(head) {
 		return ParentCompletionOperation{}, false, nil
 	}
 	authority, err := s.parentOnlySuccessorAuthority(head)
@@ -348,16 +342,34 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
 		return ParentCompletionOperation{}, false, nil
 	}
-	command := &CompletionExecutionCommand{Action: PublicationOperationParentOnlyMaterialize, ExpectedGeneration: head.ControllerGeneration}
-	if head.ActiveEpisodeID != "" {
-		_, err := s.parentOnlyRootResumeEpisode(head, ParentOnlyMaterializeInput{ExpectedGeneration: head.ControllerGeneration, EpisodeID: head.ActiveEpisodeID, EpisodeRevision: head.ActiveEpisodeRevision}, authority.Task)
-		if err != nil {
-			return ParentCompletionOperation{}, false, err
-		}
-		command.EpisodeID, command.EpisodeRevision = head.ActiveEpisodeID, head.ActiveEpisodeRevision
+	command, err := s.parentOnlyMaterializationCommand(head, authority.Task)
+	if err != nil {
+		return ParentCompletionOperation{}, false, err
 	}
 	return ParentCompletionOperation{Surface: ExecutionOperationSurface, Mode: ParentCompletionModeParentOnly, Operation: PublicationOperationParentOnlyMaterialize,
 		Execution: command}, true, nil
+}
+
+func parentOnlyMaterializationHeadReady(head RepositoryControllerHead) bool {
+	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
+		return false
+	}
+	resumingRoot := head.ActiveEpisodeID != "" && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
+		head.ExecutionTaskRef == nil && head.LiveAttemptID == "" && head.LiveLeaseID == "" && head.PendingTransitionID == ""
+	quiescentRetired := retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil) || resumingRoot
+	return IsPristine(head) || quiescentRetired
+}
+
+func (s *Store) parentOnlyMaterializationCommand(head RepositoryControllerHead, task SemanticTaskRef) (*CompletionExecutionCommand, error) {
+	command := &CompletionExecutionCommand{Action: PublicationOperationParentOnlyMaterialize, ExpectedGeneration: head.ControllerGeneration}
+	if head.ActiveEpisodeID == "" {
+		return command, nil
+	}
+	if _, err := s.parentOnlyRootResumeEpisode(head, ParentOnlyMaterializeInput{ExpectedGeneration: head.ControllerGeneration, EpisodeID: head.ActiveEpisodeID, EpisodeRevision: head.ActiveEpisodeRevision}, task); err != nil {
+		return nil, err
+	}
+	command.EpisodeID, command.EpisodeRevision = head.ActiveEpisodeID, head.ActiveEpisodeRevision
+	return command, nil
 }
 
 func (s *Store) projectAdmissionSourceAdvancement(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
