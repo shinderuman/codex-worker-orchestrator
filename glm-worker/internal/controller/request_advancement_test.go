@@ -123,15 +123,8 @@ func TestRequestPulledUnpublishedCandidateRebindPreservesAuthority(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			cleaned, err := f.store.CleanupExecution(CleanupExecutionInput{
-				ExpectedGeneration: reentered.Head.ControllerGeneration,
-				WorkspaceID:        f.source.Workspace.ID, SealRef: current.SealRef,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
 			live, err := f.store.MaterializeExecution(MaterializeExecutionInput{
-				ExpectedGeneration: cleaned.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID,
+				ExpectedGeneration: reentered.Head.ControllerGeneration, SuspensionID: reentered.Suspension.SnapshotID,
 			})
 			if err != nil {
 				t.Fatal(err)
