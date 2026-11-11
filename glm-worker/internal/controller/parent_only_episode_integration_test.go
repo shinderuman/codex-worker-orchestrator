@@ -88,7 +88,7 @@ func startParentOnlyBlockerEpisode(t *testing.T) (string, *Store, PublicationPol
 
 func publishParentOnlyBlocker(t *testing.T, store *Store, rootAdmission Admission, episode BlockerEpisodeRevision, policy PublicationPolicy) ParentCompletionOperation {
 	t.Helper()
-	suspended, err := store.SuspendExecution(&rootAdmission, episode.EpisodeID, episode.Revision)
+	suspended, err := store.SuspendExecution(rootAdmission, episode.EpisodeID, episode.Revision)
 	if err != nil || suspended.Suspension == nil {
 		t.Fatalf("parent-only Root suspension: %#v %v", suspended, err)
 	}
