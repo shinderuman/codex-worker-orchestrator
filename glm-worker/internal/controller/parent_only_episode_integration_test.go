@@ -139,6 +139,7 @@ func publishParentOnlyBlocker(t *testing.T, store *Store, rootAdmission Admissio
 	if err != nil {
 		t.Fatal(err)
 	}
+	runControllerGit(t, store.identity.PrimaryRoot, "restore", "--source=HEAD", "--staged", "--worktree", "--", "blocker-result.txt")
 	projected, err := store.ProjectParentCompletion()
 	if err != nil || projected.Operation != PublicationOperationParentOnlyMaterialize ||
 		projected.Execution == nil || projected.Execution.EpisodeID != episode.EpisodeID ||
