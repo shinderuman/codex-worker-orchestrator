@@ -92,8 +92,8 @@ func TestParseStagingResponseRejectsProtocolViolations(t *testing.T) {
 		t.Fatalf("末尾空白を含む正当responseが拒否されました: %v", err)
 	}
 	for name, body := range map[string]string{
-		"unknown-field":   `{"schema_version":1,"token":"100","exit_code":0,"promote":true}`,
-		"schema-mismatch": `{"schema_version":3,"token":"100","exit_code":0}`,
+		"unknown-field":          `{"schema_version":1,"token":"100","exit_code":0,"promote":true}`,
+		"schema-mismatch":        `{"schema_version":3,"token":"100","exit_code":0}`,
 		"trailing-value":         `{"schema_version":1,"token":"100","exit_code":0}1`,
 		"trailing-close-bracket": `{"schema_version":1,"token":"100","exit_code":0}]`,
 		"trailing-close-brace":   `{"schema_version":1,"token":"100","exit_code":0}}`,
