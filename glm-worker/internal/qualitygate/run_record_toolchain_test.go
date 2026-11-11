@@ -83,30 +83,36 @@ func TestRunToolchainMatchesRequiredGoVersion(t *testing.T) {
 	}
 }
 
-func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) {
-	root := t.TempDir()
-	runGit := func(dir string, args ...string) {
-		t.Helper()
-		command := exec.Command("git", args...)
-		command.Dir = dir
-		env, err := gitexec.WithoutLocalEnvironment(os.Environ())
-		if err != nil {
-			t.Fatal(err)
-		}
-		command.Env = env
-		if out, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
+func runQualityGateGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	env, err := gitexec.WithoutLocalEnvironment(os.Environ())
+	if err != nil {
+		t.Fatal(err)
 	}
-	runGit(root, "init", "-q")
+	command.Env = env
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+}
+
+func initValidationInputGitRepository(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	runQualityGateGit(t, root, "init", "-q")
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(root, "add", ".gitignore")
-	runGit(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ignore rules")
+	runQualityGateGit(t, root, "add", ".gitignore")
+	runQualityGateGit(t, root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ignore rules")
+	return root
+}
 
+func setForeignValidationGitEnvironment(t *testing.T) (string, []byte) {
+	t.Helper()
 	foreign := t.TempDir()
-	runGit(foreign, "init", "-q")
+	runQualityGateGit(t, foreign, "init", "-q")
 	if err := os.WriteFile(filepath.Join(foreign, "foreign.txt"), []byte("foreign only\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -116,22 +122,26 @@ func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(foreign, "foreign.log"), []byte("ignored only by foreign repository\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(foreign, "add", "foreign.txt", ".gitignore")
+	runQualityGateGit(t, foreign, "add", "foreign.txt", ".gitignore")
 	foreignIndex := filepath.Join(foreign, ".git", "index")
-	originalForeignIndex, err := os.ReadFile(foreignIndex)
+	originalIndex, err := os.ReadFile(foreignIndex)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_DIR", filepath.Join(foreign, ".git"))
 	t.Setenv("GIT_WORK_TREE", foreign)
 	t.Setenv("GIT_INDEX_FILE", foreignIndex)
+	return foreignIndex, originalIndex
+}
 
-	// The target is clean even though the inherited Git location contains ignored files.
-	cleanRoot, err := NoIgnoredInputs(root)
-	if err != nil || !cleanRoot {
-		t.Fatalf("foreign-only ignored files polluted clean target: clean=%v err=%v", cleanRoot, err)
+func TestNoIgnoredInputsForeignGitLocationIsolation(t *testing.T) {
+	root := initValidationInputGitRepository(t)
+	foreignIndex, originalForeignIndex := setForeignValidationGitEnvironment(t)
+
+	clean, err := NoIgnoredInputs(root)
+	if err != nil || !clean {
+		t.Fatalf("foreign-only ignored files polluted clean target: clean=%v err=%v", clean, err)
 	}
-
 	if err := os.WriteFile(filepath.Join(root, "top.log"), []byte("ignored in target\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -142,34 +152,6 @@ func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) 
 	if err := os.Remove(filepath.Join(root, "top.log")); err != nil {
 		t.Fatal(err)
 	}
-
-	nested := filepath.Join(root, "nested")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(nested, "nested.txt"), []byte("nested\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runGit(nested, "init", "-q")
-	clean, err := NoIgnoredInputs(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !clean {
-		t.Fatal("ignored fileがないnested repositoryで拒否されました")
-	}
-
-	if err := os.WriteFile(filepath.Join(nested, "trace.log"), []byte("on disk only after transfer\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	ignored, err := NoIgnoredInputs(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ignored {
-		t.Fatal("nested repository内のouter-ignored fileが無音通過されました")
-	}
-
 	absent, err = NoIgnoredInputs(filepath.Join(root, "missing-repository"))
 	if err == nil || absent {
 		t.Fatalf("unavailable target repository was treated as no ignored inputs: absent=%v err=%v", absent, err)
@@ -182,12 +164,37 @@ func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) 
 		t.Fatal("foreign repository index was modified")
 	}
 	for key, expected := range map[string]string{
-		"GIT_DIR":        filepath.Join(foreign, ".git"),
-		"GIT_WORK_TREE":  foreign,
+		"GIT_DIR":        filepath.Join(filepath.Dir(filepath.Dir(foreignIndex)), ".git"),
+		"GIT_WORK_TREE":  filepath.Dir(filepath.Dir(foreignIndex)),
 		"GIT_INDEX_FILE": foreignIndex,
 	} {
 		if actual := os.Getenv(key); actual != expected {
 			t.Fatalf("caller %s changed: got %q, want %q", key, actual, expected)
 		}
+	}
+}
+
+func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) {
+	root := initValidationInputGitRepository(t)
+	setForeignValidationGitEnvironment(t)
+
+	nested := filepath.Join(root, "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "nested.txt"), []byte("nested\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runQualityGateGit(t, nested, "init", "-q")
+	clean, err := NoIgnoredInputs(root)
+	if err != nil || !clean {
+		t.Fatalf("ignored fileがないnested repositoryで拒否されました: clean=%v err=%v", clean, err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "trace.log"), []byte("on disk only after transfer\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ignored, err := NoIgnoredInputs(root)
+	if err != nil || ignored {
+		t.Fatalf("nested repository内のouter-ignored fileが無音通過されました: absent=%v err=%v", ignored, err)
 	}
 }
