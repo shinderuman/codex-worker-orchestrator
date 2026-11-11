@@ -678,6 +678,18 @@ func TestParentOnlyMaterializationRejectsStaleEpisodeIdentity(t *testing.T) {
 			t.Fatalf("parent-only materialization admitted stale generation or episode: %#v", input)
 		}
 	}
+	for _, invalid := range []RepositoryControllerHead{
+		func() RepositoryControllerHead { h := head; h.ActiveEpisodeRevision = 1; return h }(),
+		func() RepositoryControllerHead { h := head; h.ActiveEpisodeID = "unpaired"; return h }(),
+	} {
+		if err := validateParentOnlyMaterializeHead(invalid, ParentOnlyMaterializeInput{
+			ExpectedGeneration: invalid.ControllerGeneration,
+			EpisodeID: invalid.ActiveEpisodeID,
+			EpisodeRevision: invalid.ActiveEpisodeRevision,
+		}); err == nil {
+			t.Fatalf("partial episode identity was admitted: %#v", invalid)
+		}
+	}
 	after, err := fixture.store.LoadHead()
 	if err != nil || after.ControllerGeneration != head.ControllerGeneration || after.PendingTransitionID != "" {
 		t.Fatalf("rejected materialization changed controller authority: %#v %v", after, err)
