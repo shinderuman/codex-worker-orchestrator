@@ -594,6 +594,10 @@ func (r *ClaudeRunner) finishRun(
 	}
 	r.observeCallClaudeVersion(versionScope, &result)
 	if err := writeResultOutput(outputPath, result.Response, streamResultSummary(parsed, parseErr), stderrPath); err != nil {
+		var paused *ScheduledPauseError
+		if errors.As(runErr, &paused) {
+			return result, errors.Join(runErr, err)
+		}
 		return result, err
 	}
 	if err := terminalRunError(result, parsed, parseErr, runErr); err != nil {
@@ -626,6 +630,13 @@ func applyParsedRunResult(result *RunResult, parsed claudeJSONResult) {
 }
 
 func terminalRunError(result RunResult, parsed claudeJSONResult, parseErr, runErr error) error {
+	var paused *ScheduledPauseError
+	if errors.As(runErr, &paused) {
+		if parseErr == nil && parsed.Subtype == subtypeStructuredOutputRetryExhausted {
+			return errors.Join(runErr, &StructuredOutputError{Subtype: parsed.Subtype, TerminalReason: parsed.TerminalReason})
+		}
+		return runErr
+	}
 	if parseErr == nil && parsed.Subtype == subtypeStructuredOutputRetryExhausted {
 		return &StructuredOutputError{Subtype: parsed.Subtype, TerminalReason: parsed.TerminalReason}
 	}
