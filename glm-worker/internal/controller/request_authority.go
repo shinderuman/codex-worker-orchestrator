@@ -204,15 +204,8 @@ func (s *Store) requestAdvancementProject(head RepositoryControllerHead, tip str
 		head.RootTaskRef.RequestID == "" || !head.RootTaskRef.Equal(*head.ExecutionTaskRef) {
 		return ProjectSnapshot{}, fmt.Errorf("request advancement requires held request Task authority")
 	}
-	if err := RequireRequestRepository(s.identity.PrimaryRoot); err != nil {
+	if err := requireRequestAdvancementRepository(s.identity.PrimaryRoot, tip); err != nil {
 		return ProjectSnapshot{}, err
-	}
-	marker, err := runGitBinary(s.identity.PrimaryRoot, nil, "ls-tree", "--name-only", tip, "--", repositoryharness.MarkerPath)
-	if err != nil {
-		return ProjectSnapshot{}, err
-	}
-	if len(marker) != 0 {
-		return ProjectSnapshot{}, fmt.Errorf("request advancement introduces a repository harness marker")
 	}
 	source, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
 	if err != nil {
@@ -227,4 +220,18 @@ func (s *Store) requestAdvancementProject(head RepositoryControllerHead, tip str
 	next.HeadOID = tip
 	next.SnapshotID = projectSnapshotID(next)
 	return next, nil
+}
+
+func requireRequestAdvancementRepository(repo, tip string) error {
+	if err := RequireRequestRepository(repo); err != nil {
+		return err
+	}
+	marker, err := runGitBinary(repo, nil, "ls-tree", "--name-only", tip, "--", repositoryharness.MarkerPath)
+	if err != nil {
+		return err
+	}
+	if len(marker) != 0 {
+		return fmt.Errorf("request advancement introduces a repository harness marker")
+	}
+	return nil
 }
