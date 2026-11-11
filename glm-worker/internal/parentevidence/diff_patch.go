@@ -55,6 +55,9 @@ func readCapturedHeadBlob(repoRoot, blob string) ([]byte, error) {
 }
 
 func capturedDiffPatch(repoRoot string, file DiffFile, content []byte, present bool) (string, error) {
+	if int64(len(content)) > maxDiffSourceBytes {
+		return "", fmt.Errorf("captured diff source for %q exceeds %d-byte execution limit", file.Path, maxDiffSourceBytes)
+	}
 	dir, err := os.MkdirTemp("", "parent-diff-*")
 	if err != nil {
 		return "", err
