@@ -273,6 +273,15 @@ func (w *evidenceGraphWalker) validateIndexedPublishedTaskRevision(subject strin
 		return evidenceGraphError(targetRef, fmt.Sprintf("episode task index head for subject %s is not reachable from published task authority", subject))
 	}
 	publishedKey := revisionChainCacheKey(subject, publishedRef)
+	if _, ok := w.taskRevisionAncestry[publishedKey]; !ok {
+		publishedRevision, err := w.store.LoadTaskIndexRevision(publishedRef)
+		if err != nil {
+			return err
+		}
+		if err := w.walkTaskRevisionChain(subject, publishedRef, publishedRevision.ControllerGeneration); err != nil {
+			return err
+		}
+	}
 	targetKey := revisionChainCacheKey(subject, targetRef)
 	published, ok := w.taskRevisionAncestry[publishedKey]
 	if !ok {
