@@ -30,9 +30,6 @@ const (
 	TaskAuthoritySyncProducer  = "sync-task-authority"
 )
 
-// ParentOnlyTaskAuthoritySyncAdmission admits only an idle parent-only attempt
-// whose primary worktree differs from its bound snapshot by a Task-only revision.
-// Normal model mutation admission is deliberately unchanged.
 func (s *Store) ParentOnlyTaskAuthoritySyncAdmission(cfg config.AppConfig) (Admission, error) {
 	if err := s.ValidateConfigScope(cfg); err != nil {
 		return Admission{}, err
