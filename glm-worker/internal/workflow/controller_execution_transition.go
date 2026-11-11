@@ -67,7 +67,7 @@ func executeControllerExecutionAction(cfg config.AppConfig, store *controller.St
 	case "materialize":
 		return executeControllerMaterialize(cfg, store, command)
 	case controller.PublicationOperationParentOnlyMaterialize:
-		return store.AdmitParentOnlyExecution(controller.ParentOnlyMaterializeInput{ExpectedGeneration: command.ExpectedGeneration})
+		return store.AdmitParentOnlyExecution(controller.ParentOnlyMaterializeInput{ExpectedGeneration: command.ExpectedGeneration, EpisodeID: command.EpisodeID, EpisodeRevision: command.EpisodeRevision})
 	case "cleanup":
 		return executeControllerCleanup(store, command)
 	case "gc-suspension":

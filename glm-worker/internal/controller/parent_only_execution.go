@@ -11,6 +11,8 @@ import (
 
 type ParentOnlyMaterializeInput struct {
 	ExpectedGeneration uint64 `json:"expected_generation"`
+	EpisodeID          string `json:"episode_id,omitempty"`
+	EpisodeRevision    uint64 `json:"episode_revision,omitempty"`
 }
 
 const (
@@ -62,6 +64,10 @@ func (s *Store) planParentOnlyExecution(input ParentOnlyMaterializeInput) (Execu
 	if snapshot.Head != authority.Snapshot.HeadOID {
 		return ExecutionOperation{}, head, fmt.Errorf("primary worktree HEAD does not match the committed parent-only task authority")
 	}
+	episode, err := s.parentOnlyRootResumeEpisode(head, input, authority.Task)
+	if err != nil {
+		return ExecutionOperation{}, head, err
+	}
 	if err := s.rejectBoundTaskRuntime(authority.Task); err != nil {
 		return ExecutionOperation{}, head, err
 	}
@@ -83,7 +89,15 @@ func (s *Store) planParentOnlyExecution(input ParentOnlyMaterializeInput) (Execu
 	record.TargetExecutionTaskRef = attempt.SemanticTaskRef
 	record.TargetRootTaskRef = attempt.RootTaskRef
 	record.Effects = []EffectExpectation{{Surface: MutationSurfaceSource, Resource: s.identity.PrimaryRoot, ExpectedNew: parentOnlyMaterializationIdentity(workspace, snapshot)}}
-	op := ExecutionOperation{Transition: record, Source: Admission{Head: head}, Workspace: &workspace, Attempt: &attempt, Lease: &lease}
+	op := ExecutionOperation{Transition: record, Source: Admission{Head: head}, Workspace: &workspace, Attempt: &attempt, Lease: &lease, Episode: episode}
+	if episode != nil {
+		if err := planRootResumeClosure(&op, head, authority.Task); err != nil {
+			return ExecutionOperation{}, head, err
+		}
+		if op.Episode.State != EpisodeStateClosed {
+			return ExecutionOperation{}, head, fmt.Errorf("parent-only Root resume did not close its episode")
+		}
+	}
 	return op, head, nil
 }
 
@@ -106,11 +120,14 @@ func (s *Store) newParentOnlyExecutionRecords(authority TaskAuthority, workspace
 }
 
 func validateParentOnlyMaterializeHead(head RepositoryControllerHead, input ParentOnlyMaterializeInput) error {
-	if head.Status != ControllerStatusActive || head.PendingTransitionID != "" || head.LiveLeaseID != "" || head.LiveAttemptID != "" || head.ExecutionTaskRef != nil || head.AcceptedCandidateRef != nil || head.ActiveEpisodeID != "" {
+	if head.Status != ControllerStatusActive || head.PendingTransitionID != "" || head.LiveLeaseID != "" || head.LiveAttemptID != "" || head.ExecutionTaskRef != nil || head.AcceptedCandidateRef != nil {
 		return fmt.Errorf("parent-only execution materialization requires a quiescent controller")
 	}
 	if head.ControllerGeneration != input.ExpectedGeneration {
 		return fmt.Errorf("parent-only execution materialization generation is stale")
+	}
+	if head.ActiveEpisodeID != input.EpisodeID || head.ActiveEpisodeRevision != input.EpisodeRevision {
+		return fmt.Errorf("parent-only execution materialization episode is stale")
 	}
 	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
 		return fmt.Errorf("observed external advancement must be adopted before parent-only execution")
@@ -119,6 +136,16 @@ func validateParentOnlyMaterializeHead(head RepositoryControllerHead, input Pare
 }
 
 func (s *Store) parentOnlySuccessorAuthority(head RepositoryControllerHead) (TaskAuthority, error) {
+	if head.ActiveEpisodeID != "" {
+		current, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+		if err != nil {
+			return TaskAuthority{}, err
+		}
+		if current.ProjectSnapshotID != head.ProjectSnapshotID || current.Snapshot.HeadOID != head.IntegrationTip {
+			return TaskAuthority{}, fmt.Errorf("parent-only Root resume requires the current committed Task authority")
+		}
+		return current, nil
+	}
 	if IsPristine(head) {
 		return ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
 	}
@@ -137,6 +164,30 @@ func (s *Store) parentOnlySuccessorAuthority(head RepositoryControllerHead) (Tas
 		return TaskAuthority{}, fmt.Errorf("parent metadata advancement must be adopted before parent-only execution")
 	}
 	return current, nil
+}
+
+func (s *Store) parentOnlyRootResumeEpisode(head RepositoryControllerHead, input ParentOnlyMaterializeInput, task SemanticTaskRef) (*BlockerEpisodeRevision, error) {
+	if head.ActiveEpisodeID == "" {
+		return nil, nil
+	}
+	if head.RootTaskRef == nil || !head.RootTaskRef.Equal(task) {
+		return nil, fmt.Errorf("parent-only Root resume changes Root Task authority")
+	}
+	episode, err := s.LoadEpisodeRevision(input.EpisodeID, input.EpisodeRevision)
+	if err != nil {
+		return nil, err
+	}
+	if episode.ProjectSnapshotID != head.ProjectSnapshotID || episode.State != EpisodeStateResumingRoot || !episode.RootTaskRef.Equal(task) {
+		return nil, fmt.Errorf("parent-only Root resume episode authority is stale")
+	}
+	schedule, err := s.scheduleEpisodeAgainstProject(episode)
+	if err != nil {
+		return nil, err
+	}
+	if schedule.Intent != FindingIntentResumeRootTask {
+		return nil, fmt.Errorf("parent-only Root resume episode has not satisfied its blocker closure")
+	}
+	return &episode, nil
 }
 
 func (s *Store) parentOnlyWorkspace() (WorkspaceIdentity, error) {
@@ -186,6 +237,13 @@ func (s *Store) validateParentOnlyExecutionOperation(op ExecutionOperation) erro
 	if !parentOnlyAttemptLeaseBindingMatches(op) {
 		return fmt.Errorf("parent-only attempt and lease binding differs")
 	}
+	if op.Transition.SourceEpisodeID == "" {
+		if op.Episode != nil {
+			return fmt.Errorf("parent-only materialization has an unexpected episode")
+		}
+	} else if op.Episode == nil || op.Episode.State != EpisodeStateClosed || op.Episode.EpisodeID != op.Transition.SourceEpisodeID || op.Episode.Revision != op.Transition.TargetEpisodeRevision {
+		return fmt.Errorf("parent-only Root episode closure differs from the journal")
+	}
 	return nil
 }
 
@@ -230,6 +288,13 @@ func (s *Store) applyParentOnlyExecution(op ExecutionOperation) error {
 		next.ExecutionTaskRef = &task
 		next.LiveAttemptID = op.Attempt.AttemptID
 		next.LiveLeaseID = op.Lease.LeaseID
+		if op.Episode != nil {
+			if err := s.writeEpisodeRevision(*op.Episode); err != nil {
+				return err
+			}
+			next.ActiveEpisodeID = ""
+			next.ActiveEpisodeRevision = 0
+		}
 		return nil
 	})
 	return err
@@ -262,6 +327,15 @@ func (s *Store) bindParentOnlySmokeTaskID(attempt AttemptRecord) error {
 func (s *Store) verifyCommittedParentOnlyExecution(op ExecutionOperation, head RepositoryControllerHead) error {
 	if !parentOnlyHeadBindingsMatch(op, head) {
 		return fmt.Errorf("committed parent-only execution bindings differ from operation")
+	}
+	if op.Episode != nil {
+		if head.ActiveEpisodeID != "" || head.ActiveEpisodeRevision != 0 {
+			return fmt.Errorf("committed parent-only Root episode remains active")
+		}
+		closed, err := s.LoadEpisodeRevision(op.Episode.EpisodeID, op.Episode.Revision)
+		if err != nil || closed.State != EpisodeStateClosed || closed.RevisionID != op.Episode.RevisionID {
+			return fmt.Errorf("committed parent-only Root episode closure is missing: %v", err)
+		}
 	}
 	workspace, err := ResolveWorkspaceIdentity(op.Workspace.Root, s.identity)
 	if err != nil {

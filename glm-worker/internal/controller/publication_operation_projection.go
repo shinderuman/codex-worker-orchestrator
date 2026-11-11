@@ -41,6 +41,8 @@ type PublicationParentCommand struct {
 type CompletionExecutionCommand struct {
 	Action             string             `json:"action"`
 	ExpectedGeneration uint64             `json:"expected_generation"`
+	EpisodeID          string             `json:"episode_id,omitempty"`
+	EpisodeRevision    uint64             `json:"episode_revision,omitempty"`
 	TransitionID       string             `json:"transition_id,omitempty"`
 	SuspensionID       string             `json:"suspension_id,omitempty"`
 	WorkspaceID        string             `json:"workspace_id,omitempty"`
@@ -344,8 +346,16 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
 		return ParentCompletionOperation{}, false, nil
 	}
+	command := &CompletionExecutionCommand{Action: PublicationOperationParentOnlyMaterialize, ExpectedGeneration: head.ControllerGeneration}
+	if head.ActiveEpisodeID != "" {
+		_, err := s.parentOnlyRootResumeEpisode(head, ParentOnlyMaterializeInput{ExpectedGeneration: head.ControllerGeneration, EpisodeID: head.ActiveEpisodeID, EpisodeRevision: head.ActiveEpisodeRevision}, authority.Task)
+		if err != nil {
+			return ParentCompletionOperation{}, false, err
+		}
+		command.EpisodeID, command.EpisodeRevision = head.ActiveEpisodeID, head.ActiveEpisodeRevision
+	}
 	return ParentCompletionOperation{Surface: ExecutionOperationSurface, Mode: ParentCompletionModeParentOnly, Operation: PublicationOperationParentOnlyMaterialize,
-		Execution: &CompletionExecutionCommand{Action: PublicationOperationParentOnlyMaterialize, ExpectedGeneration: head.ControllerGeneration}}, true, nil
+		Execution: command}, true, nil
 }
 
 func (s *Store) projectAdmissionSourceAdvancement(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
