@@ -307,8 +307,6 @@ func (e *dockerTestExecutor) processRequest(candidate stagingRequestCandidate) {
 		e.recordAttempt("docker-test:rejected-request:" + candidate.token + ":" + err.Error())
 		return
 	}
-	// A response may survive a timed-out client. Never execute a second
-	// request with that identity: it could otherwise consume an old success.
 	responsePath := filepath.Join(e.guard.dockerTestResponseDir, dockertest.StagingResponseFileName(request.Token))
 	if _, err := os.Lstat(responsePath); err == nil {
 		e.recordAttempt("docker-test:response-exists:" + request.Token)

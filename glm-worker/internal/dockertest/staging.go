@@ -180,8 +180,6 @@ func (c *StagingClient) writeRequest(request StagingRequest) error {
 		return err
 	}
 	final := filepath.Join(c.StagingDir, StagingRequestFileName(request.Token))
-	// A previous request may have timed out and removed its final path while
-	// its response remains. Never consume that response for a new request.
 	responsePath := filepath.Join(c.ResponseDir, StagingResponseFileName(request.Token))
 	if _, err := os.Lstat(responsePath); err == nil {
 		return fmt.Errorf("staging requestのtokenが重複しています: %s", request.Token)
@@ -204,7 +202,6 @@ func (c *StagingClient) writeRequest(request StagingRequest) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	// link is an atomic no-replace publication: an existing request is never overwritten.
 	if err := os.Link(temp, final); err != nil {
 		if os.IsExist(err) {
 			return fmt.Errorf("staging requestのtokenが重複しています: %s", request.Token)

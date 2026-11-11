@@ -516,8 +516,6 @@ func TestDockerTestConcurrentStagingClientsNeverExchangeResults(t *testing.T) {
 			executed++
 			continue
 		}
-		// Owner intentionally rejects concurrently visible requests. Such a
-		// rejection must not carry another package's successful output.
 		if got.code == 1 && got.stdout == "" && strings.Contains(got.stderr, "並行staging requestを拒否") {
 			continue
 		}

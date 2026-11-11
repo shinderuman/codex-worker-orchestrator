@@ -198,8 +198,6 @@ func TestStagingClientRejectsDuplicateToken(t *testing.T) {
 	}
 }
 
-// Publish a test response only after the client has published its request.
-// Real owner responses cannot predate a request, which must be rejected on reuse.
 func publishTestStagingResponseAfterRequest(staging, responses, token, body string) <-chan error {
 	done := make(chan error, 1)
 	go func() {
@@ -291,7 +289,6 @@ func TestStagingClientRandomTokensAcrossConcurrentCalls(t *testing.T) {
 		}(i)
 	}
 
-	// Both clients must publish distinct requests before any response is supplied.
 	deadline := time.Now().Add(2 * time.Second)
 	var published map[string]StagingRequest
 	for time.Now().Before(deadline) {
@@ -301,7 +298,6 @@ func TestStagingClientRandomTokensAcrossConcurrentCalls(t *testing.T) {
 		}
 		current := make(map[string]StagingRequest, 2)
 		for _, entry := range entries {
-			// Exclusive temporary files can coexist briefly with published files.
 			if !IsStagingRequestFileName(entry.Name()) {
 				continue
 			}
@@ -457,8 +453,6 @@ func TestStagingClientNeverClobbersExistingFinalOrTemp(t *testing.T) {
 func TestStagingClientDoesNotCleanUpUnownedTempOnTimeout(t *testing.T) {
 	t.Parallel()
 	client, staging, _ := newStagingClientFixture(t)
-	// A different client may have planted this token's temp while the first
-	// client is timing out; cleanup must only remove its own published request.
 	var stderr strings.Builder
 	request := StagingRequest{SchemaVersion: StagingSchemaVersion, Token: stagingClientToken(), Args: []string{"./..."}}
 	if err := client.writeRequest(request); err != nil {
