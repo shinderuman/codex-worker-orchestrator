@@ -70,7 +70,7 @@ func diffReadLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte, error
 	case unix.S_IFREG:
 		return diffReadRegularLeaf(parent, leaf, info)
 	case unix.S_IFLNK:
-		for size := 256; ; size *= 2 {
+		for size := 256; ; {
 			buffer := make([]byte, size)
 			n, err := unix.Readlinkat(int(parent.Fd()), leaf, buffer)
 			if err != nil {
@@ -78,6 +78,13 @@ func diffReadLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte, error
 			}
 			if n < len(buffer) {
 				return buffer[:n], nil
+			}
+			if size == int(maxDiffSourceBytes)+1 {
+				return nil, fmt.Errorf("diff symlink %q exceeds source execution limit %d bytes", leaf, maxDiffSourceBytes)
+			}
+			size *= 2
+			if size > int(maxDiffSourceBytes) {
+				size = int(maxDiffSourceBytes) + 1
 			}
 		}
 	default:
@@ -99,9 +106,15 @@ func diffReadRegularLeaf(parent *os.File, leaf string, info unix.Stat_t) ([]byte
 	if opened.Mode&unix.S_IFMT != unix.S_IFREG || !sameDiffObject(info, opened) {
 		return nil, fmt.Errorf("diff leaf %q changed while opening", leaf)
 	}
-	content, err := io.ReadAll(file)
+	if opened.Size > maxDiffSourceBytes {
+		return nil, fmt.Errorf("diff leaf %q worktree identity (dev=%d ino=%d mode=%06o size=%d mtime=%v) exceeds source execution limit %d bytes", leaf, opened.Dev, opened.Ino, opened.Mode, opened.Size, opened.Mtim, maxDiffSourceBytes)
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxDiffSourceBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read diff leaf %q: %w", leaf, err)
+	}
+	if int64(len(content)) > maxDiffSourceBytes {
+		return nil, fmt.Errorf("diff leaf %q exceeds source execution limit %d bytes during read", leaf, maxDiffSourceBytes)
 	}
 	return content, nil
 }

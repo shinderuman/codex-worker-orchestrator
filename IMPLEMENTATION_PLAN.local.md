@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/parent-evidence-diff-execution-bounds.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-execution-bounds.md)
+- [`IMPLEMENTATION_TASKS/quality-wiring-package-bindings.md`](IMPLEMENTATION_TASKS/quality-wiring-package-bindings.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/quality-wiring-package-bindings.md`](IMPLEMENTATION_TASKS/quality-wiring-package-bindings.md)
 - [`IMPLEMENTATION_TASKS/controlled-commentlint-source-proof.md`](IMPLEMENTATION_TASKS/controlled-commentlint-source-proof.md)
 - [`IMPLEMENTATION_TASKS/darwin-ci-acceptance-closure.md`](IMPLEMENTATION_TASKS/darwin-ci-acceptance-closure.md)
 - [`IMPLEMENTATION_TASKS/review-source-equivalence-same-head.md`](IMPLEMENTATION_TASKS/review-source-equivalence-same-head.md)

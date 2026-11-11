@@ -2,6 +2,7 @@ package parentevidence
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
@@ -570,6 +572,9 @@ func captureDiffOnce(repoRoot string, paths []string) ([]DiffFile, string, error
 		if err != nil {
 			return nil, "", err
 		}
+		if len(content) > maxDiffPatchBytes-untracked.Len() {
+			return nil, "", fmt.Errorf("requested diff exceeds %d-byte aggregate patch execution limit at %q (HEAD %s, index %s, worktree %s)", maxDiffPatchBytes, path, file.HeadBlob, file.IndexBlob, file.WorktreeSHA)
+		}
 		files = append(files, file)
 		untracked.WriteString(content)
 	}
@@ -590,7 +595,7 @@ func collectDiffFile(repoRoot, path string) (DiffFile, string, error) {
 	}
 	worktreeSHA, worktreeMode, content, present, err := diffWorktreeObject(repoRoot, path)
 	if err != nil {
-		return DiffFile{}, "", err
+		return DiffFile{}, "", fmt.Errorf("capture diff %q (HEAD %s mode %s, index %s mode %s): %w", path, headBlob, headMode, indexBlob, indexMode, err)
 	}
 	if headBlob == "" && indexBlob == "" && !present {
 		return DiffFile{}, "", fmt.Errorf("diff path %q does not exist in HEAD, index or worktree", path)
@@ -604,13 +609,18 @@ func collectDiffFile(repoRoot, path string) (DiffFile, string, error) {
 		WorktreeSHA:  worktreeSHA,
 		WorktreeMode: worktreeMode,
 	}
-	return renderCapturedDiffFile(repoRoot, file, content, present)
+	rendered, patch, err := renderCapturedDiffFile(repoRoot, file, content, present)
+	if err != nil {
+		return DiffFile{}, "", fmt.Errorf("capture diff %q (HEAD %s, index %s, worktree %s mode %s): %w", path, headBlob, indexBlob, worktreeSHA, worktreeMode, err)
+	}
+	return rendered, patch, nil
 }
 
 func renderCapturedDiffFile(repoRoot string, file DiffFile, content []byte, present bool) (DiffFile, string, error) {
 	if file.HeadBlob == "" && file.IndexBlob == "" {
 		file.Status = "?"
-		return file, untrackedDiffSection(file.Path, file.WorktreeMode, content), nil
+		patch, err := untrackedDiffSection(file.Path, file.WorktreeMode, content)
+		return file, patch, err
 	}
 	patch, err := capturedDiffPatch(repoRoot, file, content, present)
 	if err != nil {
@@ -678,35 +688,69 @@ func supportedDiffGitMode(mode string) bool {
 	return mode == "100644" || mode == "100755" || mode == "120000"
 }
 
-func untrackedDiffSection(path, mode string, content []byte) string {
+func untrackedDiffSection(path, mode string, content []byte) (string, error) {
+	if int64(len(content)) > maxDiffSourceBytes {
+		return "", fmt.Errorf("untracked source %q exceeds %d-byte execution limit", path, maxDiffSourceBytes)
+	}
 	name := "a/" + path + " b/" + path
 	dst := "b/" + path
 	if strings.ContainsAny(path, " \t\n\\\"") {
 		name = strconv.Quote("a/"+path) + " " + strconv.Quote("b/"+path)
 		dst = strconv.Quote(dst)
 	}
+	limitError := fmt.Errorf("untracked patch for %q exceeds %d-byte execution limit", path, maxDiffPatchBytes)
+	header := fmt.Sprintf("diff --git %s\nnew untracked file mode %s\n--- /dev/null\n+++ %s\n", name, mode, dst)
+	if len(header) > maxDiffPatchBytes {
+		return "", limitError
+	}
 	var body strings.Builder
-	fmt.Fprintf(&body, "diff --git %s\nnew untracked file mode %s\n--- /dev/null\n+++ %s\n", name, mode, dst)
+	body.WriteString(header)
 	if !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
-		fmt.Fprintf(&body, "untracked content (base64): %s\n", base64.StdEncoding.EncodeToString(content))
-		return body.String()
+		const prefix = "untracked content (base64): "
+		encodedBytes := base64.StdEncoding.EncodedLen(len(content))
+		if len(prefix)+encodedBytes+1 > maxDiffPatchBytes-body.Len() {
+			return "", limitError
+		}
+		body.WriteString(prefix)
+		body.WriteString(base64.StdEncoding.EncodeToString(content))
+		body.WriteByte('\n')
+		return body.String(), nil
 	}
-	lines := strings.Split(string(content), "\n")
-	if len(content) == 0 {
-		lines = nil
-	} else if content[len(content)-1] == '\n' {
-		lines = lines[:len(lines)-1]
+	if err := appendUntrackedTextBody(&body, content, limitError); err != nil {
+		return "", err
 	}
-	fmt.Fprintf(&body, "@@ -0,0 +1,%d @@\n", len(lines))
-	for _, line := range lines {
-		fmt.Fprintf(&body, "+%s\n", line)
-	}
-	if len(content) > 0 && content[len(content)-1] != '\n' {
-		body.WriteString("\\ No newline at end of file\n")
-	}
-	return body.String()
+	return body.String(), nil
 }
 
+func appendUntrackedTextBody(body *strings.Builder, content []byte, limitError error) error {
+	lineCount := bytes.Count(content, []byte{'\n'})
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		lineCount++
+	}
+	hunk := fmt.Sprintf("@@ -0,0 +1,%d @@\n", lineCount)
+	if len(hunk) > maxDiffPatchBytes-body.Len() {
+		return limitError
+	}
+	body.WriteString(hunk)
+	for remaining := string(content); remaining != ""; {
+		line, rest, _ := strings.Cut(remaining, "\n")
+		if len(line)+2 > maxDiffPatchBytes-body.Len() {
+			return limitError
+		}
+		body.WriteByte('+')
+		body.WriteString(line)
+		body.WriteByte('\n')
+		remaining = rest
+	}
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		const marker = "\\ No newline at end of file\n"
+		if len(marker) > maxDiffPatchBytes-body.Len() {
+			return limitError
+		}
+		body.WriteString(marker)
+	}
+	return nil
+}
 func (p *Projector) projectSource(request SourceRequest) Part {
 	part := Part{
 		Kind:    "source",
@@ -988,14 +1032,24 @@ func clearPartBody(part *Part) {
 }
 
 func gitLiteralOutputIn(dir string, args ...string) ([]byte, error) {
-	command := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir = dir
 	command.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
+	stdout := &boundedDiffOutput{limit: maxDiffPatchBytes}
+	stderr := &boundedDiffOutput{limit: 8 * 1024}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	err := command.Run()
+	if stdout.exceeded {
+		return nil, fmt.Errorf("git %s output exceeds %d-byte execution limit", args[0], maxDiffPatchBytes)
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("git %s: %w", args[0], ctx.Err())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
-	return output, nil
+	return stdout.Bytes(), nil
 }
