@@ -10,8 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// This scenario uses Controller transitions end to end. Unlike synthetic
-// episode fixtures, it never edits the persisted Controller head or episode.
 func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *testing.T) {
 	t.Parallel()
 	repo := newControllerRepo(t)
@@ -152,7 +150,6 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 		t.Fatalf("Root resume fabricated model Runtime: %v", err)
 	}
 
-	// Amend the exact same Root, not the retired child; do not use a State edit.
 	rootBytes, err := os.ReadFile(filepath.Join(repo, rootPath))
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +188,6 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 		t.Fatalf("amended Root state created a model Runtime binding: %v", err)
 	}
 
-	// Promotion captures the Bundle observation without creating model Runtime evidence.
 	fixture := parentOnlyTaskFixture{store: store, repo: repo, policy: policy}
 	completion := parentOnlyCompletionAdmission(t, fixture)
 	rootAccepted, err := store.AcceptParentCompletion(completion, CandidateAcceptanceInput{
