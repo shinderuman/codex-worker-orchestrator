@@ -27,7 +27,7 @@ func newGraphHistoryStore(tb testing.TB) *Store {
 		tb.Fatal(err)
 	}
 	for name, contents := range map[string]string{
-		"source.txt": "base\n",
+		"source.txt":                   "base\n",
 		"IMPLEMENTATION_PLAN.local.md": "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n",
 		"IMPLEMENTATION_TASKS/root.md": "# root\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\ncontroller root task\n\n## Dependencies\n\nnone\n",
 	} {
@@ -58,8 +58,8 @@ func buildGraphHistory(tb testing.TB, store *Store, count int) graphHistoryFixtu
 	tb.Helper()
 	result := graphHistoryFixture{
 		store: store,
-		task: SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/graph-history.md", ContractDigest: "graph-history"},
-		refs: map[string]EvidenceObjectRef{},
+		task:  SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/graph-history.md", ContractDigest: "graph-history"},
+		refs:  map[string]EvidenceObjectRef{},
 	}
 	subject := taskEvidenceSubjectID(result.task)
 	var previousTask, previousEpisode, previousHead, previousLedger *EvidenceObjectRef
@@ -81,18 +81,18 @@ func buildGraphHistory(tb testing.TB, store *Store, count int) graphHistoryFixtu
 			oldestTask = taskRef
 		}
 		episode := EpisodeIndexRevision{
-			SchemaVersion: evidenceSchemaVersion,
-			EpisodeID: "episode-graph-history",
-			RootTaskRef: result.task,
-			EpisodeRevision: generation,
-			PreviousRevision: previousEpisode,
+			SchemaVersion:             evidenceSchemaVersion,
+			EpisodeID:                 "episode-graph-history",
+			RootTaskRef:               result.task,
+			EpisodeRevision:           generation,
+			PreviousRevision:          previousEpisode,
 			DependencyGraphSnapshotID: fmt.Sprintf("dependency-%d", i),
-			AdmittedClosureTaskRefs: []SemanticTaskRef{result.task},
-			TaskIndexHeads: []EvidenceSubjectHead{{SubjectID: subject, RevisionRef: oldestTask}},
-			State: "open",
-			ControllerGeneration: generation,
-			TransitionID: transition,
-			CreatedAt: created.Add(time.Second),
+			AdmittedClosureTaskRefs:   []SemanticTaskRef{result.task},
+			TaskIndexHeads:            []EvidenceSubjectHead{{SubjectID: subject, RevisionRef: oldestTask}},
+			State:                     "open",
+			ControllerGeneration:      generation,
+			TransitionID:              transition,
+			CreatedAt:                 created.Add(time.Second),
 		}
 		episodeRef, _, err := store.StoreEpisodeIndexRevision(episode)
 		if err != nil {
@@ -100,30 +100,30 @@ func buildGraphHistory(tb testing.TB, store *Store, count int) graphHistoryFixtu
 		}
 		snapshot := fmt.Sprintf("snapshot-%d", i)
 		headRef, _, err := store.StoreEvidenceHead(EvidenceHead{
-			SchemaVersion: evidenceSchemaVersion,
-			RepositoryIdentity: store.Identity().LineageID,
-			PreviousHead: previousHead,
-			TaskHeads: []EvidenceSubjectHead{{SubjectID: subject, RevisionRef: taskRef}},
-			EpisodeHeads: []EvidenceSubjectHead{{SubjectID: episode.EpisodeID, RevisionRef: episodeRef}},
+			SchemaVersion:        evidenceSchemaVersion,
+			RepositoryIdentity:   store.Identity().LineageID,
+			PreviousHead:         previousHead,
+			TaskHeads:            []EvidenceSubjectHead{{SubjectID: subject, RevisionRef: taskRef}},
+			EpisodeHeads:         []EvidenceSubjectHead{{SubjectID: episode.EpisodeID, RevisionRef: episodeRef}},
 			ControllerGeneration: generation,
-			ProjectSnapshotID: snapshot,
-			CreatedAt: created.Add(2 * time.Second),
+			ProjectSnapshotID:    snapshot,
+			CreatedAt:            created.Add(2 * time.Second),
 		})
 		if err != nil {
 			tb.Fatal(err)
 		}
 		ledgerRef, _, err := store.StoreEvidenceLedgerRecord(EvidenceLedgerRecord{
-			SchemaVersion: evidenceSchemaVersion,
-			Sequence: generation,
-			PreviousRecord: previousLedger,
-			RepositoryIdentity: store.Identity().LineageID,
-			ControllerGeneration: generation,
-			TransitionID: transition,
-			ChangedTaskIndexHeads: []EvidenceSubjectHead{{SubjectID: subject, RevisionRef: taskRef}},
+			SchemaVersion:            evidenceSchemaVersion,
+			Sequence:                 generation,
+			PreviousRecord:           previousLedger,
+			RepositoryIdentity:       store.Identity().LineageID,
+			ControllerGeneration:     generation,
+			TransitionID:             transition,
+			ChangedTaskIndexHeads:    []EvidenceSubjectHead{{SubjectID: subject, RevisionRef: taskRef}},
 			ChangedEpisodeIndexHeads: []EvidenceSubjectHead{{SubjectID: episode.EpisodeID, RevisionRef: episodeRef}},
-			ProjectSnapshotID: snapshot,
-			EvidenceHeadRef: headRef,
-			CreatedAt: created.Add(3 * time.Second),
+			ProjectSnapshotID:        snapshot,
+			EvidenceHeadRef:          headRef,
+			CreatedAt:                created.Add(3 * time.Second),
 		})
 		if err != nil {
 			tb.Fatal(err)
