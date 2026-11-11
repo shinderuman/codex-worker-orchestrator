@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,5 +130,25 @@ func TestParentOnlyRootResumeUsesTypedMaterializationAndClosesEpisode(t *testing
 	}
 	if _, err := smoke.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("parent-only Root resume created GLM Runtime binding: %v", err)
+	}
+}
+
+func TestParentOnlyRootResumeRejectsUnpublishedEpisode(t *testing.T) {
+	t.Parallel()
+	fixture, task := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
+	head, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	head.RootTaskRef = &task
+	head.ActiveEpisodeID = "unpublished-episode"
+	head.ActiveEpisodeRevision = 1
+	_, err = fixture.store.parentOnlyRootResumeEpisode(head, ParentOnlyMaterializeInput{
+		ExpectedGeneration: head.ControllerGeneration,
+		EpisodeID: head.ActiveEpisodeID,
+		EpisodeRevision: head.ActiveEpisodeRevision,
+	}, task)
+	if err == nil || !strings.Contains(err.Error(), "finalized child publication") {
+		t.Fatalf("unpublished Root episode admitted parent-only resumption: %v", err)
 	}
 }
