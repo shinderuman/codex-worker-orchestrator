@@ -78,10 +78,14 @@ func (s *Store) verifyParentOnlySyncRequiredRevision(head RepositoryControllerHe
 	if err != nil {
 		return err
 	}
-	if required == nil || !required.Admittable ||
-		required.Plan.SourceSnapshotID != snapshot.ID ||
-		!required.Plan.PreviousTaskRef.Equal(task) {
-		return fmt.Errorf("parent-only Task sync has no exact Task-only source revision")
+	if required == nil {
+		return fmt.Errorf("parent-only Task sync requires a changed Task contract")
+	}
+	if !required.Admittable {
+		return fmt.Errorf("parent-only Task sync source revision is not admittable: %s", required.Reason)
+	}
+	if required.Plan.SourceSnapshotID != snapshot.ID || !required.Plan.PreviousTaskRef.Equal(task) {
+		return fmt.Errorf("parent-only Task sync source snapshot or previous Task authority changed")
 	}
 	return nil
 }
