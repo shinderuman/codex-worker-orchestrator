@@ -12,6 +12,13 @@
 
 none
 
+## Resolved references
+
+- Original instruction が指す前回評価のhistorical evidenceは[固定コミットの評価本文](https://github.com/shinderuman/codex-worker-orchestrator/blob/ef0b318494cce6a1119c467b1a6292ef114d1db8/review-evidence/codex-efficiency-followup-2026-11-03.md)から取得する。比較対象の過去評価であり、current requirementは本TaskのOriginal instruction・Contractを正とする。
+- Publication の親往復の採否・欠測・再評価条件は [評価コミット](https://github.com/shinderuman/codex-worker-orchestrator/commit/af5f0b78033e5490e0f78ecc2d943c761ba34bd9) を参照する。
+- 親セッション rotationの採否・欠測・再評価条件は [評価コミット](https://github.com/shinderuman/codex-worker-orchestrator/commit/ab0600d0012d4a1a0d5048ea51a37318d254c40b) を参照する。
+- Codex usage の比較可能性の採否・欠測・再評価条件は [評価コミット](https://github.com/shinderuman/codex-worker-orchestrator/commit/220e453396a52f40efdfdd44c483c31a1910810b) を参照する。
+
 ## Purpose
 
 品質と実消費・テスト時間の改善が成立したかを途中で再確認する。
