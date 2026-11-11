@@ -104,6 +104,16 @@ func (s *StateStore) rejectResumeBeforeRateLimitReset() error {
 	if err != nil {
 		return fmt.Errorf("resume checkpoint evidence is unreadable: %w", err)
 	}
+	if checkpoint.StopKind == ResumeStopScheduledPause {
+		resumeAt, err := time.Parse(time.RFC3339, checkpoint.ScheduledResumeAt)
+		if err != nil {
+			return fmt.Errorf("scheduled-pause resume evidence is unreadable: %w", err)
+		}
+		if time.Now().Before(resumeAt) {
+			return fmt.Errorf("scheduled-pause task cannot resume before %s", checkpoint.ScheduledResumeAt)
+		}
+		return nil
+	}
 	if checkpoint.StopKind != ResumeStopRateLimited {
 		return nil
 	}
@@ -130,7 +140,7 @@ func (s *StateStore) AdmitNewTask() (ParentActionPlan, bool, error) {
 
 func (kind ResumeStopKind) ParentAction() ParentAction {
 	switch kind {
-	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:
+	case ResumeStopRateLimited, ResumeStopScheduledPause, ResumeStopProviderUnavailable, ResumeStopInterrupted:
 		return ParentActionResume
 	case ResumeStopGuardRecoverable:
 		return ParentActionRepairGuardThenResume
@@ -266,6 +276,7 @@ func unexpectedOpenReview(openReview string, expected packet.Status) bool {
 func stoppedParentActionPlan(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
 	switch status {
 	case TaskStatusRateLimited,
+		TaskStatusScheduledPause,
 		TaskStatusProviderUnavailable,
 		TaskStatusInterrupted,
 		TaskStatusGuardRecoverable,
@@ -337,7 +348,7 @@ func pendingDecisionContinuesCheckpoint(pending bool, checkpoint ResumeCheckpoin
 		return false
 	}
 	switch checkpoint.StopKind {
-	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:
+	case ResumeStopRateLimited, ResumeStopScheduledPause, ResumeStopProviderUnavailable, ResumeStopInterrupted:
 	default:
 		return false
 	}

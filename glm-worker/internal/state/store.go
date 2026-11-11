@@ -33,6 +33,7 @@ const (
 	TaskStatusComplete                 TaskStatus = "complete"
 	TaskStatusUserTerminated           TaskStatus = "user-terminated"
 	TaskStatusRateLimited              TaskStatus = "rate-limited"
+	TaskStatusScheduledPause           TaskStatus = "scheduled-pause"
 	TaskStatusProviderUnavailable      TaskStatus = "provider-unavailable"
 	TaskStatusGuardRecoverable         TaskStatus = "guard-recoverable"
 	TaskStatusQualityGateRecoverable   TaskStatus = "quality-gate-recoverable"
@@ -60,6 +61,7 @@ func (status TaskStatus) Known() bool {
 		TaskStatusComplete,
 		TaskStatusUserTerminated,
 		TaskStatusRateLimited,
+		TaskStatusScheduledPause,
 		TaskStatusProviderUnavailable,
 		TaskStatusGuardRecoverable,
 		TaskStatusQualityGateRecoverable,

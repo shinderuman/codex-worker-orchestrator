@@ -804,6 +804,114 @@ func TestResumeProbeGateProviderStillDownZeroFullRuns(t *testing.T) {
 	}
 }
 
+func TestScheduledPauseKeepsProviderProbeOnResume(t *testing.T) {
+	t.Parallel()
+	st := newStateStoreT(t)
+	seedProviderUnavailableCheckpoint(t, st)
+	r := &scriptedRunner{}
+	w, clock := newRecoveryWorkflowT(t, st, r)
+	w.config.RepoRoot = newRetentionGitRepo(t)
+	w.captureSnapshot = state.CaptureGitSnapshot
+	r.probeErrs = []error{&runner.ScheduledPauseError{ResumeAt: clock.now.Add(time.Hour)}, errProbeNonTransient}
+
+	err := w.ExecuteResume()
+	var paused *runner.ScheduledPauseError
+	if !errors.As(err, &paused) || st.TaskStatus() != state.TaskStatusScheduledPause {
+		t.Fatalf("予定停止が保持されていません: %v, %s", err, st.TaskStatus())
+	}
+	saved, err := st.LoadResumeCheckpoint()
+	if err != nil || saved.ScheduledProbeClassification != "http-503" {
+		t.Fatalf("復旧確認の根拠が保存されていません: %q %v", saved.ScheduledProbeClassification, err)
+	}
+	clock.now = paused.ResumeAt
+	err = w.ExecuteResume()
+	if err == nil || len(r.probes) != 2 || len(r.prompts) != 0 {
+		t.Fatalf("予定停止からの復旧確認: probes=%d prompts=%d error=%v", len(r.probes), len(r.prompts), err)
+	}
+	saved, err = st.LoadResumeCheckpoint()
+	if err != nil || saved.StopKind != state.ResumeStopScheduledPause ||
+		saved.ScheduledProbeClassification != "http-503" || st.TaskStatus() != state.TaskStatusScheduledPause {
+		t.Fatalf("再開を拒否した後のcheckpointと状態が不整合です: %#v, %s, %v", saved, st.TaskStatus(), err)
+	}
+}
+
+func TestScheduledPauseCaptureFailureRestoresProviderStop(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{"source", "patches"} {
+		t.Run(target, func(t *testing.T) {
+			st := newStateStoreT(t)
+			seedProviderUnavailableCheckpoint(t, st)
+			r := &scriptedRunner{}
+			w, clock := newRecoveryWorkflowT(t, st, r)
+			w.config.RepoRoot = newRetentionGitRepo(t)
+			w.captureSnapshot = state.CaptureGitSnapshot
+			blockedPatch := st.Path("stop-worktree.patch")
+			r.probeErrs = []error{&runner.ScheduledPauseError{ResumeAt: clock.now.Add(time.Hour)}, errProbeNonTransient}
+			r.onProbe = func() {
+				if target == "source" {
+					w.captureSnapshot = func(string) (state.GitSnapshot, error) {
+						return state.GitSnapshot{}, errProbeLocalExec
+					}
+				} else if err := os.Mkdir(blockedPatch, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err := w.ExecuteResume()
+			if err == nil || !strings.Contains(err.Error(), target+":") {
+				t.Fatalf("予定停止の証跡保存エラーが失われました: %v", err)
+			}
+			requireProviderUnavailableStop(t, st)
+			r.onProbe = nil
+			w.captureSnapshot = state.CaptureGitSnapshot
+			if target == "patches" {
+				if err := os.Remove(blockedPatch); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = w.ExecuteResume()
+			if err == nil || !strings.Contains(err.Error(), errProbeNonTransient.Error()) || len(r.probes) != 2 || len(r.prompts) != 0 {
+				t.Fatalf("復元後の再開: probes=%d prompts=%d error=%v", len(r.probes), len(r.prompts), err)
+			}
+			requireProviderUnavailableStop(t, st)
+		})
+	}
+}
+
+func TestScheduledPauseSuccessfulProbeClearsStopBeforeRun(t *testing.T) {
+	t.Parallel()
+	st := newStateStoreT(t)
+	seedProviderUnavailableCheckpoint(t, st)
+	r := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
+	}}
+	w, clock := newRecoveryWorkflowT(t, st, r)
+	w.config.RepoRoot = newRetentionGitRepo(t)
+	writeReviewTargetFixture(t, st, w.config.RepoRoot)
+	pinRepositoryHarnessActiveResumeT(t, st)
+	w.captureSnapshot = state.CaptureGitSnapshot
+	r.probeErrs = []error{&runner.ScheduledPauseError{ResumeAt: clock.now.Add(time.Hour)}, nil}
+	r.onRun = func() {
+		checkpoint, err := st.LoadResumeCheckpoint()
+		if err != nil || checkpoint.StopKind != state.ResumeStopNone || checkpoint.ScheduledProbeClassification != "" ||
+			checkpoint.ScheduledResumeAt != "" || st.TaskStatus() != state.TaskStatusActive || len(r.probes) != 2 {
+			t.Fatalf("停止解除後の実行条件が不整合です: %#v, %s, probes=%d, %v", checkpoint, st.TaskStatus(), len(r.probes), err)
+		}
+	}
+	var paused *runner.ScheduledPauseError
+	if err := w.ExecuteResume(); !errors.As(err, &paused) || st.TaskStatus() != state.TaskStatusScheduledPause {
+		t.Fatalf("予定停止が保持されていません: %v, %s", err, st.TaskStatus())
+	}
+	clock.now = paused.ResumeAt
+	if err := w.ExecuteResume(); err != nil {
+		t.Fatalf("復旧確認成功後に再開できません: %v", err)
+	}
+	if len(r.prompts) != 2 || st.TaskStatus() != state.TaskStatusComplete {
+		t.Fatalf("再開後の実行: prompts=%d status=%s", len(r.prompts), st.TaskStatus())
+	}
+}
+
 func TestResumeProbeGateFailClosedOnNonTransientProbe(t *testing.T) {
 	t.Parallel()
 	st := newStateStoreT(t)

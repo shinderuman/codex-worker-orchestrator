@@ -209,6 +209,11 @@ func (w *Workflow) resolveModelCallFailure(
 	if execution.runErr == nil {
 		return execution, nil
 	}
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(execution.runErr, &scheduled) {
+		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "scheduled_pause", "", execution.runErr, outputPath, callDiagnostics{})
+		return execution, w.persistScheduledPauseStop(checkpoint, scheduled)
+	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(execution.runErr, &interrupted) {
 		return execution, w.interruptFromCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
@@ -281,6 +286,10 @@ func (w *Workflow) resolveTransientModelFailure(
 	}
 	if errors.Is(recErr, errParentFileGuardStopped) {
 		return execution, recErr
+	}
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(recErr, &scheduled) {
+		return execution, w.persistScheduledPauseStop(checkpoint, scheduled)
 	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(recErr, &interrupted) {
@@ -540,8 +549,8 @@ func transientRetryReason(classification string) string {
 	return "transient-provider-failure:" + classification
 }
 
-func (w *Workflow) gateResumeOnProbe(checkpoint state.ResumeCheckpoint) error {
-	_, _, _, _, err := w.recoveryLoop(checkpoint, checkpoint.ProviderUnavailableClassification, true, func() (bool, runner.RunResult, time.Time, time.Time, error) {
+func (w *Workflow) gateResumeOnProbe(checkpoint state.ResumeCheckpoint, classification string) error {
+	_, _, _, _, err := w.recoveryLoop(checkpoint, classification, true, func() (bool, runner.RunResult, time.Time, time.Time, error) {
 		return true, runner.RunResult{}, time.Time{}, time.Time{}, nil
 	})
 	return err
@@ -658,7 +667,7 @@ func (w *Workflow) recoveryLoop(
 			break
 		}
 		if err != nil {
-			return false, result, startedAt, completedAt, err
+			return false, result, startedAt, completedAt, bindScheduledRecovery(err, exhaustClassification)
 		}
 		if done {
 			return recovered, result, startedAt, completedAt, nil
@@ -670,6 +679,16 @@ func (w *Workflow) recoveryLoop(
 		return false, runner.RunResult{}, time.Time{}, time.Time{}, saveErr
 	}
 	return false, runner.RunResult{}, time.Time{}, time.Time{}, pErr
+}
+
+func bindScheduledRecovery(err error, classification string) error {
+	var paused *runner.ScheduledPauseError
+	if !errors.As(err, &paused) {
+		return err
+	}
+	bound := *paused
+	bound.RecoveryClassification = classification
+	return &bound
 }
 
 func (w *Workflow) waitForRecoveryProbe(
@@ -726,6 +745,10 @@ func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt i
 	w.recordProbeCall(checkpoint, probeResult, attempt, startedAt, completedAt, probeErr)
 	if probeErr == nil {
 		return true, "", startedAt, completedAt, nil
+	}
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(probeErr, &scheduled) {
+		return false, "", time.Time{}, time.Time{}, probeErr
 	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(probeErr, &interrupted) {
@@ -807,6 +830,35 @@ func (w *Workflow) interruptFromCall(
 func (w *Workflow) interruptBetweenCalls(checkpoint state.ResumeCheckpoint) error {
 	w.recordInterruptedEvent(checkpoint)
 	return w.persistInterruptedStop(checkpoint, nil)
+}
+
+func (w *Workflow) persistScheduledPauseStop(checkpoint state.ResumeCheckpoint, paused *runner.ScheduledPauseError) error {
+	if paused == nil || paused.ResumeAt.IsZero() {
+		return fmt.Errorf("scheduled pause requires a resume boundary")
+	}
+	checkpoint.SetStopKind(state.ResumeStopScheduledPause)
+	checkpoint.ScheduledResumeAt = paused.ResumeAt.Format(time.RFC3339)
+	checkpoint.ScheduledProbeClassification = paused.RecoveryClassification
+	if err := w.captureStopRetention(&checkpoint); err != nil {
+		return fmt.Errorf("capture scheduled-pause source: %w", err)
+	}
+	if err := state.CaptureStopPatches(w.config, w.state); err != nil {
+		return fmt.Errorf("capture scheduled-pause patches: %w", err)
+	}
+	if paused.Started && w.state.ReadOr(string(checkpoint.Role)+".id", "") != "" {
+		if err := w.state.MarkReady(checkpoint.Role); err != nil {
+			return err
+		}
+	}
+	if err := w.state.EnterStop(checkpoint); err != nil {
+		return err
+	}
+	_ = w.state.SecureArtifactDir()
+	taskID, _ := w.state.TaskID()
+	return &runner.ScheduledPauseError{
+		Phase: checkpoint.Phase, TaskID: taskID, RepoRoot: w.config.RepoRoot,
+		ResumeAt: paused.ResumeAt, CleanupWarning: paused.CleanupWarning,
+	}
 }
 
 func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cause error) error {

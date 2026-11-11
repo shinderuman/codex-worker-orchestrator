@@ -374,6 +374,7 @@ func RevisionStatusAllowed(status state.TaskStatus) bool {
 	case state.TaskStatusWaitingDecision,
 		state.TaskStatusWaitingSolReview,
 		state.TaskStatusRateLimited,
+		state.TaskStatusScheduledPause,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
 		state.TaskStatusQualityGateRecoverable,

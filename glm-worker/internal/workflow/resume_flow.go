@@ -113,7 +113,7 @@ func (w *Workflow) prepareResumeCheckpoint(
 	if err != nil {
 		return checkpoint, false, err
 	}
-	if checkpoint.StopKind == state.ResumeStopInterrupted {
+	if checkpoint.StopKind == state.ResumeStopInterrupted || checkpoint.StopKind == state.ResumeStopScheduledPause {
 		if err := w.verifyInterruptedRetention(checkpoint); err != nil {
 			return checkpoint, false, err
 		}
@@ -242,10 +242,14 @@ func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) 
 }
 
 func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
-	if checkpoint.StopKind != state.ResumeStopProviderUnavailable {
+	classification := checkpoint.ProviderUnavailableClassification
+	if checkpoint.StopKind == state.ResumeStopScheduledPause {
+		classification = checkpoint.ScheduledProbeClassification
+	}
+	if classification == "" {
 		return nil
 	}
-	if err := w.gateResumeOnProbe(checkpoint); err != nil {
+	if err := w.gateResumeOnProbe(checkpoint, classification); err != nil {
 		return w.handleResumeProbeError(checkpoint, err)
 	}
 	return nil
@@ -274,6 +278,10 @@ func (w *Workflow) gateResumeSnapshots(checkpoint state.ResumeCheckpoint, pocRes
 }
 
 func (w *Workflow) handleResumeProbeError(checkpoint state.ResumeCheckpoint, err error) error {
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(err, &scheduled) {
+		return w.restoreResumeStop(checkpoint, w.persistScheduledPauseStop(checkpoint, scheduled))
+	}
 	var interrupted *runner.InterruptedCallError
 	if errors.As(err, &interrupted) {
 		return w.interruptBetweenCalls(checkpoint)
@@ -313,6 +321,10 @@ func (w *Workflow) restoreResumeStop(previous state.ResumeCheckpoint, cause erro
 }
 
 func isResumeStopError(err error) bool {
+	var scheduled *runner.ScheduledPauseError
+	if errors.As(err, &scheduled) {
+		return true
+	}
 	if errors.Is(err, errParentFileGuardStopped) {
 		return true
 	}

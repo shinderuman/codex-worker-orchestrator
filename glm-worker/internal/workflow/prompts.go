@@ -168,6 +168,7 @@ func resumePrompt(checkpoint state.ResumeCheckpoint) string {
 	switch checkpoint.StopKind {
 	case state.ResumeStopNone,
 		state.ResumeStopRateLimited,
+		state.ResumeStopScheduledPause,
 		state.ResumeStopProviderUnavailable,
 		state.ResumeStopInterrupted:
 		return genericResumePrompt(originalPrompt)

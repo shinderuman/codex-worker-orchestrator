@@ -49,13 +49,15 @@ type ResumeCheckpoint struct {
 	DecisionBoundaryApplied bool        `json:"decision_boundary_applied,omitempty"`
 	ExecutionMilestoneID    string      `json:"execution_milestone_id,omitempty"`
 
-	WorkerResult    *packet.Result `json:"worker_result,omitempty"`
-	CompletedResult *packet.Result `json:"completed_result,omitempty"`
-	ReviewNumber    int            `json:"review_number,omitempty"`
-	AutoFixes       int            `json:"auto_fixes,omitempty"`
-	StopKind        ResumeStopKind `json:"stop_kind"`
-	ResetAtCST      string         `json:"-"`
-	ResetAtRFC3339  string         `json:"reset_at_rfc3339,omitempty"`
+	WorkerResult                 *packet.Result `json:"worker_result,omitempty"`
+	CompletedResult              *packet.Result `json:"completed_result,omitempty"`
+	ReviewNumber                 int            `json:"review_number,omitempty"`
+	AutoFixes                    int            `json:"auto_fixes,omitempty"`
+	StopKind                     ResumeStopKind `json:"stop_kind"`
+	ResetAtCST                   string         `json:"-"`
+	ResetAtRFC3339               string         `json:"reset_at_rfc3339,omitempty"`
+	ScheduledResumeAt            string         `json:"scheduled_resume_at,omitempty"`
+	ScheduledProbeClassification string         `json:"scheduled_probe_classification,omitempty"`
 
 	ResultCorrection bool `json:"result_correction,omitempty"`
 	SummaryRecovered bool `json:"summary_recovered,omitempty"`
@@ -101,6 +103,7 @@ const (
 const (
 	ResumeStopNone                ResumeStopKind = ""
 	ResumeStopRateLimited         ResumeStopKind = "rate-limited"
+	ResumeStopScheduledPause      ResumeStopKind = "scheduled-pause"
 	ResumeStopProviderUnavailable ResumeStopKind = "provider-unavailable"
 	ResumeStopInterrupted         ResumeStopKind = "interrupted"
 	ResumeStopGuardRecoverable    ResumeStopKind = "guard-recoverable"
@@ -114,6 +117,7 @@ func (kind ResumeStopKind) Valid() bool {
 	switch kind {
 	case ResumeStopNone,
 		ResumeStopRateLimited,
+		ResumeStopScheduledPause,
 		ResumeStopProviderUnavailable,
 		ResumeStopInterrupted,
 		ResumeStopGuardRecoverable,
@@ -131,7 +135,7 @@ func (kind ResumeStopKind) IsStopped() bool {
 
 func (kind ResumeStopKind) CanInterruptQualitySurfaceApproval() bool {
 	switch kind {
-	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:
+	case ResumeStopRateLimited, ResumeStopScheduledPause, ResumeStopProviderUnavailable, ResumeStopInterrupted:
 		return true
 	default:
 		return false
@@ -142,6 +146,8 @@ func (kind ResumeStopKind) TaskStatus() TaskStatus {
 	switch kind {
 	case ResumeStopRateLimited:
 		return TaskStatusRateLimited
+	case ResumeStopScheduledPause:
+		return TaskStatusScheduledPause
 	case ResumeStopProviderUnavailable:
 		return TaskStatusProviderUnavailable
 	case ResumeStopInterrupted:
@@ -161,6 +167,8 @@ func (kind ResumeStopKind) ResumeSource() string {
 	switch kind {
 	case ResumeStopRateLimited:
 		return "rate-limit"
+	case ResumeStopScheduledPause:
+		return "scheduled-pause"
 	case ResumeStopProviderUnavailable:
 		return "provider-unavailable"
 	case ResumeStopInterrupted:
@@ -227,6 +235,8 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 		!checkpoint.QualitySurfaceApprovalPending
 	checkpoint.ResetAtCST = ""
 	checkpoint.ResetAtRFC3339 = ""
+	checkpoint.ScheduledResumeAt = ""
+	checkpoint.ScheduledProbeClassification = ""
 	checkpoint.ProviderUnavailableClassification = ""
 	checkpoint.ProviderUnavailableProbes = 0
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
@@ -258,6 +268,9 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 		return err
 	}
 	if err := checkpoint.validateRateLimitStopPayload(); err != nil {
+		return err
+	}
+	if err := checkpoint.validateScheduledPausePayload(); err != nil {
 		return err
 	}
 	if err := checkpoint.validateProviderStopPayload(); err != nil {
@@ -303,6 +316,22 @@ func (checkpoint ResumeCheckpoint) validateRateLimitStopPayload() error {
 	}
 	if _, err := time.Parse(time.RFC3339, checkpoint.ResetAtRFC3339); err != nil {
 		return fmt.Errorf("rate-limit reset_at_rfc3339 is invalid: %w", err)
+	}
+	return nil
+}
+
+func (checkpoint ResumeCheckpoint) validateScheduledPausePayload() error {
+	if checkpoint.StopKind != ResumeStopScheduledPause {
+		if checkpoint.ScheduledResumeAt != "" || checkpoint.ScheduledProbeClassification != "" {
+			return fmt.Errorf("resume stop payload does not match stop kind %q: scheduled resume metadata is present", checkpoint.StopKind)
+		}
+		return nil
+	}
+	if checkpoint.ScheduledResumeAt == "" {
+		return fmt.Errorf("scheduled-pause resume stop requires resume time")
+	}
+	if _, err := time.Parse(time.RFC3339, checkpoint.ScheduledResumeAt); err != nil {
+		return fmt.Errorf("scheduled-pause resume time is invalid: %w", err)
 	}
 	return nil
 }
