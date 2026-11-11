@@ -723,16 +723,16 @@ func assertParentOnlyCandidateEvidence(t *testing.T, store *controller.Store, ca
 
 func TestParentOnlyAmendmentSyncThroughProductionBoundary(t *testing.T) {
 	cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, false)
+	// Start from a clean primary snapshot. The amendment alone changes the
+	// snapshot before sync; publishable parent products are written afterward.
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, "evaluation-result.md")); err != nil {
+		t.Fatal(err)
+	}
 	start := executeParentHandoff(t, cfg)
 	if !start.Consistent || start.RequiredAction == nil || *start.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("parent-only materialization not projected: %#v", start)
 	}
 	runParentOnlyExecutionStep(t, cfg, start.RequiredActionParameters, true)
-	// Only the Task file may change during authority sync. The product is
-	// restored after the revised contract is admitted.
-	if err := os.Remove(filepath.Join(cfg.RepoRoot, "evaluation-result.md")); err != nil {
-		t.Fatal(err)
-	}
 	before, err := store.LoadHead()
 	if err != nil {
 		t.Fatal(err)
