@@ -749,6 +749,19 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if _, err := store.SyncTaskAuthority(tampered, source.Snapshot.ID, controller.EvidenceObjectRef{}, revised); err == nil || !strings.Contains(err.Error(), "source authority changed") {
 		t.Fatalf("forged parent-only admission baseline was accepted: %v", err)
 	}
+	proof, err := store.PutEvidenceObject("runtime-artifact", "application/json",
+		before.LiveAttemptID+":"+controller.TaskAuthoritySyncProducer+":"+source.Snapshot.ID,
+		true, []byte(`{"runtime":"parent-only","task_id":"forged-attempt"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SyncTaskAuthority(source, source.Snapshot.ID, proof, revised); err == nil || !strings.Contains(err.Error(), "smoke identity") {
+		t.Fatalf("forged parent-only smoke evidence was accepted: %v", err)
+	}
+	unchanged, err = store.LoadHead()
+	if err != nil || unchanged.ControllerGeneration != before.ControllerGeneration || unchanged.PendingTransitionID != "" {
+		t.Fatalf("forged smoke proof prepared a transition: %#v %v", unchanged, err)
+	}
 	sync := executeParentHandoff(t, cfg)
 	if !sync.Consistent || sync.RequiredAction == nil || *sync.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("parent-only Amendment did not produce an executable handoff: %#v", sync)
