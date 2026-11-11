@@ -291,12 +291,14 @@ func quiescentStartHandoffAction(cfg config.AppConfig, head controller.Repositor
 	if err != nil {
 		return "", err
 	}
-	operation, err := store.ProjectParentCompletion()
-	if err != nil {
-		return "", err
-	}
-	if operation.Operation == controller.PublicationOperationNone && operation.CompletedRequest != nil {
-		return string(state.ParentActionNone), nil
+	if head.RootTaskRef == nil {
+		operation, err := store.ProjectParentCompletion()
+		if err != nil {
+			return "", err
+		}
+		if operation.Operation == controller.PublicationOperationNone && operation.CompletedRequest != nil {
+			return string(state.ParentActionNone), nil
+		}
 	}
 	authority, err := controller.ResolveCommittedTaskAuthority(store.Identity().PrimaryRoot)
 	if err != nil {
