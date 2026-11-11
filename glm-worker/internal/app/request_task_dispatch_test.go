@@ -370,8 +370,8 @@ func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
 		t.Fatalf("parent CLI publication failed: %s %s", output, diagnostics)
 	}
 	var terminal struct {
-		Status   string `json:"status"`
-		Handoff  struct {
+		Status  string `json:"status"`
+		Handoff struct {
 			Consistent     bool     `json:"consistent"`
 			RequiredAction *string  `json:"required_action"`
 			AllowedActions []string `json:"allowed_actions"`

@@ -300,7 +300,7 @@ func TestCompletionTerminalCompletedRequestRequiresMatchingPublicationAndOwner(t
 		TransitionID: "publication-one", ControllerGeneration: 42,
 	}
 	operation := controller.ParentCompletionOperation{
-		Operation: controller.PublicationOperationNone,
+		Operation:        controller.PublicationOperationNone,
 		CompletedRequest: receipt,
 	}
 	published := completionWorkflowResult{
