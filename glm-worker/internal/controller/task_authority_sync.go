@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -461,11 +462,7 @@ func (s *Store) validateTaskAuthoritySyncSource(admission Admission, task Semant
 		if err != nil {
 			return err
 		}
-		if current.Head.ControllerGeneration != admission.Head.ControllerGeneration ||
-			current.Attempt.AttemptID != admission.Attempt.AttemptID ||
-			current.Lease.LeaseID != admission.Lease.LeaseID ||
-			current.Workspace.ID != admission.Workspace.ID ||
-			current.Snapshot.ID != admission.Snapshot.ID {
+		if !reflect.DeepEqual(current, admission) {
 			return fmt.Errorf("parent-only Task sync source authority changed")
 		}
 	} else if err := s.validateTransitionSource(TransitionIntent{Source: admission, ExpectedGeneration: admission.Head.ControllerGeneration}); err != nil {
