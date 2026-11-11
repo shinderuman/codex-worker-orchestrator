@@ -247,23 +247,29 @@ func scanQualityWiringCalls(root, path string, required map[string]string, found
 	if err != nil {
 		return err
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, path, data, 0)
 	if err != nil {
 		return fmt.Errorf("parse quality wiring %s: %w", path, err)
 	}
+	bindings, _ := qualityWiringPartialBindings(set, file)
 	importName := qualityWiringHarnesslintImport(file)
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok || function.Body == nil {
 			continue
 		}
-		scanQualityWiringFunction(function, required, found, importName)
+		scanQualityWiringFunction(function, required, found, importName, &bindings)
 	}
 	return nil
 }
 
-func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]string, found map[string]bool, importName string) {
+func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]string, found map[string]bool, importName string, bindings *types.Info) {
 	receiver := qualityWiringWorkflowReceiver(function)
+	var receiverObject types.Object
+	if receiver != "" {
+		receiverObject = bindings.Defs[function.Recv.List[0].Names[0]]
+	}
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
@@ -272,6 +278,18 @@ func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]strin
 		key, ok := qualityWiringSelectorCallKey(call, receiver, importName)
 		if !ok {
 			return true
+		}
+		selector := call.Fun.(*ast.SelectorExpr)
+		base := selector.X.(*ast.Ident)
+		switch {
+		case strings.HasPrefix(key, "workflow."):
+			if receiverObject == nil || bindings.Uses[base] != receiverObject {
+				return true
+			}
+		case strings.HasPrefix(key, harnesslintName+"."):
+			if _, ok := bindings.Uses[base].(*types.PkgName); !ok {
+				return true
+			}
 		}
 		for candidate, requiredKey := range required {
 			if key == requiredKey {
