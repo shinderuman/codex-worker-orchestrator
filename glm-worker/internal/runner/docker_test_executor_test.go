@@ -518,8 +518,6 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 }
 
 func TestEncodeStagingResponseDisablesHTMLEscapingNearStreamCaps(t *testing.T) {
-	// Under the 16 MiB per-stream cap, repeated HTML-sensitive characters
-	// must not expand to six-byte JSON escapes.
 	output := strings.Repeat("<>&", dockerTestMaxOutputBytes/3)
 	response := dockertest.StagingResponse{
 		SchemaVersion: dockertest.StagingSchemaVersion,
