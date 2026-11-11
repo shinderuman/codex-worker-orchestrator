@@ -377,6 +377,16 @@ func TestPostPullSameHeadReentryMaterializesFreshReview(t *testing.T) {
 	if live.Admission == nil || !live.ParentSourceReview {
 		t.Fatalf("same-HEAD materialization did not enter parent Review: %#v", live)
 	}
+	materialized, err := state.CaptureGitSnapshot(live.Admission.Workspace.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (state.SnapshotDigest{
+		Head: materialized.Head, IndexDigest: materialized.IndexDigest, WorktreeDigest: materialized.WorktreeDigest,
+	}) != f.original.Review.Snapshot {
+		t.Fatalf("materialized Review source was not the same HEAD/index/worktree: original=%#v materialized=%#v",
+			f.original.Review.Snapshot, materialized)
+	}
 	binding, err := f.runtime.CurrentParentReviewBinding()
 	if err != nil {
 		t.Fatal(err)
