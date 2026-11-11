@@ -198,16 +198,39 @@ func TestStagingClientRejectsDuplicateToken(t *testing.T) {
 	}
 }
 
+// Publish a test response only after the client has published its request.
+// Real owner responses cannot predate a request, which must be rejected on reuse.
+func publishTestStagingResponseAfterRequest(staging, responses, token, body string) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		final := filepath.Join(staging, StagingRequestFileName(token))
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Lstat(final); err == nil {
+				done <- os.WriteFile(filepath.Join(responses, StagingResponseFileName(token)), []byte(body), 0o600)
+				return
+			} else if !os.IsNotExist(err) {
+				done <- err
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		done <- errors.New("staging request was never published")
+	}()
+	return done
+}
+
 func TestStagingClientReproducesOwnerResponse(t *testing.T) {
 	t.Parallel()
-	client, _, responses := newStagingClientFixture(t)
+	client, staging, responses := newStagingClientFixture(t)
 	token := stagingClientToken()
 	body := `{"schema_version":1,"token":"` + token + `","exit_code":3,"stdout":"container-out\n","stderr":"goquality-diagnostic {\"form\":\"diagnostic-go-test\",\"child_exit\":3,\"exit\":3}\n"}`
-	if err := os.WriteFile(filepath.Join(responses, StagingResponseFileName(token)), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	written := publishTestStagingResponseAfterRequest(staging, responses, token, body)
 	var stdout, stderr strings.Builder
 	code := client.Run(context.Background(), []string{"./internal/app"}, &stdout, &stderr)
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
 	if code != 3 {
 		t.Fatalf("owner終了codeの再現 = code %d out %q err %q", code, stdout.String(), stderr.String())
 	}
@@ -218,14 +241,15 @@ func TestStagingClientReproducesOwnerResponse(t *testing.T) {
 
 func TestStagingClientIgnoresForeignResponses(t *testing.T) {
 	t.Parallel()
-	client, _, responses := newStagingClientFixture(t)
+	client, staging, responses := newStagingClientFixture(t)
 	token := stagingClientToken()
 	foreign := `{"schema_version":1,"token":"9999999999999999999","exit_code":0,"stdout":"forged\n","stderr":""}`
-	if err := os.WriteFile(filepath.Join(responses, StagingResponseFileName(token)), []byte(foreign), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	written := publishTestStagingResponseAfterRequest(staging, responses, token, foreign)
 	var stdout, stderr strings.Builder
 	code := client.Run(context.Background(), []string{"./..."}, &stdout, &stderr)
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
 	if code != 1 || strings.Contains(stdout.String(), "forged") {
 		t.Fatalf("token不一致responseの取り込み = code %d out %q", code, stdout.String())
 	}
