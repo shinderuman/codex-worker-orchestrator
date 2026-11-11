@@ -98,3 +98,11 @@ func TestMarkdownPlanSpacingIgnoresNonTaskBullets(t *testing.T) {
 		t.Fatalf("non-task bullets or heading gap unexpectedly changed: %q", got)
 	}
 }
+
+func TestMarkdownPlanSpacingKeepsBlankLineAfterCodeFence(t *testing.T) {
+	original := "## NEXT（優先順）\n\n\x60\x60\x60\nexample\n\x60\x60\x60\n\n\n- IMPLEMENTATION_TASKS/next.md\n"
+	expected := "## NEXT（優先順）\n\n\x60\x60\x60\nexample\n\x60\x60\x60\n\n- IMPLEMENTATION_TASKS/next.md\n"
+	if got := string(compactPlanSpacing([]byte(original))); got != expected {
+		t.Fatalf("spacing after fenced code changed incorrectly: %q", got)
+	}
+}
