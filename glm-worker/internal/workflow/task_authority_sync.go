@@ -20,8 +20,8 @@ type TaskAuthoritySyncEvidence struct {
 }
 
 const (
-	TaskAuthorityRuntimeAttached  = "attached"
-	TaskAuthorityRuntimeUnstarted = "unstarted"
+	TaskAuthorityRuntimeAttached   = "attached"
+	TaskAuthorityRuntimeUnstarted  = "unstarted"
 	TaskAuthorityRuntimeParentOnly = "parent-only"
 )
 
