@@ -325,7 +325,9 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 	if head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip {
 		return ParentCompletionOperation{}, false, nil
 	}
-	quiescentRetired := retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil)
+	resumingRoot := head.ActiveEpisodeID != "" && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
+		head.ExecutionTaskRef == nil && head.LiveAttemptID == "" && head.LiveLeaseID == "" && head.PendingTransitionID == ""
+	quiescentRetired := retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil) || resumingRoot
 	if !IsPristine(head) && !quiescentRetired {
 		return ParentCompletionOperation{}, false, nil
 	}
