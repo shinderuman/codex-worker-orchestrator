@@ -47,7 +47,7 @@ repositoryでの作業規則は[`AGENTS.md`](AGENTS.md)と[`IMPLEMENTATION_RULES
 
 ローカルLinux ARM64でのGo診断は[専用の実行入口](docs/linux-go-tests.md)を参照してください。正規Quality Gateの証拠とは区別します。
 
-Darwin 専用テストの宣言は [Task ファイルの規則](IMPLEMENTATION_RULES.md#task-file必須構造) を参照してください。依頼本文で直接指定する場合も同じ形式を使えます。
+Darwin 専用テストの宣言要件は [正規の規則](IMPLEMENTATION_RULES.md#task-file必須構造) を参照してください。
 
 ## License
 
