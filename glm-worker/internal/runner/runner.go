@@ -596,7 +596,7 @@ func (r *ClaudeRunner) finishRun(
 	if err := writeResultOutput(outputPath, result.Response, streamResultSummary(parsed, parseErr), stderrPath); err != nil {
 		var paused *ScheduledPauseError
 		if errors.As(runErr, &paused) {
-			return result, errors.Join(runErr, err)
+			return result, errors.Join(terminalRunError(result, parsed, parseErr, runErr), err)
 		}
 		return result, err
 	}
