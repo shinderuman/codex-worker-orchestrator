@@ -14,6 +14,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/installlock"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/pathalias"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 )
 
@@ -68,7 +69,7 @@ func retireManagedOwners(repoRoot, binDir, codexDir, claudePath string, lock *os
 	}
 	attempt("repository hooks", func() error {
 		cmd := exec.Command("sh", filepath.Join(repoRoot, "scripts", "manage-pull-hook.sh"),
-			"retire", repoRoot, filepath.Join(binDir, "glm-publication-guard"))
+			"retire", repoRoot, binDir+string(filepath.Separator)+"glm-publication-guard")
 		cmd.ExtraFiles = []*os.File{lock}
 		cmd.Stdout = stdout
 		cmd.Stderr = stdout
@@ -87,6 +88,9 @@ func retireManagedOwners(repoRoot, binDir, codexDir, claudePath string, lock *os
 }
 
 func rejectSymlinkComponents(path string) error {
+	if hasParentTraversal(path) {
+		return fmt.Errorf("refusing parent path traversal: %s", path)
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -110,8 +114,20 @@ func rejectSymlinkComponents(path string) error {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
+			if pathalias.IsStandardDarwinVar(current) {
+				continue
+			}
 			return fmt.Errorf("refusing symlink path component: %s", current)
 		}
 	}
 	return nil
+}
+
+func hasParentTraversal(path string) bool {
+	for _, component := range strings.Split(path, string(filepath.Separator)) {
+		if component == ".." {
+			return true
+		}
+	}
+	return false
 }
