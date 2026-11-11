@@ -293,6 +293,10 @@ func (s *Store) quiescentParentOnlyRootResume(head RepositoryControllerHead) (bo
 	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
 		return false, nil
 	}
+	if head.MetadataLineageRef == nil || head.ActiveEpisodeRevision == 0 ||
+		head.ExecutionTaskRef != nil || head.LiveAttemptID != "" || head.LiveLeaseID != "" {
+		return false, fmt.Errorf("parent-only Root successor requires a completed child metadata target")
+	}
 	if !head.RootTaskRef.Equal(authority.Task) {
 		return false, fmt.Errorf("parent-only Root resume successor authority differs")
 	}
