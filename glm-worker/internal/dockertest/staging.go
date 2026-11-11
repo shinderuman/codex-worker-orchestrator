@@ -30,10 +30,10 @@ type StagingResponse struct {
 }
 
 type StagingClient struct {
-	StagingDir   string
-	ResponseDir  string
-	Timeout      time.Duration
-	PollInterval time.Duration
+	StagingDir    string
+	ResponseDir   string
+	Timeout       time.Duration
+	PollInterval  time.Duration
 	generateToken func() (string, error)
 }
 
