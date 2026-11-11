@@ -182,6 +182,13 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 	if !store.ParentOnlySmokeIdentityMatches(rootAttemptID) {
 		t.Fatal("amended Root smoke identity lost its live attempt")
 	}
+	amendedSmoke := state.AttachStateStore(WorkflowTaskConfig(cfg, store.Identity(), newRoot))
+	if taskID, err := amendedSmoke.TaskID(); err != nil || taskID != rootAttemptID {
+		t.Fatalf("amended Root state lacks its original attempt ID: %q %v", taskID, err)
+	}
+	if _, err := amendedSmoke.LoadControllerRuntimeBinding(); !os.IsNotExist(err) {
+		t.Fatalf("amended Root state created a model Runtime binding: %v", err)
+	}
 
 	// Promotion captures the Bundle observation without creating model Runtime evidence.
 	fixture := parentOnlyTaskFixture{store: store, repo: repo, policy: policy}
