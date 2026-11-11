@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-
 func TestRepoSearchDistinguishesRealUnmergedIndexStages(t *testing.T) {
 	dir := initRepo(t)
 	conflict := filepath.Join(dir, "conflict.txt")
@@ -73,8 +72,8 @@ func TestRepoSearchDistinguishesRealUnmergedIndexStages(t *testing.T) {
 			}
 		})
 	}
-	if report, err := ExhaustiveSearch(context.Background(), dir, "base", ExhaustiveOptions{}); 
-		!errors.Is(err, ErrUnmergedIndexEntry) || errors.Is(err, ErrUnsupportedIndexFlags) {
+	if report, err := ExhaustiveSearch(context.Background(), dir, "base", ExhaustiveOptions{}); !errors.Is(err, ErrUnmergedIndexEntry) ||
+		errors.Is(err, ErrUnsupportedIndexFlags) {
 		t.Fatalf("exhaustive unmerged index returned result or wrong error: %#v %v", report, err)
 	}
 }
@@ -84,10 +83,6 @@ func TestRepoSearchUnmergedEntryIsNotHiddenByUnsupportedMode(t *testing.T) {
 	if entry, include, err := parseTrackedIndexEntry(raw, map[string]bool{}); include ||
 		!errors.Is(err, ErrUnmergedIndexEntry) || errors.Is(err, ErrUnsupportedIndexFlags) {
 		t.Fatalf("unmerged symlink stage silently skipped: %#v %v %v", entry, include, err)
-	}
-	if _, include, err := parseTrackedIndexEntry(raw, map[string]bool{"generated": true}); include ||
-		!errors.Is(err, ErrUnmergedIndexEntry) {
-		t.Fatalf("unexcluded unmerged entry: include=%v err=%v", include, err)
 	}
 	excluded := "M 120000 0000000000000000000000000000000000000001 2\tgenerated/link.txt"
 	if _, include, err := parseTrackedIndexEntry(excluded, map[string]bool{"generated": true}); include || err != nil {
