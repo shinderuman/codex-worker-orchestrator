@@ -1,9 +1,13 @@
 package parentevidence
 
 import (
+	"context"
 	"go/build"
+	"os"
+	"os/exec"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestDiffWorktreePlatformBuildSelection(t *testing.T) {
@@ -35,5 +39,17 @@ func TestDiffWorktreePlatformBuildSelection(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDiffWorktreeFreeBSDBuild(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "build", "./internal/parentevidence")
+	cmd.Dir = "../.."
+	cmd.Env = append(os.Environ(), "GOOS=freebsd", "GOARCH=amd64", "CGO_ENABLED=0")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("FreeBSD cross-build of parentevidence failed: %v\n%s", err, output)
 	}
 }
