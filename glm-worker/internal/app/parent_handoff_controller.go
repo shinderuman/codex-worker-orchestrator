@@ -297,6 +297,11 @@ func quiescentStartHandoffAction(cfg config.AppConfig, head controller.Repositor
 			return "", err
 		}
 		if operation.Operation == controller.PublicationOperationNone && operation.CompletedRequest != nil {
+			receipt := operation.CompletedRequest
+			if receipt.RequestID == "" || receipt.FinalOID == "" || receipt.RemoteOID != receipt.FinalOID ||
+				receipt.TransitionID == "" || receipt.ControllerGeneration == 0 {
+				return "", errors.New("completed request handoff lacks finalized publication evidence")
+			}
 			return string(state.ParentActionNone), nil
 		}
 	}
