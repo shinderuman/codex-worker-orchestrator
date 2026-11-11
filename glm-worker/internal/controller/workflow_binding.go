@@ -260,6 +260,15 @@ func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string
 	if head.RootTaskRef == nil {
 		return "", s.requestCompletionHasNoSuccessor(head)
 	}
+	if head.ActiveEpisodeID != "" {
+		parentOnly, err := s.quiescentParentOnlyRootResume(head)
+		if err != nil {
+			return "", err
+		}
+		if parentOnly {
+			return "", nil
+		}
+	}
 	cfg := WorkflowTaskConfig(s.config, s.identity, *head.RootTaskRef)
 	cfg.RepoRoot = s.identity.PrimaryRoot
 	runtime := state.AttachStateStore(cfg)
@@ -274,6 +283,23 @@ func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string
 		return "", nil
 	}
 	return runtime.TaskID()
+}
+
+func (s *Store) quiescentParentOnlyRootResume(head RepositoryControllerHead) (bool, error) {
+	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	if err != nil {
+		return false, err
+	}
+	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
+		return false, nil
+	}
+	if !head.RootTaskRef.Equal(authority.Task) {
+		return false, fmt.Errorf("parent-only Root resume successor authority differs")
+	}
+	if err := s.rejectBoundTaskRuntime(authority.Task); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func quiescentRuntimeReady(runtime *state.StateStore) (bool, error) {
