@@ -515,16 +515,7 @@ func (s *Store) parentOnlyLiveExecution(head RepositoryControllerHead) (AttemptR
 
 func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 	head, err := s.LoadHead()
-	if err != nil || head.Status != ControllerStatusActive {
-		return false
-	}
-	if head.LiveAttemptID != "" && head.LiveAttemptID != taskID {
-		return false
-	}
-	if head.LiveAttemptID == "" && head.AcceptedCandidateRef == nil {
-		return false
-	}
-	if !s.parentOnlyCandidateSmokeIDMatches(head, taskID) {
+	if err != nil || !s.parentOnlySmokeHeadAvailable(head, taskID) {
 		return false
 	}
 	attempt, err := s.loadAttempt(taskID)
@@ -539,6 +530,19 @@ func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 		return s.parentOnlyCurrentTaskContract(head, attempt, authority) == nil
 	}
 	return s.parentOnlySealedCandidateMatches(head, attempt, authority)
+}
+
+func (s *Store) parentOnlySmokeHeadAvailable(head RepositoryControllerHead, taskID string) bool {
+	if head.Status != ControllerStatusActive {
+		return false
+	}
+	if head.LiveAttemptID != "" && head.LiveAttemptID != taskID {
+		return false
+	}
+	if head.LiveAttemptID == "" && head.AcceptedCandidateRef == nil {
+		return false
+	}
+	return s.parentOnlyCandidateSmokeIDMatches(head, taskID)
 }
 
 func (s *Store) parentOnlyCandidateSmokeIDMatches(head RepositoryControllerHead, taskID string) bool {
