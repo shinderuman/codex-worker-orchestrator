@@ -82,18 +82,6 @@ func (s *Store) liveParentContinuationConfig(cfg config.AppConfig, report Contro
 	if report.Live == nil || report.Live.WorkspaceRoot == "" || report.LiveError != "" {
 		return cfg, fmt.Errorf("parent continuation live workspace is unavailable: %s", report.LiveError)
 	}
-	if live, err := s.LiveParentOnlyExecution(); err != nil {
-		return cfg, err
-	} else if live {
-		admission, err := s.ParentOnlyTaskAuthoritySyncAdmission(cfg)
-		if err == nil {
-			if !admission.Attempt.SemanticTaskRef.Equal(report.Live.ExecutionTask) {
-				return cfg, fmt.Errorf("parent-only Task authority sync differs from live continuation")
-			}
-			cfg.RepoRoot = report.Live.WorkspaceRoot
-			return WorkflowConfig(cfg)
-		}
-	}
 	task, err := s.ExecutionTaskForWorkspace(report.Live.WorkspaceRoot)
 	if err != nil {
 		return cfg, err
@@ -153,10 +141,25 @@ func (s *Store) ExecutionTaskForWorkspace(root string) (SemanticTaskRef, error) 
 		return SemanticTaskRef{}, err
 	}
 	admission, err := s.AdmitMutationSettlingQualityIntent(authority, workspace, snapshot)
-	if err != nil {
-		return SemanticTaskRef{}, fmt.Errorf("resolve controller execution task: %w", err)
+	if err == nil {
+		return admission.Attempt.SemanticTaskRef, nil
 	}
-	return admission.Attempt.SemanticTaskRef, nil
+	if task, admitted := s.parentOnlyRevisedExecutionTask(workspace, snapshot); admitted {
+		return task, nil
+	}
+	return SemanticTaskRef{}, fmt.Errorf("resolve controller execution task: %w", err)
+}
+
+func (s *Store) parentOnlyRevisedExecutionTask(workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (SemanticTaskRef, bool) {
+	live, err := s.LiveParentOnlyExecution()
+	if err != nil || !live {
+		return SemanticTaskRef{}, false
+	}
+	admission, err := s.ParentOnlyTaskAuthoritySyncAdmission(s.config)
+	if err != nil || admission.Workspace.ID != workspace.ID || admission.Snapshot.ID != snapshot.ID {
+		return SemanticTaskRef{}, false
+	}
+	return admission.Attempt.SemanticTaskRef, true
 }
 
 func WorkflowExecutionTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) {
