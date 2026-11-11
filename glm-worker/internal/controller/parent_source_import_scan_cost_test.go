@@ -35,20 +35,14 @@ func TestSourceTreeWriterMassDeletionDoesNotLoseUntrackedFiles(t *testing.T) {
 	}
 
 	writeSuspensionTestFile(t, repo, "deleted/foreign.txt", "untracked\n")
-	if err := applySourceTreeEntries(repo, before, after); err == nil {
-		t.Fatal("mass deletion admitted untracked content")
-	}
-	foreign, err := os.ReadFile(filepath.Join(repo, "deleted", "foreign.txt"))
-	if err != nil || string(foreign) != "untracked\n" {
-		t.Fatalf("rejected deletion changed untracked content: %q %v", foreign, err)
-	}
-	if err := os.Remove(filepath.Join(repo, "deleted", "foreign.txt")); err != nil {
-		t.Fatal(err)
-	}
 	for attempt := range 2 {
 		if err := applySourceTreeEntries(repo, before, after); err != nil {
 			t.Fatalf("mass deletion attempt %d: %v", attempt, err)
 		}
+	}
+	foreign, err := os.ReadFile(filepath.Join(repo, "deleted", "foreign.txt"))
+	if err != nil || string(foreign) != "untracked\n" {
+		t.Fatalf("mass deletion changed untracked content: %q %v", foreign, err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "deleted", "0000.txt")); !os.IsNotExist(err) {
 		t.Fatalf("deleted file remains: %v", err)
