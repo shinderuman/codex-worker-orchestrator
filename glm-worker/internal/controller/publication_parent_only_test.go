@@ -685,8 +685,8 @@ func TestParentOnlyMaterializationRejectsStaleEpisodeIdentity(t *testing.T) {
 	for _, invalid := range []RepositoryControllerHead{orphanRevision, orphanID} {
 		if err := validateParentOnlyMaterializeHead(invalid, ParentOnlyMaterializeInput{
 			ExpectedGeneration: invalid.ControllerGeneration,
-			EpisodeID: invalid.ActiveEpisodeID,
-			EpisodeRevision: invalid.ActiveEpisodeRevision,
+			EpisodeID:          invalid.ActiveEpisodeID,
+			EpisodeRevision:    invalid.ActiveEpisodeRevision,
 		}); err == nil {
 			t.Fatalf("partial episode identity was admitted: %#v", invalid)
 		}

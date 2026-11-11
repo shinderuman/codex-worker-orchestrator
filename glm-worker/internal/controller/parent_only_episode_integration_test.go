@@ -94,7 +94,7 @@ func publishParentOnlyBlocker(t *testing.T, store *Store, rootAdmission Admissio
 	}
 	child, err := store.MaterializeExecution(MaterializeExecutionInput{
 		ExpectedGeneration: suspended.Head.ControllerGeneration,
-		EpisodeID: episode.EpisodeID, EpisodeRevision: episode.Revision,
+		EpisodeID:          episode.EpisodeID, EpisodeRevision: episode.Revision,
 	})
 	if err != nil || child.Admission == nil || child.Admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
 		t.Fatalf("child materialization illegally used parent-only mode: %#v %v", child, err)
@@ -154,7 +154,7 @@ func resumeAndAmendParentOnlyRoot(t *testing.T, store *Store, repo string, proje
 	rootPath := "IMPLEMENTATION_TASKS/root.md"
 	resumed, err := store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{
 		ExpectedGeneration: projected.Execution.ExpectedGeneration,
-		EpisodeID: projected.Execution.EpisodeID, EpisodeRevision: projected.Execution.EpisodeRevision,
+		EpisodeID:          projected.Execution.EpisodeID, EpisodeRevision: projected.Execution.EpisodeRevision,
 	})
 	if err != nil || resumed.Admission == nil {
 		t.Fatalf("resuming Root parent-only materialization: %#v %v", resumed, err)

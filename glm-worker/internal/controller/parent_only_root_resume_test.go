@@ -58,23 +58,23 @@ func TestParentOnlyRootResumeUsesTypedMaterializationAndClosesEpisode(t *testing
 	}
 
 	episode := BlockerEpisodeRevision{
-		SchemaVersion: controllerSchemaVersion,
-		EpisodeID: "parent-only-root-episode",
-		Revision: 1,
+		SchemaVersion:     controllerSchemaVersion,
+		EpisodeID:         "parent-only-root-episode",
+		Revision:          1,
 		ProjectSnapshotID: published.Head.ProjectSnapshotID,
-		RootTaskRef: root.Task,
-		ScopeRootTaskRef: retiredChild,
+		RootTaskRef:       root.Task,
+		ScopeRootTaskRef:  retiredChild,
 		SatisfiedTaskRefs: []SemanticTaskRef{retiredChild},
-		AdmittedClosure: []SemanticTaskRef{retiredChild},
-		AdmittedOrder: []SemanticTaskRef{retiredChild},
-		State: EpisodeStateResumingRoot,
-		CreatedAt: time.Now().UTC(),
+		AdmittedClosure:   []SemanticTaskRef{retiredChild},
+		AdmittedOrder:     []SemanticTaskRef{retiredChild},
+		State:             EpisodeStateResumingRoot,
+		CreatedAt:         time.Now().UTC(),
 	}
 	episode.RevisionID = blockerEpisodeRevisionID(episode)
 	if err := fixture.store.writeEpisodeRecord(BlockerEpisodeRecord{
 		SchemaVersion: controllerSchemaVersion, EpisodeID: episode.EpisodeID,
 		RepositoryIdentity: fixture.store.Identity().LineageID,
-		RootTaskRef: root.Task, ScopeRootTaskRef: retiredChild,
+		RootTaskRef:        root.Task, ScopeRootTaskRef: retiredChild,
 		CreatedAt: episode.CreatedAt,
 	}); err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestParentOnlyRootResumeUsesTypedMaterializationAndClosesEpisode(t *testing
 	}
 	materialized, err := fixture.store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{
 		ExpectedGeneration: projected.Execution.ExpectedGeneration,
-		EpisodeID: projected.Execution.EpisodeID, EpisodeRevision: projected.Execution.EpisodeRevision,
+		EpisodeID:          projected.Execution.EpisodeID, EpisodeRevision: projected.Execution.EpisodeRevision,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,8 +143,8 @@ func TestParentOnlyRootResumeRejectsUnpublishedEpisode(t *testing.T) {
 	head.ActiveEpisodeRevision = 1
 	_, err = fixture.store.parentOnlyRootResumeEpisode(head, ParentOnlyMaterializeInput{
 		ExpectedGeneration: head.ControllerGeneration,
-		EpisodeID: head.ActiveEpisodeID,
-		EpisodeRevision: head.ActiveEpisodeRevision,
+		EpisodeID:          head.ActiveEpisodeID,
+		EpisodeRevision:    head.ActiveEpisodeRevision,
 	}, task)
 	if err == nil || !strings.Contains(err.Error(), "finalized child publication") {
 		t.Fatalf("unpublished Root episode admitted parent-only resumption: %v", err)
