@@ -82,6 +82,18 @@ func (s *Store) liveParentContinuationConfig(cfg config.AppConfig, report Contro
 	if report.Live == nil || report.Live.WorkspaceRoot == "" || report.LiveError != "" {
 		return cfg, fmt.Errorf("parent continuation live workspace is unavailable: %s", report.LiveError)
 	}
+	if live, err := s.LiveParentOnlyExecution(); err != nil {
+		return cfg, err
+	} else if live {
+		admission, err := s.ParentOnlyTaskAuthoritySyncAdmission(cfg)
+		if err == nil {
+			if !admission.Attempt.SemanticTaskRef.Equal(report.Live.ExecutionTask) {
+				return cfg, fmt.Errorf("parent-only Task authority sync differs from live continuation")
+			}
+			cfg.RepoRoot = report.Live.WorkspaceRoot
+			return WorkflowConfig(cfg)
+		}
+	}
 	task, err := s.ExecutionTaskForWorkspace(report.Live.WorkspaceRoot)
 	if err != nil {
 		return cfg, err
