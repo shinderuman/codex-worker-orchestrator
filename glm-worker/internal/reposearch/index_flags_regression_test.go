@@ -26,7 +26,7 @@ func TestRepoSearchDistinguishesRealUnmergedIndexStages(t *testing.T) {
 	writeTestFile(t, conflict, "main\n")
 	commitAll(t, dir, "main")
 
-	merge := exec.Command("git", "-C", dir, "merge", "--no-edit", "conflict-side")
+	merge := exec.Command("git", "-C", dir, "-c", "user.name=test", "-c", "user.email=test", "merge", "--no-edit", "conflict-side")
 	if output, err := merge.CombinedOutput(); err == nil {
 		t.Fatalf("expected merge conflict; git merge output: %s", output)
 	}
