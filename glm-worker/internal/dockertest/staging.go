@@ -247,7 +247,6 @@ func readStagingResponse(path, token string) (StagingResponse, bool) {
 
 func (c *StagingClient) removeRequest(token string) {
 	_ = os.Remove(filepath.Join(c.StagingDir, StagingRequestFileName(token)))
-	_ = os.Remove(filepath.Join(c.StagingDir, ".request-"+token+".tmp"))
 }
 
 func (c *StagingClient) token() (string, error) {
