@@ -26,6 +26,13 @@ type GuardRefChange struct {
 	After  *GuardRefState `json:"after,omitempty"`
 }
 
+type RetainedReviewerCall struct {
+	CallID    string `json:"call_id"`
+	TaskID    string `json:"task_id"`
+	SessionID string `json:"session_id"`
+	RawPacket []byte `json:"raw_packet"`
+}
+
 type ResumeCheckpoint struct {
 	Version                 int         `json:"version"`
 	Stage                   ResumeStage `json:"stage"`
@@ -67,6 +74,8 @@ type ResumeCheckpoint struct {
 	GuardRefAfterDigest      string           `json:"guard_ref_after_digest,omitempty"`
 	GuardRefChanges          []GuardRefChange `json:"guard_ref_changes,omitempty"`
 	GuardRefChangesTruncated bool             `json:"guard_ref_changes_truncated,omitempty"`
+
+	RetainedReviewerCall *RetainedReviewerCall `json:"retained_reviewer_call,omitempty"`
 
 	QualityGateFailure string `json:"quality_gate_failure,omitempty"`
 
@@ -222,6 +231,7 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 	checkpoint.ProviderUnavailableProbes = 0
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
 	checkpoint.GuardFailure = ""
+	checkpoint.RetainedReviewerCall = nil
 	checkpoint.GuardRefBeforeDigest = ""
 	checkpoint.GuardRefAfterDigest = ""
 	checkpoint.GuardRefChanges = nil
@@ -318,6 +328,9 @@ func (checkpoint ResumeCheckpoint) validateProviderStopPayload() error {
 }
 
 func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
+	if err := checkpoint.validateRetainedReviewerCall(); err != nil {
+		return err
+	}
 	if checkpoint.StopKind == ResumeStopGuardRecoverable {
 		return nil
 	}
@@ -328,6 +341,19 @@ func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
 		return nil
 	}
 	return fmt.Errorf("resume stop payload does not match stop kind %q: guard-recovery metadata is present", checkpoint.StopKind)
+}
+
+func (checkpoint ResumeCheckpoint) validateRetainedReviewerCall() error {
+	call := checkpoint.RetainedReviewerCall
+	if call == nil {
+		return nil
+	}
+	if checkpoint.StopKind != ResumeStopGuardRecoverable || checkpoint.Role != ReviewerRole ||
+		checkpoint.Stage != ResumeStageReview || checkpoint.WorkerResult == nil || checkpoint.GuardFailure == "" ||
+		call.CallID == "" || call.TaskID == "" || call.SessionID == "" || len(call.RawPacket) == 0 {
+		return fmt.Errorf("retained reviewer call requires a source-bound review guard stop")
+	}
+	return nil
 }
 
 func (checkpoint ResumeCheckpoint) validateQualityGateStopPayload() error {

@@ -12,9 +12,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md`](IMPLEMENTATION_TASKS/post-pull-metadata-review-equivalence.md)
+- [`IMPLEMENTATION_TASKS/evidence-export-retry-storm-recovery.md`](IMPLEMENTATION_TASKS/evidence-export-retry-storm-recovery.md)
+- [`IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md`](IMPLEMENTATION_TASKS/post-install-probe-live-bundle-fidelity-regression.md)
+- [`IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md`](IMPLEMENTATION_TASKS/uninstall-macos-standard-path-symlink-admission.md)
+- [`IMPLEMENTATION_TASKS/resume-checkpoint-current-schema.md`](IMPLEMENTATION_TASKS/resume-checkpoint-current-schema.md)
+- [`IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`](IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md)
 - [`IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`](IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md)
-- [`IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md`](IMPLEMENTATION_TASKS/reviewer-packet-correction-reentry.md)
 - [`IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md`](IMPLEMENTATION_TASKS/system-one-architecture-effectiveness-modernization.md)
 - [`IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`](IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md)
 - [`IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md`](IMPLEMENTATION_TASKS/normal-workflow-organic-e2e-verification.md)
@@ -33,4 +36,3 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/104-test-impact-selection.md`](IMPLEMENTATION_TASKS/104-test-impact-selection.md)
 - [`IMPLEMENTATION_TASKS/106-review-call-reduction.md`](IMPLEMENTATION_TASKS/106-review-call-reduction.md)
 - [`IMPLEMENTATION_TASKS/102-model-routing-redesign.md`](IMPLEMENTATION_TASKS/102-model-routing-redesign.md)
-- [`IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`](IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md)

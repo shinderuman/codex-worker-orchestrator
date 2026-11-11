@@ -28,7 +28,7 @@ type typedCompletionFailureBoundary struct {
 func typedCompletionFailureFixture(t *testing.T, native bool) typedCompletionFailureBoundary {
 	t.Helper()
 	binary := typedCompletionWorkerBinary(t)
-	cfg, runtime, shim := typedCompletionWorkflowFixture(t, binary, true)
+	cfg, runtime, shim := typedCompletionWorkflowFixture(t, binary, true, false)
 	flag := filepath.Join(t.TempDir(), "fail-boundary")
 	if err := os.WriteFile(flag, []byte("fail"), 0600); err != nil {
 		t.Fatal(err)

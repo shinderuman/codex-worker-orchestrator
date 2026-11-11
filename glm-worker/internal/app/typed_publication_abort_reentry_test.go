@@ -18,7 +18,7 @@ func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
 
 func typedPublicationAbortBody(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
-	cfg, _, _ := typedCompletionWorkflowFixture(t, binary, false)
+	cfg, _, _ := typedCompletionWorkflowFixture(t, binary, false, false)
 	initial := executeParentHandoff(t, cfg)
 	if initial.RequiredAction == nil || *initial.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("initial handoff did not offer publication: %#v", initial)

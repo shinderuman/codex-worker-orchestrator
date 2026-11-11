@@ -182,7 +182,7 @@ const (
 	WorkerPhaseCategoryDecision    = "worker-decision"
 )
 
-const workerReportOnlyPhasePrefix = "worker-report-only-"
+const WorkerReportOnlyPhasePrefix = "worker-report-only-"
 
 func WorkerPhaseCategory(phase string) string {
 	switch {
@@ -191,7 +191,7 @@ func WorkerPhaseCategory(phase string) string {
 	case strings.HasPrefix(phase, WorkerPhaseCategoryExplicitFix):
 		return WorkerPhaseCategoryExplicitFix
 	case strings.HasPrefix(phase, WorkerPhaseCategoryAutoFix+"-"),
-		strings.HasPrefix(phase, workerReportOnlyPhasePrefix):
+		strings.HasPrefix(phase, WorkerReportOnlyPhasePrefix):
 		return WorkerPhaseCategoryAutoFix
 	case strings.HasPrefix(phase, WorkerPhaseCategoryDecision):
 		return WorkerPhaseCategoryDecision

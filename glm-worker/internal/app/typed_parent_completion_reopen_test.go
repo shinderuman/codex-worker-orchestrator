@@ -13,7 +13,7 @@ import (
 
 func TestTypedCompletionCanRejectAfterAcceptWithoutCreatingCandidate(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
-	cfg, runtime, _ := typedCompletionWorkflowFixture(t, binary, false)
+	cfg, runtime, _ := typedCompletionWorkflowFixture(t, binary, false, false)
 	taskID := runtime.ReadOr("task.id", "")
 	var output bytes.Buffer
 	if err := Execute(Command{Mode: ModeHandoff}, cfg, nil, &output, io.Discard); err != nil {

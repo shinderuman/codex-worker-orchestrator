@@ -33,11 +33,12 @@ type typedCompletionRunner struct {
 }
 
 type typedCompletionScenario struct {
-	name         string
-	sourceChange bool
-	interrupt    bool
-	fullProcess  bool
-	handoffFault string
+	name                string
+	sourceChange        bool
+	interrupt           bool
+	fullProcess         bool
+	handoffFault        string
+	parentOnlySuccessor bool
 }
 
 type typedPublicationEnvelope struct {
@@ -61,6 +62,7 @@ type typedPublicationEnvelope struct {
 func typedCompletionScenarios() []typedCompletionScenario {
 	return []typedCompletionScenario{
 		{name: "no-code", fullProcess: true},
+		{name: "parent-only-successor", fullProcess: true, parentOnlySuccessor: true},
 		{name: "no-code-publication-reentry", interrupt: true},
 		{name: "runtime-change", sourceChange: true},
 		{name: "runtime-change-publication-reentry", sourceChange: true, interrupt: true},
@@ -118,7 +120,7 @@ func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario)
 	t.Helper()
 	binary := typedCompletionWorkerBinary(t)
 	started := time.Now()
-	cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange)
+	cfg, runtime, goShim := typedCompletionWorkflowFixture(t, binary, scenario.sourceChange, scenario.parentOnlySuccessor)
 	logAppFixturePhase(t, "typed/fixture", started)
 	store, err := controller.Open(cfg)
 	if err != nil {
@@ -132,10 +134,16 @@ func typedCompletionScenarioBody(t *testing.T, scenario typedCompletionScenario)
 		t.Setenv("GLM_TYPED_COMPLETION_HANDOFF_FAULT", scenario.handoffFault)
 	}
 	started = time.Now()
-	driveTypedCompletionToStart(t, cfg, goShim, scenario.sourceChange, scenario.interrupt, scenario.fullProcess)
+	driveTypedCompletionToStart(t, cfg, goShim, scenario)
 	logAppFixturePhase(t, "typed/production-cli", started)
 	started = time.Now()
 	assertTypedCompletionTerminalState(t, cfg, runtime)
+	if scenario.parentOnlySuccessor {
+		successor, err := store.ProjectParentCompletion()
+		if err != nil || successor.Operation != controller.PublicationOperationParentOnlyMaterialize {
+			t.Fatalf("completed publication did not stop before the parent-only successor: %v, %v", successor.Operation, err)
+		}
+	}
 	receipts, err := os.ReadFile(filepath.Join(remote, "task-publication-receipts"))
 	if err != nil {
 		t.Fatal(err)
@@ -347,8 +355,9 @@ func applyProcessEnvironment(env []string) error {
 	return nil
 }
 
-func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim string, requireInstall, interrupt, fullProcess bool) {
+func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim string, scenario typedCompletionScenario) {
 	t.Helper()
+	interrupt := scenario.interrupt
 	for step := 0; step < 12; step++ {
 		handoff := executeParentHandoff(t, cfg)
 		if !handoff.Consistent {
@@ -359,7 +368,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 		}
 		switch *handoff.RequiredAction {
 		case controllerPublicationSurface:
-			if runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, requireInstall, interrupt, !fullProcess) {
+			if runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, scenario.sourceChange, interrupt, !scenario.fullProcess, scenario.parentOnlySuccessor) {
 				return
 			}
 			interrupt = false
@@ -384,7 +393,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 			if len(prepared.Slots) != 0 {
 				t.Fatalf("mechanical recovery requested semantic inputs: %#v", prepared.Slots)
 			}
-			if fullProcess {
+			if scenario.fullProcess {
 				if code, _, diagnostics := runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...); code != 0 {
 					t.Fatal(diagnostics)
 				}
@@ -400,7 +409,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 	t.Fatal("typed completion did not converge to the successor start boundary")
 }
 
-func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt, executeInProcess bool) bool {
+func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt, executeInProcess, parentOnlySuccessor bool) bool {
 	t.Helper()
 	var command controller.PublicationParentCommand
 	if err := json.Unmarshal([]byte(parameters["controller_command_json"]), &command); err != nil {
@@ -442,11 +451,24 @@ func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[
 	if expectHandoffFailure {
 		assertTypedCompletionFailure(t, cfg, exit, envelope, diagnostics)
 	} else if envelope.Status != "parent_action_terminal" || !envelope.Handoff.Consistent ||
-		stringPointerValue(envelope.Handoff.RequiredAction) != canonicalStartAction {
+		!typedCompletionSuccessorHandoff(envelope.Handoff, parentOnlySuccessor) {
 		t.Fatalf("completion lacks a canonical successor handoff: %s", output)
 	}
 	assertTypedPublicationProof(t, envelope)
 	return true
+}
+
+func typedCompletionSuccessorHandoff(handoff parentHandoffOutput, parentOnlySuccessor bool) bool {
+	action := stringPointerValue(handoff.RequiredAction)
+	if !parentOnlySuccessor {
+		return action == canonicalStartAction
+	}
+	if action != controllerExecutionSurface {
+		return false
+	}
+	var command controller.CompletionExecutionCommand
+	return json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command) == nil &&
+		command.Action == controller.PublicationOperationParentOnlyMaterialize
 }
 
 func assertTypedPublicationProof(t *testing.T, envelope typedPublicationEnvelope) {
@@ -769,9 +791,9 @@ func (r *typedCompletionRunner) Run(role state.SessionRole, phase, model string,
 	return result, nil
 }
 
-func typedCompletionWorkflowFixture(t *testing.T, binary string, sourceChange bool) (config.AppConfig, *state.StateStore, string) {
+func typedCompletionWorkflowFixture(t *testing.T, binary string, sourceChange, parentOnlySuccessor bool) (config.AppConfig, *state.StateStore, string) {
 	t.Helper()
-	cfg, runtime, shim, _, _ := typedCompletionReviewFixture(t, binary, sourceChange)
+	cfg, runtime, shim, _, _ := typedCompletionReviewFixture(t, binary, sourceChange, parentOnlySuccessor)
 	started := time.Now()
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -783,11 +805,18 @@ func typedCompletionWorkflowFixture(t *testing.T, binary string, sourceChange bo
 	return cfg, runtime, shim
 }
 
-func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange bool) (config.AppConfig, *state.StateStore, string, controller.PublicationPolicy, *typedCompletionRunner) {
+func typedCompletionReviewFixture(t *testing.T, binary string, sourceChange, parentOnlySuccessor bool) (config.AppConfig, *state.StateStore, string, controller.PublicationPolicy, *typedCompletionRunner) {
 	t.Helper()
 	started := time.Now()
-	cfg, task, _, policy := newCanonicalWorkflowCorpus(t)
+	cfg, task, successor, policy := newCanonicalWorkflowCorpus(t)
 	logAppFixturePhase(t, "typed/corpus-git-remote", started)
+	if parentOnlySuccessor {
+		body, err := os.ReadFile(filepath.Join(cfg.RepoRoot, successor))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeAppTestFile(t, cfg.RepoRoot, successor, string(body)+"\n## Execution authority\n\nmode: parent-only\n")
+	}
 	cfg.TelemetryContent = true
 	body, err := os.ReadFile(filepath.Join(cfg.RepoRoot, task))
 	if err != nil {

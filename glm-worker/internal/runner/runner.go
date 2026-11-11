@@ -18,7 +18,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/failurepathadvisory"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type StructuredOutputError struct {
@@ -99,6 +101,7 @@ type claudeJSONResult struct {
 }
 
 type runInputs struct {
+	reportOnly    bool
 	systemFile    string
 	isolationArgs string
 	settingEnv    map[string]string
@@ -344,6 +347,13 @@ func (r *ClaudeRunner) assembleSessionCall(
 	if err != nil {
 		return preparedSessionCall{result: result}, err
 	}
+	inputs.reportOnly = role == state.WorkerRole && readOnly && strings.HasPrefix(phase, state.WorkerReportOnlyPhasePrefix)
+	if inputs.reportOnly {
+		prompt, err = r.reportOnlyTaskPrompt(prompt)
+		if err != nil {
+			return preparedSessionCall{result: result}, err
+		}
+	}
 	args := r.buildRunArgs(role, taskID, sessionID, ready, model, readOnly, effort, inputs)
 	callID, callIDErr := state.NewUUID()
 	if callIDErr != nil {
@@ -365,6 +375,42 @@ func (r *ClaudeRunner) assembleSessionCall(
 		args:          args,
 		prompt:        prompt,
 	}, nil
+}
+
+func (r *ClaudeRunner) reportOnlyTaskPrompt(prompt string) (string, error) {
+	taskPath, err := r.state.CurrentWorkflowTaskPath()
+	if err != nil {
+		return "", err
+	}
+	if taskPath == "" {
+		return r.reportOnlyRequestPrompt(prompt)
+	}
+	if err := taskcontract.ValidateActiveTaskPath(taskPath); err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(filepath.Join(r.config.RepoRoot, taskPath))
+	if err != nil {
+		return "", fmt.Errorf("report-onlyのTask原文を取得できません: %w", err)
+	}
+	return fmt.Sprintf("%s\n\nACTIVE_TASK_SOURCE %q\n%s", prompt, taskPath, content), nil
+}
+
+func (r *ClaudeRunner) reportOnlyRequestPrompt(prompt string) (string, error) {
+	binding, err := r.state.LoadControllerRuntimeBinding()
+	if err == nil && binding.RequestID != "" {
+		return prompt, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	active, err := repositoryharness.RuntimeActive(r.config.RepoRoot, r.state)
+	if err != nil {
+		return "", err
+	}
+	if active {
+		return "", fmt.Errorf("report-onlyのACTIVE Taskが固定されていません")
+	}
+	return prompt, nil
 }
 
 func (r *ClaudeRunner) prepareRunSession(role state.SessionRole, phase, model string) (RunResult, string, string, bool, error) {
@@ -444,7 +490,10 @@ func (r *ClaudeRunner) buildRunArgs(
 		args = append(args, "--session-id", sessionID, "--name", r.sessionName(role, taskID))
 	}
 	tools := workerTools
-	if readOnly {
+	switch {
+	case inputs.reportOnly:
+		tools = ""
+	case readOnly:
 		tools = readOnlyTools
 	}
 	args = append(args,
