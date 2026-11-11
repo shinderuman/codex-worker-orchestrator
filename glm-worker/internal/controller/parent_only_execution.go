@@ -204,8 +204,6 @@ func (s *Store) parentOnlyRootResumeEpisode(head RepositoryControllerHead, input
 	return &episode, nil
 }
 
-// parentOnlyCurrentTaskContract accepts either the original committed Task
-// or the exact same-path amendment already admitted by Controller source sync.
 func (s *Store) parentOnlyCurrentTaskContract(head RepositoryControllerHead, attempt AttemptRecord, committed TaskAuthority) error {
 	if head.LiveAttemptID != attempt.AttemptID || head.ExecutionTaskRef == nil ||
 		!head.ExecutionTaskRef.Equal(attempt.SemanticTaskRef) || head.RootTaskRef == nil ||
@@ -481,8 +479,6 @@ func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 	if head.LiveAttemptID != "" {
 		return s.parentOnlyCurrentTaskContract(head, attempt, authority) == nil
 	}
-	// A sealed parent-only candidate retains the attempt identity after its
-	// live lease is released. Validate its accepted Task/source independently.
 	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
 	if err != nil || !candidate.TaskRef.Equal(attempt.SemanticTaskRef) ||
 		!candidate.RootTaskRef.Equal(attempt.RootTaskRef) ||
