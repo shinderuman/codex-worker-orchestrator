@@ -238,7 +238,6 @@ func TestStagingClientFailsImmediatelyOnOversizedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A sparse oversized response exercises the real 64 MiB reader boundary.
 	if err := file.Truncate(StagingMaxResponseBytes + 1); err != nil {
 		_ = file.Close()
 		t.Fatal(err)
