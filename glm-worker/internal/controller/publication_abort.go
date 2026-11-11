@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -69,6 +70,9 @@ func (s *Store) publicationAbortRecoveryAction(op ExecutionOperation, head Repos
 		return "", err.Error()
 	}
 	if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
+		if errors.Is(err, errCandidateReentryExternalAdvancement) {
+			return publicationAbortAction(op), err.Error()
+		}
 		return "", err.Error()
 	}
 	return PublicationOperationReenter, ""

@@ -1,6 +1,11 @@
 package controller
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var errCandidateReentryExternalAdvancement = errors.New("external advancement must be adopted/rebound before candidate re-entry")
 
 func (s *Store) ReenterAcceptedCandidate(input PublicationInput) (ExecutionOperationResult, error) {
 	lock, err := s.acquireMutationLock()
@@ -148,7 +153,7 @@ func (s *Store) candidateReentrySource(head RepositoryControllerHead, c Accepted
 		return SuspensionSnapshot{}, "", fmt.Errorf("positive remote observation must be committed before candidate re-entry")
 	}
 	if remote != head.IntegrationTip {
-		return SuspensionSnapshot{}, "", fmt.Errorf("external advancement must be adopted/rebound before candidate re-entry")
+		return SuspensionSnapshot{}, "", errCandidateReentryExternalAdvancement
 	}
 	return snapshot, remote, nil
 }
