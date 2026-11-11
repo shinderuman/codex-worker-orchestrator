@@ -57,8 +57,6 @@ func TestParentOnlyRootResumeUsesTypedMaterializationAndClosesEpisode(t *testing
 		t.Fatalf("successor Root lacks committed parent-only authority: %#v", root)
 	}
 
-	// Seed the resumed-Root episode as a post-child-publication fixture; the
-	// operation under test must perform its own closure without state edits.
 	episode := BlockerEpisodeRevision{
 		SchemaVersion: controllerSchemaVersion,
 		EpisodeID: "parent-only-root-episode",
