@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -302,6 +303,8 @@ func hashUntrackedEntry(hasher hash.Hash, repoRoot, absPath, path string, mode o
 		}
 		sum := sha256.Sum256(content)
 		hasher.Write([]byte("regular\x00"))
+		hasher.Write(strconv.AppendUint(nil, uint64(mode&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)), 8))
+		hasher.Write([]byte{0})
 		hasher.Write([]byte(hex.EncodeToString(sum[:])))
 	case mode&os.ModeSymlink != 0:
 		target, err := os.Readlink(absPath)
@@ -347,9 +350,9 @@ func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryW
 		if d.IsDir() {
 			return nil
 		}
-		mode := d.Type()
-		if !mode.IsRegular() && mode&os.ModeSymlink == 0 {
-			return fmt.Errorf("nested repository内の取り扱えないfile typeです: %s (%s)", path, mode.Type())
+		mode, err := nestedRepositoryFileMode(d, path)
+		if err != nil {
+			return err
 		}
 		relative, err := filepath.Rel(repoRoot, path)
 		if err != nil {
@@ -363,6 +366,18 @@ func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryW
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	return entries, nil
+}
+
+func nestedRepositoryFileMode(entry fs.DirEntry, path string) (os.FileMode, error) {
+	info, err := entry.Info()
+	if err != nil {
+		return 0, fmt.Errorf("nested repository内のfile modeを取得できません: %s: %w", path, err)
+	}
+	mode := info.Mode()
+	if !mode.IsRegular() && mode&os.ModeSymlink == 0 {
+		return 0, fmt.Errorf("nested repository内の取り扱えないfile typeです: %s (%s)", path, mode.Type())
+	}
+	return mode, nil
 }
 
 func joinWithinRoot(root, rel string) (string, error) {

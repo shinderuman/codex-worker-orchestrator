@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/nested-repository-executable-source-identity.md`](IMPLEMENTATION_TASKS/nested-repository-executable-source-identity.md)
+- [`IMPLEMENTATION_TASKS/staging-request-unique-publication.md`](IMPLEMENTATION_TASKS/staging-request-unique-publication.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/staging-request-unique-publication.md`](IMPLEMENTATION_TASKS/staging-request-unique-publication.md)
 - [`IMPLEMENTATION_TASKS/staging-response-encoded-byte-budget.md`](IMPLEMENTATION_TASKS/staging-response-encoded-byte-budget.md)
 - [`IMPLEMENTATION_TASKS/scheduled-pause-error-preservation.md`](IMPLEMENTATION_TASKS/scheduled-pause-error-preservation.md)
 - [`IMPLEMENTATION_TASKS/publication-abort-recovery-action.md`](IMPLEMENTATION_TASKS/publication-abort-recovery-action.md)
