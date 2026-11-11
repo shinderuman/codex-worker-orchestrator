@@ -796,7 +796,8 @@ func TestParentOnlyAmendmentSyncThroughProductionBoundary(t *testing.T) {
 	if _, err := runtime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("parent-only sync created a model Runtime binding: %v", err)
 	}
-	writeAppTestFile(t, cfg.RepoRoot, "evaluation-result.md", "parent evaluation product\n")
+	// Do not mutate the workspace after sync: completion is bound to the
+	// revised Task snapshot and its published metadata-only result.
 	after := executeParentHandoff(t, cfg)
 	if !after.Consistent || after.RequiredAction == nil || *after.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("amended parent-only attempt did not return to completion: %#v", after)
