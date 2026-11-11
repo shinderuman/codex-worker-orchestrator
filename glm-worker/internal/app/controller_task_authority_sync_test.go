@@ -738,6 +738,17 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if err := os.Remove(filepath.Join(cfg.RepoRoot, "unrelated-change.txt")); err != nil {
 		t.Fatal(err)
 	}
+	// Matching IDs alone are insufficient: the admitted attempt baseline must
+	// remain byte-for-byte bound to Controller's stored source authority.
+	source, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := source
+	tampered.Attempt.BaselineTrees.WorktreeTree = "forged-baseline"
+	if _, err := store.SyncTaskAuthority(tampered, source.Snapshot.ID, controller.EvidenceObjectRef{}, revised); err == nil || !strings.Contains(err.Error(), "source authority changed") {
+		t.Fatalf("forged parent-only admission baseline was accepted: %v", err)
+	}
 	sync := executeParentHandoff(t, cfg)
 	if !sync.Consistent || sync.RequiredAction == nil || *sync.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("parent-only Amendment did not produce an executable handoff: %#v", sync)
