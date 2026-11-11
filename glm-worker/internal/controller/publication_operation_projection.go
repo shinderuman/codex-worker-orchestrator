@@ -12,7 +12,8 @@ import (
 )
 
 type ParentCompletionOperation struct {
-	Surface           string                      `json:"surface"`
+	CompletedRequest  *CompletedRequestPublication `json:"completed_request,omitempty"`
+	Surface           string                       `json:"surface"`
 	Operation         string                      `json:"operation"`
 	Mode              string                      `json:"mode,omitempty"`
 	Command           *PublicationParentCommand   `json:"command,omitempty"`
@@ -22,6 +23,16 @@ type ParentCompletionOperation struct {
 	FinalValidation   *FinalValidationRequest     `json:"final_validation,omitempty"`
 	SmokeProbeIDs     []string                    `json:"smoke_probe_ids,omitempty"`
 	Reason            string                      `json:"reason,omitempty"`
+}
+
+// CompletedRequestPublication is a Controller-validated receipt for a finalized request.
+// It is observation evidence, not a new executable completion operation.
+type CompletedRequestPublication struct {
+	RequestID            string `json:"request_id"`
+	FinalOID             string `json:"final_oid"`
+	RemoteOID            string `json:"remote_oid"`
+	TransitionID         string `json:"transition_id"`
+	ControllerGeneration uint64 `json:"controller_generation"`
 }
 
 type PublicationParentCommand struct {
@@ -111,7 +122,25 @@ func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCo
 			if err := s.requireCompletedRequest(head); err != nil {
 				return ParentCompletionOperation{}, err
 			}
-			return noneCompletionOperation("request completed; a new request must be supplied explicitly"), nil
+			task, completed, err := s.completedRequestTask(head)
+			if err != nil {
+				return ParentCompletionOperation{}, err
+			}
+			if !completed || task.RequestID != project.CompletedRequest.RequestID ||
+				task.ContractDigest != digestBytes([]byte(project.CompletedRequest.Content)) {
+				return ParentCompletionOperation{}, fmt.Errorf("completed request publication owner differs")
+			}
+			return ParentCompletionOperation{
+				Operation: PublicationOperationNone,
+				Reason:    "request completed; a new request must be supplied explicitly",
+				CompletedRequest: &CompletedRequestPublication{
+					RequestID:            task.RequestID,
+					FinalOID:             head.IntegrationTip,
+					RemoteOID:            head.ObservedRemoteTip,
+					TransitionID:         head.MetadataLineageRef.LogicalIdentity,
+					ControllerGeneration: head.ControllerGeneration,
+				},
+			}, nil
 		}
 	}
 	if operation, ok, err := s.projectExternalAdvancement(head); err != nil || ok {

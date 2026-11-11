@@ -18,6 +18,7 @@ type completionPublicationCommand struct {
 type completionWorkflowResult struct {
 	Status               string   `json:"status"`
 	Steps                []string `json:"steps"`
+	RequestID            string   `json:"request_id,omitempty"`
 	SourceOID            string   `json:"source_oid,omitempty"`
 	FinalOID             string   `json:"final_oid,omitempty"`
 	RemoteOID            string   `json:"remote_oid,omitempty"`
@@ -50,6 +51,7 @@ func runCompletionWorkflow(cfg config.AppConfig, command completionPublicationCo
 		return writeCompletionWorkflowFailure(stdout, result, err)
 	}
 	result.SourceOID = candidate.CommitOID
+	result.RequestID = candidate.TaskRef.RequestID
 	result.Steps = append(result.Steps, command.Action)
 	if err := consume(); err != nil {
 		return writeCompletionWorkflowFailure(stdout, result, err)
@@ -150,6 +152,13 @@ func completionTerminalBoundary(operation controller.ParentCompletionOperation, 
 			operation.Execution.Action == controller.PublicationOperationParentOnlyMaterialize &&
 			operation.Execution.ExpectedGeneration == result.ControllerGeneration, nil
 	case controller.PublicationOperationNone:
+		receipt := operation.CompletedRequest
+		if receipt != nil && receipt.RequestID != "" && result.RequestID == receipt.RequestID &&
+			hasCompletionPublicationEvidence(result) && result.FinalOID == receipt.FinalOID &&
+			result.RemoteOID == receipt.RemoteOID && result.TransitionID == receipt.TransitionID &&
+			result.ControllerGeneration == receipt.ControllerGeneration {
+			return true, nil
+		}
 		return false, fmt.Errorf("completion stopped before terminal publication: %s", operation.Reason)
 	default:
 		return false, nil
