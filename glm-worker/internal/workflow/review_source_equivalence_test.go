@@ -73,6 +73,21 @@ func TestEquivalentReviewSourceNextOnlyFastForward(t *testing.T) {
 	}
 }
 
+func TestEquivalentReviewSourceRejectsSameHead(t *testing.T) {
+	root, original := reviewEquivalenceFixture(t)
+	current, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original != (state.SnapshotDigest{Head: current.Head, IndexDigest: current.IndexDigest, WorktreeDigest: current.WorktreeDigest}) {
+		t.Fatal("same-HEAD fixture did not preserve the accepted HEAD, index and worktree")
+	}
+	if _, err := equivalentReviewSource(root, original, []string{"review.go:1"}); err == nil ||
+		!strings.Contains(err.Error(), "no committed advancement") {
+		t.Fatalf("unchanged source must take ordinary review reentry, not equivalence: %v", err)
+	}
+}
+
 func TestEquivalentReviewSourceRejectsPremiseChanges(t *testing.T) {
 	tests := []struct {
 		name    string

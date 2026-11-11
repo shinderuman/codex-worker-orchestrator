@@ -31,10 +31,7 @@ func equivalentReviewSource(repo string, original state.SnapshotDigest, targets 
 		return state.SnapshotDigest{}, fmt.Errorf("review source cannot prove unchanged working-tree and review identity")
 	}
 	if original.Head == current.Head {
-		if original.IndexDigest != current.IndexDigest {
-			return state.SnapshotDigest{}, fmt.Errorf("review source index changed without a committed advancement")
-		}
-		return current, packet.ValidateReviewTargetProof(repo, targets)
+		return state.SnapshotDigest{}, fmt.Errorf("review source has no committed advancement to prove equivalent")
 	}
 	if err := validateEquivalentReviewAdvancement(repo, original, current, targets); err != nil {
 		return state.SnapshotDigest{}, err
