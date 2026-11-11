@@ -172,3 +172,123 @@ func TestCompletionTerminalStopsBeforeParentOnlySuccessor(t *testing.T) {
 		t.Fatalf("stale generation falsely proved completion: %v, %v", done, err)
 	}
 }
+
+func TestScopeCompletedPublicationHandoff(t *testing.T) {
+	raw := json.RawMessage(`{"version":1,"consistent":true,"required_action":"start","action_specs":{"start":{"args":["next"]}},"parent_request":{"continuation":{"state":"continue-now","task":"IMPLEMENTATION_TASKS/next.md","reason":"current-task"}}}`)
+	scoped, err := scopeCompletedPublicationHandoff(raw, "IMPLEMENTATION_TASKS/completed.md", controller.RepositoryControllerHead{RootTaskRef: &controller.SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/next.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(scoped, &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"required_action", "action_specs", "parent_request"} {
+		if _, ok := payload[key]; ok {
+			t.Fatalf("postpublication response advertised successor action %q: %s", key, scoped)
+		}
+	}
+	var successor struct {
+		Task  string `json:"task"`
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(payload["successor"], &successor); err != nil {
+		t.Fatal(err)
+	}
+	if successor.Task != "IMPLEMENTATION_TASKS/next.md" || successor.State != "not-started" {
+		t.Fatalf("successor identity lost: %#v", successor)
+	}
+	projected, err := projectParentActionTerminalEnvelope(
+		json.RawMessage(`{"status":"completed","stop_boundary":"next-task-not-started"}`), scoped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(projected.Handoff, []byte(`"successor"`)) {
+		t.Fatalf("projection discarded successor identity: %s", projected.Handoff)
+	}
+}
+
+func TestScopeCompletedPublicationHandoffPreservesNonSuccessorAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  json.RawMessage
+		task string
+	}{
+		{"same-task", json.RawMessage(`{"consistent":true,"required_action":"controller-publication","parent_request":{"continuation":{"state":"continue-now","task":"current","reason":"active-task-not-started"}}}`), "current"},
+		{"blocked", json.RawMessage(`{"consistent":true,"required_action":"recover","parent_request":{"continuation":{"state":"blocked","task":"next","reason":"failure"}}}`), "current"},
+		{"current-task-requires-publication", json.RawMessage(`{"consistent":true,"task_id":"still-active","task_status":"awaiting-parent-completion","required_action":"controller-publication","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"current-task"}}}`), "current"},
+		{"unknown-reason", json.RawMessage(`{"consistent":true,"required_action":"recover","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"failure"}}}`), "current"},
+		{"inconsistent", json.RawMessage(`{"consistent":false,"required_action":"recover","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"active-task-not-started"}}}`), "current"},
+		{"missing-identity", json.RawMessage(`{"consistent":true,"required_action":"recover","parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"active-task-not-started"}}}`), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, err := scopeCompletedPublicationHandoff(tc.raw, tc.task, controller.RepositoryControllerHead{RootTaskRef: &controller.SemanticTaskRef{TaskPath: "next"}})
+			if err != nil || !bytes.Equal(actual, tc.raw) {
+				t.Fatalf("unproven successor authority suppressed: %s %v", actual, err)
+			}
+		})
+	}
+	if _, err := scopeCompletedPublicationHandoff(json.RawMessage(`{"consistent":`), "current", controller.RepositoryControllerHead{RootTaskRef: &controller.SemanticTaskRef{TaskPath: "next"}}); err == nil {
+		t.Fatal("malformed handoff silently accepted")
+	}
+}
+
+func TestScopeCompletedPublicationHandoffParentOnlySuccessor(t *testing.T) {
+	head := controller.RepositoryControllerHead{
+		ControllerGeneration: 354,
+		RootTaskRef:          &controller.SemanticTaskRef{TaskPath: "IMPLEMENTATION_TASKS/eval.md"},
+	}
+	raw := json.RawMessage(`{"consistent":true,"required_action":"controller-execution","required_action_parameters":{"controller_command_json":"{\"action\":\"materialize-parent-only\",\"expected_generation\":354}"},"parent_request":null}`)
+	scoped, err := scopeCompletedPublicationHandoff(raw, "IMPLEMENTATION_TASKS/completed.md", head)
+	if err != nil || !bytes.Contains(scoped, []byte(`"successor":{"task":"IMPLEMENTATION_TASKS/eval.md","state":"not-started"}`)) || bytes.Contains(scoped, []byte(`"required_action"`)) {
+		t.Fatalf("parent-only successor was not reduced to observation: %s %v", scoped, err)
+	}
+	head.ControllerGeneration++
+	scoped, err = scopeCompletedPublicationHandoff(raw, "IMPLEMENTATION_TASKS/completed.md", head)
+	if err != nil || !bytes.Equal(scoped, raw) {
+		t.Fatalf("stale successor command lost its original evidence: %s %v", scoped, err)
+	}
+}
+
+func TestScopeCompletedPublicationHandoffAudit1410(t *testing.T) {
+	const completed = "IMPLEMENTATION_TASKS/completion-required-validation-closure.md"
+	const next = "IMPLEMENTATION_TASKS/task-resource-observability-bundle-closure.md"
+	raw := json.RawMessage(`{"consistent":true,"task_id":null,"task_status":null,"required_action":"controller-publication","action_specs":{"controller-publication":{"prepare_command":["glm-parent-action","prepare","controller-publication"]},"controller-evidence":{"prepare_command":["glm-parent-action","prepare","controller-evidence"]}},"parent_request":{"continuation":{"state":"continue-now","task":"` + next + `","reason":"current-task","required_action":"controller-publication"}}}`)
+	head := controller.RepositoryControllerHead{RootTaskRef: &controller.SemanticTaskRef{TaskPath: next}}
+	scoped, err := scopeCompletedPublicationHandoff(raw, completed, head)
+	if err != nil || string(scoped) != `{"consistent":true,"successor":{"task":"`+next+`","state":"not-started"}}` {
+		t.Fatalf("Audit #1410 retained publication actions after the completed task: %s %v", scoped, err)
+	}
+	head.ActiveEpisodeID = "retained-child-episode"
+	scoped, err = scopeCompletedPublicationHandoff(raw, completed, head)
+	if err != nil || !bytes.Equal(scoped, raw) {
+		t.Fatalf("active episode recovery was suppressed: %s %v", scoped, err)
+	}
+}
+
+func TestScopeCompletedPublicationHandoffKeepsExplicitControllerOperation(t *testing.T) {
+	head := controller.RepositoryControllerHead{
+		ControllerGeneration: 42,
+		RootTaskRef:          &controller.SemanticTaskRef{TaskPath: "next"},
+	}
+	for _, scenario := range []struct {
+		reason  string
+		action  string
+		command string
+	}{
+		{"active-task-not-started", "controller-execution", "sync-task-authority"},
+		{"post-local-completion-active", "controller-publication", "rebind"},
+		{"active-task-not-started", "start", "sync-task-authority"},
+	} {
+		t.Run(scenario.reason+"/"+scenario.action, func(t *testing.T) {
+			raw := json.RawMessage(`{"consistent":true,"required_action":"` + scenario.action +
+				`","required_action_parameters":{"controller_command_json":"{\"action\":\"` + scenario.command +
+				`\",\"expected_generation\":42}"},"parent_request":{"continuation":{"state":"continue-now","task":"next","reason":"` +
+				scenario.reason + `"}}}`)
+			projected, err := scopeCompletedPublicationHandoff(raw, "completed", head)
+			if err != nil || !bytes.Equal(projected, raw) {
+				t.Fatalf("explicit controller operation was discarded: %s %v", projected, err)
+			}
+		})
+	}
+}

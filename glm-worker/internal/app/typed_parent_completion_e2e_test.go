@@ -42,8 +42,14 @@ type typedCompletionScenario struct {
 }
 
 type typedPublicationEnvelope struct {
-	Status   string              `json:"status"`
-	Handoff  parentHandoffOutput `json:"handoff"`
+	Status  string `json:"status"`
+	Handoff struct {
+		parentHandoffOutput
+		Successor struct {
+			Task  string `json:"task"`
+			State string `json:"state"`
+		} `json:"successor"`
+	} `json:"handoff"`
 	Recovery struct {
 		Command    []string `json:"command"`
 		WorkingDir string   `json:"working_dir"`
@@ -368,7 +374,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 		}
 		switch *handoff.RequiredAction {
 		case controllerPublicationSurface:
-			if runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, scenario.sourceChange, interrupt, !scenario.fullProcess, scenario.parentOnlySuccessor) {
+			if runTypedPublicationStep(t, cfg, handoff.RequiredActionParameters, scenario.sourceChange, interrupt, !scenario.fullProcess) {
 				return
 			}
 			interrupt = false
@@ -409,7 +415,7 @@ func driveTypedCompletionToStart(t *testing.T, cfg config.AppConfig, goShim stri
 	t.Fatal("typed completion did not converge to the successor start boundary")
 }
 
-func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt, executeInProcess, parentOnlySuccessor bool) bool {
+func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[string]string, requireInstall, interrupt, executeInProcess bool) bool {
 	t.Helper()
 	var command controller.PublicationParentCommand
 	if err := json.Unmarshal([]byte(parameters["controller_command_json"]), &command); err != nil {
@@ -451,24 +457,12 @@ func runTypedPublicationStep(t *testing.T, cfg config.AppConfig, parameters map[
 	if expectHandoffFailure {
 		assertTypedCompletionFailure(t, cfg, exit, envelope, diagnostics)
 	} else if envelope.Status != "parent_action_terminal" || !envelope.Handoff.Consistent ||
-		!typedCompletionSuccessorHandoff(envelope.Handoff, parentOnlySuccessor) {
-		t.Fatalf("completion lacks a canonical successor handoff: %s", output)
+		envelope.Handoff.RequiredAction != nil || envelope.Handoff.Successor.State != "not-started" ||
+		envelope.Handoff.Successor.Task == "" {
+		t.Fatalf("completed publication lacks a non-executable successor summary: %s", output)
 	}
 	assertTypedPublicationProof(t, envelope)
 	return true
-}
-
-func typedCompletionSuccessorHandoff(handoff parentHandoffOutput, parentOnlySuccessor bool) bool {
-	action := stringPointerValue(handoff.RequiredAction)
-	if !parentOnlySuccessor {
-		return action == canonicalStartAction
-	}
-	if action != controllerExecutionSurface {
-		return false
-	}
-	var command controller.CompletionExecutionCommand
-	return json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command) == nil &&
-		command.Action == controller.PublicationOperationParentOnlyMaterialize
 }
 
 func assertTypedPublicationProof(t *testing.T, envelope typedPublicationEnvelope) {

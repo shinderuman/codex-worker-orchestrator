@@ -246,7 +246,7 @@ func publishFreshRoundOnceOnPulledSource(t *testing.T, cfg config.AppConfig, scr
 	if completionCommand.Action != controller.PublicationOperationAccept {
 		t.Fatalf("fresh completion action: %#v", completionCommand)
 	}
-	runTypedPublicationStep(t, freshCfg, completionHandoff.RequiredActionParameters, true, false, true, false)
+	runTypedPublicationStep(t, freshCfg, completionHandoff.RequiredActionParameters, true, false, true)
 	assertTypedCompletionTerminalState(t, freshCfg, freshState)
 	published, err := store.LoadHead()
 	if err != nil {

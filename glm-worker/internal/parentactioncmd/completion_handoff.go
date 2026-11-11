@@ -8,6 +8,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 )
 
 type terminalHandoffRecovery struct {
@@ -18,6 +19,18 @@ type terminalHandoffRecovery struct {
 type completionHandoffStageError struct {
 	stage string
 	cause error
+}
+
+type completedPublicationHandoff struct {
+	Version        json.RawMessage   `json:"version"`
+	Consistent     bool              `json:"consistent"`
+	TaskID         string            `json:"task_id"`
+	TaskStatus     string            `json:"task_status"`
+	RequiredAction string            `json:"required_action"`
+	Parameters     map[string]string `json:"required_action_parameters"`
+	ParentRequest  struct {
+		Continuation repositoryproject.Continuation `json:"continuation"`
+	} `json:"parent_request"`
 }
 
 func (e *completionHandoffStageError) Error() string {
@@ -92,6 +105,14 @@ func readCompletionTerminalHandoff(cfg config.AppConfig, result completionWorkfl
 	if err := validateCompletionHandoffProjection(store, expected, handoff); err != nil {
 		return nil, recovery, completionHandoffFailure("canonical-handoff-validation", err)
 	}
+	terminalRecord, err := store.LoadTerminalTaskRecord(*expected.MetadataLineageRef)
+	if err != nil {
+		return nil, recovery, err
+	}
+	handoff, err = scopeCompletedPublicationHandoff(handoff, terminalRecord.TaskRef.TaskPath, expected)
+	if err != nil {
+		return nil, recovery, err
+	}
 	return handoff, nil, nil
 }
 
@@ -133,4 +154,79 @@ func validateCompletionHandoffProjection(store *controller.Store, expected contr
 		return fmt.Errorf("controller authority changed during completion handoff")
 	}
 	return nil
+}
+
+func scopeCompletedPublicationHandoff(raw json.RawMessage, completedTask string, head controller.RepositoryControllerHead) (json.RawMessage, error) {
+	var canonical completedPublicationHandoff
+	if err := json.Unmarshal(raw, &canonical); err != nil {
+		return nil, fmt.Errorf("decode verified completion handoff: %w", err)
+	}
+	successor := completedPublicationSuccessor(canonical, completedTask, head)
+	if successor == "" {
+		return raw, nil
+	}
+	return json.Marshal(struct {
+		Version    json.RawMessage `json:"version,omitempty"`
+		Consistent bool            `json:"consistent"`
+		Successor  struct {
+			Task  string `json:"task"`
+			State string `json:"state"`
+		} `json:"successor"`
+	}{
+		Version:    canonical.Version,
+		Consistent: true,
+		Successor: struct {
+			Task  string `json:"task"`
+			State string `json:"state"`
+		}{Task: successor, State: "not-started"},
+	})
+}
+
+func completedPublicationSuccessor(handoff completedPublicationHandoff, completedTask string, head controller.RepositoryControllerHead) string {
+	if !handoff.Consistent || completedTask == "" || head.RootTaskRef == nil ||
+		head.ExecutionTaskRef != nil || head.ActiveEpisodeID != "" {
+		return ""
+	}
+	successor := head.RootTaskRef.TaskPath
+	if successor == "" || successor == completedTask {
+		return ""
+	}
+	if isCompletedPublicationSuccessor(handoff, successor) || isParentOnlySuccessorCommand(handoff, head.ControllerGeneration) {
+		return successor
+	}
+	return ""
+}
+
+func isCompletedPublicationSuccessor(handoff completedPublicationHandoff, successor string) bool {
+	continuation := handoff.ParentRequest.Continuation
+	if continuation.State != repositoryproject.ContinuationContinueNow || continuation.Task != successor ||
+		handoff.Parameters["controller_command_json"] != "" {
+		return false
+	}
+	switch continuation.Reason {
+	case repositoryproject.ReasonActiveTaskNotStarted, repositoryproject.ReasonPostCompletionActive:
+		return publicationSuccessorStart(handoff)
+	case repositoryproject.ReasonCurrentTask:
+		return publicationSuccessorStart(handoff) || handoff.RequiredAction == controller.PublicationOperationSurface &&
+			handoff.TaskID == "" && handoff.TaskStatus == ""
+	default:
+		return false
+	}
+}
+
+func publicationSuccessorStart(handoff completedPublicationHandoff) bool {
+	action := handoff.ParentRequest.Continuation.RequiredAction
+	return handoff.RequiredAction == controller.SuccessorStartSurface &&
+		(action == "" || action == controller.SuccessorStartSurface)
+}
+
+func isParentOnlySuccessorCommand(handoff completedPublicationHandoff, generation uint64) bool {
+	if handoff.RequiredAction != controller.ExecutionOperationSurface {
+		return false
+	}
+	var command controller.CompletionExecutionCommand
+	if err := json.Unmarshal([]byte(handoff.Parameters["controller_command_json"]), &command); err != nil {
+		return false
+	}
+	return command.Action == controller.PublicationOperationParentOnlyMaterialize && command.ExpectedGeneration == generation
 }
