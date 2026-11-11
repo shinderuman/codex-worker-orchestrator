@@ -316,7 +316,6 @@ func TestNormalTaskRequestReadOnlyReviewCannotAlterPlanNamedData(t *testing.T) {
 	}
 }
 
-
 func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
 	cfg := newRequestTaskAppConfig(t)
 	binary := typedCompletionWorkerBinary(t)
