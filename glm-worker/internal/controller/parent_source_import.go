@@ -340,6 +340,11 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	if err := s.writeAttempt(*op.Attempt); err != nil {
 		return err
 	}
+	if op.Transition.Kind == executionTaskAuthoritySync && op.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if err := s.bindParentOnlySmokeTaskID(*op.Attempt); err != nil {
+			return err
+		}
+	}
 	actual := map[string]string{op.Transition.Effects[0].Key(): trees.WorktreeTree}
 	_, _, err = s.commitAuthorityTransitionWithEvidenceLocked(op.Transition, actual, op.Evidence, func(head *RepositoryControllerHead) error {
 		head.LiveLeaseID = lease.LeaseID
@@ -397,7 +402,13 @@ func (s *Store) verifyCommittedParentSourceImport(op ExecutionOperation, head Re
 	if head.LiveAttemptID != op.Source.Attempt.AttemptID || head.LiveLeaseID != op.Lease.LeaseID || head.ProjectSnapshotID != op.Transition.ProjectSnapshotNew || head.RootTaskRef == nil || head.ExecutionTaskRef == nil || !head.RootTaskRef.Equal(op.Attempt.RootTaskRef) || !head.ExecutionTaskRef.Equal(op.Attempt.SemanticTaskRef) {
 		return fmt.Errorf("parent source import committed a different execution")
 	}
-	return s.verifyCommittedMaterialization(op, head)
+	if err := s.verifyCommittedMaterialization(op, head); err != nil {
+		return err
+	}
+	if op.Transition.Kind == executionTaskAuthoritySync && op.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return s.verifyParentOnlySmokeTaskID(*op.Attempt)
+	}
+	return nil
 }
 
 func validateParentSourceTaskBinding(op ExecutionOperation, task SemanticTaskRef) error {
