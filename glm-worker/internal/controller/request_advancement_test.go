@@ -24,7 +24,9 @@ func newRequestAdvancementFixture(t *testing.T) (findingAcceptanceFixture, Publi
 		t.Fatal(err)
 	}
 	seedFinalValidationNoneObligation(t, store, source)
-	return configurePublicationTestFixture(t, findingAcceptanceFixture{store: store, source: source})
+	fixture, policy := configurePublicationTestFixture(t, findingAcceptanceFixture{store: store, source: source})
+	bindPublicationUpstream(t, fixture.store, policy)
+	return fixture, policy
 }
 
 func assertRequestAdvancementAuthority(t *testing.T, store *Store, head RepositoryControllerHead, tip string) {
