@@ -28,22 +28,8 @@ func newGraphHistoryStore(tb testing.TB) *Store {
 	}
 	for name, contents := range map[string]string{
 		"source.txt": "base\n",
-		"IMPLEMENTATION_PLAN.local.md": "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`
-",
-		"IMPLEMENTATION_TASKS/root.md": "# root
-
-## External feasibility
-
-status: not-applicable
-
-## Contract
-
-controller root task
-
-## Dependencies
-
-none
-",
+		"IMPLEMENTATION_PLAN.local.md": "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/root.md`\n",
+		"IMPLEMENTATION_TASKS/root.md": "# root\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\ncontroller root task\n\n## Dependencies\n\nnone\n",
 	} {
 		if err := os.WriteFile(filepath.Join(repo, name), []byte(contents), 0o644); err != nil {
 			tb.Fatal(err)
