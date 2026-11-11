@@ -192,6 +192,39 @@ func (s *Store) parentOnlyRootResumeEpisode(head RepositoryControllerHead, input
 	return &episode, nil
 }
 
+// parentOnlyCurrentTaskContract accepts either the original committed Task
+// or the exact same-path amendment already admitted by Controller source sync.
+func (s *Store) parentOnlyCurrentTaskContract(head RepositoryControllerHead, attempt AttemptRecord, committed TaskAuthority) error {
+	if head.LiveAttemptID != attempt.AttemptID || head.ExecutionTaskRef == nil ||
+		!head.ExecutionTaskRef.Equal(attempt.SemanticTaskRef) || head.RootTaskRef == nil ||
+		!head.RootTaskRef.Equal(attempt.RootTaskRef) || committed.Task.TaskPath != attempt.SemanticTaskRef.TaskPath ||
+		committed.Snapshot.HeadOID != attempt.ExecutionBaseOID || head.IntegrationTip != committed.Snapshot.HeadOID {
+		return fmt.Errorf("parent-only Task/attempt authority is stale")
+	}
+	if committed.Task.Equal(attempt.SemanticTaskRef) {
+		return nil
+	}
+	if head.ProjectSnapshotID == committed.ProjectSnapshotID {
+		return fmt.Errorf("committed task contract changed during parent-only execution")
+	}
+	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+	if err != nil {
+		return err
+	}
+	revised, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, project.HeadOID)
+	if err != nil {
+		return err
+	}
+	if revised.ProjectSnapshotID != head.ProjectSnapshotID || revised.ExecutionMode != ExecutionAuthorityParentOnly ||
+		!revised.Task.Equal(attempt.SemanticTaskRef) {
+		return fmt.Errorf("parent-only amendment has no matching Controller project authority")
+	}
+	if err := verifyTaskOnlyAuthorityDelta(s.identity.PrimaryRoot, committed.Snapshot.HeadOID, revised.Snapshot.HeadOID, attempt.SemanticTaskRef.TaskPath); err != nil {
+		return fmt.Errorf("parent-only amendment changed non-Task authority: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) parentOnlyWorkspace() (WorkspaceIdentity, error) {
 	workspace, err := ResolveWorkspaceIdentity(s.identity.PrimaryRoot, s.identity)
 	if err != nil {
@@ -414,10 +447,36 @@ func (s *Store) ParentOnlySmokeIdentityMatches(taskID string) bool {
 		return false
 	}
 	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
-	return err == nil && authority.ExecutionMode == ExecutionAuthorityParentOnly &&
-		head.ExecutionTaskRef != nil && head.RootTaskRef != nil &&
-		attempt.SemanticTaskRef.Equal(*head.ExecutionTaskRef) && attempt.RootTaskRef.Equal(*head.RootTaskRef) &&
-		attempt.SemanticTaskRef.TaskPath == authority.Task.TaskPath
+	if err != nil || authority.ExecutionMode != ExecutionAuthorityParentOnly {
+		return false
+	}
+	if head.LiveAttemptID != "" {
+		return s.parentOnlyCurrentTaskContract(head, attempt, authority) == nil
+	}
+	// A sealed parent-only candidate retains the attempt identity after its
+	// live lease is released. Validate its accepted Task/source independently.
+	candidate, err := s.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil || !candidate.TaskRef.Equal(attempt.SemanticTaskRef) ||
+		!candidate.RootTaskRef.Equal(attempt.RootTaskRef) ||
+		candidate.ProjectSnapshotID != head.ProjectSnapshotID ||
+		authority.Task.TaskPath != attempt.SemanticTaskRef.TaskPath ||
+		authority.Snapshot.HeadOID != attempt.ExecutionBaseOID {
+		return false
+	}
+	if authority.Task.Equal(attempt.SemanticTaskRef) {
+		return true
+	}
+	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+	if err != nil {
+		return false
+	}
+	revised, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, project.HeadOID)
+	if err != nil || revised.ProjectSnapshotID != head.ProjectSnapshotID ||
+		revised.ExecutionMode != ExecutionAuthorityParentOnly ||
+		!revised.Task.Equal(attempt.SemanticTaskRef) {
+		return false
+	}
+	return verifyTaskOnlyAuthorityDelta(s.identity.PrimaryRoot, authority.Snapshot.HeadOID, revised.Snapshot.HeadOID, attempt.SemanticTaskRef.TaskPath) == nil
 }
 
 func (s *Store) LiveParentOnlyExecution() (bool, error) {
