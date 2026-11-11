@@ -13,14 +13,14 @@ import (
 	"time"
 )
 
-const maxDiffSourceBytes int64 = 1 << 20 // Independent of the requested display budget.
-const maxDiffPatchBytes = 2 << 20 // Bounds each patch and the complete requested diff.
-
 type boundedDiffOutput struct {
 	bytes.Buffer
 	limit    int
 	exceeded bool
 }
+
+const maxDiffSourceBytes int64 = 1 << 20
+const maxDiffPatchBytes = 2 << 20
 
 func (out *boundedDiffOutput) Write(data []byte) (int, error) {
 	if len(data) > out.limit-out.Len() {
@@ -30,8 +30,6 @@ func (out *boundedDiffOutput) Write(data []byte) (int, error) {
 	return out.Buffer.Write(data)
 }
 
-// HEAD blobs are immutable, so checking their declared size prevents expensive
-// extraction before the captured snapshot is constructed.
 func readCapturedHeadBlob(repoRoot, blob string) ([]byte, error) {
 	sizeBytes, err := gitLiteralOutputIn(repoRoot, "cat-file", "-s", blob)
 	if err != nil {
@@ -54,6 +52,17 @@ func readCapturedHeadBlob(repoRoot, blob string) ([]byte, error) {
 	return content, nil
 }
 
+func writeHeadDiffSnapshot(dir, repoRoot string, file DiffFile) (string, error) {
+	if file.HeadBlob == "" {
+		return os.DevNull, nil
+	}
+	head, err := readCapturedHeadBlob(repoRoot, file.HeadBlob)
+	if err != nil {
+		return "", err
+	}
+	return writeDiffSnapshot(dir, "a", file.Path, file.HeadMode, head)
+}
+
 func capturedDiffPatch(repoRoot string, file DiffFile, content []byte, present bool) (string, error) {
 	if int64(len(content)) > maxDiffSourceBytes {
 		return "", fmt.Errorf("captured diff source for %q exceeds %d-byte execution limit", file.Path, maxDiffSourceBytes)
@@ -63,16 +72,9 @@ func capturedDiffPatch(repoRoot string, file DiffFile, content []byte, present b
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	before := os.DevNull
-	if file.HeadBlob != "" {
-		head, err := readCapturedHeadBlob(repoRoot, file.HeadBlob)
-		if err != nil {
-			return "", err
-		}
-		before, err = writeDiffSnapshot(dir, "a", file.Path, file.HeadMode, head)
-		if err != nil {
-			return "", err
-		}
+	before, err := writeHeadDiffSnapshot(dir, repoRoot, file)
+	if err != nil {
+		return "", err
 	}
 	after := os.DevNull
 	if present {
