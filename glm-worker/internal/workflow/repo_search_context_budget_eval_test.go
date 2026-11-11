@@ -103,8 +103,12 @@ func repoSearchCorpusRoot(dir string) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("resolve corpus directory: %w", err)
 	}
+	physicalDir, err := filepath.EvalSymlinks(absoluteDir)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve physical corpus directory: %w", err)
+	}
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	cmd.Dir = absoluteDir
+	cmd.Dir = physicalDir
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	output, err := cmd.Output()
 	if err != nil {
@@ -112,7 +116,7 @@ func repoSearchCorpusRoot(dir string) (string, bool, error) {
 		if errors.As(err, &exitErr) &&
 			strings.Contains(string(exitErr.Stderr), "not a git repository") &&
 			os.Getenv("GIT_DIR") == "" && os.Getenv("GIT_WORK_TREE") == "" &&
-			!hasGitMarkerInAncestors(absoluteDir) {
+			!hasGitMarkerInAncestors(physicalDir) {
 			return "", true, nil
 		}
 		stderr := ""
@@ -169,6 +173,34 @@ func TestRepoSearchContextBudgetRepositoryDetection(t *testing.T) {
 	_, missing, err = repoSearchCorpusRoot(corrupt)
 	if err == nil || missing {
 		t.Fatalf("corrupt repository marker: missing=%t err=%v; want hard failure", missing, err)
+	}
+
+	brokenRepo := filepath.Join(t.TempDir(), "broken-repository")
+	if output, err := exec.Command("git", "init", "-q", brokenRepo).CombinedOutput(); err != nil {
+		t.Fatalf("initialize broken repository fixture: %v: %s", err, output)
+	}
+	if err := os.Mkdir(filepath.Join(brokenRepo, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(brokenRepo, ".git", "HEAD")); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "archive")
+	if err := os.Symlink(filepath.Join(brokenRepo, "nested"), alias); err != nil {
+		t.Fatalf("create repository alias: %v", err)
+	}
+	_, missing, err = repoSearchCorpusRoot(alias)
+	if err == nil || missing {
+		t.Fatalf("broken repository via symlink: missing=%t err=%v; want hard failure", missing, err)
+	}
+
+	brokenAlias := filepath.Join(t.TempDir(), "missing")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "absent"), brokenAlias); err != nil {
+		t.Fatalf("create dangling directory alias: %v", err)
+	}
+	_, missing, err = repoSearchCorpusRoot(brokenAlias)
+	if err == nil || missing {
+		t.Fatalf("unresolvable directory alias: missing=%t err=%v; want hard failure", missing, err)
 	}
 
 	t.Setenv("GIT_DIR", filepath.Join(archive, "missing.git"))
