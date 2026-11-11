@@ -259,6 +259,8 @@ func TestStagingClientRandomTokensAcrossConcurrentCalls(t *testing.T) {
 	t.Parallel()
 	client, staging, responses := newStagingClientFixture(t)
 	client.generateToken = nil
+	client.Timeout = 3 * time.Second
+	client.PollInterval = 5 * time.Millisecond
 	other := &StagingClient{
 		StagingDir: staging, ResponseDir: responses,
 		Timeout: 3 * time.Second, PollInterval: 5 * time.Millisecond,
