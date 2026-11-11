@@ -180,6 +180,14 @@ func (c *StagingClient) writeRequest(request StagingRequest) error {
 		return err
 	}
 	final := filepath.Join(c.StagingDir, StagingRequestFileName(request.Token))
+	// A previous request may have timed out and removed its final path while
+	// its response remains. Never consume that response for a new request.
+	responsePath := filepath.Join(c.ResponseDir, StagingResponseFileName(request.Token))
+	if _, err := os.Lstat(responsePath); err == nil {
+		return fmt.Errorf("staging requestのtokenが重複しています: %s", request.Token)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("staging responseの確認に失敗しました: %w", err)
+	}
 	temp := filepath.Join(c.StagingDir, ".request-"+request.Token+".tmp")
 	file, err := os.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if os.IsExist(err) {
