@@ -44,7 +44,8 @@ const StagingClientTimeoutDefault = StagingRequestTimeoutDefault + 5*time.Minute
 
 const StagingClientPollIntervalDefault = 250 * time.Millisecond
 
-const stagingMaxResponseBytes = 64 << 20
+// StagingMaxResponseBytes is the shared encoded JSON response file limit for owner and client.
+const StagingMaxResponseBytes = 64 << 20
 
 const stagingTokenCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-"
 
@@ -196,7 +197,12 @@ func (c *StagingClient) awaitResponse(ctx context.Context, request StagingReques
 			return StagingResponse{}, false
 		case <-ticker.C:
 		}
-		if response, ok := readStagingResponse(path, request.Token); ok {
+		response, ok, readErr := readStagingResponse(path, request.Token)
+		if readErr != nil {
+			_, _ = fmt.Fprintln(stderr, "goquality test:", readErr)
+			return StagingResponse{}, false
+		}
+		if ok {
 			return response, true
 		}
 		if !time.Now().Before(deadline) {
@@ -206,21 +212,24 @@ func (c *StagingClient) awaitResponse(ctx context.Context, request StagingReques
 	}
 }
 
-func readStagingResponse(path, token string) (StagingResponse, bool) {
+func readStagingResponse(path, token string) (StagingResponse, bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return StagingResponse{}, false
+		return StagingResponse{}, false, nil
 	}
 	defer func() { _ = file.Close() }()
-	data, err := io.ReadAll(io.LimitReader(file, stagingMaxResponseBytes+1))
-	if err != nil || len(data) > stagingMaxResponseBytes {
-		return StagingResponse{}, false
+	data, err := io.ReadAll(io.LimitReader(file, StagingMaxResponseBytes+1))
+	if err != nil {
+		return StagingResponse{}, false, nil
+	}
+	if len(data) > StagingMaxResponseBytes {
+		return StagingResponse{}, false, fmt.Errorf("staging responseが符号化後size上限を超えました")
 	}
 	response, err := ParseStagingResponse(data)
 	if err != nil || response.Token != token {
-		return StagingResponse{}, false
+		return StagingResponse{}, false, nil
 	}
-	return response, true
+	return response, true, nil
 }
 
 func (c *StagingClient) removeRequest(token string) {
