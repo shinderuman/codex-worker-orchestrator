@@ -518,7 +518,7 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 }
 
 func TestEncodeStagingResponseDisablesHTMLEscapingNearStreamCaps(t *testing.T) {
-	output := strings.Repeat("<>&", dockerTestMaxOutputBytes/3)
+	output := strings.Repeat("<>&", dockerTestMaxOutputBytes / 3)
 	response := dockertest.StagingResponse{
 		SchemaVersion: dockertest.StagingSchemaVersion,
 		Token:         "8600000000000000000",
