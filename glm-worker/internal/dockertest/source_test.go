@@ -472,14 +472,34 @@ func TestSourceArchiveNestedExecutableModeMatchesSourceIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		restored := t.TempDir()
-		extractFixtureArchive(t, archive, restored)
-		info, err := os.Stat(filepath.Join(restored, "nested", "tool.sh"))
+		file, err := os.Open(archive)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != permission {
-			t.Fatalf("Docker転送tarのmodeがsourceと一致しません: got=%#o want=%#o", info.Mode().Perm(), permission)
+		reader := tar.NewReader(file)
+		found := false
+		for {
+			header, err := reader.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if header.Name != "nested/tool.sh" {
+				continue
+			}
+			found = true
+			if header.Typeflag != tar.TypeReg || os.FileMode(header.Mode).Perm() != permission {
+				t.Fatalf("Docker転送tarのmodeがsourceと一致しません: type=%d mode=%#o want=%#o", header.Typeflag, header.Mode, permission)
+			}
+			break
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			t.Fatal("nested tool.shがDocker転送tarに含まれていません")
 		}
 		previous = snapshot
 	}
