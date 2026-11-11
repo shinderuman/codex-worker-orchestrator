@@ -96,7 +96,6 @@ func compactPlanSectionSpacing(data []byte, heading string) []byte {
 	return append(compacted, data[end:]...)
 }
 
-// Find only real level-two headings: quoted headings inside code fences are not sections.
 func planSectionBounds(data []byte, heading string) (int, int, bool) {
 	start := -1
 	offset := 0
@@ -123,7 +122,6 @@ func planSectionBounds(data []byte, heading string) (int, int, bool) {
 	return start, len(data), true
 }
 
-// Keep fenced examples byte-for-byte intact, even when they contain task bullets.
 func compactPlanUnfencedSpacing(data []byte) []byte {
 	var result, unfenced []byte
 	var fence markdownFence

@@ -78,7 +78,6 @@ func TestMarkdownPlanSpacingAllSupportedTaskItems(t *testing.T) {
 }
 
 func TestMarkdownPlanSpacingPreservesFencesAndNonScheduleSections(t *testing.T) {
-	const path = implementationPlanPath
 	goal := "## GOAL\n\n\x60\x60\x60\x60md\n## NEXT（優先順）\n\n- \x60IMPLEMENTATION_TASKS/example-a.md\x60\n\n- \x60IMPLEMENTATION_TASKS/example-b.md\x60\n\x60\x60\x60\x60\n\n"
 	fence := "\x60\x60\x60md\n- \x60IMPLEMENTATION_TASKS/quoted-a.md\x60\n\n\n- \x60IMPLEMENTATION_TASKS/quoted-b.md\x60\n## BLOCKED / USER_PERMISSION_WAIT\n\x60\x60\x60\n"
 	first := "- IMPLEMENTATION_TASKS/first.md"
