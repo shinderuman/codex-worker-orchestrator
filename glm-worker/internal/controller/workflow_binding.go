@@ -141,10 +141,25 @@ func (s *Store) ExecutionTaskForWorkspace(root string) (SemanticTaskRef, error) 
 		return SemanticTaskRef{}, err
 	}
 	admission, err := s.AdmitMutationSettlingQualityIntent(authority, workspace, snapshot)
-	if err != nil {
-		return SemanticTaskRef{}, fmt.Errorf("resolve controller execution task: %w", err)
+	if err == nil {
+		return admission.Attempt.SemanticTaskRef, nil
 	}
-	return admission.Attempt.SemanticTaskRef, nil
+	if task, admitted := s.parentOnlyRevisedExecutionTask(workspace, snapshot); admitted {
+		return task, nil
+	}
+	return SemanticTaskRef{}, fmt.Errorf("resolve controller execution task: %w", err)
+}
+
+func (s *Store) parentOnlyRevisedExecutionTask(workspace WorkspaceIdentity, snapshot WorkspaceSnapshot) (SemanticTaskRef, bool) {
+	live, err := s.LiveParentOnlyExecution()
+	if err != nil || !live {
+		return SemanticTaskRef{}, false
+	}
+	admission, err := s.ParentOnlyTaskAuthoritySyncAdmission(s.config)
+	if err != nil || admission.Workspace.ID != workspace.ID || admission.Snapshot.ID != snapshot.ID {
+		return SemanticTaskRef{}, false
+	}
+	return admission.Attempt.SemanticTaskRef, true
 }
 
 func WorkflowExecutionTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) {
@@ -245,6 +260,15 @@ func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string
 	if head.RootTaskRef == nil {
 		return "", s.requestCompletionHasNoSuccessor(head)
 	}
+	if head.ActiveEpisodeID != "" {
+		parentOnly, err := s.quiescentParentOnlyRootResume(head)
+		if err != nil {
+			return "", err
+		}
+		if parentOnly {
+			return "", nil
+		}
+	}
 	cfg := WorkflowTaskConfig(s.config, s.identity, *head.RootTaskRef)
 	cfg.RepoRoot = s.identity.PrimaryRoot
 	runtime := state.AttachStateStore(cfg)
@@ -259,6 +283,27 @@ func (s *Store) QuiescentRuntimeAdmission(head RepositoryControllerHead) (string
 		return "", nil
 	}
 	return runtime.TaskID()
+}
+
+func (s *Store) quiescentParentOnlyRootResume(head RepositoryControllerHead) (bool, error) {
+	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	if err != nil {
+		return false, err
+	}
+	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
+		return false, nil
+	}
+	if head.MetadataLineageRef == nil || head.ActiveEpisodeRevision == 0 ||
+		head.ExecutionTaskRef != nil || head.LiveAttemptID != "" || head.LiveLeaseID != "" {
+		return false, fmt.Errorf("parent-only Root successor requires a completed child metadata target")
+	}
+	if !head.RootTaskRef.Equal(authority.Task) {
+		return false, fmt.Errorf("parent-only Root resume successor authority differs")
+	}
+	if err := s.rejectBoundTaskRuntime(authority.Task); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func quiescentRuntimeReady(runtime *state.StateStore) (bool, error) {

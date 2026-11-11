@@ -399,7 +399,7 @@ func TestParentOnlyCompletionFailClosedBoundaries(t *testing.T) {
 			runControllerGit(t, f.repo, "add", ".")
 			runControllerGit(t, f.repo, "commit", "-q", "-m", "amend contract")
 			return handBuiltParentOnlyAdmission(t, f)
-		}, want: "committed task contract changed"},
+		}, want: "committed repository HEAD moved"},
 		{name: "repository HEAD moved mid-flight", seed: func(t *testing.T, f parentOnlyTaskFixture, _ Admission) Admission {
 			writeParentOnlyProduct(t, f, "unrelated-committed.txt", "committed elsewhere\n")
 			runControllerGit(t, f.repo, "add", ".")
@@ -659,5 +659,40 @@ func TestParentOnlyCompletionRecoversPublishedWithoutAnotherPush(t *testing.T) {
 	count, err := os.ReadFile(pushes)
 	if err != nil || string(count) != "x" {
 		t.Fatalf("publication recovery repeated a successful push: %q %v", count, err)
+	}
+}
+
+func TestParentOnlyMaterializationRejectsStaleEpisodeIdentity(t *testing.T) {
+	t.Parallel()
+	fixture, _ := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
+	head, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []ParentOnlyMaterializeInput{
+		{ExpectedGeneration: head.ControllerGeneration + 1},
+		{ExpectedGeneration: head.ControllerGeneration, EpisodeID: "unscheduled-episode", EpisodeRevision: 1},
+		{ExpectedGeneration: head.ControllerGeneration, EpisodeRevision: 1},
+	} {
+		if _, err := fixture.store.AdmitParentOnlyExecution(input); err == nil {
+			t.Fatalf("parent-only materialization admitted stale generation or episode: %#v", input)
+		}
+	}
+	orphanRevision := head
+	orphanRevision.ActiveEpisodeRevision = 1
+	orphanID := head
+	orphanID.ActiveEpisodeID = "unpaired"
+	for _, invalid := range []RepositoryControllerHead{orphanRevision, orphanID} {
+		if err := validateParentOnlyMaterializeHead(invalid, ParentOnlyMaterializeInput{
+			ExpectedGeneration: invalid.ControllerGeneration,
+			EpisodeID:          invalid.ActiveEpisodeID,
+			EpisodeRevision:    invalid.ActiveEpisodeRevision,
+		}); err == nil {
+			t.Fatalf("partial episode identity was admitted: %#v", invalid)
+		}
+	}
+	after, err := fixture.store.LoadHead()
+	if err != nil || after.ControllerGeneration != head.ControllerGeneration || after.PendingTransitionID != "" {
+		t.Fatalf("rejected materialization changed controller authority: %#v %v", after, err)
 	}
 }

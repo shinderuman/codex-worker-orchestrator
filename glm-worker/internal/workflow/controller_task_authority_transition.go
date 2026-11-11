@@ -17,16 +17,12 @@ func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.
 	if command.SourceSnapshotID == "" || command.RevisedTask == nil {
 		return controller.ExecutionOperationResult{}, fmt.Errorf("task authority sync requires exact source snapshot and revised Task identity")
 	}
-	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
+	admission, runtimeCfg, err := taskAuthoritySyncAdmission(cfg, store)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
 	wf := NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
 	before, err := wf.CaptureTaskAuthoritySyncEvidence()
-	if err != nil {
-		return controller.ExecutionOperationResult{}, err
-	}
-	admission, err := controller.CurrentSemanticAdmission(cfg, store)
 	if err != nil {
 		return controller.ExecutionOperationResult{}, err
 	}
@@ -47,21 +43,59 @@ func executeControllerTaskAuthoritySync(cfg config.AppConfig, store *controller.
 	return result, nil
 }
 
+func taskAuthoritySyncAdmission(cfg config.AppConfig, store *controller.Store) (controller.Admission, config.AppConfig, error) {
+	liveParentOnly, err := store.LiveParentOnlyExecution()
+	if err != nil {
+		return controller.Admission{}, cfg, err
+	}
+	if liveParentOnly {
+		admission, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg)
+		if err != nil {
+			return controller.Admission{}, cfg, err
+		}
+		return admission, controller.WorkflowTaskConfig(cfg, store.Identity(), admission.Attempt.SemanticTaskRef), nil
+	}
+	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		return controller.Admission{}, cfg, err
+	}
+	admission, err := controller.CurrentSemanticAdmission(cfg, store)
+	return admission, runtimeCfg, err
+}
+
 func VerifyTaskAuthoritySyncRuntime(before []byte, admission controller.Admission) error {
 	var evidence TaskAuthoritySyncEvidence
 	if err := json.Unmarshal(before, &evidence); err != nil {
 		return fmt.Errorf("decode task authority sync runtime evidence: %w", err)
 	}
+	if admission.Attempt.ExecutionAuthority == controller.ExecutionAuthorityParentOnly {
+		return verifyParentOnlyTaskSyncEvidence(evidence, admission)
+	}
+	if evidence.Runtime == TaskAuthorityRuntimeParentOnly {
+		return fmt.Errorf("ordinary Task authority sync cannot accept parent-only smoke evidence")
+	}
 	if evidence.Runtime == TaskAuthorityRuntimeUnstarted {
-		if evidence.TaskID != "" || evidence.Binding != nil {
-			return fmt.Errorf("unstarted task authority sync must not claim retained runtime identity")
-		}
-		return nil
+		return verifyUnstartedTaskSyncEvidence(evidence)
 	}
 	if evidence.Runtime != TaskAuthorityRuntimeAttached || evidence.Binding == nil || evidence.TaskID == "" {
 		return fmt.Errorf("task authority sync evidence is incomplete")
 	}
 	return verifyTaskAuthoritySyncAttached(evidence, admission)
+}
+
+func verifyParentOnlyTaskSyncEvidence(evidence TaskAuthoritySyncEvidence, admission controller.Admission) error {
+	if evidence.Runtime != TaskAuthorityRuntimeParentOnly || evidence.TaskID == "" ||
+		evidence.TaskID != admission.Attempt.AttemptID || evidence.Binding != nil {
+		return fmt.Errorf("parent-only Task authority sync requires exact smoke attempt identity without Runtime binding")
+	}
+	return nil
+}
+
+func verifyUnstartedTaskSyncEvidence(evidence TaskAuthoritySyncEvidence) error {
+	if evidence.TaskID != "" || evidence.Binding != nil {
+		return fmt.Errorf("unstarted task authority sync must not claim retained runtime identity")
+	}
+	return nil
 }
 
 func verifyTaskAuthoritySyncAttached(evidence TaskAuthoritySyncEvidence, admission controller.Admission) error {

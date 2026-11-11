@@ -185,11 +185,14 @@ func (s *Store) parentOnlyCompletionReview(admission Admission) (WorkspaceSnapsh
 	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
 		return WorkspaceSnapshot{}, fmt.Errorf("committed task is no longer designated for parent-only execution")
 	}
-	if !authority.Task.Equal(admission.Attempt.SemanticTaskRef) {
-		return WorkspaceSnapshot{}, fmt.Errorf("committed task contract changed during parent-only execution")
-	}
 	if authority.Snapshot.HeadOID != admission.Attempt.ExecutionBaseOID {
 		return WorkspaceSnapshot{}, fmt.Errorf("committed repository HEAD moved during parent-only execution")
+	}
+	if err := s.parentOnlyCurrentTaskContract(admission.Head, admission.Attempt, authority); err != nil {
+		return WorkspaceSnapshot{}, err
+	}
+	if err := s.verifyParentOnlyCurrentTaskFile(admission.Attempt.SemanticTaskRef); err != nil {
+		return WorkspaceSnapshot{}, err
 	}
 	runtime, _, err := s.boundAttemptRuntime(admission)
 	if err != nil {
@@ -206,6 +209,17 @@ func (s *Store) parentOnlyCompletionReview(admission Admission) (WorkspaceSnapsh
 		return WorkspaceSnapshot{}, fmt.Errorf("parent-only execution source changed after admission")
 	}
 	return workspace, nil
+}
+
+func (s *Store) verifyParentOnlyCurrentTaskFile(task SemanticTaskRef) error {
+	digest, regular, err := worktreeRegularFileDigest(s.identity.PrimaryRoot, task.TaskPath)
+	if err != nil {
+		return err
+	}
+	if !regular || digest != task.ContractDigest {
+		return fmt.Errorf("parent-only completion requires the revised Task contract to be admitted by sync-task-authority")
+	}
+	return nil
 }
 
 func (s *Store) validateParentAcceptanceArtifact(candidate AcceptedCandidate, ref EvidenceObjectRef) error {

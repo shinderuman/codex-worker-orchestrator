@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -27,6 +30,82 @@ const (
 	TaskAuthoritySyncProducer  = "sync-task-authority"
 )
 
+func (s *Store) ParentOnlyTaskAuthoritySyncAdmission(cfg config.AppConfig) (Admission, error) {
+	if err := s.ValidateConfigScope(cfg); err != nil {
+		return Admission{}, err
+	}
+	head, err := s.LoadHead()
+	if err != nil {
+		return Admission{}, err
+	}
+	if head.ExecutionTaskRef == nil {
+		return Admission{}, fmt.Errorf("parent-only Task sync has no live Task")
+	}
+	if _, err := s.loadAdmissibleHead(*head.ExecutionTaskRef); err != nil {
+		return Admission{}, err
+	}
+	attempt, lease, err := s.loadLiveAttemptAndLease(head)
+	if err != nil {
+		return Admission{}, err
+	}
+	if err := validateParentOnlySyncBinding(head, attempt, lease); err != nil {
+		return Admission{}, err
+	}
+	if err := s.verifyParentOnlySmokeTaskID(attempt); err != nil {
+		return Admission{}, fmt.Errorf("parent-only Task sync smoke state is invalid: %w", err)
+	}
+	return s.parentOnlySyncSourceAdmission(head, attempt, lease)
+}
+func (s *Store) parentOnlySyncSourceAdmission(head RepositoryControllerHead, attempt AttemptRecord, lease ExecutionLease) (Admission, error) {
+	workspace, err := s.parentOnlyWorkspace()
+	if err != nil {
+		return Admission{}, err
+	}
+	if workspace.ID != lease.WorkspaceID || workspace.RepositoryID != head.RepositoryIdentity {
+		return Admission{}, fmt.Errorf("parent-only Task sync workspace differs from its lease")
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(workspace.Root)
+	if err != nil {
+		return Admission{}, err
+	}
+	if snapshot.Head != lease.ExpectedBaseOID || head.IntegrationTip != snapshot.Head {
+		return Admission{}, fmt.Errorf("parent-only Task sync changed committed source")
+	}
+	if err := s.verifyParentOnlySyncRequiredRevision(head, attempt.SemanticTaskRef, snapshot); err != nil {
+		return Admission{}, err
+	}
+	return Admission{Head: head, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
+}
+func (s *Store) verifyParentOnlySyncRequiredRevision(head RepositoryControllerHead, task SemanticTaskRef, snapshot WorkspaceSnapshot) error {
+	required, err := s.RequiredTaskAuthoritySync(head)
+	if err != nil {
+		return err
+	}
+	if required == nil {
+		return fmt.Errorf("parent-only Task sync requires a changed Task contract")
+	}
+	if !required.Admittable {
+		return fmt.Errorf("parent-only Task sync source revision is not admittable: %s", required.Reason)
+	}
+	if required.Plan.SourceSnapshotID != snapshot.ID || !required.Plan.PreviousTaskRef.Equal(task) {
+		return fmt.Errorf("parent-only Task sync source snapshot or previous Task authority changed")
+	}
+	return nil
+}
+
+func validateParentOnlySyncBinding(head RepositoryControllerHead, attempt AttemptRecord, lease ExecutionLease) error {
+	if attempt.ExecutionAuthority != ExecutionAuthorityParentOnly ||
+		lease.Purpose != parentOnlyExecutionPurpose ||
+		validateLiveRecordIdentity(head, *head.ExecutionTaskRef, attempt, lease) != nil ||
+		lease.ControllerGeneration != head.ControllerGeneration ||
+		lease.InFlightCallID != "" || head.ActiveEpisodeID != "" ||
+		head.AcceptedCandidateRef != nil ||
+		(head.ObservedRemoteTip != "" && head.ObservedRemoteTip != head.IntegrationTip) {
+		return fmt.Errorf("parent-only Task sync requires an idle, exact live parent-only attempt")
+	}
+	return nil
+}
+
 func (s *Store) SyncTaskAuthority(admission Admission, sourceSnapshotID string, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperationResult, error) {
 	return s.executeParentSourceRevision(admission, func() (ExecutionOperation, error) {
 		return s.planTaskAuthoritySync(admission, sourceSnapshotID, runtimeRef, task)
@@ -37,12 +116,18 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if err := s.validateTaskAuthoritySyncSource(admission, task); err != nil {
 		return ExecutionOperation{}, err
 	}
+	if err := s.verifyTaskSyncSourceEvidence(admission, runtimeRef); err != nil {
+		return ExecutionOperation{}, err
+	}
 	source, authority, err := s.captureTaskSourceRevision(sourceSnapshotID, admission.Head.IntegrationTip, task.TaskPath)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
 	if !authority.Task.Equal(task) {
 		return ExecutionOperation{}, fmt.Errorf("task authority sync changes Task authority")
+	}
+	if err := validateTaskSyncExecutionMode(admission.Attempt.ExecutionAuthority, authority.ExecutionMode); err != nil {
+		return ExecutionOperation{}, err
 	}
 	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
 	if err != nil {
@@ -66,6 +151,20 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 		return ExecutionOperation{}, err
 	}
 	return s.buildTaskAuthoritySync(admission, source, authority, rebound, runtimeRef, task)
+}
+
+func (s *Store) verifyTaskSyncSourceEvidence(admission Admission, runtimeRef EvidenceObjectRef) error {
+	if admission.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return nil
+	}
+	return s.validateParentOnlyTaskSyncEvidence(runtimeRef, admission.Attempt.AttemptID)
+}
+
+func validateTaskSyncExecutionMode(sourceAuthority, revisedAuthority string) error {
+	if (sourceAuthority == ExecutionAuthorityParentOnly) != (revisedAuthority == ExecutionAuthorityParentOnly) {
+		return fmt.Errorf("task authority sync cannot change parent-only execution designation")
+	}
+	return nil
 }
 
 func (s *Store) buildTaskAuthoritySync(admission Admission, source ParentSourceRevision, authority TaskAuthority, rebound ReboundSuspension, runtimeRef EvidenceObjectRef, task SemanticTaskRef) (ExecutionOperation, error) {
@@ -118,6 +217,11 @@ func (s *Store) validateTaskAuthoritySync(op ExecutionOperation) error {
 	if !parentSourceRuntimeIdentity(op, TaskAuthoritySyncProducer) {
 		return fmt.Errorf("task authority sync runtime producer identity differs")
 	}
+	if op.Source.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if err := s.validateParentOnlyTaskSyncEvidence(*op.RuntimeBeforeRef, op.Source.Attempt.AttemptID); err != nil {
+			return err
+		}
+	}
 	if err := s.validateParentSourceImportProject(op); err != nil {
 		return err
 	}
@@ -126,6 +230,25 @@ func (s *Store) validateTaskAuthoritySync(op ExecutionOperation) error {
 		return err
 	}
 	return s.validateParentSourceArchive(*op.ParentSource, op.Source.Head.IntegrationTip, tree)
+}
+
+func (s *Store) validateParentOnlyTaskSyncEvidence(ref EvidenceObjectRef, attemptID string) error {
+	data, err := s.LoadEvidenceObject(ref)
+	if err != nil {
+		return err
+	}
+	var evidence struct {
+		Runtime string          `json:"runtime"`
+		TaskID  string          `json:"task_id"`
+		Binding json.RawMessage `json:"binding"`
+	}
+	if err := decodeControllerJSON(data, &evidence); err != nil {
+		return fmt.Errorf("decode parent-only Task sync smoke evidence: %w", err)
+	}
+	if evidence.Runtime != "parent-only" || evidence.TaskID != attemptID || len(evidence.Binding) != 0 {
+		return fmt.Errorf("parent-only Task sync requires exact smoke identity without model Runtime binding")
+	}
+	return nil
 }
 
 func (e *TaskAuthoritySyncRequiredError) Error() string {
@@ -396,7 +519,15 @@ func verifyTaskOnlyTreeDelta(repo, before, after string, taskPath string) error 
 }
 
 func (s *Store) validateTaskAuthoritySyncSource(admission Admission, task SemanticTaskRef) error {
-	if err := s.validateTransitionSource(TransitionIntent{Source: admission, ExpectedGeneration: admission.Head.ControllerGeneration}); err != nil {
+	if admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		current, err := s.ParentOnlyTaskAuthoritySyncAdmission(s.config)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(current, admission) {
+			return fmt.Errorf("parent-only Task sync source authority changed")
+		}
+	} else if err := s.validateTransitionSource(TransitionIntent{Source: admission, ExpectedGeneration: admission.Head.ControllerGeneration}); err != nil {
 		return err
 	}
 	if admission.Lease.InFlightCallID != "" {

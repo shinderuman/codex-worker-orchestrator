@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/parent-only-root-resume-and-amendment-admission.md`](IMPLEMENTATION_TASKS/parent-only-root-resume-and-amendment-admission.md)
+- [`IMPLEMENTATION_TASKS/request-publication-terminal-success.md`](IMPLEMENTATION_TASKS/request-publication-terminal-success.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/request-publication-terminal-success.md`](IMPLEMENTATION_TASKS/request-publication-terminal-success.md)
 - [`IMPLEMENTATION_TASKS/request-advancement-authority.md`](IMPLEMENTATION_TASKS/request-advancement-authority.md)
 - [`IMPLEMENTATION_TASKS/nested-repository-executable-source-identity.md`](IMPLEMENTATION_TASKS/nested-repository-executable-source-identity.md)
 - [`IMPLEMENTATION_TASKS/staging-request-unique-publication.md`](IMPLEMENTATION_TASKS/staging-request-unique-publication.md)

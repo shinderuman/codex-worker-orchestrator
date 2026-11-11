@@ -20,11 +20,17 @@ type TaskAuthoritySyncEvidence struct {
 }
 
 const (
-	TaskAuthorityRuntimeAttached  = "attached"
-	TaskAuthorityRuntimeUnstarted = "unstarted"
+	TaskAuthorityRuntimeAttached   = "attached"
+	TaskAuthorityRuntimeUnstarted  = "unstarted"
+	TaskAuthorityRuntimeParentOnly = "parent-only"
 )
 
 func (w *Workflow) CaptureTaskAuthoritySyncEvidence() ([]byte, error) {
+	if w.state.Exists("task.id") {
+		if evidence, handled, err := w.captureParentOnlyTaskAuthoritySyncEvidence(); handled || err != nil {
+			return evidence, err
+		}
+	}
 	if !w.state.Exists("task.id") {
 		unstarted, err := w.state.UnstartedTaskRuntime()
 		if err != nil {
@@ -54,6 +60,49 @@ func (w *Workflow) CaptureTaskAuthoritySyncEvidence() ([]byte, error) {
 	return json.Marshal(TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeAttached, TaskID: taskID, Binding: &binding})
 }
 
+func (w *Workflow) captureParentOnlyTaskAuthoritySyncEvidence() ([]byte, bool, error) {
+	exists, err := controller.Exists(w.config)
+	if err != nil {
+		return nil, true, err
+	}
+	if !exists {
+		return nil, false, nil
+	}
+	store, err := controller.Open(w.config)
+	if err != nil {
+		return nil, true, err
+	}
+	live, err := store.LiveParentOnlyExecution()
+	if err != nil {
+		return nil, true, err
+	}
+	if !live {
+		return nil, false, nil
+	}
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		return nil, true, err
+	}
+	if !store.ParentOnlySmokeIdentityMatches(taskID) {
+		return nil, true, fmt.Errorf("parent-only smoke identity differs from live Task or attempt authority")
+	}
+	if err := w.verifyParentOnlyNoRuntimeBinding(); err != nil {
+		return nil, true, err
+	}
+	data, err := json.Marshal(TaskAuthoritySyncEvidence{Runtime: TaskAuthorityRuntimeParentOnly, TaskID: taskID})
+	return data, true, err
+}
+
+func (w *Workflow) verifyParentOnlyNoRuntimeBinding() error {
+	if _, err := w.state.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		if err != nil {
+			return fmt.Errorf("parent-only Task authority sync Runtime binding inspection failed: %w", err)
+		}
+		return fmt.Errorf("parent-only Task authority sync encountered model Runtime binding")
+	}
+	return nil
+}
+
 func (w *Workflow) CompleteTaskAuthoritySync(data []byte) error {
 	var source TaskAuthoritySyncEvidence
 	if err := json.Unmarshal(data, &source); err != nil {
@@ -61,6 +110,9 @@ func (w *Workflow) CompleteTaskAuthoritySync(data []byte) error {
 	}
 	if source.Runtime == TaskAuthorityRuntimeUnstarted {
 		return nil
+	}
+	if source.Runtime == TaskAuthorityRuntimeParentOnly {
+		return w.completeParentOnlyTaskAuthoritySync(source)
 	}
 	if source.Runtime != TaskAuthorityRuntimeAttached || source.Binding == nil {
 		return fmt.Errorf("task authority sync evidence is incomplete")
@@ -85,6 +137,35 @@ func (w *Workflow) CompleteTaskAuthoritySync(data []byte) error {
 		return err
 	}
 	return w.refreshRetainedTaskAuthorityBoundary()
+}
+
+func (w *Workflow) completeParentOnlyTaskAuthoritySync(source TaskAuthoritySyncEvidence) error {
+	if source.TaskID == "" || source.Binding != nil {
+		return fmt.Errorf("parent-only Task authority sync evidence is incomplete")
+	}
+	store, err := controller.Open(w.config)
+	if err != nil {
+		return err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	live, err := store.LiveParentOnlyExecution()
+	if err != nil {
+		return err
+	}
+	if !live || head.LiveAttemptID != source.TaskID || head.ExecutionTaskRef == nil {
+		return fmt.Errorf("parent-only Task authority sync changed live attempt authority")
+	}
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		return fmt.Errorf("read parent-only smoke identity after Task authority sync: %w", err)
+	}
+	if taskID != source.TaskID {
+		return fmt.Errorf("parent-only smoke identity changed during Task authority sync")
+	}
+	return w.verifyParentOnlyNoRuntimeBinding()
 }
 
 func (w *Workflow) refreshRetainedTaskAuthorityBoundary() error {
