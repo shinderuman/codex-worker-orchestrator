@@ -2,7 +2,11 @@ package workflow
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,11 +17,13 @@ func TestRepoSearchContextBudgetCurrentCorpus(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git is unavailable: %v", err)
 	}
-	rootOutput, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	root, missing, err := repoSearchCorpusRoot(".")
 	if err != nil {
-		t.Fatalf("resolve repository root: %v", err)
+		t.Fatal(err)
 	}
-	root := strings.TrimSpace(string(rootOutput))
+	if missing {
+		t.Skip("current-corpus evaluation requires a git repository; no repository found")
+	}
 	report, err := reposearch.Search(context.Background(), root, "cache", reposearch.Options{
 		DisableCache: true,
 		MaxResults:   RepoSearchMaxResults,
@@ -90,4 +96,116 @@ func TestRepoSearchContextBudgetCurrentCorpus(t *testing.T) {
 	t.Logf("model-visible worker navigation bytes=%d reviewer diff-first navigation bytes=%d; snippet-only allocation savings=0",
 		len(worker), len(reviewer))
 	t.Log("follow-up search/read counts, real Codex/Sol token usage and Quality Delta are not observable in this isolated test")
+}
+
+func repoSearchCorpusRoot(dir string) (string, bool, error) {
+	absoluteDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve corpus directory: %w", err)
+	}
+	physicalDir, err := filepath.EvalSymlinks(absoluteDir)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve physical corpus directory: %w", err)
+	}
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = physicalDir
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	output, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) &&
+			strings.Contains(string(exitErr.Stderr), "not a git repository") &&
+			os.Getenv("GIT_DIR") == "" && os.Getenv("GIT_WORK_TREE") == "" &&
+			!hasGitMarkerInAncestors(physicalDir) {
+			return "", true, nil
+		}
+		stderr := ""
+		if exitErr != nil {
+			stderr = strings.TrimSpace(string(exitErr.Stderr))
+		}
+		return "", false, fmt.Errorf("resolve repository root: %w (stderr: %s)", err, stderr)
+	}
+	return strings.TrimSpace(string(output)), false, nil
+}
+
+func hasGitMarkerInAncestors(dir string) bool {
+	for {
+		_, err := os.Lstat(filepath.Join(dir, ".git"))
+		if err == nil || !errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+func TestRepoSearchContextBudgetRepositoryDetection(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git is unavailable: %v", err)
+	}
+	archive := t.TempDir()
+	root, missing, err := repoSearchCorpusRoot(archive)
+	if err != nil || !missing || root != "" {
+		t.Fatalf("source archive: root=%q missing=%t err=%v; want missing repository", root, missing, err)
+	}
+
+	init := exec.Command("git", "init", "-q", archive)
+	if output, err := init.CombinedOutput(); err != nil {
+		t.Fatalf("initialize fixture repository: %v: %s", err, output)
+	}
+	root, missing, err = repoSearchCorpusRoot(archive)
+	if err != nil || missing {
+		t.Fatalf("real repository: root=%q missing=%t err=%v", root, missing, err)
+	}
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	canonicalArchive, archiveErr := filepath.EvalSymlinks(archive)
+	if rootErr != nil || archiveErr != nil || canonicalRoot != canonicalArchive {
+		t.Fatalf("real repository root=%q (err=%v), want %q (err=%v)", canonicalRoot, rootErr, canonicalArchive, archiveErr)
+	}
+
+	corrupt := t.TempDir()
+	if err := os.WriteFile(filepath.Join(corrupt, ".git"), []byte("invalid gitfile"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, missing, err = repoSearchCorpusRoot(corrupt)
+	if err == nil || missing {
+		t.Fatalf("corrupt repository marker: missing=%t err=%v; want hard failure", missing, err)
+	}
+
+	brokenRepo := filepath.Join(t.TempDir(), "broken-repository")
+	if output, err := exec.Command("git", "init", "-q", brokenRepo).CombinedOutput(); err != nil {
+		t.Fatalf("initialize broken repository fixture: %v: %s", err, output)
+	}
+	if err := os.Mkdir(filepath.Join(brokenRepo, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(brokenRepo, ".git", "HEAD")); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "archive")
+	if err := os.Symlink(filepath.Join(brokenRepo, "nested"), alias); err != nil {
+		t.Fatalf("create repository alias: %v", err)
+	}
+	_, missing, err = repoSearchCorpusRoot(alias)
+	if err == nil || missing {
+		t.Fatalf("broken repository via symlink: missing=%t err=%v; want hard failure", missing, err)
+	}
+
+	brokenAlias := filepath.Join(t.TempDir(), "missing")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "absent"), brokenAlias); err != nil {
+		t.Fatalf("create dangling directory alias: %v", err)
+	}
+	_, missing, err = repoSearchCorpusRoot(brokenAlias)
+	if err == nil || missing {
+		t.Fatalf("unresolvable directory alias: missing=%t err=%v; want hard failure", missing, err)
+	}
+
+	t.Setenv("GIT_DIR", filepath.Join(archive, "missing.git"))
+	_, missing, err = repoSearchCorpusRoot(archive)
+	if err == nil || missing {
+		t.Fatalf("invalid explicit GIT_DIR: missing=%t err=%v; want hard failure", missing, err)
+	}
 }

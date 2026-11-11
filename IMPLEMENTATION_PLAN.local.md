@@ -29,7 +29,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md`](IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md)
 - [`IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md`](IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md)
 - [`IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md`](IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md)
-- [`IMPLEMENTATION_TASKS/repository-corpus-eval-nonrepo-skip.md`](IMPLEMENTATION_TASKS/repository-corpus-eval-nonrepo-skip.md)
 - [`IMPLEMENTATION_TASKS/peak-pause-civil-time-boundaries.md`](IMPLEMENTATION_TASKS/peak-pause-civil-time-boundaries.md)
 - [`IMPLEMENTATION_TASKS/docker-cli-deny-rule-coverage.md`](IMPLEMENTATION_TASKS/docker-cli-deny-rule-coverage.md)
 - [`IMPLEMENTATION_TASKS/codex-efficiency-review-followup.md`](IMPLEMENTATION_TASKS/codex-efficiency-review-followup.md)
