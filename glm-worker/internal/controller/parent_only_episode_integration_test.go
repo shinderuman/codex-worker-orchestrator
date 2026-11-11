@@ -196,16 +196,20 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rootCandidate.BundleCheckRef == nil {
-		t.Fatal("parent-only Root completion lacks Bundle observation")
-	}
 	promotedRoot, err := store.PromoteAcceptedCandidate(PublicationInput{
 		ExpectedGeneration: rootAccepted.Head.ControllerGeneration, CandidateID: rootCandidate.CandidateID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	retiredRoot, _ := prepareCompletionTestCandidate(t, store, promotedRoot, rootCandidate)
+	promotedCandidate, err := store.LoadAcceptedCandidate(*promotedRoot.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promotedCandidate.BundleCheckRef == nil {
+		t.Fatal("parent-only Root promotion lacks its pre-publication Bundle observation")
+	}
+	retiredRoot, _ := prepareCompletionTestCandidate(t, store, promotedRoot, promotedCandidate)
 	finished, err := store.RecoverExecutionOperation(retiredRoot.TransitionID)
 	if err != nil {
 		t.Fatal(err)
