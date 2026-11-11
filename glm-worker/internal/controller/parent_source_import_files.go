@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -146,7 +145,15 @@ func (s *Store) applyParentSourceFiles(op ExecutionOperation) error {
 }
 
 func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) error {
-	if err := validateSourceTreeReplacementDirectories(repo, before, after); err != nil {
+	entries := append(append([]workspaceTreeEntry(nil), before...), after...)
+	for _, entry := range entries {
+		if err := validateSuspensionPath(entry.path); err != nil {
+			return err
+		}
+	}
+	beforeDirectories := sourceTreeDirectories(before)
+	afterDirectories := sourceTreeDirectories(after)
+	if err := validateSourceTreeReplacementDirectories(repo, entries, beforeDirectories, afterDirectories); err != nil {
 		return err
 	}
 	previous := sourceImportEntryMap(before)
@@ -156,8 +163,8 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 		if _, remains := next[entry.path]; remains {
 			continue
 		}
-		if sourceTreeReplacementDirectoryPresent(repo, entry.path, after) ||
-			sourceTreeAncestorReplacementPresent(repo, entry.path, after) {
+		if sourceTreeReplacementDirectoryPresent(repo, entry.path, afterDirectories) ||
+			sourceTreeAncestorReplacementPresent(repo, entry.path, next) {
 			continue
 		}
 		removed = append(removed, entry)
@@ -168,18 +175,15 @@ func applySourceTreeEntries(repo string, before, after []workspaceTreeEntry) err
 			return err
 		}
 	}
-	return applySourceTreeAddedEntries(repo, previous, before, after)
+	return applySourceTreeAddedEntries(repo, previous, beforeDirectories, after)
 }
 
-func validateSourceTreeReplacementDirectories(repo string, before, after []workspaceTreeEntry) error {
-	entries := append(append([]workspaceTreeEntry(nil), before...), after...)
-	for _, entry := range entries {
-		if err := validateSuspensionPath(entry.path); err != nil {
-			return err
-		}
+func validateSourceTreeReplacementDirectories(repo string, entries []workspaceTreeEntry, beforeDirectories, afterDirectories map[string]bool) error {
+	directories := make(map[string]bool, len(beforeDirectories)+len(afterDirectories))
+	for path := range beforeDirectories {
+		directories[path] = true
 	}
-	directories := sourceTreeDirectories(before)
-	for path := range sourceTreeDirectories(after) {
+	for path := range afterDirectories {
 		directories[path] = true
 	}
 	known := sourceImportEntryMap(entries)
@@ -248,13 +252,20 @@ func sourceTreeReplacementEntryOwned(path string, entry os.DirEntry, directories
 	return known[path].path != "" && (entry.Type().IsRegular() || entry.Type() == os.ModeSymlink)
 }
 
-func applySourceTreeAddedEntries(repo string, previous map[string]workspaceTreeEntry, before, after []workspaceTreeEntry) error {
+func applySourceTreeAddedEntries(repo string, previous map[string]workspaceTreeEntry, beforeDirectories map[string]bool, after []workspaceTreeEntry) error {
+	var directoryChildren map[string][]string
 	for start := 0; start < len(after); start += workspaceBlobBatchSize {
 		batch := after[start:min(start+workspaceBlobBatchSize, len(after))]
 		prior := make([]workspaceTreeEntry, len(batch))
 		for index, entry := range batch {
 			prior[index] = previous[entry.path]
-			if err := removeSourceTreeReplacedDirectory(repo, entry.path, before); err != nil {
+			if !beforeDirectories[entry.path] {
+				continue
+			}
+			if directoryChildren == nil {
+				directoryChildren = sourceTreeDirectoryChildren(beforeDirectories)
+			}
+			if err := removeSourceTreeReplacedDirectory(repo, entry.path, directoryChildren); err != nil {
 				return err
 			}
 		}
@@ -265,37 +276,37 @@ func applySourceTreeAddedEntries(repo string, previous map[string]workspaceTreeE
 	return nil
 }
 
-func sourceTreeReplacementDirectoryPresent(repo, path string, after []workspaceTreeEntry) bool {
-	replaced := false
-	for _, entry := range after {
-		if strings.HasPrefix(entry.path, path+"/") {
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
+func sourceTreeReplacementDirectoryPresent(repo, path string, afterDirectories map[string]bool) bool {
+	if !afterDirectories[path] {
 		return false
 	}
 	info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(path)))
 	return err == nil && info.IsDir()
 }
 
-func sourceTreeAncestorReplacementPresent(repo, path string, after []workspaceTreeEntry) bool {
-	for _, entry := range after {
-		if !strings.HasPrefix(path, entry.path+"/") {
+func sourceTreeAncestorReplacementPresent(repo, path string, after map[string]workspaceTreeEntry) bool {
+	for ancestor := filepath.ToSlash(filepath.Dir(path)); ancestor != "."; ancestor = filepath.ToSlash(filepath.Dir(ancestor)) {
+		if after[ancestor].path == "" {
 			continue
 		}
-		info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(entry.path)))
+		info, err := os.Lstat(filepath.Join(repo, filepath.FromSlash(ancestor)))
 		return err == nil && !info.IsDir()
 	}
 	return false
 }
 
-func removeSourceTreeReplacedDirectory(repo, path string, before []workspaceTreeEntry) error {
-	directories := sourceTreeReplacedDirectories(path, before)
-	if len(directories) == 0 {
-		return nil
+func sourceTreeDirectoryChildren(directories map[string]bool) map[string][]string {
+	children := make(map[string][]string)
+	for directory := range directories {
+		parent := filepath.ToSlash(filepath.Dir(directory))
+		if directories[parent] {
+			children[parent] = append(children[parent], directory)
+		}
 	}
+	return children
+}
+
+func removeSourceTreeReplacedDirectory(repo, path string, directoryChildren map[string][]string) error {
 	abs, err := suspensionWorktreePath(repo, path)
 	if err != nil {
 		return err
@@ -310,9 +321,9 @@ func removeSourceTreeReplacedDirectory(repo, path string, before []workspaceTree
 	if !info.IsDir() {
 		return nil
 	}
-	ordered := make([]string, 0, len(directories))
-	for directory := range directories {
-		ordered = append(ordered, directory)
+	ordered := []string{path}
+	for index := 0; index < len(ordered); index++ {
+		ordered = append(ordered, directoryChildren[ordered[index]]...)
 	}
 	sort.Slice(ordered, func(i, j int) bool {
 		return len(ordered[i]) > len(ordered[j])
@@ -323,22 +334,6 @@ func removeSourceTreeReplacedDirectory(repo, path string, before []workspaceTree
 		}
 	}
 	return nil
-}
-
-func sourceTreeReplacedDirectories(path string, before []workspaceTreeEntry) map[string]bool {
-	directories := make(map[string]bool)
-	for _, entry := range before {
-		if !strings.HasPrefix(entry.path, path+"/") {
-			continue
-		}
-		for directory := filepath.ToSlash(filepath.Dir(entry.path)); directory != "."; directory = filepath.ToSlash(filepath.Dir(directory)) {
-			directories[directory] = true
-			if directory == path {
-				break
-			}
-		}
-	}
-	return directories
 }
 
 func removeSourceTreeEmptyDirectory(repo, path string) error {
