@@ -307,6 +307,14 @@ func (e *dockerTestExecutor) processRequest(candidate stagingRequestCandidate) {
 		e.recordAttempt("docker-test:rejected-request:" + candidate.token + ":" + err.Error())
 		return
 	}
+	responsePath := filepath.Join(e.guard.dockerTestResponseDir, dockertest.StagingResponseFileName(request.Token))
+	if _, err := os.Lstat(responsePath); err == nil {
+		e.recordAttempt("docker-test:response-exists:" + request.Token)
+		return
+	} else if !os.IsNotExist(err) {
+		e.recordAttempt("docker-test:response-stat:" + request.Token + ":" + err.Error())
+		return
+	}
 	e.processed++
 	e.executeRequest(request)
 }

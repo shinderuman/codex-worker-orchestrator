@@ -450,6 +450,9 @@ func TestDockerTestExecutorKeepsPublishedResponseImmutable(t *testing.T) {
 	if string(data) != published {
 		t.Fatalf("既存responseが置き換えられました: %s", string(data))
 	}
+	if calls := recorder.snapshot(); len(calls) != 0 {
+		t.Fatalf("既存responseのtokenでownerが別requestを実行しました: %#v", calls)
+	}
 	entries, err := os.ReadDir(guard.dockerTestResponseDir)
 	if err != nil {
 		t.Fatal(err)
@@ -461,13 +464,78 @@ func TestDockerTestExecutorKeepsPublishedResponseImmutable(t *testing.T) {
 	}
 }
 
+func TestDockerTestConcurrentStagingClientsNeverExchangeResults(t *testing.T) {
+	guard := newDockerTestGuard(t)
+	recorder := &stagingRunRecorder{}
+	run := func(_ context.Context, root string, args []string, stdout, _ io.Writer) (int, error) {
+		recorder.capture(root, args)
+		_, _ = io.WriteString(stdout, "executed:"+args[0])
+		if args[0] == "./internal/dockertest" {
+			return 5, nil
+		}
+		return 0, nil
+	}
+	startTestDockerTestExecutor(t, guard, run)
+
+	type result struct {
+		code   int
+		stdout string
+		stderr string
+	}
+	packages := []string{"./internal/runner", "./internal/dockertest"}
+	results := make([]result, len(packages))
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i, pkg := range packages {
+		wg.Add(1)
+		go func(i int, pkg string) {
+			defer wg.Done()
+			<-start
+			client := &dockertest.StagingClient{
+				StagingDir:   guard.dockerTestStagingDir,
+				ResponseDir:  guard.dockerTestResponseDir,
+				Timeout:      5 * time.Second,
+				PollInterval: 5 * time.Millisecond,
+			}
+			var stdout, stderr strings.Builder
+			code := client.Run(context.Background(), []string{pkg}, &stdout, &stderr)
+			results[i] = result{code: code, stdout: stdout.String(), stderr: stderr.String()}
+		}(i, pkg)
+	}
+	close(start)
+	wg.Wait()
+
+	executed := 0
+	for i, pkg := range packages {
+		got := results[i]
+		expectedCode := 0
+		if pkg == "./internal/dockertest" {
+			expectedCode = 5
+		}
+		if got.stdout == "executed:"+pkg && got.code == expectedCode {
+			executed++
+			continue
+		}
+		if got.code == 1 && got.stdout == "" && strings.Contains(got.stderr, "並行staging requestを拒否") {
+			continue
+		}
+		t.Fatalf("%s result was confused with another request: %#v", pkg, got)
+	}
+	if executed == 0 {
+		t.Fatalf("owner did not process either request: %#v", results)
+	}
+	if records := recorder.snapshot(); len(records) != executed {
+		t.Fatalf("owner executed unexpected request count: %#v / %#v", records, results)
+	}
+}
+
 func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 	guard := newDockerTestGuard(t)
 	recorder := &stagingRunRecorder{}
 	codes := []int{0, 3}
 	run := func(_ context.Context, root string, args []string, stdout, stderr io.Writer) (int, error) {
 		call := recorder.capture(root, args)
-		_, _ = io.WriteString(stdout, "container-test-output\n")
+		_, _ = io.WriteString(stdout, "container-test-output:"+strings.Join(args, " ")+"\n")
 		_, _ = io.WriteString(stderr, "goquality-diagnostic {\"form\":\"diagnostic-go-test\",\"child_exit\":0,\"exit\":0}\n")
 		return codes[call-1], nil
 	}
@@ -484,7 +552,7 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("staging経由の診断 = code %d out %q err %q", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "container-test-output") || !strings.Contains(stderr.String(), "goquality-diagnostic") {
+	if !strings.Contains(stdout.String(), "container-test-output:./...") || !strings.Contains(stderr.String(), "goquality-diagnostic") {
 		t.Fatalf("staging経由の出力再現が壊れています out %q err %q", stdout.String(), stderr.String())
 	}
 
@@ -492,6 +560,9 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 	code = client.Run(context.Background(), []string{"./internal/app"}, &retryStdout, &retryStderr)
 	if code != 3 {
 		t.Fatalf("target終了codeの再現 = code %d out %q err %q", code, retryStdout.String(), retryStderr.String())
+	}
+	if !strings.Contains(retryStdout.String(), "container-test-output:./internal/app") {
+		t.Fatalf("second package response is mismatched: %q", retryStdout.String())
 	}
 
 	records := recorder.snapshot()

@@ -104,6 +104,8 @@ Darwin専用テストがAcceptanceに必要な場合、親はTask fileの`## Dar
 
 ## parent orchestrationのproduct化判断
 
+- 登録・テスト・ビルド・インストール・finalize・Publication等の待機中は、進行中の処理を妨げない範囲で次の1 taskの確認または観測済み遅延の調査を進める。過度な並列化や、経過時間だけを理由とするpoll・親model再入は行わない。
+
 - 親Codexは通常作業中、自身が同種の手作業・定型操作・定型判断を繰り返していると気付いた時点で、それを親の手作業に残すべきか、glm-workerのcommand / machine interface / automationへ取り込むべきかを判断する。対象は実行制御、状態確認、復旧、安全確認、review補助を含み、command追加に限定しない
 - 反復可能で機械的に強制でき、Codex / Sol消費または反復障害を減らし、実装・保守コストに見合うと判断した場合は、ユーザーの個別指摘を待たず通常のPlan lifecycleへsemanticな改善taskを追加する。一度限り、低頻度、実装コストに見合わない候補、および高レバレッジな意味判断は機械化しない
 - 判断対象は親の手作業だけでなくworker / reviewer / test / build / lint / smoke / provider probe / polling / resume verification等のmachine executionを含む。同一または実質同一の高コスト処理がtask wall-clockの主要部を占める一次証拠を得た場合、worker/reviewerは現taskを勝手に縮退・拡張せず観測を重複なく報告し、親Codexが再発性、coverage維持、expensive real executionとcheap contract verificationの分離、費用対効果、false success・flakiness・観測不能riskから独立task化を判断する
