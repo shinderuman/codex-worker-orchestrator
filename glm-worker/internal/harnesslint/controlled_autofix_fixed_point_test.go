@@ -149,7 +149,9 @@ func TestControlledRunnerUsesControlPolicyWithoutTargetToolExecution(t *testing.
 	writeFocusedValidationFile(t, target, ".golangci.yml", "target-policy-must-not-be-selected\n", 0o644)
 	targetTool := "#!/bin/sh\nprintf 'executed\\n' > \"$TARGET_TOOL_MARKER\"\nexit 87\n"
 	writeFocusedValidationFile(t, target, "commentlint", targetTool, 0o755)
-	writeFocusedValidationFile(t, target, "golangci-lint", targetTool, 0o755)
+	outsideToolRoot := t.TempDir()
+	writeFocusedValidationFile(t, outsideToolRoot, "golangci-lint", targetTool, 0o755)
+	t.Setenv("PATH", outsideToolRoot+string(os.PathListSeparator)+os.Getenv("PATH"))
 	writeFocusedValidationFile(t, target, "subject.go", "package subject\n\n// explanation\nfunc Subject() {}\n", 0o644)
 	writeFocusedValidationFile(t, control, "golangci-lint", `#!/bin/sh
 set -eu
@@ -179,8 +181,18 @@ exit 86
 		t.Fatalf("executed tool arguments = %q", arguments)
 	}
 	result, err = runner.run(target, filepath.Join(target, "commentlint"))
-	if err != nil || result.exitCode != 1 || len(parseCommentlint(result)) == 0 {
+	if err != nil || result.exitCode != 1 {
 		t.Fatalf("in-process commentlint result = %#v, err = %v", result, err)
+	}
+	violations := parseCommentlint(result)
+	if len(violations) != 1 || violations[0].Path != "subject.go" ||
+		violations[0].Rule != "commentlint/comment" || violations[0].Line != 3 {
+		t.Fatalf("expected subject.go comment violation, got %+v", violations)
+	}
+	writeFocusedValidationFile(t, target, "subject.go", "package subject\n\nfunc Subject() {}\n", 0o644)
+	result, err = runner.run(target, filepath.Join(target, "commentlint"))
+	if err != nil || result.exitCode != 0 || len(parseCommentlint(result)) != 0 {
+		t.Fatalf("comment-free subject must pass: result = %#v, err = %v", result, err)
 	}
 	if _, err := os.Stat(targetMarker); !os.IsNotExist(err) {
 		t.Fatalf("target-owned tool was executed: %v", err)
