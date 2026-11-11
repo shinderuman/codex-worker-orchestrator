@@ -96,6 +96,11 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if err := s.validateTaskAuthoritySyncSource(admission, task); err != nil {
 		return ExecutionOperation{}, err
 	}
+	if admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if err := s.validateParentOnlyTaskSyncEvidence(runtimeRef, admission.Attempt.AttemptID); err != nil {
+			return ExecutionOperation{}, err
+		}
+	}
 	source, authority, err := s.captureTaskSourceRevision(sourceSnapshotID, admission.Head.IntegrationTip, task.TaskPath)
 	if err != nil {
 		return ExecutionOperation{}, err
@@ -181,7 +186,7 @@ func (s *Store) validateTaskAuthoritySync(op ExecutionOperation) error {
 		return fmt.Errorf("task authority sync runtime producer identity differs")
 	}
 	if op.Source.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
-		if err := s.validateParentOnlyTaskSyncEvidence(op); err != nil {
+		if err := s.validateParentOnlyTaskSyncEvidence(*op.RuntimeBeforeRef, op.Source.Attempt.AttemptID); err != nil {
 			return err
 		}
 	}
@@ -195,8 +200,8 @@ func (s *Store) validateTaskAuthoritySync(op ExecutionOperation) error {
 	return s.validateParentSourceArchive(*op.ParentSource, op.Source.Head.IntegrationTip, tree)
 }
 
-func (s *Store) validateParentOnlyTaskSyncEvidence(op ExecutionOperation) error {
-	data, err := s.LoadEvidenceObject(*op.RuntimeBeforeRef)
+func (s *Store) validateParentOnlyTaskSyncEvidence(ref EvidenceObjectRef, attemptID string) error {
+	data, err := s.LoadEvidenceObject(ref)
 	if err != nil {
 		return err
 	}
@@ -208,7 +213,7 @@ func (s *Store) validateParentOnlyTaskSyncEvidence(op ExecutionOperation) error 
 	if err := decodeControllerJSON(data, &evidence); err != nil {
 		return fmt.Errorf("decode parent-only Task sync smoke evidence: %w", err)
 	}
-	if evidence.Runtime != "parent-only" || evidence.TaskID != op.Source.Attempt.AttemptID || len(evidence.Binding) != 0 {
+	if evidence.Runtime != "parent-only" || evidence.TaskID != attemptID || len(evidence.Binding) != 0 {
 		return fmt.Errorf("parent-only Task sync requires exact smoke identity without model Runtime binding")
 	}
 	return nil
