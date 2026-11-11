@@ -710,6 +710,7 @@ func TestParentOnlyResumingRootClosesEpisodeWithTypedMaterialization(t *testing.
 	if _, err := fixture.store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{ExpectedGeneration: prior.ControllerGeneration - 1}); err == nil {
 		t.Fatal("stale generation materialized a parent-only Root")
 	}
+	writeParentOnlyProduct(t, fixture, "root-result.txt", "parent-only Root resumed\n")
 	result, err := fixture.store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{ExpectedGeneration: prior.ControllerGeneration})
 	if err != nil {
 		t.Fatal(err)
@@ -725,7 +726,6 @@ func TestParentOnlyResumingRootClosesEpisodeWithTypedMaterialization(t *testing.
 	if _, err := fixture.store.RecoverExecutionOperation(result.TransitionID); err != nil {
 		t.Fatalf("resuming-root materialization did not recover idempotently: %v", err)
 	}
-	writeParentOnlyProduct(t, fixture, "root-result.txt", "parent-only Root resumed\n")
 	admission := parentOnlyCompletionAdmission(t, fixture)
 	accepted, err := fixture.store.AcceptParentCompletion(admission, CandidateAcceptanceInput{
 		Message: "Root resume completion", Policy: fixture.policy, RequiredValidations: declaredNoValidations(),
