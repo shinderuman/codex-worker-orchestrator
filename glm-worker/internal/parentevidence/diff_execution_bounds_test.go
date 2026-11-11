@@ -28,8 +28,12 @@ func TestDiffSourceExecutionLimitRejectsLargeWorktreeBeforeTinyBudget(t *testing
 			projector := NewProjector(repo, st, "source-limit", Providers{})
 			projector.Project(Manifest{
 				Version: ManifestVersion,
-				Reason: "bounded source",
-				Diff: []DiffRequest{{Question: "large source", Paths: []string{tc.path}, BudgetBytes: 1}},
+				Reason:  "bounded source",
+				Diff: []DiffRequest{{
+					Question:    "large source",
+					Paths:       []string{tc.path},
+					BudgetBytes: 1,
+				}},
 			})
 			part := projector.Output().Parts[0]
 			if part.Status != PartError || part.Digest != "" || part.Diff != nil ||
@@ -62,8 +66,13 @@ func TestDiffSourceExecutionLimitRejectsLargeHeadBlob(t *testing.T) {
 	}
 	projector := NewProjector(repo, st, "head-limit", Providers{})
 	projector.Project(Manifest{
-		Version: ManifestVersion, Reason: "bounded HEAD",
-		Diff: []DiffRequest{{Question: "large HEAD", Paths: []string{"large-head.bin"}, BudgetBytes: 1}},
+		Version: ManifestVersion,
+		Reason:  "bounded HEAD",
+		Diff: []DiffRequest{{
+			Question:    "large HEAD",
+			Paths:       []string{"large-head.bin"},
+			BudgetBytes: 1,
+		}},
 	})
 	part := projector.Output().Parts[0]
 	if part.Status != PartError || part.Digest != "" ||
@@ -83,8 +92,13 @@ func TestDiffAggregatePatchExecutionLimit(t *testing.T) {
 	}
 	projector := NewProjector(repo, st, "aggregate-limit", Providers{})
 	projector.Project(Manifest{
-		Version: ManifestVersion, Reason: "bounded aggregate",
-		Diff: []DiffRequest{{Question: "aggregate", Paths: paths, BudgetBytes: 1}},
+		Version: ManifestVersion,
+		Reason:  "bounded aggregate",
+		Diff: []DiffRequest{{
+			Question:    "aggregate",
+			Paths:       paths,
+			BudgetBytes: 1,
+		}},
 	})
 	part := projector.Output().Parts[0]
 	if part.Status != PartError || part.Digest != "" ||
@@ -114,8 +128,13 @@ func TestDiffTrackedBinaryPatchOutputLimit(t *testing.T) {
 	}
 	projector := NewProjector(repo, st, "patch-limit", Providers{})
 	projector.Project(Manifest{
-		Version: ManifestVersion, Reason: "bounded binary patch",
-		Diff: []DiffRequest{{Question: "binary patch", Paths: []string{"binary.bin"}, BudgetBytes: 1}},
+		Version: ManifestVersion,
+		Reason:  "bounded binary patch",
+		Diff: []DiffRequest{{
+			Question:    "binary patch",
+			Paths:       []string{"binary.bin"},
+			BudgetBytes: 1,
+		}},
 	})
 	part := projector.Output().Parts[0]
 	if part.Status != PartError || part.Digest != "" ||
@@ -132,7 +151,9 @@ func TestDiffBoundedBinaryRetainsIdentityAndSmallBudgetRefines(t *testing.T) {
 		t.Fatal(err)
 	}
 	part := NewProjector(repo, st, "bounded-positive", Providers{}).projectDiff(DiffRequest{
-		Question: "bounded binary", Paths: []string{path}, BudgetBytes: MaxBudgetBytes,
+		Question:    "bounded binary",
+		Paths:       []string{path},
+		BudgetBytes: MaxBudgetBytes,
 	})
 	if part.Status != PartProjected || part.Digest == "" || part.Diff == nil ||
 		len(part.Diff.Files) != 1 || part.Diff.Files[0].WorktreeSHA == "" ||
@@ -140,7 +161,9 @@ func TestDiffBoundedBinaryRetainsIdentityAndSmallBudgetRefines(t *testing.T) {
 		t.Fatalf("bounded binary lost content or identity: %#v", part)
 	}
 	refined := NewProjector(repo, st, "bounded-refinement", Providers{}).projectDiff(DiffRequest{
-		Question: "bounded binary", Paths: []string{path}, BudgetBytes: 1,
+		Question:    "bounded binary",
+		Paths:       []string{path},
+		BudgetBytes: 1,
 	})
 	if refined.Status != PartRefinement || refined.Digest != part.Digest ||
 		refined.Diff == nil || len(refined.Diff.Files) != 1 ||
@@ -157,8 +180,13 @@ func TestDiffSingleUntrackedPatchLimit(t *testing.T) {
 	}
 	projector := NewProjector(repo, st, "untracked-patch-limit", Providers{})
 	projector.Project(Manifest{
-		Version: ManifestVersion, Reason: "bounded single untracked patch",
-		Diff: []DiffRequest{{Question: "untracked dense lines", Paths: []string{path}, BudgetBytes: 1}},
+		Version: ManifestVersion,
+		Reason:  "bounded single untracked patch",
+		Diff: []DiffRequest{{
+			Question:    "untracked dense lines",
+			Paths:       []string{path},
+			BudgetBytes: 1,
+		}},
 	})
 	part := projector.Output().Parts[0]
 	if part.Status != PartError || part.Digest != "" ||
