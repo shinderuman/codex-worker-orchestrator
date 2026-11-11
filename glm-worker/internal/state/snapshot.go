@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -302,7 +303,8 @@ func hashUntrackedEntry(hasher hash.Hash, repoRoot, absPath, path string, mode o
 		}
 		sum := sha256.Sum256(content)
 		hasher.Write([]byte("regular\x00"))
-		hasher.Write([]byte(fmt.Sprintf("%#o\x00", mode&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky))))
+		hasher.Write(strconv.AppendUint(nil, uint64(mode&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)), 8))
+		hasher.Write([]byte{0})
 		hasher.Write([]byte(hex.EncodeToString(sum[:])))
 	case mode&os.ModeSymlink != 0:
 		target, err := os.Readlink(absPath)
