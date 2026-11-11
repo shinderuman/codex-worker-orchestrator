@@ -198,3 +198,47 @@ func (s *Store) ValidateRequestTask(task SemanticTaskRef, request string) error 
 	}
 	return nil
 }
+
+func (s *Store) requestAdvancementProject(head RepositoryControllerHead, tip string) (ProjectSnapshot, error) {
+	if head.RootTaskRef == nil || head.ExecutionTaskRef == nil ||
+		head.RootTaskRef.RequestID == "" || !head.RootTaskRef.Equal(*head.ExecutionTaskRef) {
+		return ProjectSnapshot{}, fmt.Errorf("request advancement requires held request Task authority")
+	}
+	if err := requireRequestAdvancementRepository(s.identity.PrimaryRoot, head.IntegrationTip, tip); err != nil {
+		return ProjectSnapshot{}, err
+	}
+	source, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+	if err != nil {
+		return ProjectSnapshot{}, err
+	}
+	if source.HeadOID != head.IntegrationTip || source.UserRequest == nil ||
+		len(source.Tasks) != 1 || !source.Tasks[0].Equal(*head.ExecutionTaskRef) ||
+		source.TaskCorpusDigest != digestTaskRefs(source.Tasks) {
+		return ProjectSnapshot{}, fmt.Errorf("request advancement differs from canonical request authority")
+	}
+	next := source
+	next.HeadOID = tip
+	next.SnapshotID = projectSnapshotID(next)
+	return next, nil
+}
+
+func requireRequestAdvancementRepository(repo, base, tip string) error {
+	descendant, err := isPublicationDescendant(repo, base, tip)
+	if err != nil {
+		return err
+	}
+	if !descendant {
+		return fmt.Errorf("request advancement is not a fast-forward of the controller integration authority")
+	}
+	if err := RequireRequestRepository(repo); err != nil {
+		return err
+	}
+	marker, err := runGitBinary(repo, nil, "ls-tree", "--name-only", tip, "--", repositoryharness.MarkerPath)
+	if err != nil {
+		return err
+	}
+	if len(marker) != 0 {
+		return fmt.Errorf("request advancement introduces a repository harness marker")
+	}
+	return nil
+}

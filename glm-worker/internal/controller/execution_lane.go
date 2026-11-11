@@ -85,6 +85,9 @@ func (s *Store) planExecutionMaterialization(input MaterializeExecutionInput) (E
 }
 
 func (s *Store) bindMaterializedExecutionAuthority(task SemanticTaskRef, suspended *SuspensionSnapshot, attempt *AttemptRecord, lease *ExecutionLease) error {
+	if task.RequestID != "" {
+		return s.bindMaterializedRequestAuthority(task, suspended)
+	}
 	mode, err := s.committedTaskExecutionMode(task.TaskPath)
 	if err != nil {
 		return err
@@ -105,6 +108,23 @@ func (s *Store) bindMaterializedExecutionAuthority(task SemanticTaskRef, suspend
 	if mode == ExecutionAuthorityParentOnly {
 		attempt.ExecutionAuthority = ExecutionAuthorityParentOnly
 		lease.Purpose = parentOnlyExecutionPurpose
+	}
+	return nil
+}
+
+func (s *Store) bindMaterializedRequestAuthority(task SemanticTaskRef, suspended *SuspensionSnapshot) error {
+	if _, err := s.requestTaskAuthority(task); err != nil {
+		return err
+	}
+	if suspended == nil {
+		return nil
+	}
+	previous, err := s.loadAttempt(suspended.AttemptID)
+	if err != nil {
+		return err
+	}
+	if previous.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		return fmt.Errorf("request execution cannot resume a parent-only predecessor")
 	}
 	return nil
 }

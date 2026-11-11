@@ -50,12 +50,17 @@ func (s *Store) verifyPulledSourceTask(head RepositoryControllerHead, sourceOID 
 	if err != nil {
 		return err
 	}
-	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, sourceOID)
-	if err != nil {
-		return err
+	if head.RootTaskRef == nil {
+		return fmt.Errorf("post-pull source has no selected Task authority")
 	}
-	if head.RootTaskRef == nil || !authority.Task.Equal(*head.RootTaskRef) {
-		return fmt.Errorf("post-pull source changes the selected Task authority")
+	if head.RootTaskRef.RequestID == "" {
+		authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, sourceOID)
+		if err != nil {
+			return err
+		}
+		if !authority.Task.Equal(*head.RootTaskRef) {
+			return fmt.Errorf("post-pull source changes the selected Task authority")
+		}
 	}
 	if head.ExecutionTaskRef != nil && !projectHasTask(project, *head.ExecutionTaskRef) {
 		return fmt.Errorf("post-pull source changes execution Task authority")

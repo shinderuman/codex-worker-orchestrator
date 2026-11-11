@@ -194,6 +194,9 @@ func (s *Store) rebaseCandidateSurface(oldTree string, old AcceptedCandidate) (s
 }
 
 func (s *Store) publicationProjectAdvancement(head RepositoryControllerHead, tip string) (ProjectSnapshot, error) {
+	if head.ExecutionTaskRef != nil && head.ExecutionTaskRef.RequestID != "" {
+		return s.requestAdvancementProject(head, tip)
+	}
 	authority, err := ResolveCommittedTaskAuthorityAt(s.identity.PrimaryRoot, tip)
 	if err != nil {
 		return ProjectSnapshot{}, err
