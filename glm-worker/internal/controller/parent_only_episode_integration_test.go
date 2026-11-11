@@ -12,6 +12,14 @@ import (
 
 func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *testing.T) {
 	t.Parallel()
+	repo, store, policy, initialRoot, episode := startParentOnlyBlockerEpisode(t)
+	projected := publishParentOnlyBlocker(t, store, initialRoot, episode, policy)
+	smoke := resumeAndAmendParentOnlyRoot(t, store, repo, projected)
+	completeAmendedParentOnlyRoot(t, store, repo, policy, smoke)
+}
+
+func startParentOnlyBlockerEpisode(t *testing.T) (string, *Store, PublicationPolicy, Admission, BlockerEpisodeRevision) {
+	t.Helper()
 	repo := newControllerRepo(t)
 	rootPath := "IMPLEMENTATION_TASKS/root.md"
 	childPath := "IMPLEMENTATION_TASKS/parent-only-blocker.md"
@@ -75,7 +83,12 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 		t.Fatalf("parent-only blocker episode planning: %#v %v", disposition, err)
 	}
 	episode := *disposition.Episode
-	suspended, err := store.SuspendExecution(*started.Admission, episode.EpisodeID, episode.Revision)
+	return repo, store, policy, *started.Admission, episode
+}
+
+func publishParentOnlyBlocker(t *testing.T, store *Store, rootAdmission Admission, episode BlockerEpisodeRevision, policy PublicationPolicy) ParentCompletionOperation {
+	t.Helper()
+	suspended, err := store.SuspendExecution(&rootAdmission, episode.EpisodeID, episode.Revision)
 	if err != nil || suspended.Suspension == nil {
 		t.Fatalf("parent-only Root suspension: %#v %v", suspended, err)
 	}
@@ -133,6 +146,12 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 		projected.Execution.EpisodeRevision != cleaned.Head.ActiveEpisodeRevision {
 		t.Fatalf("completed child did not project the parent-only Root action: %#v %v", projected, err)
 	}
+	return projected
+}
+
+func resumeAndAmendParentOnlyRoot(t *testing.T, store *Store, repo string, projected ParentCompletionOperation) *state.StateStore {
+	t.Helper()
+	rootPath := "IMPLEMENTATION_TASKS/root.md"
 	resumed, err := store.AdmitParentOnlyExecution(ParentOnlyMaterializeInput{
 		ExpectedGeneration: projected.Execution.ExpectedGeneration,
 		EpisodeID: projected.Execution.EpisodeID, EpisodeRevision: projected.Execution.EpisodeRevision,
@@ -145,7 +164,7 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 		t.Fatalf("Root continuation escaped parent-only authority: %#v", resumed)
 	}
 	rootAttemptID := resumed.Admission.Attempt.AttemptID
-	smoke := state.AttachStateStore(WorkflowTaskConfig(cfg, store.Identity(), resumed.Admission.Attempt.SemanticTaskRef))
+	smoke := state.AttachStateStore(WorkflowTaskConfig(store.config, store.Identity(), resumed.Admission.Attempt.SemanticTaskRef))
 	if _, err := smoke.LoadControllerRuntimeBinding(); !os.IsNotExist(err) {
 		t.Fatalf("Root resume fabricated model Runtime: %v", err)
 	}
@@ -154,11 +173,11 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	amended := append(rootBytes, []byte("\n## Amendments\n\nRetain Root across this parent-only revision.\n")...)
+	amended := []byte(string(rootBytes) + "\n## Amendments\n\nRetain Root across this parent-only revision.\n")
 	if err := os.WriteFile(filepath.Join(repo, rootPath), amended, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	authority, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg)
+	authority, err := store.ParentOnlyTaskAuthoritySyncAdmission(store.config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +199,7 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 	if !store.ParentOnlySmokeIdentityMatches(rootAttemptID) {
 		t.Fatal("amended Root smoke identity lost its live attempt")
 	}
-	amendedSmoke := state.AttachStateStore(WorkflowTaskConfig(cfg, store.Identity(), newRoot))
+	amendedSmoke := state.AttachStateStore(WorkflowTaskConfig(store.config, store.Identity(), newRoot))
 	if taskID, err := amendedSmoke.TaskID(); err != nil || taskID != rootAttemptID {
 		t.Fatalf("amended Root state lacks its original attempt ID: %q %v", taskID, err)
 	}
@@ -188,6 +207,11 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 		t.Fatalf("amended Root state created a model Runtime binding: %v", err)
 	}
 
+	return smoke
+}
+
+func completeAmendedParentOnlyRoot(t *testing.T, store *Store, repo string, policy PublicationPolicy, smoke *state.StateStore) {
+	t.Helper()
 	fixture := parentOnlyTaskFixture{store: store, repo: repo, policy: policy}
 	completion := parentOnlyCompletionAdmission(t, fixture)
 	rootAccepted, err := store.AcceptParentCompletion(completion, CandidateAcceptanceInput{
