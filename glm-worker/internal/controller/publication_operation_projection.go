@@ -324,10 +324,10 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 		return ParentCompletionOperation{}, false, nil
 	}
 	quiescentRetired := retiredMetadataHead(head) || (head.UserTerminationRef != nil && head.MetadataLineageRef == nil)
-	if !IsPristine(head) && !quiescentRetired {
+	if !IsPristine(head) && !quiescentRetired && head.ActiveEpisodeID == "" {
 		return ParentCompletionOperation{}, false, nil
 	}
-	authority, err := s.parentOnlySuccessorAuthority(head)
+	authority, _, err := s.parentOnlyMaterializationAuthority(head)
 	if err != nil {
 		if IsPristine(head) {
 			return ParentCompletionOperation{}, false, nil
