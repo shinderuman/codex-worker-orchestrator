@@ -22,9 +22,10 @@ type darwinCIWorkflow struct {
 	} `yaml:"on"`
 	Jobs map[string]struct {
 		Steps []struct {
-			Uses string `yaml:"uses"`
-			Run  string `yaml:"run"`
-			Env  map[string]string `yaml:"env"`
+			Uses            string            `yaml:"uses"`
+			Run             string            `yaml:"run"`
+			Env             map[string]string `yaml:"env"`
+			ContinueOnError bool              `yaml:"continue-on-error"`
 			With struct {
 				PersistCredentials *bool `yaml:"persist-credentials"`
 			} `yaml:"with"`
@@ -57,6 +58,9 @@ func readDarwinCIWorkflow(t *testing.T, filename string) darwinCIWorkflow {
 	for name, job := range workflow.Jobs {
 		checkouts := 0
 		for _, step := range job.Steps {
+			if step.ContinueOnError {
+				t.Fatalf("%s job %s must propagate test and smoke failures", filename, name)
+			}
 			if !strings.HasPrefix(step.Uses, "actions/checkout@") {
 				continue
 			}
