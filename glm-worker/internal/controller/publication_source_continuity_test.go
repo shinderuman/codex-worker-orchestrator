@@ -2,9 +2,9 @@ package controller
 
 import (
 	"errors"
-	"reflect"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
