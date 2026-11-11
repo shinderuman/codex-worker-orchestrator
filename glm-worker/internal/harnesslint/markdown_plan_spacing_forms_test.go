@@ -11,7 +11,6 @@ import (
 )
 
 func TestMarkdownPlanSpacingAllSupportedTaskItems(t *testing.T) {
-	const path = implementationPlanPath
 	const a = "IMPLEMENTATION_TASKS/first.md"
 	const b = "IMPLEMENTATION_TASKS/second.md"
 	forms := []struct {
@@ -33,47 +32,55 @@ func TestMarkdownPlanSpacingAllSupportedTaskItems(t *testing.T) {
 	}
 	for _, tt := range forms {
 		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
-			original := "## NEXT（優先順）\n\n" + tt.first + "\n \t\n" + tt.last + "\n"
-			expected := "## NEXT（優先順）\n\n" + tt.first + "\n" + tt.last + "\n"
-			writeMarkdownAuthorityFixture(t, root, path, original)
-			violations, err := markdownDerivedStatePathViolations(root, path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(violations) != 1 || violations[0].Rule != "markdown-plan-spacing" || !violations[0].Fixable {
-				t.Fatalf("spacing violation not detected: %+v", violations)
-			}
-			if err := fixPlanSpacing(root, []string{path}); err != nil {
-				t.Fatal(err)
-			}
-			contents, err := os.ReadFile(filepath.Join(root, path))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(contents) != expected {
-				t.Fatalf("unexpected fixed schedule:\n%q\nwant:\n%q", contents, expected)
-			}
-			schedule := taskcontract.ParsePlanSchedule(string(contents))
-			next, blocked, err := schedule.NonActiveEntries()
-			if err != nil || !reflect.DeepEqual(next, []string{a, b}) || len(blocked) != 0 {
-				t.Fatalf("schedule entries = %v, %v, err %v", next, blocked, err)
-			}
-			if err := fixPlanSpacing(root, []string{path}); err != nil {
-				t.Fatal(err)
-			}
-			again, err := os.ReadFile(filepath.Join(root, path))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(again) != expected {
-				t.Fatalf("fix not idempotent: %q", again)
-			}
-			violations, err = markdownDerivedStatePathViolations(root, path)
-			if err != nil || len(violations) != 0 {
-				t.Fatalf("violations remain after fix: %+v, %v", violations, err)
-			}
+			assertMarkdownPlanSpacingCase(t, tt.first, tt.last)
 		})
+	}
+}
+
+func assertMarkdownPlanSpacingCase(t *testing.T, first, last string) {
+	t.Helper()
+	const path = implementationPlanPath
+	const a = "IMPLEMENTATION_TASKS/first.md"
+	const b = "IMPLEMENTATION_TASKS/second.md"
+	root := t.TempDir()
+	original := "## NEXT（優先順）\n\n" + first + "\n \t\n" + last + "\n"
+	expected := "## NEXT（優先順）\n\n" + first + "\n" + last + "\n"
+	writeMarkdownAuthorityFixture(t, root, path, original)
+	violations, err := markdownDerivedStatePathViolations(root, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 1 || violations[0].Rule != "markdown-plan-spacing" || !violations[0].Fixable {
+		t.Fatalf("spacing violation not detected: %+v", violations)
+	}
+	if err := fixPlanSpacing(root, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != expected {
+		t.Fatalf("unexpected fixed schedule:\n%q\nwant:\n%q", contents, expected)
+	}
+	schedule := taskcontract.ParsePlanSchedule(string(contents))
+	next, blocked, err := schedule.NonActiveEntries()
+	if err != nil || !reflect.DeepEqual(next, []string{a, b}) || len(blocked) != 0 {
+		t.Fatalf("schedule entries = %v, %v, err %v", next, blocked, err)
+	}
+	if err := fixPlanSpacing(root, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != expected {
+		t.Fatalf("fix not idempotent: %q", again)
+	}
+	violations, err = markdownDerivedStatePathViolations(root, path)
+	if err != nil || len(violations) != 0 {
+		t.Fatalf("violations remain after fix: %+v, %v", violations, err)
 	}
 }
 
