@@ -450,6 +450,9 @@ func TestDockerTestExecutorKeepsPublishedResponseImmutable(t *testing.T) {
 	if string(data) != published {
 		t.Fatalf("既存responseが置き換えられました: %s", string(data))
 	}
+	if calls := recorder.snapshot(); len(calls) != 0 {
+		t.Fatalf("既存responseのtokenでownerが別requestを実行しました: %#v", calls)
+	}
 	entries, err := os.ReadDir(guard.dockerTestResponseDir)
 	if err != nil {
 		t.Fatal(err)
