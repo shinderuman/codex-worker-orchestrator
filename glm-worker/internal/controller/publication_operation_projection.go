@@ -12,16 +12,25 @@ import (
 )
 
 type ParentCompletionOperation struct {
-	Surface           string                      `json:"surface"`
-	Operation         string                      `json:"operation"`
-	Mode              string                      `json:"mode,omitempty"`
-	Command           *PublicationParentCommand   `json:"command,omitempty"`
-	Execution         *CompletionExecutionCommand `json:"execution,omitempty"`
-	AllowedOperations []string                    `json:"allowed_operations,omitempty"`
-	SemanticSlots     []string                    `json:"semantic_slots,omitempty"`
-	FinalValidation   *FinalValidationRequest     `json:"final_validation,omitempty"`
-	SmokeProbeIDs     []string                    `json:"smoke_probe_ids,omitempty"`
-	Reason            string                      `json:"reason,omitempty"`
+	CompletedRequest  *CompletedRequestPublication `json:"completed_request,omitempty"`
+	Surface           string                       `json:"surface"`
+	Operation         string                       `json:"operation"`
+	Mode              string                       `json:"mode,omitempty"`
+	Command           *PublicationParentCommand    `json:"command,omitempty"`
+	Execution         *CompletionExecutionCommand  `json:"execution,omitempty"`
+	AllowedOperations []string                     `json:"allowed_operations,omitempty"`
+	SemanticSlots     []string                     `json:"semantic_slots,omitempty"`
+	FinalValidation   *FinalValidationRequest      `json:"final_validation,omitempty"`
+	SmokeProbeIDs     []string                     `json:"smoke_probe_ids,omitempty"`
+	Reason            string                       `json:"reason,omitempty"`
+}
+
+type CompletedRequestPublication struct {
+	RequestID            string `json:"request_id"`
+	FinalOID             string `json:"final_oid"`
+	RemoteOID            string `json:"remote_oid"`
+	TransitionID         string `json:"transition_id"`
+	ControllerGeneration uint64 `json:"controller_generation"`
 }
 
 type PublicationParentCommand struct {
@@ -110,10 +119,7 @@ func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCo
 			return ParentCompletionOperation{}, err
 		}
 		if project.CompletedRequest != nil {
-			if err := s.requireCompletedRequest(head); err != nil {
-				return ParentCompletionOperation{}, err
-			}
-			return noneCompletionOperation("request completed; a new request must be supplied explicitly"), nil
+			return s.projectCompletedRequestPublication(head, project)
 		}
 	}
 	if operation, ok, err := s.projectExternalAdvancement(head); err != nil || ok {
@@ -130,6 +136,31 @@ func (s *Store) projectActiveCompletion(head RepositoryControllerHead) (ParentCo
 		return s.projectAcceptedCandidateOperation(head)
 	}
 	return s.projectQuiescentCompletion(head)
+}
+
+func (s *Store) projectCompletedRequestPublication(head RepositoryControllerHead, project ProjectSnapshot) (ParentCompletionOperation, error) {
+	if err := s.requireCompletedRequest(head); err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	task, completed, err := s.completedRequestTask(head)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	if !completed || task.RequestID != project.CompletedRequest.RequestID ||
+		task.ContractDigest != digestBytes([]byte(project.CompletedRequest.Content)) {
+		return ParentCompletionOperation{}, fmt.Errorf("completed request publication owner differs")
+	}
+	return ParentCompletionOperation{
+		Operation: PublicationOperationNone,
+		Reason:    "request completed; a new request must be supplied explicitly",
+		CompletedRequest: &CompletedRequestPublication{
+			RequestID:            task.RequestID,
+			FinalOID:             head.IntegrationTip,
+			RemoteOID:            head.ObservedRemoteTip,
+			TransitionID:         head.MetadataLineageRef.LogicalIdentity,
+			ControllerGeneration: head.ControllerGeneration,
+		},
+	}, nil
 }
 
 func (s *Store) projectAwaitingAcceptance(head RepositoryControllerHead) (ParentCompletionOperation, error) {

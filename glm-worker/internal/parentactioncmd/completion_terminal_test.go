@@ -292,3 +292,54 @@ func TestScopeCompletedPublicationHandoffKeepsExplicitControllerOperation(t *tes
 		})
 	}
 }
+
+func TestCompletionTerminalCompletedRequestRequiresMatchingPublicationAndOwner(t *testing.T) {
+	const oid = "1a63fcb4ba21c8daac932b86cde869c3309f54c9"
+	receipt := &controller.CompletedRequestPublication{
+		RequestID: "request-one", FinalOID: oid, RemoteOID: oid,
+		TransitionID: "publication-one", ControllerGeneration: 42,
+	}
+	operation := controller.ParentCompletionOperation{
+		Operation:        controller.PublicationOperationNone,
+		CompletedRequest: receipt,
+	}
+	published := completionWorkflowResult{
+		RequestID: "request-one", SourceOID: oid, FinalOID: oid, RemoteOID: oid,
+		TransitionID: "publication-one", ControllerGeneration: 42,
+	}
+	if done, err := completionTerminalBoundary(operation, published); err != nil || !done {
+		t.Fatalf("matching published request was not terminal: done=%v err=%v", done, err)
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*completionWorkflowResult)
+	}{
+		{"missing-publication", func(r *completionWorkflowResult) { *r = completionWorkflowResult{} }},
+		{"different-request", func(r *completionWorkflowResult) { r.RequestID = "request-two" }},
+		{"missing-request", func(r *completionWorkflowResult) { r.RequestID = "" }},
+		{"different-source", func(r *completionWorkflowResult) { r.SourceOID = "other" }},
+		{"missing-final", func(r *completionWorkflowResult) { r.FinalOID = "" }},
+		{"different-final", func(r *completionWorkflowResult) { r.FinalOID = "other" }},
+		{"different-remote", func(r *completionWorkflowResult) { r.RemoteOID = "other" }},
+		{"different-transition", func(r *completionWorkflowResult) { r.TransitionID = "other" }},
+		{"missing-transition", func(r *completionWorkflowResult) { r.TransitionID = "" }},
+		{"different-generation", func(r *completionWorkflowResult) { r.ControllerGeneration++ }},
+		{"missing-generation", func(r *completionWorkflowResult) { r.ControllerGeneration = 0 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := published
+			tc.change(&result)
+			if done, err := completionTerminalBoundary(operation, result); done || err == nil {
+				t.Fatalf("unproven request was accepted: done=%v err=%v", done, err)
+			}
+		})
+	}
+	operation.CompletedRequest = nil
+	if done, err := completionTerminalBoundary(operation, published); done || err == nil {
+		t.Fatalf("unwitnessed none operation was accepted: done=%v err=%v", done, err)
+	}
+	operation.CompletedRequest = &controller.CompletedRequestPublication{RequestID: "request-two", FinalOID: oid, RemoteOID: oid, TransitionID: "publication-one", ControllerGeneration: 42}
+	if done, err := completionTerminalBoundary(operation, published); done || err == nil {
+		t.Fatalf("unmatched receipt was accepted: done=%v err=%v", done, err)
+	}
+}
