@@ -180,12 +180,12 @@ func (s *Store) observeAdvancedPrimary(admission Admission, policy PublicationPo
 	if remote != observed.Head {
 		return WorkspaceSnapshot{}, fmt.Errorf("advanced primary %s does not match the configured remote tip %s", observed.Head, remote)
 	}
-	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	project, err := s.publicationProjectAdvancement(admission.Head, observed.Head)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
-	if authority.Snapshot.HeadOID != observed.Head {
-		return WorkspaceSnapshot{}, fmt.Errorf("committed primary authority %s does not match the advanced primary %s", authority.Snapshot.HeadOID, observed.Head)
+	if project.HeadOID != observed.Head {
+		return WorkspaceSnapshot{}, fmt.Errorf("committed primary authority %s does not match the advanced primary %s", project.HeadOID, observed.Head)
 	}
 	return observed, nil
 }
