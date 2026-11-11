@@ -720,3 +720,114 @@ func assertParentOnlyCandidateEvidence(t *testing.T, store *controller.Store, ca
 		t.Fatalf("parent-only candidate required validations: %#v", candidate.RequiredValidations)
 	}
 }
+
+func TestParentOnlyAmendmentSyncThroughProductionBoundary(t *testing.T) {
+	cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, false)
+	start := executeParentHandoff(t, cfg)
+	if !start.Consistent || start.RequiredAction == nil || *start.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("parent-only materialization not projected: %#v", start)
+	}
+	runParentOnlyExecutionStep(t, cfg, start.RequiredActionParameters, true)
+	before, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.LiveAttemptID == "" || before.ExecutionTaskRef == nil {
+		t.Fatalf("materialization omitted parent-only attempt: %#v", before)
+	}
+	path := filepath.Join(cfg.RepoRoot, tasks.parent)
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	amended := append(append([]byte(nil), original...), []byte("\n## Amendments\n\n- Same-attempt parent-only acceptance requirement.\n")...)
+	if err := os.WriteFile(path, amended, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(amended)
+	revised := controller.SemanticTaskRef{TaskPath: tasks.parent, ContractDigest: hex.EncodeToString(sum[:])}
+	pending := executeParentHandoff(t, cfg)
+	if !pending.Consistent || pending.RequiredAction == nil || *pending.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("parent-only amendment did not demand a Controller sync: %#v", pending)
+	}
+	var command workflow.ControllerExecutionCommand
+	if err := json.Unmarshal([]byte(pending.RequiredActionParameters["controller_command_json"]), &command); err != nil {
+		t.Fatal(err)
+	}
+	if command.Action != "sync-task-authority" || command.ExpectedGeneration != before.ControllerGeneration ||
+		command.RevisedTask == nil || !command.RevisedTask.Equal(revised) || command.SourceSnapshotID == "" {
+		t.Fatalf("parent-only amendment sync projected wrong authority: %#v", command)
+	}
+	stale := command
+	stale.ExpectedGeneration--
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, stale); err == nil {
+		t.Fatal("stale Controller generation was admitted for parent-only sync")
+	}
+	foreign := command
+	unrelated := *command.RevisedTask
+	unrelated.TaskPath = "IMPLEMENTATION_TASKS/successor.md"
+	foreign.RevisedTask = &unrelated
+	if _, err := workflow.ExecuteControllerExecution(cfg, store, foreign); err == nil {
+		t.Fatal("foreign Task was admitted as a parent-only amendment")
+	}
+	result, err := workflow.ExecuteControllerExecution(cfg, store, command)
+	if err != nil {
+		t.Fatalf("existing sync owner rejected parent-only smoke identity: %v", err)
+	}
+	if result.Head.LiveAttemptID != before.LiveAttemptID ||
+		result.Head.ExecutionTaskRef == nil || !result.Head.ExecutionTaskRef.Equal(revised) ||
+		result.Head.RootTaskRef == nil || !result.Head.RootTaskRef.Equal(revised) {
+		t.Fatalf("amendment changed Root attempt or lost revised authority: %#v", result.Head)
+	}
+	bound, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := state.AttachStateStore(bound)
+	id, err := runtime.Read("task.id")
+	if err != nil || id != before.LiveAttemptID {
+		t.Fatalf("amendment changed smoke attempt identity: %q %v", id, err)
+	}
+	if _, err := runtime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("parent-only sync created a model Runtime binding: %v", err)
+	}
+	after := executeParentHandoff(t, cfg)
+	if !after.Consistent || after.RequiredAction == nil || *after.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("amended parent-only attempt did not return to completion: %#v", after)
+	}
+	driveParentOnlyCompletion(t, cfg, goShim, false, false, true)
+	assertParentOnlyTerminalState(t, cfg, store, policy, tasks, false)
+}
+
+func TestParentOnlyAmendmentSyncRejectsForgedRuntimeBinding(t *testing.T) {
+	cfg, store, _, _, _ := parentOnlyCompletionFixture(t, false)
+	start := executeParentHandoff(t, cfg)
+	runParentOnlyExecutionStep(t, cfg, start.RequiredActionParameters, true)
+	bound, err := controller.WorkflowConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := state.AttachStateStore(bound)
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
+		AttemptID: head.LiveAttemptID, TaskPath: head.ExecutionTaskRef.TaskPath,
+		TaskContractDigest: head.ExecutionTaskRef.ContractDigest,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runtimeCfg, err := controller.ParentContinuationConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wf := workflow.NewWorkflow(runtimeCfg, state.AttachStateStore(runtimeCfg), nil, io.Discard)
+	admission, err := controller.CurrentSemanticAdmission(cfg, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wf.CaptureParentOnlyTaskAuthoritySyncEvidence(admission); err == nil {
+		t.Fatal("forged model Runtime binding was accepted as a smoke-only identity")
+	}
+}
