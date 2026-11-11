@@ -681,8 +681,6 @@ func TestTaskAuthoritySyncRejectsForeignMilestoneLineage(t *testing.T) {
 
 func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, false)
-	// Amendment admission must observe a Task-only primary worktree revision.
-	// The completion fixture also seeds an untracked product; remove it before sync.
 	if err := os.Remove(filepath.Join(cfg.RepoRoot, "evaluation-result.md")); err != nil {
 		t.Fatal(err)
 	}
@@ -708,7 +706,6 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 		t.Fatalf("parent-only execution unexpectedly attached a model Runtime: %v", err)
 	}
 
-	// A same-path amendment must never promote a parent-only attempt into GLM execution.
 	glmContent := parentOnlyAppTaskContent(controller.ExecutionAuthorityGLM)
 	writeAppTestFile(t, cfg.RepoRoot, tasks.parent, glmContent)
 	glmSnapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
@@ -738,8 +735,6 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if err := os.Remove(filepath.Join(cfg.RepoRoot, "unrelated-change.txt")); err != nil {
 		t.Fatal(err)
 	}
-	// Matching IDs alone are insufficient: the admitted attempt baseline must
-	// remain byte-for-byte bound to Controller's stored source authority.
 	source, err := store.ParentOnlyTaskAuthoritySyncAdmission(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -803,8 +798,6 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if actual, err := runtime.TaskID(); err != nil || actual != taskID {
 		t.Fatalf("parent-only Amendment lost old smoke attempt identity: %q %v", actual, err)
 	}
-	// Task digest changes the state-store namespace. The amended Task must also
-	// carry the same smoke attempt identity with no model Runtime binding.
 	revisedConfig, err := controller.WorkflowConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -816,8 +809,6 @@ func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	if _, err := revisedRuntime.LoadControllerRuntimeBinding(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("amended Task state created a GLM Runtime binding: %v", err)
 	}
-	// Completion must use the exact post-sync snapshot. Introducing another
-	// unrecorded product here would invalidate the live lease.
 	next := executeParentHandoff(t, cfg)
 	if !next.Consistent || next.RequiredAction == nil || *next.RequiredAction != controllerPublicationSurface {
 		t.Fatalf("parent-only Amendment did not proceed to completion: %#v", next)
