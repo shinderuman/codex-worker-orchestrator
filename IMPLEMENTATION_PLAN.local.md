@@ -30,7 +30,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/mutable-advancement-baseline-rejection-proof.md`](IMPLEMENTATION_TASKS/mutable-advancement-baseline-rejection-proof.md)
 - [`IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md`](IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md)
 - [`IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md`](IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md)
-- [`IMPLEMENTATION_TASKS/observation-test-unix-build-scope.md`](IMPLEMENTATION_TASKS/observation-test-unix-build-scope.md)
 - [`IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md`](IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md)
 - [`IMPLEMENTATION_TASKS/repository-corpus-eval-nonrepo-skip.md`](IMPLEMENTATION_TASKS/repository-corpus-eval-nonrepo-skip.md)
 - [`IMPLEMENTATION_TASKS/peak-pause-civil-time-boundaries.md`](IMPLEMENTATION_TASKS/peak-pause-civil-time-boundaries.md)
