@@ -194,9 +194,10 @@ func TestDarwinCIWorkflowExecution(t *testing.T) {
 			case "go test -race -count=1 ./internal/uninstallcmd":
 				raceRun = true
 			case "./tests/install_smoke.sh":
-				if step.Env["TMPDIR"] == "/private/tmp" {
+				switch step.Env["TMPDIR"] {
+				case "/private/tmp":
 					privateSmoke = true
-				} else if step.Env["TMPDIR"] == "" {
+				case "":
 					varSmoke = true
 				}
 			}
