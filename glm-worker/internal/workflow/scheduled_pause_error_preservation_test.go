@@ -61,7 +61,16 @@ func TestScheduledPauseWithSecondaryErrorsKeepsResumeCheckpoint(t *testing.T) {
 					st.TaskStatus(), st.Exists("worker.ready"), st.ReadOr("worker.id", ""))
 			}
 			logs := taskLogs(t, st)
-			if len(logs) == 0 || logs[0].Outcome != "scheduled_pause" {
+			found := false
+			for _, log := range logs {
+				if log.CallType == state.CallTypeTask && log.Outcome == "scheduled_pause" {
+					found = true
+					if !strings.Contains(log.Error, tc.secondary.Error()) {
+						t.Fatalf("secondary failure was lost from scheduled-pause diagnostics: %q", log.Error)
+					}
+				}
+			}
+			if !found {
 				t.Fatalf("scheduled pause call outcome was not recorded: %#v", logs)
 			}
 			if !strings.Contains(err.Error(), "GLM invocation paused") {
