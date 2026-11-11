@@ -310,7 +310,7 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 		if err := w.addRef(current); err != nil {
 			return err
 		}
-		revision, ok := w.episodeRevisions[key]
+		revision, ok := w.episodeRevisions[revisionChainCacheKey(subject, current)]
 		if !ok {
 			var err error
 			revision, err = w.store.LoadEpisodeIndexRevision(current)
@@ -320,7 +320,7 @@ func (w *evidenceGraphWalker) walkEpisodeRevisionChain(
 			if w.episodeRevisions == nil {
 				w.episodeRevisions = map[string]EpisodeIndexRevision{}
 			}
-			w.episodeRevisions[key] = revision
+			w.episodeRevisions[revisionChainCacheKey(subject, current)] = revision
 		}
 		if revision.EpisodeID != subject || revision.ControllerGeneration >= upper {
 			return evidenceGraphError(current, "episode index revision chain authority is inconsistent")
