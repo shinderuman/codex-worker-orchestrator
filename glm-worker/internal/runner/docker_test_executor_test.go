@@ -467,7 +467,7 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 	codes := []int{0, 3}
 	run := func(_ context.Context, root string, args []string, stdout, stderr io.Writer) (int, error) {
 		call := recorder.capture(root, args)
-		_, _ = io.WriteString(stdout, "container-test-output\n")
+		_, _ = io.WriteString(stdout, "container-test-output:"+strings.Join(args, " ")+"\n")
 		_, _ = io.WriteString(stderr, "goquality-diagnostic {\"form\":\"diagnostic-go-test\",\"child_exit\":0,\"exit\":0}\n")
 		return codes[call-1], nil
 	}
@@ -484,7 +484,7 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("staging経由の診断 = code %d out %q err %q", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "container-test-output") || !strings.Contains(stderr.String(), "goquality-diagnostic") {
+	if !strings.Contains(stdout.String(), "container-test-output:./...") || !strings.Contains(stderr.String(), "goquality-diagnostic") {
 		t.Fatalf("staging経由の出力再現が壊れています out %q err %q", stdout.String(), stderr.String())
 	}
 
@@ -492,6 +492,9 @@ func TestDockerTestStagingClientRunsThroughExecutor(t *testing.T) {
 	code = client.Run(context.Background(), []string{"./internal/app"}, &retryStdout, &retryStderr)
 	if code != 3 {
 		t.Fatalf("target終了codeの再現 = code %d out %q err %q", code, retryStdout.String(), retryStderr.String())
+	}
+	if !strings.Contains(retryStdout.String(), "container-test-output:./internal/app") {
+		t.Fatalf("second package response is mismatched: %q", retryStdout.String())
 	}
 
 	records := recorder.snapshot()
