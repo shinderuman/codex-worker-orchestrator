@@ -463,3 +463,26 @@ func TestStagingClientFailsClosedOnTokenGenerationError(t *testing.T) {
 		t.Fatalf("token generation error published request: %#v %v", entries, err)
 	}
 }
+
+func TestStagingClientRejectsReusedTokenWithStaleOwnerResponse(t *testing.T) {
+	t.Parallel()
+	client, staging, responses := newStagingClientFixture(t)
+	token := stagingClientToken()
+	stale := StagingResponse{SchemaVersion: StagingSchemaVersion, Token: token, ExitCode: 0, Stdout: "unrelated-success"}
+	data, err := json.Marshal(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(responses, StagingResponseFileName(token)), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr strings.Builder
+	code := client.Run(context.Background(), []string{"./internal/runner"}, &stdout, &stderr)
+	if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "tokenが重複") {
+		t.Fatalf("stale response was reused: code %d out %q err %q", code, stdout.String(), stderr.String())
+	}
+	entries, err := os.ReadDir(staging)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("stale response token published request: %#v %v", entries, err)
+	}
+}
