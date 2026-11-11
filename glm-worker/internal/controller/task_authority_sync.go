@@ -51,6 +51,9 @@ func (s *Store) ParentOnlyTaskAuthoritySyncAdmission(cfg config.AppConfig) (Admi
 	if err := validateParentOnlySyncBinding(head, attempt, lease); err != nil {
 		return Admission{}, err
 	}
+	return s.parentOnlySyncSourceAdmission(head, attempt, lease)
+}
+func (s *Store) parentOnlySyncSourceAdmission(head RepositoryControllerHead, attempt AttemptRecord, lease ExecutionLease) (Admission, error) {
 	workspace, err := s.parentOnlyWorkspace()
 	if err != nil {
 		return Admission{}, err
@@ -65,16 +68,22 @@ func (s *Store) ParentOnlyTaskAuthoritySyncAdmission(cfg config.AppConfig) (Admi
 	if snapshot.Head != lease.ExpectedBaseOID || head.IntegrationTip != snapshot.Head {
 		return Admission{}, fmt.Errorf("parent-only Task sync changed committed source")
 	}
+	if err := s.verifyParentOnlySyncRequiredRevision(head, attempt.SemanticTaskRef, snapshot); err != nil {
+		return Admission{}, err
+	}
+	return Admission{Head: head, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
+}
+func (s *Store) verifyParentOnlySyncRequiredRevision(head RepositoryControllerHead, task SemanticTaskRef, snapshot WorkspaceSnapshot) error {
 	required, err := s.RequiredTaskAuthoritySync(head)
 	if err != nil {
-		return Admission{}, err
+		return err
 	}
 	if required == nil || !required.Admittable ||
 		required.Plan.SourceSnapshotID != snapshot.ID ||
-		!required.Plan.PreviousTaskRef.Equal(attempt.SemanticTaskRef) {
-		return Admission{}, fmt.Errorf("parent-only Task sync has no exact Task-only source revision")
+		!required.Plan.PreviousTaskRef.Equal(task) {
+		return fmt.Errorf("parent-only Task sync has no exact Task-only source revision")
 	}
-	return Admission{Head: head, Attempt: attempt, Lease: lease, Workspace: workspace, Snapshot: snapshot}, nil
+	return nil
 }
 
 func validateParentOnlySyncBinding(head RepositoryControllerHead, attempt AttemptRecord, lease ExecutionLease) error {
