@@ -716,19 +716,26 @@ func untrackedDiffSection(path, mode string, content []byte) (string, error) {
 		body.WriteByte('\n')
 		return body.String(), nil
 	}
+	if err := appendUntrackedTextBody(&body, content, limitError); err != nil {
+		return "", err
+	}
+	return body.String(), nil
+}
+
+func appendUntrackedTextBody(body *strings.Builder, content []byte, limitError error) error {
 	lineCount := bytes.Count(content, []byte{'\n'})
 	if len(content) > 0 && content[len(content)-1] != '\n' {
 		lineCount++
 	}
 	hunk := fmt.Sprintf("@@ -0,0 +1,%d @@\n", lineCount)
 	if len(hunk) > maxDiffPatchBytes-body.Len() {
-		return "", limitError
+		return limitError
 	}
 	body.WriteString(hunk)
 	for remaining := string(content); remaining != ""; {
 		line, rest, _ := strings.Cut(remaining, "\n")
 		if len(line)+2 > maxDiffPatchBytes-body.Len() {
-			return "", limitError
+			return limitError
 		}
 		body.WriteByte('+')
 		body.WriteString(line)
@@ -738,11 +745,11 @@ func untrackedDiffSection(path, mode string, content []byte) (string, error) {
 	if len(content) > 0 && content[len(content)-1] != '\n' {
 		const marker = "\\ No newline at end of file\n"
 		if len(marker) > maxDiffPatchBytes-body.Len() {
-			return "", limitError
+			return limitError
 		}
 		body.WriteString(marker)
 	}
-	return body.String(), nil
+	return nil
 }
 func (p *Projector) projectSource(request SourceRequest) Part {
 	part := Part{
