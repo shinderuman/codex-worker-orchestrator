@@ -187,6 +187,10 @@ func TestRequestAdvancementRejectsForeignAuthorityAndHarness(t *testing.T) {
 	f, policy := newRequestAdvancementFixture(t)
 	head := f.source.Head
 	remote := advancePublicationTestRemote(t, f, policy, "external.txt", "upstream\n")
+	observed, err := observePublicationRemote(f.store.identity.PrimaryRoot, policy)
+	if err != nil || observed != remote {
+		t.Fatalf("request remote was not fetched for the authority test: %s, %v", observed, err)
+	}
 	if _, err := f.store.publicationProjectAdvancement(head, remote); err != nil {
 		t.Fatal(err)
 	}
