@@ -3,12 +3,13 @@ package dockertest
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -33,7 +34,7 @@ type StagingClient struct {
 	ResponseDir  string
 	Timeout      time.Duration
 	PollInterval time.Duration
-	Now          func() time.Time
+	generateToken func() (string, error)
 }
 
 const StagingSchemaVersion = 1
@@ -146,7 +147,12 @@ func (r StagingRequest) Validate() error {
 }
 
 func (c *StagingClient) Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	request := StagingRequest{SchemaVersion: StagingSchemaVersion, Token: c.token(), Args: args}
+	token, err := c.token()
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "goquality test:", err)
+		return 1
+	}
+	request := StagingRequest{SchemaVersion: StagingSchemaVersion, Token: token, Args: args}
 	if err := request.Validate(); err != nil {
 		_, _ = fmt.Fprintln(stderr, "goquality test:", err)
 		return 1
@@ -174,14 +180,30 @@ func (c *StagingClient) writeRequest(request StagingRequest) error {
 		return err
 	}
 	final := filepath.Join(c.StagingDir, StagingRequestFileName(request.Token))
-	if _, err := os.Lstat(final); err == nil {
+	temp := filepath.Join(c.StagingDir, ".request-"+request.Token+".tmp")
+	file, err := os.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if os.IsExist(err) {
 		return fmt.Errorf("staging requestのtokenが重複しています: %s", request.Token)
 	}
-	temp := filepath.Join(c.StagingDir, ".request-"+request.Token+".tmp")
-	if err := os.WriteFile(temp, data, 0o600); err != nil {
+	if err != nil {
 		return err
 	}
-	return os.Rename(temp, final)
+	defer func() { _ = os.Remove(temp) }()
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	// link is an atomic no-replace publication: an existing request is never overwritten.
+	if err := os.Link(temp, final); err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("staging requestのtokenが重複しています: %s", request.Token)
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *StagingClient) awaitResponse(ctx context.Context, request StagingRequest, stderr io.Writer) (StagingResponse, bool) {
@@ -228,15 +250,15 @@ func (c *StagingClient) removeRequest(token string) {
 	_ = os.Remove(filepath.Join(c.StagingDir, ".request-"+token+".tmp"))
 }
 
-func (c *StagingClient) token() string {
-	return strconv.FormatInt(c.now().UnixNano(), 10)
-}
-
-func (c *StagingClient) now() time.Time {
-	if c.Now != nil {
-		return c.Now()
+func (c *StagingClient) token() (string, error) {
+	if c.generateToken != nil {
+		return c.generateToken()
 	}
-	return time.Now()
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", fmt.Errorf("staging request tokenを生成できません: %w", err)
+	}
+	return hex.EncodeToString(random[:]), nil
 }
 
 func (c *StagingClient) timeout() time.Duration {
