@@ -149,6 +149,9 @@ func TestControlledRunnerUsesControlPolicyWithoutTargetToolExecution(t *testing.
 	writeFocusedValidationFile(t, target, ".golangci.yml", "target-policy-must-not-be-selected\n", 0o644)
 	targetTool := "#!/bin/sh\nprintf 'executed\\n' > \"$TARGET_TOOL_MARKER\"\nexit 87\n"
 	writeFocusedValidationFile(t, target, "commentlint", targetTool, 0o755)
+	outsideToolRoot := t.TempDir()
+	writeFocusedValidationFile(t, outsideToolRoot, "golangci-lint", targetTool, 0o755)
+	t.Setenv("PATH", outsideToolRoot+string(os.PathListSeparator)+os.Getenv("PATH"))
 	writeFocusedValidationFile(t, target, "subject.go", "package subject\n\n// explanation\nfunc Subject() {}\n", 0o644)
 	writeFocusedValidationFile(t, control, "golangci-lint", `#!/bin/sh
 set -eu
