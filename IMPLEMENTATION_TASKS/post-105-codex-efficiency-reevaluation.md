@@ -35,8 +35,62 @@ post-105-codex-efficiency-reevaluation.md
 あまりこのタスクの範囲を増やしすぎて監査がゆるくならないようにはしろ
 ````
 
+### 2026-11-11 親評価での外部指摘採用
+
+出典: https://github.com/shinderuman/codex-worker-orchestrator/pull/1552#pullrequestreview-5852289232
+
+````text
+**Decode `message` only for `assistant` records.**
+
+`reportOnlyTranscriptRecord.Message.Content` is typed as `[]reportOnlyTranscriptBlock`. `scanReportOnlyReadTranscript` unmarshals every line into this type before it checks `record.Type`. Suppose a `user` record carries `message.content` as a plain string. This is the usual form for a prompt message in Claude session transcripts. `json.Unmarshal` then fails, and the whole transcript is treated as invalid. Every read metric becomes `unknown`.
+
+The failure is safe but lossy. No test covers a string `content` value. Decode `Message` lazily, after the `assistant` check.
+
+<details>
+<summary>♻️ Proposed change</summary>
+<dl>
+<dd>
+<br>
+
+```diff
+ type reportOnlyTranscriptRecord struct {
+-	Type    string `json:"type"`
+-	Message struct {
+-		Content []reportOnlyTranscriptBlock `json:"content"`
+-	} `json:"message"`
++	Type    string          `json:"type"`
++	Message json.RawMessage `json:"message"`
+ }
+```
+
+```diff
+ 		if record.Type != "assistant" {
+ 			continue
+ 		}
+-		for _, block := range record.Message.Content {
++		var message struct {
++			Content []reportOnlyTranscriptBlock `json:"content"`
++		}
++		if json.Unmarshal(record.Message, &message) != nil {
++			return scan, false
++		}
++		for _, block := range message.Content {
+ 			scan.observe(block)
+ 		}
+```
+</dd>
+</dl>
+</details>
+
+</dd>
+</dl>
+````
+
+本Taskの実transcript評価でこのtest-only helperを再利用する場合に、誤ったunknown化を避ける要求として採用する。production Bundle parserの不具合修正要求には拡張しない。
+
 ## Resolved references
 
+- 2026-11-11の追加レビューで採用した[CodeRabbit追補](https://github.com/shinderuman/codex-worker-orchestrator/pull/1552#pullrequestreview-5852289232)は、`bundleanalysis/report_only_read_reentry_helper_test.go`のtest-only解析器に関する指摘であり、production Bundle解析の障害証拠とは区別する。
 - 「このセッションの最初で行ったのと同じもの」は、GLM-Worker telemetry、Codex自身の `~/.codex/` 等に残るログを親Codexが直接解析し、目的を改善するtask候補とログ収集command拡充の要否を判断した2026-09-03の調査を指す
 - 調査・意味判断をGLM modelへ委譲しない。`glm-worker` commandが機能するか、何を出力するかの確認とread-only projectionの利用は許可する
 - 「意味のある停止」は、Task corpus閉包実装が品質ポリシー面を変更したため、GLM自身による品質基準の弱体化を防ぐguardがCodex reviewを要求した状態を指す。この個別停止は意図した安全境界として維持し、反復costや品質影響の新証拠が得られた場合だけ改善候補として再評価する
@@ -82,6 +136,7 @@ status: not-applicable
 
 ## Acceptance criteria
 
+- report-onlyのread再入を実transcriptから評価する場合、assistant以外の`message.content`がstringである正常recordを誤って破損扱いしない解析方法を使う。既存test-only helperを再利用する前にこの制約を確認し、未対応helperから得たunknownを既知のread件数へ読み替えない。
 - Direct Codex対Codex + glm-workerのCodex ReductionとQuality Deltaを、比較可能なcohort、unknown理由、exact source locator付きで報告できる
 - Codex / Sol側のinput/cached input/output/reasoning/total、turn/tool/output bytes/compaction等、利用可能な実消費fieldを区間別に評価できる
 - 105までの各改善について、期待したCodex削減、品質維持、退行、観測不能を区別して判断できる
