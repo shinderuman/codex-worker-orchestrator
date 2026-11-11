@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -215,6 +216,17 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 	}
 	if promotedCandidate.BundleCheckRef == nil {
 		t.Fatal("parent-only Root promotion lacks its pre-publication Bundle observation")
+	}
+	bundleData, err := store.LoadEvidenceObject(*promotedCandidate.BundleCheckRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle CompletionBundleCheck
+	if err := json.Unmarshal(bundleData, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if bundle.RuntimeTaskID != "" || bundle.TaskClockBasis != completionBundleNoModelRuntimeBasis || len(bundle.ModelCallsByRole) != 0 {
+		t.Fatalf("amended parent-only Root Bundle reported unexpected model execution: %#v", bundle)
 	}
 	retiredRoot, _ := prepareCompletionTestCandidate(t, store, promotedRoot, promotedCandidate)
 	finished, err := store.RecoverExecutionOperation(retiredRoot.TransitionID)
