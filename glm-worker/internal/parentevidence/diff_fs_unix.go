@@ -14,8 +14,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const maxDiffSourceBytes int64 = 1 << 20
-
 func diffWorktreeObject(repoRoot, path string) (string, string, []byte, bool, error) {
 	parent, err := diffOpenParent(repoRoot, path)
 	if errors.Is(err, unix.ENOENT) {
