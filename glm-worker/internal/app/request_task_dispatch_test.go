@@ -391,7 +391,7 @@ func TestNormalTaskRequestPublicationThroughParentActionTerminal(t *testing.T) {
 	}
 	proof := terminal.Terminal
 	if terminal.Status != "parent_action_terminal" || !terminal.Handoff.Consistent ||
-		terminal.Handoff.RequiredAction != nil || proof.Status != "completed" ||
+		stringPointerValue(terminal.Handoff.RequiredAction) != string(state.ParentActionNone) || proof.Status != "completed" ||
 		proof.RequestID != requestID || proof.SourceOID == "" ||
 		proof.SourceOID != proof.FinalOID || proof.RemoteOID != proof.FinalOID ||
 		proof.FinalOID != head.IntegrationTip || proof.RemoteOID != head.ObservedRemoteTip ||
