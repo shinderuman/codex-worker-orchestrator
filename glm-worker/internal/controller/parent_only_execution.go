@@ -175,6 +175,15 @@ func (s *Store) parentOnlyRootResumeEpisode(head RepositoryControllerHead, input
 	if head.RootTaskRef == nil || !head.RootTaskRef.Equal(task) {
 		return nil, fmt.Errorf("parent-only Root resume changes Root Task authority")
 	}
+	if head.MetadataLineageRef == nil {
+		return nil, fmt.Errorf("parent-only Root resume requires finalized child publication")
+	}
+	if err := s.ensureTerminalMetadataFinalized(head); err != nil {
+		return nil, err
+	}
+	if err := s.verifyTerminalTaskRecord(*head.MetadataLineageRef); err != nil {
+		return nil, err
+	}
 	episode, err := s.LoadEpisodeRevision(input.EpisodeID, input.EpisodeRevision)
 	if err != nil {
 		return nil, err
