@@ -24,6 +24,9 @@ type CompletionFailure struct {
 
 func (e *PublicationAdvancementRequired) Error() string {
 	if e.Reason != "" {
+		if e.Action == PublicationOperationRebind {
+			return fmt.Sprintf("publication transition %s was not applied; run glm-parent-action prepare controller-publication --operation rebind at controller generation %d for remote %s: %s", e.TransitionID, e.ControllerGeneration, e.RemoteOID, e.Reason)
+		}
 		return fmt.Sprintf("publication transition %s was not applied; candidate reentry unavailable at controller generation %d for remote %s: %s", e.TransitionID, e.ControllerGeneration, e.RemoteOID, e.Reason)
 	}
 	if e.Action == PublicationOperationReenter {
@@ -36,7 +39,7 @@ func publicationAbortAction(op ExecutionOperation) string {
 	if op.Transition.Kind == publicationAdopt || op.Transition.Kind == publicationAdoptSource {
 		return "adopt-external-advancement"
 	}
-	return "rebind-unpublished-candidate"
+	return ""
 }
 
 func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryControllerHead, phase TransitionState) (ExecutionOperationResult, error) {
@@ -59,8 +62,12 @@ func (s *Store) finishPublicationAbort(op ExecutionOperation, head RepositoryCon
 }
 
 func (s *Store) publicationAbortRecoveryAction(op ExecutionOperation, head RepositoryControllerHead, phase TransitionState) (string, string) {
-	if op.Terminal == nil || phase.Completion == nil || phase.Completion.AbortRemoteOID != op.Source.Head.IntegrationTip {
+	if op.Transition.Kind == publicationAdopt || op.Transition.Kind == publicationAdoptSource {
 		return publicationAbortAction(op), ""
+	}
+	if op.Terminal == nil || phase.Completion == nil || phase.Completion.AbortRemoteOID == "" ||
+		phase.Completion.ObservationRef != nil {
+		return "", "aborted publication lacks a bound unpublished terminal remote observation for candidate reentry"
 	}
 	if head.AcceptedCandidateRef == nil {
 		return "", "aborted completion has no accepted candidate"
@@ -71,7 +78,7 @@ func (s *Store) publicationAbortRecoveryAction(op ExecutionOperation, head Repos
 	}
 	if err := s.admitPromotedCandidateReentry(head, candidate); err != nil {
 		if errors.Is(err, errCandidateReentryExternalAdvancement) {
-			return publicationAbortAction(op), err.Error()
+			return PublicationOperationRebind, err.Error()
 		}
 		return "", err.Error()
 	}

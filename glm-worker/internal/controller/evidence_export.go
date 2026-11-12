@@ -263,6 +263,8 @@ const evidenceExportPayloadOmission = "git pack payload omitted from portable pr
 
 var errEvidenceExportRuntimeTaskUnresolved = errors.New("evidence export cannot resolve the runtime task identity required by the fixed archive contract")
 
+var errEvidenceExportUnpublishedSeal = errors.New("attempt seal is outside published evidence authority")
+
 func (s *Store) ExportEvidence(request EvidenceExportRequest) (EvidenceExport, EvidenceExportResult, error) {
 	head, err := s.LoadHead()
 	if err != nil {
@@ -500,6 +502,9 @@ func (s *Store) sealedRuntimeTaskMatches(head RepositoryControllerHead, taskID s
 			continue
 		}
 		associated, err := s.attemptRuntimeTaskIDs(head, attempt)
+		if errors.Is(err, errEvidenceExportUnpublishedSeal) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -571,7 +576,7 @@ func (s *Store) findAttemptSeal(head RepositoryControllerHead, attempt AttemptRe
 			return ref, seal, nil
 		}
 		if revision.PreviousRevision == nil {
-			return EvidenceObjectRef{}, AttemptSeal{}, fmt.Errorf("attempt %s has no published attempt seal", attempt.AttemptID)
+			return EvidenceObjectRef{}, AttemptSeal{}, fmt.Errorf("attempt %s has no published attempt seal: %w", attempt.AttemptID, errEvidenceExportUnpublishedSeal)
 		}
 		current = *revision.PreviousRevision
 	}
@@ -579,7 +584,7 @@ func (s *Store) findAttemptSeal(head RepositoryControllerHead, attempt AttemptRe
 
 func (s *Store) attemptTaskEvidenceRoot(head RepositoryControllerHead, attempt AttemptRecord) (EvidenceObjectRef, error) {
 	if head.EvidenceHeadRef == nil {
-		return EvidenceObjectRef{}, fmt.Errorf("attempt %s has no published evidence authority", attempt.AttemptID)
+		return EvidenceObjectRef{}, fmt.Errorf("attempt %s has no published evidence authority: %w", attempt.AttemptID, errEvidenceExportUnpublishedSeal)
 	}
 	evidenceHead, err := s.LoadEvidenceHead(*head.EvidenceHeadRef)
 	if err != nil {
@@ -587,7 +592,7 @@ func (s *Store) attemptTaskEvidenceRoot(head RepositoryControllerHead, attempt A
 	}
 	subject, ok := evidenceSubjectHead(evidenceHead.TaskHeads, taskEvidenceSubjectID(attempt.SemanticTaskRef))
 	if !ok {
-		return EvidenceObjectRef{}, fmt.Errorf("attempt %s task evidence root is not published", attempt.AttemptID)
+		return EvidenceObjectRef{}, fmt.Errorf("attempt %s task evidence root is not published: %w", attempt.AttemptID, errEvidenceExportUnpublishedSeal)
 	}
 	return subject.RevisionRef, nil
 }

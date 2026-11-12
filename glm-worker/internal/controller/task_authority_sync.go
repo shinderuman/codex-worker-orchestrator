@@ -119,7 +119,7 @@ func (s *Store) planTaskAuthoritySync(admission Admission, sourceSnapshotID stri
 	if err := s.verifyTaskSyncSourceEvidence(admission, runtimeRef); err != nil {
 		return ExecutionOperation{}, err
 	}
-	source, authority, err := s.captureTaskSourceRevision(sourceSnapshotID, admission.Head.IntegrationTip, task.TaskPath)
+	source, authority, err := s.captureTaskSourceRevision(admission, sourceSnapshotID, admission.Head.IntegrationTip, task.TaskPath)
 	if err != nil {
 		return ExecutionOperation{}, err
 	}
@@ -337,6 +337,20 @@ func (s *Store) taskAuthoritySyncBlockReason(head RepositoryControllerHead, task
 	if authority.Snapshot.HeadOID != head.IntegrationTip {
 		return "primary HEAD moved beyond the controller integration tip; run the regular adopt or source sync first"
 	}
+	attempt, err := s.loadAttempt(head.LiveAttemptID)
+	if err != nil {
+		return fmt.Sprintf("live attempt is unreadable: %v", err)
+	}
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		lease, err := s.loadLease(head.LiveLeaseID)
+		if err != nil {
+			return fmt.Sprintf("live admitted source lease is unreadable: %v", err)
+		}
+		if err := verifyParentOnlyTaskSourceDelta(repo, lease, taskPath); err != nil {
+			return fmt.Sprintf("parent worktree deviation is not limited to the active Task file %q: %v", taskPath, err)
+		}
+		return ""
+	}
 	changed, err := primaryWorktreeChanges(repo)
 	if err != nil {
 		return fmt.Sprintf("primary worktree status is unreadable: %v", err)
@@ -350,6 +364,24 @@ func (s *Store) taskAuthoritySyncBlockReason(head RepositoryControllerHead, task
 		return fmt.Sprintf("parent worktree deviation is not limited to the active Task file %q: %s", taskPath, strings.Join(paths, ", "))
 	}
 	return ""
+}
+
+func verifyParentOnlyTaskSourceDelta(repo string, lease ExecutionLease, taskPath string) error {
+	if lease.ExpectedWorkspaceSnapshotID == "" || lease.AdmittedSourceTrees == nil ||
+		lease.AdmittedSourceTrees.IndexTree == "" || lease.AdmittedSourceTrees.WorktreeTree == "" {
+		return fmt.Errorf("parent-only admitted source is not bound to a workspace snapshot")
+	}
+	current, err := CaptureAdmittedSourceTrees(repo, taskPath)
+	if err != nil {
+		return err
+	}
+	if current.IndexTree != lease.AdmittedSourceTrees.IndexTree {
+		return fmt.Errorf("primary index changed outside admitted source")
+	}
+	if current.WorktreeTree != lease.AdmittedSourceTrees.WorktreeTree {
+		return fmt.Errorf("primary worktree changed outside admitted source")
+	}
+	return nil
 }
 
 func (s *Store) TaskAuthoritySyncEvidence(transitionID string) ([]byte, error) {
@@ -379,9 +411,9 @@ func (s *Store) TaskAuthoritySyncEvidence(transitionID string) ([]byte, error) {
 	return s.LoadEvidenceObject(*op.RuntimeBeforeRef)
 }
 
-func (s *Store) captureTaskSourceRevision(snapshotID, remote, taskPath string) (ParentSourceRevision, TaskAuthority, error) {
+func (s *Store) captureTaskSourceRevision(admission Admission, snapshotID, remote, taskPath string) (ParentSourceRevision, TaskAuthority, error) {
 	repo := s.identity.PrimaryRoot
-	snapshot, err := captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath)
+	snapshot, err := captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath, admission)
 	if err != nil {
 		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
@@ -594,7 +626,7 @@ func captureTaskSourceTree(repo, remote, taskPath string) (string, error) {
 	return suspensionGitText(repo, index, nil, "write-tree")
 }
 
-func captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath string) (WorkspaceSnapshot, error) {
+func captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath string, admission Admission) (WorkspaceSnapshot, error) {
 	snapshot, err := CaptureWorkspaceSnapshot(repo)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
@@ -602,12 +634,18 @@ func captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath string) (Works
 	if snapshot.ID != snapshotID || snapshot.Head != remote {
 		return WorkspaceSnapshot{}, fmt.Errorf("task source revision snapshot or remote HEAD differs")
 	}
-	changed, err := primaryWorktreeChanges(repo)
-	if err != nil {
-		return WorkspaceSnapshot{}, err
-	}
-	if len(changed) != 1 || !changed[taskPath] {
-		return WorkspaceSnapshot{}, fmt.Errorf("parent worktree revision is not limited to the active Task file %q", taskPath)
+	if admission.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		if err := verifyParentOnlyTaskSourceDelta(repo, admission.Lease, taskPath); err != nil {
+			return WorkspaceSnapshot{}, fmt.Errorf("parent worktree revision is not limited to the active Task file %q: %w", taskPath, err)
+		}
+	} else {
+		changed, err := primaryWorktreeChanges(repo)
+		if err != nil {
+			return WorkspaceSnapshot{}, err
+		}
+		if len(changed) != 1 || !changed[taskPath] {
+			return WorkspaceSnapshot{}, fmt.Errorf("parent worktree revision is not limited to the active Task file %q", taskPath)
+		}
 	}
 	return snapshot, nil
 }

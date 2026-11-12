@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 )
 
@@ -146,6 +147,23 @@ func TestRepoSearchContextBudgetRepositoryDetection(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git is unavailable: %v", err)
 	}
+	for _, key := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"} {
+		value, present := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			var err error
+			if present {
+				err = os.Setenv(key, value)
+			} else {
+				err = os.Unsetenv(key)
+			}
+			if err != nil {
+				t.Errorf("restore %s: %v", key, err)
+			}
+		})
+	}
 	archive := t.TempDir()
 	root, missing, err := repoSearchCorpusRoot(archive)
 	if err != nil || !missing || root != "" {
@@ -153,6 +171,7 @@ func TestRepoSearchContextBudgetRepositoryDetection(t *testing.T) {
 	}
 
 	init := exec.Command("git", "init", "-q", archive)
+	init.Env = repoSearchContextFixtureGitEnv(t)
 	if output, err := init.CombinedOutput(); err != nil {
 		t.Fatalf("initialize fixture repository: %v: %s", err, output)
 	}
@@ -176,7 +195,9 @@ func TestRepoSearchContextBudgetRepositoryDetection(t *testing.T) {
 	}
 
 	brokenRepo := filepath.Join(t.TempDir(), "broken-repository")
-	if output, err := exec.Command("git", "init", "-q", brokenRepo).CombinedOutput(); err != nil {
+	brokenInit := exec.Command("git", "init", "-q", brokenRepo)
+	brokenInit.Env = repoSearchContextFixtureGitEnv(t)
+	if output, err := brokenInit.CombinedOutput(); err != nil {
 		t.Fatalf("initialize broken repository fixture: %v: %s", err, output)
 	}
 	if err := os.Mkdir(filepath.Join(brokenRepo, "nested"), 0700); err != nil {
@@ -208,4 +229,13 @@ func TestRepoSearchContextBudgetRepositoryDetection(t *testing.T) {
 	if err == nil || missing {
 		t.Fatalf("invalid explicit GIT_DIR: missing=%t err=%v; want hard failure", missing, err)
 	}
+}
+
+func repoSearchContextFixtureGitEnv(t *testing.T) []string {
+	t.Helper()
+	env, err := gitexec.WithoutLocalEnvironment(os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env
 }

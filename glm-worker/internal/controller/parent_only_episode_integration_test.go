@@ -20,6 +20,11 @@ func TestParentOnlyRootResumesAfterRealChildPublicationAndAmendsSameAttempt(t *t
 
 func startParentOnlyBlockerEpisode(t *testing.T) (string, *Store, PublicationPolicy, Admission, BlockerEpisodeRevision) {
 	t.Helper()
+	return startParentOnlyBlockerEpisodeWithRootMutation(t, nil)
+}
+
+func startParentOnlyBlockerEpisodeWithRootMutation(t *testing.T, mutate func(string)) (string, *Store, PublicationPolicy, Admission, BlockerEpisodeRevision) {
+	t.Helper()
 	repo := newControllerRepo(t)
 	rootPath := "IMPLEMENTATION_TASKS/root.md"
 	childPath := "IMPLEMENTATION_TASKS/parent-only-blocker.md"
@@ -61,6 +66,18 @@ func startParentOnlyBlockerEpisode(t *testing.T) (string, *Store, PublicationPol
 	}
 	if started.Admission.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
 		t.Fatal("initial Root changed execution mode")
+	}
+	if mutate != nil {
+		mutate(repo)
+		snapshot, err := CaptureWorkspaceSnapshot(repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated, err := store.RecordAdmittedMutation(*started.Admission, "root edits", "preserve Root output before blocker", snapshot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		started.Admission = &updated
 	}
 	finding, err := store.ObserveFinding(*started.Admission, FindingObservationInput{
 		Producer: "parent-only-root-reviewer", ProofClass: FindingProofUnverified, ProblemKey: "child-blocks-parent-only-root",
@@ -139,7 +156,6 @@ func publishParentOnlyBlocker(t *testing.T, store *Store, rootAdmission Admissio
 	if err != nil {
 		t.Fatal(err)
 	}
-	runControllerGit(t, store.identity.PrimaryRoot, "restore", "--source=HEAD", "--staged", "--worktree", "--", "blocker-result.txt")
 	projected, err := store.ProjectParentCompletion()
 	if err != nil || projected.Operation != PublicationOperationParentOnlyMaterialize ||
 		projected.Execution == nil || projected.Execution.EpisodeID != episode.EpisodeID ||
@@ -162,6 +178,9 @@ func resumeAndAmendParentOnlyRoot(t *testing.T, store *Store, repo string, proje
 	if resumed.Head.ActiveEpisodeID != "" || resumed.Admission.Attempt.SemanticTaskRef.TaskPath != rootPath ||
 		resumed.Admission.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
 		t.Fatalf("Root continuation escaped parent-only authority: %#v", resumed)
+	}
+	if data, err := os.ReadFile(filepath.Join(repo, "blocker-result.txt")); err != nil || string(data) != "implemented blocker\n" {
+		t.Fatalf("Root resume lost published child output: %q %v", data, err)
 	}
 	rootAttemptID := resumed.Admission.Attempt.AttemptID
 	smoke := state.AttachStateStore(WorkflowTaskConfig(store.config, store.Identity(), resumed.Admission.Attempt.SemanticTaskRef))

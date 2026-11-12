@@ -140,8 +140,21 @@ func TestQualityMutationIntentSettlesCrashBeforeRecord(t *testing.T) {
 }
 
 func TestQualityMutationIntentCompletesPartiallyAppliedRecord(t *testing.T) {
-	t.Parallel()
-	f := newQualityIntentFixture(t)
+	t.Run("model-worker", func(t *testing.T) {
+		t.Parallel()
+		assertQualityMutationPartialRecovery(t, newQualityIntentFixture(t), false)
+	})
+	t.Run("parent-only", func(t *testing.T) {
+		t.Parallel()
+		fixture, _ := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
+		started := admitParentOnlyExecutionFixture(t, fixture)
+		f := &qualityIntentFixture{repo: fixture.repo, store: fixture.store, workspace: started.Workspace, before: started.Snapshot, admission: started}
+		assertQualityMutationPartialRecovery(t, f, true)
+	})
+}
+
+func assertQualityMutationPartialRecovery(t *testing.T, f *qualityIntentFixture, parentOnly bool) {
+	t.Helper()
 	f.stageQualityIntent(t)
 	output := f.applyQualityOutput(t)
 	f.preserveQualityOutput(t, output)
@@ -193,6 +206,20 @@ func TestQualityMutationIntentCompletesPartiallyAppliedRecord(t *testing.T) {
 		t.Fatalf("partial completion advanced head to generation=%d lease=%s, want %d/%s",
 			head.ControllerGeneration, head.LiveLeaseID, partial.TargetGeneration, partial.TargetLeaseID)
 	}
+	if parentOnly {
+		file := filepath.Join(f.repo, admission.Attempt.SemanticTaskRef.TaskPath)
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, append(content, []byte("\n## Amendments\n\nTask revision after quality recovery.\n")...), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.store.ParentOnlyTaskAuthoritySyncAdmission(f.store.config); err != nil {
+			t.Fatalf("recovered quality output was not admitted for Task-only revision: %v", err)
+		}
+	}
+
 }
 
 func TestQualityMutationIntentRejectsMissingProvenance(t *testing.T) {

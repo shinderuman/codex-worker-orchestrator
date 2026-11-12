@@ -208,6 +208,9 @@ func (s *Store) completeExistingQualityMutationRecord(record MutationRecord, cur
 	nextLease.ControllerGeneration = record.TargetGeneration
 	nextLease.ExpectedBaseOID = record.After.Head
 	nextLease.ExpectedWorkspaceSnapshotID = record.After.ID
+	if err := bindParentOnlyAdmittedMutationSource(current, record.After, &nextLease); err != nil {
+		return err
+	}
 	nextLease.InFlightCallID = ""
 	nextLease.CreatedAt = time.Now().UTC()
 	if err := s.writeLease(nextLease); err != nil {

@@ -452,10 +452,24 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 	if err != nil {
 		return ParentCompletionOperation{}, false, err
 	}
+	remoteAdvance := false
+	if continuity == publicationSourceContinuous {
+		tip, remoteAdvance, err = s.unpublishedCandidateRemoteAdvance(head, candidate)
+		if err != nil {
+			return ParentCompletionOperation{}, false, err
+		}
+		if remoteAdvance {
+			continuity = publicationSourceAdvanced
+		}
+	}
 	switch continuity {
 	case publicationSourceContinuous:
 		return ParentCompletionOperation{}, false, nil
 	case publicationSourceAdvanced:
+		reason := fmt.Sprintf("primary advanced to %s beyond the candidate base %s", tip, candidate.BaseOID)
+		if remoteAdvance {
+			reason = fmt.Sprintf("unpublished candidate remote advanced to %s beyond the candidate base %s", tip, candidate.BaseOID)
+		}
 		return ParentCompletionOperation{
 			Surface:   PublicationOperationSurface,
 			Operation: PublicationOperationRebind,
@@ -465,11 +479,29 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 				CandidateID:        candidate.CandidateID,
 				SourceOID:          tip,
 			},
-			Reason: fmt.Sprintf("primary advanced to %s beyond the candidate base %s", tip, candidate.BaseOID),
+			Reason: reason,
 		}, true, nil
 	default:
 		return ParentCompletionOperation{}, false, fmt.Errorf("publication local ref %s is outside candidate promotion authority and is not a fast-forward of the candidate base; resolve the primary divergence before publication", tip)
 	}
+}
+
+func (s *Store) unpublishedCandidateRemoteAdvance(head RepositoryControllerHead, candidate AcceptedCandidate) (string, bool, error) {
+	if candidate.State != candidatePromoted || !candidate.EvidenceValid {
+		return "", false, nil
+	}
+	remote, err := s.observeCandidateRemote(head, candidate)
+	if err != nil {
+		return "", false, err
+	}
+	if remote == candidate.BaseOID || remote == candidate.CommitOID {
+		return "", false, nil
+	}
+	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
+	if err != nil {
+		return "", false, err
+	}
+	return remote, !contains, nil
 }
 
 func (s *Store) projectAcceptanceOperation(head RepositoryControllerHead) (ParentCompletionOperation, error) {

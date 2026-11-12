@@ -182,6 +182,45 @@ func TestSkippedCivilDateDoesNotInheritPreviousWeekday(t *testing.T) {
 	})
 }
 
+func TestZoneBoundsNonAdvancingLeapYearEnd(t *testing.T) {
+	policy, err := Parse("Europe/Warsaw", "mon-fri@12:00-13:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []pauseCase{
+		{"before", "2040-12-31T10:59:59Z", false, "2040-12-31T11:00:00Z"},
+		{"inside", "2040-12-31T11:30:00Z", true, "2040-12-31T12:00:00Z"},
+		{"exclusive end", "2040-12-31T12:00:00Z", false, "2041-01-01T11:00:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := make(chan struct {
+				paused bool
+				next   time.Time
+			}, 1)
+			go func() {
+				at, _ := time.Parse(time.RFC3339, tc.at)
+				paused, next := policy.Evaluate(at)
+				result <- struct {
+					paused bool
+					next   time.Time
+				}{paused, next}
+			}()
+			select {
+			case got := <-result:
+				want, err := time.Parse(time.RFC3339, tc.next)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.paused != tc.paused || !got.next.Equal(want) {
+					t.Fatalf("Evaluate(%s) = %t/%s; want %t/%s", tc.at, got.paused, got.next, tc.paused, want)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("ZoneBounds non-advancing at leap-year end blocked Evaluate")
+			}
+		})
+	}
+}
+
 func assertPauseCases(t *testing.T, policy Policy, cases []pauseCase) {
 	t.Helper()
 	for _, tc := range cases {

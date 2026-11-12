@@ -48,7 +48,7 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	if !errors.As(err, &raced) {
 		t.Fatalf("remote race was not classified as a recoverable refusal: %v", err)
 	}
-	if raced.Action != "rebind-unpublished-candidate" ||
+	if raced.Action != PublicationOperationRebind ||
 		!strings.Contains(raced.Reason, errCandidateReentryExternalAdvancement.Error()) ||
 		raced.RemoteOID != implementation.BaseOID {
 		t.Fatalf("remote race lost repair action, reason, or abort evidence: %#v", raced)
@@ -59,6 +59,17 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	}
 	if head.PendingTransitionID != "" || head.IntegrationTip != implementation.BaseOID || head.AcceptedCandidateRef == nil {
 		t.Fatalf("aborted journal changed publication authority: %#v", head)
+	}
+	projected, err := fixture.store.ProjectParentCompletion()
+	if err != nil || projected.Operation != PublicationOperationRebind ||
+		projected.Command == nil || projected.Command.CandidateID != implementation.CandidateID ||
+		projected.Command.ExpectedGeneration != head.ControllerGeneration {
+		t.Fatalf("canonical handoff did not project remote-only rebind: %#v %v", projected, err)
+	}
+	selected, err := fixture.store.ProjectParentCompletionOperation(PublicationOperationRebind)
+	if err != nil || selected.Operation != PublicationOperationRebind || selected.Command == nil ||
+		selected.Command.SourceOID != external {
+		t.Fatalf("canonical prepare projection did not bind the observed remote: %#v %v", selected, err)
 	}
 	missing := head
 	missing.AcceptedCandidateRef = nil
@@ -108,5 +119,24 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 		CandidateID:        implementation.CandidateID,
 	}); err == nil {
 		t.Fatal("stale rebind authority admitted twice")
+	}
+}
+
+func TestPublicationAbortRejectsMissingTerminalRemoteEvidence(t *testing.T) {
+	var store Store
+	op := ExecutionOperation{Terminal: &TerminalMetadataOperation{}}
+	for _, tc := range []struct {
+		name       string
+		completion CompletionProgress
+	}{
+		{name: "missing-remote", completion: CompletionProgress{}},
+		{name: "already-observed", completion: CompletionProgress{AbortRemoteOID: "observed", ObservationRef: &EvidenceObjectRef{}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action, reason := store.publicationAbortRecoveryAction(op, RepositoryControllerHead{}, TransitionState{Completion: &tc.completion})
+			if action != "" || !strings.Contains(reason, "remote observation") {
+				t.Fatalf("missing terminal remote evidence offered generic rebind: action=%q reason=%q", action, reason)
+			}
+		})
 	}
 }

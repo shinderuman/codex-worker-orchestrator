@@ -321,12 +321,9 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	trees, err := CaptureExecutionTrees(op.Workspace.Root, base, op.Attempt.SemanticTaskRef)
+	trees, err := verifyImportedParentSourceTrees(op, base)
 	if err != nil {
 		return err
-	}
-	if trees != op.Rebound.Current {
-		return fmt.Errorf("parent source import output differs from its archived tree")
 	}
 	snapshot, err := CaptureWorkspaceSnapshot(op.Workspace.Root)
 	if err != nil {
@@ -334,6 +331,9 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	}
 	lease := *op.Lease
 	lease.ExpectedWorkspaceSnapshotID = snapshot.ID
+	if err := bindParentOnlyAdmittedSource(op, snapshot, &lease); err != nil {
+		return err
+	}
 	if err := s.writeLease(lease); err != nil {
 		return err
 	}
@@ -354,6 +354,36 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 		return nil
 	})
 	return err
+}
+
+func bindParentOnlyAdmittedSource(op ExecutionOperation, snapshot WorkspaceSnapshot, lease *ExecutionLease) error {
+	if op.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return nil
+	}
+	trees, err := CaptureAdmittedSourceTrees(op.Workspace.Root, op.Attempt.SemanticTaskRef.TaskPath)
+	if err != nil {
+		return err
+	}
+	observed, err := CaptureWorkspaceSnapshot(op.Workspace.Root)
+	if err != nil {
+		return err
+	}
+	if observed != snapshot {
+		return fmt.Errorf("parent-only source sync trees differ from the bound snapshot")
+	}
+	lease.AdmittedSourceTrees = &trees
+	return nil
+}
+
+func verifyImportedParentSourceTrees(op ExecutionOperation, base string) (ExecutionTrees, error) {
+	trees, err := CaptureExecutionTrees(op.Workspace.Root, base, op.Attempt.SemanticTaskRef)
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	if trees != op.Rebound.Current {
+		return ExecutionTrees{}, fmt.Errorf("parent source import output differs from its archived tree")
+	}
+	return trees, nil
 }
 
 func (s *Store) bindParentOnlySourceSyncSmoke(op ExecutionOperation) error {

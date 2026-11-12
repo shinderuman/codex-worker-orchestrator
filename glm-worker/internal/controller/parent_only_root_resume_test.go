@@ -3,89 +3,27 @@ package controller
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestParentOnlyRootResumeUsesTypedMaterializationAndClosesEpisode(t *testing.T) {
 	t.Parallel()
-	fixture, retiredChild := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
-	successorPath := "IMPLEMENTATION_TASKS/successor.md"
-	if err := os.WriteFile(filepath.Join(fixture.repo, successorPath), []byte(parentOnlyTaskContent(ExecutionAuthorityParentOnly)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runControllerGit(t, fixture.repo, "add", successorPath)
-	runControllerGit(t, fixture.repo, "commit", "-q", "-m", "designate parent-only successor Root")
-	runControllerGit(t, fixture.repo, "push", "origin", "HEAD:"+fixture.policy.RemoteRef)
-
-	writeParentOnlyProduct(t, fixture, "evaluation-result.md", "parent evaluation product\n")
-	admitParentOnlyExecutionFixture(t, fixture)
-	admission := parentOnlyCompletionAdmission(t, fixture)
-	accepted, err := fixture.store.AcceptParentCompletion(admission, CandidateAcceptanceInput{
-		Message: "retire child", Policy: fixture.policy, RequiredValidations: declaredNoValidations(),
-	})
+	repo, store, policy, initial, episode := startParentOnlyBlockerEpisode(t)
+	publishParentOnlyBlocker(t, store, initial, episode, policy)
+	fixture := parentOnlyTaskFixture{repo: repo, store: store, policy: policy}
+	root, err := ResolveCommittedTaskAuthority(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate, err := fixture.store.LoadAcceptedCandidate(*accepted.CandidateRef)
+	head, err := store.LoadHead()
 	if err != nil {
 		t.Fatal(err)
 	}
-	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{
-		ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
-	})
+	episode, err = store.LoadEpisodeRevision(head.ActiveEpisodeID, head.ActiveEpisodeRevision)
 	if err != nil {
-		t.Fatal(err)
-	}
-	retired, _ := prepareCompletionTestCandidate(t, fixture.store, promoted, candidate)
-	published, err := fixture.store.RecoverExecutionOperation(retired.TransitionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if published.Head.MetadataLineageRef == nil || published.Head.ExecutionTaskRef != nil || published.Head.LiveLeaseID != "" {
-		t.Fatalf("child publication did not reach a retired successor: %#v", published.Head)
-	}
-	root, err := ResolveCommittedTaskAuthority(fixture.repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if root.Task.TaskPath != successorPath || root.ExecutionMode != ExecutionAuthorityParentOnly {
-		t.Fatalf("successor Root lacks committed parent-only authority: %#v", root)
-	}
-
-	episode := BlockerEpisodeRevision{
-		SchemaVersion:     controllerSchemaVersion,
-		EpisodeID:         "parent-only-root-episode",
-		Revision:          1,
-		ProjectSnapshotID: published.Head.ProjectSnapshotID,
-		RootTaskRef:       root.Task,
-		ScopeRootTaskRef:  retiredChild,
-		SatisfiedTaskRefs: []SemanticTaskRef{retiredChild},
-		AdmittedClosure:   []SemanticTaskRef{retiredChild},
-		AdmittedOrder:     []SemanticTaskRef{retiredChild},
-		State:             EpisodeStateResumingRoot,
-		CreatedAt:         time.Now().UTC(),
-	}
-	episode.RevisionID = blockerEpisodeRevisionID(episode)
-	if err := fixture.store.writeEpisodeRevision(episode); err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.store.writeEpisodeRecord(BlockerEpisodeRecord{
-		SchemaVersion: controllerSchemaVersion, EpisodeID: episode.EpisodeID,
-		RepositoryIdentity: fixture.store.Identity().LineageID,
-		RootTaskRef:        root.Task, ScopeRootTaskRef: retiredChild,
-		CreatedAt: episode.CreatedAt,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	head := published.Head
-	head.ControllerGeneration++
-	head.ActiveEpisodeID, head.ActiveEpisodeRevision = episode.EpisodeID, episode.Revision
-	if err := fixture.store.writeHeadCAS(published.Head.ControllerGeneration, head); err != nil {
 		t.Fatal(err)
 	}
 	projected, err := fixture.store.ProjectParentCompletion()

@@ -85,8 +85,8 @@ func (s *Store) planParentOnlyExecution(input ParentOnlyMaterializeInput) (Execu
 	record.TargetExecutionTaskRef = attempt.SemanticTaskRef
 	record.TargetRootTaskRef = attempt.RootTaskRef
 	record.Effects = []EffectExpectation{{Surface: MutationSurfaceSource, Resource: s.identity.PrimaryRoot, ExpectedNew: parentOnlyMaterializationIdentity(workspace, snapshot)}}
-	op := ExecutionOperation{Transition: record, Source: Admission{Head: head}, Workspace: &workspace, Attempt: &attempt, Lease: &lease, Episode: episode}
-	if err := planParentOnlyEpisodeClosure(&op, head, authority.Task); err != nil {
+	op := ExecutionOperation{Transition: record, Source: Admission{Head: head, Workspace: workspace, Snapshot: snapshot}, Workspace: &workspace, Attempt: &attempt, Lease: &lease, Episode: episode}
+	if err := s.planParentOnlyEpisodeClosure(&op, head, authority.Task); err != nil {
 		return ExecutionOperation{}, head, err
 	}
 	return op, head, nil
@@ -114,9 +114,12 @@ func parentOnlyExecutionSourceSnapshot(workspace WorkspaceIdentity, authority Ta
 	return snapshot, nil
 }
 
-func planParentOnlyEpisodeClosure(op *ExecutionOperation, head RepositoryControllerHead, task SemanticTaskRef) error {
+func (s *Store) planParentOnlyEpisodeClosure(op *ExecutionOperation, head RepositoryControllerHead, task SemanticTaskRef) error {
 	if op.Episode == nil {
 		return nil
+	}
+	if err := s.planParentOnlyResumeSource(op); err != nil {
+		return err
 	}
 	if err := planRootResumeClosure(op, head, task); err != nil {
 		return err
@@ -139,6 +142,18 @@ func (s *Store) newParentOnlyExecutionRecords(authority TaskAuthority, workspace
 	}
 	attempt.BaselineTrees.IndexTree = baseTree
 	attempt.BaselineTrees.WorktreeTree = baseTree
+	admittedTrees, err := CaptureAdmittedSourceTrees(workspace.Root, authority.Task.TaskPath)
+	if err != nil {
+		return AttemptRecord{}, ExecutionLease{}, err
+	}
+	lease.AdmittedSourceTrees = &admittedTrees
+	observed, err := CaptureWorkspaceSnapshot(workspace.Root)
+	if err != nil {
+		return AttemptRecord{}, ExecutionLease{}, err
+	}
+	if observed != snapshot {
+		return AttemptRecord{}, ExecutionLease{}, fmt.Errorf("parent-only admitted source trees differ from the bound snapshot")
+	}
 	if err := s.archiveExecutionBaseline(workspace.Root, &attempt); err != nil {
 		return AttemptRecord{}, ExecutionLease{}, err
 	}
@@ -318,9 +333,8 @@ func (s *Store) validateParentOnlyExecutionOperation(op ExecutionOperation) erro
 	if !parentOnlyPlanMatchesJournal(op) {
 		return fmt.Errorf("parent-only execution plan differs from journal authority")
 	}
-	bound := WorkspaceSnapshot{ID: op.Lease.ExpectedWorkspaceSnapshotID, Head: op.Lease.ExpectedBaseOID}
-	if op.Transition.Effects[0].ExpectedNew != parentOnlyMaterializationIdentity(*op.Workspace, bound) {
-		return fmt.Errorf("parent-only execution source binding differs")
+	if err := validateParentOnlySourceBinding(op); err != nil {
+		return err
 	}
 	if !parentOnlyAttemptLeaseBindingMatches(op) {
 		return fmt.Errorf("parent-only attempt and lease binding differs")
@@ -358,23 +372,30 @@ func (s *Store) applyParentOnlyExecution(op ExecutionOperation) error {
 	if workspace != *op.Workspace {
 		return fmt.Errorf("parent-only execution workspace was replaced")
 	}
-	snapshot, err := CaptureWorkspaceSnapshot(workspace.Root)
+	snapshot, err := s.applyParentOnlyResumeSource(op)
 	if err != nil {
 		return err
 	}
-	if snapshot.Head != op.Lease.ExpectedBaseOID || snapshot.ID != op.Lease.ExpectedWorkspaceSnapshotID {
-		return fmt.Errorf("parent-only execution source changed after prepare")
-	}
-	if err := s.writeAttempt(*op.Attempt); err != nil {
+	attempt, lease := *op.Attempt, *op.Lease
+	attempt.WorkspaceSnapshotID = snapshot.ID
+	lease.ExpectedWorkspaceSnapshotID = snapshot.ID
+	if err := bindParentOnlyAdmittedSource(op, snapshot, &lease); err != nil {
 		return err
 	}
-	if err := s.writeLease(*op.Lease); err != nil {
+	if err := s.writeAttempt(attempt); err != nil {
 		return err
 	}
-	if err := s.bindParentOnlySmokeTaskID(*op.Attempt); err != nil {
+	if err := s.writeLease(lease); err != nil {
 		return err
 	}
-	actual := map[string]string{op.Transition.Effects[0].Key(): parentOnlyMaterializationIdentity(workspace, snapshot)}
+	if err := s.bindParentOnlySmokeTaskID(attempt); err != nil {
+		return err
+	}
+	identity := parentOnlyMaterializationIdentity(workspace, snapshot)
+	if op.Rebound != nil {
+		identity = laneMaterializationIdentity(workspace, *op.Rebound)
+	}
+	actual := map[string]string{op.Transition.Effects[0].Key(): identity}
 	_, err = s.commitAuthorityTransitionLocked(op.Transition, actual, false, func(next *RepositoryControllerHead) error {
 		next.ProjectSnapshotID = op.Transition.ProjectSnapshotNew
 		next.IntegrationTip = op.Lease.ExpectedBaseOID
@@ -590,4 +611,19 @@ func (s *Store) LiveParentOnlyExecution() (bool, error) {
 	}
 	_, live, err := s.parentOnlyLiveExecution(head)
 	return live, err
+}
+
+func validateParentOnlySourceBinding(op ExecutionOperation) error {
+	bound := WorkspaceSnapshot{ID: op.Lease.ExpectedWorkspaceSnapshotID, Head: op.Lease.ExpectedBaseOID}
+	expected := parentOnlyMaterializationIdentity(*op.Workspace, bound)
+	if op.Rebound != nil {
+		expected = laneMaterializationIdentity(*op.Workspace, *op.Rebound)
+	}
+	if (op.Episode != nil) != (op.Rebound != nil && op.Suspension != nil) {
+		return fmt.Errorf("parent-only Root resume source is incomplete")
+	}
+	if op.Transition.Effects[0].ExpectedNew != expected {
+		return fmt.Errorf("parent-only execution source binding differs")
+	}
+	return nil
 }

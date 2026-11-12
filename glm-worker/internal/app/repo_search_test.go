@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -277,6 +278,7 @@ func TestRepoSearchUnsupportedFlagCannotBeDeliveredAsEmptyResult(t *testing.T) {
 	root := newRepoSearchGitRepo(t, "unsupportedflag")
 	command := exec.Command("git", "update-index", "--assume-unchanged", "corpus.md")
 	command.Dir = root
+	command.Env = repoSearchTestGitEnvironment(t)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("mark tracked file assume-unchanged: %v: %s", err, output)
 	}
@@ -307,6 +309,7 @@ func TestRepoSearchUnmergedConflictIsNotDeliveredAsEmptyResult(t *testing.T) {
 	run := func(args ...string) {
 		t.Helper()
 		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		command.Env = repoSearchTestGitEnvironment(t)
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v failed: %v: %s", args, err, output)
 		}
@@ -322,6 +325,7 @@ func TestRepoSearchUnmergedConflictIsNotDeliveredAsEmptyResult(t *testing.T) {
 	}
 	run("commit", "-am", "main")
 	merge := exec.Command("git", "-C", root, "merge", "--no-edit", "conflict-side")
+	merge.Env = repoSearchTestGitEnvironment(t)
 	if output, err := merge.CombinedOutput(); err == nil {
 		t.Fatalf("expected merge conflict; git merge output: %s", output)
 	}
@@ -356,6 +360,7 @@ func newRepoSearchGitRepo(t *testing.T, marker string) string {
 		t.Helper()
 		command := exec.Command("git", args...)
 		command.Dir = dir
+		command.Env = repoSearchTestGitEnvironment(t)
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("git %v失敗: %v: %s", args, err, output)
 		}
@@ -370,4 +375,36 @@ func newRepoSearchGitRepo(t *testing.T, marker string) string {
 	run("add", "corpus.md")
 	run("commit", "-q", "-m", "initial")
 	return dir
+}
+
+func repoSearchTestGitEnvironment(t *testing.T) []string {
+	t.Helper()
+	env, err := gitexec.WithoutLocalEnvironment(os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env
+}
+
+func TestRepoSearchFixtureDoesNotWriteForeignIndex(t *testing.T) {
+	foreign := newRepoSearchGitRepo(t, "foreign")
+	foreignIndex := filepath.Join(foreign, ".git", "index")
+	before, err := os.ReadFile(foreignIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(foreign, ".git"))
+	t.Setenv("GIT_WORK_TREE", foreign)
+	t.Setenv("GIT_INDEX_FILE", foreignIndex)
+	target := newRepoSearchGitRepo(t, "target")
+	if target == foreign {
+		t.Fatal("fixture accidentally reused foreign repository")
+	}
+	after, err := os.ReadFile(foreignIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("fixture initialization modified foreign repository index")
+	}
 }

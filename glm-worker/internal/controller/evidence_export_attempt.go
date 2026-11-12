@@ -200,6 +200,7 @@ func (b *evidenceExportBuilder) materializeSealGroup(seal AttemptSeal, prefix st
 			return err
 		}
 	}
+	b.collectSealedTaskAuthority(seal, prefix)
 	return nil
 }
 

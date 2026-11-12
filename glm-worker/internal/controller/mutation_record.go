@@ -30,6 +30,9 @@ func (s *Store) recordMutationLocked(admission Admission, command, outcome strin
 	nextLease.ControllerGeneration = nextGeneration
 	nextLease.ExpectedBaseOID = after.Head
 	nextLease.ExpectedWorkspaceSnapshotID = after.ID
+	if err := bindParentOnlyAdmittedMutationSource(current, after, &nextLease); err != nil {
+		return Admission{}, err
+	}
 	nextLease.InFlightCallID = ""
 	nextLease.CreatedAt = time.Now().UTC()
 	record := MutationRecord{
@@ -60,6 +63,25 @@ func (s *Store) recordMutationLocked(admission Admission, command, outcome strin
 		return Admission{}, err
 	}
 	return Admission{Head: nextHead, Attempt: current.Attempt, Lease: nextLease, Workspace: current.Workspace, Snapshot: after}, nil
+}
+
+func bindParentOnlyAdmittedMutationSource(current Admission, after WorkspaceSnapshot, lease *ExecutionLease) error {
+	if current.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
+		return nil
+	}
+	trees, err := CaptureAdmittedSourceTrees(current.Workspace.Root, current.Attempt.SemanticTaskRef.TaskPath)
+	if err != nil {
+		return err
+	}
+	observed, err := CaptureWorkspaceSnapshot(current.Workspace.Root)
+	if err != nil {
+		return err
+	}
+	if observed != after {
+		return fmt.Errorf("admitted mutation source trees differ from the bound snapshot")
+	}
+	lease.AdmittedSourceTrees = &trees
+	return nil
 }
 
 func changedSurfaces(before, after WorkspaceSnapshot) []MutationSurface {

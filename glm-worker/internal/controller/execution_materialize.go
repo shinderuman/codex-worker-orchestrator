@@ -203,32 +203,43 @@ func materializeExecutionBatch(repo string, entries []workspaceTreeEntry) error 
 }
 
 func verifyLaneMaterializationPaths(root string, entries []workspaceTreeEntry) error {
+	return verifyMaterializationPaths(root, entries, false)
+}
+
+func verifyMaterializationPaths(root string, entries []workspaceTreeEntry, preserveGitlinks bool) error {
+	gitlinks := map[string]bool{}
 	allowed := map[string]bool{".git": true}
 	for _, entry := range entries {
 		allowed[entry.path] = true
+		gitlinks[entry.path] = entry.mode == "160000"
 	}
 	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if path == root {
-			return nil
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if relative == ".git" && entry.IsDir() {
+		return verifyMaterializationPath(root, path, entry, allowed, gitlinks, preserveGitlinks)
+	})
+}
+
+func verifyMaterializationPath(root, path string, entry fs.DirEntry, allowed, gitlinks map[string]bool, preserveGitlinks bool) error {
+	if path == root {
+		return nil
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return err
+	}
+	relative = filepath.ToSlash(relative)
+	if entry.IsDir() {
+		if relative == ".git" || preserveGitlinks && gitlinks[relative] {
 			return filepath.SkipDir
 		}
-		if entry.IsDir() {
-			return nil
-		}
-		if !allowed[filepath.ToSlash(relative)] {
-			return fmt.Errorf("unexpected materialization path %q", relative)
-		}
 		return nil
-	})
+	}
+	if !allowed[relative] {
+		return fmt.Errorf("unexpected materialization path %q", relative)
+	}
+	return nil
 }
 
 func materializeExecutionEntry(repo string, entry workspaceTreeEntry, blobs workspaceBlobs) error {

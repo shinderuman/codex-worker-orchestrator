@@ -126,6 +126,7 @@ func civilWindowIntervals(day time.Time, window Window, location *time.Location)
 		if segmentEnd.IsZero() || segmentEnd.After(limit) {
 			segmentEnd = limit
 		}
+		segmentEnd = advancingZoneSegmentEnd(cursor, segmentEnd, limit)
 		shift := time.Duration(offset) * time.Second
 		start := civilStart.Add(-shift)
 		end := civilEnd.Add(-shift)
@@ -141,6 +142,17 @@ func civilWindowIntervals(day time.Time, window Window, location *time.Location)
 		cursor = segmentEnd
 	}
 	return ranges
+}
+
+func advancingZoneSegmentEnd(cursor, zoneEnd, limit time.Time) time.Time {
+	if zoneEnd.After(cursor) {
+		return zoneEnd
+	}
+	end := cursor.Add(time.Second)
+	if end.After(limit) {
+		return limit
+	}
+	return end
 }
 
 func mergeIntervals(ranges []interval) []interval {

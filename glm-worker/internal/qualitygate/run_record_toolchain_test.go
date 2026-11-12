@@ -174,6 +174,39 @@ func TestNoIgnoredInputsForeignGitLocationIsolation(t *testing.T) {
 	}
 }
 
+func TestNoIgnoredInputsSameWorktreeForeignGitLocationIsolation(t *testing.T) {
+	root := initValidationInputGitRepository(t)
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Errorf("restore process cwd: %v", err)
+		}
+	})
+	foreignIndex, originalForeignIndex := setForeignValidationGitEnvironment(t)
+	if clean, err := NoIgnoredInputs(root); err != nil || !clean {
+		t.Fatalf("clean target at process cwd: clean=%t err=%v", clean, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "top.log"), []byte("ignored by target\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if clean, err := NoIgnoredInputs(root); err != nil || clean {
+		t.Fatalf("foreign Git environment hid an ignored file at process cwd: clean=%t err=%v", clean, err)
+	}
+	after, err := os.ReadFile(foreignIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, originalForeignIndex) {
+		t.Fatal("validation Git inspection changed the foreign index")
+	}
+}
+
 func TestNoIgnoredInputsRejectsIgnoredFilesInsideNestedRepository(t *testing.T) {
 	root := initValidationInputGitRepository(t)
 	setForeignValidationGitEnvironment(t)

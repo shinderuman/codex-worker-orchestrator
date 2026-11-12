@@ -61,6 +61,31 @@ func TestMarkdownPlanSpacingFixesSingleBlankBetweenTaskEntries(t *testing.T) {
 	}
 }
 
+func TestMarkdownPlanSpacingKeepsNonTaskLinkSeparation(t *testing.T) {
+	root := t.TempDir()
+	path := implementationPlanPath
+	original := "## NEXT（優先順）\n\n- [non-task](https://example.invalid/guide)\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n\n- `IMPLEMENTATION_TASKS/second.md`\n\n- [readme](docs/readme.md)\n\n- IMPLEMENTATION_TASKS/third.md\n"
+	expected := "## NEXT（優先順）\n\n- [non-task](https://example.invalid/guide)\n\n- [first](IMPLEMENTATION_TASKS/first.md)\n- `IMPLEMENTATION_TASKS/second.md`\n\n- [readme](docs/readme.md)\n\n- IMPLEMENTATION_TASKS/third.md\n"
+	writeMarkdownAuthorityFixture(t, root, path, original)
+	if err := fixPlanSpacing(root, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != expected {
+		t.Fatalf("non-task link spacing changed: %q", got)
+	}
+	if err := fixPlanSpacing(root, []string{path}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil || string(again) != expected {
+		t.Fatalf("second fix changed spacing: %q err=%v", again, err)
+	}
+}
+
 func TestMarkdownPlanSpacingDoesNotRewriteOtherMarkdown(t *testing.T) {
 	root := t.TempDir()
 	path := "IMPLEMENTATION_TASKS/task.md"

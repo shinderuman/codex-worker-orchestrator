@@ -100,6 +100,7 @@ type ExecutionLease struct {
 	WorkspaceID                 string          `json:"workspace_id"`
 	ExpectedBaseOID             string          `json:"expected_base_oid"`
 	ExpectedWorkspaceSnapshotID string          `json:"expected_workspace_snapshot_id"`
+	AdmittedSourceTrees         *ExecutionTrees `json:"admitted_source_trees,omitempty"`
 	InFlightCallID              string          `json:"in_flight_call_id,omitempty"`
 	CreatedAt                   time.Time       `json:"created_at"`
 }
