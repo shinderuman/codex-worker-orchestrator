@@ -126,7 +126,7 @@ func TestPublicationAbortRejectsMissingTerminalRemoteEvidence(t *testing.T) {
 	var store Store
 	op := ExecutionOperation{Terminal: &TerminalMetadataOperation{}}
 	for _, tc := range []struct {
-		name string
+		name       string
 		completion CompletionProgress
 	}{
 		{name: "missing-remote", completion: CompletionProgress{}},
