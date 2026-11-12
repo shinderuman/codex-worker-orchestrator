@@ -167,11 +167,9 @@ var workerGoTestDisallowedBashRules = []string{
 }
 
 var workerDockerDisallowedBashRules = []string{
-	"Bash(docker run*)",
-	"Bash(docker exec*)",
-	"Bash(docker cp*)",
-	"Bash(docker build*)",
-	"Bash(docker compose*)",
+	"Bash(docker *)",
+	"Bash(* docker *)",
+	"Bash(*/docker *)",
 }
 
 var (
