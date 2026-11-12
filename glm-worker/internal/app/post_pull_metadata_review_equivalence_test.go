@@ -332,6 +332,80 @@ func TestPostPullMetadataEquivalentReviewReentersThroughMaterializeAndAcceptsNew
 	}
 }
 
+func TestPostPullSameHeadReentryMaterializesFreshReview(t *testing.T) {
+	f := newPostPullMetadataReviewFixture(t)
+	current, err := state.CaptureGitSnapshot(f.cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.original.Review.Snapshot != (state.SnapshotDigest{
+		Head: current.Head, IndexDigest: current.IndexDigest, WorktreeDigest: current.WorktreeDigest,
+	}) {
+		t.Fatal("same-HEAD reentry fixture has a different index or worktree")
+	}
+	callsBefore := countPostPullReviewerCalls(t, f.runtime, f.taskID)
+	parentSource, err := controller.CaptureWorkspaceSnapshot(f.cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebound, err := f.store.RebindParentSourceCandidate(controller.PublicationInput{
+		ExpectedGeneration: f.accepted.Head.ControllerGeneration,
+		CandidateID:        f.candidate.CandidateID,
+	}, parentSource.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := f.store.LoadAcceptedCandidate(*rebound.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reentered, err := f.store.ReenterAcceptedCandidate(controller.PublicationInput{
+		ExpectedGeneration: rebound.Head.ControllerGeneration,
+		CandidateID:        candidate.CandidateID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := workflow.ExecuteControllerExecution(f.cfg, f.store, workflow.ControllerExecutionCommand{
+		Action:             "materialize",
+		ExpectedGeneration: reentered.Head.ControllerGeneration,
+		SuspensionID:       reentered.Suspension.SnapshotID,
+	})
+	if err != nil {
+		t.Fatalf("same-HEAD materialization must fall back to fresh Review: %v", err)
+	}
+	if live.Admission == nil || !live.ParentSourceReview {
+		t.Fatalf("same-HEAD materialization did not enter parent Review: %#v", live)
+	}
+	materialized, err := state.CaptureGitSnapshot(live.Admission.Workspace.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (state.SnapshotDigest{
+		Head: materialized.Head, IndexDigest: materialized.IndexDigest, WorktreeDigest: materialized.WorktreeDigest,
+	}) != f.original.Review.Snapshot {
+		t.Fatalf("materialized Review source was not the same HEAD/index/worktree: original=%#v materialized=%#v",
+			f.original.Review.Snapshot, materialized)
+	}
+	binding, err := f.runtime.CurrentParentReviewBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding != nil && binding.SourceEquivalence != nil {
+		t.Fatal("same-HEAD reentry reused an equivalent Review without committed advancement")
+	}
+	if f.runtime.TaskStatus() != state.TaskStatusInterrupted {
+		t.Fatalf("fresh Review was not prepared: %s", f.runtime.TaskStatus())
+	}
+	checkpoint, err := f.runtime.LoadResumeCheckpoint()
+	if err != nil || checkpoint.Role != state.ReviewerRole || !checkpoint.ReadOnly {
+		t.Fatalf("fresh independent Reviewer checkpoint missing: %#v %v", checkpoint, err)
+	}
+	if countPostPullReviewerCalls(t, f.runtime, f.taskID) != callsBefore {
+		t.Fatal("preparing fresh Review must not manufacture a Reviewer model call")
+	}
+}
+
 func TestPostPullMetadataChangedDependencyFallsBackToFreshReview(t *testing.T) {
 	f := newPostPullMetadataReviewFixture(t)
 	originalCalls := countPostPullReviewerCalls(t, f.runtime, f.taskID)
