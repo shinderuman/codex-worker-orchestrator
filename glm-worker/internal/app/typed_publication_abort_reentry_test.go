@@ -37,9 +37,6 @@ func TestTypedPublicationAbortRemoteRaceRebindsThroughHandoffAndStaging(t *testi
 	if err != nil || pending.PendingTransitionID == "" {
 		t.Fatalf("interrupted publication lost its journal: %#v %v", pending, err)
 	}
-	if err := os.Remove(hook); err != nil {
-		t.Fatal(err)
-	}
 
 	recovery := executeParentHandoff(t, cfg)
 	if recovery.RequiredAction == nil || *recovery.RequiredAction != controllerExecutionSurface {
@@ -59,6 +56,9 @@ func TestTypedPublicationAbortRemoteRaceRebindsThroughHandoffAndStaging(t *testi
 	aborted, err := store.LoadHead()
 	if err != nil || aborted.PendingTransitionID != "" {
 		t.Fatalf("recovery did not finalize the rejected publication journal: %#v %v", aborted, err)
+	}
+	if err := os.Remove(hook); err != nil {
+		t.Fatal(err)
 	}
 
 	external := filepath.Join(t.TempDir(), "external")
