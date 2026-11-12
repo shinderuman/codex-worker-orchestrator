@@ -41,19 +41,6 @@ func TestTypedPublicationAbortRemoteRaceRebindsThroughHandoffAndStaging(t *testi
 		t.Fatal(err)
 	}
 
-	external := filepath.Join(t.TempDir(), "external")
-	runControllerActivationGit(t, cfg.RepoRoot, "clone", "--quiet", "--branch", "main", remotePath, external)
-	runControllerActivationGit(t, external, "config", "user.name", "external")
-	runControllerActivationGit(t, external, "config", "user.email", "external@example.com")
-	writeAppTestFile(t, external, "remote-only-advancement.txt", "external writer\n")
-	runControllerActivationGit(t, external, "add", "--all")
-	runControllerActivationGit(t, external, "commit", "-qm", "remote-only update")
-	runControllerActivationGit(t, external, "push", "origin", "HEAD:refs/heads/main")
-	remoteOID := strings.TrimSpace(string(appTestGitOutput(t, external, "rev-parse", "HEAD")))
-	if current := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"))); current == remoteOID {
-		t.Fatal("test lost its remote-only race; local source was pulled")
-	}
-
 	recovery := executeParentHandoff(t, cfg)
 	if recovery.RequiredAction == nil || *recovery.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("pending publication did not require canonical recovery: %#v", recovery)
@@ -69,6 +56,23 @@ func TestTypedPublicationAbortRemoteRaceRebindsThroughHandoffAndStaging(t *testi
 		t.Fatalf("prepared recovery command: %#v %v", prepared, err)
 	}
 	_, _, _ = runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
+	aborted, err := store.LoadHead()
+	if err != nil || aborted.PendingTransitionID != "" {
+		t.Fatalf("recovery did not finalize the rejected publication journal: %#v %v", aborted, err)
+	}
+
+	external := filepath.Join(t.TempDir(), "external")
+	runControllerActivationGit(t, cfg.RepoRoot, "clone", "--quiet", "--branch", "main", remotePath, external)
+	runControllerActivationGit(t, external, "config", "user.name", "external")
+	runControllerActivationGit(t, external, "config", "user.email", "external@example.com")
+	writeAppTestFile(t, external, "remote-only-advancement.txt", "external writer\n")
+	runControllerActivationGit(t, external, "add", "--all")
+	runControllerActivationGit(t, external, "commit", "-qm", "remote-only update")
+	runControllerActivationGit(t, external, "push", "origin", "HEAD:refs/heads/main")
+	remoteOID := strings.TrimSpace(string(appTestGitOutput(t, external, "rev-parse", "HEAD")))
+	if current := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"))); current == remoteOID {
+		t.Fatal("test lost its remote-only race; local source was pulled")
+	}
 
 	handoff := executeParentHandoff(t, cfg)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
