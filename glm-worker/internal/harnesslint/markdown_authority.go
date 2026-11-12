@@ -17,7 +17,7 @@ const markdownDerivedStateRule = "markdown-derived-state"
 
 var planExtraBlankLines = regexp.MustCompile(`\n(?:[ \t]*\n){2,}`)
 var planHeadingBlankLines = regexp.MustCompile(`^(?:[ \t]*\n){2,}`)
-var planSeparatedTaskItems = regexp.MustCompile(`(?m)(^- \[[^\n]*\n)[ \t]*\n(- \[)`)
+var planSeparatedTaskItems = regexp.MustCompile("(?m)(^[ \\t]*- [ \\t]*(?:IMPLEMENTATION_TASKS/|`IMPLEMENTATION_TASKS/|\\[)[^\\n]*\\n)[ \\t]*\\n([ \\t]*- [ \\t]*(?:IMPLEMENTATION_TASKS/|`IMPLEMENTATION_TASKS/|\\[))")
 
 var readmePinnedVersionPattern = regexp.MustCompile(`^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
 
@@ -81,25 +81,12 @@ func compactPlanSpacing(data []byte) []byte {
 }
 
 func compactPlanSectionSpacing(data []byte, heading string) []byte {
-	position := bytes.Index(data, []byte(heading))
-	if position < 0 {
+	start, end, found := planSectionBounds(data, heading)
+	if !found {
 		return data
 	}
-	start := position + len(heading)
-	end := len(data)
-	if next := bytes.Index(data[start:], []byte("\n## ")); next >= 0 {
-		end = start + next + 1
-	}
 	original := data[start:end]
-	result := planHeadingBlankLines.ReplaceAll(original, []byte("\n"))
-	result = planExtraBlankLines.ReplaceAll(result, []byte("\n\n"))
-	for {
-		next := planSeparatedTaskItems.ReplaceAll(result, []byte("$1$2"))
-		if bytes.Equal(next, result) {
-			break
-		}
-		result = next
-	}
+	result := compactPlanUnfencedSpacing(original)
 	if bytes.Equal(original, result) {
 		return data
 	}
@@ -107,6 +94,63 @@ func compactPlanSectionSpacing(data []byte, heading string) []byte {
 	compacted = append(compacted, data[:start]...)
 	compacted = append(compacted, result...)
 	return append(compacted, data[end:]...)
+}
+
+func planSectionBounds(data []byte, heading string) (int, int, bool) {
+	start := -1
+	offset := 0
+	var fence markdownFence
+	for _, raw := range bytes.SplitAfter(data, []byte("\n")) {
+		line := strings.TrimSuffix(string(raw), "\n")
+		if updateMarkdownFence(strings.TrimSpace(line), &fence) {
+			offset += len(raw)
+			continue
+		}
+		if fence.width == 0 && strings.HasPrefix(line, "## ") {
+			if start >= 0 {
+				return start, offset, true
+			}
+			if line+"\n" == heading {
+				start = offset + len(raw)
+			}
+		}
+		offset += len(raw)
+	}
+	if start < 0 {
+		return 0, 0, false
+	}
+	return start, len(data), true
+}
+
+func compactPlanUnfencedSpacing(data []byte) []byte {
+	var result, unfenced []byte
+	var fence markdownFence
+	for _, line := range bytes.SplitAfter(data, []byte("\n")) {
+		if updateMarkdownFence(strings.TrimSpace(string(line)), &fence) {
+			result = append(result, compactPlanPlainSpacing(unfenced)...)
+			unfenced = nil
+			result = append(result, line...)
+			continue
+		}
+		if fence.width != 0 {
+			result = append(result, line...)
+		} else {
+			unfenced = append(unfenced, line...)
+		}
+	}
+	return append(result, compactPlanPlainSpacing(unfenced)...)
+}
+
+func compactPlanPlainSpacing(data []byte) []byte {
+	result := planHeadingBlankLines.ReplaceAll(data, []byte("\n"))
+	result = planExtraBlankLines.ReplaceAll(result, []byte("\n\n"))
+	for {
+		next := planSeparatedTaskItems.ReplaceAll(result, []byte("$1$2"))
+		if bytes.Equal(next, result) {
+			return result
+		}
+		result = next
+	}
 }
 
 func fixPlanSpacing(root string, paths []string) error {
