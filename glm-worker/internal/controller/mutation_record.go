@@ -30,6 +30,20 @@ func (s *Store) recordMutationLocked(admission Admission, command, outcome strin
 	nextLease.ControllerGeneration = nextGeneration
 	nextLease.ExpectedBaseOID = after.Head
 	nextLease.ExpectedWorkspaceSnapshotID = after.ID
+	if current.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		admittedTrees, err := CaptureAdmittedSourceTrees(current.Workspace.Root)
+		if err != nil {
+			return Admission{}, err
+		}
+		nextLease.AdmittedSourceTrees = &admittedTrees
+		observed, err := CaptureWorkspaceSnapshot(current.Workspace.Root)
+		if err != nil {
+			return Admission{}, err
+		}
+		if observed != after {
+			return Admission{}, fmt.Errorf("admitted mutation source trees differ from the bound snapshot")
+		}
+	}
 	nextLease.InFlightCallID = ""
 	nextLease.CreatedAt = time.Now().UTC()
 	record := MutationRecord{

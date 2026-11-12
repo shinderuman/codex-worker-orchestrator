@@ -1,13 +1,17 @@
 package reposearch
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 )
 
 func TestRepoSearchDistinguishesRealUnmergedIndexStages(t *testing.T) {
@@ -27,6 +31,7 @@ func TestRepoSearchDistinguishesRealUnmergedIndexStages(t *testing.T) {
 	commitAll(t, dir, "main")
 
 	merge := exec.Command("git", "-C", dir, "-c", "user.name=test", "-c", "user.email=test", "merge", "--no-edit", "conflict-side")
+	merge.Env = repoSearchGitTestEnvironment(t)
 	if output, err := merge.CombinedOutput(); err == nil {
 		t.Fatalf("expected merge conflict; git merge output: %s", output)
 	}
@@ -297,5 +302,38 @@ func TestRepoSearchExhaustiveRejectsFlagAppearingDuringScan(t *testing.T) {
 	}
 	if calls < 2 {
 		t.Fatal("exhaustive search did not reach its post-search fingerprint")
+	}
+}
+
+func repoSearchGitTestEnvironment(t *testing.T) []string {
+	t.Helper()
+	env, err := gitexec.WithoutLocalEnvironment(os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env
+}
+
+func TestRepoSearchGitHelperDoesNotTouchForeignIndex(t *testing.T) {
+	foreign := initRepo(t)
+	writeTestFile(t, filepath.Join(foreign, "foreign.txt"), "foreign\n")
+	commitAll(t, foreign, "initial")
+	foreignIndex := filepath.Join(foreign, ".git", "index")
+	before, err := os.ReadFile(foreignIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(foreign, ".git"))
+	t.Setenv("GIT_WORK_TREE", foreign)
+	t.Setenv("GIT_INDEX_FILE", foreignIndex)
+	target := initRepo(t)
+	writeTestFile(t, filepath.Join(target, "target.txt"), "target\n")
+	commitAll(t, target, "target")
+	after, err := os.ReadFile(foreignIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("temporary fixture changed foreign index")
 	}
 }

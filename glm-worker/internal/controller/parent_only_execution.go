@@ -139,6 +139,18 @@ func (s *Store) newParentOnlyExecutionRecords(authority TaskAuthority, workspace
 	}
 	attempt.BaselineTrees.IndexTree = baseTree
 	attempt.BaselineTrees.WorktreeTree = baseTree
+	admittedTrees, err := CaptureAdmittedSourceTrees(workspace.Root)
+	if err != nil {
+		return AttemptRecord{}, ExecutionLease{}, err
+	}
+	lease.AdmittedSourceTrees = &admittedTrees
+	observed, err := CaptureWorkspaceSnapshot(workspace.Root)
+	if err != nil {
+		return AttemptRecord{}, ExecutionLease{}, err
+	}
+	if observed != snapshot {
+		return AttemptRecord{}, ExecutionLease{}, fmt.Errorf("parent-only admitted source trees differ from the bound snapshot")
+	}
 	if err := s.archiveExecutionBaseline(workspace.Root, &attempt); err != nil {
 		return AttemptRecord{}, ExecutionLease{}, err
 	}

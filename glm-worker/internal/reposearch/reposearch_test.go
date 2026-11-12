@@ -11,13 +11,19 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 )
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	env, err := gitexec.WithoutLocalEnvironment(os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Env = append(env,
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 	)

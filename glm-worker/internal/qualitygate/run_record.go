@@ -181,8 +181,22 @@ func testCacheLineMask(line string) int {
 	return 0
 }
 
+func validationGitCommand(repository string, args ...string) (*exec.Cmd, error) {
+	env, err := gitexec.WithoutLocalEnvironment(os.Environ())
+	if err != nil {
+		return nil, fmt.Errorf("isolate validation Git environment: %w", err)
+	}
+	command := gitexec.Command("git", repository, args...)
+	command.Env = env
+	return command, nil
+}
+
 func NoIgnoredInputs(repository string) (bool, error) {
-	data, err := gitexec.Command("git", repository, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").Output()
+	command, err := validationGitCommand(repository, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
+	if err != nil {
+		return false, err
+	}
+	data, err := command.Output()
 	if err != nil {
 		return false, fmt.Errorf("inspect ignored validation inputs: %w", err)
 	}
@@ -193,7 +207,11 @@ func NoIgnoredInputs(repository string) (bool, error) {
 }
 
 func noIgnoredNestedRepositoryInputs(repository string) (bool, error) {
-	listing, err := gitexec.Command("git", repository, "ls-files", "--others", "--exclude-standard", "-z").Output()
+	command, err := validationGitCommand(repository, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return false, err
+	}
+	listing, err := command.Output()
 	if err != nil {
 		return false, fmt.Errorf("inspect nested untracked repositories: %w", err)
 	}
@@ -213,7 +231,10 @@ func noIgnoredNestedRepositoryInputs(repository string) (bool, error) {
 	if len(candidates) == 0 {
 		return true, nil
 	}
-	command := gitexec.Command("git", repository, "check-ignore", "-z", "--stdin")
+	command, err = validationGitCommand(repository, "check-ignore", "-z", "--stdin")
+	if err != nil {
+		return false, err
+	}
 	command.Stdin = strings.NewReader(strings.Join(candidates, "\x00") + "\x00")
 	output, err := command.Output()
 	if err != nil {

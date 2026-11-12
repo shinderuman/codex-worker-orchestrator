@@ -61,6 +61,40 @@ func CaptureExecutionTrees(repo, authorityBase string, task SemanticTaskRef) (Ex
 	return ExecutionTrees{IndexTree: indexTree, WorktreeTree: worktreeTree, ParentAuthorityDigest: parentDigest}, err
 }
 
+func CaptureAdmittedSourceTrees(repo string) (ExecutionTrees, error) {
+	entries, err := suspensionIndexEntries(repo)
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	index, err := newSuspensionIndex(repo, "")
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	defer func() { _ = os.Remove(index) }()
+	if err := writeSuspensionEntries(repo, index, entries); err != nil {
+		return ExecutionTrees{}, err
+	}
+	indexTree, err := suspensionGitText(repo, index, nil, "write-tree")
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	worktree, err := captureSuspensionWorktree(repo, entries, false)
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	if _, err := suspensionGit(repo, index, nil, "read-tree", "--empty"); err != nil {
+		return ExecutionTrees{}, err
+	}
+	if err := writeSuspensionEntries(repo, index, worktree); err != nil {
+		return ExecutionTrees{}, err
+	}
+	worktreeTree, err := suspensionGitText(repo, index, nil, "write-tree")
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	return ExecutionTrees{IndexTree: indexTree, WorktreeTree: worktreeTree}, nil
+}
+
 func suspensionIndexEntries(repo string) ([]workspaceTreeEntry, error) {
 	debug, err := runGitBinary(repo, nil, "ls-files", "--debug", "-z")
 	if err != nil {

@@ -48,7 +48,7 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	if !errors.As(err, &raced) {
 		t.Fatalf("remote race was not classified as a recoverable refusal: %v", err)
 	}
-	if raced.Action != "rebind-unpublished-candidate" ||
+	if raced.Action != PublicationOperationRebind ||
 		!strings.Contains(raced.Reason, errCandidateReentryExternalAdvancement.Error()) ||
 		raced.RemoteOID != implementation.BaseOID {
 		t.Fatalf("remote race lost repair action, reason, or abort evidence: %#v", raced)
@@ -59,6 +59,17 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	}
 	if head.PendingTransitionID != "" || head.IntegrationTip != implementation.BaseOID || head.AcceptedCandidateRef == nil {
 		t.Fatalf("aborted journal changed publication authority: %#v", head)
+	}
+	projected, err := fixture.store.ProjectParentCompletion()
+	if err != nil || projected.Operation != PublicationOperationRebind ||
+		projected.Command == nil || projected.Command.CandidateID != implementation.CandidateID ||
+		projected.Command.ExpectedGeneration != head.ControllerGeneration {
+		t.Fatalf("canonical handoff did not project remote-only rebind: %#v %v", projected, err)
+	}
+	selected, err := fixture.store.ProjectParentCompletionOperation(PublicationOperationRebind)
+	if err != nil || selected.Operation != PublicationOperationRebind || selected.Command == nil ||
+		selected.Command.SourceOID != external {
+		t.Fatalf("canonical prepare projection did not bind the observed remote: %#v %v", selected, err)
 	}
 	missing := head
 	missing.AcceptedCandidateRef = nil

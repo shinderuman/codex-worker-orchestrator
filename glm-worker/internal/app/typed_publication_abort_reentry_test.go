@@ -16,6 +16,90 @@ func TestTypedPublicationAbortAdvertisesExecutableStagedReentry(t *testing.T) {
 	runIsolatedScenario(t, isolatedScenarioKeyTypedPublicationAbort, "default")
 }
 
+func TestTypedPublicationAbortRemoteRaceRebindsThroughHandoffAndStaging(t *testing.T) {
+	binary := typedCompletionWorkerBinary(t)
+	cfg, _, _ := typedCompletionWorkflowFixture(t, binary, false, false)
+	initial := executeParentHandoff(t, cfg)
+	if initial.RequiredAction == nil || *initial.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("initial publication handoff: %#v", initial)
+	}
+	remotePath := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "remote", "get-url", "origin")))
+	hook := filepath.Join(remotePath, "hooks", "pre-receive")
+	if err := execfile.Write(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	interruptTypedPublication(t, cfg, initial.RequiredActionParameters, false)
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := store.LoadHead()
+	if err != nil || pending.PendingTransitionID == "" {
+		t.Fatalf("interrupted publication lost its journal: %#v %v", pending, err)
+	}
+	if err := os.Remove(hook); err != nil {
+		t.Fatal(err)
+	}
+
+	external := filepath.Join(t.TempDir(), "external")
+	runControllerActivationGit(t, cfg.RepoRoot, "clone", "--quiet", "--branch", "main", remotePath, external)
+	runControllerActivationGit(t, external, "config", "user.name", "external")
+	runControllerActivationGit(t, external, "config", "user.email", "external@example.com")
+	writeAppTestFile(t, external, "remote-only-advancement.txt", "external writer\n")
+	runControllerActivationGit(t, external, "add", "--all")
+	runControllerActivationGit(t, external, "commit", "-qm", "remote-only update")
+	runControllerActivationGit(t, external, "push", "origin", "HEAD:refs/heads/main")
+	remoteOID := strings.TrimSpace(string(appTestGitOutput(t, external, "rev-parse", "HEAD")))
+	if current := strings.TrimSpace(string(appTestGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"))); current == remoteOID {
+		t.Fatal("test lost its remote-only race; local source was pulled")
+	}
+
+	recovery := executeParentHandoff(t, cfg)
+	if recovery.RequiredAction == nil || *recovery.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("pending publication did not require canonical recovery: %#v", recovery)
+	}
+	code, output, diagnostic := runTypedParentActionCLI(t, cfg, "prepare", controllerExecutionSurface)
+	if code != 0 {
+		t.Fatalf("prepare recovery: %s", diagnostic)
+	}
+	var prepared struct {
+		NextCommand []string `json:"next_command"`
+	}
+	if err := json.Unmarshal([]byte(output), &prepared); err != nil || len(prepared.NextCommand) < 3 {
+		t.Fatalf("prepared recovery command: %#v %v", prepared, err)
+	}
+	_, _, _ = runTypedParentActionCLI(t, cfg, prepared.NextCommand[1:]...)
+
+	handoff := executeParentHandoff(t, cfg)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
+		t.Fatalf("aborted remote race did not project a canonical publication action: %#v", handoff)
+	}
+	payload := handoff.RequiredActionParameters["controller_command_json"]
+	var command controllerPublicationCommand
+	if err := json.Unmarshal([]byte(payload), &command); err != nil {
+		t.Fatal(err)
+	}
+	if command.Action != controller.PublicationOperationRebind ||
+		command.SourceOID != remoteOID {
+		t.Fatalf("remote race did not select rebind: %#v", command)
+	}
+	executeStagedControllerAction(t, cfg, controllerPublicationSurface, payload, true)
+
+	head, err := store.LoadHead()
+	if err != nil || head.AcceptedCandidateRef == nil || head.IntegrationTip != remoteOID {
+		t.Fatalf("staged rebind did not advance candidate source: %#v %v", head, err)
+	}
+	candidate, err := store.LoadAcceptedCandidate(*head.AcceptedCandidateRef)
+	if err != nil || candidate.EvidenceValid {
+		t.Fatalf("staged rebind reused stale validation: %#v %v", candidate, err)
+	}
+	next := executeParentHandoff(t, cfg)
+	if next.RequiredAction != nil && *next.RequiredAction == controllerPublicationSurface &&
+		strings.Contains(next.RequiredActionParameters["controller_command_json"], `"action":"publish"`) {
+		t.Fatal("rebound candidate was published without fresh validation")
+	}
+}
+
 func typedPublicationAbortBody(t *testing.T) {
 	binary := typedCompletionWorkerBinary(t)
 	cfg, _, _ := typedCompletionWorkflowFixture(t, binary, false, false)

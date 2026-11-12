@@ -452,10 +452,30 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 	if err != nil {
 		return ParentCompletionOperation{}, false, err
 	}
+	remoteAdvance := false
+	if continuity == publicationSourceContinuous && candidate.State == candidatePromoted && candidate.EvidenceValid {
+		remote, err := s.observeCandidateRemote(head, candidate)
+		if err != nil {
+			return ParentCompletionOperation{}, false, err
+		}
+		if remote != candidate.BaseOID && remote != candidate.CommitOID {
+			contains, err := isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
+			if err != nil {
+				return ParentCompletionOperation{}, false, err
+			}
+			if !contains {
+				continuity, tip, remoteAdvance = publicationSourceAdvanced, remote, true
+			}
+		}
+	}
 	switch continuity {
 	case publicationSourceContinuous:
 		return ParentCompletionOperation{}, false, nil
 	case publicationSourceAdvanced:
+		reason := fmt.Sprintf("primary advanced to %s beyond the candidate base %s", tip, candidate.BaseOID)
+		if remoteAdvance {
+			reason = fmt.Sprintf("unpublished candidate remote advanced to %s beyond the candidate base %s", tip, candidate.BaseOID)
+		}
 		return ParentCompletionOperation{
 			Surface:   PublicationOperationSurface,
 			Operation: PublicationOperationRebind,
@@ -465,7 +485,7 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 				CandidateID:        candidate.CandidateID,
 				SourceOID:          tip,
 			},
-			Reason: fmt.Sprintf("primary advanced to %s beyond the candidate base %s", tip, candidate.BaseOID),
+			Reason: reason,
 		}, true, nil
 	default:
 		return ParentCompletionOperation{}, false, fmt.Errorf("publication local ref %s is outside candidate promotion authority and is not a fast-forward of the candidate base; resolve the primary divergence before publication", tip)

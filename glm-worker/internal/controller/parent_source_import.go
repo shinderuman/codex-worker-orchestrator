@@ -334,6 +334,20 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	}
 	lease := *op.Lease
 	lease.ExpectedWorkspaceSnapshotID = snapshot.ID
+	if op.Attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		admittedTrees, err := CaptureAdmittedSourceTrees(op.Workspace.Root)
+		if err != nil {
+			return err
+		}
+		lease.AdmittedSourceTrees = &admittedTrees
+		observed, err := CaptureWorkspaceSnapshot(op.Workspace.Root)
+		if err != nil {
+			return err
+		}
+		if observed != snapshot {
+			return fmt.Errorf("parent-only source sync trees differ from the bound snapshot")
+		}
+	}
 	if err := s.writeLease(lease); err != nil {
 		return err
 	}

@@ -11,6 +11,79 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func TestParentOnlyTaskAmendmentUsesAdmittedSourceAfterMutation(t *testing.T) {
+	fixture, task := newParentOnlyTaskFixture(t, ExecutionAuthorityParentOnly)
+	writeParentOnlyProduct(t, fixture, "initial-untracked.txt", "existing evaluation product\n")
+	started := admitParentOnlyExecutionFixture(t, fixture)
+
+	// An unrelated tracked edit and an untracked product become admitted source.
+	tracked := filepath.Join(fixture.repo, "source.txt")
+	if _, err := os.Stat(tracked); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(tracked, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("\nAdmitted evaluation product.\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writeParentOnlyProduct(t, fixture, "later-untracked.txt", "admitted mutation product\n")
+	after, err := CaptureWorkspaceSnapshot(fixture.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutated, err := fixture.store.RecordAdmittedMutation(started, "parent-only evaluation", "success", after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mutated.Attempt.BaselineTrees != started.Attempt.BaselineTrees {
+		t.Fatal("admitted mutation changed the candidate implementation baseline")
+	}
+	if mutated.Lease.AdmittedSourceTrees == started.Lease.AdmittedSourceTrees {
+		t.Fatal("admitted mutation did not advance its source tree binding")
+	}
+
+	taskFile := filepath.Join(fixture.repo, task.TaskPath)
+	original, err := os.ReadFile(taskFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taskFile, append(original, []byte("\n## Amendments\n\nRevision one.\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	head, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	required, err := fixture.store.RequiredTaskAuthoritySync(head)
+	if err != nil || required == nil || !required.Admittable {
+		t.Fatalf("admitted products hid a Task-only revision: %#v %v", required, err)
+	}
+	if _, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config); err != nil {
+		t.Fatalf("admitted products prevented Task-only admission: %v", err)
+	}
+
+	writeParentOnlyProduct(t, fixture, "foreign-product.txt", "not admitted\n")
+	if _, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config); err == nil {
+		t.Fatal("unadmitted worktree edit was accepted")
+	}
+	if err := os.Remove(filepath.Join(fixture.repo, "foreign-product.txt")); err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, fixture.repo, "add", task.TaskPath)
+	if _, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config); err == nil {
+		t.Fatal("unadmitted index mutation was accepted")
+	}
+	runControllerGit(t, fixture.repo, "reset", "-q", "--", task.TaskPath)
+	if _, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config); err != nil {
+		t.Fatalf("restored index did not restore admitted Task-only source: %v", err)
+	}
+}
+
 func TestParentOnlyDirectTaskSyncRejectsInvalidLiveSmokeState(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

@@ -681,9 +681,6 @@ func TestTaskAuthoritySyncRejectsForeignMilestoneLineage(t *testing.T) {
 
 func TestParentOnlyTaskAmendmentSyncCompletesWithoutModelRuntime(t *testing.T) {
 	cfg, store, policy, tasks, goShim := parentOnlyCompletionFixture(t, false)
-	if err := os.Remove(filepath.Join(cfg.RepoRoot, "evaluation-result.md")); err != nil {
-		t.Fatal(err)
-	}
 	start := executeParentHandoff(t, cfg)
 	if !start.Consistent || start.RequiredAction == nil || *start.RequiredAction != controllerExecutionSurface {
 		t.Fatalf("parent-only start handoff: %#v", start)
