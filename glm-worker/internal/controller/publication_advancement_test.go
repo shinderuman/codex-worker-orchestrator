@@ -115,7 +115,7 @@ func TestPublicationRaceAbortRecoveryNeverReportsSuccess(t *testing.T) {
 	remote := advancePublicationTestRemote(t, fixture, policy, "raced.txt", "race\n")
 	_, err = fixture.store.RecoverExecutionOperation(op.Transition.TransitionID)
 	var advancement *PublicationAdvancementRequired
-	if !errors.As(err, &advancement) || advancement.RemoteOID != remote || advancement.Action != "rebind-unpublished-candidate" {
+	if !errors.As(err, &advancement) || advancement.RemoteOID != remote || advancement.Action != PublicationOperationRebind {
 		t.Fatalf("race classification = %v", err)
 	}
 	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); !errors.As(err, &advancement) {

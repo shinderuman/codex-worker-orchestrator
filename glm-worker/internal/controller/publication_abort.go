@@ -65,8 +65,9 @@ func (s *Store) publicationAbortRecoveryAction(op ExecutionOperation, head Repos
 	if op.Transition.Kind == publicationAdopt || op.Transition.Kind == publicationAdoptSource {
 		return publicationAbortAction(op), ""
 	}
-	if op.Terminal == nil || phase.Completion == nil || phase.Completion.AbortRemoteOID != op.Source.Head.IntegrationTip {
-		return "", "aborted publication lacks a bound terminal remote observation for candidate reentry"
+	if op.Terminal == nil || phase.Completion == nil || phase.Completion.AbortRemoteOID == "" ||
+		phase.Completion.ObservationRef != nil {
+		return "", "aborted publication lacks a bound unpublished terminal remote observation for candidate reentry"
 	}
 	if head.AcceptedCandidateRef == nil {
 		return "", "aborted completion has no accepted candidate"

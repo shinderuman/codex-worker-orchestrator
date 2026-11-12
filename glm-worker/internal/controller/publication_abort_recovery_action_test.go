@@ -60,6 +60,12 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	if head.PendingTransitionID != "" || head.IntegrationTip != implementation.BaseOID || head.AcceptedCandidateRef == nil {
 		t.Fatalf("aborted journal changed publication authority: %#v", head)
 	}
+	noRemoteProof := phase
+	noRemoteProof.Completion = &CompletionOperationState{}
+	action, reason := fixture.store.publicationAbortRecoveryAction(op, head, noRemoteProof)
+	if action != "" || !strings.Contains(reason, "remote observation") {
+		t.Fatalf("missing terminal remote evidence offered generic rebind: action=%q reason=%q", action, reason)
+	}
 	projected, err := fixture.store.ProjectParentCompletion()
 	if err != nil || projected.Operation != PublicationOperationRebind ||
 		projected.Command == nil || projected.Command.CandidateID != implementation.CandidateID ||
@@ -73,7 +79,7 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	}
 	missing := head
 	missing.AcceptedCandidateRef = nil
-	action, reason := fixture.store.publicationAbortRecoveryAction(op, missing, phase)
+	action, reason = fixture.store.publicationAbortRecoveryAction(op, missing, phase)
 	if action != "" || reason != "aborted completion has no accepted candidate" {
 		t.Fatalf("missing candidate was treated as repairable: action=%q reason=%q", action, reason)
 	}
