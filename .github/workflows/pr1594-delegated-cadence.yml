@@ -1,0 +1,23 @@
+name: PR 1594 delegated workflow integration verification
+
+on:
+  push:
+    branches:
+      - 'web-gpt/pr1594-review-fixes'
+    paths:
+      - '.github/workflows/pr1594-delegated-cadence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-validation-cadence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-quality-go
+      - name: Verify canonical validation cadence without runtime repair
+        run: ./goquality test -tags=workflowintegration -run '^TestCanonicalValidationCadenceWithoutRuntimeRepair$' -count=1 -timeout=30m ./internal/app
