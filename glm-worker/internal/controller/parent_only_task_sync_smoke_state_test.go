@@ -113,16 +113,38 @@ func TestParentOnlyConsecutiveTaskAmendmentsKeepAdmittedSource(t *testing.T) {
 		if err != nil || required == nil || !required.Admittable {
 			t.Fatalf("consecutive Task amendment was not admissible: %#v %v", required, err)
 		}
-		admitted, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config)
+		admission, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config)
 		if err != nil {
 			t.Fatalf("consecutive Task amendment was not admitted: %v", err)
 		}
-		if admitted.Attempt.BaselineTrees != started.Attempt.BaselineTrees ||
-			admitted.Lease.AdmittedSourceTrees == nil ||
-			*admitted.Lease.AdmittedSourceTrees == previousTrees {
-			t.Fatal("Task amendment did not advance admitted source independently of candidate baseline")
+		amended := SemanticTaskRef{TaskPath: task.TaskPath, ContractDigest: digestBytes(append(content, []byte(revision)...))}
+		proof := []byte(fmt.Sprintf(`{"runtime":"parent-only","task_id":%q}`, started.Attempt.AttemptID))
+		runtimeRef, err := fixture.store.PutEvidenceObject("runtime-artifact", "application/json",
+			started.Attempt.AttemptID+":"+TaskAuthoritySyncProducer+":"+admission.Snapshot.ID, true, proof)
+		if err != nil {
+			t.Fatal(err)
 		}
-		previousTrees = *admitted.Lease.AdmittedSourceTrees
+		if _, err := fixture.store.SyncTaskAuthority(admission, admission.Snapshot.ID, runtimeRef, amended); err != nil {
+			t.Fatalf("consecutive Task sync failed: %v", err)
+		}
+		updatedHead, err := fixture.store.LoadHead()
+		if err != nil {
+			t.Fatal(err)
+		}
+		updatedAttempt, err := fixture.store.loadAttempt(updatedHead.LiveAttemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		updatedLease, err := fixture.store.loadLease(updatedHead.LiveLeaseID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if updatedAttempt.BaselineTrees != started.Attempt.BaselineTrees ||
+			updatedLease.AdmittedSourceTrees == nil ||
+			*updatedLease.AdmittedSourceTrees == previousTrees {
+			t.Fatal("Task sync did not advance admitted source independently of candidate baseline")
+		}
+		previousTrees = *updatedLease.AdmittedSourceTrees
 	}
 }
 
