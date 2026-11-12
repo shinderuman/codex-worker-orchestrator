@@ -112,6 +112,8 @@ func TestDarwinCIWorkflowPathClosure(t *testing.T) {
 			positive: []string{
 				"glm-worker/internal/observationexec/execute_darwin.go",
 				"glm-worker/internal/qualitygate/resource_samples_darwin.go",
+				"glm-worker/internal/gitexec/command.go",
+				"glm-worker/internal/state/store.go",
 				"glm-worker/internal/execfile/execfile.go",
 			},
 			negative: []string{

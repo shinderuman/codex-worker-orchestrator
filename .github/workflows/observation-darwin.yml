@@ -5,6 +5,8 @@ on:
     paths:
       - 'glm-worker/internal/observationexec/**'
       - 'glm-worker/internal/qualitygate/**'
+      - 'glm-worker/internal/gitexec/**'
+      - 'glm-worker/internal/state/**'
       - 'glm-worker/internal/execfile/**'
       - 'glm-worker/go.mod'
       - 'glm-worker/go.sum'
@@ -19,6 +21,8 @@ on:
     paths:
       - 'glm-worker/internal/observationexec/**'
       - 'glm-worker/internal/qualitygate/**'
+      - 'glm-worker/internal/gitexec/**'
+      - 'glm-worker/internal/state/**'
       - 'glm-worker/internal/execfile/**'
       - 'glm-worker/go.mod'
       - 'glm-worker/go.sum'

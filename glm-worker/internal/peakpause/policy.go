@@ -126,6 +126,13 @@ func civilWindowIntervals(day time.Time, window Window, location *time.Location)
 		if segmentEnd.IsZero() || segmentEnd.After(limit) {
 			segmentEnd = limit
 		}
+		if !segmentEnd.After(cursor) {
+			// TZ footerの古い境界で停滞する場合も、全ての秒を走査する。
+			segmentEnd = cursor.Add(time.Second)
+			if segmentEnd.After(limit) {
+				segmentEnd = limit
+			}
+		}
 		shift := time.Duration(offset) * time.Second
 		start := civilStart.Add(-shift)
 		end := civilEnd.Add(-shift)
