@@ -11,6 +11,41 @@ permissions:
   contents: read
 
 jobs:
+
+  baseline-cadence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ca0d2e9c83124d0335ffcd20b959d48b1ac66c70
+      - uses: ./.github/actions/setup-quality-go
+      - name: Validate baseline pinned Go versions
+        shell: bash
+        run: |
+          GOTOOLCHAIN=go1.22.12 go version
+          GOTOOLCHAIN=go1.22.12 GOPROXY=off go version
+      - name: Baseline canonical validation cadence
+        run: ./goquality test -tags=workflowintegration -run '^TestCanonicalValidationCadenceWithoutRuntimeRepair  canonical-validation-cadence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-quality-go
+      - name: Validate availability of pinned lint-go toolchain
+        shell: bash
+        run: |
+          printf 'go version: '; go version
+          printf 'module cache: '; go env GOMODCACHE
+          printf 'lint-go online resolution: '; GOTOOLCHAIN=go1.22.12 go version
+          printf 'lint-go offline resolution: '; GOTOOLCHAIN=go1.22.12 GOPROXY=off go version
+      - name: Verify canonical validation cadence without runtime repair
+        run: ./goquality test -tags=workflowintegration -run '^TestCanonicalValidationCadenceWithoutRuntimeRepair$' -count=1 -timeout=30m ./internal/app
+ -count=1 -timeout=30m ./internal/app
   canonical-validation-cadence:
     runs-on: ubuntu-latest
     timeout-minutes: 35
