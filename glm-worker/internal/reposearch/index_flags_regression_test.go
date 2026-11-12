@@ -3,11 +3,102 @@ package reposearch
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestRepoSearchDistinguishesRealUnmergedIndexStages(t *testing.T) {
+	dir := initRepo(t)
+	conflict := filepath.Join(dir, "conflict.txt")
+	writeTestFile(t, conflict, "base\n")
+	commitAll(t, dir, "base")
+	opts := Options{CacheRoot: t.TempDir()}
+	if report, err := Search(context.Background(), dir, "base", opts); err != nil || report.CacheStatus != CacheStatusRebuilt {
+		t.Fatalf("initial cache build: %#v %v", report, err)
+	}
+	gitRun(t, dir, "checkout", "-b", "conflict-side")
+	writeTestFile(t, conflict, "side\n")
+	commitAll(t, dir, "side")
+	gitRun(t, dir, "checkout", "-")
+	writeTestFile(t, conflict, "main\n")
+	commitAll(t, dir, "main")
+
+	merge := exec.Command("git", "-C", dir, "-c", "user.name=test", "-c", "user.email=test", "merge", "--no-edit", "conflict-side")
+	if output, err := merge.CombinedOutput(); err == nil {
+		t.Fatalf("expected merge conflict; git merge output: %s", output)
+	}
+
+	output, err := gitOutput(context.Background(), dir, "ls-files", "-z", "-v", "-s", "--cached")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stages := map[string]bool{}
+	for _, raw := range strings.Split(string(output), "\x00") {
+		if raw == "" {
+			continue
+		}
+		tab := strings.IndexByte(raw, '\t')
+		if len(raw) < 3 || tab < 0 || raw[0] != 'M' {
+			t.Fatalf("unexpected conflict index entry: %q", raw)
+		}
+		fields := strings.Fields(raw[2:tab])
+		if len(fields) != 3 || fields[0] != trackedModeRegular {
+			t.Fatalf("unexpected stage header: %q", raw)
+		}
+		stages[fields[2]] = true
+		if entry, include, err := parseTrackedIndexEntry(raw, map[string]bool{}); include ||
+			!errors.Is(err, ErrUnmergedIndexEntry) || errors.Is(err, ErrUnsupportedIndexFlags) ||
+			!strings.Contains(err.Error(), "conflict.txt") {
+			t.Fatalf("stage %s misdiagnosed: %#v %v %v", fields[2], entry, include, err)
+		}
+	}
+	if !reflect.DeepEqual(stages, map[string]bool{"1": true, "2": true, "3": true}) {
+		t.Fatalf("unmerged stages = %v want 1, 2, 3", stages)
+	}
+	for _, test := range []struct {
+		name string
+		opts Options
+	}{
+		{name: "cache previously populated", opts: opts},
+		{name: "cache disabled", opts: Options{DisableCache: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			report, err := Search(context.Background(), dir, "base", test.opts)
+			if !errors.Is(err, ErrUnmergedIndexEntry) || errors.Is(err, ErrUnsupportedIndexFlags) {
+				t.Fatalf("unmerged index returned result or wrong error: %#v %v", report, err)
+			}
+		})
+	}
+	if report, err := ExhaustiveSearch(context.Background(), dir, "base", ExhaustiveOptions{}); !errors.Is(err, ErrUnmergedIndexEntry) ||
+		errors.Is(err, ErrUnsupportedIndexFlags) {
+		t.Fatalf("exhaustive unmerged index returned result or wrong error: %#v %v", report, err)
+	}
+
+	gitRun(t, dir, "merge", "--abort")
+	if report, err := Search(context.Background(), dir, "main", opts); err != nil ||
+		report.CacheStatus != CacheStatusRebuilt || !reflect.DeepEqual(resultPaths(report), []string{"conflict.txt"}) {
+		t.Fatalf("resolved repository did not recover search: %#v %v", report, err)
+	}
+	if report, err := ExhaustiveSearch(context.Background(), dir, "main", ExhaustiveOptions{}); err != nil ||
+		len(report.Matches) != 1 || report.Matches[0].Path != "conflict.txt" {
+		t.Fatalf("resolved repository did not recover exhaustive search: %#v %v", report, err)
+	}
+}
+
+func TestRepoSearchUnmergedEntryIsNotHiddenByUnsupportedMode(t *testing.T) {
+	raw := "M 120000 0000000000000000000000000000000000000001 2\tlink.txt"
+	if entry, include, err := parseTrackedIndexEntry(raw, map[string]bool{}); include ||
+		!errors.Is(err, ErrUnmergedIndexEntry) || errors.Is(err, ErrUnsupportedIndexFlags) {
+		t.Fatalf("unmerged symlink stage silently skipped: %#v %v %v", entry, include, err)
+	}
+	excluded := "M 120000 0000000000000000000000000000000000000001 2\tgenerated/link.txt"
+	if _, include, err := parseTrackedIndexEntry(excluded, map[string]bool{"generated": true}); include || err != nil {
+		t.Fatalf("excluded path should remain out of corpus: include=%v err=%v", include, err)
+	}
+}
 
 func TestRepoSearchRejectsAssumeUnchangedInsteadOfServingStaleCache(t *testing.T) {
 	dir := initRepo(t)
@@ -25,11 +116,11 @@ func TestRepoSearchRejectsAssumeUnchangedInsteadOfServingStaleCache(t *testing.T
 	gitRun(t, dir, "update-index", "--assume-unchanged", "data.txt")
 	writeTestFile(t, filepath.Join(dir, "data.txt"), "newneedle\n")
 	for _, options := range []Options{opts, {DisableCache: true}} {
-		if report, err := Search(context.Background(), dir, "newneedle", options); !errors.Is(err, ErrUnsupportedIndexFlags) {
+		if report, err := Search(context.Background(), dir, "newneedle", options); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 			t.Fatalf("unsupported index returned stale/success result: %#v %v", report, err)
 		}
 	}
-	if report, err := ExhaustiveSearch(context.Background(), dir, "newneedle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) {
+	if report, err := ExhaustiveSearch(context.Background(), dir, "newneedle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 		t.Fatalf("exhaustive search ignored unsupported index: %#v %v", report, err)
 	}
 	gitRun(t, dir, "update-index", "--no-assume-unchanged", "data.txt")
@@ -50,11 +141,11 @@ func TestRepoSearchRejectsSkipWorktreeBeforeCacheOrExhaustiveSearch(t *testing.T
 	}
 	gitRun(t, dir, "update-index", "--skip-worktree", "data.txt")
 	for _, options := range []Options{opts, {DisableCache: true}} {
-		if _, err := Search(context.Background(), dir, "needle", options); !errors.Is(err, ErrUnsupportedIndexFlags) {
+		if _, err := Search(context.Background(), dir, "needle", options); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 			t.Fatalf("skip-worktree accepted: %v", err)
 		}
 	}
-	if _, err := ExhaustiveSearch(context.Background(), dir, "needle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) {
+	if _, err := ExhaustiveSearch(context.Background(), dir, "needle", ExhaustiveOptions{}); !errors.Is(err, ErrUnsupportedIndexFlags) || errors.Is(err, ErrUnmergedIndexEntry) {
 		t.Fatalf("exhaustive skip-worktree accepted: %v", err)
 	}
 	gitRun(t, dir, "update-index", "--no-skip-worktree", "data.txt")

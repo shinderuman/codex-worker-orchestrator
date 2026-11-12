@@ -22,6 +22,7 @@ const (
 )
 
 var ErrUnsupportedIndexFlags = errors.New("repo-search does not support assume-unchanged or skip-worktree index entries")
+var ErrUnmergedIndexEntry = errors.New("repo-searchは未解決のmerge conflict entryを扱えません")
 
 var defaultExcludeDirs = []string{".git", ".hg", ".svn", "node_modules", "vendor", "dist", "build", "target", "__pycache__"}
 
@@ -110,7 +111,13 @@ func parseTrackedIndexEntry(raw string, excludeDirs map[string]bool) (trackedEnt
 	if !ok {
 		return trackedEntry{}, false, fmt.Errorf("git ls-files --cachedのentryを解析できません: %q", raw)
 	}
-	if (mode != trackedModeRegular && mode != trackedModeExecutable) || excludedPath(path, excludeDirs) {
+	if excludedPath(path, excludeDirs) {
+		return trackedEntry{}, false, nil
+	}
+	if raw[0] == 'M' {
+		return trackedEntry{}, false, fmt.Errorf("%w: %s", ErrUnmergedIndexEntry, path)
+	}
+	if mode != trackedModeRegular && mode != trackedModeExecutable {
 		return trackedEntry{}, false, nil
 	}
 	if raw[0] != 'H' {
