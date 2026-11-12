@@ -84,7 +84,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 
 全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`を持つ。未解決findingがある場合だけ`Review findings`を追加する。schedule stateはPlanだけを正とし、task fileへ`Status`や`Current boundary`を持たせない。Goal modeで成功済みdependency edgeを保持する必要があるtaskだけはoptional `Fulfilled dependencies`を持てる。欠落はfulfilledなしとして扱う。
 
-Darwin専用テストがAcceptanceに必要な場合、親はTask fileの`## Darwin acceptance`にGo module相対のpackageとテスト名を列挙する。各項目は `` - `./internal/qualitygate:TestDarwinSysctlDecoding` `` の形式とし、Controllerが候補の`go-test`へ引き継ぐ。
+Task-backed taskでDarwin専用テストがAcceptanceに必要な場合、親はTask fileの`## Darwin acceptance`にGo module相対のpackageとテスト名を列挙する。各項目は `` - `./internal/qualitygate:TestDarwinSysctlDecoding` `` の形式とし、Controllerが候補の`go-test`へ引き継ぐ。request-backed taskではcanonical request本文の`## Darwin acceptance`へ同じ形式で宣言し、Controllerは正規request recordに束縛された本文を要求sourceとして候補の`go-test`へ引き継ぐ。
 
 ## task filename
 

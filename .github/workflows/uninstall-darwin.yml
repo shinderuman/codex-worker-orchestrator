@@ -4,6 +4,23 @@ on:
   pull_request:
     paths:
       - 'glm-worker/internal/uninstallcmd/**'
+      - 'glm-worker/internal/codexinstall/**'
+      - 'glm-worker/internal/cliinstall/**'
+      - 'glm-worker/internal/installlock/**'
+      - 'glm-worker/internal/claudesettings/**'
+      - 'glm-worker/internal/mergejsoncmd/**'
+      - 'glm-worker/internal/claudeoverride/**'
+      - 'glm-worker/go.mod'
+      - 'glm-worker/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'install.sh'
+      - 'scripts/manage-pull-hook.sh'
+      - '.githooks/**'
+      - 'claude/settings-managed.json'
+      - 'codex/**'
+      - 'quality-tools.yml'
+      - 'install-quality-tools.sh'
       - 'glm-worker/internal/pathalias/**'
       - 'glm-worker/internal/settingsmerge/**'
       - 'uninstall.sh'
@@ -15,6 +32,23 @@ on:
       - 'web-gpt/**'
     paths:
       - 'glm-worker/internal/uninstallcmd/**'
+      - 'glm-worker/internal/codexinstall/**'
+      - 'glm-worker/internal/cliinstall/**'
+      - 'glm-worker/internal/installlock/**'
+      - 'glm-worker/internal/claudesettings/**'
+      - 'glm-worker/internal/mergejsoncmd/**'
+      - 'glm-worker/internal/claudeoverride/**'
+      - 'glm-worker/go.mod'
+      - 'glm-worker/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'install.sh'
+      - 'scripts/manage-pull-hook.sh'
+      - '.githooks/**'
+      - 'claude/settings-managed.json'
+      - 'codex/**'
+      - 'quality-tools.yml'
+      - 'install-quality-tools.sh'
       - 'glm-worker/internal/pathalias/**'
       - 'glm-worker/internal/settingsmerge/**'
       - 'uninstall.sh'
@@ -34,6 +68,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Read Go toolchain version
         id: quality-tools
         run: |

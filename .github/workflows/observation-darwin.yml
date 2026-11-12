@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'glm-worker/internal/observationexec/**'
+      - 'glm-worker/internal/qualitygate/**'
       - 'glm-worker/internal/execfile/**'
       - 'glm-worker/go.mod'
       - 'glm-worker/go.sum'
@@ -17,6 +18,7 @@ on:
       - 'web-gpt/**'
     paths:
       - 'glm-worker/internal/observationexec/**'
+      - 'glm-worker/internal/qualitygate/**'
       - 'glm-worker/internal/execfile/**'
       - 'glm-worker/go.mod'
       - 'glm-worker/go.sum'
@@ -38,6 +40,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Read Go version
         id: quality-tools
         run: |
@@ -49,4 +53,4 @@ jobs:
           cache: false
       - name: Validate supported Darwin observation executor
         working-directory: glm-worker
-        run: go test -count=1 ./internal/observationexec
+        run: go test -count=1 ./internal/observationexec ./internal/qualitygate
