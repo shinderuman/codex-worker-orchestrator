@@ -321,12 +321,9 @@ func (s *Store) applyParentSourceImport(op ExecutionOperation) error {
 	if err != nil {
 		return err
 	}
-	trees, err := CaptureExecutionTrees(op.Workspace.Root, base, op.Attempt.SemanticTaskRef)
+	trees, err := verifyImportedParentSourceTrees(op, base)
 	if err != nil {
 		return err
-	}
-	if trees != op.Rebound.Current {
-		return fmt.Errorf("parent source import output differs from its archived tree")
 	}
 	snapshot, err := CaptureWorkspaceSnapshot(op.Workspace.Root)
 	if err != nil {
@@ -376,6 +373,17 @@ func bindImportedParentOnlySource(op ExecutionOperation, snapshot WorkspaceSnaps
 	}
 	lease.AdmittedSourceTrees = &trees
 	return nil
+}
+
+func verifyImportedParentSourceTrees(op ExecutionOperation, base string) (ExecutionTrees, error) {
+	trees, err := CaptureExecutionTrees(op.Workspace.Root, base, op.Attempt.SemanticTaskRef)
+	if err != nil {
+		return ExecutionTrees{}, err
+	}
+	if trees != op.Rebound.Current {
+		return ExecutionTrees{}, fmt.Errorf("parent source import output differs from its archived tree")
+	}
+	return trees, nil
 }
 
 func (s *Store) bindParentOnlySourceSyncSmoke(op ExecutionOperation) error {
