@@ -153,6 +153,7 @@ Original instructionのPTY integrationは撤去前の要求として保持する
 
 ## Contract
 
+- 比較可能なCodex Reduction / Quality Deltaやorganic workflowの受入を、通常/raceや局所fixtureのPASSで代用しない。比較条件・観測限界と未達受入はそれぞれの実証拠で判断する。一時的な評価文書をGitへ保存・復元しない。
 - 列挙gateをfreshに実行し証跡化
 - failureを原因taskへ戻す
 - installed binary / managed instructions / source HEADの最終一致とinstalled状態での必要なproduction smokeを再監査する

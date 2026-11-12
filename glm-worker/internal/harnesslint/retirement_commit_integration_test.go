@@ -1,6 +1,7 @@
 package harnesslint
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,41 +27,10 @@ func TestGeneratedTerminalRetirementCommitPassesCanonicalLint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.RemoveAll(workspace) }()
-	plan, err := os.ReadFile(filepath.Join(workspace, "IMPLEMENTATION_PLAN.local.md"))
+	plan, tasks, target := canonicalRetirementFixture(t, workspace)
+	retirement, err := repositoryproject.RetireTerminalMetadata(plan, tasks, target, true)
 	if err != nil {
 		t.Fatal(err)
-	}
-	paths, err := os.ReadDir(filepath.Join(workspace, "IMPLEMENTATION_TASKS"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tasks := map[string][]byte{}
-	for _, entry := range paths {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-		path := "IMPLEMENTATION_TASKS/" + entry.Name()
-		content, err := os.ReadFile(filepath.Join(workspace, path))
-		if err != nil {
-			t.Fatal(err)
-		}
-		tasks[path] = content
-	}
-	schedule := taskcontract.ParsePlanSchedule(string(plan))
-	if len(schedule.Next) < 1 {
-		t.Fatal("canonical corpus lacks a NEXT task for retirement")
-	}
-	var retirement repositoryproject.TerminalMetadata
-	var target string
-	for _, path := range schedule.Next {
-		retired, err := repositoryproject.RetireTerminalMetadata(plan, tasks, path, true)
-		if err == nil {
-			target, retirement = path, retired
-			break
-		}
-	}
-	if target == "" {
-		t.Fatal("no existing NEXT task admits a mechanical terminal retirement")
 	}
 	for _, change := range retirement.Changes {
 		path := filepath.Join(workspace, change.Path)
@@ -79,6 +49,78 @@ func TestGeneratedTerminalRetirementCommitPassesCanonicalLint(t *testing.T) {
 	if err != nil || report.Status != "pass" || len(report.Violations) != 0 {
 		t.Fatalf("generated terminal retirement commit failed canonical lint: %s, %#v, %v", target, report.Violations, err)
 	}
+}
+
+func canonicalRetirementFixture(t *testing.T, workspace string) ([]byte, map[string][]byte, string) {
+	t.Helper()
+	planPath := filepath.Join(workspace, "IMPLEMENTATION_PLAN.local.md")
+	original, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schedule := taskcontract.ParsePlanSchedule(string(original))
+	active, err := schedule.ActiveTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, blocked, err := schedule.NonActiveEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := os.ReadDir(filepath.Join(workspace, "IMPLEMENTATION_TASKS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := make(map[string][]byte)
+	for _, entry := range paths {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		path := "IMPLEMENTATION_TASKS/" + entry.Name()
+		content, err := os.ReadFile(filepath.Join(workspace, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks[path] = content
+	}
+	target := "IMPLEMENTATION_TASKS/retirement-lint-fixture.md"
+	if _, exists := tasks[target]; exists {
+		t.Fatalf("fixture target already exists: %s", target)
+	}
+	content, exists := tasks[active]
+	if !exists {
+		t.Fatalf("fixture ACTIVE task is missing: %s", active)
+	}
+	tasks[target] = append([]byte(nil), content...)
+	plan := retirementFixtureSchedule(active, append(next, target), blocked)
+	for path, data := range map[string][]byte{target: tasks[target], "IMPLEMENTATION_PLAN.local.md": plan} {
+		if err := os.WriteFile(filepath.Join(workspace, path), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retirementGit(t, workspace, "add", "--all")
+	retirementGit(t, workspace, "-c", "user.name=retirement-lint", "-c", "user.email=retirement-lint@example.invalid", "commit", "-qm", "prepare retirement fixture")
+	return plan, tasks, target
+}
+
+func retirementFixtureSchedule(active string, next, blocked []string) []byte {
+	var plan strings.Builder
+	plan.WriteString("# retirement lint fixture\n\n")
+	for _, section := range []struct {
+		heading string
+		paths   []string
+	}{
+		{"ACTIVE", []string{active}},
+		{"NEXT（優先順）", next},
+		{"BLOCKED / USER_PERMISSION_WAIT", blocked},
+	} {
+		fmt.Fprintf(&plan, "## %s\n\n", section.heading)
+		for _, path := range section.paths {
+			fmt.Fprintf(&plan, "- [`%s`](%s)\n", path, path)
+		}
+		plan.WriteByte('\n')
+	}
+	return []byte(plan.String())
 }
 
 func retirementGit(t *testing.T, root string, args ...string) string {
