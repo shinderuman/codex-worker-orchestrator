@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/validation-input-git-environment-isolation.md`](IMPLEMENTATION_TASKS/validation-input-git-environment-isolation.md)
+- [`IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md`](IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md`](IMPLEMENTATION_TASKS/repo-search-unmerged-index-diagnostic.md)
 - [`IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md`](IMPLEMENTATION_TASKS/plan-spacing-supported-task-forms.md)
 - [`IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md`](IMPLEMENTATION_TASKS/diff-unsupported-platform-build.md)
 - [`IMPLEMENTATION_TASKS/peak-pause-civil-time-boundaries.md`](IMPLEMENTATION_TASKS/peak-pause-civil-time-boundaries.md)

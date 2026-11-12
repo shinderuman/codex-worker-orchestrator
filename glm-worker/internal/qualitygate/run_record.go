@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -181,7 +182,7 @@ func testCacheLineMask(line string) int {
 }
 
 func NoIgnoredInputs(repository string) (bool, error) {
-	data, err := exec.Command("git", "-C", repository, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").Output()
+	data, err := gitexec.Command("git", repository, "ls-files", "--others", "--ignored", "--exclude-standard", "-z").Output()
 	if err != nil {
 		return false, fmt.Errorf("inspect ignored validation inputs: %w", err)
 	}
@@ -192,7 +193,7 @@ func NoIgnoredInputs(repository string) (bool, error) {
 }
 
 func noIgnoredNestedRepositoryInputs(repository string) (bool, error) {
-	listing, err := exec.Command("git", "-C", repository, "ls-files", "--others", "--exclude-standard", "-z").Output()
+	listing, err := gitexec.Command("git", repository, "ls-files", "--others", "--exclude-standard", "-z").Output()
 	if err != nil {
 		return false, fmt.Errorf("inspect nested untracked repositories: %w", err)
 	}
@@ -212,7 +213,7 @@ func noIgnoredNestedRepositoryInputs(repository string) (bool, error) {
 	if len(candidates) == 0 {
 		return true, nil
 	}
-	command := exec.Command("git", "-C", repository, "check-ignore", "-z", "--stdin")
+	command := gitexec.Command("git", repository, "check-ignore", "-z", "--stdin")
 	command.Stdin = strings.NewReader(strings.Join(candidates, "\x00") + "\x00")
 	output, err := command.Output()
 	if err != nil {
