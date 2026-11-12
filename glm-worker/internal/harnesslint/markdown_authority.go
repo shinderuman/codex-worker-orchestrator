@@ -17,7 +17,7 @@ const markdownDerivedStateRule = "markdown-derived-state"
 
 var planExtraBlankLines = regexp.MustCompile(`\n(?:[ \t]*\n){2,}`)
 var planHeadingBlankLines = regexp.MustCompile(`^(?:[ \t]*\n){2,}`)
-var planSeparatedTaskItems = regexp.MustCompile("(?m)(^[ \\t]*- [ \\t]*(?:IMPLEMENTATION_TASKS/|`IMPLEMENTATION_TASKS/|\\[[^\\]\\n]+\\]\\(IMPLEMENTATION_TASKS/[^)\\s\\n]+\\))[^\\n]*\\n)[ \\t]*\\n([ \\t]*- [ \\t]*(?:IMPLEMENTATION_TASKS/|`IMPLEMENTATION_TASKS/|\\[[^\\]\\n]+\\]\\(IMPLEMENTATION_TASKS/[^)\\s\\n]+\\)))
+var planSeparatedTaskItems = regexp.MustCompile("(?m)(^[ \\t]*- [ \\t]*(?:IMPLEMENTATION_TASKS/|`IMPLEMENTATION_TASKS/|\\[[^\\]\\n]+\\]\\(IMPLEMENTATION_TASKS/[^)\\s\\n]+\\))[^\\n]*\\n)[ \\t]*\\n([ \\t]*- [ \\t]*(?:IMPLEMENTATION_TASKS/|`IMPLEMENTATION_TASKS/|\\[[^\\]\\n]+\\]\\(IMPLEMENTATION_TASKS/[^)\\s\\n]+\\)))")
 
 var readmePinnedVersionPattern = regexp.MustCompile(`^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
 
