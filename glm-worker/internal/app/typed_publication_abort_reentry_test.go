@@ -76,7 +76,9 @@ func TestTypedPublicationAbortRemoteRaceRebindsThroughHandoffAndStaging(t *testi
 
 	handoff := executeParentHandoff(t, cfg)
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface {
-		t.Fatalf("aborted remote race did not project a canonical publication action: %#v", handoff)
+		latest, headErr := store.LoadHead()
+		projected, projectErr := store.ProjectParentCompletion()
+		t.Fatalf("aborted remote race did not project a canonical publication action: handoff=%#v head=%#v headErr=%v projected=%#v projectionErr=%v", handoff, latest, headErr, projected, projectErr)
 	}
 	payload := handoff.RequiredActionParameters["controller_command_json"]
 	var command controllerPublicationCommand
