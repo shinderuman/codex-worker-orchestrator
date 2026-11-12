@@ -42,7 +42,8 @@ func TestParentOnlyTaskAmendmentUsesAdmittedSourceAfterMutation(t *testing.T) {
 	if mutated.Attempt.BaselineTrees != started.Attempt.BaselineTrees {
 		t.Fatal("admitted mutation changed the candidate implementation baseline")
 	}
-	if mutated.Lease.AdmittedSourceTrees == started.Lease.AdmittedSourceTrees {
+	if mutated.Lease.AdmittedSourceTrees == nil || started.Lease.AdmittedSourceTrees == nil ||
+		*mutated.Lease.AdmittedSourceTrees == *started.Lease.AdmittedSourceTrees {
 		t.Fatal("admitted mutation did not advance its source tree binding")
 	}
 
@@ -62,8 +63,37 @@ func TestParentOnlyTaskAmendmentUsesAdmittedSourceAfterMutation(t *testing.T) {
 	if err != nil || required == nil || !required.Admittable {
 		t.Fatalf("admitted products hid a Task-only revision: %#v %v", required, err)
 	}
-	if _, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config); err != nil {
+	first, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config)
+	if err != nil {
 		t.Fatalf("admitted products prevented Task-only admission: %v", err)
+	}
+	if first.Attempt.BaselineTrees != started.Attempt.BaselineTrees {
+		t.Fatal("Task amendment changed candidate implementation baseline")
+	}
+
+	revised, err := os.ReadFile(taskFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taskFile, append(revised, []byte("\nRevision two.\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nextHead, err := fixture.store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextRequired, err := fixture.store.RequiredTaskAuthoritySync(nextHead)
+	if err != nil || nextRequired == nil || !nextRequired.Admittable {
+		t.Fatalf("consecutive Task-only amendment was not admitted: %#v %v", nextRequired, err)
+	}
+	second, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config)
+	if err != nil {
+		t.Fatalf("second Task-only amendment rejected admitted products: %v", err)
+	}
+	if second.Attempt.BaselineTrees != started.Attempt.BaselineTrees ||
+		second.Lease.AdmittedSourceTrees == nil || first.Lease.AdmittedSourceTrees == nil ||
+		*second.Lease.AdmittedSourceTrees == *first.Lease.AdmittedSourceTrees {
+		t.Fatal("consecutive amendment did not advance admitted source without altering candidate baseline")
 	}
 
 	writeParentOnlyProduct(t, fixture, "foreign-product.txt", "not admitted\n")
