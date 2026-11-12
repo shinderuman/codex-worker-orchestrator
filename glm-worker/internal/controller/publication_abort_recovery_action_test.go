@@ -60,12 +60,6 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	if head.PendingTransitionID != "" || head.IntegrationTip != implementation.BaseOID || head.AcceptedCandidateRef == nil {
 		t.Fatalf("aborted journal changed publication authority: %#v", head)
 	}
-	noRemoteProof := phase
-	noRemoteProof.Completion = &CompletionProgress{}
-	action, reason := fixture.store.publicationAbortRecoveryAction(op, head, noRemoteProof)
-	if action != "" || !strings.Contains(reason, "remote observation") {
-		t.Fatalf("missing terminal remote evidence offered generic rebind: action=%q reason=%q", action, reason)
-	}
 	projected, err := fixture.store.ProjectParentCompletion()
 	if err != nil || projected.Operation != PublicationOperationRebind ||
 		projected.Command == nil || projected.Command.CandidateID != implementation.CandidateID ||
@@ -79,7 +73,7 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 	}
 	missing := head
 	missing.AcceptedCandidateRef = nil
-	action, reason = fixture.store.publicationAbortRecoveryAction(op, missing, phase)
+	action, reason := fixture.store.publicationAbortRecoveryAction(op, missing, phase)
 	if action != "" || reason != "aborted completion has no accepted candidate" {
 		t.Fatalf("missing candidate was treated as repairable: action=%q reason=%q", action, reason)
 	}
@@ -125,5 +119,24 @@ func TestCompletionAbortRemoteRaceRetainsRebindAction(t *testing.T) {
 		CandidateID:        implementation.CandidateID,
 	}); err == nil {
 		t.Fatal("stale rebind authority admitted twice")
+	}
+}
+
+func TestPublicationAbortRejectsMissingTerminalRemoteEvidence(t *testing.T) {
+	var store Store
+	op := ExecutionOperation{Terminal: &TerminalMetadataOperation{}}
+	for _, tc := range []struct {
+		name string
+		completion CompletionProgress
+	}{
+		{name: "missing-remote", completion: CompletionProgress{}},
+		{name: "already-observed", completion: CompletionProgress{AbortRemoteOID: "observed", ObservationRef: &EvidenceObjectRef{}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action, reason := store.publicationAbortRecoveryAction(op, RepositoryControllerHead{}, TransitionState{Completion: &tc.completion})
+			if action != "" || !strings.Contains(reason, "remote observation") {
+				t.Fatalf("missing terminal remote evidence offered generic rebind: action=%q reason=%q", action, reason)
+			}
+		})
 	}
 }
