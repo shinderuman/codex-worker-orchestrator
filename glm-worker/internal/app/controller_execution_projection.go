@@ -45,6 +45,10 @@ func runControllerExecutionProjection(args []string, loadConfig func() (config.A
 	if err != nil {
 		return true, err
 	}
+	cfg, err = controller.WorkflowConfig(cfg)
+	if err != nil {
+		return true, err
+	}
 	handoff := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
 	if len(args) > 2 {
 		projection, err := projectRequestedExecutionOperation(cfg, handoff, args[2:])

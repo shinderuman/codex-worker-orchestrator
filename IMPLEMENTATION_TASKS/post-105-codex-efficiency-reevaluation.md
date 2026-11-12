@@ -109,6 +109,7 @@ status: not-applicable
 
 ## Contract
 
+- 次の差分評価のbaselineは `review-evidence/codex-efficiency-followup-2026-11-12.md` とその固定source・run identityとする。同reportのunknown/No-Goを証拠なしに解除せず、以後の新証拠に限定する。最大5件間隔を超える再計画または重大incidentでは評価を前倒しし、022直前の評価を維持する。
 - `105-session-rotation.md`完了後、022開始前に親Codex自身が実行するparent-only evaluationとする。GLM modelへ調査・分析・採否判断を委譲しない
 - 本評価は`codex/AGENTS.md`の通常委譲原則に対する、105完了後から022開始前だけのbounded exceptionとする。データ収集は既承認のread-only commandとmachine projectionだけを使い、repository探索、semantic investigation、Quality Delta評価、Go/No-Goは親Codexが行う
 - 本評価から新しい実装taskを作った後のstart/decision/fix/accept/resumeは通常規則どおり`glm-parent-action`を必須とし、parent-only exceptionをfollow-up implementationへ拡張しない
