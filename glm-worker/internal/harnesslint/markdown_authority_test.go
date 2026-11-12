@@ -61,7 +61,6 @@ func TestMarkdownPlanSpacingFixesSingleBlankBetweenTaskEntries(t *testing.T) {
 	}
 }
 
-
 func TestMarkdownPlanSpacingKeepsNonTaskLinkSeparation(t *testing.T) {
 	root := t.TempDir()
 	path := implementationPlanPath

@@ -453,19 +453,13 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 		return ParentCompletionOperation{}, false, err
 	}
 	remoteAdvance := false
-	if continuity == publicationSourceContinuous && candidate.State == candidatePromoted && candidate.EvidenceValid {
-		remote, err := s.observeCandidateRemote(head, candidate)
+	if continuity == publicationSourceContinuous {
+		tip, remoteAdvance, err = s.unpublishedCandidateRemoteAdvance(head, candidate)
 		if err != nil {
 			return ParentCompletionOperation{}, false, err
 		}
-		if remote != candidate.BaseOID && remote != candidate.CommitOID {
-			contains, err := isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
-			if err != nil {
-				return ParentCompletionOperation{}, false, err
-			}
-			if !contains {
-				continuity, tip, remoteAdvance = publicationSourceAdvanced, remote, true
-			}
+		if remoteAdvance {
+			continuity = publicationSourceAdvanced
 		}
 	}
 	switch continuity {
@@ -490,6 +484,24 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 	default:
 		return ParentCompletionOperation{}, false, fmt.Errorf("publication local ref %s is outside candidate promotion authority and is not a fast-forward of the candidate base; resolve the primary divergence before publication", tip)
 	}
+}
+
+func (s *Store) unpublishedCandidateRemoteAdvance(head RepositoryControllerHead, candidate AcceptedCandidate) (string, bool, error) {
+	if candidate.State != candidatePromoted || !candidate.EvidenceValid {
+		return "", false, nil
+	}
+	remote, err := s.observeCandidateRemote(head, candidate)
+	if err != nil {
+		return "", false, err
+	}
+	if remote == candidate.BaseOID || remote == candidate.CommitOID {
+		return "", false, nil
+	}
+	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
+	if err != nil {
+		return "", false, err
+	}
+	return remote, !contains, nil
 }
 
 func (s *Store) projectAcceptanceOperation(head RepositoryControllerHead) (ParentCompletionOperation, error) {

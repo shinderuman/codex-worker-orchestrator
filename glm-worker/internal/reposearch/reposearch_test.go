@@ -23,10 +23,11 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd.Env = append(env,
+	env = append(env,
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
 	)
+	cmd.Env = env
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s in %s: %v: %s", strings.Join(args, " "), dir, err, out)
 	}

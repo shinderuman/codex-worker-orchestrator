@@ -174,7 +174,6 @@ func TestNoIgnoredInputsForeignGitLocationIsolation(t *testing.T) {
 	}
 }
 
-
 func TestNoIgnoredInputsSameWorktreeForeignGitLocationIsolation(t *testing.T) {
 	root := initValidationInputGitRepository(t)
 	previous, err := os.Getwd()

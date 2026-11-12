@@ -182,7 +182,6 @@ func TestSkippedCivilDateDoesNotInheritPreviousWeekday(t *testing.T) {
 	})
 }
 
-
 func TestZoneBoundsNonAdvancingLeapYearEnd(t *testing.T) {
 	policy, err := Parse("Europe/Warsaw", "mon-fri@12:00-13:00")
 	if err != nil {

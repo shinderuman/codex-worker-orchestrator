@@ -215,18 +215,9 @@ func noIgnoredNestedRepositoryInputs(repository string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("inspect nested untracked repositories: %w", err)
 	}
-	candidates := []string{}
-	for _, dir := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
-		if dir == "" || !strings.HasSuffix(dir, "/") {
-			continue
-		}
-		entries, err := state.NestedUntrackedRepositoryEntries(repository, dir)
-		if err != nil {
-			return false, err
-		}
-		for _, entry := range entries {
-			candidates = append(candidates, entry.Path)
-		}
+	candidates, err := nestedUntrackedValidationCandidates(repository, listing)
+	if err != nil {
+		return false, err
 	}
 	if len(candidates) == 0 {
 		return true, nil
@@ -245,6 +236,23 @@ func noIgnoredNestedRepositoryInputs(repository string) (bool, error) {
 		return false, fmt.Errorf("inspect ignored nested validation inputs: %w", err)
 	}
 	return len(output) == 0, nil
+}
+
+func nestedUntrackedValidationCandidates(repository string, listing []byte) ([]string, error) {
+	var candidates []string
+	for _, dir := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
+		if dir == "" || !strings.HasSuffix(dir, "/") {
+			continue
+		}
+		entries, err := state.NestedUntrackedRepositoryEntries(repository, dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			candidates = append(candidates, entry.Path)
+		}
+	}
+	return candidates, nil
 }
 
 func NewRunID() (string, error) {

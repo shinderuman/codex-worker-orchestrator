@@ -16,7 +16,6 @@ func TestParentOnlyTaskAmendmentUsesAdmittedSourceAfterMutation(t *testing.T) {
 	writeParentOnlyProduct(t, fixture, "initial-untracked.txt", "existing evaluation product\n")
 	started := admitParentOnlyExecutionFixture(t, fixture)
 
-	// An unrelated tracked edit and an untracked product become admitted source.
 	tracked := filepath.Join(fixture.repo, "source.txt")
 	if _, err := os.Stat(tracked); err != nil {
 		t.Fatal(err)
