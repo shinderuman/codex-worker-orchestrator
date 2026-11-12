@@ -428,18 +428,27 @@ func TestTaskAuthoritySyncGuardBlocksDispatchUntilRevisedContract(t *testing.T) 
 	}
 }
 
-func TestTaskAuthoritySyncGuardBlocksFreshStartUntilSynced(t *testing.T) {
-	cfg, rootTask, _, _ := newCanonicalWorkflowCorpus(t)
-	original, err := os.ReadFile(filepath.Join(cfg.RepoRoot, rootTask))
+func taskAuthoritySyncSuccessorFixture(t *testing.T) (config.AppConfig, *controller.Store, controller.SemanticTaskRef, controller.SemanticTaskRef) {
+	t.Helper()
+	cfg, _, store, _, _ := completedRetiredWorkflowFixture(t)
+	taskPath := "IMPLEMENTATION_TASKS/successor.md"
+	original, err := os.ReadFile(filepath.Join(cfg.RepoRoot, taskPath))
 	if err != nil {
 		t.Fatal(err)
 	}
-	revisedContent := append(append([]byte(nil), original...), []byte("\n## Amendments\n\n初回dispatch前の追加分。\n")...)
-	writeAppTestFile(t, cfg.RepoRoot, rootTask, string(revisedContent))
-	revisedDigest := taskAuthoritySyncDigest(t, revisedContent)
+	revised := append(append([]byte(nil), original...), []byte("\n## Amendments\n\n初回dispatch前の追加分。\n")...)
+	writeAppTestFile(t, cfg.RepoRoot, taskPath, string(revised))
+	return cfg, store,
+		controller.SemanticTaskRef{TaskPath: taskPath, ContractDigest: taskAuthoritySyncDigest(t, original)},
+		controller.SemanticTaskRef{TaskPath: taskPath, ContractDigest: taskAuthoritySyncDigest(t, revised)}
+}
+
+func TestTaskAuthoritySyncGuardBlocksFreshStartUntilSynced(t *testing.T) {
+	cfg, store, previous, revised := taskAuthoritySyncSuccessorFixture(t)
+	stubQualityPreflight(t, func(string) error { return nil })
 
 	dispatchFreshStart := func() (*canonicalWorkflowRunner, error) {
-		scripted := &canonicalWorkflowRunner{t: t, task: rootTask}
+		scripted := &canonicalWorkflowRunner{t: t, task: revised.TaskPath}
 		factory := func(actual config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
 			scripted.cfg = actual
 			return scripted
@@ -456,44 +465,69 @@ func TestTaskAuthoritySyncGuardBlocksFreshStartUntilSynced(t *testing.T) {
 	if len(scripted.prompts) != 0 {
 		t.Fatalf("stale fresh start reached the provider: %d calls", len(scripted.prompts))
 	}
-	store, err := controller.Open(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
 	loaded, err := store.LoadHead()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.LiveAttemptID == "" || loaded.ExecutionTaskRef == nil || loaded.ExecutionTaskRef.ContractDigest == revisedDigest {
+	if loaded.LiveAttemptID == "" || loaded.ExecutionTaskRef == nil || !loaded.ExecutionTaskRef.Equal(previous) {
 		t.Fatalf("blocked fresh start did not bootstrap the regular lane authority: %#v", loaded)
 	}
-	snapshot, err := controller.CaptureWorkspaceSnapshot(cfg.RepoRoot)
+	bound, err := controller.ParentContinuationConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workflow.ExecuteControllerExecution(cfg, store, workflow.ControllerExecutionCommand{
-		Action: "sync-task-authority", ExpectedGeneration: loaded.ControllerGeneration,
-		SourceSnapshotID: snapshot.ID,
-		RevisedTask:      &controller.SemanticTaskRef{TaskPath: rootTask, ContractDigest: revisedDigest},
-	}); err != nil {
+	if bound.RepoRoot == cfg.RepoRoot {
+		t.Fatalf("successor fresh start did not materialize a regular lane workspace: %s", bound.RepoRoot)
+	}
+	unstarted, err := state.AttachStateStore(bound).UnstartedTaskRuntime()
+	if err != nil || !unstarted {
+		t.Fatalf("blocked fresh start did not leave an unstarted runtime: %v err=%v", unstarted, err)
+	}
+
+	handoff := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("pre-sync handoff hid the Task authority sync operation: %#v", handoff)
+	}
+	if containsParentAction(handoff.AllowedActions, "start") {
+		t.Fatalf("pre-sync handoff admitted start before the sync: %v", handoff.AllowedActions)
+	}
+	payload := handoff.RequiredActionParameters["controller_command_json"]
+	var command workflow.ControllerExecutionCommand
+	if err := json.Unmarshal([]byte(payload), &command); err != nil {
 		t.Fatal(err)
 	}
-	if head, err := store.LoadHead(); err != nil || head.ExecutionTaskRef.ContractDigest != revisedDigest {
+	if command.Action != "sync-task-authority" || command.ExpectedGeneration != loaded.ControllerGeneration ||
+		command.SourceSnapshotID == "" || command.RevisedTask == nil || !command.RevisedTask.Equal(revised) {
+		t.Fatalf("pre-sync handoff guided an unexpected sync command: %#v", command)
+	}
+	if handoff.RequiredActionParameters["previous_task_contract_sha256"] != previous.ContractDigest ||
+		handoff.RequiredActionParameters["revised_task_contract_sha256"] != revised.ContractDigest {
+		t.Fatalf("pre-sync handoff lost its digest boundary: %#v", handoff.RequiredActionParameters)
+	}
+	executeStagedControllerAction(t, cfg, controllerExecutionSurface, payload, true)
+
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.ExecutionTaskRef == nil || !head.ExecutionTaskRef.Equal(revised) {
 		t.Fatalf("fresh lane sync did not rebind the revised contract: %#v err=%v", head, err)
 	}
-	handoff := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
-	if !handoff.Consistent || handoff.Controller == nil ||
-		handoff.RequiredAction == nil || *handoff.RequiredAction != canonicalStartAction {
-		t.Fatalf("unstarted runtime after Task sync has no legal start handoff: %#v", handoff)
+	after := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
+	if !after.Consistent || after.Controller == nil ||
+		after.RequiredAction == nil || *after.RequiredAction != canonicalStartAction {
+		t.Fatalf("unstarted runtime after Task sync has no legal start handoff: %#v", after)
 	}
-	if handoff.Controller.Head.ExecutionTaskRef == nil ||
-		handoff.Controller.Head.ExecutionTaskRef.ContractDigest != revisedDigest {
-		t.Fatalf("synchronized handoff lost its Task revision: %#v", handoff.Controller.Head)
+	if after.Controller.Head.ExecutionTaskRef == nil || !after.Controller.Head.ExecutionTaskRef.Equal(revised) {
+		t.Fatalf("synchronized handoff lost its Task revision: %#v", after.Controller.Head)
 	}
 	scripted, err = dispatchFreshStart()
 	var interrupted *runner.InterruptedCallError
 	if !errors.As(err, &interrupted) || len(scripted.prompts) != 1 {
 		t.Fatalf("synced fresh start did not reach the provider exactly once: %v calls=%d", err, len(scripted.prompts))
+	}
+	if scripted.cfg.RepoRoot != bound.RepoRoot {
+		t.Fatalf("restarted fresh start left the leased lane workspace: %s", scripted.cfg.RepoRoot)
 	}
 }
 

@@ -511,7 +511,7 @@ func canonicalLifecycleTask(cfg config.AppConfig, st *state.StateStore, task con
 	if err != nil {
 		return "", err
 	}
-	if committed.Task.TaskPath != task.TaskPath || committed.Task.Equal(task) {
+	if committed.Task.TaskPath != task.TaskPath {
 		return "", bindingErr
 	}
 	return task.TaskPath, nil

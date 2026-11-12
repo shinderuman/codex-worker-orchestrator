@@ -297,6 +297,13 @@ func activateNewWorkflowConfig(cfg config.AppConfig, store *controller.Store, he
 		cfg.RepoRoot = materialized.Admission.Workspace.Root
 		return controller.WorkflowConfig(cfg)
 	}
+	if head.LiveLeaseID != "" {
+		bound, err := controller.ParentContinuationConfig(cfg)
+		if err != nil {
+			return cfg, err
+		}
+		cfg = bound
+	}
 	if _, err := controller.ActivateRequest(cfg, request); err != nil {
 		return cfg, err
 	}
