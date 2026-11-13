@@ -10,33 +10,42 @@ import (
 )
 
 func RegisteredTask(repo string) (SemanticTaskRef, error) {
+	task, _, err := registeredTaskDeclaration(repo)
+	return task, err
+}
+
+func registeredTaskDeclaration(repo string) (SemanticTaskRef, string, error) {
 	plan, err := os.ReadFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"))
 	if err != nil {
-		return SemanticTaskRef{}, err
+		return SemanticTaskRef{}, "", err
 	}
 	prepared, err := repositoryproject.PrepareProjectState(string(plan))
 	if err != nil {
-		return SemanticTaskRef{}, err
+		return SemanticTaskRef{}, "", err
 	}
 	entries, err := taskcontract.EnumerateTaskCorpus(repo)
 	if err != nil {
-		return SemanticTaskRef{}, err
+		return SemanticTaskRef{}, "", err
 	}
 	if err := repositoryproject.ValidateClosure(prepared.Schedule, entries, "registered Task"); err != nil {
-		return SemanticTaskRef{}, err
+		return SemanticTaskRef{}, "", err
 	}
 	if len(prepared.Active) == 0 {
-		return SemanticTaskRef{}, nil
+		return SemanticTaskRef{}, "", nil
 	}
 	path := prepared.Active[0]
 	content, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(path)))
 	if err != nil {
-		return SemanticTaskRef{}, err
+		return SemanticTaskRef{}, "", err
 	}
 	if err := repositoryproject.ValidateActiveTaskContent(content); err != nil {
-		return SemanticTaskRef{}, err
+		return SemanticTaskRef{}, "", err
 	}
-	return SemanticTaskRef{TaskPath: path, ContractDigest: digestBytes(content)}, nil
+	execution, err := taskcontract.ParseExecutionAuthority(content)
+	if err != nil {
+		return SemanticTaskRef{}, "", err
+	}
+	return SemanticTaskRef{TaskPath: path, ContractDigest: digestBytes(content)}, execution.Mode, nil
 }
 
 func (s *Store) StartRegisteredTask() (Admission, error) {
@@ -67,6 +76,9 @@ func (s *Store) StartRegisteredTask() (Admission, error) {
 	if err != nil {
 		return Admission{}, err
 	}
+	if authority.ExecutionMode == ExecutionAuthorityParentOnly {
+		return Admission{}, fmt.Errorf("registered parent-only Task requires parent-only materialization")
+	}
 	return s.bootstrapFreshExecution(head, authority, workspace, snapshot)
 }
 
@@ -82,8 +94,8 @@ func (s *Store) captureRegisteredTaskAuthority(snapshot WorkspaceSnapshot) (Task
 	if err != nil {
 		return TaskAuthority{}, err
 	}
-	if !authority.Task.Equal(task) || authority.ExecutionMode == ExecutionAuthorityParentOnly {
-		return TaskAuthority{}, fmt.Errorf("registered Runtime Task authority changed or is parent-only")
+	if !authority.Task.Equal(task) {
+		return TaskAuthority{}, fmt.Errorf("registered Task authority changed during capture")
 	}
 	authority.SourceRevision = &source
 	return authority, nil

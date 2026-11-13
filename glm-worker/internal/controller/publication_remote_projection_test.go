@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -78,6 +79,16 @@ func TestRemoteContainingCandidateProjectsAndCompletesAdoption(t *testing.T) {
 }
 
 func TestObservedCompletionRecoveryNeverPushes(t *testing.T) {
+	for _, advanced := range []bool{false, true} {
+		for _, intent := range []bool{false, true} {
+			name := map[bool]string{false: "base", true: "advanced"}[advanced] + map[bool]string{false: "/prepared", true: "/intent"}[intent]
+			t.Run(name, func(t *testing.T) { observedCompletionAbortCase(t, advanced, intent) })
+		}
+	}
+}
+
+func observedCompletionAbortCase(t *testing.T, advanced, intent bool) {
+	t.Helper()
 	fixture, policy := newPublicationTestFixture(t)
 	source := publicationTestEdit(t, fixture, "candidate.txt", "candidate\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
@@ -90,12 +101,51 @@ func TestObservedCompletionRecoveryNeverPushes(t *testing.T) {
 	if err := fixture.store.prepareExecutionOperation(&op, head); err != nil {
 		t.Fatal(err)
 	}
+	if intent {
+		phase, err := fixture.store.loadTransitionState(op.Transition.TransitionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fixture.store.prepareCandidateCompletionWrite(op, &phase); err != nil {
+			t.Fatal(err)
+		}
+		if err := fixture.store.beginCandidateCompletionWrite(op, &phase); err != nil {
+			t.Fatal(err)
+		}
+	}
 	remote := controllerGitOutput(t, source.Workspace.Root, "remote", "get-url", policy.Remote)
 	runControllerGit(t, source.Workspace.Root, "--git-dir", remote, "update-ref", policy.RemoteRef, candidate.BaseOID, candidate.CommitOID)
-	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); err == nil {
-		t.Fatal("observation-only recovery accepted a remote without the candidate")
+	tip := candidate.BaseOID
+	action := PublicationOperationReenter
+	if advanced {
+		tip = advancePublicationTestRemote(t, fixture, policy, "raced.txt", "advanced without candidate\n")
+		action = PublicationOperationRebind
 	}
-	if got := observeTestRemote(t, source.Workspace.Root, policy); got != candidate.BaseOID {
+	var advancement *PublicationAdvancementRequired
+	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); !errors.As(err, &advancement) || advancement.Action != action {
+		t.Fatalf("observation-only recovery did not abort into %s: %v", action, err)
+	}
+	if got := observeTestRemote(t, source.Workspace.Root, policy); got != tip {
 		t.Fatal("observation-only recovery pushed the candidate")
+	}
+	aborted, err := fixture.store.LoadHead()
+	if err != nil || aborted.PendingTransitionID != "" {
+		t.Fatalf("observation-only abort retained pending authority: %#v %v", aborted, err)
+	}
+	if _, err := fixture.store.RecoverExecutionOperation(op.Transition.TransitionID); !errors.As(err, &advancement) {
+		t.Fatalf("aborted observation recovery reported success: %v", err)
+	}
+	projection, err := fixture.store.ProjectParentCompletionOperation(action)
+	if err != nil || projection.Command == nil {
+		t.Fatalf("observation abort did not admit its next operation: %#v %v", projection, err)
+	}
+	input := PublicationInput{ExpectedGeneration: projection.Command.ExpectedGeneration, CandidateID: projection.Command.CandidateID}
+	if advanced {
+		_, err = fixture.store.RebindUnpublishedCandidate(input)
+	} else {
+		_, err = fixture.store.ReenterAcceptedCandidate(input)
+	}
+	if err != nil {
+		t.Fatalf("observation abort could not execute its next operation: %v", err)
 	}
 }

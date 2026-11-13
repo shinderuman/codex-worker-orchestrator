@@ -258,3 +258,35 @@ func TestNewTaskAdmissionStartsUncommittedRegisteredTaskFromIdle(t *testing.T) {
 		})
 	}
 }
+
+func TestRegisteredParentOnlyTaskUsesTypedStartHandoff(t *testing.T) {
+	root := t.TempDir()
+	runControllerActivationGit(t, root, "init", "-q")
+	runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
+	runControllerActivationGit(t, root, "config", "user.email", "admission@example.invalid")
+	writeAppTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n")
+	runControllerActivationGit(t, root, "add", ".")
+	runControllerActivationGit(t, root, "commit", "-qm", "idle base")
+	path := "IMPLEMENTATION_TASKS/registered-parent.md"
+	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `"+path+"`\n\n## NEXT\n\n## BLOCKED\n")
+	writeAppTestFile(t, root, path, "# registered parent\n\n## Contract\n\nparent work\n\n## Execution authority\n\nmode: parent-only\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+	cfg := taskAdmissionTestConfig(t, root)
+	store, err := controller.Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handoff := executeParentHandoff(t, cfg)
+	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerExecutionSurface {
+		t.Fatalf("registered parent-only Task did not project its typed start: %#v", handoff)
+	}
+	runParentOnlyExecutionStep(t, cfg, handoff.RequiredActionParameters, true)
+	head, err := store.LoadHead()
+	if err != nil || head.ExecutionTaskRef == nil || head.ExecutionTaskRef.TaskPath != path {
+		t.Fatalf("registered parent-only handoff did not bind its Task: %#v %v", head, err)
+	}
+	live, err := store.LiveParentOnlyExecution()
+	if err != nil || !live {
+		t.Fatalf("registered parent-only start created the wrong execution authority: %v", err)
+	}
+}

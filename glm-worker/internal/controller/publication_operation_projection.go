@@ -374,7 +374,7 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 	if !parentOnlyMaterializationHeadReady(head) {
 		return ParentCompletionOperation{}, false, nil
 	}
-	authority, err := s.parentOnlySuccessorAuthority(head)
+	task, mode, err := s.parentOnlyMaterializationTask(head)
 	if err != nil {
 		if IsPristine(head) {
 			return ParentCompletionOperation{}, false, nil
@@ -388,15 +388,26 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 		}
 		return ParentCompletionOperation{}, false, err
 	}
-	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
+	if mode != ExecutionAuthorityParentOnly {
 		return ParentCompletionOperation{}, false, nil
 	}
-	command, err := s.parentOnlyMaterializationCommand(head, authority.Task)
+	command, err := s.parentOnlyMaterializationCommand(head, task)
 	if err != nil {
 		return ParentCompletionOperation{}, false, err
 	}
 	return ParentCompletionOperation{Surface: ExecutionOperationSurface, Mode: ParentCompletionModeParentOnly, Operation: PublicationOperationParentOnlyMaterialize,
 		Execution: command}, true, nil
+}
+
+func (s *Store) parentOnlyMaterializationTask(head RepositoryControllerHead) (SemanticTaskRef, string, error) {
+	authority, err := s.parentOnlySuccessorAuthority(head)
+	if err != nil {
+		return SemanticTaskRef{}, "", err
+	}
+	if authority.Task.Empty() && head.RootTaskRef == nil && head.ActiveEpisodeID == "" {
+		return registeredTaskDeclaration(s.identity.PrimaryRoot)
+	}
+	return authority.Task, authority.ExecutionMode, nil
 }
 
 func parentOnlyMaterializationHeadReady(head RepositoryControllerHead) bool {

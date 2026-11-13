@@ -134,7 +134,7 @@ func (s *Store) validateCompletionFailure(op ExecutionOperation, phase Transitio
 	if err != nil {
 		return err
 	}
-	if failure.SchemaVersion != controllerSchemaVersion || ref.LogicalIdentity != op.Transition.TransitionID || failure.OperationDigest != op.Transition.OperationDigest || failure.Message == "" {
+	if !completionFailureBindingMatches(op, ref, failure) {
 		return fmt.Errorf("completion failure evidence binding differs")
 	}
 	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, failure.RemoteOID, remote)
@@ -144,10 +144,15 @@ func (s *Store) validateCompletionFailure(op ExecutionOperation, phase Transitio
 	if !contains {
 		return fmt.Errorf("completion failure remote proof differs")
 	}
-	if completionFailureProvesNoWrite(phase.Completion.WriteIntent, failure, op.Terminal.Policy) {
+	if (op.Terminal.ObserveOnly && failure.Stage == "observe-only") || completionFailureProvesNoWrite(phase.Completion.WriteIntent, failure, op.Terminal.Policy) {
 		return nil
 	}
 	return fmt.Errorf("completion publication outcome is unresolved; exact journal retained")
+}
+
+func completionFailureBindingMatches(op ExecutionOperation, ref EvidenceObjectRef, failure CompletionFailure) bool {
+	return failure.SchemaVersion == controllerSchemaVersion && ref.LogicalIdentity == op.Transition.TransitionID &&
+		failure.OperationDigest == op.Transition.OperationDigest && failure.Message != ""
 }
 
 func (s *Store) restoreCompletionPrepare(op ExecutionOperation) error {

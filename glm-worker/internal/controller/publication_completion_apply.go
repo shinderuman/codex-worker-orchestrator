@@ -34,7 +34,7 @@ func (s *Store) applyCandidateCompletion(op ExecutionOperation) error {
 		return s.adoptCandidateCompletion(op, phase, c, remote)
 	}
 	if op.Terminal.ObserveOnly {
-		return fmt.Errorf("completion adoption remote no longer contains the observed candidate")
+		return s.abortObservedCompletion(op, phase, remote)
 	}
 	if phase.Completion.FailureRef != nil {
 		return s.abortCompletionPrepare(op, phase, remote)
@@ -43,6 +43,13 @@ func (s *Store) applyCandidateCompletion(op ExecutionOperation) error {
 		return s.abortCompletionPrepare(op, phase, remote)
 	}
 	return s.publishPreparedCompletion(op, phase, c, remote)
+}
+
+func (s *Store) abortObservedCompletion(op ExecutionOperation, phase TransitionState, remote string) error {
+	if err := s.saveCompletionFailure(op, &phase, "observe-only", "", "completion adoption remote no longer contains the observed candidate", remote); err != nil {
+		return err
+	}
+	return s.abortCompletionPrepare(op, phase, remote)
 }
 
 func (s *Store) adoptCandidateCompletion(op ExecutionOperation, phase TransitionState, candidate AcceptedCandidate, remote string) error {

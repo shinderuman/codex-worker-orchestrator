@@ -413,7 +413,11 @@ func canonicalHandoffStatus(cfg config.AppConfig) (controller.ControllerStatusRe
 		return controller.ControllerStatusReport{}, false
 	}
 	report, err := store.ProjectStatus()
-	return report, err == nil && report.CanonicalActive
+	if err != nil || report.CanonicalActive {
+		return report, err == nil
+	}
+	operation, err := store.ProjectParentCompletion()
+	return report, err == nil && operation.Mode == controller.ParentCompletionModeParentOnly && operation.Surface == controller.ExecutionOperationSurface
 }
 
 func applyRuntimeDispositionHandoff(cfg config.AppConfig, output *parentHandoffOutput, report controller.ControllerStatusReport) bool {

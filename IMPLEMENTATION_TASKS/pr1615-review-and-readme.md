@@ -105,6 +105,10 @@ GLMがLimitになったからあとの作業はお前が引き継げ
 すべてが問題なくなったらPRをMergeするのではなくPublishを行う、つまりPRは破棄する
 そういう形で進めろ
 
+### 2026-11-13 1コミット制約の適用時点
+
+1コミットを強調しているがPublish前に1コミットにすればいいのでこのあとPR対応をAmendしたりする必要はない当たり前だが
+
 ## Resolved references
 
 - 対象PR: https://github.com/shinderuman/codex-worker-orchestrator/pull/1615
@@ -123,6 +127,17 @@ GLMがLimitになったからあとの作業はお前が引き継げ
 - 1タスク1コミットの開始に関する追加一次証拠: `app/execution.go:activateNewWorkflowConfig`は、既存controller・live leaseなし・ExecutionTaskRefなしで`MaterializeExecution`へ進む。idle完了headはRootTaskRefもnilであり、`controller/execution_lane.go:validateMaterializationHead`はnil rootを拒否する。未コミットの新ACTIVE Task登録だけではこのheadに新task authorityが束縛されず、正規開始が`materialization requires exact quiescent controller authority`で停止する。登録だけのコミットやcontroller state直編集で回避しない。開始ownerの変更が必要な場合も、このTaskの1コミット境界を維持する。
 - 開始ownerへの親の直接修正方針: current worktreeのTask/Planを既存parent-source revisionとして捕捉し、pristineまたはfinalized idleと一致するprimary/remoteからのみ実行authorityを開始する。公開refや履歴へ登録commitを追加しない。現行live Task・candidate・pending transition・external advancementを置き換えない。worker/reviewerは開始修正も本Task全体のdiffとして検証すること。特にsource revisionのarchive/provenanceが復旧・GC・最終Publicationまで保持されるか、登録Taskと実装を含む1コミットでretirementできるかを確認し、欠落があれば既存owner内で補う。
 
+### PR 1617の外部レビュー採否（2026-11-13）
+
+- レビュー対象: https://github.com/shinderuman/codex-worker-orchestrator/pull/1617 、HEAD `5d191f03164fd215f595ec2a4f370d3ea5f8a9f6`。
+- 採用: `discussion_r4561402662`。`StartRegisteredTask`がparent-only指定を拒否する一方、既存parent-only admissionはcommitted Taskを要求する。登録sourceを既存parent-only materializationへ接続し、Runtime/GLM開始との責務分離を維持する。pristine idle・完了後idleの双方で登録専用コミットなしに開始・完了できることを検証する。
+- 採用: `discussion_r4561415245`。ObserveOnlyのremote非包含時はprepare済みtransitionからerrorだけを返しpendingが残る。非pushを維持し、既存のcompletion abortへ収束して次の正規操作を投影できるようにする。remoteがbaseへ戻った場合と別子孫へ進んだ場合、recovery反復でもpendingが永久に残らないことを検証する。
+- 採用・重複統合: `discussion_r4561384221`、`4561430406`、`4561439515`。登録source復元がLiveAttemptIDだけに依存するため、candidate受理後のsealed attemptからも同じsource archiveを復元する。受理後・promote後にGCしてpromote/publishまたはadoptまで完遂する回帰を検証する。
+- 採用: `discussion_r4561430390`。APIキーをliteralなexport commandへ埋める例はshell履歴へキーが残る。履歴へ値を記録しない入力方法に変更し、README補足を冗長化しない。
+- 対象外: `discussion_r4561368646`のdescendant親管理Markdownによるcompletion拒否要求は撤回済み。candidate自身の完了と後続descendant adoptionの責務分離を維持する。
+- 対象外: `discussion_r4561430403`のmaterialization退行説は、RootTaskRefありの正常後続Taskが新分岐へ入らず、nil rootを旧materializationも拒否するため不成立。`4561469411`の反証と`4561481322`の撤回を確認した。
+- 対象外: `discussion_r4561430412`のlocal descendant許容提案は、exact candidate treeを要求するindex/worktree保護と矛盾する。`4561469848`の反証と`4561476181`の撤回を確認した。local equalityを弱めない。
+
 ## Purpose
 
 指定PRの有効な指摘を修正し、READMEを利用者向け入口として必要十分な情報へ整理する。
@@ -139,6 +154,7 @@ status: not-applicable
 - idle完了でACTIVEが空でも、口頭依頼を親が専用Taskへ固定して通常のGLM workflowを開始できるよう、開始ownerを修正する。未コミットTaskを理由に登録専用コミットを要求しない。今回の開始障害を復旧する範囲は親の直接修正・検証許可として扱い、それ以外はGLMへ委譲する。
 - 最新Amendmentにより、GLM Limit後の残る本Task実装・検証は親Codexが直接引き継ぐ。GLMへの委譲を要求する従前Contractは、この残作業について直接実装許可で上書きする。
 - Publish前にレビュー用PRを作成する。CodeRabbit/Greptileへの呼出しやメンションは行わず、ユーザーの外部レビュー呼出しと結果を待つ。指摘へ対応した後の次レビューもユーザーが呼び出す。全問題解消後もPRをMergeせず、正規Publishを行いレビュー用PRを閉じる。このレビュー待ち境界ではTaskを完了扱いしない。
+- 1タスク1コミットの制約はPublish直前の最終成果へ適用する。レビュー用PRの指摘対応は通常の追加コミットで進め、都度のAmendや履歴書換えを要求しない。Publish前に実装と終了metadataを1コミットへまとめる。登録だけのコミットは作らない。
 
 ## Must not
 

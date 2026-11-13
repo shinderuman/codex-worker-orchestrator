@@ -6,8 +6,12 @@
 
 インストールはClaude Codeの接続先をZ.aiへ設定します。APIキーは配置しないため、実行するシェルから`ANTHROPIC_AUTH_TOKEN`など、Claude Codeが使用する認証情報を渡してください。
 
-```sh
-export ANTHROPIC_AUTH_TOKEN='取得したAPIキー'
+対話的なbashでは、キーを表示せずに入力できます。設定後は同じシェルから作業を開始してください。
+
+```bash
+read -r -s -p 'Z.ai API key: ' ANTHROPIC_AUTH_TOKEN
+printf '\n'
+export ANTHROPIC_AUTH_TOKEN
 ```
 
 接続先とモデルの管理設定は[`claude/settings-managed.json`](../claude/settings-managed.json)を正とします。

@@ -178,14 +178,14 @@ func (s *Store) parentOnlyCompletionReview(admission Admission) (WorkspaceSnapsh
 	if admission.Attempt.ExecutionAuthority != ExecutionAuthorityParentOnly {
 		return WorkspaceSnapshot{}, fmt.Errorf("parent-only completion requires an attempt with parent-only execution authority")
 	}
-	authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	authority, err := s.parentOnlySourceAuthority(admission.Attempt)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
 	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
 		return WorkspaceSnapshot{}, fmt.Errorf("committed task is no longer designated for parent-only execution")
 	}
-	if authority.Snapshot.HeadOID != admission.Attempt.ExecutionBaseOID {
+	if authority.Snapshot.HeadOID != parentOnlySourceOID(admission.Attempt) {
 		return WorkspaceSnapshot{}, fmt.Errorf("committed repository HEAD moved during parent-only execution")
 	}
 	if err := s.parentOnlyCurrentTaskContract(admission.Head, admission.Attempt, authority); err != nil {

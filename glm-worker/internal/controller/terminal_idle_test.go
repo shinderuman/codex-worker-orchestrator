@@ -135,9 +135,43 @@ func testIdleMetadataAndNewTask(t *testing.T, store *Store, policy PublicationPo
 	fixture := findingAcceptanceFixture{store: store, source: execution}
 	source := publicationTestEdit(t, fixture, "restarted-result.txt", "completed registered Task\n")
 	acceptedCompletionRuntime(t, store, source)
-	published, _ := publishTerminalTestSource(t, fixture, policy, source)
+	accepted, err := store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "registered Task result", Policy: policy, Evidence: publicationTestEvidence(t, store, source, policy)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pruneAndRestoreRegisteredSource(t, store, execution.Attempt.SourceRevision.AuthorityOID, accepted.Head.ProjectSnapshotID)
+	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pruneAndRestoreRegisteredSource(t, store, execution.Attempt.SourceRevision.AuthorityOID, promoted.Head.ProjectSnapshotID)
+	published, err := store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	parent := controllerGitOutput(t, repo, "rev-parse", published.Head.IntegrationTip+"^")
 	if parent != execution.Snapshot.Head || published.Head.RootTaskRef != nil {
 		t.Fatalf("registered Task did not retire in one public commit: parent=%s base=%s", parent, execution.Snapshot.Head)
+	}
+}
+
+func pruneAndRestoreRegisteredSource(t *testing.T, store *Store, sourceOID, projectID string) {
+	t.Helper()
+	repo := store.Identity().PrimaryRoot
+	runControllerGit(t, repo, "reflog", "expire", "--expire=now", "--all")
+	runControllerGit(t, repo, "gc", "--prune=now")
+	if _, err := runGitBinary(repo, nil, "cat-file", "-e", sourceOID); err == nil {
+		t.Fatal("registered source remained reachable during the pruning regression")
+	}
+	project, err := store.LoadProjectSnapshot(projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveCommittedTaskAuthorityAt(repo, project.HeadOID); err != nil {
+		t.Fatalf("sealed registered source was not restored: %v", err)
 	}
 }
