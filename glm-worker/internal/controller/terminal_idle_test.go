@@ -132,6 +132,24 @@ func testIdleMetadataAndNewTask(t *testing.T, store *Store, policy PublicationPo
 	if err != nil || authority.Task.TaskPath != path {
 		t.Fatalf("registered Task source did not survive Git object pruning: %#v %v", authority, err)
 	}
+	writeSuspensionTestFile(t, repo, path, "# restarted\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n\n## Amendments\n\n要求改訂。\n")
+	writeSuspensionTestFile(t, repo, "unadmitted-result.txt", "not admitted\n")
+	required, err := store.RequiredTaskAuthoritySync(execution.Head)
+	if err != nil || required == nil || required.Admittable {
+		t.Fatalf("registered Task sync admitted a non-Task change: %#v %v", required, err)
+	}
+	if err := os.Remove(filepath.Join(repo, "unadmitted-result.txt")); err != nil {
+		t.Fatal(err)
+	}
+	execution, _ = syncRevisedTaskAuthority(t, store, execution, "\n## Amendments\n\n登録後の要求改訂。\n")
+	project, err = store.LoadProjectSnapshot(execution.Head.ProjectSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.HeadOID == execution.Attempt.SourceRevision.AuthorityOID {
+		t.Fatal("Task amendment did not advance source authority")
+	}
+	pruneAndRestoreRegisteredSource(t, store, project.HeadOID, project.SnapshotID)
 	fixture := findingAcceptanceFixture{store: store, source: execution}
 	source := publicationTestEdit(t, fixture, "restarted-result.txt", "completed registered Task\n")
 	acceptedCompletionRuntime(t, store, source)
@@ -139,7 +157,7 @@ func testIdleMetadataAndNewTask(t *testing.T, store *Store, policy PublicationPo
 	if err != nil {
 		t.Fatal(err)
 	}
-	pruneAndRestoreRegisteredSource(t, store, execution.Attempt.SourceRevision.AuthorityOID, accepted.Head.ProjectSnapshotID)
+	pruneAndRestoreRegisteredSource(t, store, project.HeadOID, accepted.Head.ProjectSnapshotID)
 	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +166,7 @@ func testIdleMetadataAndNewTask(t *testing.T, store *Store, policy PublicationPo
 	if err != nil {
 		t.Fatal(err)
 	}
-	pruneAndRestoreRegisteredSource(t, store, execution.Attempt.SourceRevision.AuthorityOID, promoted.Head.ProjectSnapshotID)
+	pruneAndRestoreRegisteredSource(t, store, project.HeadOID, promoted.Head.ProjectSnapshotID)
 	published, err := store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
 	if err != nil {
 		t.Fatal(err)

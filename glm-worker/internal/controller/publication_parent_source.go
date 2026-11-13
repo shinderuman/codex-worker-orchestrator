@@ -112,6 +112,7 @@ func (s *Store) captureParentSourceRevision(snapshotID, remote string) (ParentSo
 	if after != snapshot {
 		return ParentSourceRevision{}, TaskAuthority{}, fmt.Errorf("parent source changed during capture")
 	}
+	authority.Snapshot.SourceArchive = &ref
 	return ParentSourceRevision{Snapshot: snapshot, AuthorityOID: commit, Archive: ref}, authority, nil
 }
 

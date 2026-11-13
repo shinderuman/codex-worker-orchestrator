@@ -24,6 +24,7 @@ type RequestTaskAuthority struct {
 }
 
 type ProjectSnapshot struct {
+	SourceArchive       *EvidenceObjectRef    `json:"source_archive,omitempty"`
 	UserRequest         *RequestTaskAuthority `json:"user_request,omitempty"`
 	CompletedRequest    *RequestTaskAuthority `json:"completed_request,omitempty"`
 	SchemaVersion       int                   `json:"schema_version"`

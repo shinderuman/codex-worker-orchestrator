@@ -223,46 +223,10 @@ func (s *Store) LoadProjectSnapshot(id string) (ProjectSnapshot, error) {
 	if err := validateRequestTaskSnapshot(snapshot); err != nil {
 		return ProjectSnapshot{}, err
 	}
-	if err := s.restoreRegisteredProjectSource(snapshot); err != nil {
+	if err := s.restoreProjectSource(snapshot); err != nil {
 		return ProjectSnapshot{}, err
 	}
 	return snapshot, nil
-}
-
-func (s *Store) restoreRegisteredProjectSource(snapshot ProjectSnapshot) error {
-	head, err := s.LoadHead()
-	if err != nil || head.ProjectSnapshotID != snapshot.SnapshotID || snapshot.HeadOID == head.IntegrationTip {
-		return err
-	}
-	attemptID, err := s.registeredSourceAttemptID(head)
-	if err != nil || attemptID == "" {
-		return err
-	}
-	attempt, err := s.loadAttempt(attemptID)
-	if err != nil || attempt.SourceRevision == nil || attempt.SourceRevision.AuthorityOID != snapshot.HeadOID {
-		return err
-	}
-	if _, err := gitTrimmed(s.identity.PrimaryRoot, "cat-file", "-t", snapshot.HeadOID); err == nil {
-		return nil
-	}
-	return s.restoreExecutionBaseline(s.identity.PrimaryRoot, attempt)
-}
-
-func (s *Store) registeredSourceAttemptID(head RepositoryControllerHead) (string, error) {
-	if head.LiveAttemptID != "" {
-		return head.LiveAttemptID, nil
-	}
-	if head.AcceptedCandidateRef == nil {
-		return "", nil
-	}
-	candidate, err := s.loadCandidateArchive(*head.AcceptedCandidateRef)
-	if err != nil {
-		return "", err
-	}
-	if candidate.ProjectSnapshotID != head.ProjectSnapshotID {
-		return "", fmt.Errorf("registered source candidate project differs from controller")
-	}
-	return candidate.AttemptID, nil
 }
 
 func readCommittedObject(repoRoot, revision, path string) ([]byte, error) {

@@ -138,6 +138,12 @@ GLMがLimitになったからあとの作業はお前が引き継げ
 - 対象外: `discussion_r4561430403`のmaterialization退行説は、RootTaskRefありの正常後続Taskが新分岐へ入らず、nil rootを旧materializationも拒否するため不成立。`4561469411`の反証と`4561481322`の撤回を確認した。
 - 対象外: `discussion_r4561430412`のlocal descendant許容提案は、exact candidate treeを要求するindex/worktree保護と矛盾する。`4561469848`の反証と`4561476181`の撤回を確認した。local equalityを弱めない。
 
+### PR 1617の追加外部レビュー採否（2026-11-13）
+
+- レビュー対象HEAD: `41c2cede908b683977ef506143eefb5459d0234c`。
+- 採用: `discussion_r4561915444`。Task同期後のProjectSnapshotは新しいsynthetic sourceを指す一方、復元が開始時のAttempt.SourceRevisionへ依存している。開始時のsourceはparent-onlyの基準として維持し、synthetic sourceを作る各ownerが対応するarchiveをProjectSnapshotへ束縛する。復元時はarchiveのcommit rootとsnapshot.HeadOIDの一致を検証し、snapshot自体のHeadOIDによる意味的identityは変えない。live/受理後/昇格後の復元をAttemptの状態に依存させない。
+- 関連する実装上の不足: 登録Taskの同期は物理HEADをtree基準にすると未コミットのPlan登録を失う。同期元のProjectSnapshotをtree基準とし、登録時のprimary sourceからTaskだけが変更されたことを検証する。Task以外の未承認変更を許容しない。登録→Task改訂sync→GC→受理→昇格→公開をRuntime/parent-only双方で確認し、登録専用commitを作らず成果物を保持する。
+
 ## Purpose
 
 指定PRの有効な指摘を修正し、READMEを利用者向け入口として必要十分な情報へ整理する。

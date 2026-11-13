@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,6 +47,7 @@ func TestRegisteredParentOnlyTaskStartsAndCompletesWithoutRegistrationCommit(t *
 			if got := controllerGitOutput(t, fixture.repo, "rev-parse", "HEAD"); got != base {
 				t.Fatal("parent-only registration created a separate commit")
 			}
+			syncRegisteredParentOnlyTask(t, fixture, admission)
 			completeRegisteredParentOnly(t, fixture)
 			head, err := fixture.store.LoadHead()
 			if err != nil || head.RootTaskRef != nil || head.LiveAttemptID != "" {
@@ -66,6 +68,39 @@ func TestRegisteredParentOnlyTaskStartsAndCompletesWithoutRegistrationCommit(t *
 	}
 }
 
+func syncRegisteredParentOnlyTask(t *testing.T, fixture parentOnlyTaskFixture, started Admission) {
+	t.Helper()
+	path := started.Attempt.SemanticTaskRef.TaskPath
+	content, err := os.ReadFile(filepath.Join(fixture.repo, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, []byte("\n## Amendments\n\n登録後の要求改訂。\n")...)
+	writeSuspensionTestFile(t, fixture.repo, path, string(content))
+	admission, err := fixture.store.ParentOnlyTaskAuthoritySyncAdmission(fixture.store.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := []byte(fmt.Sprintf(`{"runtime":"parent-only","task_id":%q}`, started.Attempt.AttemptID))
+	ref, err := fixture.store.PutEvidenceObject("runtime-artifact", "application/json", started.Attempt.AttemptID+":"+TaskAuthoritySyncProducer+":"+admission.Snapshot.ID, true, proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revised := SemanticTaskRef{TaskPath: path, ContractDigest: digestBytes(content)}
+	synced, err := fixture.store.SyncTaskAuthority(admission, admission.Snapshot.ID, ref, revised)
+	if err != nil || synced.Admission == nil {
+		t.Fatalf("registered parent-only Task sync: %v", err)
+	}
+	project, err := fixture.store.LoadProjectSnapshot(synced.Head.ProjectSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.HeadOID == started.Attempt.SourceRevision.AuthorityOID || synced.Admission.Attempt.SourceRevision.AuthorityOID != started.Attempt.SourceRevision.AuthorityOID {
+		t.Fatal("Task sync lost the independent initial source binding")
+	}
+	pruneAndRestoreRegisteredSource(t, fixture.store, project.HeadOID, project.SnapshotID)
+}
+
 func completeRegisteredParentOnly(t *testing.T, fixture parentOnlyTaskFixture) {
 	t.Helper()
 	admission := parentOnlyCompletionAdmission(t, fixture)
@@ -78,11 +113,22 @@ func completeRegisteredParentOnly(t *testing.T, fixture parentOnlyTaskFixture) {
 		t.Fatal(err)
 	}
 	if admission.Attempt.SourceRevision != nil {
-		pruneAndRestoreRegisteredSource(t, fixture.store, admission.Attempt.SourceRevision.AuthorityOID, accepted.Head.ProjectSnapshotID)
+		project, err := fixture.store.LoadProjectSnapshot(accepted.Head.ProjectSnapshotID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pruneAndRestoreRegisteredSource(t, fixture.store, project.HeadOID, accepted.Head.ProjectSnapshotID)
 	}
 	promoted, err := fixture.store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
 	if err != nil {
 		t.Fatal(err)
+	}
+	project, err := fixture.store.LoadProjectSnapshot(promoted.Head.ProjectSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admission.Attempt.SourceRevision != nil {
+		pruneAndRestoreRegisteredSource(t, fixture.store, project.HeadOID, promoted.Head.ProjectSnapshotID)
 	}
 	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}); err != nil {
 		t.Fatal(err)

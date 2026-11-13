@@ -351,19 +351,38 @@ func (s *Store) taskAuthoritySyncBlockReason(head RepositoryControllerHead, task
 		}
 		return ""
 	}
-	changed, err := primaryWorktreeChanges(repo)
-	if err != nil {
-		return fmt.Sprintf("primary worktree status is unreadable: %v", err)
-	}
-	if len(changed) != 1 || !changed[taskPath] {
-		paths := make([]string, 0, len(changed))
-		for path := range changed {
-			paths = append(paths, path)
-		}
-		sort.Strings(paths)
-		return fmt.Sprintf("parent worktree deviation is not limited to the active Task file %q: %s", taskPath, strings.Join(paths, ", "))
+	if err := s.verifyRuntimeTaskSourceDelta(head, attempt, taskPath); err != nil {
+		return err.Error()
 	}
 	return ""
+}
+
+func (s *Store) verifyRuntimeTaskSourceDelta(head RepositoryControllerHead, attempt AttemptRecord, taskPath string) error {
+	repo := s.identity.PrimaryRoot
+	if attempt.SourceRevision != nil {
+		base, err := s.projectMetadataBase(head.ProjectSnapshotID)
+		if err != nil {
+			return err
+		}
+		current, err := captureParentSourceTree(repo)
+		if err != nil {
+			return err
+		}
+		return verifyTaskOnlyTreeDelta(repo, base, current, taskPath)
+	}
+	changed, err := primaryWorktreeChanges(repo)
+	if err != nil {
+		return err
+	}
+	if len(changed) == 1 && changed[taskPath] {
+		return nil
+	}
+	paths := make([]string, 0, len(changed))
+	for path := range changed {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return fmt.Errorf("parent worktree deviation is not limited to the active Task file %q: %s", taskPath, strings.Join(paths, ", "))
 }
 
 func verifyParentOnlyTaskSourceDelta(repo string, lease ExecutionLease, taskPath string) error {
@@ -413,11 +432,15 @@ func (s *Store) TaskAuthoritySyncEvidence(transitionID string) ([]byte, error) {
 
 func (s *Store) captureTaskSourceRevision(admission Admission, snapshotID, remote, taskPath string) (ParentSourceRevision, TaskAuthority, error) {
 	repo := s.identity.PrimaryRoot
-	snapshot, err := captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath, admission)
+	snapshot, err := s.captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath, admission)
 	if err != nil {
 		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
-	tree, err := captureTaskSourceTree(repo, remote, taskPath)
+	base, err := s.projectMetadataBase(admission.Head.ProjectSnapshotID)
+	if err != nil {
+		return ParentSourceRevision{}, TaskAuthority{}, err
+	}
+	tree, err := captureTaskSourceTree(repo, base, taskPath)
 	if err != nil {
 		return ParentSourceRevision{}, TaskAuthority{}, err
 	}
@@ -440,6 +463,7 @@ func (s *Store) captureTaskSourceRevision(admission Admission, snapshotID, remot
 	if after != snapshot {
 		return ParentSourceRevision{}, TaskAuthority{}, fmt.Errorf("parent source changed during capture")
 	}
+	authority.Snapshot.SourceArchive = &ref
 	return ParentSourceRevision{Snapshot: snapshot, AuthorityOID: commit, Archive: ref}, authority, nil
 }
 
@@ -626,7 +650,7 @@ func captureTaskSourceTree(repo, remote, taskPath string) (string, error) {
 	return suspensionGitText(repo, index, nil, "write-tree")
 }
 
-func captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath string, admission Admission) (WorkspaceSnapshot, error) {
+func (s *Store) captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath string, admission Admission) (WorkspaceSnapshot, error) {
 	snapshot, err := CaptureWorkspaceSnapshot(repo)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
@@ -639,12 +663,8 @@ func captureTaskSourceSnapshot(repo, snapshotID, remote, taskPath string, admiss
 			return WorkspaceSnapshot{}, fmt.Errorf("parent worktree revision is not limited to the active Task file %q: %w", taskPath, err)
 		}
 	} else {
-		changed, err := primaryWorktreeChanges(repo)
-		if err != nil {
+		if err := s.verifyRuntimeTaskSourceDelta(admission.Head, admission.Attempt, taskPath); err != nil {
 			return WorkspaceSnapshot{}, err
-		}
-		if len(changed) != 1 || !changed[taskPath] {
-			return WorkspaceSnapshot{}, fmt.Errorf("parent worktree revision is not limited to the active Task file %q", taskPath)
 		}
 	}
 	return snapshot, nil
