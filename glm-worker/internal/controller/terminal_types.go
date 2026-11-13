@@ -38,6 +38,7 @@ type TerminalMetadataFile struct {
 }
 
 type TerminalMetadataOperation struct {
+	ObserveOnly bool                    `json:"observe_only,omitempty"`
 	Record      TerminalTaskRecord      `json:"record"`
 	RecordRef   EvidenceObjectRef       `json:"record_ref"`
 	Policy      PublicationPolicy       `json:"policy"`

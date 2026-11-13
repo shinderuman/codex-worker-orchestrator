@@ -64,13 +64,20 @@ func (s *Store) captureGitObjectArchiveReusing(repoPath, logicalIdentity string,
 }
 
 func (s *Store) loadGitObjectArchiveData(ref EvidenceObjectRef) ([]byte, error) {
-	if err := validateTypedEvidenceRef(ref, "git-object-archive"); err != nil {
+	if err := validateGitObjectArchiveRef(ref); err != nil {
 		return nil, err
 	}
-	if ref.MediaType != gitObjectArchiveMediaType {
-		return nil, gitArchiveIntegrityError(ref, "git object archive media type is unsupported")
-	}
 	return s.LoadEvidenceObject(ref)
+}
+
+func validateGitObjectArchiveRef(ref EvidenceObjectRef) error {
+	if err := validateTypedEvidenceRef(ref, "git-object-archive"); err != nil {
+		return err
+	}
+	if ref.MediaType != gitObjectArchiveMediaType {
+		return gitArchiveIntegrityError(ref, "git object archive media type is unsupported")
+	}
+	return nil
 }
 
 func decodeGitObjectArchiveEnvelope(ref EvidenceObjectRef, data []byte) (gitObjectArchiveEnvelope, error) {

@@ -6,7 +6,11 @@ import (
 )
 
 func (s *Store) archiveExecutionBaseline(repo string, attempt *AttemptRecord) error {
-	ref, _, err := s.CaptureGitObjectArchive(repo, "baseline:"+attempt.AttemptID, []string{attempt.ExecutionBaseOID, attempt.BaselineTrees.IndexTree, attempt.BaselineTrees.WorktreeTree})
+	roots := []string{attempt.ExecutionBaseOID, attempt.BaselineTrees.IndexTree, attempt.BaselineTrees.WorktreeTree}
+	if attempt.SourceRevision != nil {
+		roots = append(roots, attempt.SourceRevision.AuthorityOID)
+	}
+	ref, _, err := s.CaptureGitObjectArchive(repo, "baseline:"+attempt.AttemptID, roots)
 	if err != nil {
 		return err
 	}
@@ -20,6 +24,9 @@ func (s *Store) restoreExecutionBaseline(repo string, attempt AttemptRecord) err
 		return err
 	}
 	expected := map[string]string{attempt.ExecutionBaseOID: "commit", attempt.BaselineTrees.IndexTree: "tree", attempt.BaselineTrees.WorktreeTree: "tree"}
+	if attempt.SourceRevision != nil {
+		expected[attempt.SourceRevision.AuthorityOID] = "commit"
+	}
 	if len(roots) != len(expected) {
 		return fmt.Errorf("execution baseline archive roots differ from attempt")
 	}

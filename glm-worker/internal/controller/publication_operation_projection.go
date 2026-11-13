@@ -247,10 +247,28 @@ func (s *Store) projectAcceptedCandidateOperation(head RepositoryControllerHead)
 	case candidatePrepared:
 		return s.projectPreparedCandidateOperation(head, candidate)
 	case candidatePromoted:
-		return s.projectCandidateOperation(head, candidate, PublicationOperationPublish), nil
+		return s.projectPromotedCandidateOperation(head, candidate)
 	default:
 		return ParentCompletionOperation{Operation: PublicationOperationObserved}, nil
 	}
+}
+
+func (s *Store) projectPromotedCandidateOperation(head RepositoryControllerHead, candidate AcceptedCandidate) (ParentCompletionOperation, error) {
+	remote, err := s.observeCandidateRemote(head, candidate)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	if contains {
+		operation := s.projectCandidateOperation(head, candidate, PublicationOperationAdopt)
+		operation.Command.SourceOID = remote
+		operation.Command.Policy = &candidate.Policy
+		return operation, nil
+	}
+	return s.projectCandidateOperation(head, candidate, PublicationOperationPublish), nil
 }
 
 func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead, candidate AcceptedCandidate) (ParentCompletionOperation, error) {
@@ -356,7 +374,7 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 	if !parentOnlyMaterializationHeadReady(head) {
 		return ParentCompletionOperation{}, false, nil
 	}
-	authority, err := s.parentOnlySuccessorAuthority(head)
+	task, mode, err := s.parentOnlyMaterializationTask(head)
 	if err != nil {
 		if IsPristine(head) {
 			return ParentCompletionOperation{}, false, nil
@@ -370,15 +388,26 @@ func (s *Store) projectQuiescentParentOnlyMaterialization(head RepositoryControl
 		}
 		return ParentCompletionOperation{}, false, err
 	}
-	if authority.ExecutionMode != ExecutionAuthorityParentOnly {
+	if mode != ExecutionAuthorityParentOnly {
 		return ParentCompletionOperation{}, false, nil
 	}
-	command, err := s.parentOnlyMaterializationCommand(head, authority.Task)
+	command, err := s.parentOnlyMaterializationCommand(head, task)
 	if err != nil {
 		return ParentCompletionOperation{}, false, err
 	}
 	return ParentCompletionOperation{Surface: ExecutionOperationSurface, Mode: ParentCompletionModeParentOnly, Operation: PublicationOperationParentOnlyMaterialize,
 		Execution: command}, true, nil
+}
+
+func (s *Store) parentOnlyMaterializationTask(head RepositoryControllerHead) (SemanticTaskRef, string, error) {
+	authority, err := s.parentOnlySuccessorAuthority(head)
+	if err != nil {
+		return SemanticTaskRef{}, "", err
+	}
+	if authority.Task.Empty() && head.RootTaskRef == nil && head.ActiveEpisodeID == "" {
+		return registeredTaskDeclaration(s.identity.PrimaryRoot)
+	}
+	return authority.Task, authority.ExecutionMode, nil
 }
 
 func parentOnlyMaterializationHeadReady(head RepositoryControllerHead) bool {
@@ -487,9 +516,6 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 }
 
 func (s *Store) unpublishedCandidateRemoteAdvance(head RepositoryControllerHead, candidate AcceptedCandidate) (string, bool, error) {
-	if candidate.State != candidatePromoted || !candidate.EvidenceValid {
-		return "", false, nil
-	}
 	remote, err := s.observeCandidateRemote(head, candidate)
 	if err != nil {
 		return "", false, err

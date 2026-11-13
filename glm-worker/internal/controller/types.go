@@ -24,6 +24,7 @@ type RequestTaskAuthority struct {
 }
 
 type ProjectSnapshot struct {
+	SourceArchive       *EvidenceObjectRef    `json:"source_archive,omitempty"`
 	UserRequest         *RequestTaskAuthority `json:"user_request,omitempty"`
 	CompletedRequest    *RequestTaskAuthority `json:"completed_request,omitempty"`
 	SchemaVersion       int                   `json:"schema_version"`
@@ -67,25 +68,26 @@ type RepositoryControllerHead struct {
 }
 
 type AttemptRecord struct {
-	SchemaVersion             int               `json:"schema_version"`
-	AttemptID                 string            `json:"attempt_id"`
-	SemanticTaskRef           SemanticTaskRef   `json:"semantic_task_ref"`
-	RootTaskRef               SemanticTaskRef   `json:"root_task_ref"`
-	EpisodeID                 string            `json:"episode_id,omitempty"`
-	EpisodeRevision           uint64            `json:"episode_revision,omitempty"`
-	PredecessorAttemptID      string            `json:"predecessor_attempt_id,omitempty"`
-	ResumedFromSealID         string            `json:"resumed_from_seal_id,omitempty"`
-	ExecutionBaseOID          string            `json:"execution_base_oid"`
-	BaselineSnapshotID        string            `json:"baseline_snapshot_id"`
-	BaselineArchive           EvidenceObjectRef `json:"baseline_archive"`
-	BaselineTrees             ExecutionTrees    `json:"baseline_trees"`
-	WorkspaceSnapshotID       string            `json:"workspace_snapshot_id"`
-	ExecutionAuthority        string            `json:"execution_authority,omitempty"`
-	StartControllerGeneration uint64            `json:"start_controller_generation"`
-	PublicationAnchorAtStart  string            `json:"publication_anchor_at_start,omitempty"`
-	AttemptState              AttemptState      `json:"attempt_state"`
-	AttemptSealID             string            `json:"attempt_seal_id,omitempty"`
-	CreatedAt                 time.Time         `json:"created_at"`
+	SourceRevision            *ParentSourceRevision `json:"source_revision,omitempty"`
+	SchemaVersion             int                   `json:"schema_version"`
+	AttemptID                 string                `json:"attempt_id"`
+	SemanticTaskRef           SemanticTaskRef       `json:"semantic_task_ref"`
+	RootTaskRef               SemanticTaskRef       `json:"root_task_ref"`
+	EpisodeID                 string                `json:"episode_id,omitempty"`
+	EpisodeRevision           uint64                `json:"episode_revision,omitempty"`
+	PredecessorAttemptID      string                `json:"predecessor_attempt_id,omitempty"`
+	ResumedFromSealID         string                `json:"resumed_from_seal_id,omitempty"`
+	ExecutionBaseOID          string                `json:"execution_base_oid"`
+	BaselineSnapshotID        string                `json:"baseline_snapshot_id"`
+	BaselineArchive           EvidenceObjectRef     `json:"baseline_archive"`
+	BaselineTrees             ExecutionTrees        `json:"baseline_trees"`
+	WorkspaceSnapshotID       string                `json:"workspace_snapshot_id"`
+	ExecutionAuthority        string                `json:"execution_authority,omitempty"`
+	StartControllerGeneration uint64                `json:"start_controller_generation"`
+	PublicationAnchorAtStart  string                `json:"publication_anchor_at_start,omitempty"`
+	AttemptState              AttemptState          `json:"attempt_state"`
+	AttemptSealID             string                `json:"attempt_seal_id,omitempty"`
+	CreatedAt                 time.Time             `json:"created_at"`
 }
 
 type ExecutionLease struct {

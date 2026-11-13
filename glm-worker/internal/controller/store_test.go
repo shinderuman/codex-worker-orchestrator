@@ -216,6 +216,9 @@ func TestMutablePlanCannotMintExecutionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	committed := controllerTestTask(t, repo)
+	if _, err := store.StartRegisteredTask(); err == nil {
+		t.Fatal("registered Task start replaced existing committed authority")
+	}
 	admission, err := store.BootstrapExecution(committed, workspace, snapshot)
 	if err != nil {
 		t.Fatal(err)
@@ -243,6 +246,64 @@ func TestMutablePlanCannotMintExecutionAuthority(t *testing.T) {
 	claim.SemanticTaskRef = forged
 	if _, err := store.AdmitMutation(claim, workspace, changed); err == nil {
 		t.Fatal("uncommitted Plan/Task rewrite minted execution authority")
+	}
+}
+
+func TestIdleAuthorityCannotBootstrapRuntimeExecution(t *testing.T) {
+	t.Parallel()
+	repo := newControllerRepo(t)
+	if err := os.Remove(filepath.Join(repo, "IMPLEMENTATION_TASKS", "root.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("## ACTIVE\n\n## NEXT\n\n## BLOCKED\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runControllerGit(t, repo, "add", "--all")
+	runControllerGit(t, repo, "commit", "-q", "-m", "idle")
+	authority, err := ResolveCommittedTaskAuthority(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authority.Task.Empty() {
+		t.Fatalf("idle commit resolved Task authority: %#v", authority.Task)
+	}
+	stateRoot := filepath.Join(t.TempDir(), "state", "sessions")
+	cfg := controllerTestConfig(repo, stateRoot)
+	store, err := Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := ResolveWorkspaceIdentity(repo, store.Identity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := CaptureWorkspaceSnapshot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BootstrapExecution(SemanticTaskRef{}, workspace, snapshot); err == nil {
+		t.Fatal("direct idle bootstrap minted execution authority")
+	}
+	if _, err := Activate(cfg); err == nil {
+		t.Fatal("app activation minted execution authority from idle commit")
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !IsPristine(head) {
+		t.Fatalf("rejected idle bootstrap polluted controller head: %#v", head)
+	}
+	attempts, err := os.ReadDir(filepath.Join(store.dir, "attempts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases, err := os.ReadDir(filepath.Join(store.dir, "leases"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 0 || len(leases) != 0 {
+		t.Fatalf("rejected idle bootstrap persisted execution records: attempts=%d leases=%d", len(attempts), len(leases))
 	}
 }
 

@@ -240,3 +240,28 @@ func assertPauseCases(t *testing.T, policy Policy, cases []pauseCase) {
 		})
 	}
 }
+
+func TestZoneBoundsLeapYearEndTraversalIsBounded(t *testing.T) {
+	location, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor := time.Date(2040, 12, 28, 0, 0, 0, 0, time.UTC)
+	limit := time.Date(2041, 1, 3, 0, 0, 0, 0, time.UTC)
+	steps := 0
+	for cursor.Before(limit) {
+		_, zoneEnd := cursor.In(location).ZoneBounds()
+		if zoneEnd.IsZero() || zoneEnd.After(limit) {
+			zoneEnd = limit
+		}
+		next := advancingZoneSegmentEnd(cursor, zoneEnd, limit)
+		if !next.After(cursor) || next.After(limit) {
+			t.Fatalf("zone traversal did not advance within its limit: %v -> %v", cursor, next)
+		}
+		steps++
+		if steps > 8 {
+			t.Fatal("zone traversal expanded into second-by-second scanning")
+		}
+		cursor = next
+	}
+}

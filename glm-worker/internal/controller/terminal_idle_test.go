@@ -111,17 +111,85 @@ func testIdleMetadataAndNewTask(t *testing.T, store *Store, policy PublicationPo
 	}
 	plan = []byte(strings.Replace(string(plan), "## ACTIVE\n", "## ACTIVE\n\n- `"+path+"`\n", 1))
 	writeSuspensionTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", string(plan))
-	runControllerGit(t, repo, "add", "--all")
-	runControllerGit(t, repo, "commit", "-qm", "select next Task")
-	current, err = store.AdoptExternalAdvancement(ExternalAdvancementInput{ExpectedGeneration: current.Head.ControllerGeneration, Policy: policy})
+	readTask, canonical, err := WorkflowAuthorityTask(store.config)
+	if err != nil || !canonical || readTask.TaskPath != path {
+		t.Fatalf("new registered Task read authority: %#v %v", readTask, err)
+	}
+	execution, err := store.StartRegisteredTask()
+	if err != nil || execution.Attempt.SemanticTaskRef.TaskPath != path || execution.Head.RootTaskRef == nil {
+		t.Fatalf("new Task did not start: %v", err)
+	}
+	if got := controllerGitOutput(t, repo, "rev-parse", "HEAD"); strings.TrimSpace(got) != current.Head.IntegrationTip {
+		t.Fatal("Task registration changed the public commit boundary")
+	}
+	runControllerGit(t, repo, "reflog", "expire", "--expire=now", "--all")
+	runControllerGit(t, repo, "gc", "--prune=now")
+	project, err := store.LoadProjectSnapshot(execution.Head.ProjectSnapshotID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Head.RootTaskRef == nil || current.Head.RootTaskRef.TaskPath != path {
-		t.Fatal("new Task was not selected")
+	authority, err := ResolveCommittedTaskAuthorityAt(repo, project.HeadOID)
+	if err != nil || authority.Task.TaskPath != path {
+		t.Fatalf("registered Task source did not survive Git object pruning: %#v %v", authority, err)
 	}
-	execution, err := store.MaterializeExecution(MaterializeExecutionInput{ExpectedGeneration: current.Head.ControllerGeneration})
-	if err != nil || execution.Admission == nil || execution.Admission.Attempt.SemanticTaskRef.TaskPath != path {
-		t.Fatalf("new Task did not start: %v", err)
+	writeSuspensionTestFile(t, repo, path, "# restarted\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n\n## Amendments\n\n要求改訂。\n")
+	writeSuspensionTestFile(t, repo, "unadmitted-result.txt", "not admitted\n")
+	required, err := store.RequiredTaskAuthoritySync(execution.Head)
+	if err != nil || required == nil || required.Admittable {
+		t.Fatalf("registered Task sync admitted a non-Task change: %#v %v", required, err)
+	}
+	if err := os.Remove(filepath.Join(repo, "unadmitted-result.txt")); err != nil {
+		t.Fatal(err)
+	}
+	execution, _ = syncRevisedTaskAuthority(t, store, execution, "\n## Amendments\n\n登録後の要求改訂。\n")
+	project, err = store.LoadProjectSnapshot(execution.Head.ProjectSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.HeadOID == execution.Attempt.SourceRevision.AuthorityOID {
+		t.Fatal("Task amendment did not advance source authority")
+	}
+	pruneAndRestoreRegisteredSource(t, store, project.HeadOID, project.SnapshotID)
+	fixture := findingAcceptanceFixture{store: store, source: execution}
+	source := publicationTestEdit(t, fixture, "restarted-result.txt", "completed registered Task\n")
+	acceptedCompletionRuntime(t, store, source)
+	accepted, err := store.AcceptExecutionCandidate(source, CandidateAcceptanceInput{RequiredValidations: declaredNoValidations(), Message: "registered Task result", Policy: policy, Evidence: publicationTestEvidence(t, store, source, policy)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pruneAndRestoreRegisteredSource(t, store, project.HeadOID, accepted.Head.ProjectSnapshotID)
+	candidate, err := store.LoadAcceptedCandidate(*accepted.CandidateRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := store.PromoteAcceptedCandidate(PublicationInput{ExpectedGeneration: accepted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pruneAndRestoreRegisteredSource(t, store, project.HeadOID, promoted.Head.ProjectSnapshotID)
+	published, err := store.PublishAcceptedCandidate(PublicationInput{ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := controllerGitOutput(t, repo, "rev-parse", published.Head.IntegrationTip+"^")
+	if parent != execution.Snapshot.Head || published.Head.RootTaskRef != nil {
+		t.Fatalf("registered Task did not retire in one public commit: parent=%s base=%s", parent, execution.Snapshot.Head)
+	}
+}
+
+func pruneAndRestoreRegisteredSource(t *testing.T, store *Store, sourceOID, projectID string) {
+	t.Helper()
+	repo := store.Identity().PrimaryRoot
+	runControllerGit(t, repo, "reflog", "expire", "--expire=now", "--all")
+	runControllerGit(t, repo, "gc", "--prune=now")
+	if _, err := runGitBinary(repo, nil, "cat-file", "-e", sourceOID); err == nil {
+		t.Fatal("registered source remained reachable during the pruning regression")
+	}
+	project, err := store.LoadProjectSnapshot(projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveCommittedTaskAuthorityAt(repo, project.HeadOID); err != nil {
+		t.Fatalf("sealed registered source was not restored: %v", err)
 	}
 }

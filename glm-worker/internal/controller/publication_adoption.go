@@ -27,7 +27,35 @@ func (s *Store) AdoptExternalAdvancement(input ExternalAdvancementInput) (Execut
 	if err != nil {
 		return ExecutionOperationResult{}, err
 	}
+	if c.State == candidatePromoted {
+		return s.adoptPromotedCompletion(head, c, input.Policy)
+	}
 	return s.adoptObservedAdvancement(head, c, input.Policy)
+}
+
+func (s *Store) adoptPromotedCompletion(head RepositoryControllerHead, candidate AcceptedCandidate, policy PublicationPolicy) (ExecutionOperationResult, error) {
+	if candidate.Policy != policy {
+		return ExecutionOperationResult{}, fmt.Errorf("completion adoption policy differs")
+	}
+	remote, err := s.observeCandidateRemote(head, candidate)
+	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
+	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if !contains {
+		return ExecutionOperationResult{}, fmt.Errorf("completion adoption requires a remote containing the candidate")
+	}
+	op, current, err := s.planTerminalMetadataWithObservation(TerminalTaskInput{ExpectedGeneration: head.ControllerGeneration, ProjectSnapshotID: head.ProjectSnapshotID, CandidateID: candidate.CandidateID, TaskRef: candidate.TaskRef}, true)
+	if err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	if err := s.prepareExecutionOperation(&op, current); err != nil {
+		return ExecutionOperationResult{}, err
+	}
+	return s.recoverExecutionOperationLocked(op)
 }
 
 func (s *Store) adoptObservedAdvancement(head RepositoryControllerHead, c AcceptedCandidate, policy PublicationPolicy) (ExecutionOperationResult, error) {

@@ -12,6 +12,7 @@ import (
 )
 
 type TaskAuthority struct {
+	SourceRevision    *ParentSourceRevision
 	Task              SemanticTaskRef
 	ProjectSnapshotID string
 	Snapshot          ProjectSnapshot
@@ -220,6 +221,9 @@ func (s *Store) LoadProjectSnapshot(id string) (ProjectSnapshot, error) {
 		return ProjectSnapshot{}, fmt.Errorf("project snapshot %s identity is invalid", id)
 	}
 	if err := validateRequestTaskSnapshot(snapshot); err != nil {
+		return ProjectSnapshot{}, err
+	}
+	if err := s.restoreProjectSource(snapshot); err != nil {
 		return ProjectSnapshot{}, err
 	}
 	return snapshot, nil

@@ -220,7 +220,7 @@ func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head Reposi
 		return task, true, err
 	}
 	if task, completed, err := store.completedIdleTask(head); completed || err != nil {
-		return task, true, err
+		return store.idleWorkflowAuthority(task, err)
 	}
 	if !retiredMetadataHead(head) {
 		if task, sealed := sealedAcceptedReadAuthority(store, head); sealed {
@@ -229,6 +229,20 @@ func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head Reposi
 		return SemanticTaskRef{}, true, executionErr
 	}
 	return store.retiredWorkflowAuthority(cfg, head)
+}
+
+func (store *Store) idleWorkflowAuthority(completed SemanticTaskRef, sourceErr error) (SemanticTaskRef, bool, error) {
+	if sourceErr != nil {
+		return SemanticTaskRef{}, true, sourceErr
+	}
+	registered, err := RegisteredTask(store.identity.PrimaryRoot)
+	if err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	if !registered.Empty() {
+		return registered, true, nil
+	}
+	return completed, true, nil
 }
 
 func (store *Store) retiredWorkflowAuthority(cfg config.AppConfig, head RepositoryControllerHead) (SemanticTaskRef, bool, error) {

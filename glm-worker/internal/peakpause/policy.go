@@ -148,7 +148,8 @@ func advancingZoneSegmentEnd(cursor, zoneEnd, limit time.Time) time.Time {
 	if zoneEnd.After(cursor) {
 		return zoneEnd
 	}
-	end := cursor.Add(time.Second)
+	day := cursor.UTC()
+	end := time.Date(day.Year(), day.Month(), day.Day()+1, 0, 0, 0, 0, time.UTC)
 	if end.After(limit) {
 		return limit
 	}
