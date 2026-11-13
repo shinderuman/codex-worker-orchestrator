@@ -109,6 +109,20 @@ GLMがLimitになったからあとの作業はお前が引き継げ
 
 1コミットを強調しているがPublish前に1コミットにすればいいのでこのあとPR対応をAmendしたりする必要はない当たり前だが
 
+### 2026-11-13 docs全体の整理
+
+docs/setup.md
+これこそ冗長そのものだろ
+お前のエゴ
+お前が冗長に書きたい欲求を俺に注意されたからそれをここに垂れ流してるだけ
+ほかのDocsに入ってるやつを整理してないのがその証拠
+Docsに入ってるやつはほかから参照されたりしてるのか？
+してないならディレクトリごと削除するべきだろ
+
+### 2026-11-13 READMEへの詳細移植の取り消し
+
+認証環境変数と診断コマンドをREADMEに置く必要はあるのかよ
+
 ## Resolved references
 
 - 対象PR: https://github.com/shinderuman/codex-worker-orchestrator/pull/1615
@@ -143,6 +157,13 @@ GLMがLimitになったからあとの作業はお前が引き継げ
 - レビュー対象HEAD: `41c2cede908b683977ef506143eefb5459d0234c`。
 - 採用: `discussion_r4561915444`。Task同期後のProjectSnapshotは新しいsynthetic sourceを指す一方、復元が開始時のAttempt.SourceRevisionへ依存している。開始時のsourceはparent-onlyの基準として維持し、synthetic sourceを作る各ownerが対応するarchiveをProjectSnapshotへ束縛する。復元時はarchiveのcommit rootとsnapshot.HeadOIDの一致を検証し、snapshot自体のHeadOIDによる意味的identityは変えない。live/受理後/昇格後の復元をAttemptの状態に依存させない。
 - 関連する実装上の不足: 登録Taskの同期は物理HEADをtree基準にすると未コミットのPlan登録を失う。同期元のProjectSnapshotをtree基準とし、登録時のprimary sourceからTaskだけが変更されたことを検証する。Task以外の未承認変更を許容しない。登録→Task改訂sync→GC→受理→昇格→公開をRuntime/parent-only双方で確認し、登録専用commitを作らず成果物を保持する。
+
+### PR 1617の再レビュー採否（2026-11-13、HEAD 5c5a9a9）
+
+- CodeRabbitの最新review（source/covered commit `5c5a9a9aa3e13a990988bb794899595606aaf5a2`）とGreptileの最新review（同commit）を確認し、新規のactionable findingはない。APIキー入力例の旧指摘もCodeRabbitが対応済みと記録している。
+- 採用・補足統合: `discussion_r4562738586`、`4562765222`。通常のProjectSnapshot読込でもsource存在確認より先に全archiveをread/hashし、Store初回にはbare repositoryでpack展開とfsckを行う。sourceが存在する通常経路ではarchiveを復元authorityとして消費せず、refの型metadataを検証してGit commitの存在確認だけで戻す。欠損復元時のevidence digest・pack closure・commit rootとsnapshot.HeadOIDの厳密な照合、および明示的archive監査の検証は維持する。schema・新規cacheは追加しない。archiveを読めない状態でも複数の新規Storeから通常読込が成功すること、欠損時は破損・異root・型不正を拒否すること、GC後の正常復元を回帰で確認する。
+
+- docs整理の親判断: `docs/`はsetup・linux-go-tests・stage-timingの3件。前2件の参照元はREADMEだけで、stage-timingは未参照。Linux診断の詳細は既存の`codex/instructions/worker/go.md`・`quality-gate-capability.md`と重複する。専用docsを増やす方針を取り消し、3件とREADMEのdocs参照を削除する。認証環境変数名・診断コマンドはREADMEへ移植せず、API認証情報が必要な前提と既存の開発規則へのリンクだけを残す。
 
 ## Purpose
 
