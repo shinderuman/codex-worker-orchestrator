@@ -3,6 +3,7 @@ package harnesslint
 import (
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
@@ -19,6 +20,9 @@ func activeTaskContractViolations(root string, paths []string) ([]Violation, err
 	schedule := taskcontract.ParsePlanSchedule(string(plan))
 	taskPath, err := schedule.ActiveTask()
 	if err != nil {
+		if _, idleErr := repositoryproject.PrepareFinalHead(string(plan)); idleErr == nil && len(schedule.Active) == 0 {
+			return nil, nil
+		}
 		return []Violation{activeTaskContractViolation(implementationPlanPath, err.Error())}, nil
 	}
 	if !containsPath(paths, taskPath) {

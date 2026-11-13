@@ -70,6 +70,47 @@ func terminalMetadataChangesByPath(t *testing.T, metadata TerminalMetadata) map[
 	return changes
 }
 
+func TestLastTaskRetirementPreservesBlockedAndValidatesIdleCandidate(t *testing.T) {
+	root, blocked := "IMPLEMENTATION_TASKS/root.md", "IMPLEMENTATION_TASKS/blocked.md"
+	for _, hasBlocked := range []bool{false, true} {
+		t.Run(map[bool]string{false: "exhausted", true: "blocked"}[hasBlocked], func(t *testing.T) {
+			plan := "## ACTIVE\n\n- [`" + root + "`](" + root + ")\n\n## NEXT\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n"
+			tasks := map[string][]byte{root: []byte("# root\n\n## Dependencies\n\nnone\n")}
+			if hasBlocked {
+				plan += "- [`" + blocked + "`](" + blocked + ")\n"
+				tasks[blocked] = []byte("# blocked\n\n## Dependencies\n\n- `" + root + "`\n")
+			}
+			result, err := RetireTerminalMetadata([]byte(plan), tasks, root, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			changes := terminalMetadataChangesByPath(t, result)
+			if result.Successor != "" || !changes[root].Delete {
+				t.Fatalf("last Task was not retired: %#v", result)
+			}
+			candidate := string(changes["IMPLEMENTATION_PLAN.local.md"].NewBytes)
+			prepared, err := PrepareFinalHead(candidate)
+			if err != nil || prepared.ActiveTask != "" || len(prepared.Tasks) != len(tasks)-1 {
+				t.Fatalf("idle candidate: %#v %v", prepared, err)
+			}
+			if _, err := prepared.Schedule.ActiveTask(); err == nil {
+				t.Fatal("idle project admitted a new Task without ACTIVE")
+			}
+			if hasBlocked {
+				deps, err := taskcontract.ParseTaskDependencyState(changes[blocked].NewBytes)
+				if err != nil || len(deps.Outstanding) != 0 || len(deps.Fulfilled) != 1 || deps.Fulfilled[0] != root || prepared.Tasks[0] != blocked {
+					t.Fatalf("blocked requirement lost: %#v %v", deps, err)
+				}
+			}
+			for _, invalid := range []string{"", "## ACTIVE\n\n## NEXT\n\n- `" + blocked + "`\n\n## BLOCKED\n", "## GOAL\n\nstatus: active\n\n" + candidate} {
+				if _, err := PrepareFinalHead(invalid); err == nil {
+					t.Fatalf("invalid idle project admitted: %q", invalid)
+				}
+			}
+		})
+	}
+}
+
 func TestRetireTerminalMetadataNormalizesPlanWithNextBoundaryAndDependencies(t *testing.T) {
 	root, first, second, blocked := "IMPLEMENTATION_TASKS/root.md", "IMPLEMENTATION_TASKS/first.md",
 		"IMPLEMENTATION_TASKS/second.md", "IMPLEMENTATION_TASKS/blocked.md"

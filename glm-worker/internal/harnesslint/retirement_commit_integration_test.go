@@ -59,7 +59,7 @@ func canonicalRetirementFixture(t *testing.T, workspace string) ([]byte, map[str
 		t.Fatal(err)
 	}
 	schedule := taskcontract.ParsePlanSchedule(string(original))
-	active, err := schedule.ActiveTask()
+	activeEntries, err := schedule.ActiveEntries()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +83,18 @@ func canonicalRetirementFixture(t *testing.T, workspace string) ([]byte, map[str
 		}
 		tasks[path] = content
 	}
+	active := "IMPLEMENTATION_TASKS/retirement-lint-active.md"
+	switch len(activeEntries) {
+	case 0:
+		if _, exists := tasks[active]; exists {
+			t.Fatalf("fixture ACTIVE already exists: %s", active)
+		}
+		tasks[active] = []byte("# 退役検証fixture\n\n## Original instruction\n\n退役候補の正規lintを検証する。\n\n## Amendments\n\n## Purpose\n\n退役検証。\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\n- 正規lintを通す。\n\n## Must not\n\n- 本番を変更しない。\n\n## Acceptance criteria\n\n- 正規lint成功。\n\n## Historical invariants\n\n- fixture内に限定する。\n\n## Dependencies\n\nnone\n")
+	case 1:
+		active = activeEntries[0]
+	default:
+		t.Fatal("fixture source has multiple ACTIVE tasks")
+	}
 	target := "IMPLEMENTATION_TASKS/retirement-lint-fixture.md"
 	if _, exists := tasks[target]; exists {
 		t.Fatalf("fixture target already exists: %s", target)
@@ -93,7 +105,7 @@ func canonicalRetirementFixture(t *testing.T, workspace string) ([]byte, map[str
 	}
 	tasks[target] = append([]byte(nil), content...)
 	plan := retirementFixtureSchedule(active, append(next, target), blocked)
-	for path, data := range map[string][]byte{target: tasks[target], "IMPLEMENTATION_PLAN.local.md": plan} {
+	for path, data := range map[string][]byte{active: tasks[active], target: tasks[target], "IMPLEMENTATION_PLAN.local.md": plan} {
 		if err := os.WriteFile(filepath.Join(workspace, path), data, 0o644); err != nil {
 			t.Fatal(err)
 		}

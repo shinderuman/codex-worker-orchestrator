@@ -435,6 +435,10 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 	if err != nil || !canonical {
 		return Request{}, canonical, err
 	}
+	if quiescent && tasklessCompletionHead(head) {
+		request, err := BuildPostCompletionRequest(canonicalSnapshotRoot(cfg, cfg.RepoRoot), task.TaskPath)
+		return request, true, err
+	}
 	status := st.TaskStatus()
 	lifecycleTask, err := canonicalExecutionLifecycleTask(cfg, st, task, quiescent)
 	if err != nil {
@@ -461,6 +465,10 @@ func canonicalExecutionRequest(cfg config.AppConfig, st *state.StateStore, plan 
 		Continuation:       policy.Continuation,
 		TaskAttribution:    attribution,
 	}, true, nil
+}
+
+func tasklessCompletionHead(head *controller.RepositoryControllerHead) bool {
+	return head != nil && head.RootTaskRef == nil && head.ExecutionTaskRef == nil && head.MetadataLineageRef != nil
 }
 
 func canonicalExecutionLifecycleTask(cfg config.AppConfig, st *state.StateStore, task controller.SemanticTaskRef, quiescent bool) (string, error) {

@@ -10,9 +10,10 @@ type PlanSchedule struct {
 	Next    []string
 	Blocked []string
 
-	activeErr  error
-	nextErr    error
-	blockedErr error
+	activeErr    error
+	nextErr      error
+	blockedErr   error
+	idleSections bool
 }
 
 type planScheduleSection string
@@ -28,12 +29,13 @@ func ParsePlanSchedule(planContent string) PlanSchedule {
 	next, nextErr := parsePlanScheduleSection(planContent, planScheduleNext)
 	blocked, blockedErr := parsePlanScheduleSection(planContent, planScheduleBlocked)
 	return PlanSchedule{
-		Active:     active,
-		Next:       next,
-		Blocked:    blocked,
-		activeErr:  activeErr,
-		nextErr:    nextErr,
-		blockedErr: blockedErr,
+		Active:       active,
+		Next:         next,
+		Blocked:      blocked,
+		activeErr:    activeErr,
+		nextErr:      nextErr,
+		blockedErr:   blockedErr,
+		idleSections: idleScheduleSections(planContent),
 	}
 }
 
@@ -93,6 +95,40 @@ func (s PlanSchedule) ValidateComplete() (string, error) {
 		return "", fmt.Errorf("ACTIVE task file %s がNEXT/BLOCKEDへ重複して記載されています", active)
 	}
 	return active, nil
+}
+
+func (s PlanSchedule) ValidateIdle() error {
+	if !s.idleSections {
+		return fmt.Errorf("idle schedule requires unique ACTIVE, NEXT and BLOCKED sections")
+	}
+	if err := s.parseError(); err != nil {
+		return err
+	}
+	if len(s.Active) != 0 || len(s.Next) != 0 {
+		return fmt.Errorf("idle schedule requires empty ACTIVE and NEXT")
+	}
+	for _, path := range s.Blocked {
+		if err := ValidateActiveTaskPath(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func idleScheduleSections(plan string) bool {
+	counts := map[planScheduleSection]int{}
+	for _, line := range strings.Split(plan, "\n") {
+		if !strings.HasPrefix(line, "## ") {
+			continue
+		}
+		heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
+		for _, section := range []planScheduleSection{planScheduleActive, planScheduleNext, planScheduleBlocked} {
+			if scheduleHeadingMatches(section, heading) {
+				counts[section]++
+			}
+		}
+	}
+	return counts[planScheduleActive] == 1 && counts[planScheduleNext] == 1 && counts[planScheduleBlocked] == 1
 }
 
 func parsePlanScheduleSection(planContent string, section planScheduleSection) ([]string, error) {

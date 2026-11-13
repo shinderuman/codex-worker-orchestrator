@@ -89,4 +89,9 @@ fixed eval-ab基盤。`glm-worker/internal/abeval/usage.go`の`GLMUsageFromTaskS
 
 ## Dependencies
 
+none
+
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/022-final-verification.md`

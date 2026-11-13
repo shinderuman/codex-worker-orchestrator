@@ -111,7 +111,10 @@ func workflowTaskRef(cfg config.AppConfig, exists bool) (SemanticTaskRef, error)
 	if head.RootTaskRef != nil {
 		return *head.RootTaskRef, nil
 	}
-	task, _, err := store.completedRequestTask(head)
+	if task, completed, err := store.completedRequestTask(head); completed || err != nil {
+		return task, err
+	}
+	task, _, err := store.completedIdleTask(head)
 	return task, err
 }
 
@@ -214,6 +217,9 @@ func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head Reposi
 		return authority.Task, true, err
 	}
 	if task, request, err := store.completedRequestTask(head); request || err != nil {
+		return task, true, err
+	}
+	if task, completed, err := store.completedIdleTask(head); completed || err != nil {
 		return task, true, err
 	}
 	if !retiredMetadataHead(head) {

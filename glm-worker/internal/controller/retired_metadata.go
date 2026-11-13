@@ -9,7 +9,7 @@ import (
 )
 
 func retiredMetadataHead(head RepositoryControllerHead) bool {
-	return head.Status == ControllerStatusActive && head.MetadataLineageRef != nil && head.RootTaskRef != nil &&
+	return head.Status == ControllerStatusActive && head.MetadataLineageRef != nil &&
 		head.ExecutionTaskRef == nil && head.LiveAttemptID == "" && head.LiveLeaseID == "" &&
 		head.AcceptedCandidateRef == nil && head.PendingTransitionID == "" && head.ActiveEpisodeID == ""
 }
@@ -35,7 +35,7 @@ func (s *Store) retiredProjectAuthority(head RepositoryControllerHead) (TaskAuth
 	if err := validateCompletionSuccessorAuthority(head, authority); err != nil {
 		return authority, err
 	}
-	if !reflect.DeepEqual(authority.Snapshot, project) || !authority.Task.Equal(*head.RootTaskRef) {
+	if !reflect.DeepEqual(authority.Snapshot, project) || !completionRootMatches(head.RootTaskRef, authority) {
 		return TaskAuthority{}, fmt.Errorf("ordinary successor project authority is stale")
 	}
 	record, err := s.LoadTerminalTaskRecord(*head.MetadataLineageRef)
@@ -80,7 +80,7 @@ func retiredLineageMatchesFinalizedTransition(op ExecutionOperation, evidence Ev
 		reflect.DeepEqual(op.Transition, transition) && phase.Phase == TransitionPhaseFinalized && transition.TargetGeneration <= head.ControllerGeneration &&
 		retiredBaseAdvancement(op) && op.Source.Head.ControllerGeneration < head.ControllerGeneration &&
 		op.Publication.Project.SnapshotID == head.ProjectSnapshotID && op.Publication.NewTip == head.IntegrationTip &&
-		op.Transition.TargetRootTaskRef.Equal(*head.RootTaskRef) && evidenceRefsEqual(*op.Source.Head.MetadataLineageRef, *head.MetadataLineageRef)
+		completionRootMatches(head.RootTaskRef, TaskAuthority{Task: op.Transition.TargetRootTaskRef, Snapshot: *op.Publication.Project}) && evidenceRefsEqual(*op.Source.Head.MetadataLineageRef, *head.MetadataLineageRef)
 }
 
 func (s *Store) retiredMetadataLineageOperation(head RepositoryControllerHead) (ExecutionOperation, EvidenceHead, EvidenceLedgerRecord, error) {

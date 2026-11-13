@@ -302,6 +302,9 @@ func quiescentRequestStartHandoffAction(store *controller.Store, head controller
 	if err != nil {
 		return "", err
 	}
+	if operation.Operation == controller.PublicationOperationObserved && head.RootTaskRef == nil {
+		return string(state.ParentActionNone), nil
+	}
 	if operation.Operation == controller.PublicationOperationNone && operation.CompletedRequest != nil {
 		receipt := operation.CompletedRequest
 		if receipt.RequestID == "" || receipt.FinalOID == "" || receipt.RemoteOID != receipt.FinalOID ||

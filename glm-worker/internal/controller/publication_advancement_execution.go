@@ -31,7 +31,10 @@ func (s *Store) applyAdvancementSuspension(op ExecutionOperation) error {
 func (s *Store) commitAdvancementExecution(next *RepositoryControllerHead, op ExecutionOperation) error {
 	if retiredBaseAdvancement(op) {
 		task := op.Transition.TargetRootTaskRef
-		next.RootTaskRef = &task
+		next.RootTaskRef = nil
+		if !task.Empty() {
+			next.RootTaskRef = &task
+		}
 		return nil
 	}
 	if op.Publication.Episode != nil {

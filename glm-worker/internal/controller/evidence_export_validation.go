@@ -37,6 +37,7 @@ const (
 	evidenceExportValidationSmokeLog       = "smoke.log"
 
 	evidenceExportSourceGateRun      = "quality-gate-run"
+	evidenceKindAcceptedCandidate    = "accepted-candidate"
 	evidenceExportSourceInstallSmoke = "install-smoke-run"
 
 	evidenceExportBasisRuntimeValidation   = "runtime-validation-store"
@@ -251,45 +252,75 @@ func (c *evidenceLiveCollector) verifyPostInstallProbeSource(store *state.StateS
 	if record.TaskID != c.taskID || record.Log != expected {
 		return fmt.Errorf("post-install probe runtime Task or log locator differs")
 	}
-	candidate, err := c.postInstallProbeCandidate()
+	candidate, err := c.postInstallProbeCandidate(record)
 	if err != nil {
 		return err
 	}
 	return c.store.verifyExportedSmokeProbe(candidate, record)
 }
 
-func (c *evidenceLiveCollector) postInstallProbeCandidate() (AcceptedCandidate, error) {
-	if ref := c.builder.head.AcceptedCandidateRef; ref != nil {
-		candidate, err := c.store.LoadAcceptedCandidate(*ref)
-		if err != nil {
-			return candidate, err
-		}
-		if candidate.AttemptID == c.attempt.AttemptID && candidate.TaskRef.Equal(c.attempt.SemanticTaskRef) {
-			return candidate, nil
-		}
+func (c *evidenceLiveCollector) postInstallProbeCandidate(record qualitygate.RunRecord) (AcceptedCandidate, error) {
+	refs, err := c.postInstallProbeLineage(record)
+	if err != nil {
+		return AcceptedCandidate{}, err
 	}
-	return c.publishedPostInstallProbeCandidate()
-}
-
-func (c *evidenceLiveCollector) publishedPostInstallProbeCandidate() (AcceptedCandidate, error) {
-	for ref := c.builder.head.MetadataLineageRef; ref != nil; {
-		record, err := c.store.LoadTerminalTaskRecord(*ref)
+	for _, ref := range refs {
+		if ref.Kind != evidenceKindAcceptedCandidate {
+			continue
+		}
+		candidate, err := c.store.LoadAcceptedCandidate(ref)
 		if err != nil {
 			return AcceptedCandidate{}, err
 		}
-		if record.AttemptID == c.attempt.AttemptID && record.TaskRef.Equal(c.attempt.SemanticTaskRef) {
-			candidate, err := c.store.LoadAcceptedCandidate(record.CandidateRef)
-			if err != nil {
-				return candidate, err
-			}
-			if !terminalCandidateMatches(record, candidate) {
-				return AcceptedCandidate{}, fmt.Errorf("post-install probe terminal candidate authority differs")
-			}
-			return candidate, nil
+		if candidate.CommitOID != record.Head || candidate.TaskRef.ContractDigest != record.TaskAuthorityDigest {
+			continue
 		}
-		ref = record.Previous
+		for _, evidence := range candidate.Evidence {
+			if evidence.Digest == record.InstallEvidenceDigest {
+				return candidate, c.verifyPostInstallProbeRuntime(candidate)
+			}
+		}
 	}
-	return AcceptedCandidate{}, fmt.Errorf("post-install probe has no accepted candidate for the exported attempt")
+	return AcceptedCandidate{}, fmt.Errorf("post-install probe has no source-bound candidate in the canonical Task lineage")
+}
+
+func (c *evidenceLiveCollector) postInstallProbeLineage(record qualitygate.RunRecord) ([]EvidenceObjectRef, error) {
+	if c.builder.head.EvidenceHeadRef == nil {
+		return nil, fmt.Errorf("post-install probe has no canonical Task evidence authority")
+	}
+	head, err := c.store.LoadEvidenceHead(*c.builder.head.EvidenceHeadRef)
+	if err != nil {
+		return nil, err
+	}
+	task := c.attempt.SemanticTaskRef
+	task.ContractDigest = record.TaskAuthorityDigest
+	subject, ok := evidenceSubjectHead(head.TaskHeads, taskEvidenceSubjectID(task))
+	if !ok {
+		return nil, fmt.Errorf("post-install probe Task contract is absent from the canonical evidence authority")
+	}
+	revision, err := c.store.LoadTaskIndexRevision(subject.RevisionRef)
+	if err != nil {
+		return nil, err
+	}
+	return revision.PublicationLineageRecords, nil
+}
+
+func (c *evidenceLiveCollector) verifyPostInstallProbeRuntime(candidate AcceptedCandidate) error {
+	attempt, err := c.store.loadAttempt(candidate.AttemptID)
+	if err != nil {
+		return err
+	}
+	taskID, err := c.store.attemptRuntimeTaskIdentity(c.builder.head, attempt)
+	if err != nil {
+		return err
+	}
+	if attempt.ExecutionAuthority == ExecutionAuthorityParentOnly {
+		taskID = attempt.AttemptID
+	}
+	if taskID != c.taskID {
+		return fmt.Errorf("post-install probe candidate belongs to a different runtime Task")
+	}
+	return nil
 }
 
 func (s *Store) verifyExportedSmokeProbe(candidate AcceptedCandidate, record qualitygate.RunRecord) error {

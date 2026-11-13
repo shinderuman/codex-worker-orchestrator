@@ -171,7 +171,7 @@ GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をs
 
 ## task完了
 
-ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。Goal modeでそのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。
+ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。Goal modeでそのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。 GOALのないPlanでNEXTが空なら、完了Taskを削除してACTIVEも空にし、残るBLOCKED / USER_PERMISSION_WAITは保持する。存在しない後続Taskを作らず、Taskがなくなったことを未完了GoalやBLOCKEDの完了へ読み替えない。新たなTaskの実行には従来どおり一意のACTIVEを要求する。
 
 Goal modeの最終taskだけは、上記Goal起点project orchestrationのterminal条件を満たす場合に限り、NEXT昇格ではなくcompleted GOALと空scheduleへ同期する。Goal未完了、mechanical readiness未充足、semantic acceptance未確定ではこの例外を使わない。
 

@@ -58,6 +58,14 @@ func appProbeFixture(t *testing.T, argv []string) (config.AppConfig, *controller
 	if _, err := runtime.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
+		AttemptID:          admission.Attempt.AttemptID,
+		TaskPath:           admission.Attempt.SemanticTaskRef.TaskPath,
+		RequestID:          admission.Attempt.SemanticTaskRef.RequestID,
+		TaskContractDigest: admission.Attempt.SemanticTaskRef.ContractDigest,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	policy.RequireInstall = true
 	tree, err := store.PreviewCandidateTree(admission, policy)
 	if err != nil {

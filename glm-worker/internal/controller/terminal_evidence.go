@@ -115,7 +115,7 @@ func completeTerminalMetadataPayload(op ExecutionOperation) bool {
 	if op.Terminal.Record.TaskRef.RequestID != "" {
 		return op.Terminal.RootTaskRef == nil && len(op.Terminal.Files) == 0
 	}
-	return op.Terminal.RootTaskRef != nil && len(op.Terminal.Files) >= 2
+	return len(op.Terminal.Files) >= 2 && (op.Terminal.RootTaskRef != nil || idleTaskProject(op.Terminal.Record.ResultProject))
 }
 
 func bindingContainsPath(bindings []MetadataTaskBinding, path string) bool {
@@ -431,8 +431,19 @@ func validateTerminalMetadataJournal(op ExecutionOperation, record TerminalTaskR
 	if record.TaskRef.RequestID != "" {
 		return validateTerminalRequestBinding(record, p.RootTaskRef)
 	}
-	if !projectHasTask(record.SourceProject, record.TaskRef) || projectHasTask(record.ResultProject, record.TaskRef) || p.RootTaskRef == nil || !projectHasTask(record.ResultProject, *p.RootTaskRef) {
+	return validateRetiredTaskBinding(record, p.RootTaskRef)
+}
+
+func validateRetiredTaskBinding(record TerminalTaskRecord, next *SemanticTaskRef) error {
+	if !projectHasTask(record.SourceProject, record.TaskRef) || projectHasTask(record.ResultProject, record.TaskRef) {
 		return fmt.Errorf("terminal retirement Task/project identity differs")
+	}
+	if next == nil {
+		if !idleTaskProject(record.ResultProject) {
+			return fmt.Errorf("terminal retirement has no successor in a runnable project")
+		}
+	} else if !projectHasTask(record.ResultProject, *next) {
+		return fmt.Errorf("terminal retirement successor is absent from result project")
 	}
 	return nil
 }

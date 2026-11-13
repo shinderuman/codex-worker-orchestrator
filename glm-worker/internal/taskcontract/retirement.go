@@ -134,7 +134,9 @@ func validateTerminalScheduleRetirementResult(plan, target, successor string) er
 	schedule := ParsePlanSchedule(plan)
 	active, err := schedule.ValidateComplete()
 	if err != nil {
-		return err
+		if idleErr := validateIdleRetirement(plan, schedule, successor); idleErr != nil {
+			return idleErr
+		}
 	}
 	for _, path := range append(append([]string{active}, schedule.Next...), schedule.Blocked...) {
 		if path == target || (successor != "" && path == successor && active != successor) {
@@ -143,6 +145,27 @@ func validateTerminalScheduleRetirementResult(plan, target, successor string) er
 	}
 	if successor != "" && active != successor {
 		return fmt.Errorf("terminal schedule retirement did not promote the successor")
+	}
+	return nil
+}
+
+func validateIdleRetirement(plan string, schedule PlanSchedule, successor string) error {
+	if successor != "" {
+		return fmt.Errorf("retirement successor is absent")
+	}
+	if err := validateNonGoalRetirement(plan); err != nil {
+		return err
+	}
+	return schedule.ValidateIdle()
+}
+
+func validateNonGoalRetirement(plan string) error {
+	goal, err := ParsePlanGoal(plan)
+	if err != nil {
+		return err
+	}
+	if goal.Present {
+		return fmt.Errorf("terminal schedule retirement requires a parent GOAL decision")
 	}
 	return nil
 }
@@ -164,6 +187,9 @@ func retirementPlanLine(line string, section planScheduleSection, target, succes
 	}
 	if path == target {
 		if section == planScheduleActive {
+			if successor == "" {
+				return "", nil
+			}
 			if strings.HasPrefix(strings.TrimSpace(line), "- [`") {
 				return "- [`" + successor + "`](" + successor + ")", nil
 			}
@@ -188,7 +214,22 @@ func validateTerminalScheduleRetirement(plan, target, successor string) error {
 			count++
 		}
 	}
-	if count != 1 || (active == target && (len(schedule.Next) == 0 || schedule.Next[0] != successor)) || (active != target && successor != "") {
+	if count != 1 {
+		return fmt.Errorf("terminal schedule retirement is not mechanically determined")
+	}
+	if active != target {
+		if successor != "" {
+			return fmt.Errorf("blocker retirement cannot select a successor")
+		}
+		return nil
+	}
+	if len(schedule.Next) == 0 {
+		if successor != "" {
+			return fmt.Errorf("retirement successor is absent")
+		}
+		return validateNonGoalRetirement(plan)
+	}
+	if schedule.Next[0] != successor {
 		return fmt.Errorf("terminal schedule retirement is not mechanically determined")
 	}
 	return nil

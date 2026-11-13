@@ -88,8 +88,8 @@ func runRealPostInstallProbeForBundle(t *testing.T) (config.AppConfig, *controll
 		"/bin/sh", "-c", `printf 'probe stdout\n'; printf 'probe stderr\n' >&2`,
 	})
 	runtime := state.AttachStateStore(controller.WorkflowTaskConfig(cfg, store.Identity(), candidate.TaskRef))
-	taskID := "producer-probe-bundle-task"
-	if err := runtime.Write("task.id", taskID); err != nil {
+	taskID, err := runtime.TaskID()
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := runtime.SaveControllerRuntimeBinding(state.ControllerRuntimeBinding{
@@ -143,10 +143,10 @@ func checkRealPostInstallProbeZIP(t *testing.T, export controller.EvidenceExport
 	t.Helper()
 	prefix := "bound/validation/quality-gate/" + record.ValidationRunID + "/"
 	logEntry := prefix + "probe.log"
-	if string(members[logEntry]) != string(actual) {
-		t.Fatalf("Bundle ZIP probe log differs from executed process: %q", members[logEntry])
-	}
 	entry := probeExportManifestEntry(t, export, logEntry)
+	if string(members[logEntry]) != string(actual) {
+		t.Fatalf("Bundle ZIP probe log differs from executed process: %q; manifest=%#v", members[logEntry], entry)
+	}
 	sum := sha256.Sum256(actual)
 	if entry.Missing || entry.Unreadable != "" || entry.Changing ||
 		entry.Source != "quality-gate-run" || entry.Basis != "runtime-validation-store" {

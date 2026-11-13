@@ -50,7 +50,7 @@ func Load(root, revision string) (Project, error) {
 		return Project{}, fmt.Errorf("read committed implementation plan: %w", err)
 	}
 	schedule := taskcontract.ParsePlanSchedule(string(plan))
-	rootTaskPath, err := schedule.ValidateComplete()
+	prepared, err := repositoryproject.PrepareFinalHead(string(plan))
 	if err != nil {
 		return Project{}, err
 	}
@@ -74,7 +74,7 @@ func Load(root, revision string) (Project, error) {
 		RepoRoot:     root,
 		Plan:         plan,
 		Schedule:     schedule,
-		RootTaskPath: rootTaskPath,
+		RootTaskPath: prepared.ActiveTask,
 		Tasks:        tasks,
 		graph:        graph,
 	}, nil

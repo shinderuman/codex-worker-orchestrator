@@ -60,7 +60,7 @@ func terminalRetirementSuccessor(schedule taskcontract.PlanSchedule, tasks map[s
 		return "", nil
 	}
 	if len(schedule.Next) == 0 {
-		return "", fmt.Errorf("terminal focus has no mechanical NEXT successor; parent scheduling decision required")
+		return "", nil
 	}
 	successor := schedule.Next[0]
 	deps, err := taskcontract.ParseTaskDependencyState(tasks[successor])
@@ -98,7 +98,9 @@ func validateRetirementCorpus(schedule taskcontract.PlanSchedule, tasks map[stri
 		entries = append(entries, taskcontract.TaskCorpusEntry{Path: path, Regular: true})
 	}
 	if _, err := schedule.ValidateComplete(); err != nil {
-		return err
+		if idleErr := schedule.ValidateIdle(); idleErr != nil {
+			return err
+		}
 	}
 	if err := ValidateClosure(schedule, entries, "terminal metadata corpus is invalid"); err != nil {
 		return err

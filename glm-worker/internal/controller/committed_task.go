@@ -55,7 +55,7 @@ func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (TaskAut
 		refs = append(refs, SemanticTaskRef{TaskPath: task.Path, ContractDigest: digestBytes(task.Content)})
 	}
 	root, ok := findTaskRef(refs, project.RootTaskPath)
-	if !ok {
+	if !ok && project.RootTaskPath != "" {
 		return TaskAuthority{}, fmt.Errorf("committed root task %s is missing from task corpus", project.RootTaskPath)
 	}
 	authority, err := committedTaskExecutionMode(project)
@@ -80,6 +80,9 @@ func resolveCommittedTaskAuthority(repoRoot, repositoryID, head string) (TaskAut
 }
 
 func committedTaskExecutionMode(project repositoryprojectcommit.Project) (taskcontract.ExecutionAuthority, error) {
+	if project.RootTaskPath == "" {
+		return taskcontract.ExecutionAuthority{}, nil
+	}
 	for _, task := range project.Tasks {
 		if task.Path != project.RootTaskPath {
 			continue

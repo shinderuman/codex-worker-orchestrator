@@ -64,7 +64,13 @@ func PrepareProjectState(plan string) (ProjectStatePlan, error) {
 	}
 	activeTask, err := schedule.ValidateComplete()
 	if err != nil {
-		return ProjectStatePlan{}, err
+		if goal.Present {
+			return ProjectStatePlan{}, err
+		}
+		if idleErr := schedule.ValidateIdle(); idleErr != nil {
+			return ProjectStatePlan{}, err
+		}
+		return ProjectStatePlan{Goal: goal, Schedule: schedule, Active: []string{}, Next: next, Blocked: blocked}, nil
 	}
 	return ProjectStatePlan{
 		Goal: goal, Schedule: schedule, Active: []string{activeTask}, Next: next, Blocked: blocked,
@@ -152,18 +158,18 @@ func NonGoalCompletionSyncApplied(prepared PostCompletionPlan, completedTask str
 }
 
 func PrepareFinalHead(plan string) (FinalHeadPlan, error) {
-	return prepareFinalHeadSchedule(taskcontract.ParsePlanSchedule(plan))
-}
-
-func prepareFinalHeadSchedule(schedule taskcontract.PlanSchedule) (FinalHeadPlan, error) {
-	activePath, err := schedule.ValidateComplete()
+	prepared, err := PrepareProjectState(plan)
 	if err != nil {
 		return FinalHeadPlan{}, err
 	}
-	tasks := []string{activePath}
-	tasks = append(tasks, schedule.Next...)
-	tasks = append(tasks, schedule.Blocked...)
-	return FinalHeadPlan{Schedule: schedule, ActiveTask: activePath, Tasks: tasks}, nil
+	tasks := append([]string{}, prepared.Active...)
+	tasks = append(tasks, prepared.Next...)
+	tasks = append(tasks, prepared.Blocked...)
+	active := ""
+	if len(prepared.Active) == 1 {
+		active = prepared.Active[0]
+	}
+	return FinalHeadPlan{Schedule: prepared.Schedule, ActiveTask: active, Tasks: tasks}, nil
 }
 
 func ValidateClosure(schedule taskcontract.PlanSchedule, entries []taskcontract.TaskCorpusEntry, prefix string) error {

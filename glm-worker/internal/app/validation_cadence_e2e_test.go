@@ -156,6 +156,60 @@ func TestCanonicalValidationCadenceWithoutRuntimeRepair(t *testing.T) {
 	}
 }
 
+func TestCanonicalLastTaskCompletionWithoutRuntimeRepair(t *testing.T) {
+	binary, err := buildMultiRepoWorkerBinary(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, blocked := range []bool{false, true} {
+		t.Run(map[bool]string{false: "empty", true: "blocked"}[blocked], func(t *testing.T) {
+			cfg, task, policy, _, _ := cadenceWorkflowFixture(t, binary)
+			primary := cfg.RepoRoot
+			remaining := "IMPLEMENTATION_TASKS/f11.md"
+			plan := "## ACTIVE\n\n- `" + task + "`\n\n## NEXT\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n"
+			if blocked {
+				plan += "- `" + remaining + "`\n"
+			} else if err := os.Remove(filepath.Join(primary, remaining)); err != nil {
+				t.Fatal(err)
+			}
+			writeAppTestFile(t, primary, "IMPLEMENTATION_PLAN.local.md", plan)
+			runControllerActivationGit(t, primary, "add", "--all")
+			runControllerActivationGit(t, primary, "commit", "-qm", "last task fixture")
+			runControllerActivationGit(t, primary, "push", policy.Remote, policy.LocalRef+":"+policy.RemoteRef)
+			r := &cadenceWorkflowRunner{canonicalWorkflowRunner: canonicalWorkflowRunner{complete: true, t: t, task: task, path: "cadence-result.txt"}}
+			evidence := cadenceExecute(t, cfg, ModeNewTask, r)
+			cfg = r.cfg
+			review := cadenceParentAcceptance(t, cfg, r)
+			candidate, generation := cadenceAcceptCandidate(t, cfg, policy, evidence, review)
+			if output := cadenceFinalCheck(t, cfg); !strings.Contains(output, "ready_for_parent_decision") {
+				t.Fatalf("last Task final validation: %s", output)
+			}
+			promoted := cadencePublication(t, cfg, controllerPublicationCommand{Action: "promote", ExpectedGeneration: generation, CandidateID: candidate.CandidateID}).(controller.ExecutionOperationResult)
+			published := cadencePublication(t, cfg, controllerPublicationCommand{Action: "publish", ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID}).(controller.ExecutionOperationResult)
+			if published.Head.RootTaskRef != nil || published.Head.LiveAttemptID != "" || state.AttachStateStore(cfg).TaskStatus() != state.TaskStatusComplete {
+				t.Fatal("last Task did not complete")
+			}
+			cfg.RepoRoot = primary
+			cfg, err = controller.WorkflowConfig(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			handoff := buildParentHandoffWithConfig(cfg, state.AttachStateStore(cfg))
+			if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != "none" || handoff.ParentRequest == nil || !handoff.ParentRequest.CompletionAdmitted {
+				t.Fatalf("last Task handoff: %#v", handoff)
+			}
+			if _, err := os.Stat(filepath.Join(primary, task)); !os.IsNotExist(err) {
+				t.Fatal("completed Task remains")
+			}
+			if blocked {
+				if _, err := os.Stat(filepath.Join(primary, remaining)); err != nil {
+					t.Fatal("remaining Task was deleted")
+				}
+			}
+		})
+	}
+}
+
 func cadenceParentAcceptance(t *testing.T, cfg config.AppConfig, r *cadenceWorkflowRunner) string {
 	t.Helper()
 	st := state.AttachStateStore(cfg)

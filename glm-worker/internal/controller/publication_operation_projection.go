@@ -717,6 +717,9 @@ func (s *Store) projectCompletionSuccessor(head RepositoryControllerHead) (Paren
 	if _, err := s.QuiescentRuntimeAdmission(head); err != nil {
 		return ParentCompletionOperation{}, true, err
 	}
+	if head.RootTaskRef == nil {
+		return ParentCompletionOperation{Operation: PublicationOperationObserved, Reason: "no runnable Task remains"}, true, nil
+	}
 	return ParentCompletionOperation{Surface: SuccessorStartSurface, Operation: PublicationOperationSuccessorStart}, true, nil
 }
 

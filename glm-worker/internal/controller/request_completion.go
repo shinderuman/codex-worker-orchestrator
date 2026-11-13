@@ -111,10 +111,19 @@ func (s *Store) requestCompletionHasNoSuccessor(head RepositoryControllerHead) e
 	if err != nil {
 		return err
 	}
-	if record.ResultProject.CompletedRequest == nil || record.ResultProject.SnapshotID != head.ProjectSnapshotID || head.RootTaskRef != nil || head.ExecutionTaskRef != nil {
+	if head.RootTaskRef != nil || head.ExecutionTaskRef != nil {
 		return fmt.Errorf("request completion has unexpected successor authority")
 	}
-	return nil
+	if record.ResultProject.SnapshotID == head.ProjectSnapshotID {
+		if record.ResultProject.CompletedRequest != nil || idleTaskProject(record.ResultProject) {
+			return nil
+		}
+	}
+	if idleTaskProject(record.ResultProject) {
+		_, err := s.retiredProjectAuthority(head)
+		return err
+	}
+	return fmt.Errorf("request completion has unexpected successor authority")
 }
 
 func (s *Store) completionTargetAuthority(op ExecutionOperation) (TaskAuthority, error) {
@@ -136,10 +145,35 @@ func (s *Store) completionTargetAuthority(op ExecutionOperation) (TaskAuthority,
 }
 
 func completionRootMatches(root *SemanticTaskRef, authority TaskAuthority) bool {
-	if authority.Snapshot.CompletedRequest != nil {
-		return root == nil && authority.Task.Empty()
+	if authority.Task.Empty() {
+		return root == nil && (authority.Snapshot.CompletedRequest != nil || idleTaskProject(authority.Snapshot))
 	}
 	return root != nil && root.Equal(authority.Task)
+}
+
+func idleTaskProject(project ProjectSnapshot) bool {
+	return project.UserRequest == nil && project.CompletedRequest == nil && len(project.Active) == 0 && len(project.Next) == 0
+}
+
+func (s *Store) completedIdleTask(head RepositoryControllerHead) (SemanticTaskRef, bool, error) {
+	if !completedRequestHeadReady(head) {
+		return SemanticTaskRef{}, false, nil
+	}
+	project, err := s.LoadProjectSnapshot(head.ProjectSnapshotID)
+	if err != nil || !idleTaskProject(project) {
+		return SemanticTaskRef{}, false, err
+	}
+	record, err := s.LoadTerminalTaskRecord(*head.MetadataLineageRef)
+	if err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	if record.TaskRef.RequestID != "" {
+		return SemanticTaskRef{}, true, fmt.Errorf("completed Task authority differs from idle project")
+	}
+	if _, err := s.retiredProjectAuthority(head); err != nil {
+		return SemanticTaskRef{}, true, err
+	}
+	return record.TaskRef, true, nil
 }
 
 func completedRequestHeadReady(head RepositoryControllerHead) bool {
