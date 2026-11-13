@@ -8,6 +8,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
+- [`IMPLEMENTATION_TASKS/pr1615-review-and-readme.md`](IMPLEMENTATION_TASKS/pr1615-review-and-readme.md)
+
 ## NEXT（優先順）
 
 ## BLOCKED / USER_PERMISSION_WAIT

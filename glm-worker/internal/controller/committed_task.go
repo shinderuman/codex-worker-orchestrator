@@ -12,6 +12,7 @@ import (
 )
 
 type TaskAuthority struct {
+	SourceRevision    *ParentSourceRevision
 	Task              SemanticTaskRef
 	ProjectSnapshotID string
 	Snapshot          ProjectSnapshot
@@ -222,7 +223,25 @@ func (s *Store) LoadProjectSnapshot(id string) (ProjectSnapshot, error) {
 	if err := validateRequestTaskSnapshot(snapshot); err != nil {
 		return ProjectSnapshot{}, err
 	}
+	if err := s.restoreRegisteredProjectSource(snapshot); err != nil {
+		return ProjectSnapshot{}, err
+	}
 	return snapshot, nil
+}
+
+func (s *Store) restoreRegisteredProjectSource(snapshot ProjectSnapshot) error {
+	head, err := s.LoadHead()
+	if err != nil || head.LiveAttemptID == "" || head.ProjectSnapshotID != snapshot.SnapshotID {
+		return err
+	}
+	attempt, err := s.loadAttempt(head.LiveAttemptID)
+	if err != nil || attempt.SourceRevision == nil || attempt.SourceRevision.AuthorityOID != snapshot.HeadOID {
+		return err
+	}
+	if _, err := gitTrimmed(s.identity.PrimaryRoot, "cat-file", "-t", snapshot.HeadOID); err == nil {
+		return nil
+	}
+	return s.restoreExecutionBaseline(s.identity.PrimaryRoot, attempt)
 }
 
 func readCommittedObject(repoRoot, revision, path string) ([]byte, error) {

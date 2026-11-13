@@ -281,13 +281,12 @@ func activateWorkflowConfig(cmd Command, cfg config.AppConfig) (config.AppConfig
 }
 
 func activateNewWorkflowConfig(cfg config.AppConfig, store *controller.Store, head controller.RepositoryControllerHead, request string) (config.AppConfig, error) {
-	requestScope := false
-	if head.ProjectSnapshotID != "" {
-		project, err := store.LoadProjectSnapshot(head.ProjectSnapshotID)
-		if err != nil {
-			return cfg, err
-		}
-		requestScope = project.UserRequest != nil || project.CompletedRequest != nil
+	requestScope, err := workflowRequestScope(store, head)
+	if err != nil {
+		return cfg, err
+	}
+	if !requestScope && idleProjectWorkflowHead(head) {
+		return activateIdleWorkflowConfig(cfg, store, request)
 	}
 	if !requestScope && !controller.IsPristine(head) && head.LiveLeaseID == "" && head.ExecutionTaskRef == nil {
 		materialized, err := store.MaterializeExecution(controller.MaterializeExecutionInput{ExpectedGeneration: head.ControllerGeneration})
@@ -303,6 +302,44 @@ func activateNewWorkflowConfig(cfg config.AppConfig, store *controller.Store, he
 			return cfg, err
 		}
 		cfg = bound
+	}
+	if _, err := controller.ActivateRequest(cfg, request); err != nil {
+		return cfg, err
+	}
+	return controller.WorkflowConfig(cfg)
+}
+
+func workflowRequestScope(store *controller.Store, head controller.RepositoryControllerHead) (bool, error) {
+	if head.ProjectSnapshotID == "" {
+		return false, nil
+	}
+	project, err := store.LoadProjectSnapshot(head.ProjectSnapshotID)
+	if err != nil {
+		return false, err
+	}
+	return project.UserRequest != nil || project.CompletedRequest != nil, nil
+}
+
+func idleProjectWorkflowHead(head controller.RepositoryControllerHead) bool {
+	return head.RootTaskRef == nil && head.ExecutionTaskRef == nil && head.LiveLeaseID == ""
+}
+
+func activateIdleWorkflowConfig(cfg config.AppConfig, store *controller.Store, request string) (config.AppConfig, error) {
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil {
+		return cfg, err
+	}
+	if decision.Active {
+		authority, err := controller.ResolveCommittedTaskAuthority(cfg.RepoRoot)
+		if err != nil {
+			return cfg, err
+		}
+		if authority.Task.Empty() {
+			if _, err := store.StartRegisteredTask(); err != nil {
+				return cfg, err
+			}
+			return controller.WorkflowConfig(cfg)
+		}
 	}
 	if _, err := controller.ActivateRequest(cfg, request); err != nil {
 		return cfg, err

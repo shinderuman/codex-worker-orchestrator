@@ -9,18 +9,22 @@ import (
 )
 
 func (s *Store) planTerminalMetadata(input TerminalTaskInput) (ExecutionOperation, RepositoryControllerHead, error) {
+	return s.planTerminalMetadataWithObservation(input, false)
+}
+
+func (s *Store) planTerminalMetadataWithObservation(input TerminalTaskInput, observed bool) (ExecutionOperation, RepositoryControllerHead, error) {
 	head, c, candidateRef, err := s.publicationCandidateAuthority(PublicationInput{ExpectedGeneration: input.ExpectedGeneration, CandidateID: input.CandidateID})
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	project, err := s.terminalSourceProject(input, head, c)
+	project, err := s.terminalSourceProject(input, head, c, observed)
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	return s.buildTerminalMetadataOperation(head, c, candidateRef, project)
+	return s.buildTerminalMetadataOperation(head, c, candidateRef, project, observed)
 }
 
-func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot) (ExecutionOperation, RepositoryControllerHead, error) {
+func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c AcceptedCandidate, candidateRef EvidenceObjectRef, project ProjectSnapshot, observed bool) (ExecutionOperation, RepositoryControllerHead, error) {
 	if len(c.TerminalFiles) == 0 && c.TaskRef.RequestID == "" {
 		return ExecutionOperation{}, head, fmt.Errorf("candidate lacks accept-time terminal finalization; re-enter and accept under the current contract")
 	}
@@ -42,7 +46,7 @@ func (s *Store) buildTerminalMetadataOperation(head RepositoryControllerHead, c 
 	if err != nil {
 		return ExecutionOperation{}, head, err
 	}
-	payload := &TerminalMetadataOperation{Record: terminal, RecordRef: ref, Policy: c.Policy, Files: c.TerminalFiles}
+	payload := &TerminalMetadataOperation{Record: terminal, RecordRef: ref, Policy: c.Policy, Files: c.TerminalFiles, ObserveOnly: observed}
 	if !result.Task.Empty() {
 		payload.RootTaskRef = &result.Task
 	}
@@ -107,7 +111,7 @@ func (s *Store) terminalMetadataTree(base string, metadata repositoryprojectcomm
 	return files, strings.TrimSpace(tree), err
 }
 
-func (s *Store) terminalSourceProject(input TerminalTaskInput, head RepositoryControllerHead, c AcceptedCandidate) (ProjectSnapshot, error) {
+func (s *Store) terminalSourceProject(input TerminalTaskInput, head RepositoryControllerHead, c AcceptedCandidate, observed bool) (ProjectSnapshot, error) {
 	if err := validateTerminalTaskInput(input, head, c); err != nil {
 		return ProjectSnapshot{}, err
 	}
@@ -122,8 +126,12 @@ func (s *Store) terminalSourceProject(input TerminalTaskInput, head RepositoryCo
 	if err != nil {
 		return ProjectSnapshot{}, err
 	}
+	remoteMatches, err := s.terminalSourceRemoteMatches(c, remote, observed)
+	if err != nil {
+		return ProjectSnapshot{}, err
+	}
 	local, _, err := readExecutionRef(s.identity.PrimaryRoot, c.Policy.LocalRef)
-	if err != nil || local != c.CommitOID || remote != c.BaseOID || head.IntegrationTip != c.BaseOID {
+	if err != nil || local != c.CommitOID || !remoteMatches || head.IntegrationTip != c.BaseOID {
 		return ProjectSnapshot{}, fmt.Errorf("terminal source local/remote tip is stale")
 	}
 	if err := s.verifyPrimaryPublicationTree(c); err != nil {
@@ -131,6 +139,13 @@ func (s *Store) terminalSourceProject(input TerminalTaskInput, head RepositoryCo
 	}
 
 	return project, nil
+}
+
+func (s *Store) terminalSourceRemoteMatches(candidate AcceptedCandidate, remote string, observed bool) (bool, error) {
+	if !observed {
+		return remote == candidate.BaseOID, nil
+	}
+	return isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
 }
 
 func metadataTaskBindings(project, result ProjectSnapshot) []MetadataTaskBinding {

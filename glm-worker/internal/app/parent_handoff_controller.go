@@ -303,7 +303,7 @@ func quiescentRequestStartHandoffAction(store *controller.Store, head controller
 		return "", err
 	}
 	if operation.Operation == controller.PublicationOperationObserved && head.RootTaskRef == nil {
-		return string(state.ParentActionNone), nil
+		return registeredTaskStartHandoffAction(store, action)
 	}
 	if operation.Operation == controller.PublicationOperationNone && operation.CompletedRequest != nil {
 		receipt := operation.CompletedRequest
@@ -314,6 +314,17 @@ func quiescentRequestStartHandoffAction(store *controller.Store, head controller
 		return string(state.ParentActionNone), nil
 	}
 	return quiescentOrdinaryStartHandoffAction(store, head, action)
+}
+
+func registeredTaskStartHandoffAction(store *controller.Store, action string) (string, error) {
+	task, err := controller.RegisteredTask(store.Identity().PrimaryRoot)
+	if err != nil {
+		return "", err
+	}
+	if !task.Empty() {
+		return action, nil
+	}
+	return string(state.ParentActionNone), nil
 }
 
 func quiescentOrdinaryStartHandoffAction(store *controller.Store, head controller.RepositoryControllerHead, action string) (string, error) {

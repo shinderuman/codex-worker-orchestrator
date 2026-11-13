@@ -211,3 +211,50 @@ func taskAdmissionTestConfig(t *testing.T, root string) config.AppConfig {
 	hash := config.RepoHashFor(root)
 	return config.AppConfig{RepoRoot: root, RepoHash: hash, RepoShort: hash[:12], StateBase: filepath.Join(t.TempDir(), "state", "sessions")}
 }
+
+func TestNewTaskAdmissionStartsUncommittedRegisteredTaskFromIdle(t *testing.T) {
+	for _, registered := range []bool{false, true} {
+		t.Run(map[bool]string{false: "no-task", true: "registered"}[registered], func(t *testing.T) {
+			root := t.TempDir()
+			runControllerActivationGit(t, root, "init", "-q")
+			runControllerActivationGit(t, root, "config", "user.name", "Admission Test")
+			runControllerActivationGit(t, root, "config", "user.email", "admission@example.invalid")
+			writeAppTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+			writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n")
+			runControllerActivationGit(t, root, "add", ".")
+			runControllerActivationGit(t, root, "commit", "-qm", "idle base")
+			base, err := controller.CaptureWorkspaceSnapshot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := "IMPLEMENTATION_TASKS/registered.md"
+			if registered {
+				writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n\n- `"+path+"`\n\n## NEXT\n\n## BLOCKED\n")
+				writeAppTestFile(t, root, path, "# registered\n\n## Contract\n\nrequested work\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n")
+			}
+			cfg := taskAdmissionTestConfig(t, root)
+			_, err = activateWorkflowConfig(Command{Mode: ModeNewTask, Payload: "oral request"}, cfg)
+			store, openErr := controller.Open(cfg)
+			if openErr != nil {
+				t.Fatal(openErr)
+			}
+			head, headErr := store.LoadHead()
+			if headErr != nil {
+				t.Fatal(headErr)
+			}
+			if !registered {
+				if err == nil || !controller.IsPristine(head) || head.LiveAttemptID != "" || head.LiveLeaseID != "" {
+					t.Fatalf("empty Task created execution authority: %#v %v", head, err)
+				}
+				return
+			}
+			if err != nil || head.ExecutionTaskRef == nil || head.ExecutionTaskRef.TaskPath != path || head.LiveLeaseID == "" {
+				t.Fatalf("registered Task was not started: %#v %v", head, err)
+			}
+			after, err := controller.CaptureWorkspaceSnapshot(root)
+			if err != nil || after.Head != base.Head {
+				t.Fatal("Task registration created a separate public commit")
+			}
+		})
+	}
+}

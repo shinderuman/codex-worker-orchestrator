@@ -247,10 +247,28 @@ func (s *Store) projectAcceptedCandidateOperation(head RepositoryControllerHead)
 	case candidatePrepared:
 		return s.projectPreparedCandidateOperation(head, candidate)
 	case candidatePromoted:
-		return s.projectCandidateOperation(head, candidate, PublicationOperationPublish), nil
+		return s.projectPromotedCandidateOperation(head, candidate)
 	default:
 		return ParentCompletionOperation{Operation: PublicationOperationObserved}, nil
 	}
+}
+
+func (s *Store) projectPromotedCandidateOperation(head RepositoryControllerHead, candidate AcceptedCandidate) (ParentCompletionOperation, error) {
+	remote, err := s.observeCandidateRemote(head, candidate)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	contains, err := isPublicationDescendant(s.identity.PrimaryRoot, candidate.CommitOID, remote)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	if contains {
+		operation := s.projectCandidateOperation(head, candidate, PublicationOperationAdopt)
+		operation.Command.SourceOID = remote
+		operation.Command.Policy = &candidate.Policy
+		return operation, nil
+	}
+	return s.projectCandidateOperation(head, candidate, PublicationOperationPublish), nil
 }
 
 func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead, candidate AcceptedCandidate) (ParentCompletionOperation, error) {
@@ -487,9 +505,6 @@ func (s *Store) projectCandidateSourceAdvancement(head RepositoryControllerHead,
 }
 
 func (s *Store) unpublishedCandidateRemoteAdvance(head RepositoryControllerHead, candidate AcceptedCandidate) (string, bool, error) {
-	if candidate.State != candidatePromoted || !candidate.EvidenceValid {
-		return "", false, nil
-	}
 	remote, err := s.observeCandidateRemote(head, candidate)
 	if err != nil {
 		return "", false, err

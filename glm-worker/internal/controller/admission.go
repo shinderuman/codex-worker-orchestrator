@@ -33,6 +33,9 @@ func (s *Store) bootstrapExecution(task SemanticTaskRef, workspace WorkspaceIden
 }
 
 func (s *Store) bootstrapWithoutLiveLease(task SemanticTaskRef, workspace WorkspaceIdentity, snapshot WorkspaceSnapshot, head RepositoryControllerHead) (Admission, error) {
+	if task.Empty() {
+		return Admission{}, fmt.Errorf("runtime execution bootstrap requires committed Task authority; idle repository authority must not mint execution records")
+	}
 	if !IsPristine(head) {
 		return Admission{}, fmt.Errorf("execution bootstrap is restricted to a pristine controller; existing execution requires its typed transition")
 	}
@@ -86,6 +89,7 @@ func (s *Store) bootstrapFreshExecution(
 	if err != nil {
 		return Admission{}, err
 	}
+	attempt.SourceRevision = authority.SourceRevision
 	if err := s.archiveExecutionBaseline(workspace.Root, &attempt); err != nil {
 		return Admission{}, err
 	}

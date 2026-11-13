@@ -111,17 +111,33 @@ func testIdleMetadataAndNewTask(t *testing.T, store *Store, policy PublicationPo
 	}
 	plan = []byte(strings.Replace(string(plan), "## ACTIVE\n", "## ACTIVE\n\n- `"+path+"`\n", 1))
 	writeSuspensionTestFile(t, repo, "IMPLEMENTATION_PLAN.local.md", string(plan))
-	runControllerGit(t, repo, "add", "--all")
-	runControllerGit(t, repo, "commit", "-qm", "select next Task")
-	current, err = store.AdoptExternalAdvancement(ExternalAdvancementInput{ExpectedGeneration: current.Head.ControllerGeneration, Policy: policy})
+	readTask, canonical, err := WorkflowAuthorityTask(store.config)
+	if err != nil || !canonical || readTask.TaskPath != path {
+		t.Fatalf("new registered Task read authority: %#v %v", readTask, err)
+	}
+	execution, err := store.StartRegisteredTask()
+	if err != nil || execution.Attempt.SemanticTaskRef.TaskPath != path || execution.Head.RootTaskRef == nil {
+		t.Fatalf("new Task did not start: %v", err)
+	}
+	if got := controllerGitOutput(t, repo, "rev-parse", "HEAD"); strings.TrimSpace(got) != current.Head.IntegrationTip {
+		t.Fatal("Task registration changed the public commit boundary")
+	}
+	runControllerGit(t, repo, "reflog", "expire", "--expire=now", "--all")
+	runControllerGit(t, repo, "gc", "--prune=now")
+	project, err := store.LoadProjectSnapshot(execution.Head.ProjectSnapshotID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Head.RootTaskRef == nil || current.Head.RootTaskRef.TaskPath != path {
-		t.Fatal("new Task was not selected")
+	authority, err := ResolveCommittedTaskAuthorityAt(repo, project.HeadOID)
+	if err != nil || authority.Task.TaskPath != path {
+		t.Fatalf("registered Task source did not survive Git object pruning: %#v %v", authority, err)
 	}
-	execution, err := store.MaterializeExecution(MaterializeExecutionInput{ExpectedGeneration: current.Head.ControllerGeneration})
-	if err != nil || execution.Admission == nil || execution.Admission.Attempt.SemanticTaskRef.TaskPath != path {
-		t.Fatalf("new Task did not start: %v", err)
+	fixture := findingAcceptanceFixture{store: store, source: execution}
+	source := publicationTestEdit(t, fixture, "restarted-result.txt", "completed registered Task\n")
+	acceptedCompletionRuntime(t, store, source)
+	published, _ := publishTerminalTestSource(t, fixture, policy, source)
+	parent := controllerGitOutput(t, repo, "rev-parse", published.Head.IntegrationTip+"^")
+	if parent != execution.Snapshot.Head || published.Head.RootTaskRef != nil {
+		t.Fatalf("registered Task did not retire in one public commit: parent=%s base=%s", parent, execution.Snapshot.Head)
 	}
 }
