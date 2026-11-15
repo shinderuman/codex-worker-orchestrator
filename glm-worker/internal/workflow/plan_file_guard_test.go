@@ -893,9 +893,31 @@ func TestRepositoryBootstrapAuthorityReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"codex/AGENTS.md", "IMPLEMENTATION_RULES.md"} {
-		if !strings.Contains(string(agents), "`"+path+"`") {
-			t.Errorf("root AGENTS.mdに正本参照 %qがありません", path)
+	for _, authority := range []string{
+		"`codex/AGENTS.md`",
+		"`IMPLEMENTATION_RULES.md`",
+		"`control:parent-metadata-integrity`",
+	} {
+		if !strings.Contains(string(agents), authority) {
+			t.Errorf("root AGENTS.mdにbootstrap authority %qがありません", authority)
+		}
+	}
+	rules, err := os.ReadFile(filepath.Join(root, "IMPLEMENTATION_RULES.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"## 親Codex専有metadata",
+		"親Codexだけが編集する",
+		"GLM worker/reviewerは変更せず提案だけを返す",
+		"## worker / reviewer contract",
+		"workerと独立reviewerは同じACTIVE Taskをそれぞれ原文から読み",
+		"Historyは将来のtracked Taskが明示参照する非diffのcross-task decisionだけを保持する",
+		"## task完了",
+		"通常の完了証跡はHistoryへ追記しない",
+	} {
+		if !strings.Contains(string(rules), want) {
+			t.Errorf("IMPLEMENTATION_RULES.mdに契約 %qがありません", want)
 		}
 	}
 	managed, err := os.ReadFile(filepath.Join(root, "codex", "AGENTS.md"))
