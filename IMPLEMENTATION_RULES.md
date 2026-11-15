@@ -2,6 +2,8 @@
 
 このfileはtask lifecycleと親Codex/GLMの責務境界を定める。個別Taskの要求、進捗、実行時状態を複製しない。
 
+各節は該当するTask操作・イベントにだけ適用する。Goal、BLOCKED、完了、automationなどの条件付き規則を、無関係な作業の常時実行手順として扱わない。
+
 ## source-of-truth順位
 
 Git / working treeの実状態、`IMPLEMENTATION_RULES.md`、`IMPLEMENTATION_PLAN.local.md`、PlanにACTIVEがある場合はそのTask file、Taskが明示参照する`IMPLEMENTATION_HISTORY.md`の例外decisionの順に確認する。conversation、compaction summary、internal TODOはcacheであり要求正本ではない。実装と要求が矛盾しても、原要求を実装に合わせて変更しない。ユーザーによる要求変更は`Amendments`に保存する。
