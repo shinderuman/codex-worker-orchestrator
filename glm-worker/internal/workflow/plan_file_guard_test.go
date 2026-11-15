@@ -907,6 +907,9 @@ func TestRepositoryBootstrapAuthorityReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		"tracked canonical source",
+		"欠損時に推測・復元・自動生成しない",
+		"Planが最初から存在しない他repositoryへ一般化しない",
 		"## 親Codex専有metadata",
 		"親Codexだけが編集する",
 		"GLM worker/reviewerは変更せず提案だけを返す",
