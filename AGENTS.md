@@ -1,4 +1,10 @@
 # Repository bootstrap
 
-- このrepositoryで作業する親Codexは、開始・再開時に`codex/AGENTS.md`を読む。このfileはproject-scoped bootstrapだけを保持し、同じ規則を複製しない。
-- Taskの要求・Plan・親Codex/GLMの権限・完了条件は`IMPLEMENTATION_RULES.md`を正とする。正規authority bootstrapと実行手順は`codex/AGENTS.md`に従う。
+## 常時
+
+- このrepositoryの作業開始時に`codex/AGENTS.md`を読む。ここへその内容を複製しない。
+
+## Task / Plan / 親Metadataを扱う場合
+
+- `IMPLEMENTATION_RULES.md`をTask lifecycleの正本とする。正規のauthority bootstrapは`codex/AGENTS.md`に従う。
+- 親Metadataの書込権限と機械保護は`IMPLEMENTATION_RULES.md`および`control:parent-metadata-integrity`を正とする。実行手順をこのbootstrapへ再掲しない。
