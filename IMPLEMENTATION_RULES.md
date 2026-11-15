@@ -13,11 +13,11 @@
 - ACTIVEがある場合、そのtaskが明示参照する`IMPLEMENTATION_HISTORY.md`のexceptional decision見出し
 - conversation context、compaction summary、internal TODO
 
-conversation context、compaction summary、internal TODOはsource of truthではなくcacheとして扱う。Git現物とPlan/Taskが矛盾する場合、親Codexが現物確認後にPlan/Taskを修正してから続行する。
+conversation context、compaction summary、internal TODOはsource of truthではなくcacheとして扱う。Git現物とPlan/Taskが矛盾する場合、親Codexが現物と要求sourceを照合して原因を解消する。作業状態やscheduleの不一致と要求違反の実装を区別し、原要求を実装に合わせて書き換えない。要求を変更する場合は、その根拠となるユーザー指示を`Amendments`へ保存する。
 
 ## 要求受領とtracked化
 
-- すべての新規ユーザー要求はconversation contextだけに保持したまま作業を続けず、compaction、GLM call、長時間調査、実装開始より前に親Codexがtrackedな正へ固定する。「後でPlanへまとめる」は禁止する
+- taskの意味契約に影響する新規ユーザー要求はconversation contextだけに保持したまま作業を続けず、compaction、GLM call、長時間調査、実装開始より前に親Codexがtrackedな正へ固定する。「後でPlanへまとめる」は禁止する。開始・再開・停止等のrun-controlだけの指示は`codex/instructions/task-request-boundary.md`に従い、Taskの`Amendments`へ転記しない
 - tracked化は独立task作成やACTIVE切替と同義ではない。要求内容をparent-managed surface自体へ完全に表現できるか、現ACTIVEの同一責務か、独立taskかを別々に判断する
 - 現ACTIVEそのものへの追加指示は、新task分離を判断する前にACTIVE taskの`Amendments`へ原文を時系列追記する。同一責務のacceptance追加は同じACTIVEで継続し、独立責務は新taskへ分割し、別問題を優先実装する場合だけPlan上のACTIVEを切り替える
 - 各taskの`Original instruction`はimmutableなlossless requirement sourceとし、契機となったユーザー/親Codexのtask該当指示を可能な限り原文のまま保存する。要約、重複除去、理由の省略、実装TODOだけへの圧縮、「意味は同じ」という書換えを禁止する
@@ -169,7 +169,7 @@ GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をs
 
 ## task完了
 
-ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。そのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。 GOALのないPlanでNEXTが空なら、完了Taskを削除してACTIVEも空にし、残るBLOCKED / USER_PERMISSION_WAITは保持する。存在しない後続Taskを作らず、Taskがなくなったことを未完了GoalやBLOCKEDの完了へ読み替えない。新たなTaskの実行には従来どおり一意のACTIVEを要求する。
+ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。そのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求を保持するのはTask fileがコミットされていた場合に限る。未コミット登録から同じ1コミット内で削除されたTaskの原要求はそのGit履歴には残らないため、Controllerが固定したparent-source revision / ProjectSnapshot archiveを回収元とする。実装diffはGit履歴、validation・runtime/model evidenceはCIとbundle / telemetryを正とする。 GOALのないPlanでNEXTが空なら、完了Taskを削除してACTIVEも空にし、残るBLOCKED / USER_PERMISSION_WAITは保持する。存在しない後続Taskを作らず、Taskがなくなったことを未完了GoalやBLOCKEDの完了へ読み替えない。新たなTaskの実行には従来どおり一意のACTIVEを要求する。
 
 Goal modeの最終taskだけは、上記Goal起点project orchestrationのterminal条件を満たす場合に限り、NEXT昇格ではなくcompleted GOALと空scheduleへ同期する。Goal未完了、mechanical readiness未充足、semantic acceptance未確定ではこの例外を使わない。
 
