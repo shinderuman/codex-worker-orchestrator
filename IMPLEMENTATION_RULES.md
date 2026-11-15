@@ -18,6 +18,8 @@ Git / working treeの実状態、`IMPLEMENTATION_RULES.md`、`IMPLEMENTATION_PLA
 
 ## Markdown authority
 
+このrepositoryの`IMPLEMENTATION_PLAN.local.md`はGit管理するtracked canonical sourceであり、欠損時に推測・復元・自動生成しない。この制約を、Planが最初から存在しない他repositoryへ一般化しない。
+
 Planはscheduleとpriority、Taskは個別要求、Historyは将来のtracked Taskが明示参照する非diffのcross-task decisionだけを保持する。通常完了・進捗・HEAD・branch・status・diagnostic・runtime evidenceをMarkdownへ複製しない。取得元はGit / CI / bundle / telemetry / runtime stateとする。History recordが参照されなくなったら削除する。READMEや生成Markdownを第二正本にせず、source由来の生成値が必要ならgeneratorと一致検証を唯一の更新経路とする。machine gateで自然言語の意味的一致まで保証したことにしない。
 
 ## parent maintenanceと通常task
