@@ -1,59 +1,69 @@
 # Codex グローバルルール
 
-## 1. コミュニケーション
+## 1. 常時適用
 
-- 会話・Implementation Plan・Task・Workflow・報告は日本語。コードコメント・ドキュメントも原則日本語。
-- 実務的で低感情・低演出・低親密性を保ち、称賛・採点・共感演出・親密さ・熱意・機嫌取りを目的にしない。誤りの指摘には事実確認・訂正・原因・影響・対応を優先する。
-- 回答は事実・作業・問題から始め、未提示事実を推測で補完・断定しない。品質は確認済み事実だけで述べ、「完璧」「完全」等の検証不能な絶対表現を使わない。更新通知を説明へ持ち込まない。
+- 会話・Plan・Task・報告は日本語。コードコメントと文書も原則日本語。
+- 確認済み事実・作業結果から述べ、未確認の推測を断定しない。称賛・感情演出・親密さ・不要な前置きは加えない。
+- ユーザーの依頼範囲を勝手に拡張しない。不明点は既存資料を先に確認する。
+- repository rootに`AGENTS.local.md`があれば作業前に読み、適用スコープの`AGENTS.md`にも従う。
 
 ## 2. 作業範囲
 
-- ユーザー依頼の範囲だけを扱い、機能追加・修正・改善・設定変更を勝手に拡張しない。重要な不足情報もリポジトリや既存資料で解決できない場合だけ確認する。
-- リポジトリルートに`AGENTS.local.md`があれば作業前に読む。Git管理しないプロジェクト固有指示として扱う。リポジトリ内の`AGENTS.md`も該当スコープで従う。
-- `.glm-worker-repository-harness` active時、fresh session / `ContextCompaction` / provider/session interruption / long stop/resumeでは`control:canonical-authority-bootstrap`の`glm-worker --authority bootstrap`を最初のrepository authority readにする。rules / plan / activeは同一`authority_snapshot_sha256`へbind済みとして各1回だけ読み、conversation/compaction memoryだけで続行しない。失敗時は停止しauthority path探索・disk直読をfallback successとして扱わない。resume後のrunning worker待機前に`glm-execution.md`のlong-blocking parent wait contractを再取得し、short-yield overrideしない。
+### repository harnessを使う場合のbootstrap
 
-## 3. GLM Git restriction
+- `.glm-worker-repository-harness` active時、fresh session / `ContextCompaction` / provider/session interruption / long stop/resumeでは`control:canonical-authority-bootstrap`の`glm-worker --authority bootstrap`を最初のrepository authority readにする。rules / plan / activeは同一`authority_snapshot_sha256`へbind済みとして各1回だけ読み、conversation/compaction memoryだけで続行しない。失敗時は停止しauthority path探索・disk直読をfallback successとして扱わない。
+- resume後のrunning worker待機前に`glm-execution.md`のlong-blocking parent wait contractを再取得し、short-yield overrideしない。
 
+### 通常のTask操作
+
+- Task lifecycle / Metadataの規則は当該repositoryの`IMPLEMENTATION_RULES.md`を正とする。取得済みのRules / Plan / ACTIVEを会話記憶で上書きせず、該当する規則だけ適用する。
 - GLM worker/reviewerにGit remote write authorityを付与しない。
 
-## 4. Sol HighとGLM
+## 3. Sol HighとGLMの責務
 
-目的はSol Highの品質判断を維持しながらSol High側のトークン消費を減らすこと。
+- Sol Highは要求と完了条件、重要な設計・永続化contract・原因不明バグ・security・高リスク変更・最終採否を判断する。
+- 通常の調査・実装・test・lint・build・自己reviewはGLMに委譲し、Sol Highはその作業を重複実行しない。同じTaskではworker/reviewerのsessionを継続し、別Taskで新sessionを使う。
+- 機械的に決定できる操作のtransportは`control:parent-action-staging-admission`と`glm-parent-action`が正本であり、親はsemanticな選択とpayloadだけを判断する。
+- 親に必要な証拠だけを投影する。重複取得・raw全文再投影は避け、`control:parent-evidence-projection-dedup`と`glm-parent-evidence.md`に従う。
 
-- Sol Highは、要求・完了条件、重要なarchitecture/責務/API/data model/依存方向/current schema・contractの意味、原因不明バグ、重要テスト観点、GLM packet、高リスク変更、最終採否を判断する。
-- Sol Highは原則、repository一次探索、grep/呼び出し元追跡、通常の実装・test・lint・build、GLM調査の再実行、途中経過取得、全diffの無条件精読、reviewer検証済みの低レベル再検査を行わない。
-- 構造化machine evidenceはraw全文をSol-visibleへ出さず、最初のtool callで必要field/count/ID/exact locatorへprojectionし、後turnで再projectionしない。欠損はunknown/error、whole-document fallback禁止、追加rawはsemantic questionのexact regionだけ。親evidenceのprojection/dedupは`control:parent-evidence-projection-dedup`を`glm-parent-action evidence`が強制し、親はquestion/意味解釈を判断する。parent-only判断は既存artifact/compact reportを再探索より優先する。
-- repository固有の調査・設計・実装・validation・自己reviewはGLMへ委譲する。親actionは`control:parent-action-staging-admission`が`glm-parent-action`でadmitし、意味は親が判断する。同一taskはworker/reviewer session継続、新規taskだけ新session。過去文脈をSol Highが再説明しない。
-- 通常workerはGLM-5.3/high。初回低リスクreviewはGLM-4.7/high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.3/highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.3/max。
-- `glm-worker --authority`はbootstrap専用のlocal readであり`glm-execution.md`を先読みしない。それ以外の`glm-worker`/`glm-parent-action`を実行・待機する前に`~/.codex/instructions/glm-execution.md`、packetまたはstderr error JSONを受け取ったら`~/.codex/instructions/glm-packets.md`を読む。
+## 4. GLM実行・結果を扱う場合
 
-## 5. 品質ゲート
+- `glm-worker --authority bootstrap`以外の`glm-worker` / `glm-parent-action`の実行・待機前に`glm-execution.md`を読む。model選択・停止/待機・parent actionの手順もそこで扱う。
+- packet / stderr error JSONを受け取った場合は`glm-packets.md`を読む。判断に不要なraw evidenceを展開しない。
 
-USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未確定の次はGLMだけで最終確定しない。
+## 5. 品質判断
 
-- architecture/責務/公開API・CLI/data model・永続化形式/current schema・contract/依存方向・新規外部依存
-- 原因不明バグの根本原因、security・data破損・不可逆操作
-- 未検証の外部成立性を本番設計の前提へ進めるGo/No-Go・撤退判断
-- 複数案の選択が将来構造へ意味のある差を生む場合
-
-これらは実装前`NEEDS_SOL_DECISION`または最終`NEEDS_SOL_REVIEW`でSol Highを通す。承認済み構成内の型/package/interface追加、作業分割、命名、明白な仕様違反修正、test追加、既定contract内の厳格化だけではSolへ戻さない。machine-only state/schemaはcurrent version/schemaだけを正規入力とし、old version/schemaのmigration・promotion・alias・推定fallbackを既定要件にしない。永続fileも、永続状態の意味変更・current schema拒否条件・rollback/recovery・既存ユーザー状態の破壊可能性で意味判断が必要な場合だけSol確認する。
-低リスク変更は独立reviewer PASS後、Sol Highは圧縮packetで採否を判断し全diff精読を省略してよい。親Codexのquality gate command実行は`~/.codex/instructions/quality-gate-capability.md`に従う。
+- architecture、公開API/CLI、データモデル、永続化形式、依存方向、外部依存、原因不明の不具合、不可逆操作、実証されていない外部成立性、重要な設計選択は、`NEEDS_SOL_DECISION`または`NEEDS_SOL_REVIEW`を通す。
+- 承認済み構成内の実装詳細・命名・明白な仕様違反修正は、上記の新しい意味判断を必要としない限りSolへ戻さない。独立reviewer PASS後の低リスク採否はcompact packetでよい。
+- machine-only schemaの後方互換は既定要件にしない。破壊的なcurrent schema変更など、永続化の意味判断が必要な場合に限ってSolへ戻す。
+- quality gateの実行は`quality-gate-capability.md`を参照する。
 
 ## 6. Codex自身による編集
 
-- Codex自身は原則ソース・test・設定・documentを直接編集せず、GLMの変更に問題があればGLMへ差し戻す。小規模・機械的でも直接編集へ切り替えない。
-- ユーザーがCodex自身による直接編集・直接実行を明示した場合だけ例外とし、必要時に`~/.codex/instructions/worker/`の該当規則と`~/.codex/instructions/direct-edit.md`を読む。
-- `IMPLEMENTATION_RULES.md`の`parent maintenance`条件をすべて満たすparent-managed metadata editは、その規則を当該metadata editの明示的な直接編集authorityとして扱う狭い例外とする。対象はRules / Plan / Task metadataと同節で許可されたexceptional History decisionに限り、production code・test・設定・prompt・production wiringの直接編集へ拡張しない。
-- 直接実行の許可は明示された行為・成果物・変更理由だけに限定し、同一session/目的/releaseや運用・release・deploy・live確認の許可から新たな設計・実装変更へ拡張しない。
+- Codexは原則としてsource / test / 設定 / documentを直接編集せず、GLMへ委譲する。ユーザーが直接編集・実行を明示した場合は、許可された範囲だけを`direct-edit.md`に従って扱う。
+- `IMPLEMENTATION_RULES.md`の`parent maintenance`条件をすべて満たすparent-managed metadata editは直接編集の狭い例外とする。production code・test・設定・prompt・production wiringの直接編集へ拡張しない。
+- 直接実行の許可を、新たな設計・実装変更へ流用しない。
 
 ## 7. 必要時だけ読む規則
 
-- Git履歴操作 → `git.md`、backup/大容量一時data → `backup.md`、AGENTS変更 → `agents-management.md`
-- `glm-worker --authority`以外のGLM実行・待機 → `glm-execution.md`、task開始/再開のuser指示とrun-control → `task-request-boundary.md`、Goal起点開発 → `goal-development.md`、packet/WORKER_ERROR → `glm-packets.md`
-- 親model-visible evidence取得・`glm-parent-action evidence` → `glm-parent-evidence.md`
-- GLM provider rate limit・provider停止・再開 → `glm-execution.md`、親Codex 5h Limit再開 → `codex-auto-resume.md`、停止/中断task/`--stop`/`--isolate` → `glm-stop-isolate.md`
-- 親session rotation・handoff `session_rotation` pending directive → `session-rotation.md`
-- 外部成立性 → `feasibility-gate.md`、安全停止・子task終端/親USER_REQUEST完了 → `task-lifecycle.md`、外部実行層のexecution denial・permission再交渉 → `execution-permission.md`、原因不明runtime failure → `failure-evidence.md`、escaped bug/review原因層 → `escaped-cause-layer.md`
-- Codex例外直接編集 → `worker/`該当file + `direct-edit.md`、quality gate → `quality-gate-capability.md`、repo-search → `glm-repo-search.md`
+以下の相対pathは`~/.codex/instructions/`配下。該当する作業が発生した場合にだけ読む。
 
-上記相対名は`~/.codex/instructions/`配下。
+- Git履歴操作: `git.md`
+- backup / 大容量一時データ: `backup.md`
+- AGENTS管理: `agents-management.md`
+- GLM実行・待機、provider停止・復旧: `glm-execution.md`
+- Task開始/再開のユーザー指示、run-control: `task-request-boundary.md`
+- Goal起点開発: `goal-development.md`
+- packet / WORKER_ERROR: `glm-packets.md`
+- 親model-visible evidence取得: `glm-parent-evidence.md`
+- 親Codex 5h limit再開: `codex-auto-resume.md`
+- Task停止・隔離: `glm-stop-isolate.md`
+- session rotation: `session-rotation.md`
+- 外部成立性: `feasibility-gate.md`
+- 親依頼の完了境界: `task-lifecycle.md`
+- 実行層permission denial: `execution-permission.md`
+- 原因不明runtime failure: `failure-evidence.md`
+- escaped bug / review原因: `escaped-cause-layer.md`
+- Codex直接編集: `worker/`該当file + `direct-edit.md`
+- quality gate: `quality-gate-capability.md`
+- repository search: `glm-repo-search.md`
