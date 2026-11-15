@@ -36,7 +36,7 @@ Planはscheduleとpriority、Taskは個別要求、Historyは将来のtracked Ta
 
 Task fileには`Original instruction`、`Amendments`、必要時の`Resolved references`、`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、`Historical invariants`、`Dependencies`を設ける。未解決Findingがあるときだけ`Review findings`、成功済みdependencyの明示保持が必要なときだけ`Fulfilled dependencies`を設ける。Task fileに`Status`・`Current boundary`を置かず、schedule stateはPlanを正とする。
 
-Darwin専用テストが必要なTaskは`## Darwin acceptance`へ `- \`./internal/qualitygate:TestDarwinSysctlDecoding\`` 形式で対象packageとテスト名を宣言する。request-backedの場合は正規request本文に置き、Controllerが正式な`go-test`へ引き継ぐ。
+Darwin専用テストが必要なTaskは`## Darwin acceptance`へ `` - `./internal/qualitygate:TestDarwinSysctlDecoding` `` 形式で対象packageとテスト名を宣言する。request-backedの場合は正規request本文に置き、Controllerが正式な`go-test`へ引き継ぐ。
 
 ## task filenameとdependency
 
