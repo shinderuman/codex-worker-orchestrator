@@ -1,9 +1,4 @@
-# このリポジトリの作業bootstrap規則
+# Repository bootstrap
 
-- 親Codexは、このrepositoryで作業を開始・再開する時に`codex/AGENTS.md`をproject-scoped parent/tool instructionの唯一の正本として読む。Codexがrepository root `AGENTS.md`を自動注入するsupported project scopeからこの参照へ到達し、user-global `~/.codex/AGENTS.md`へrepository固有ruleを要求しない。
-- `codex/AGENTS.md`と本fileへ同じrule本文を複製しない。本fileはrepository bootstrapとparent/tool instruction正本への参照だけを所有し、`codex/AGENTS.md`はinstallerによりuser-global AGENTSへ配置されない。
-- 作業開始時と再開時(Sol判断後の継続・review修正・provider障害やrate limit上限後のresume)にrepository rootの`IMPLEMENTATION_PLAN.local.md`を確認し、存在する場合だけ読み、未完了作業と進行状態の唯一の正として扱う。過去sessionの記憶や推測を優先せず、計画本文を他fileへ複製しない。
-- `IMPLEMENTATION_PLAN.local.md`はGit管理するtracked canonical sourceとし、公開`.gitignore`へ追加しない。存在しない場合は推測・復元・自動生成しない。
-- `IMPLEMENTATION_RULES.md`・`IMPLEMENTATION_PLAN.local.md`・`IMPLEMENTATION_TASKS/`配下全file・`IMPLEMENTATION_HISTORY.md`はparent-managed implementation metadataであり、親Codexだけが編集する。GLM worker/reviewerは読み取り専用とし、必要な更新は候補と根拠をPACKETへ記載する。このrepositoryでharnessがactiveなときのtracked欠損とworker model呼出前後のmetadata不変性は`control:parent-metadata-integrity`がfail closedで機械強制し、親は修復内容だけを判断する。未追跡で最初からPlanが存在しない他repositoryやGit管理外directoryへこのrepository固有guardを一般化せず、GLMはPlanを生成しない。
-- `IMPLEMENTATION_HISTORY.md`は通常taskの完了ledgerではなく、production diffやcurrent Rules/taskだけでは表せず、将来のtracked taskが明示参照するcross-taskの採否・Go/No-Go decisionだけを保持するbounded exceptional recordとする。ordinary completionのcommit・diff・validation・install・runtime evidenceはGit、CI、bundle / telemetryを正とし、通常task完了時にHistoryを読んだり追記したりしない。Historyは親Codex専有で、GLM worker/reviewerは編集・生成・削除せず、ACTIVE taskが明示参照した見出しだけを読む。
-- planの`## ACTIVE`節は実行中taskの要求正本を`IMPLEMENTATION_TASKS/`配下へ1件だけ指す。harnessがactiveなときは`glm-worker`がACTIVE task fileを一意に解決・固定し、解決不能をmodel呼出前にfail closedする。ACTIVE task fileのOriginal instruction・Amendments・Resolved references・Contract・Must not・Acceptance criteriaはtask開始・Sol判断後継続・review修正・resumeの全呼出で、workerとreviewerがそれぞれ独立にtask file本文から読む。USER_REQUEST・会話要約・過去session記憶を要求定義の代わりにしない。task完了時は完了task fileを削除してPlanを次の実状態へ同期し、原要求の回収元は、要求内容を含む版がGit履歴にあるかを区別して`IMPLEMENTATION_RULES.md`の`task完了`節に従う。Historyへの通常完了移行は行わない。
+- このrepositoryで作業する親Codexは、開始・再開時に`codex/AGENTS.md`を読む。このfileはproject-scoped bootstrapだけを保持し、同じ規則を複製しない。
+- Taskの要求・Plan・親Codex/GLMの権限・完了条件は`IMPLEMENTATION_RULES.md`を正とする。正規authority bootstrapと実行手順は`codex/AGENTS.md`に従う。
