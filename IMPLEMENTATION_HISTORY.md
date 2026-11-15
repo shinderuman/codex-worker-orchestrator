@@ -1,6 +1,6 @@
 # codex-worker-orchestrator 例外decision記録
 
-このfileは通常taskの完了ledgerではない。ordinary completionのcommit・diff・validation・install・runtime evidenceはGit、CI、bundle / telemetryを正とし、task要求は削除済みtask fileのGit履歴から回収する。通常task完了時にこのfileを読んだり追記したりしない。
+このfileは通常taskの完了ledgerではない。ordinary completionのcommit・diff・validation・install・runtime evidenceはGit、CI、bundle / telemetryを正とし、task要求の回収元は`IMPLEMENTATION_RULES.md`の`task完了`節に従う。通常task完了時にこのfileを読んだり追記したりしない。
 
 親Codexだけが編集し、GLM worker/reviewerは読み取り専用とする。新しいrecordは次をすべて満たす場合だけ追加する。
 

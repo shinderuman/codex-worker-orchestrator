@@ -886,30 +886,41 @@ func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) 
 	}
 }
 
-func TestPlanFileContractWiring(t *testing.T) {
+func TestRepositoryBootstrapAuthorityReferences(t *testing.T) {
 	t.Parallel()
 	root := scenarioRepoRoot(t)
 	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, authority := range []string{
+		"`codex/AGENTS.md`",
+		"`IMPLEMENTATION_RULES.md`",
+		"`control:parent-metadata-integrity`",
+	} {
+		if !strings.Contains(string(agents), authority) {
+			t.Errorf("root AGENTS.mdにbootstrap authority %qがありません", authority)
+		}
+	}
+	rules, err := os.ReadFile(filepath.Join(root, "IMPLEMENTATION_RULES.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, want := range []string{
 		"tracked canonical source",
-		"親Codexだけ",
-		"読み取り専用",
-		"必要な更新は候補と根拠をPACKETへ記載",
-		"control:parent-metadata-integrity",
-		"未追跡で最初からPlanが存在しない他repositoryやGit管理外directoryへこのrepository固有guardを一般化せず",
-		"ACTIVE task fileを一意に解決・固定",
-		"workerとreviewerがそれぞれ独立にtask file本文から読む",
-		"bounded exceptional record",
-		"通常task完了時にHistoryを読んだり追記したりしない",
-		"GLM worker/reviewerは編集・生成・削除せず",
-		"ACTIVE taskが明示参照した見出しだけを読む",
-		"Historyへの通常完了移行は行わない",
+		"欠損時に推測・復元・自動生成しない",
+		"Planが最初から存在しない他repositoryへ一般化しない",
+		"## 親Codex専有metadata",
+		"親Codexだけが編集する",
+		"GLM worker/reviewerは変更せず提案だけを返す",
+		"## worker / reviewer contract",
+		"workerと独立reviewerは同じACTIVE Taskをそれぞれ原文から読み",
+		"Historyは将来のtracked Taskが明示参照する非diffのcross-task decisionだけを保持する",
+		"## task完了",
+		"通常の完了証跡はHistoryへ追記しない",
 	} {
-		if !strings.Contains(string(agents), want) {
-			t.Errorf("root AGENTS.mdにplan/history契約文 %qがありません", want)
+		if !strings.Contains(string(rules), want) {
+			t.Errorf("IMPLEMENTATION_RULES.mdに契約 %qがありません", want)
 		}
 	}
 	managed, err := os.ReadFile(filepath.Join(root, "codex", "AGENTS.md"))

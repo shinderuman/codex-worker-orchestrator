@@ -2,6 +2,11 @@
 
 `glm-worker`または`glm-parent-action`を実行・待機する場合だけ適用する。目的は、deterministic orchestrationをmachineへ寄せ、Sol Highをsemantic判断へ集中させること。
 
+## model routing
+
+- 通常workerはGLM-5.3/high。初回低リスクreviewはGLM-4.7/high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.3/highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.3/max。
+
+
 ## 実行
 
 - model実行またはstate変更を行うcommandはsandbox外、実装上read-onlyのinspection/report commandはsandbox内で実行する。command名で推測せずside effectを正とする。
