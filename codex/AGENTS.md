@@ -16,7 +16,7 @@
 
 ### 通常のTask操作
 
-- Task lifecycle / Metadataの規則は当該repositoryの`IMPLEMENTATION_RULES.md`を正とする。取得済みのRules / Plan / ACTIVEを会話記憶で上書きせず、該当する規則だけ適用する。
+- 当該repositoryに`IMPLEMENTATION_RULES.md`がある場合は、Task lifecycle / Metadataの規則として適用する。存在しないrepositoryへこのproject固有のRules / Planを要求しない。取得済みのauthorityを会話記憶で上書きしない。
 - GLM worker/reviewerにGit remote write authorityを付与しない。
 
 ## 3. Sol HighとGLMの責務
