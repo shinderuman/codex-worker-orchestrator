@@ -1,206 +1,84 @@
 # 実装task lifecycle規則
 
-このfileは長期間変わらないtask lifecycle、ownership、compaction、commit、review、exceptional decision記録の規則だけを保持する。個別task仕様は書かない。
+このfileはtask lifecycleと親Codex/GLMの責務境界を定める。個別Taskの要求、進捗、実行時状態を複製しない。
 
 ## source-of-truth順位
 
-作業開始・再開時は次の順を正とする。
-
-- Git / working treeの現物
-- `IMPLEMENTATION_RULES.md`
-- `IMPLEMENTATION_PLAN.local.md`
-- PlanにACTIVEがある場合、その`IMPLEMENTATION_TASKS/*.md`
-- ACTIVEがある場合、そのtaskが明示参照する`IMPLEMENTATION_HISTORY.md`のexceptional decision見出し
-- conversation context、compaction summary、internal TODO
-
-conversation context、compaction summary、internal TODOはsource of truthではなくcacheとして扱う。Git現物とPlan/Taskが矛盾する場合、親Codexが現物と要求sourceを照合して原因を解消する。作業状態やscheduleの不一致と要求違反の実装を区別し、原要求を実装に合わせて書き換えない。要求を変更する場合は、その根拠となるユーザー指示を`Amendments`へ保存する。
+Git / working treeの実状態、`IMPLEMENTATION_RULES.md`、`IMPLEMENTATION_PLAN.local.md`、PlanにACTIVEがある場合はそのTask file、Taskが明示参照する`IMPLEMENTATION_HISTORY.md`の例外decisionの順に確認する。conversation、compaction summary、internal TODOはcacheであり要求正本ではない。実装と要求が矛盾しても、原要求を実装に合わせて変更しない。ユーザーによる要求変更は`Amendments`に保存する。
 
 ## 要求受領とtracked化
 
-- taskの意味契約に影響する新規ユーザー要求はconversation contextだけに保持したまま作業を続けず、compaction、GLM call、長時間調査、実装開始より前に親Codexがtrackedな正へ固定する。「後でPlanへまとめる」は禁止する。開始・再開・停止等のrun-controlだけの指示は`codex/instructions/task-request-boundary.md`に従い、ユーザーがdurable task contractへの反映を明示した場合を除きTaskの`Amendments`へ転記しない
-- tracked化は独立task作成やACTIVE切替と同義ではない。要求内容をparent-managed surface自体へ完全に表現できるか、現ACTIVEの同一責務か、独立taskかを別々に判断する
-- 現ACTIVEの意味契約に対する追加指示は、新task分離を判断する前にsemantic deltaの原文だけをACTIVE taskの`Amendments`へ時系列追記する。run-controlはユーザーがdurable化を明示した場合だけ例外として扱い、混在するmessage全体を機械的に転記しない。同一責務のacceptance追加は同じACTIVEで継続し、独立責務は新taskへ分割し、別問題を優先実装する場合だけPlan上のACTIVEを切り替える
-- 各taskの`Original instruction`はimmutableなlossless requirement sourceとし、契機となったユーザー/親Codexのtask該当指示を可能な限り原文のまま保存する。要約、重複除去、理由の省略、実装TODOだけへの圧縮、「意味は同じ」という書換えを禁止する
-- 追加要求は旧本文を上書き・削除せず、日時または順序と原文を`Amendments`へappend-onlyで追記する。新旧要求が矛盾する場合も両方を保持し、最新Amendmentによるoverrideをderived `Contract`へ明示する
-- 「これ」「さっきの」「前のreview」等の会話依存参照はOriginal instructionを書き換えず、当時の解決結果を`Resolved references`へ分離して具体化する
-- task fileへ進捗日記、current schedule/status/branch/HEAD/dirty state、ordinary completion evidenceのsnapshotを追加しない。長い診断とruntime/model evidenceはartifact / bundle / telemetry、ordinary completionのcommit・diff・validation・install evidenceはGit / CI / bundleを正とし、Historyへ複製しない
-
-## lossless sourceとderived contract
-
-- `Original instruction` / `Amendments` / `Resolved references`を一次要求source、`Purpose` / `Contract` / `Must not` / `Acceptance criteria`を実装・review用のderived informationとして明確に分離する
-- derived sectionが十分詳細でもOriginal instructionを要約してよい理由にはしない。token削減はderived sectionと通常resume経路で行い、一次要求sourceを削らない
-- 長い指示を複数taskへ分割する場合、各taskの要求・理由・禁止事項・完了条件を理解するために必要な原文sectionをlosslessに保存する。共通前提を暗黙依存にせず、必要部分を含めるかtrackedな共通sourceを明示参照する
-- derived sectionへOriginal instruction全文を複製せず、compactな作業・review indexとして維持する
-- RULES変更が既存taskへretroactiveに影響する場合はmigration要否を判定し、矛盾するtask metadataを更新して同じcontractで実行可能なことを確認してから完了する
+- 意味契約を変更する新規ユーザー要求は、compaction・GLM呼出・長時間調査・実装開始より前に、親CodexがRules / Plan / Taskの適切な正本へ固定する。run-controlだけの指示は`codex/instructions/task-request-boundary.md`に従い、ユーザーがdurable化を明示した場合を除いてTaskへ転記しない。混在するmessageは意味契約の追加分だけをlosslessに分離する。
+- 現ACTIVEの同一責務への追加要求は`Amendments`へ原文を時系列追記し、別責務なら独立Taskを作る。新Task作成だけでACTIVEを変更せず、優先実行が必要な場合だけPlanを更新する。
+- `Original instruction`はimmutableな原要求、`Amendments`はappend-onlyの追加要求、`Resolved references`は会話依存参照の解決記録とする。要約・置換・旧要求の削除は禁止し、新旧要求が矛盾するときは最新Amendmentの優先をderived `Contract`へ明示する。
+- `Purpose` / `Contract` / `Must not` / `Acceptance criteria`は原要求から導いた実装・review用indexであり、原要求の複製や代用にしない。複数Taskへ分割する場合も必要な原要求と禁止事項をlosslessに引き継ぐ。
+- RULES変更が既存Taskと矛盾するときは、そのTaskのmetadataも整合させてから確定する。
 
 ## Markdown authority
 
-- tracked Markdownは規範contract、不変の設計根拠、lossless requirement、canonical schedule/decisionだけを保持する。Git/state/telemetry/generated artifactから再取得できるcurrent valueやordinary chronologyを手動複製しない
-- task scheduleとpriorityはPlan、runtime lifecycleはstate/live projection、branch/HEAD/dirty stateとordinary completionはGit/CI/bundleを正とする。task fileへ`Current boundary`を設けない
-- `Review findings`は実際に未解決findingがある場合だけtask fileへ置く。未解決findingがない状態はsection欠落を正とし、`none`という可変negative snapshotを維持しない
-- READMEは利用者向け入口とcanonical locatorを示し、tool version、command inventory、state transition、schema version等の変更可能なcurrent実装一覧を第二正本として保持しない
-- repository sourceから導出した値をMarkdownへ残す必要がある場合だけdeterministic generatorを唯一の更新経路にし、canonical inputとのexact一致をmachine gateで検証する。生成値を残さない場合はgenerator/state mirrorを追加しない
-- machine gateはsection禁止、参照閉包、schedule closure、generated source/output一致等の決定可能な性質だけを扱い、任意の自然言語とcurrent実装の意味的一致を保証したことにしない
+Planはscheduleとpriority、Taskは個別要求、Historyは将来のtracked Taskが明示参照する非diffのcross-task decisionだけを保持する。通常完了・進捗・HEAD・branch・status・diagnostic・runtime evidenceをMarkdownへ複製しない。取得元はGit / CI / bundle / telemetry / runtime stateとする。History recordが参照されなくなったら削除する。READMEや生成Markdownを第二正本にせず、source由来の生成値が必要ならgeneratorと一致検証を唯一の更新経路とする。machine gateで自然言語の意味的一致まで保証したことにしない。
 
-## parent maintenance
+## parent maintenanceと通常task
 
-次をすべて満たす変更は、独立taskを作成・ACTIVE化せず、現在のACTIVEを維持したまま親Codexが直接処理できる。
-
-- production behaviorとimplementation codeを変更しない
-- GLM workerへの独立実装委譲、独立した長時間調査、通常実装task相当のreview/testを必要としない
-- 現ACTIVEの意味契約・acceptance criteriaを変更しない
-- 独立したrollback単位として管理する必要がない
-- Rules、Plan、Task metadata、必要時のexceptional History decision等のparent-managed surfaceだけで完結する
-- 変更後の意味契約をそのtracked surface自体へ完全に保存できる
-
-命名規則、Plan priority/ACTIVE/NEXT metadata、typo、意味を変えない明確化、exceptional decision recordの参照修正、意味契約を変えないAmendment、parent-managed metadataの参照修正は代表例とする。parent maintenance中もACTIVEは主要な実装・調査・review対象を示し続け、一時task作成、ACTIVE退避、maintenance完了処理、元ACTIVE復帰を行わない。
-
-parent maintenanceは記録不要を意味しない。ユーザー要求をcompaction前に対象のRules / Plan / Taskへ直接保存し、内容に応じた最小確認を行う。Historyへ追加できるのは、production diffやcurrent Rules/taskだけでは表現されず、将来のtracked taskがactivation / adoption条件として明示参照するcross-taskの採否・Go/No-Go decisionだけとする。通常の作業・完了chronology、commit、validation、install、escaped defect診断をHistoryへappendしない。変更が単独で意味を持ち、即時固定が安全なら小さな独立変更として記録できる。GLMへcommit/pushさせない。
-
-parent-managed metadataを扱うguard、self-protection、production wiring自体の変更は、編集対象がparent-managed surfaceに関係していてもproduction behavior変更であるためparent maintenanceにしない。
+- production behavior・コード・prompt・testを変更せず、現在のACTIVEの意味契約を変えず、独立review・rollback単位を必要とせず、Rules / Plan / Task metadata / 必要なHistory decisionだけで完結する変更は親Codexがparent maintenanceとして直接扱える。ACTIVEを一時退避・再昇格しない。要求は対象の正本へ保存し、必要な最小検証を行う。
+- production code、CLI/API/protocol、state、prompt/dispatch、integration testを実質変更する作業、独立したacceptance・rollbackや長時間調査を要する作業はsemantic filenameの通常Taskへ分離する。Metadataに関係するguard / production wiringの修正も通常Taskとする。
+- 1 Taskは原則1つの独立review可能な責務・1コミット候補とする。同じinvariantの実装とintegration testは分離しない。GLMへumbrellaではなく具体Task 1件をdispatchする。
 
 ## 親MetadataのGitコミット境界
 
-- 通常Taskは1 Task 1 Commitとする。実装完了のコミットを作り、Task終了・完了Task削除・次Task昇格等のMetadataをその未公開コミットへAmendしてから最終Publicationを行う。Taskの実装と終了Metadataを別の公開コミットに分けない。
-- Metadataの編集とGitコミットを別の操作として扱う。ファイル更新自体をコミット理由にせず、同じTaskに属するMetadataは終了時のAmendへまとめる。
-- 調査途中の結果、追加証拠、許可内容、Amendment追記を理由に機械的にコミットを増やさない。複数回の追記が予想される場合は、先に関連する調査と変更内容を整理して集約する。
-- Controller admission、snapshot整合、Publication、Retireの責務は維持し、各証拠と最終OIDを整合させる。既存ownerがMetadata先行コミットや別の終了コミットを要求する場合は、Guardを迂回せず1 Task 1 Commitを成立させるownerの接続を修正する。未成立の操作を成功扱いしない。
-- コミット回数削減を理由にGuardを迂回したり、未確定Metadataを確定済みと偽装したりしない。コミット細分化や履歴整理のための余計な実装・制御機構を追加せず、既に公開されたコミットの履歴を改変しない。
-
-## 通常taskへの分離
-
-次のいずれかに該当する要求はparent maintenanceにせず、内容を表すsemantic slugの独立task fileへ固定する。
-
-- production code、CLI / API / protocol behavior、state / checkpoint / telemetry semanticsを変更する
-- worker / reviewer promptまたはproduction wiringを意味的に変更する
-- test / integration scenario追加が主要成果になる
-- 独立reviewが必要な設計変更、複数fileにまたがる実装責務、長時間調査を含む
-- 現ACTIVEとは独立したacceptance criteriaを持つ、または途中実装でrollback境界が曖昧になる
-- ユーザー許可待ちを独立管理する
-
-独立taskを作成しただけではACTIVEを自動変更しない。現在の主要作業より優先する根拠がある場合だけPlanのACTIVE / NEXT / BLOCKEDを更新する。
+通常Taskは1 Task 1 Commitとする。実装完了コミットにTask退役・Plan同期等のmetadataをAmendしてからPublicationし、実装と退役を別々の公開コミットにしない。metadataの追記ごとにコミットを増やさない。Controllerのadmission / snapshot / Publication / Retire、最終OIDと証拠の整合を保ち、Guardを迂回・成功偽装・公開済み履歴の改変をしない。
 
 ## task file必須構造
 
-全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`を持つ。未解決findingがある場合だけ`Review findings`を追加する。schedule stateはPlanだけを正とし、task fileへ`Status`や`Current boundary`を持たせない。成功済みdependency edgeを保持する必要があるtaskは、Goal modeの有無を問わずoptional `Fulfilled dependencies`を持てる。欠落はfulfilledなしとして扱う。
+Task fileには`Original instruction`、`Amendments`、必要時の`Resolved references`、`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、`Historical invariants`、`Dependencies`を設ける。未解決Findingがあるときだけ`Review findings`、成功済みdependencyの明示保持が必要なときだけ`Fulfilled dependencies`を設ける。Task fileに`Status`・`Current boundary`を置かず、schedule stateはPlanを正とする。
 
-Task-backed taskでDarwin専用テストがAcceptanceに必要な場合、親はTask fileの`## Darwin acceptance`にGo module相対のpackageとテスト名を列挙する。各項目は `` - `./internal/qualitygate:TestDarwinSysctlDecoding` `` の形式とし、Controllerが候補の`go-test`へ引き継ぐ。request-backed taskではcanonical request本文の`## Darwin acceptance`へ同じ形式で宣言し、Controllerは正規request recordに束縛された本文を要求sourceとして候補の`go-test`へ引き継ぐ。
+Darwin専用テストが必要なTaskは`## Darwin acceptance`へ `- \`./internal/qualitygate:TestDarwinSysctlDecoding\`` 形式で対象packageとテスト名を宣言する。request-backedの場合は正規request本文に置き、Controllerが正式な`go-test`へ引き継ぐ。
 
-## task filename
+## task filenameとdependency
 
-- 新規`IMPLEMENTATION_TASKS/*.md`は内容を表すsemantic slugだけをfilenameに使用し、sequence、priority、status、dependency、completion順、作成順、permission wait分類を表すnumeric prefixを付けない
-- 実行順序とpriorityは`IMPLEMENTATION_PLAN.local.md`のACTIVE / NEXT / BLOCKEDを正とし、dependencyは各task fileの`Dependencies`へpathで明示する。filenameや番号大小から推論しない
-- 割り込みtaskもsemantic filenameを追加してPlan上の位置だけを変更する。順序へ割り込むための番号、枝番、BLOCKED専用番号帯を作らない
-- この規則導入前から存在する番号付きtask fileはrenameせず、reopen時も既存filenameを維持する
-- numeric prefixを禁止するためだけの複雑なvalidatorは追加せず、新規taskを作る親instructionと生成経路でsemantic filenameを固定する
-- Planを含むtask scheduling listはunordered marker `-`を使い、source上の行順をpriorityとする。割り込み時は項目の移動・追加だけを行い、numeric markerを付けない
+- 新規Task filenameはsemantic slugとし、priority・順序・statusを表す番号を付けない。既存の番号付きTaskはrenameしない。過剰な命名validatorは追加しない。
+- PlanのACTIVE / NEXTはunordered `-` の出現順をpriorityとする。Task fileの`Dependencies`にはcorrectness上の真の先行要件だけをpathで記載し、予定順や番号からhard dependencyを推定しない。
+- `Dependencies`はoutstanding、`Fulfilled dependencies`は親Codexが成功確認後に明示移動したものだけとする。Taskが消えたことやGit履歴だけからfulfilledを推定しない。欠損・未知参照、cycle、self dependency、明示状態の矛盾はfail closedする。
 
-## task粒度とdispatch
+## parent orchestrationの改善
 
-- 原則は1 task file = 1つの独立review可能な変更責務 = 1個別commit候補
-- acceptanceが独立、別commit可能、protocol/transport/observability/Eval等で責務が異なる、個別rollback可能、一方だけpermission待ち、1 worker callへ複数大規模責務を渡す場合は分割する
-- 同一invariantを成立させる実装とintegration testは過剰分割しない
-- umbrella見出しをそのままGLMへ渡さず、具体task file 1件だけをdispatchする
-
-## parent orchestrationのproduct化判断
-
-- 登録・テスト・ビルド・インストール・finalize・Publication等の待機中は、進行中の処理を妨げない範囲で次の1 taskの確認または観測済み遅延の調査を進める。過度な並列化や、経過時間だけを理由とするpoll・親model再入は行わない。
-
-- 親Codexは通常作業中、自身が同種の手作業・定型操作・定型判断を繰り返していると気付いた時点で、それを親の手作業に残すべきか、glm-workerのcommand / machine interface / automationへ取り込むべきかを判断する。対象は実行制御、状態確認、復旧、安全確認、review補助を含み、command追加に限定しない
-- 反復可能で機械的に強制でき、Codex / Sol消費または反復障害を減らし、実装・保守コストに見合うと判断した場合は、ユーザーの個別指摘を待たず通常のPlan lifecycleへsemanticな改善taskを追加する。一度限り、低頻度、実装コストに見合わない候補、および高レバレッジな意味判断は機械化しない
-- 判断対象は親の手作業だけでなくworker / reviewer / test / build / lint / smoke / provider probe / polling / resume verification等のmachine executionを含む。同一または実質同一の高コスト処理がtask wall-clockの主要部を占める一次証拠を得た場合、worker/reviewerは現taskを勝手に縮退・拡張せず観測を重複なく報告し、親Codexが再発性、coverage維持、expensive real executionとcheap contract verificationの分離、費用対効果、false success・flakiness・観測不能riskから独立task化を判断する
-- 各taskの実行中に、Codex / Solの実消費、Quality Delta、不要なparent return、停止、retry、poll、再説明、重複validation、過大なmodel-visible output、観測欠損等の改善候補を新たに得た場合、親Codexはその意味のある状態遷移で再発性・削減効果・品質risk・実装費用を評価する。改善価値があれば現在taskへ混ぜず、現在task完了を待たずにparent-managedな独立taskとしてPlanの適切な優先位置へ追加し、通常のGo/No-Goと作業サイクルへ含める。現在taskを中断して優先するのは、継続すると証拠喪失・品質低下・大幅な追加消費が生じる場合だけとする
-- 意図どおり作動した安全停止、必要なSol semantic gate、単発の外部limit、測定可能なCodex削減または品質維持へ結び付かない違和感は、発生しただけで改善task化しない。ただし同じ境界が反復してCodex / Sol消費の主要因になる、または品質を保ったままround tripを削減できる一次証拠が得られた場合は再評価する
-- 初回棚卸しtaskを設けても、その完了をこの継続的判断義務の完了とは扱わない。この規則は通常orchestrationの恒久contractとして残す
+親Codexは反復する手動操作・高コストなmodel / test / review / retry等を観測したら、品質と保守費用を比較し、機械化に価値があるものだけを独立Task化してPlanで優先順位を決める。worker/reviewerは対象Taskを勝手に拡張せず観測を報告する。安全停止・必要なSol gate・単発の外部limitだけを根拠に改善Taskを増やさない。待機中に無関係な並列作業や反復pollで消費を増やさない。
 
 ## Goal起点のproject orchestration
 
-- Plan管理repositoryは`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を、project-levelのlosslessなGoal原文、append-only amendment、derived acceptance、bounded completion decisionの正本として使える。GOAL節がない既存repositoryのschedule・task lifecycle・CLI behaviorは変更しない
-- Goal受領時の初期task生成、priorityとdependencyに基づく選択、worker/reviewer結果・finding・user amendmentによる再計画、Goal acceptanceは親Codexのsemantic authorityとする。通常利用者へPlan fileの逐次編集、task選択、通常resume操作を要求しない
-- `glm-worker --project-state`はmodel呼出・state変更・repository lockを行わないread-only machine projectionとし、GOAL検証、schedule、dependency graph、next runnable、blocker、mechanical completion readinessを返す。Plan/Task編集、task昇格、replanning、completion acceptanceを行わない
-- task fileの`Dependencies`にあるpathはoutstanding、`Fulfilled dependencies`に親Codexが明示移動したpathだけをfulfilledとする。同じpathを両sectionへ置かず、current treeからtask fileが消えたこと、Git履歴にそのpathが存在すること、commit message・時刻・filename近接だけからfulfilledを推定しない。`Dependencies`のpathがcurrent treeに存在せずfulfilledにも明示されていない場合はunknownとしてfail closedする
-- prerequisite taskが通常のsemantic acceptance・必要validation・親action完了を経て成功完了した場合だけ、task file削除とschedule同期の前に、残存する各dependent taskでそのpathを`Dependencies`から`Fulfilled dependencies`へ親Codexが同一metadata同期として移す。No-Go、cancel、withdrawal、replanによる単純削除はfulfilledへ移さず、dependent側の要求自体を変更する必要がある場合は通常のtracked amendment/replanningとして扱う
-- self dependency、outstanding edgeのcycle、malformed GOAL / schedule / task contract、明示状態の矛盾はfail closedとし、`runnableなし`や`complete`へ縮退しない
-- Goal進行中は既存どおりACTIVE taskを一意に要求する。mechanical completion readinessは、current ACTIVEのlifecycleがcompleteかつpending parent actionなし、NEXT / BLOCKEDが空、unresolved findingなし、current snapshot対応validation成功、clean working treeを最低条件とし、semantic Goal acceptanceと必要なinstall判断を代替しない
-- 親Codexがmechanical readinessとGoal acceptanceを確認してbounded completion decisionをGOAL節へ記録したterminal Goalだけは、ACTIVE / NEXT / BLOCKEDが空のPlanを許可する。未完了GoalでACTIVE空を許可せず、単一worker PASSをproject completionへ昇格しない
-- 既存task state、checkpoint、parent action、worker/reviewer、Codex gate、rate-limit / Codex-limit recovery、telemetry、Plan/task guardを再利用し、Goal mode専用daemon、scheduler、state DB、第二正本を追加しない
-
-## priorityとhard dependency
-
-- PlanのACTIVE / NEXTにおけるsource上の順序は変更可能な実行priorityだけを表す
-- task fileの`Dependencies`は、そのtaskを正しく実装・検証するために先行taskの成果物が実際に必要なcorrectness prerequisiteだけを、`IMPLEMENTATION_TASKS/<semantic-or-existing-name>.md`形式のpathで明示する
-- Planで先行予定、作成順、番号大小、隣接taskという理由だけでdependencyを追加しない。priority変更はPlanだけを変更し、hard dependencyと同一視しない
+Goal modeの手順は`codex/instructions/goal-development.md`を正とする。PlanにGOALがない場合は通常Task lifecycleを維持する。Goalの分割・replanning・採否は親Codexのsemantic authorityであり、`glm-worker --project-state`はread-onlyのmechanical projectionとする。Goal進行中は一意のACTIVEを要し、未完了Goalをtasklessへ縮退しない。最終Taskのmechanical readiness、未解決依存・Findingなし、必要なvalidation・install、親Codexのsemantic acceptanceを満たしたときだけcompleted GOALと空scheduleを確定する。専用daemon・state DB・第二正本は追加しない。
 
 ## 再読contract
 
-新session、compaction後、rate limit/provider-unavailable後、長時間停止後、user追加指示後、`--resume`、internal TODO不一致時、reviewer差戻し後、false-complete再open時、acceptance最終確認時、ユーザーから指示適合性を確認された時は、コードへ触る前に次を読む。
-
-- `IMPLEMENTATION_RULES.md`全文
-- `IMPLEMENTATION_PLAN.local.md`全文
-- ACTIVEがある場合、そのtask file全文（Original instruction、Amendments、Resolved referencesを省略しない）
-- ACTIVEがある場合、そのtaskが明示参照したexceptional History見出しだけ
-
-NEXT taskは開始時まで全文を読む必要はない。
+新session、compaction、停止・再開、追加ユーザー要求、レビュー差戻し、最終受入確認では、コードへ触る前にRules / Plan全文、ACTIVEがあればそのTask全文と明示参照したHistory見出しを読む。NEXT Taskは開始時まで全文を読む必要はない。実際のauthority bootstrap経路は`codex/AGENTS.md`を正とする。
 
 ## worker / reviewer contract
 
-- workerとreviewerは同じACTIVE task fileを要求定義として独立に読む
-- reviewerは開始時にimplementer summaryだけでなくOriginal instruction、Amendments、Resolved references、Contract、Must not、Acceptance criteriaを確認する
-- reviewerは`実装 vs Contract`だけでなく`Contract vs Original instruction / Amendments`も比較し、derived contract作成時の要求欠落自体をreview対象にする
-- scripted runnerの期待packetだけでなくproduction prompt/dispatchとの因果をtestで固定する
-- review結果はdefect、user-visible/workflow impact、why Codex+GLM missed it、要求由来/実装由来複雑性、preventionを区別する。原因層はparent orchestration、requirement preservation、worker、reviewer、Sol gate、production wiring、test/scenario、cross-cutting invariant compositionから一次証拠で分類する
+workerと独立reviewerは同じACTIVE Taskをそれぞれ原文から読み、reviewerは実装とderived Contractの一致だけでなくContractとOriginal instruction / Amendmentsの欠落も評価する。production prompt/dispatchとの因果をtestで検証する。Review結果は欠陥・影響・原因層・再発防止を混同しない。
 
 ## blocked taskのactivation
 
-- BLOCKED / USER_PERMISSION_WAIT taskはpermission受領だけでACTIVEへ移さない
-- 許可原文を`Amendments`へlosslessに追記し、prerequisite evaluation artifactを読んだ上で、concrete `Contract`、`Must not`、`Acceptance criteria`を確定してからACTIVE候補にする
-- placeholder contractのままGLMへdispatchしない
+BLOCKED / USER_PERMISSION_WAITは許可だけではACTIVE化しない。許可原文をAmendmentsへ追記し、前提証拠を確認し、具体的なContract / Must not / Acceptance criteriaを確定してから候補とする。
 
 ## 親Codex専有metadata
 
-次を親Codexだけが編集するtracked surfaceとする。
-
-- `IMPLEMENTATION_RULES.md`
-- `IMPLEMENTATION_PLAN.local.md`
-- `IMPLEMENTATION_TASKS/*.md`
-- `IMPLEMENTATION_HISTORY.md`
-
-GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をstructured resultで返す。親がmodel停止中に行う更新だけをparent-managed deltaとして扱い、model-call中の機械的不変性/fail-closedは`control:parent-metadata-integrity`を正とする。pathごとの分岐を増殖させずparent-managed implementation metadataの単一集合へ収束する。Historyがこの集合に残る理由は、current BLOCKED taskから明示参照される少数の非diff decisionを保護するためであり、通常completion ledgerへ戻す理由にはしない。
+`IMPLEMENTATION_RULES.md`、`IMPLEMENTATION_PLAN.local.md`、`IMPLEMENTATION_TASKS/*.md`、`IMPLEMENTATION_HISTORY.md`は親Codexだけが編集する。GLM worker/reviewerは変更せず提案だけを返す。model-call中の整合性は`control:parent-metadata-integrity`を正とし、Guardを迂回しない。
 
 ## task完了
 
-ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。そのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求を保持するのは、その要求内容を含むTask fileの版が実際にコミットされていた場合に限る。Taskの新規登録やAmendments追記が未コミットのまま完了Task削除と同じコミットに含まれた場合、その版の原要求はGit履歴に残らないため、Controllerが固定したparent-source revision / ProjectSnapshot archiveを回収元とする。実装diffはGit履歴、validation・runtime/model evidenceはCIとbundle / telemetryを正とする。 GOALのないPlanでNEXTが空なら、完了Taskを削除してACTIVEも空にし、残るBLOCKED / USER_PERMISSION_WAITは保持する。存在しない後続Taskを作らず、Taskがなくなったことを未完了GoalやBLOCKEDの完了へ読み替えない。新たなTaskの実行には従来どおり一意のACTIVEを要求する。
-
-Goal modeの最終taskだけは、上記Goal起点project orchestrationのterminal条件を満たす場合に限り、NEXT昇格ではなくcompleted GOALと空scheduleへ同期する。Goal未完了、mechanical readiness未充足、semantic acceptance未確定ではこの例外を使わない。
-
-Historyを更新できるのは、完了結果そのものではなく、そのtaskがproduction diffへ表現されないcross-task decisionを新たに確定し、将来のtracked taskがそのdecisionをactivation / adoption条件として明示参照する場合だけとする。その場合もdecision、最小根拠、再評価境界だけを残し、commit / validation chronologyや長い診断を複製しない。参照taskがなくなったrecordは削除する。
+- 成功確認後、残存Taskのhard prerequisiteは`Dependencies`から`Fulfilled dependencies`へ同じmetadata同期で移す。No-Go・cancel・withdrawalによる削除ではfulfilledにしない。
+- 完了Task fileを削除しPlanを同期する。非GoalでNEXTがなければACTIVEも空にし、BLOCKEDを保持する。存在しない後続Taskを作らず、実行開始時は一意のACTIVEを要求する。Goal modeの空scheduleはGoalのcompletion条件に従う。
+- 最終HEADとremote同期は`control:remote-completion-sync`を正とする。通常の完了証跡はHistoryへ追記しない。コミットされた要求版はGit履歴から回収し、未コミットのTask登録・Amendments版が削除と同じcommitに含まれる場合はControllerのparent-source revision / ProjectSnapshot archiveを正とする。diffはGit、validation・runtime evidenceはCI / bundle / telemetryを正とする。
 
 ## install / validation
 
-- GLMにcommit/pushさせない
-- runtimeへ影響するtaskはimplementation、test/review後、適切な区切りで`install.sh`本配置、installed/source一致、そのinstalled状態で必要なproduction smokeまでをtask completion flowとして行う。複数task分を未配置のまま後続実運用へ進めず、最終taskまでinstall義務を延期しない
-- source-only metadata変更はruntime install対象から除外する
-
-## Greptile日次review
-
-- Greptile日次reviewは本repository固有の補助review orchestrationであり、`glm-worker` production機能へ統合しない
-- 日次schedulerは`codex-config` project所属のLuna Low専用taskだけを起動し、review入力precondition、Standard CLI 1回実行、JSON/status検証、finding正規化、親実装taskへの1回送信、正常時のcheckpoint更新という機械処理だけを担当する
-- 専用taskはfindingの最終採否、設計判断、自動修正、Task/Plan編集を行わない。findingの有効性・重複・Task化とGreptile継続利用価値は親CodexがGit現物と複数runの傾向から判断する
-- findingがあるrunは親taskへの送信成功前にcheckpointを進めず、送信失敗時は次回runで最後の成功地点からcatch upする。finding 0件は親taskを起こさずcheckpointだけを正常更新できる
-- scheduler移行・prompt変更の確認だけを理由にGreptile CLIを実行してcreditを消費せず、旧taskと新taskへautomationを二重登録しない
+GLMにcommit/pushさせない。runtime変更はtest/review後、後続の実運用へ進む前の適切な区切りで`install.sh`による本配置、installed/source一致と必要なproduction smokeを確認する。source-only metadata変更はinstall不要。
 
 ## repository automation authority
 
-- ユーザーは親Codexがこのrepositoryに属するCodex app automationを作成・更新・削除することを恒久的に許可している。rate-limit自動再開、Codex limit wake、review scheduling等、現在taskまたはtracked repository workflowの実行に必要なautomationは、automation単位の追加確認を要求せず管理してよい
-- 2026-08-31のユーザー指示により、この許可は特定日時・一回の発火・現在taskだけに限定しない。24時間継続して開発するという本repositoryの目的に沿って、現在および将来の許可済み開発taskについて、rate limit等による停止後の再開automationの作成・再作成・更新・再予約を恒久的に許可する。繰り返し制限に到達しても、同じ許可を日時や予約単位で取り直さない
-- 再開後は、そのtaskに既に許可された実装・独立review・Sol判断・validation・Plan/task metadata同期・installまで継続してよい。各発火を別の未許可作業と扱わず、automation promptには本節の恒久許可と対象task・checkpoint・停止境界を明示する。一回限りscheduleは重複実行を避ける予約形式であり、ユーザー許可の有効期限を意味しない
-- automation authorityはautomationのlifecycle管理だけを許可する。automation promptが後で実行できる操作は、その発火時に適用されるユーザー指示とrepository authorityのscopeを超えない。別repository、credential操作、購入、または無関係な外部変更へ拡張しない
-- 一回限りの再開automationは保存済みtask ID・同一checkout・resume可能stateを発火時に再検証し、条件不一致ならresumeせず削除または停止する。重複予約を作らず、完了・別state移行後は不要なautomationを削除または停止する
-- 恒久許可はtaskの開始条件・feasibility gate・品質gate・ユーザー指定の停止境界を解除しない。「現在ACTIVE完了後は次taskを開始せず停止」のような指示は引き続き守る。Codex app等の外部安全審査をこのfileで無効化・迂回せず、同じ許可済みscopeの拒否が再発した場合は、拒否理由と恒久許可の適用関係を確認し、実際に追加権限が必要な部分だけを報告する
+ユーザーは本repositoryの許可済み作業について、親Codexによるautomationの作成・更新・削除・停止後再予約を恒久的に許可している（2026-08-31）。同じ範囲・再開予約ごとに許可を取り直さない。ただし他repository・credential・購入・無関係な操作へ拡張せず、task固有の停止境界・feasibility / quality gate・外部の安全審査を解除しない。再開時はtaskとcheckpoint・repositoryを再検証し、不要な重複予約を残さない。
 
-### 恒久許可の原指示（2026-08-31）
-
-直前の確認に対し、ユーザーは日時・現在taskに限らない恒久許可として次の原文を回答した。
+原指示（権限の範囲を示すlossless source）:
 
 ```text
 いや今後永続的に許可するよ
@@ -210,16 +88,12 @@ Historyを更新できるのは、完了結果そのものではなく、そのt
 
 ## machine-only data原則
 
-glm-worker/Codex/GLMだけが生成・消費するmachine dataを長期公開APIとして扱わない。旧parser、migration、fallback、deprecated推定、version bridge、dual protocolを「一応読める」だけで恒久追加しない。current schema validationは厳格に保ち、old versionは用途に応じreject/skip/reset/rebuild/delete/resume不能を選ぶ。active task保護と恒久互換を混同しない。
+glm-worker/Codex/GLM専用のmachine dataに後方互換を恒久追加しない。旧schemaは用途に応じreject/skip/reset/rebuild/delete/resume不能とし、current schemaを厳格に検証する。active task保護と恒久互換を混同しない。
 
 ## repository structure invariants
 
-- Go commandは`cmd/<name>/main.go`を起動処理だけの薄いentrypointとし、feature固有のCLI分岐・command dispatch・設定解析・永続化・HTTP handlingを`main`へ置かない。実装責務は`internal/`配下のownerが持ち、この構造を`harnesslint`のentrypoint-thin ruleがAST構造判定で機械的に強制する
-- `glm-worker`の成功stdoutは単一のmachine-readable JSON objectとし、失敗時はstdoutを空に保ちstructured error JSONをstderrへ出す。help/bootstrap等のearly-return pathも含め、この契約を`glm-worker`内のsingle-object validatorが実stdoutへのrelease前に機械的に強制する
+Go commandの`cmd/<name>/main.go`は薄いentrypointに限定し、実装ownerは`internal/`とする（`harnesslint`のentrypoint-thin rule）。`glm-worker`の成功stdoutは単一JSON object、失敗時stdoutは空・stderrにstructured error JSONとし、既存のsingle-object validatorを正とする。
 
 ## 禁止
 
-- taskごとの独自state DB、filesystem watcher、daemonを追加しない
-- task fileをHistoryや進捗日記にしない
-- Planとtask fileへ詳細仕様を二重管理しない
-- ユーザー許可のない実Sol High本番A/Bとbenchmark目的の追加AI callを行わない。GLM worker/reviewerへGit remote writeを許可しない
+Task専用state DB / watcher / daemon、Task fileへの進捗日記、PlanとTaskの詳細仕様二重化、無許可の実Sol High A/Bや追加benchmark AI call、GLM worker/reviewerのGit remote writeを禁止する。
