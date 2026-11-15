@@ -9,8 +9,8 @@
 - Git / working treeの現物
 - `IMPLEMENTATION_RULES.md`
 - `IMPLEMENTATION_PLAN.local.md`
-- Planが示すACTIVE `IMPLEMENTATION_TASKS/*.md`
-- ACTIVE taskが明示参照する`IMPLEMENTATION_HISTORY.md`のexceptional decision見出し
+- PlanにACTIVEがある場合、その`IMPLEMENTATION_TASKS/*.md`
+- ACTIVEがある場合、そのtaskが明示参照する`IMPLEMENTATION_HISTORY.md`のexceptional decision見出し
 - conversation context、compaction summary、internal TODO
 
 conversation context、compaction summary、internal TODOはsource of truthではなくcacheとして扱う。Git現物とPlan/Taskが矛盾する場合、親Codexが現物確認後にPlan/Taskを修正してから続行する。
@@ -82,7 +82,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 
 ## task file必須構造
 
-全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`を持つ。未解決findingがある場合だけ`Review findings`を追加する。schedule stateはPlanだけを正とし、task fileへ`Status`や`Current boundary`を持たせない。Goal modeで成功済みdependency edgeを保持する必要があるtaskだけはoptional `Fulfilled dependencies`を持てる。欠落はfulfilledなしとして扱う。
+全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`を持つ。未解決findingがある場合だけ`Review findings`を追加する。schedule stateはPlanだけを正とし、task fileへ`Status`や`Current boundary`を持たせない。成功済みdependency edgeを保持する必要があるtaskは、Goal modeの有無を問わずoptional `Fulfilled dependencies`を持てる。欠落はfulfilledなしとして扱う。
 
 Task-backed taskでDarwin専用テストがAcceptanceに必要な場合、親はTask fileの`## Darwin acceptance`にGo module相対のpackageとテスト名を列挙する。各項目は `` - `./internal/qualitygate:TestDarwinSysctlDecoding` `` の形式とし、Controllerが候補の`go-test`へ引き継ぐ。request-backed taskではcanonical request本文の`## Darwin acceptance`へ同じ形式で宣言し、Controllerは正規request recordに束縛された本文を要求sourceとして候補の`go-test`へ引き継ぐ。
 
@@ -109,10 +109,8 @@ Task-backed taskでDarwin専用テストがAcceptanceに必要な場合、親は
 - 親Codexは通常作業中、自身が同種の手作業・定型操作・定型判断を繰り返していると気付いた時点で、それを親の手作業に残すべきか、glm-workerのcommand / machine interface / automationへ取り込むべきかを判断する。対象は実行制御、状態確認、復旧、安全確認、review補助を含み、command追加に限定しない
 - 反復可能で機械的に強制でき、Codex / Sol消費または反復障害を減らし、実装・保守コストに見合うと判断した場合は、ユーザーの個別指摘を待たず通常のPlan lifecycleへsemanticな改善taskを追加する。一度限り、低頻度、実装コストに見合わない候補、および高レバレッジな意味判断は機械化しない
 - 判断対象は親の手作業だけでなくworker / reviewer / test / build / lint / smoke / provider probe / polling / resume verification等のmachine executionを含む。同一または実質同一の高コスト処理がtask wall-clockの主要部を占める一次証拠を得た場合、worker/reviewerは現taskを勝手に縮退・拡張せず観測を重複なく報告し、親Codexが再発性、coverage維持、expensive real executionとcheap contract verificationの分離、費用対効果、false success・flakiness・観測不能riskから独立task化を判断する
-- 各taskの実行中に、Codex / Solの実消費、Quality Delta、不要なparent return、停止、retry、poll、再説明、重複validation、過大なmodel-visible output、観測欠損等の改善候補を新たに得た場合、親Codexはその意味のある状態遷移で再発性・削減効果・品質risk・実装費用を評価する。改善価値があれば現在taskへ混ぜず、現在task完了を待たずにparent-managedな独立taskとして022より前のPlanへ追加し、通常のGo/No-Goと作業サイクルへ含める。現在taskを中断して優先するのは、継続すると証拠喪失・品質低下・大幅な追加消費が生じる場合だけとする
+- 各taskの実行中に、Codex / Solの実消費、Quality Delta、不要なparent return、停止、retry、poll、再説明、重複validation、過大なmodel-visible output、観測欠損等の改善候補を新たに得た場合、親Codexはその意味のある状態遷移で再発性・削減効果・品質risk・実装費用を評価する。改善価値があれば現在taskへ混ぜず、現在task完了を待たずにparent-managedな独立taskとしてPlanの適切な優先位置へ追加し、通常のGo/No-Goと作業サイクルへ含める。現在taskを中断して優先するのは、継続すると証拠喪失・品質低下・大幅な追加消費が生じる場合だけとする
 - 意図どおり作動した安全停止、必要なSol semantic gate、単発の外部limit、測定可能なCodex削減または品質維持へ結び付かない違和感は、発生しただけで改善task化しない。ただし同じ境界が反復してCodex / Sol消費の主要因になる、または品質を保ったままround tripを削減できる一次証拠が得られた場合は再評価する
-- 105後・022前のCodex効率再評価はこの随時判断の代替ではなくsafety netとする。同評価では、それまでのtask packet、telemetry、Codex rollout、停止/retry/fix/review/validation履歴を横断し、作業中に観測したがTask化しなかった候補を含めて取りこぼしがないか再精査する。新しい実行可能Findingがあれば022より前へ追加し、その完了後も必要な再評価を続ける
-- 022完了まではparent-only Codex効率中間再評価を最大5件のtask完了ごとに実行し、false-complete、正規復旧不能、または大きな重複model消費を伴う新規incident時は前倒しする。各回でCodex Reduction / Quality Delta、未Task化Finding、Plan priorityを再評価し、完了同期時に次回checkpointを022より前へ再配置する。105後の最終再評価は別に維持する
 - 初回棚卸しtaskを設けても、その完了をこの継続的判断義務の完了とは扱わない。この規則は通常orchestrationの恒久contractとして残す
 
 ## Goal起点のproject orchestration
@@ -139,8 +137,8 @@ Task-backed taskでDarwin専用テストがAcceptanceに必要な場合、親は
 
 - `IMPLEMENTATION_RULES.md`全文
 - `IMPLEMENTATION_PLAN.local.md`全文
-- ACTIVE task file全文（Original instruction、Amendments、Resolved referencesを省略しない）
-- ACTIVE taskが明示参照したexceptional History見出しだけ
+- ACTIVEがある場合、そのtask file全文（Original instruction、Amendments、Resolved referencesを省略しない）
+- ACTIVEがある場合、そのtaskが明示参照したexceptional History見出しだけ
 
 NEXT taskは開始時まで全文を読む必要はない。
 
@@ -171,7 +169,7 @@ GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をs
 
 ## task完了
 
-ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。Goal modeでそのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。 GOALのないPlanでNEXTが空なら、完了Taskを削除してACTIVEも空にし、残るBLOCKED / USER_PERMISSION_WAITは保持する。存在しない後続Taskを作らず、Taskがなくなったことを未完了GoalやBLOCKEDの完了へ読み替えない。新たなTaskの実行には従来どおり一意のACTIVEを要求する。
+ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。そのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。 GOALのないPlanでNEXTが空なら、完了Taskを削除してACTIVEも空にし、残るBLOCKED / USER_PERMISSION_WAITは保持する。存在しない後続Taskを作らず、Taskがなくなったことを未完了GoalやBLOCKEDの完了へ読み替えない。新たなTaskの実行には従来どおり一意のACTIVEを要求する。
 
 Goal modeの最終taskだけは、上記Goal起点project orchestrationのterminal条件を満たす場合に限り、NEXT昇格ではなくcompleted GOALと空scheduleへ同期する。Goal未完了、mechanical readiness未充足、semantic acceptance未確定ではこの例外を使わない。
 
