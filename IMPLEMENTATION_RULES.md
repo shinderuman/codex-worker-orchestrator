@@ -17,7 +17,7 @@ conversation context、compaction summary、internal TODOはsource of truthで�
 
 ## 要求受領とtracked化
 
-- taskの意味契約に影響する新規ユーザー要求はconversation contextだけに保持したまま作業を続けず、compaction、GLM call、長時間調査、実装開始より前に親Codexがtrackedな正へ固定する。「後でPlanへまとめる」は禁止する。開始・再開・停止等のrun-controlだけの指示は`codex/instructions/task-request-boundary.md`に従い、Taskの`Amendments`へ転記しない
+- taskの意味契約に影響する新規ユーザー要求はconversation contextだけに保持したまま作業を続けず、compaction、GLM call、長時間調査、実装開始より前に親Codexがtrackedな正へ固定する。「後でPlanへまとめる」は禁止する。開始・再開・停止等のrun-controlだけの指示は`codex/instructions/task-request-boundary.md`に従い、ユーザーがdurable task contractへの反映を明示した場合を除きTaskの`Amendments`へ転記しない
 - tracked化は独立task作成やACTIVE切替と同義ではない。要求内容をparent-managed surface自体へ完全に表現できるか、現ACTIVEの同一責務か、独立taskかを別々に判断する
 - 現ACTIVEそのものへの追加指示は、新task分離を判断する前にACTIVE taskの`Amendments`へ原文を時系列追記する。同一責務のacceptance追加は同じACTIVEで継続し、独立責務は新taskへ分割し、別問題を優先実装する場合だけPlan上のACTIVEを切り替える
 - 各taskの`Original instruction`はimmutableなlossless requirement sourceとし、契機となったユーザー/親Codexのtask該当指示を可能な限り原文のまま保存する。要約、重複除去、理由の省略、実装TODOだけへの圧縮、「意味は同じ」という書換えを禁止する
