@@ -353,3 +353,33 @@ func TestReadRolloutDigestRejectsSizeDrift(t *testing.T) {
 		t.Fatalf("size drift: %v", err)
 	}
 }
+
+func TestDuplicateContentRechecksBeforeReportingDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	first := chainWrite(t, dir, "first.jsonl", "aaa")
+	second := chainWrite(t, dir, "second.jsonl", "aaa")
+	members := []Rollout{
+		{AbsolutePath: first, HomeRelative: "sessions/first.jsonl"},
+		{AbsolutePath: second, HomeRelative: "sessions/second.jsonl"},
+	}
+	read := func(path string, size int64) (cachedRolloutDigest, error) {
+		result, err := readRolloutDigest(path, size)
+		if err != nil {
+			return cachedRolloutDigest{}, err
+		}
+		if path == second {
+			if err := os.WriteFile(first, []byte("bbb"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			changedAt := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+			if err := os.Chtimes(first, changedAt, changedAt); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return result, nil
+	}
+	reason := duplicateContentWithReader(members, read)
+	if !strings.Contains(reason, "sessions/first.jsonl: rollout file changed after digest read") {
+		t.Fatalf("stale duplicate digest was reported instead of change: %q", reason)
+	}
+}

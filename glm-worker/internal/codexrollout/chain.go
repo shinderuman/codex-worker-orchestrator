@@ -109,6 +109,12 @@ func duplicateContentWithReader(ordered []Rollout, read func(string, int64) (cac
 				return "rollout chain candidate cannot be read for duplicate comparison: " + ordered[i].HomeRelative + ": " + err.Error()
 			}
 			if left.sum == right.sum {
+				if _, err := rolloutDigestAt(ordered[i], sizes[i], i, cache, read); err != nil {
+					return "rollout chain candidate cannot be read for duplicate comparison: " + ordered[i].HomeRelative + ": " + err.Error()
+				}
+				if _, err := rolloutDigestAt(ordered[j], sizes[j], j, cache, read); err != nil {
+					return "rollout chain candidate cannot be read for duplicate comparison: " + ordered[i].HomeRelative + ": " + err.Error()
+				}
 				return "rollout chain candidates duplicate identical content: " + ordered[i].HomeRelative + ", " + ordered[j].HomeRelative
 			}
 		}
