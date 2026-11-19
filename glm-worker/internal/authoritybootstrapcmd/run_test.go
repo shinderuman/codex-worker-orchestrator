@@ -336,6 +336,8 @@ func TestLoadSnapshotRejectsMalformedIdleSchedule(t *testing.T) {
 		"active GOAL without Task": "## GOAL\nstatus: active\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n",
 		"completed GOAL missing section": "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## NEXT\n",
 		"completed GOAL duplicate ACTIVE": "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n",
+		"missing BLOCKED Task": "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/missing.md`\n",
+		"duplicate BLOCKED Task": "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/missing.md`\n- `IMPLEMENTATION_TASKS/missing.md`\n",
 	}
 	for name, plan := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -359,5 +361,15 @@ func TestLoadStableSnapshotRejectsIdlePlanChangingDuringRead(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "changed while reading snapshot") {
 		t.Fatalf("mixed idle authority error = %v", err)
+	}
+}
+
+func TestLoadSnapshotRejectsUnscheduledTaskDuringIdle(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, rulesFile, "rules\n")
+	writeTestFile(t, root, planFile, "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n")
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/unregistered.md", "# unregistered\n")
+	if _, err := buildBootstrapFromRoot(root); err == nil || !strings.Contains(err.Error(), "unscheduled") && !strings.Contains(err.Error(), "列挙") {
+		t.Fatalf("idle bootstrap admitted unscheduled Task: %v", err)
 	}
 }

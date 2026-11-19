@@ -15,6 +15,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type Output struct {
@@ -208,6 +209,13 @@ func readSnapshot(root string) (snapshot, error) {
 	}
 	if len(prepared.Active) == 0 {
 		if err := prepared.Schedule.ValidateIdle(); err != nil {
+			return snapshot{}, err
+		}
+		entries, err := taskcontract.EnumerateTaskCorpus(cfg.RepoRoot)
+		if err != nil {
+			return snapshot{}, err
+		}
+		if err := repositoryproject.ValidateClosure(prepared.Schedule, entries, "idle bootstrap"); err != nil {
 			return snapshot{}, err
 		}
 		if err := controller.ValidateIdleBootstrap(cfg); err != nil {
