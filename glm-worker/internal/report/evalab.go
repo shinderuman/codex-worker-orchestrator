@@ -35,8 +35,5 @@ func PrintEvalABWorktreeIdentity(path string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return machinecli.WriteJSON(stdout, map[string]any{
-		"worktree_path": filepath.Clean(path),
-		"worktree_identity": identity,
-	})
+	return machinecli.WriteJSON(stdout, map[string]any{"worktree_path": filepath.Clean(path), "worktree_identity": identity})
 }
