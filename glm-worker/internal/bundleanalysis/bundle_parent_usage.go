@@ -274,7 +274,6 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 	tokens.TotalTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldTotal, analysisAnchorTotal, segments, tokens.UnknownFields)
 	for _, segment := range segments {
 		if segment.end == nil {
-			// Without an anchor in this member, no counter continuity proves full coverage.
 			tokens.Status = analysisStatusUnknown
 			break
 		}

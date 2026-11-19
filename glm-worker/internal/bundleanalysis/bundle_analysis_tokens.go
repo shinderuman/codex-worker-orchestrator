@@ -19,7 +19,6 @@ func analysisTokenSegments(scan bundleRolloutScan, baseline, end analysisRollout
 			continue
 		}
 		if last == nil {
-			// An intervening rollout is still part of the interval even without token anchors.
 			segments = append(segments, analysisTokenSegment{file: file, source: scan.fileSources[file]})
 			continue
 		}
