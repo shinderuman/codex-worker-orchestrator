@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-func TestCleanCutoverRejectsRegisteredParentActionRejectionRoots(t *testing.T) {
-	root := fixtureRoot(t)
-	writeFixture(t, root, parentActionMetadataPath, `package parentactioncmd
+const currentParentActionCutoverFixture = `package parentactioncmd
 
 type parentActionExecutionKind uint8
 type parentActionCommandDescriptor struct {
@@ -18,75 +16,101 @@ type parentActionCommandDescriptor struct {
 const (
 	parentActionExecutionUnsupported parentActionExecutionKind = iota
 	parentActionExecutionCurrent
-	parentActionExecutionLegacy
-	parentActionExecutionGitEvidence
+	parentActionExecutionSpecial
+	parentActionExecutionRetired
 )
 var parentActionCommands = map[string]parentActionCommandDescriptor{
 	"current": {Action: "current", Execute: parentActionExecutionCurrent},
-	"legacy-kind": {Action: "legacy-kind", Execute: parentActionExecutionLegacy},
-	"legacy-action": {Action: "legacy-action", Execute: parentActionExecutionGitEvidence},
+	"special": {Action: "special", Execute: parentActionExecutionSpecial},
 }
-func executeParentActionCommand(descriptor parentActionCommandDescriptor) error {
-	execution := descriptor.Execute
-	if err := denyRetiredSurface(execution, descriptor.Action); err != nil {
-		return err
-	}
-	return nil
+func executeParentActionCommand() {
+	executeStandardParentAction()
+	executeSpecialParentAction()
 }
-func denyRetiredSurface(kind parentActionExecutionKind, surface string) error {
-	if !matchesRetiredSurface(kind, surface) {
-		return nil
-	}
-	return retiredSurfaceError()
+func executeStandardParentAction() {
+	executeInterfaceParentAction()
 }
-func matchesRetiredSurface(kind parentActionExecutionKind, surface string) bool {
-	switch kind {
-	case parentActionExecutionLegacy:
-		return true
-	case parentActionExecutionGitEvidence:
-		return surface == "legacy-action"
+func executeInterfaceParentAction() {
+	switch execution {
+	case parentActionExecutionCurrent:
+		return executeCurrent(), true
 	default:
-		return false
+		return nil, false
 	}
 }
-`)
-	violations, err := scanCleanCutover(root, []string{parentActionMetadataPath})
-	if err != nil {
-		t.Fatalf("scanCleanCutover: %v", err)
+func executeSpecialParentAction() {
+	if execution == parentActionExecutionSpecial {
+		return executeSpecial()
 	}
-	if len(violations) != 2 {
-		t.Fatalf("violations = %d, want 2: %+v", len(violations), violations)
+	return usageError()
+}
+`
+
+func TestCleanCutoverRejectsRegisteredParentActionRejectionRoots(t *testing.T) {
+	cases := []struct {
+		name string
+		source string
+		message string
+	}{
+		{
+			name: "unsupported tombstone",
+			source: strings.Replace(currentParentActionCutoverFixture,
+				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
+				"\"special\": {Action: \"special\", Execute: parentActionExecutionUnsupported},", 1),
+			message: "no live executable dispatch",
+		},
+		{
+			name: "registered kind with no dispatch",
+			source: strings.Replace(currentParentActionCutoverFixture,
+				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
+				"\"retired\": {Action: \"retired\", Execute: parentActionExecutionRetired},", 1),
+			message: "no live executable dispatch",
+		},
+		{
+			name: "error only dispatch",
+			source: strings.Replace(
+				strings.Replace(currentParentActionCutoverFixture,
+					"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
+					"\"retired\": {Action: \"retired\", Execute: parentActionExecutionRetired},", 1),
+				"return usageError()",
+				"if execution == parentActionExecutionRetired { return retiredError() }; return usageError()", 1),
+			message: "no live executable dispatch",
+		},
+		{
+			name: "retired alias mismatch",
+			source: strings.Replace(currentParentActionCutoverFixture,
+				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
+				"\"retired\": {Action: \"special\", Execute: parentActionExecutionSpecial},", 1),
+			message: "same canonical action",
+		},
+		{
+			name: "terminal tombstone",
+			source: strings.Replace(currentParentActionCutoverFixture,
+				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
+				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial, TerminalExecute: parentActionExecutionRetired},", 1),
+			message: "no live terminal dispatch",
+		},
 	}
-	for _, violation := range violations {
-		if violation.Rule != cleanCutoverRule {
-			t.Fatalf("rule = %q, want %q", violation.Rule, cleanCutoverRule)
-		}
-		if violation.Path != parentActionMetadataPath {
-			t.Fatalf("path = %q, want %q", violation.Path, parentActionMetadataPath)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := fixtureRoot(t)
+			writeFixture(t, root, parentActionMetadataPath, tc.source)
+			violations, err := scanCleanCutover(root, []string{parentActionMetadataPath})
+			if err != nil {
+				t.Fatalf("scanCleanCutover: %v", err)
+			}
+			if len(violations) != 1 || violations[0].Rule != cleanCutoverRule ||
+				violations[0].Path != parentActionMetadataPath ||
+				!strings.Contains(violations[0].Message, tc.message) {
+				t.Fatalf("violations = %+v, want one %q rule", violations, tc.message)
+			}
+		})
 	}
 }
 
 func TestCleanCutoverAllowsCurrentParentActionRegistry(t *testing.T) {
 	root := fixtureRoot(t)
-	writeFixture(t, root, parentActionMetadataPath, `package parentactioncmd
-
-type parentActionExecutionKind uint8
-type parentActionCommandDescriptor struct {
-	Action string
-	Execute parentActionExecutionKind
-}
-const parentActionExecutionCurrent parentActionExecutionKind = 1
-var parentActionCommands = map[string]parentActionCommandDescriptor{
-	"current": {Action: "current", Execute: parentActionExecutionCurrent},
-}
-func executeParentActionCommand(descriptor parentActionCommandDescriptor) error {
-	if err := validateCurrentInput(); err != nil {
-		return err
-	}
-	return nil
-}
-`)
+	writeFixture(t, root, parentActionMetadataPath, currentParentActionCutoverFixture)
 	violations, err := scanCleanCutover(root, []string{parentActionMetadataPath})
 	if err != nil {
 		t.Fatalf("scanCleanCutover: %v", err)
@@ -96,75 +120,34 @@ func executeParentActionCommand(descriptor parentActionCommandDescriptor) error 
 	}
 }
 
-func TestCleanCutoverFixRemovesOnlyRejectedRegistryRootsAndConverges(t *testing.T) {
+func TestCleanCutoverRejectsUnprovenDispatch(t *testing.T) {
 	root := fixtureRoot(t)
-	writeFixture(t, root, parentActionMetadataPath, `package parentactioncmd
+	source := strings.Replace(currentParentActionCutoverFixture,
+		"executeSpecialParentAction()", "missingSpecialDispatch()", 1)
+	writeFixture(t, root, parentActionMetadataPath, source)
+	violations, err := scanCleanCutover(root, []string{parentActionMetadataPath})
+	if err != nil {
+		t.Fatalf("scanCleanCutover: %v", err)
+	}
+	if len(violations) != 1 || !strings.Contains(violations[0].Message, "not provable") {
+		t.Fatalf("violations = %+v, want fail-closed dispatch proof", violations)
+	}
+}
 
-type parentActionExecutionKind uint8
-type parentActionCommandDescriptor struct {
-	Action string
-	Execute parentActionExecutionKind
-}
-const (
-	parentActionExecutionCurrent parentActionExecutionKind = iota
-	parentActionExecutionLegacy
-)
-var parentActionCommands = map[string]parentActionCommandDescriptor{
-	"current": {Action: "current", Execute: parentActionExecutionCurrent},
-	"legacy": {Action: "legacy", Execute: parentActionExecutionLegacy},
-}
-func executeParentActionCommand(descriptor parentActionCommandDescriptor) error {
-	execution := descriptor.Execute
-	if err := cutoverGuard(execution, descriptor.Action); err != nil {
-		return err
+func TestCleanCutoverLintIsReportOnly(t *testing.T) {
+	root := fixtureRoot(t)
+	source := strings.Replace(currentParentActionCutoverFixture,
+		"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
+		"\"special\": {Action: \"special\", Execute: parentActionExecutionUnsupported},", 1)
+	writeFixture(t, root, parentActionMetadataPath, source)
+	if violations, err := scanCleanCutover(root, []string{parentActionMetadataPath}); err != nil || len(violations) != 1 {
+		t.Fatalf("scan before unchanged source: %+v, %v", violations, err)
 	}
-	return nil
-}
-func cutoverGuard(kind parentActionExecutionKind, surface string) error {
-	if !retiredKind(kind, surface) {
-		return nil
-	}
-	return retiredSurfaceError()
-}
-func retiredKind(kind parentActionExecutionKind, surface string) bool {
-	switch kind {
-	case parentActionExecutionLegacy:
-		return true
-	default:
-		return false
-	}
-}
-`)
-	paths := []string{parentActionMetadataPath}
-	if err := fixCleanCutover(root, paths); err != nil {
-		t.Fatalf("fixCleanCutover: %v", err)
-	}
-	first, err := readRegularFile(root, parentActionMetadataPath)
+	after, err := readRegularFile(root, parentActionMetadataPath)
 	if err != nil {
-		t.Fatalf("read fixed file: %v", err)
+		t.Fatal(err)
 	}
-	fixed := string(first)
-	if !strings.Contains(fixed, `"current"`) {
-		t.Fatalf("current registry entry was removed:\n%s", fixed)
-	}
-	if strings.Contains(fixed, `"legacy"`) {
-		t.Fatalf("rejection-only registry entry remains:\n%s", fixed)
-	}
-	violations, err := scanCleanCutover(root, paths)
-	if err != nil {
-		t.Fatalf("scan after fix: %v", err)
-	}
-	if len(violations) != 0 {
-		t.Fatalf("violations after fix: %+v", violations)
-	}
-	if err := fixCleanCutover(root, paths); err != nil {
-		t.Fatalf("second fixCleanCutover: %v", err)
-	}
-	second, err := readRegularFile(root, parentActionMetadataPath)
-	if err != nil {
-		t.Fatalf("read second fixed file: %v", err)
-	}
-	if string(second) != fixed {
-		t.Fatalf("fix did not converge\nfirst:\n%s\nsecond:\n%s", fixed, string(second))
+	if string(after) != source {
+		t.Fatal("report-only lint modified the source")
 	}
 }

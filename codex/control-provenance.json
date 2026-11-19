@@ -57,7 +57,7 @@
     {
       "id": "clean-cutover-rejection-only-surface",
       "classification": "machine-enforced",
-      "purpose": "Reject parent-action registry roots that the current explicit dispatch contract unconditionally rejects, so retired rejection-only surfaces do not remain in the production graph.",
+      "purpose": "Require each canonical registered parent-action descriptor to resolve to a current executable normal and terminal dispatch handler, rejecting unsupported or error-only roots without reconstructing retired guards.",
       "machine_owners": [
         {
           "path": "glm-worker/internal/harnesslint/clean_cutover.go",

@@ -53,9 +53,6 @@ func applyRequestedFixes(root string, paths []string, runner commandRunner, fix 
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := fixCleanCutover(root, paths); err != nil {
-		return 0, nil, err
-	}
 	if err := fixPlanSpacing(root, paths); err != nil {
 		return 0, nil, err
 	}

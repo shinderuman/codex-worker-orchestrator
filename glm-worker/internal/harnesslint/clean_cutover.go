@@ -1,508 +1,121 @@
 package harnesslint
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/parser"
 	"go/token"
 	"strconv"
+	"strings"
 )
 
 const (
-	cleanCutoverRule          = "clean-cutover-rejection-only-surface"
-	cleanCutoverNilIdentifier = "nil"
-	parentActionMetadataPath  = "glm-worker/internal/parentactioncmd/command_metadata.go"
-	parentActionRegistryName  = "parentActionCommands"
-	parentActionDispatchName  = "executeParentActionCommand"
+	cleanCutoverRule         = "clean-cutover-rejection-only-surface"
+	parentActionMetadataPath = "glm-worker/internal/parentactioncmd/command_metadata.go"
+	parentActionRegistryName = "parentActionCommands"
 )
 
 func scanCleanCutover(root string, paths []string) ([]Violation, error) {
-	if !cleanCutoverContainsPath(paths, parentActionMetadataPath) {
-		return nil, nil
-	}
-	return cleanCutoverParentActionViolations(root)
-}
-
-func fixCleanCutover(root string, paths []string) error {
-	if !cleanCutoverContainsPath(paths, parentActionMetadataPath) {
-		return nil
-	}
-	set, file, err := parseParentActionMetadata(root, parser.ParseComments)
-	if err != nil {
-		return err
-	}
-	rejectedKinds, rejectedActions := parentActionRejectedRoots(file)
-	if !removeRejectedParentActionRegistryEntries(file, rejectedKinds, rejectedActions) {
-		return nil
-	}
-	return writeFormattedParentActionMetadata(root, set, file)
-}
-
-func parseParentActionMetadata(root string, mode parser.Mode) (*token.FileSet, *ast.File, error) {
-	data, err := readRegularFile(root, parentActionMetadataPath)
-	if err != nil {
-		return nil, nil, err
-	}
-	set := token.NewFileSet()
-	file, err := parser.ParseFile(set, parentActionMetadataPath, data, mode)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse %s: %w", parentActionMetadataPath, err)
-	}
-	return set, file, nil
-}
-
-func removeRejectedParentActionRegistryEntries(file *ast.File, rejectedKinds, rejectedActions map[string]bool) bool {
-	changed := false
-	for _, registry := range parentActionRegistries(file) {
-		kept := registry.Elts[:0]
-		for _, element := range registry.Elts {
-			entry, ok := element.(*ast.KeyValueExpr)
-			if ok && parentActionRegistryEntryRejected(entry, rejectedKinds, rejectedActions) {
-				changed = true
-				continue
-			}
-			kept = append(kept, element)
-		}
-		registry.Elts = kept
-	}
-	return changed
-}
-
-func writeFormattedParentActionMetadata(root string, set *token.FileSet, file *ast.File) error {
-	var output bytes.Buffer
-	if err := format.Node(&output, set, file); err != nil {
-		return fmt.Errorf("format %s: %w", parentActionMetadataPath, err)
-	}
-	formatted := output.Bytes()
-	if len(formatted) == 0 || formatted[len(formatted)-1] != '\n' {
-		formatted = append(formatted, '\n')
-	}
-	return writeRegularFile(root, parentActionMetadataPath, formatted)
-}
-
-func cleanCutoverContainsPath(paths []string, wanted string) bool {
 	for _, path := range paths {
-		if path == wanted {
-			return true
+		if path == parentActionMetadataPath {
+			return cleanCutoverParentActionViolations(root)
 		}
 	}
-	return false
+	return nil, nil
 }
 
+// Enforce the current registry-to-dispatch postcondition, rather than searching
+// for a historical retirement predicate that the live command owner no longer uses.
 func cleanCutoverParentActionViolations(root string) ([]Violation, error) {
-	set, file, err := parseParentActionMetadata(root, 0)
+	data, err := readRegularFile(root, parentActionMetadataPath)
 	if err != nil {
 		return nil, err
 	}
-	rejectedKinds, rejectedActions := parentActionRejectedRoots(file)
-	if len(rejectedKinds) == 0 && len(rejectedActions) == 0 {
-		return nil, nil
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, parentActionMetadataPath, data, 0)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", parentActionMetadataPath, err)
 	}
-	return parentActionRegistryViolations(set, file, rejectedKinds, rejectedActions), nil
-}
-
-func parentActionRejectedRoots(file *ast.File) (map[string]bool, map[string]bool) {
-	kinds := make(map[string]bool)
-	actions := make(map[string]bool)
-	predicate, executionParam, actionParam := findParentActionRejectionPredicate(file)
-	if predicate == nil {
-		return kinds, actions
+	var violations []Violation
+	report := func(node ast.Node, message string) {
+		position := set.Position(node.Pos())
+		violations = append(violations, Violation{
+			Rule: cleanCutoverRule, Path: parentActionMetadataPath,
+			Line: position.Line, Column: position.Column, Message: message,
+		})
 	}
-	collectRejectedParentActionKinds(predicate.Body, kinds, executionParam)
-	collectRejectedParentActionNames(predicate.Body, actions, actionParam)
-	return kinds, actions
-}
-
-func findParentActionRejectionPredicate(file *ast.File) (*ast.FuncDecl, string, string) {
-	dispatch := findCleanCutoverFunction(file, parentActionDispatchName)
-	if dispatch == nil || dispatch.Body == nil {
-		return nil, "", ""
+	kinds, validDispatch := cleanCutoverExecutableKinds(file)
+	if !validDispatch {
+		report(file, "current parent-action command dispatch contract is not provable")
+		return violations, nil
 	}
-	for _, statement := range dispatch.Body.List {
-		predicate, executionParam, actionParam, ok := parentActionRejectionPredicateFromStatement(file, statement)
-		if ok {
-			return predicate, executionParam, actionParam
-		}
+	registry := cleanCutoverRegistry(file)
+	if registry == nil {
+		report(file, "canonical parent-action command registry is absent or not a literal map")
+		return violations, nil
 	}
-	return nil, "", ""
-}
-
-func parentActionRejectionPredicateFromStatement(file *ast.File, statement ast.Stmt) (*ast.FuncDecl, string, string, bool) {
-	conditional, ok := statement.(*ast.IfStmt)
-	if !ok {
-		return nil, "", "", false
-	}
-	guardCall, executionIndex, actionIndex, ok := parentActionRejectionGuardCall(conditional)
-	if !ok {
-		return nil, "", "", false
-	}
-	guardName, ok := cleanCutoverCalledFunctionName(guardCall)
-	if !ok {
-		return nil, "", "", false
-	}
-	guard := findCleanCutoverFunction(file, guardName)
-	guardParams := cleanCutoverParameterNames(guard)
-	if !cleanCutoverParameterIndexesValid(guard, guardParams, executionIndex, actionIndex) {
-		return nil, "", "", false
-	}
-	predicateCall, predicateExecutionIndex, predicateActionIndex, ok := cleanCutoverRejectionPredicateCall(
-		guard,
-		guardParams[executionIndex],
-		guardParams[actionIndex],
-	)
-	if !ok {
-		return nil, "", "", false
-	}
-	predicateName, ok := cleanCutoverCalledFunctionName(predicateCall)
-	if !ok {
-		return nil, "", "", false
-	}
-	predicate := findCleanCutoverFunction(file, predicateName)
-	predicateParams := cleanCutoverParameterNames(predicate)
-	if !cleanCutoverParameterIndexesValid(predicate, predicateParams, predicateExecutionIndex, predicateActionIndex) {
-		return nil, "", "", false
-	}
-	return predicate, predicateParams[predicateExecutionIndex], predicateParams[predicateActionIndex], true
-}
-
-func cleanCutoverParameterIndexesValid(function *ast.FuncDecl, parameters []string, executionIndex, actionIndex int) bool {
-	return function != nil && executionIndex >= 0 && actionIndex >= 0 && executionIndex < len(parameters) && actionIndex < len(parameters)
-}
-
-func parentActionRejectionGuardCall(statement *ast.IfStmt) (*ast.CallExpr, int, int, bool) {
-	assignment, ok := cleanCutoverGuardAssignment(statement)
-	if !ok {
-		return nil, 0, 0, false
-	}
-	call, ok := assignment.Rhs[0].(*ast.CallExpr)
-	if !ok || len(call.Args) != 2 {
-		return nil, 0, 0, false
-	}
-	executionIndex, actionIndex := cleanCutoverGuardArgumentIndexes(call)
-	if executionIndex < 0 || actionIndex < 0 || executionIndex == actionIndex {
-		return nil, 0, 0, false
-	}
-	return call, executionIndex, actionIndex, true
-}
-
-func cleanCutoverGuardAssignment(statement *ast.IfStmt) (*ast.AssignStmt, bool) {
-	if statement == nil {
-		return nil, false
-	}
-	assignment, ok := statement.Init.(*ast.AssignStmt)
-	if !ok || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
-		return nil, false
-	}
-	errName, ok := assignment.Lhs[0].(*ast.Ident)
-	if !ok {
-		return nil, false
-	}
-	if !cleanCutoverConditionIsNonNil(statement.Cond, errName.Name) || !cleanCutoverBlockReturnsIdentifier(statement.Body, errName.Name) {
-		return nil, false
-	}
-	return assignment, true
-}
-
-func cleanCutoverGuardArgumentIndexes(call *ast.CallExpr) (int, int) {
-	executionIndex := -1
-	actionIndex := -1
-	for index, argument := range call.Args {
-		if _, ok := argument.(*ast.Ident); ok {
-			executionIndex = index
-			continue
-		}
-		selector, ok := argument.(*ast.SelectorExpr)
-		if ok && selector.Sel.Name == "Action" {
-			actionIndex = index
-		}
-	}
-	return executionIndex, actionIndex
-}
-
-func cleanCutoverConditionIsNonNil(expression ast.Expr, name string) bool {
-	comparison, ok := expression.(*ast.BinaryExpr)
-	if !ok || comparison.Op != token.NEQ {
-		return false
-	}
-	return cleanCutoverIdentAndNil(comparison.X, comparison.Y, name) || cleanCutoverIdentAndNil(comparison.Y, comparison.X, name)
-}
-
-func cleanCutoverIdentAndNil(identifierExpr, nilExpr ast.Expr, name string) bool {
-	identifier, ok := identifierExpr.(*ast.Ident)
-	if !ok || identifier.Name != name {
-		return false
-	}
-	nilIdentifier, ok := nilExpr.(*ast.Ident)
-	return ok && nilIdentifier.Name == cleanCutoverNilIdentifier
-}
-
-func cleanCutoverBlockReturnsIdentifier(block *ast.BlockStmt, name string) bool {
-	if block == nil {
-		return false
-	}
-	for _, statement := range block.List {
-		result, ok := statement.(*ast.ReturnStmt)
-		if !ok || len(result.Results) != 1 {
-			continue
-		}
-		identifier, ok := result.Results[0].(*ast.Ident)
-		if ok && identifier.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func cleanCutoverRejectionPredicateCall(guard *ast.FuncDecl, executionParam, actionParam string) (*ast.CallExpr, int, int, bool) {
-	if guard == nil || guard.Body == nil {
-		return nil, 0, 0, false
-	}
-	for index, statement := range guard.Body.List {
-		conditional, call, negated, executionIndex, actionIndex, ok := cleanCutoverPredicateCandidate(statement, executionParam, actionParam)
+	for _, element := range registry.Elts {
+		entry, ok := element.(*ast.KeyValueExpr)
 		if !ok {
+			report(element, "parent-action registry entry must be a keyed descriptor")
 			continue
 		}
-		if cleanCutoverPredicateRejects(conditional, negated, guard.Body.List[index+1:]) {
-			return call, executionIndex, actionIndex, true
-		}
-	}
-	return nil, 0, 0, false
-}
-
-func cleanCutoverPredicateCandidate(statement ast.Stmt, executionParam, actionParam string) (*ast.IfStmt, *ast.CallExpr, bool, int, int, bool) {
-	conditional, ok := statement.(*ast.IfStmt)
-	if !ok {
-		return nil, nil, false, 0, 0, false
-	}
-	call, negated := cleanCutoverBooleanCall(conditional.Cond)
-	if call == nil {
-		return nil, nil, false, 0, 0, false
-	}
-	executionIndex, actionIndex, ok := cleanCutoverCallParameterIndexes(call, executionParam, actionParam)
-	return conditional, call, negated, executionIndex, actionIndex, ok
-}
-
-func cleanCutoverPredicateRejects(conditional *ast.IfStmt, negated bool, remaining []ast.Stmt) bool {
-	if negated {
-		return cleanCutoverBlockReturnsNil(conditional.Body) && cleanCutoverStatementsReturnNonNil(remaining)
-	}
-	return cleanCutoverBlockReturnsNonNil(conditional.Body) && cleanCutoverStatementsReturnNil(remaining)
-}
-
-func cleanCutoverBooleanCall(expression ast.Expr) (*ast.CallExpr, bool) {
-	if call, ok := expression.(*ast.CallExpr); ok {
-		return call, false
-	}
-	negation, ok := expression.(*ast.UnaryExpr)
-	if !ok || negation.Op != token.NOT {
-		return nil, false
-	}
-	call, ok := negation.X.(*ast.CallExpr)
-	return call, ok
-}
-
-func cleanCutoverCallParameterIndexes(call *ast.CallExpr, executionParam, actionParam string) (int, int, bool) {
-	if call == nil {
-		return 0, 0, false
-	}
-	executionIndex := -1
-	actionIndex := -1
-	for index, argument := range call.Args {
-		identifier, ok := argument.(*ast.Ident)
+		descriptor, ok := entry.Value.(*ast.CompositeLit)
 		if !ok {
+			report(entry, "parent-action registry descriptor must be a literal")
 			continue
 		}
-		switch identifier.Name {
-		case executionParam:
-			executionIndex = index
-		case actionParam:
-			actionIndex = index
+		key, keyOK := cleanCutoverAction(entry.Key)
+		action, actionOK := cleanCutoverDescriptorField(descriptor, "Action")
+		actionName, actionNameOK := cleanCutoverAction(action)
+		if !keyOK || !actionOK || !actionNameOK || key != actionName {
+			report(entry, "parent-action registry key and descriptor action must be the same canonical action")
+		}
+		execution, ok := cleanCutoverDescriptorField(descriptor, "Execute")
+		if !ok || !cleanCutoverExecutable(execution, kinds) {
+			report(entry, "registered parent action has no live executable dispatch (rejection-only tombstone)")
+		}
+		if terminal, specified := cleanCutoverDescriptorField(descriptor, "TerminalExecute"); specified &&
+			!cleanCutoverExecutable(terminal, kinds) {
+			report(entry, "registered parent action has no live terminal dispatch (rejection-only tombstone)")
 		}
 	}
-	return executionIndex, actionIndex, executionIndex >= 0 && actionIndex >= 0 && executionIndex != actionIndex
+	return violations, nil
 }
 
-func cleanCutoverBlockReturnsNil(block *ast.BlockStmt) bool {
-	return block != nil && cleanCutoverStatementsReturnNil(block.List)
-}
-
-func cleanCutoverBlockReturnsNonNil(block *ast.BlockStmt) bool {
-	return block != nil && cleanCutoverStatementsReturnNonNil(block.List)
-}
-
-func cleanCutoverStatementsReturnNil(statements []ast.Stmt) bool {
-	for _, statement := range statements {
-		result, ok := statement.(*ast.ReturnStmt)
-		if !ok || len(result.Results) != 1 {
-			continue
+func cleanCutoverAction(expr ast.Expr) (string, bool) {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		return value.Name, true
+	case *ast.BasicLit:
+		if value.Kind == token.STRING {
+			s, err := strconv.Unquote(value.Value)
+			return s, err == nil
 		}
-		identifier, ok := result.Results[0].(*ast.Ident)
-		if ok && identifier.Name == cleanCutoverNilIdentifier {
-			return true
-		}
-	}
-	return false
-}
-
-func cleanCutoverStatementsReturnNonNil(statements []ast.Stmt) bool {
-	for _, statement := range statements {
-		result, ok := statement.(*ast.ReturnStmt)
-		if !ok || len(result.Results) != 1 {
-			continue
-		}
-		identifier, isIdentifier := result.Results[0].(*ast.Ident)
-		if !isIdentifier || identifier.Name != cleanCutoverNilIdentifier {
-			return true
-		}
-	}
-	return false
-}
-
-func cleanCutoverCalledFunctionName(call *ast.CallExpr) (string, bool) {
-	if call == nil {
-		return "", false
-	}
-	identifier, ok := call.Fun.(*ast.Ident)
-	if !ok {
-		return "", false
-	}
-	return identifier.Name, true
-}
-
-func findCleanCutoverFunction(file *ast.File, name string) *ast.FuncDecl {
-	if file == nil {
-		return nil
-	}
-	for _, declaration := range file.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Name.Name == name && function.Body != nil {
-			return function
-		}
-	}
-	return nil
-}
-
-func cleanCutoverParameterNames(function *ast.FuncDecl) []string {
-	if function == nil || function.Type == nil || function.Type.Params == nil {
-		return nil
-	}
-	var names []string
-	for _, field := range function.Type.Params.List {
-		for _, name := range field.Names {
-			names = append(names, name.Name)
-		}
-	}
-	return names
-}
-
-func collectRejectedParentActionKinds(body *ast.BlockStmt, kinds map[string]bool, executionParam string) {
-	ast.Inspect(body, func(node ast.Node) bool {
-		switchStatement, ok := node.(*ast.SwitchStmt)
-		if !ok || !switchesOnIdentifier(switchStatement, executionParam) {
-			return true
-		}
-		collectRejectedSwitchKinds(switchStatement, kinds)
-		return true
-	})
-}
-
-func switchesOnIdentifier(statement *ast.SwitchStmt, name string) bool {
-	identifier, ok := statement.Tag.(*ast.Ident)
-	return ok && identifier.Name == name
-}
-
-func collectRejectedSwitchKinds(statement *ast.SwitchStmt, kinds map[string]bool) {
-	for _, item := range statement.Body.List {
-		clause, ok := item.(*ast.CaseClause)
-		if !ok || !returnsBoolean(clause.Body, true) {
-			continue
-		}
-		for _, expression := range clause.List {
-			identifier, ok := expression.(*ast.Ident)
-			if ok {
-				kinds[identifier.Name] = true
-			}
-		}
-	}
-}
-
-func collectRejectedParentActionNames(body *ast.BlockStmt, actions map[string]bool, actionParam string) {
-	ast.Inspect(body, func(node ast.Node) bool {
-		result, ok := node.(*ast.ReturnStmt)
-		if !ok {
-			return true
-		}
-		for _, expression := range result.Results {
-			if action, ok := parentActionRejectedAction(expression, actionParam); ok {
-				actions[action] = true
-			}
-		}
-		return true
-	})
-}
-
-func returnsBoolean(statements []ast.Stmt, wanted bool) bool {
-	for _, statement := range statements {
-		result, ok := statement.(*ast.ReturnStmt)
-		if !ok || len(result.Results) != 1 {
-			continue
-		}
-		identifier, ok := result.Results[0].(*ast.Ident)
-		if ok && identifier.Name == strconv.FormatBool(wanted) {
-			return true
-		}
-	}
-	return false
-}
-
-func parentActionRejectedAction(expression ast.Expr, actionParam string) (string, bool) {
-	comparison, ok := expression.(*ast.BinaryExpr)
-	if !ok || comparison.Op != token.EQL {
-		return "", false
-	}
-	if identifier, ok := comparison.X.(*ast.Ident); ok && identifier.Name == actionParam {
-		return cleanCutoverStringLiteral(comparison.Y)
-	}
-	if identifier, ok := comparison.Y.(*ast.Ident); ok && identifier.Name == actionParam {
-		return cleanCutoverStringLiteral(comparison.X)
 	}
 	return "", false
 }
 
-func cleanCutoverStringLiteral(expression ast.Expr) (string, bool) {
-	literal, ok := expression.(*ast.BasicLit)
-	if !ok || literal.Kind != token.STRING {
-		return "", false
-	}
-	value, err := strconv.Unquote(literal.Value)
-	if err != nil {
-		return "", false
-	}
-	return value, true
-}
-
-func parentActionRegistryViolations(set *token.FileSet, file *ast.File, rejectedKinds, rejectedActions map[string]bool) []Violation {
-	var violations []Violation
-	for _, registry := range parentActionRegistries(file) {
-		for _, element := range registry.Elts {
-			entry, ok := element.(*ast.KeyValueExpr)
-			if !ok || !parentActionRegistryEntryRejected(entry, rejectedKinds, rejectedActions) {
-				continue
-			}
-			position := set.Position(entry.Key.Pos())
-			violations = append(violations, Violation{
-				Rule: cleanCutoverRule, Path: parentActionMetadataPath, Line: position.Line, Column: position.Column,
-				Message: "registered parent action is retained solely behind an unconditional cutover rejection; remove the registry root",
-			})
+func cleanCutoverDescriptorField(descriptor *ast.CompositeLit, name string) (ast.Expr, bool) {
+	for _, element := range descriptor.Elts {
+		field, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		identifier, ok := field.Key.(*ast.Ident)
+		if ok && identifier.Name == name {
+			return field.Value, true
 		}
 	}
-	return violations
+	return nil, false
 }
 
-func parentActionRegistries(file *ast.File) []*ast.CompositeLit {
-	var registries []*ast.CompositeLit
+func cleanCutoverExecutable(expr ast.Expr, kinds map[string]bool) bool {
+	identifier, ok := expr.(*ast.Ident)
+	return ok && identifier.Name != "parentActionExecutionUnsupported" && kinds[identifier.Name]
+}
+
+func cleanCutoverRegistry(file *ast.File) *ast.CompositeLit {
 	for _, declaration := range file.Decls {
 		general, ok := declaration.(*ast.GenDecl)
 		if !ok || general.Tok != token.VAR {
@@ -515,34 +128,139 @@ func parentActionRegistries(file *ast.File) []*ast.CompositeLit {
 			}
 			registry, ok := value.Values[0].(*ast.CompositeLit)
 			if ok {
-				registries = append(registries, registry)
+				return registry
 			}
 		}
 	}
-	return registries
+	return nil
 }
 
-func parentActionRegistryEntryRejected(entry *ast.KeyValueExpr, rejectedKinds, rejectedActions map[string]bool) bool {
-	if action, ok := cleanCutoverStringLiteral(entry.Key); ok && rejectedActions[action] {
-		return true
+// The only accepted routes are branches that invoke an executable handler;
+// a default usage error, a direct error-only branch, or an undeclared kind
+// cannot make a registered action executable.
+func cleanCutoverExecutableKinds(file *ast.File) (map[string]bool, bool) {
+	parent := cleanCutoverFunction(file, "executeParentActionCommand")
+	standard := cleanCutoverFunction(file, "executeStandardParentAction")
+	interfaced := cleanCutoverFunction(file, "executeInterfaceParentAction")
+	special := cleanCutoverFunction(file, "executeSpecialParentAction")
+	if !cleanCutoverCalls(parent, "executeStandardParentAction") ||
+		!cleanCutoverCalls(parent, "executeSpecialParentAction") ||
+		!cleanCutoverCalls(standard, "executeInterfaceParentAction") ||
+		interfaced == nil || special == nil {
+		return nil, false
 	}
-	descriptor, ok := entry.Value.(*ast.CompositeLit)
-	if !ok {
-		return false
-	}
-	for _, element := range descriptor.Elts {
-		field, ok := element.(*ast.KeyValueExpr)
+	kinds := make(map[string]bool)
+	for _, statement := range standard.Body.List {
+		conditional, ok := statement.(*ast.IfStmt)
 		if !ok {
 			continue
 		}
-		name, ok := field.Key.(*ast.Ident)
-		if !ok || (name.Name != "Execute" && name.Name != "TerminalExecute") {
-			continue
-		}
-		kind, ok := field.Value.(*ast.Ident)
-		if ok && rejectedKinds[kind.Name] {
-			return true
+		if kind, ok := cleanCutoverExecutionMatch(conditional.Cond); ok && cleanCutoverHandlerReturn(conditional.Body.List, true) {
+			kinds[kind] = true
 		}
 	}
-	return false
+	for _, statement := range interfaced.Body.List {
+		switcher, ok := statement.(*ast.SwitchStmt)
+		if !ok {
+			continue
+		}
+		tag, ok := switcher.Tag.(*ast.Ident)
+		if !ok || tag.Name != "execution" {
+			continue
+		}
+		for _, item := range switcher.Body.List {
+			clause, ok := item.(*ast.CaseClause)
+			if !ok || !cleanCutoverHandlerReturn(clause.Body, true) {
+				continue
+			}
+			for _, expression := range clause.List {
+				if kind, ok := expression.(*ast.Ident); ok {
+					kinds[kind.Name] = true
+				}
+			}
+		}
+	}
+	for _, statement := range special.Body.List {
+		conditional, ok := statement.(*ast.IfStmt)
+		if !ok {
+			continue
+		}
+		if kind, ok := cleanCutoverExecutionMatch(conditional.Cond); ok && cleanCutoverHandlerReturn(conditional.Body.List, false) {
+			kinds[kind] = true
+		}
+	}
+	return kinds, len(kinds) > 0
+}
+
+func cleanCutoverExecutionMatch(expression ast.Expr) (string, bool) {
+	comparison, ok := expression.(*ast.BinaryExpr)
+	if !ok || comparison.Op != token.EQL {
+		return "", false
+	}
+	if execution, ok := comparison.X.(*ast.Ident); ok && execution.Name == "execution" {
+		if kind, ok := comparison.Y.(*ast.Ident); ok {
+			return kind.Name, true
+		}
+	}
+	if execution, ok := comparison.Y.(*ast.Ident); ok && execution.Name == "execution" {
+		if kind, ok := comparison.X.(*ast.Ident); ok {
+			return kind.Name, true
+		}
+	}
+	return "", false
+}
+
+func cleanCutoverHandlerReturn(statements []ast.Stmt, handled bool) bool {
+	if len(statements) != 1 {
+		return false
+	}
+	result, ok := statements[0].(*ast.ReturnStmt)
+	if !ok || len(result.Results) != 1 && (!handled || len(result.Results) != 2) {
+		return false
+	}
+	call, ok := result.Results[0].(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	handler, ok := call.Fun.(*ast.Ident)
+	if !ok || !strings.HasPrefix(handler.Name, "execute") {
+		return false
+	}
+	if !handled {
+		return len(result.Results) == 1
+	}
+	if len(result.Results) != 2 {
+		return false
+	}
+	accepted, ok := result.Results[1].(*ast.Ident)
+	return ok && accepted.Name == "true"
+}
+
+func cleanCutoverFunction(file *ast.File, name string) *ast.FuncDecl {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == name && function.Body != nil {
+			return function
+		}
+	}
+	return nil
+}
+
+func cleanCutoverCalls(function *ast.FuncDecl, name string) bool {
+	if function == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		identifier, ok := call.Fun.(*ast.Ident)
+		if ok && identifier.Name == name {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
