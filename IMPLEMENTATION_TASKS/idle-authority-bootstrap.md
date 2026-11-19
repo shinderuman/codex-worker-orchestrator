@@ -20,6 +20,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 README.md は全Task完了後からも登録可能とし、repositoryproject/plan.go はValidateIdleを許容する。codex/AGENTS.md は開始時のauthority bootstrapを必須にするが、authoritybootstrapcmd/run.go のloadは必ずActiveTask()を要求し、ACTIVEとNEXTが空の監査対象HEADで失敗した。controller/registered_task.go の登録済みTask開始はACTIVE登録後の入口。
