@@ -345,3 +345,23 @@ func (l *evidenceExportLaneFixture) exportStore(t *testing.T, root string) *Stor
 	}
 	return store
 }
+
+func TestExportEvidenceRejectsUnverifiedWorkspace(t *testing.T) {
+	t.Parallel()
+	fixture := newEvidenceExportFixture(t)
+	lease, err := fixture.store.loadLease(evidenceExportLiveLeaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.WorkspaceID = "workspace-other"
+	data, err := json.Marshal(lease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture.store.dir, "leases", evidenceExportLiveLeaseID+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{}); err == nil {
+		t.Fatal("export accepted a lease workspace identity that does not match the repository")
+	}
+}
