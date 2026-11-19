@@ -51,7 +51,9 @@ func installScopeFixture(t *testing.T) string {
 	runInstall(t, sourceRepo, codexDir)
 
 	installedInstructions := filepath.Join(codexDir, "instructions", "codex-worker-orchestrator.md")
-	assertFileBytes(t, installedInstructions, readTestFile(t, filepath.Join(sourceRepo, "codex", "AGENTS.md")))
+	if _, err := os.Lstat(installedInstructions); !os.IsNotExist(err) {
+		t.Fatalf("repository-specific instructions were installed at user scope: %v", err)
+	}
 	assertFileBytes(t, globalAgents, globalOriginal)
 	globalConfig := readTestFile(t, filepath.Join(codexDir, "config.toml"))
 	if bytes.Contains(globalConfig, []byte("developer_instructions")) ||
@@ -93,11 +95,14 @@ func checkScopeActivation(t *testing.T, targetRepo string, optIn bool) {
 	projectConfig := readTestFile(t, configPath)
 	for _, required := range []string{
 		"developer_instructions = ",
-		"instructions/codex-worker-orchestrator.md",
+		"this repository's own AGENTS.md",
 	} {
 		if !bytes.Contains(projectConfig, []byte(required)) {
 			t.Fatalf("opt-in config missing %q:\n%s", required, projectConfig)
 		}
+	}
+	if bytes.Contains(projectConfig, []byte("instructions/codex-worker-orchestrator.md")) {
+		t.Fatalf("project opt-in loads removed user-level repository instructions: %s", projectConfig)
 	}
 	var disabled bytes.Buffer
 	if err := codexcontext.Run([]string{"disable", targetRepo}, &disabled); err != nil {
