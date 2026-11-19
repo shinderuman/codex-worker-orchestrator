@@ -104,7 +104,6 @@ func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.
 	if err != nil {
 		return err
 	}
-	// Select the recovery view before collecting optional full handoff evidence.
 	full := projectBoundParentHandoffWithEvidence(cfg, st, false)
 	value := projectParentHandoffRecovery(full)
 	applyParentGuardRecovery(st, &value)

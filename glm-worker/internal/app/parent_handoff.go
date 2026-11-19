@@ -90,6 +90,11 @@ type parentHandoffValidation struct {
 	WorktreeDigest  string `json:"worktree_digest"`
 }
 
+type parentHandoffEvidenceReadVisits struct {
+	RunEntries int
+	RunRecords int
+}
+
 const parentHandoffVersion = 3
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
@@ -154,11 +159,6 @@ func applyParentQualityGateRecovery(st *state.StateStore, output *parentHandoffR
 		return
 	}
 	output.QualityGateFailure = checkpoint.QualityGateFailure
-}
-
-type parentHandoffEvidenceReadVisits struct {
-	RunEntries int
-	RunRecords int
 }
 
 func buildParentHandoffFromContinuationWithEvidence(st *state.StateStore, continuation parentcontinuation.Projection, full bool, visits *parentHandoffEvidenceReadVisits) parentHandoffOutput {
