@@ -25,7 +25,8 @@ type Result struct {
 
 const (
 	ProjectConfigRelativePath = ".codex/config.toml"
-	managedMarker             = "# managed-by: codex-worker-orchestrator glm-codex-context v1"
+	managedMarker             = "# managed-by: codex-worker-orchestrator glm-codex-context v2"
+	legacyManagedMarker       = "# managed-by: codex-worker-orchestrator glm-codex-context v1"
 	excludeMarker             = "# codex-worker-orchestrator glm-codex-context v1"
 	excludePattern            = "/.codex/config.toml"
 	contextStateEnabled       = "enabled"
@@ -33,7 +34,7 @@ const (
 	contextStateConflict      = "conflict"
 )
 
-var managedConfig = []byte(managedMarker + `
+var legacyManagedConfig = []byte(legacyManagedMarker + `
 # This local project profile reduces Codex Desktop context for glm-worker tasks.
 # Start a new Codex thread after enabling or disabling it.
 
@@ -57,8 +58,32 @@ root_agent_usage_hint_text = ""
 multi_agent_mode_hint_text = ""
 `)
 
+var managedConfig = []byte(managedMarker + `
+# This local project profile reduces Codex Desktop context for glm-worker tasks.
+# Start a new Codex thread after enabling or disabling it.
+
+developer_instructions = "When glm-worker or glm-parent-action is used in this repository, follow this repository's own AGENTS.md and project-local instructions. Do not load codex-worker-orchestrator repository-specific instructions from the user-level Codex configuration directory or apply that repository's rules here."
+
+include_apps_instructions = false
+include_collaboration_mode_instructions = false
+
+[skills]
+include_instructions = false
+
+[features]
+apps = false
+plugins = false
+
+[features.code_mode]
+default_exec_yield_time_ms = 21600000
+
+[features.multi_agent_v2]
+root_agent_usage_hint_text = ""
+multi_agent_mode_hint_text = ""
+`)
+
 func IsManagedConfig(content []byte) bool {
-	return bytes.Equal(content, managedConfig)
+	return bytes.Equal(content, managedConfig) || bytes.Equal(content, legacyManagedConfig)
 }
 
 func Run(args []string, stdout io.Writer) error {
@@ -107,6 +132,8 @@ func repositoryRoot(repo string) (string, error) {
 
 func enable(root string) (Result, error) {
 	configPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
+	previous, _ := os.ReadFile(configPath)
+	legacyWasPresent := bytes.Equal(previous, legacyManagedConfig)
 	configCreated, err := ensureManagedConfig(configPath)
 	if err != nil {
 		return Result{}, err
@@ -114,7 +141,7 @@ func enable(root string) (Result, error) {
 	excluded, err := ensureGitExclude(root)
 	if err != nil {
 		cause := fmt.Errorf("configure local Git exclude: %w", err)
-		return Result{}, rollbackProjectContextEnable(configPath, configCreated, cause)
+		return Result{}, rollbackProjectContextEnable(configPath, configCreated, legacyWasPresent, cause)
 	}
 	return Result{
 		Status:            contextStateEnabled,
@@ -131,6 +158,11 @@ func enable(root string) (Result, error) {
 func ensureManagedConfig(configPath string) (bool, error) {
 	content, err := os.ReadFile(configPath)
 	switch {
+	case err == nil && bytes.Equal(content, legacyManagedConfig):
+		if err := writeManagedConfig(configPath); err != nil {
+			return false, err
+		}
+		return false, nil
 	case err == nil && !IsManagedConfig(content):
 		return false, fmt.Errorf("refusing to overwrite existing %s; merge the lean Codex settings explicitly or disable/remove the existing project config first", ProjectConfigRelativePath)
 	case err == nil:
@@ -145,11 +177,18 @@ func ensureManagedConfig(configPath string) (bool, error) {
 	}
 }
 
-func rollbackProjectContextEnable(configPath string, configCreated bool, cause error) error {
+func rollbackProjectContextEnable(configPath string, configCreated, legacyWasPresent bool, cause error) error {
 	errs := []error{cause}
 	if configCreated {
 		if err := removeManagedConfig(configPath); err != nil {
 			errs = append(errs, fmt.Errorf("rollback project config: %w", err))
+		}
+	} else if legacyWasPresent {
+		current, err := os.ReadFile(configPath)
+		if err != nil || !bytes.Equal(current, managedConfig) {
+			errs = append(errs, fmt.Errorf("cannot safely restore previous managed project config: %v", err))
+		} else if err := writeManagedConfigContent(configPath, legacyManagedConfig); err != nil {
+			errs = append(errs, fmt.Errorf("rollback previous managed project config: %w", err))
 		}
 	}
 	return errors.Join(errs...)
@@ -226,6 +265,10 @@ func managedConfigState(configPath string) (string, string, error) {
 }
 
 func writeManagedConfig(path string) error {
+	return writeManagedConfigContent(path, managedConfig)
+}
+
+func writeManagedConfigContent(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create .codex directory: %w", err)
 	}
@@ -235,7 +278,7 @@ func writeManagedConfig(path string) error {
 	}
 	tmpPath := tmp.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
-	if _, err := tmp.Write(managedConfig); err != nil {
+	if _, err := tmp.Write(content); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write project config: %w", err)
 	}

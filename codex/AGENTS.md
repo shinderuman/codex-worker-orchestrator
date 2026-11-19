@@ -1,4 +1,4 @@
-# Codex グローバルルール
+# Codex リポジトリルール
 
 ## 1. 常時適用
 
@@ -46,7 +46,7 @@
 
 ## 7. 必要時だけ読む規則
 
-以下の相対pathは`~/.codex/instructions/`配下。該当する作業が発生した場合にだけ読む。
+以下の相対pathは本repositoryの`codex/instructions/`配下。該当する作業が発生した場合にだけ読む。
 
 - Git履歴操作: `git.md`
 - backup / 大容量一時データ: `backup.md`

@@ -28,10 +28,9 @@ type fileInstallPlan struct {
 
 func collectDesiredFiles(repoRoot string) ([]desiredFile, error) {
 	files := []desiredFile{}
-	if err := addDesiredFile(repoRoot, "codex/AGENTS.md", "instructions/codex-worker-orchestrator.md", &files); err != nil {
-		return nil, err
-	}
-	if err := walkDesiredTree(repoRoot, "codex/instructions", "instructions", &files); err != nil {
+	// Repository-specific instructions remain local to the repository.
+	// Only reusable worker instructions are installed as tool assets.
+	if err := walkDesiredTree(repoRoot, "codex/instructions/worker", "instructions/worker", &files); err != nil {
 		return nil, err
 	}
 	if err := addDesiredFile(repoRoot, "codex/rules/glm-worker.rules", "rules/glm-worker.rules", &files); err != nil {
