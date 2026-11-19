@@ -78,37 +78,39 @@ func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *pare
 		failParentCompletionHandoff(output, errors.New("pending Controller has no projected recovery"))
 		return true
 	}
+	command, err := pendingControllerHandoffCommand(operation, report.Head)
+	if err != nil {
+		failParentCompletionHandoff(output, err)
+		return true
+	}
+	applyControllerRecoveryHandoff(output, operation.Surface, command)
+	return true
+}
+
+func pendingControllerHandoffCommand(operation controller.ParentCompletionOperation, head controller.RepositoryControllerHead) (string, error) {
 	var command any
 	switch operation.Surface {
 	case controller.ExecutionOperationSurface:
 		if operation.Execution == nil ||
 			operation.Execution.Action != controller.PublicationOperationRecover ||
-			operation.Execution.ExpectedGeneration != report.Head.ControllerGeneration ||
-			operation.Execution.TransitionID != report.Head.PendingTransitionID {
-			failParentCompletionHandoff(output, errors.New("projected execution recovery differs from Controller status"))
-			return true
+			operation.Execution.ExpectedGeneration != head.ControllerGeneration ||
+			operation.Execution.TransitionID != head.PendingTransitionID {
+			return "", errors.New("projected execution recovery differs from Controller status")
 		}
 		command = operation.Execution
 	case controller.PublicationOperationSurface:
 		if operation.Command == nil ||
 			operation.Command.Action != controller.PublicationOperationRecover ||
-			operation.Command.ExpectedGeneration != report.Head.ControllerGeneration ||
-			operation.Command.TransitionID != report.Head.PendingTransitionID {
-			failParentCompletionHandoff(output, errors.New("projected publication recovery differs from Controller status"))
-			return true
+			operation.Command.ExpectedGeneration != head.ControllerGeneration ||
+			operation.Command.TransitionID != head.PendingTransitionID {
+			return "", errors.New("projected publication recovery differs from Controller status")
 		}
 		command = operation.Command
 	default:
-		failParentCompletionHandoff(output, errors.New("pending Controller projected an invalid recovery surface"))
-		return true
+		return "", errors.New("pending Controller projected an invalid recovery surface")
 	}
 	payload, err := json.Marshal(command)
-	if err != nil {
-		failParentCompletionHandoff(output, err)
-		return true
-	}
-	applyControllerRecoveryHandoff(output, operation.Surface, string(payload))
-	return true
+	return string(payload), err
 }
 
 func applyControllerRecoveryHandoff(output *parentHandoffOutput, action string, command string) {
