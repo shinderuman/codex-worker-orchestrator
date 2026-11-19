@@ -92,6 +92,25 @@ func TestReviewAdmissionRequiresReachableQualityGate(t *testing.T) {
 				}
 				return
 			}
+			if tc.mutate {
+				// A clean gate report cannot authorize a changed review input.
+				// The review-start snapshot guard rejects it without a recoverable
+				// quality-tool failure (and without invoking the reviewer).
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(r.phases) != 1 || st.TaskStatus() != state.TaskStatusWaitingSolReview {
+					t.Fatalf("stale review input was admitted: phases=%v status=%s", r.phases, st.TaskStatus())
+				}
+				comparison, err := st.LoadSnapshotComparison()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if comparison.Stage != state.SnapshotStageReviewStart || comparison.Matched {
+					t.Fatalf("stale review-start snapshot was not rejected: %+v", comparison)
+				}
+				return
+			}
 			var stopped *QualityGateRecoverableError
 			if !errors.As(err, &stopped) {
 				t.Fatalf("missing/failing/stale gate must stop recoverably: %v", err)
