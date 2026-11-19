@@ -6,7 +6,14 @@
 
 ## Amendments
 
-none
+2026-11-20
+
+> 1672はTaskの時点で大きく間違っているのでPR自体も修正した
+> codex/AGENTS.md 等にリポジトリ固有のルールが入っていてそれをinstall.sh経由でユーザーレベルに配置されていることがおかしい
+> リポジトリ固有のルールとユーザーレベルのルールの境界線が曖昧になっているので直すというタスクだ
+> PRは多少直させたがお前が作業する際に改めて精査してくれ
+> PRにかかれていることも鵜呑みにするな
+> 確認は実際1672をするときでよい
 
 ## Resolved references
 
@@ -21,23 +28,27 @@ none
 
 ## Purpose
 
-導入済みCodex指示の適用範囲を検証する。
+リポジトリ固有のCodex指示とユーザーレベルの指示の責務・配置を分ける。
 
 ## External feasibility
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
-codexinstall/files.go は専用指示をuser設定に置き、codexcontext/context.go が対象repositoryで参照する。配置だけを根拠に漏出を断定できないため、設計評価として扱う。
+最新Amendmentを適用する。codex/AGENTS.md等のリポジトリ固有ルールとユーザーレベルのルールの配置を分け、install.shからリポジトリ固有ルールをユーザーレベルに配置する経路を修正する。配置元、配置先、対象repositoryでの読み込み経路を着手時に確認し、用意されたPRを実際の要件に照らして精査する。
 
 ## Must not
 
-PR #1651で新たに入った退行と分類しない。
+ユーザー所有のAGENTSを変更しない。既存のopt-inと専用repositoryのauthority・worker制約を維持し、ファイル名の一致だけで適用しない。PR #1651で新たに入った退行と分類しない。
 
 ## Acceptance criteria
 
-opt-inあり、なし、固有Planなしの3条件で注入内容を照合し、ユーザー所有のAGENTSが保持されることを検証する。再現時だけ原因と修正境界を確定し、再現しない場合は根拠を記す。
+インストール後のユーザーレベルの指示にリポジトリ固有ルールが入らないことを確認する。opt-inあり、なし、固有Planなしの3条件で読み込み経路と内容を照合し、対象repositoryの規則とユーザー所有のAGENTSが保持されることを検証する。
 
 ## Historical invariants
 

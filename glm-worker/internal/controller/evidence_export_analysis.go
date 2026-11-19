@@ -645,12 +645,15 @@ func (b *evidenceExportBuilder) analysisRetries(canonical, observed []EvidenceAn
 }
 
 func (b *evidenceExportBuilder) analysisModelCalls() EvidenceAnalysisModelCalls {
-	calls := EvidenceAnalysisModelCalls{Status: evidenceAnalysisStatusAbsent, Basis: evidenceAnalysisBasisTelemetry}
-	logs := workflowModelCalls(b.telemetryCalls())
+	source := b.exportDecodedEvidence().telemetry
+	calls := EvidenceAnalysisModelCalls{Status: source.status, Basis: evidenceAnalysisBasisTelemetry}
+	logs := workflowModelCalls(source.records)
 	if len(logs) == 0 {
+		if source.status == evidenceAnalysisStatusCollected {
+			calls.Status = evidenceAnalysisStatusAbsent
+		}
 		return calls
 	}
-	calls.Status = evidenceAnalysisStatusCollected
 	calls.Total = len(logs)
 	calls.ByRole = map[string]int{}
 	calls.BySession = map[string]int{}
@@ -662,31 +665,14 @@ func (b *evidenceExportBuilder) analysisModelCalls() EvidenceAnalysisModelCalls 
 }
 
 func (b *evidenceExportBuilder) analysisReviewRounds() EvidenceAnalysisReviewRounds {
-	rounds := EvidenceAnalysisReviewRounds{Status: evidenceAnalysisStatusAbsent, Basis: evidenceAnalysisBasisRounds}
-	data, ok := b.runtimeFileBytes("task/rounds.jsonl")
-	if !ok {
-		data, ok = b.fileBytes("attempt/rounds.jsonl")
-	}
-	if !ok || len(data) == 0 {
-		return rounds
-	}
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		var record state.RoundRecord
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			continue
-		}
+	source := b.exportDecodedEvidence().rounds
+	rounds := EvidenceAnalysisReviewRounds{Status: source.status, Basis: evidenceAnalysisBasisRounds}
+	for _, record := range source.records {
 		rounds.Rounds = append(rounds.Rounds, EvidenceAnalysisRound{
 			Seq: record.Seq, ReviewNumber: record.ReviewNumber, AutoFixes: record.AutoFixes,
 			WorkerPhase: record.WorkerPhase, CapturedAt: record.CapturedAt,
 		})
 	}
-	if len(rounds.Rounds) == 0 {
-		return rounds
-	}
-	rounds.Status = evidenceAnalysisStatusCollected
 	rounds.Count = len(rounds.Rounds)
 	return rounds
 }
@@ -733,29 +719,11 @@ func (b *evidenceExportBuilder) analysisStates() EvidenceAnalysisStates {
 }
 
 func (b *evidenceExportBuilder) telemetryCalls() []state.ModelCallLog {
-	return parseWorkflowTelemetry(b.runtimeTelemetryBytes())
+	return b.exportDecodedEvidence().telemetry.records
 }
 
 func (b *evidenceExportBuilder) taskEvents() []state.TaskEventRecord {
-	data, ok := b.runtimeFileBytes("task/events.jsonl")
-	if !ok {
-		data, ok = b.fileBytes("attempt/events.jsonl")
-	}
-	if !ok || len(data) == 0 {
-		return nil
-	}
-	var events []state.TaskEventRecord
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		record, err := state.ParseTaskEventLine([]byte(line))
-		if err != nil {
-			continue
-		}
-		events = append(events, record)
-	}
-	return events
+	return b.exportDecodedEvidence().events.records
 }
 
 func (b *evidenceExportBuilder) fileBytes(path string) ([]byte, bool) {

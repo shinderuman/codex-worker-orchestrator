@@ -193,17 +193,18 @@ type EvidenceExportResult struct {
 }
 
 type evidenceExportBuilder struct {
-	store          *Store
-	targetTask     SemanticTaskRef
-	head           RepositoryControllerHead
-	observedAt     time.Time
-	files          []EvidenceExportFile
-	entries        []EvidenceExportEntry
-	attemptSection EvidenceExportAttemptSection
-	analysisRef    EvidenceExportAnalysisRef
-	association    *runtimeSessionAssociation
-	archiveRefs    []evidenceExportArchiveSource
-	validationRuns []collectedValidationRun
+	store           *Store
+	targetTask      SemanticTaskRef
+	head            RepositoryControllerHead
+	observedAt      time.Time
+	files           []EvidenceExportFile
+	entries         []EvidenceExportEntry
+	attemptSection  EvidenceExportAttemptSection
+	analysisRef     EvidenceExportAnalysisRef
+	association     *runtimeSessionAssociation
+	archiveRefs     []evidenceExportArchiveSource
+	validationRuns  []collectedValidationRun
+	decodedEvidence *evidenceExportDecodedRecords
 
 	workspaceRoot           string
 	workspaceRootResolved   bool

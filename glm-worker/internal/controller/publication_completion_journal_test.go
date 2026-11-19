@@ -354,7 +354,7 @@ func acceptedCompletionRuntimeOptions(t *testing.T, store *Store, source Admissi
 		t.Fatal(err)
 	}
 	if telemetry {
-		started := time.Now().UTC()
+		started := time.Now().UTC().Add(-30 * time.Second)
 		runtime.RecordModelCallLog(state.ModelCallLog{
 			TaskID: taskID, CallType: state.CallTypeTask, Role: state.WorkerRole,
 			ModelAlias: "opus", Effort: "high", Outcome: "success",

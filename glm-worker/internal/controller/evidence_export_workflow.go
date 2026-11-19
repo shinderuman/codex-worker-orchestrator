@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 	"time"
@@ -207,12 +206,20 @@ func (b *evidenceExportBuilder) analysisWorkflow(live EvidenceExportRuntimeSecti
 		Interactions: EvidenceAnalysisInteractions{Basis: evidenceAnalysisBasisRounds},
 		Regression:   emptyWorkflowRegression(evidenceAnalysisStatusAbsent),
 	}
+	decoded := b.exportDecodedEvidence()
+	if decoded.telemetry.status == evidenceAnalysisStatusPartial ||
+		decoded.lifecycle.status == evidenceAnalysisStatusPartial ||
+		decoded.rounds.status == evidenceAnalysisStatusPartial {
+		workflow.Status = evidenceAnalysisStatusPartial
+	}
 	latest := b.latestWorkflowObservation(b.workflowObservationWindow(live))
 	if latest == nil {
 		workflow.Regression.Unknown = "no valid complete runtime telemetry in this export"
 		return workflow
 	}
-	workflow.Status = evidenceAnalysisStatusCollected
+	if workflow.Status == evidenceAnalysisStatusAbsent {
+		workflow.Status = evidenceAnalysisStatusCollected
+	}
 	if len(latest.telemetry) == 0 {
 		workflow.Unknown = append(workflow.Unknown, "worker model telemetry unavailable or malformed; independent validation and parent observations retained")
 	}
@@ -260,12 +267,10 @@ func emptyWorkflowRegression(status string) EvidenceAnalysisWorkflowRegression {
 
 func (b *evidenceExportBuilder) latestWorkflowObservation(attemptWindow *EvidenceAnalysisWindow) *workflowObservation {
 	taskID := b.workflowRuntimeTaskID()
-	telemetry := parseWorkflowTelemetry(b.runtimeTelemetryBytes())
-	lifecycle := parseWorkflowLifecycle(b.runtimeLifecycleBytes())
-	rounds := parseWorkflowRounds(b.runtimeRoundsBytes())
-	if !workflowTaskRecordsMatch(taskID, telemetry, lifecycle, rounds) {
-		telemetry, lifecycle, rounds = nil, nil, nil
-	}
+	decoded := b.exportDecodedEvidence()
+	telemetry := decoded.telemetry.records
+	lifecycle := decoded.lifecycle.records
+	rounds := decoded.rounds.records
 	window := workflowLifecycleWindow(lifecycle, b.observedAt)
 	runs := b.workflowTaskRuns(taskID, window)
 	if len(telemetry) == 0 && window == nil && len(runs) == 0 && attemptWindow == nil {
@@ -285,28 +290,6 @@ func (b *evidenceExportBuilder) workflowRuntimeTaskID() string {
 		return b.association.RuntimeTaskID
 	}
 	return b.attemptSection.RuntimeTaskID
-}
-
-func workflowTaskRecordsMatch(taskID string, calls []state.ModelCallLog, lifecycle []state.TaskLifecycleRecord, rounds []state.RoundRecord) bool {
-	if taskID == "" {
-		return false
-	}
-	for _, call := range calls {
-		if call.TaskID != taskID {
-			return false
-		}
-	}
-	for _, record := range lifecycle {
-		if record.TaskID != taskID {
-			return false
-		}
-	}
-	for _, record := range rounds {
-		if record.TaskID != taskID {
-			return false
-		}
-	}
-	return true
 }
 
 func workflowLifecycleWindow(records []state.TaskLifecycleRecord, observedAt time.Time) *EvidenceAnalysisWindow {
@@ -377,27 +360,6 @@ func (b *evidenceExportBuilder) workflowObservationWindow(live EvidenceExportRun
 	default:
 		return nil
 	}
-}
-
-func (b *evidenceExportBuilder) runtimeTelemetryBytes() ([]byte, bool) {
-	if data, ok := b.runtimeFileBytes("task/telemetry.jsonl"); ok {
-		return data, true
-	}
-	return b.fileBytes("attempt/telemetry.jsonl")
-}
-
-func (b *evidenceExportBuilder) runtimeLifecycleBytes() ([]byte, bool) {
-	if data, ok := b.runtimeFileBytes("task/lifecycle.jsonl"); ok {
-		return data, true
-	}
-	return b.fileBytes("attempt/lifecycle.jsonl")
-}
-
-func (b *evidenceExportBuilder) runtimeRoundsBytes() ([]byte, bool) {
-	if data, ok := b.runtimeFileBytes("task/rounds.jsonl"); ok {
-		return data, true
-	}
-	return b.fileBytes("attempt/rounds.jsonl")
 }
 
 func (b *evidenceExportBuilder) workflowWindowRuns(window *EvidenceAnalysisWindow) []collectedValidationRun {
@@ -817,66 +779,6 @@ func workflowScopedRounds(rounds []state.RoundRecord, window *EvidenceAnalysisWi
 		}
 	}
 	return scoped
-}
-
-func parseWorkflowTelemetry(data []byte, ok bool) []state.ModelCallLog {
-	if !ok || len(data) == 0 {
-		return nil
-	}
-	var logs []state.ModelCallLog
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		var log state.ModelCallLog
-		if err := json.Unmarshal([]byte(line), &log); err != nil {
-			return nil
-		}
-		if log.CallID == "" || log.Version != state.ModelCallLogVersion {
-			return nil
-		}
-		logs = append(logs, log)
-	}
-	return logs
-}
-
-func parseWorkflowLifecycle(data []byte, ok bool) []state.TaskLifecycleRecord {
-	if !ok || len(data) == 0 {
-		return nil
-	}
-	var records []state.TaskLifecycleRecord
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		record, err := state.ParseTaskLifecycleLine([]byte(line))
-		if err != nil {
-			return nil
-		}
-		records = append(records, record)
-	}
-	return records
-}
-
-func parseWorkflowRounds(data []byte, ok bool) []state.RoundRecord {
-	if !ok {
-		return nil
-	}
-	records := make([]state.RoundRecord, 0)
-	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		var record state.RoundRecord
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			return nil
-		}
-		if record.Seq <= 0 || record.CapturedAt.IsZero() {
-			return nil
-		}
-		records = append(records, record)
-	}
-	return records
 }
 
 func workflowModelsComparable(latest, baseline []state.ModelCallLog) bool {
