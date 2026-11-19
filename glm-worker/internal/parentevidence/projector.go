@@ -94,7 +94,9 @@ type Part struct {
 	Diff        *DiffBody       `json:"diff,omitempty"`
 	Source      *SourceBody     `json:"source,omitempty"`
 
-	Surface string `json:"-"`
+	Surface           string `json:"-"`
+	ClaimRefinement   bool   `json:"-"`
+	duplicateDelivery bool
 }
 
 type AuthorityBody struct {
@@ -638,7 +640,8 @@ func (p *Projector) saveSurvivingClaims(parts []Part) error {
 
 func claimSurvivesBudget(parts []Part, claim state.ParentEvidenceLedgerEntry) bool {
 	for _, part := range parts {
-		if part.Surface == claim.Surface && part.Digest == claim.Digest && part.Status != PartRefinement {
+		if part.Surface == claim.Surface && part.Digest == claim.Digest && !part.duplicateDelivery &&
+			(part.Status != PartRefinement || part.ClaimRefinement) {
 			return true
 		}
 	}
@@ -663,6 +666,7 @@ func (p *Projector) degradeDuplicateParts() error {
 		}
 		hadBody := partHasBody(part)
 		clearPartBody(part)
+		part.duplicateDelivery = true
 		part.Reason = UnchangedReason
 		if hadBody {
 			part.Bytes = 0

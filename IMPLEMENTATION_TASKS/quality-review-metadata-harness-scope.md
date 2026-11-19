@@ -20,6 +20,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 workflow/review_flow.go の prepareReviewInputSnapshot は runQualityGate の前に state.CaptureParentFileStates を無条件に呼ぶ。state/parent_authority.go は固定名のRules・Plan・HistoryとTaskディレクトリを読む。opt-inしていない別プロジェクトで IMPLEMENTATION_RULES.md がディレクトリなら ReadFile が失敗し、review準備が停止する。正常な同名ファイルも毎回ハッシュされる。

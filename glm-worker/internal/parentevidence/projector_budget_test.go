@@ -105,3 +105,48 @@ func requireBudgetedJSON(t *testing.T, output Output) {
 		t.Fatalf("serialized output invalid or oversized: %d bytes", buf.Len())
 	}
 }
+
+func TestDuplicateSearchCannotClaimLocatorsStrippedByBatchBudget(t *testing.T) {
+	repoRoot, st := newReviewCoverageStore(t)
+	const searchDigest = "search-locators"
+	providers := Providers{Search: func(request SearchRequest) Part {
+		digest := searchDigest
+		if request.Question != "target" {
+			digest = "other-locators"
+		}
+		results := make([]SearchResult, 20)
+		for i := range results {
+			results[i] = SearchResult{Path: fmt.Sprintf("%s/%d", strings.Repeat("docs/", 510), i), Line: 1}
+		}
+		return Part{
+			Kind: "search", Status: PartProjected, Digest: digest,
+			Search: &SearchBody{Question: request.Question, Scopes: request.Scopes, Results: results},
+		}
+	}}
+	request := func(question string) SearchRequest {
+		return SearchRequest{Question: question, Scopes: []string{"docs"}, BudgetBytes: SearchMaxBudgetBytes}
+	}
+	first := NewProjector(repoRoot, st, "batched-search", providers)
+	first.Project(Manifest{Version: ManifestVersion, Reason: "batch budget",
+		Search: []SearchRequest{request("other"), request("target"), request("target")}})
+	if err := first.Commit(&bytes.Buffer{}, "batch budget"); err != nil {
+		t.Fatal(err)
+	}
+	parts := first.Output().Parts
+	if len(parts) != 3 || parts[1].Status != PartRefinement || len(parts[1].Search.Results) != 0 ||
+		parts[2].Reason != UnchangedReason || len(parts[2].Search.Results) != 0 {
+		t.Fatal("expected the target results to be omitted and the duplicate to stay suppressed")
+	}
+	if _, delivered, err := st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceSearch, searchDigest); err != nil || delivered {
+		t.Fatalf("omitted locators marked as delivered: %t, %v", delivered, err)
+	}
+	second := NewProjector(repoRoot, st, "refined-search", providers)
+	second.Project(Manifest{Version: ManifestVersion, Reason: "retry locator delivery",
+		Search: []SearchRequest{request("target")}})
+	if err := second.Commit(&bytes.Buffer{}, "retry locator delivery"); err != nil {
+		t.Fatal(err)
+	}
+	if got := second.Output().Parts[0]; got.Status != PartProjected || len(got.Search.Results) != 20 {
+		t.Fatalf("retry did not deliver the target results: %s", got.Status)
+	}
+}

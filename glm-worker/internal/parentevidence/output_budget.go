@@ -82,6 +82,7 @@ func stripPartBody(part *Part) bool {
 	}
 	clearPartBody(part)
 	part.Status = PartRefinement
+	part.ClaimRefinement = false
 	part.Reason = "total evidence output budget exceeded; body omitted while counts, digests and locators are preserved"
 	part.Bytes = 0
 	part.TokenProxy = 0

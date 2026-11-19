@@ -8,13 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md`](IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md)
+- [`IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md`](IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md)
 
 ## NEXT（優先順）
 
 - [`IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md`](IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md)
 - [`IMPLEMENTATION_TASKS/idle-authority-bootstrap.md`](IMPLEMENTATION_TASKS/idle-authority-bootstrap.md)
-- [`IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md`](IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md)
 - [`IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md`](IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md)
 - [`IMPLEMENTATION_TASKS/status-event-read-completeness.md`](IMPLEMENTATION_TASKS/status-event-read-completeness.md)
 - [`IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md`](IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md)
