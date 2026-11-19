@@ -148,3 +148,44 @@ func indexByte(value string, target byte) int {
 	}
 	return -1
 }
+
+func TestTerminalSemanticFieldsFollowPacketContract(t *testing.T) {
+	cases := []struct {
+		status Status
+		extras []string
+	}{
+		{StatusImplemented, []string{"parent_validation", "parent_validation_working_dir", "parent_validation_evidence"}},
+		{StatusNeedsSolDecision, []string{"failure_path_advisory"}},
+		{StatusPass, []string{"failure_path_advisory"}},
+		{StatusFixRequired, nil},
+		{StatusNeedsSolReview, []string{"failure_path_advisory"}},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.status), func(t *testing.T) {
+			fields := TerminalSemanticFields(tc.status)
+			want := []string{"status", "risk"}
+			for _, field := range packetStatusContracts[tc.status].resultFields {
+				want = append(want, string(field))
+			}
+			want = append(want, tc.extras...)
+			want = append(want, "targets", "artifacts")
+			if !slices.Equal(fields, want) {
+				t.Fatalf("terminal fields = %v, want %v", fields, want)
+			}
+			seen := map[string]bool{}
+			for _, field := range fields {
+				if seen[field] {
+					t.Fatalf("duplicate packet field %q", field)
+				}
+				seen[field] = true
+			}
+			fields[0] = "mutated"
+			if got := TerminalSemanticFields(tc.status)[0]; got != "status" {
+				t.Fatalf("packet projection contract was mutated: %q", got)
+			}
+		})
+	}
+	if got := TerminalSemanticFields(Status("unknown")); got != nil {
+		t.Fatalf("unknown status has terminal fields: %v", got)
+	}
+}

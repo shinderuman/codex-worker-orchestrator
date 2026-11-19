@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md`](IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md)
+- [`IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md`](IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md)
 
 ## NEXT（優先順）
 
@@ -24,7 +24,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md`](IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md)
 - [`IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md`](IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md)
 - [`IMPLEMENTATION_TASKS/review-admission-quality-reachability.md`](IMPLEMENTATION_TASKS/review-admission-quality-reachability.md)
-- [`IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md`](IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md)
 - [`IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md`](IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md)
 - [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)
 - [`IMPLEMENTATION_TASKS/test-timing-regression-owner.md`](IMPLEMENTATION_TASKS/test-timing-regression-owner.md)

@@ -27,6 +27,10 @@ handoffの応答に必要な証拠だけを読み込む。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 appのfull handoffを作った後でterminal/recovery用に削る。
@@ -45,9 +49,10 @@ appのfull handoffを作った後でterminal/recovery用に削る。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md`
-
+none
 
 ## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md`
+
+- `IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md`
