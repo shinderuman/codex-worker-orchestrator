@@ -259,10 +259,10 @@ func emptyWorkflowRegression(status string) EvidenceAnalysisWorkflowRegression {
 
 func (b *evidenceExportBuilder) latestWorkflowObservation(attemptWindow *EvidenceAnalysisWindow) *workflowObservation {
 	taskID := b.workflowRuntimeTaskID()
-    decoded := b.exportDecodedEvidence()
-    telemetry := decoded.telemetry.records
-    lifecycle := decoded.lifecycle.records
-    rounds := decoded.rounds.records
+	decoded := b.exportDecodedEvidence()
+	telemetry := decoded.telemetry.records
+	lifecycle := decoded.lifecycle.records
+	rounds := decoded.rounds.records
 	window := workflowLifecycleWindow(lifecycle, b.observedAt)
 	runs := b.workflowTaskRuns(taskID, window)
 	if len(telemetry) == 0 && window == nil && len(runs) == 0 && attemptWindow == nil {

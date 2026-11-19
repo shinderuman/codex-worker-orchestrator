@@ -649,8 +649,6 @@ func (b *evidenceExportBuilder) analysisModelCalls() EvidenceAnalysisModelCalls 
 	calls := EvidenceAnalysisModelCalls{Status: source.status, Basis: evidenceAnalysisBasisTelemetry}
 	logs := workflowModelCalls(source.records)
 	if len(logs) == 0 {
-		// A valid event-only stream contains no model calls; invalid evidence
-		// retains its partial coverage instead of being treated as absent.
 		if source.status == evidenceAnalysisStatusCollected {
 			calls.Status = evidenceAnalysisStatusAbsent
 		}
@@ -667,16 +665,16 @@ func (b *evidenceExportBuilder) analysisModelCalls() EvidenceAnalysisModelCalls 
 }
 
 func (b *evidenceExportBuilder) analysisReviewRounds() EvidenceAnalysisReviewRounds {
-    source := b.exportDecodedEvidence().rounds
-    rounds := EvidenceAnalysisReviewRounds{Status: source.status, Basis: evidenceAnalysisBasisRounds}
-    for _, record := range source.records {
-        rounds.Rounds = append(rounds.Rounds, EvidenceAnalysisRound{
-            Seq: record.Seq, ReviewNumber: record.ReviewNumber, AutoFixes: record.AutoFixes,
-            WorkerPhase: record.WorkerPhase, CapturedAt: record.CapturedAt,
-        })
-    }
-    rounds.Count = len(rounds.Rounds)
-    return rounds
+	source := b.exportDecodedEvidence().rounds
+	rounds := EvidenceAnalysisReviewRounds{Status: source.status, Basis: evidenceAnalysisBasisRounds}
+	for _, record := range source.records {
+		rounds.Rounds = append(rounds.Rounds, EvidenceAnalysisRound{
+			Seq: record.Seq, ReviewNumber: record.ReviewNumber, AutoFixes: record.AutoFixes,
+			WorkerPhase: record.WorkerPhase, CapturedAt: record.CapturedAt,
+		})
+	}
+	rounds.Count = len(rounds.Rounds)
+	return rounds
 }
 
 func analysisGit(git *EvidenceExportGitAudit) *EvidenceAnalysisGit {
@@ -721,11 +719,11 @@ func (b *evidenceExportBuilder) analysisStates() EvidenceAnalysisStates {
 }
 
 func (b *evidenceExportBuilder) telemetryCalls() []state.ModelCallLog {
-    return b.exportDecodedEvidence().telemetry.records
+	return b.exportDecodedEvidence().telemetry.records
 }
 
 func (b *evidenceExportBuilder) taskEvents() []state.TaskEventRecord {
-    return b.exportDecodedEvidence().events.records
+	return b.exportDecodedEvidence().events.records
 }
 
 func (b *evidenceExportBuilder) fileBytes(path string) ([]byte, bool) {
