@@ -8,11 +8,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 )
 
-func (s *Store) failedFinalValidation(candidate AcceptedCandidate) (*FinalValidationRequest, error) {
-	return s.failedFinalValidationFromInventory(candidate, nil)
-}
-
-func (s *Store) failedFinalValidationFromInventory(candidate AcceptedCandidate, inventory *publicationRunInventory) (*FinalValidationRequest, error) {
+func (s *Store) failedFinalValidation(candidate AcceptedCandidate, inventory *publicationRunInventory) (*FinalValidationRequest, error) {
 	if len(candidate.RequiredValidations) == 0 {
 		return nil, nil
 	}

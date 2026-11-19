@@ -57,18 +57,15 @@ func TestPostInstallSmokeUnreadableRunDoesNotBecomeMissing(t *testing.T) {
 	}
 }
 
-func TestPostInstallSmokeReadinessReaderMatchesValidationMissingSemantics(t *testing.T) {
+func TestPublicationRunInventoryMissingDirectoryPreservesReadError(t *testing.T) {
 	t.Parallel()
 	fixture := newFindingAcceptanceFixture(t)
 	module := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.identity, fixture.source.Attempt.SemanticTaskRef))
 	if err := os.RemoveAll(module.Path(qualitygate.RunDirectory)); err != nil {
 		t.Fatal(err)
 	}
-	if _, found, err := latestSmokeProbeRun(module, t.TempDir(), "probe"); err != nil || found {
-		t.Fatalf("missing smoke run directory must mean no run: found=%v err=%v", found, err)
-	}
-	if _, _, err := latestFinalValidationRun(module, t.TempDir(), "go-test"); !os.IsNotExist(err) {
-		t.Fatalf("raw validation reader did not preserve the filesystem error: %v", err)
+	if _, err := readPublicationRunInventory(module); !os.IsNotExist(err) {
+		t.Fatalf("run inventory did not preserve the missing-directory error: %v", err)
 	}
 }
 

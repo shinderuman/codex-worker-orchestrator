@@ -20,18 +20,8 @@ func TestPublicationRunInventoryLatestIndependentOfEnumerationOrder(t *testing.T
 			module := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.identity, fixture.source.Attempt.SemanticTaskRef))
 			root := t.TempDir()
 			for index, stamp := range stamps {
-				writePublicationInventoryRecord(t, module, qualitygate.RunRecord{
-					ValidationRunID: fmt.Sprintf("%032x", index+1),
-					Form: "go-test", Repository: root,
-					StartedAt: time.Unix(int64(stamp), 0),
-					Status: qualitygate.StatusPass,
-				})
-				writePublicationInventoryRecord(t, module, qualitygate.RunRecord{
-					ValidationRunID: fmt.Sprintf("%032x", index+4),
-					Form: smokeProbeForm, Repository: root, ProbeID: "probe",
-					StartedAt: time.Unix(int64(stamp), 0),
-					Status: qualitygate.StatusPass,
-				})
+				writePublicationInventoryRecord(t, module, publicationInventoryRecord(index+1, "go-test", root, "", int64(stamp), qualitygate.StatusPass))
+				writePublicationInventoryRecord(t, module, publicationInventoryRecord(index+4, smokeProbeForm, root, "probe", int64(stamp), qualitygate.StatusPass))
 			}
 			dirs, records := 0, 0
 			inventory, err := readPublicationRunInventoryWith(module, func(path string) ([]os.DirEntry, error) {
@@ -71,13 +61,13 @@ func TestPublicationRunInventoryFreshReadAndNewestFailure(t *testing.T) {
 	fixture := newFindingAcceptanceFixture(t)
 	module := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.identity, fixture.source.Attempt.SemanticTaskRef))
 	root := t.TempDir()
-	pass := qualitygate.RunRecord{ValidationRunID: fmt.Sprintf("%032x", 1), Form: "go-test", Repository: root, StartedAt: time.Unix(1, 0), Status: qualitygate.StatusPass}
+	pass := publicationInventoryRecord(1, "go-test", root, "", 1, qualitygate.StatusPass)
 	writePublicationInventoryRecord(t, module, pass)
 	before, err := readPublicationRunInventory(module)
 	if err != nil {
 		t.Fatal(err)
 	}
-	failure := qualitygate.RunRecord{ValidationRunID: fmt.Sprintf("%032x", 2), Form: "go-test", Repository: root, StartedAt: time.Unix(2, 0), Status: qualitygate.StatusFail}
+	failure := publicationInventoryRecord(2, "go-test", root, "", 2, qualitygate.StatusFail)
 	writePublicationInventoryRecord(t, module, failure)
 	oldRun, _, err := before.latestValidation(root, "go-test")
 	if err != nil || oldRun.ValidationRunID != pass.ValidationRunID {
@@ -99,16 +89,8 @@ func TestPublicationRunInventoryRejectsOnlyLatestTie(t *testing.T) {
 	module := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.identity, fixture.source.Attempt.SemanticTaskRef))
 	root := t.TempDir()
 	for index, stamp := range []int{2, 2, 1} {
-		for _, form := range []string{"go-test", smokeProbeForm} {
-			id := index + 1
-			if form == smokeProbeForm {
-				id += 3
-			}
-			writePublicationInventoryRecord(t, module, qualitygate.RunRecord{
-				ValidationRunID: fmt.Sprintf("%032x", id), Form: form, Repository: root, ProbeID: "probe",
-				StartedAt: time.Unix(int64(stamp), 0),
-			})
-		}
+		writePublicationInventoryRecord(t, module, publicationInventoryRecord(index+1, "go-test", root, "", int64(stamp), qualitygate.StatusPass))
+		writePublicationInventoryRecord(t, module, publicationInventoryRecord(index+4, smokeProbeForm, root, "probe", int64(stamp), qualitygate.StatusPass))
 	}
 	inventory, err := readPublicationRunInventory(module)
 	if err != nil {
@@ -130,9 +112,7 @@ func TestPublicationRunInventoryMalformedUnrelatedFailsClosed(t *testing.T) {
 	fixture := newFindingAcceptanceFixture(t)
 	module := state.AttachStateStore(WorkflowTaskConfig(fixture.store.config, fixture.store.identity, fixture.source.Attempt.SemanticTaskRef))
 	root := t.TempDir()
-	writePublicationInventoryRecord(t, module, qualitygate.RunRecord{
-		ValidationRunID: fmt.Sprintf("%032x", 1), Form: "go-test", Repository: root, StartedAt: time.Unix(1, 0),
-	})
+	writePublicationInventoryRecord(t, module, publicationInventoryRecord(1, "go-test", root, "", 1, qualitygate.StatusPass))
 	badID := fmt.Sprintf("%032x", 2)
 	badPath := module.Path(qualitygate.RunRelativePath(badID))
 	if err := os.MkdirAll(filepath.Dir(badPath), 0o700); err != nil {
@@ -144,6 +124,16 @@ func TestPublicationRunInventoryMalformedUnrelatedFailsClosed(t *testing.T) {
 	if _, err := readPublicationRunInventory(module); err == nil || !strings.Contains(err.Error(), badID) {
 		t.Fatalf("malformed unrelated record escaped fail-closed read: %v", err)
 	}
+}
+
+func publicationInventoryRecord(id int, form, root, probe string, started int64, status string) qualitygate.RunRecord {
+	record := qualitygate.RunRecord{ValidationRunID: fmt.Sprintf("%032x", id)}
+	record.Form = form
+	record.Repository = root
+	record.ProbeID = probe
+	record.StartedAt = time.Unix(started, 0)
+	record.Status = status
+	return record
 }
 
 func writePublicationInventoryRecord(t *testing.T, module *state.StateStore, record qualitygate.RunRecord) {

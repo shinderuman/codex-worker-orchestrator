@@ -278,7 +278,7 @@ func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead,
 	} else if err != nil {
 		return ParentCompletionOperation{}, err
 	}
-	failed, err := s.failedFinalValidationFromInventory(candidate, inventory)
+	failed, err := s.failedFinalValidation(candidate, inventory)
 	if err != nil {
 		return ParentCompletionOperation{}, err
 	}

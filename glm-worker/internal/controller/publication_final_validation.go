@@ -186,11 +186,7 @@ func validFinalValidationWorkingDir(dir string) bool {
 	return true
 }
 
-func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalValidationEvidence, error) {
-	return s.collectFinalValidationEvidenceFromInventory(c, nil)
-}
-
-func (s *Store) collectFinalValidationEvidenceFromInventory(c AcceptedCandidate, inventory *publicationRunInventory) ([]FinalValidationEvidence, error) {
+func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate, optional ...*publicationRunInventory) ([]FinalValidationEvidence, error) {
 	requests, err := normalizeRequiredValidations(c.RequiredValidations)
 	if err != nil || len(requests) == 0 {
 		return nil, err
@@ -198,6 +194,10 @@ func (s *Store) collectFinalValidationEvidenceFromInventory(c AcceptedCandidate,
 	source, err := s.finalValidationSource(c)
 	if err != nil {
 		return nil, err
+	}
+	var inventory *publicationRunInventory
+	if len(optional) != 0 {
+		inventory = optional[0]
 	}
 	if inventory == nil {
 		inventory, err = s.publicationRunInventoryFor(c)
@@ -207,30 +207,34 @@ func (s *Store) collectFinalValidationEvidenceFromInventory(c AcceptedCandidate,
 	}
 	evidence := make([]FinalValidationEvidence, 0, len(requests))
 	for _, request := range requests {
-		repoRoot, err := s.finalValidationWorkspace(c, request)
+		item, err := s.finalValidationEvidenceFor(c, request, source, inventory)
 		if err != nil {
 			return nil, err
 		}
-		record, found, err := inventory.latestValidation(repoRoot, request.Form)
-		if err != nil {
-			return nil, err
-		}
-		if !found || !finalValidationMatchesSource(record, repoRoot, source, request) {
-			return nil, fmt.Errorf("final validation %s has no terminal PASS run for the current candidate source", request.Form)
-		}
-		if err := qualitygate.VerifyTerminalPass(record); err != nil {
-			return nil, fmt.Errorf("final validation %s run %s is not a terminal PASS: %w", request.Form, record.ValidationRunID, err)
-		}
-		evidence = append(evidence, FinalValidationEvidence{Form: request.Form, ValidationRunID: record.ValidationRunID})
+		evidence = append(evidence, item)
 	}
 	return evidence, nil
 }
 
-func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []FinalValidationEvidence) error {
-	return s.verifyFinalValidationEvidenceFromInventory(c, recorded, nil)
+func (s *Store) finalValidationEvidenceFor(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource, inventory *publicationRunInventory) (FinalValidationEvidence, error) {
+	repoRoot, err := s.finalValidationWorkspace(c, request)
+	if err != nil {
+		return FinalValidationEvidence{}, err
+	}
+	record, found, err := inventory.latestValidation(repoRoot, request.Form)
+	if err != nil {
+		return FinalValidationEvidence{}, err
+	}
+	if !found || !finalValidationMatchesSource(record, repoRoot, source, request) {
+		return FinalValidationEvidence{}, fmt.Errorf("final validation %s has no terminal PASS run for the current candidate source", request.Form)
+	}
+	if err := qualitygate.VerifyTerminalPass(record); err != nil {
+		return FinalValidationEvidence{}, fmt.Errorf("final validation %s run %s is not a terminal PASS: %w", request.Form, record.ValidationRunID, err)
+	}
+	return FinalValidationEvidence{Form: request.Form, ValidationRunID: record.ValidationRunID}, nil
 }
 
-func (s *Store) verifyFinalValidationEvidenceFromInventory(c AcceptedCandidate, recorded []FinalValidationEvidence, inventory *publicationRunInventory) error {
+func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []FinalValidationEvidence, optional ...*publicationRunInventory) error {
 	requests, err := normalizeRequiredValidations(c.RequiredValidations)
 	if err != nil {
 		return err
@@ -244,6 +248,10 @@ func (s *Store) verifyFinalValidationEvidenceFromInventory(c AcceptedCandidate, 
 	if err != nil {
 		return err
 	}
+	var inventory *publicationRunInventory
+	if len(optional) != 0 {
+		inventory = optional[0]
+	}
 	if inventory == nil {
 		inventory, err = s.publicationRunInventoryFor(c)
 		if err != nil {
@@ -251,25 +259,31 @@ func (s *Store) verifyFinalValidationEvidenceFromInventory(c AcceptedCandidate, 
 		}
 	}
 	for _, request := range requests {
-		repoRoot, err := s.finalValidationWorkspace(c, request)
-		if err != nil {
+		if err := s.verifyRecordedFinalValidation(c, request, source, inventory, byForm[request.Form]); err != nil {
 			return err
 		}
-		runID := byForm[request.Form]
-		record, err := inventory.record(runID)
-		if err != nil {
-			return fmt.Errorf("final validation %s run %s is unreadable: %w", request.Form, runID, err)
-		}
-		if err := verifyFinalValidationRecord(record, repoRoot, request, source); err != nil {
-			return err
-		}
-		latest, _, err := inventory.latestValidation(repoRoot, request.Form)
-		if err != nil {
-			return err
-		}
-		if latest.ValidationRunID != runID {
-			return fmt.Errorf("final validation %s has a newer run; saved readiness is stale", request.Form)
-		}
+	}
+	return nil
+}
+
+func (s *Store) verifyRecordedFinalValidation(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource, inventory *publicationRunInventory, runID string) error {
+	repoRoot, err := s.finalValidationWorkspace(c, request)
+	if err != nil {
+		return err
+	}
+	record, err := inventory.record(runID)
+	if err != nil {
+		return fmt.Errorf("final validation %s run %s is unreadable: %w", request.Form, runID, err)
+	}
+	if err := verifyFinalValidationRecord(record, repoRoot, request, source); err != nil {
+		return err
+	}
+	latest, _, err := inventory.latestValidation(repoRoot, request.Form)
+	if err != nil {
+		return err
+	}
+	if latest.ValidationRunID != runID {
+		return fmt.Errorf("final validation %s has a newer run; saved readiness is stale", request.Form)
 	}
 	return nil
 }
@@ -353,14 +367,6 @@ func (s *Store) finalValidationRunStore(task SemanticTaskRef) (*state.StateStore
 		return nil, fmt.Errorf("no validation run store is bound to the final Task: %w", err)
 	}
 	return module, nil
-}
-
-func latestFinalValidationRun(module *state.StateStore, repoRoot, form string) (qualitygate.RunRecord, bool, error) {
-	inventory, err := readPublicationRunInventory(module)
-	if err != nil {
-		return qualitygate.RunRecord{}, false, err
-	}
-	return inventory.latestValidation(repoRoot, form)
 }
 
 func finalValidationMatchesSource(record qualitygate.RunRecord, repoRoot string, source finalValidationSource, request FinalValidationRequest) bool {

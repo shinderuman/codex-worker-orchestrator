@@ -10,8 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// A publicationRunInventory is scoped to one publication decision, never retained
-// across readiness revalidation or projection calls.
 type publicationRunInventory struct {
 	module *state.StateStore
 	latest map[publicationRunKey]publicationRunSelection
@@ -33,7 +31,6 @@ func readPublicationRunInventory(module *state.StateStore) (*publicationRunInven
 	return readPublicationRunInventoryWith(module, os.ReadDir, qualitygate.Read)
 }
 
-// The injected readers allow tests to count directory and run-record reads.
 func readPublicationRunInventoryWith(
 	module *state.StateStore,
 	readDir func(string) ([]os.DirEntry, error),

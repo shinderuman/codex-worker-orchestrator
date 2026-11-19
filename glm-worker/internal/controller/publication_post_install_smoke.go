@@ -215,19 +215,15 @@ func (s *Store) InterruptedPostInstallSmokeWorkspace(candidate AcceptedCandidate
 	if err != nil {
 		return false, err
 	}
-	module, err := s.finalValidationRunStore(candidate.TaskRef)
+	inventory, err := s.publicationRunInventoryFor(candidate)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	inventory, err := readPublicationRunInventory(module)
-	if errors.Is(err, os.ErrNotExist) {
+	if inventory == nil {
 		return false, nil
-	}
-	if err != nil {
-		return false, err
 	}
 	for _, probe := range candidate.RequiredSmokeProbes {
 		record, found, err := inventory.latestSmokeProbe(root, probe.ProbeID)
@@ -356,11 +352,7 @@ func smokeProbeSatisfied(inventory *publicationRunInventory, repoRoot string, so
 	return verifyTerminalSmokeProbePass(inventory.module, record) == nil, nil
 }
 
-func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvidence, error) {
-	return s.collectSmokeProbeEvidenceFromInventory(c, nil)
-}
-
-func (s *Store) collectSmokeProbeEvidenceFromInventory(c AcceptedCandidate, inventory *publicationRunInventory) ([]SmokeProbeEvidence, error) {
+func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate, optional ...*publicationRunInventory) ([]SmokeProbeEvidence, error) {
 	probes, err := normalizeSmokeProbes(c.RequiredSmokeProbes)
 	if err != nil || len(probes) == 0 {
 		return nil, err
@@ -377,6 +369,10 @@ func (s *Store) collectSmokeProbeEvidenceFromInventory(c AcceptedCandidate, inve
 	if err != nil {
 		return nil, err
 	}
+	var inventory *publicationRunInventory
+	if len(optional) != 0 {
+		inventory = optional[0]
+	}
 	if inventory == nil {
 		inventory, err = s.publicationRunInventoryFor(c)
 		if err != nil {
@@ -385,26 +381,30 @@ func (s *Store) collectSmokeProbeEvidenceFromInventory(c AcceptedCandidate, inve
 	}
 	evidence := make([]SmokeProbeEvidence, 0, len(probes))
 	for _, probe := range probes {
-		record, found, err := inventory.latestSmokeProbe(repoRoot, probe.ProbeID)
+		item, err := smokeProbeEvidenceFor(inventory, repoRoot, source, c, probe, deployment)
 		if err != nil {
 			return nil, err
 		}
-		if !found || !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
-			return nil, fmt.Errorf("post-install smoke probe %s has no terminal PASS run for the current candidate source and verification deployment", probe.ProbeID)
-		}
-		if err := verifyTerminalSmokeProbePass(inventory.module, record); err != nil {
-			return nil, fmt.Errorf("post-install smoke probe %s has no complete PASS evidence: %w", probe.ProbeID, err)
-		}
-		evidence = append(evidence, SmokeProbeEvidence{ProbeID: probe.ProbeID, ValidationRunID: record.ValidationRunID})
+		evidence = append(evidence, item)
 	}
 	return evidence, nil
 }
 
-func (s *Store) verifySmokeProbeEvidence(c AcceptedCandidate, recorded []SmokeProbeEvidence) error {
-	return s.verifySmokeProbeEvidenceFromInventory(c, recorded, nil)
+func smokeProbeEvidenceFor(inventory *publicationRunInventory, repoRoot string, source finalValidationSource, c AcceptedCandidate, probe SmokeProbeDeclaration, deployment SmokeProbeDeployment) (SmokeProbeEvidence, error) {
+	record, found, err := inventory.latestSmokeProbe(repoRoot, probe.ProbeID)
+	if err != nil {
+		return SmokeProbeEvidence{}, err
+	}
+	if !found || !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
+		return SmokeProbeEvidence{}, fmt.Errorf("post-install smoke probe %s has no terminal PASS run for the current candidate source and verification deployment", probe.ProbeID)
+	}
+	if err := verifyTerminalSmokeProbePass(inventory.module, record); err != nil {
+		return SmokeProbeEvidence{}, fmt.Errorf("post-install smoke probe %s has no complete PASS evidence: %w", probe.ProbeID, err)
+	}
+	return SmokeProbeEvidence{ProbeID: probe.ProbeID, ValidationRunID: record.ValidationRunID}, nil
 }
 
-func (s *Store) verifySmokeProbeEvidenceFromInventory(c AcceptedCandidate, recorded []SmokeProbeEvidence, inventory *publicationRunInventory) error {
+func (s *Store) verifySmokeProbeEvidence(c AcceptedCandidate, recorded []SmokeProbeEvidence, optional ...*publicationRunInventory) error {
 	probes, err := normalizeSmokeProbes(c.RequiredSmokeProbes)
 	if err != nil {
 		return err
@@ -412,6 +412,10 @@ func (s *Store) verifySmokeProbeEvidenceFromInventory(c AcceptedCandidate, recor
 	byProbe, err := smokeProbeRecordShape(probes, recorded)
 	if err != nil {
 		return err
+	}
+	var inventory *publicationRunInventory
+	if len(optional) != 0 {
+		inventory = optional[0]
 	}
 	return s.verifySmokeProbeRuns(c, probes, byProbe, inventory)
 }
@@ -492,17 +496,6 @@ func verifySmokeProbeRun(inventory *publicationRunInventory, record qualitygate.
 		return fmt.Errorf("post-install smoke probe %s has a newer run; saved readiness is stale", probe.ProbeID)
 	}
 	return nil
-}
-
-func latestSmokeProbeRun(module *state.StateStore, repoRoot, probeID string) (qualitygate.RunRecord, bool, error) {
-	inventory, err := readPublicationRunInventory(module)
-	if errors.Is(err, os.ErrNotExist) {
-		return qualitygate.RunRecord{}, false, nil
-	}
-	if err != nil {
-		return qualitygate.RunRecord{}, false, err
-	}
-	return inventory.latestSmokeProbe(repoRoot, probeID)
 }
 
 func verifyTerminalSmokeProbePass(module *state.StateStore, record qualitygate.RunRecord) error {
