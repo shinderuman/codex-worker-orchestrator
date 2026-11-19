@@ -136,6 +136,11 @@ type SessionRotationDecision struct {
 	Evidence []SessionRotationEvidence
 }
 
+type sessionRotationStartAdmission struct {
+	targetTaskID string
+	resume       bool
+}
+
 type SessionRotationEvaluation struct {
 	ParentThreadID           string
 	TaskID                   string
@@ -565,13 +570,6 @@ func (s *StateStore) findSessionRotationClaim(claimID string) (*SessionRotationM
 	return found, nil
 }
 
-// sessionRotationStartAdmission is the single decision returned to read-only
-// command admission and re-evaluated immediately before claimed task mutation.
-type sessionRotationStartAdmission struct {
-	targetTaskID string
-	resume       bool
-}
-
 func (s *StateStore) admitClaimedSessionRotation(callerThreadID, claimID string) (sessionRotationStartAdmission, error) {
 	marker, err := s.findSessionRotationClaim(claimID)
 	if err != nil {
@@ -662,8 +660,6 @@ func sessionRotationMarkerTargets(marker *SessionRotationMarker, callerThreadID,
 	return marker.State == SessionRotationStateBound || marker.State == SessionRotationStateIssued
 }
 
-// StartSessionRotationTask performs a fresh claimed admission immediately before
-// mutation; it must not rely on a prior read-only command preflight.
 func (s *StateStore) StartSessionRotationTask(callerThreadID, claimID string) (string, error) {
 	admission, err := s.admitClaimedSessionRotation(callerThreadID, claimID)
 	if err != nil {
