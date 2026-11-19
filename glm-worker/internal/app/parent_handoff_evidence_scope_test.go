@@ -27,7 +27,7 @@ func TestParentHandoffEvidenceReadScopeFullVersusRecovery(t *testing.T) {
 	const runs = 24
 	for i := 0; i < runs; i++ {
 		record := qualitygate.RunRecord{}
-		record.ValidationRunID = fmt.Sprintf("%032x", i + 1)
+		record.ValidationRunID = fmt.Sprintf("%032x", i+1)
 		record.Form = "go-test"
 		record.Repository = cfg.RepoRoot
 		record.WorkingDir = cfg.RepoRoot
