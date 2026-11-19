@@ -44,10 +44,10 @@ const (
 const knownContentSHA256Flag = "--known-content-sha256"
 
 const (
-	rulesFile = "IMPLEMENTATION_RULES.md"
-	planFile  = "IMPLEMENTATION_PLAN.local.md"
+	rulesFile  = "IMPLEMENTATION_RULES.md"
+	planFile   = "IMPLEMENTATION_PLAN.local.md"
 	activeKind = "active"
-	usage     = "usage: glm-worker --authority bootstrap | <rules|plan|active> [--known-content-sha256 <hex>]"
+	usage      = "usage: glm-worker --authority bootstrap | <rules|plan|active> [--known-content-sha256 <hex>]"
 )
 
 func Build(args []string) (Output, error) {
@@ -225,7 +225,6 @@ func readSnapshot(root string) (snapshot, error) {
 	}
 	return snapshot{rules: rules, plan: plan, active: active, activePath: activePath, hash: snapshotHash(rules, plan, activePath, active)}, nil
 }
-
 
 func readIdleSnapshot(cfg config.AppConfig, schedule taskcontract.PlanSchedule, rules, plan []byte) (snapshot, error) {
 	if err := schedule.ValidateIdle(); err != nil {
