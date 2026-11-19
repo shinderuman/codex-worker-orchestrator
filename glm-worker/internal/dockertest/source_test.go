@@ -23,6 +23,11 @@ type cancelAfterArchiveRead struct {
 	remaining int
 }
 
+type cancelAfterArchiveWrite struct {
+	cancel context.CancelFunc
+	writes int
+}
+
 func (r *cancelAfterArchiveRead) Read(p []byte) (int, error) {
 	if r.remaining == 0 {
 		return 0, io.EOF
@@ -40,11 +45,6 @@ func (r *cancelAfterArchiveRead) Read(p []byte) (int, error) {
 		r.cancel()
 	}
 	return n, nil
-}
-
-type cancelAfterArchiveWrite struct {
-	cancel context.CancelFunc
-	writes int
 }
 
 func (w *cancelAfterArchiveWrite) Write(p []byte) (int, error) {

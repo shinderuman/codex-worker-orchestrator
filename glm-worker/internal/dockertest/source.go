@@ -98,24 +98,8 @@ func copySharedIndexFiles(sourceDir, destinationDir string) error {
 }
 
 func writeArchive(ctx context.Context, writer *tar.Writer, root, clone string, paths []byte) error {
-	seen := map[string]bool{}
-	for _, path := range strings.Split(string(paths), "\x00") {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if path == "" || seen[path] {
-			continue
-		}
-		seen[path] = true
-		if strings.HasSuffix(path, "/") {
-			if err := archiveNestedRepository(ctx, writer, root, path); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := archiveEntry(ctx, writer, root, path, true); err != nil {
-			return err
-		}
+	if err := writeArchivePaths(ctx, writer, root, paths); err != nil {
+		return err
 	}
 	walkErr := filepath.WalkDir(filepath.Join(clone, ".git"), func(path string, _ fs.DirEntry, err error) error {
 		if canceled := ctx.Err(); canceled != nil {
@@ -132,6 +116,32 @@ func writeArchive(ctx context.Context, writer *tar.Writer, root, clone string, p
 	})
 	if walkErr != nil {
 		return walkErr
+	}
+	return ctx.Err()
+}
+
+func writeArchivePaths(ctx context.Context, writer *tar.Writer, root string, paths []byte) error {
+	seen := map[string]bool{}
+	remaining := string(paths)
+	for remaining != "" {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		path, rest, _ := strings.Cut(remaining, "\x00")
+		remaining = rest
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		if strings.HasSuffix(path, "/") {
+			if err := archiveNestedRepository(ctx, writer, root, path); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := archiveEntry(ctx, writer, root, path, true); err != nil {
+			return err
+		}
 	}
 	return ctx.Err()
 }

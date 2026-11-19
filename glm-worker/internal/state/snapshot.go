@@ -349,28 +349,7 @@ func NestedUntrackedRepositoryEntriesContext(ctx context.Context, repoRoot, dir 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.Name() == ".git" {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		mode, err := nestedRepositoryFileMode(d, path)
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(repoRoot, path)
-		if err != nil {
-			return err
-		}
-		entries = append(entries, NestedRepositoryWorktreeEntry{Path: filepath.ToSlash(relative), Mode: mode})
-		return nil
+		return appendNestedRepositoryEntry(&entries, repoRoot, path, d, walkErr)
 	})
 	if err != nil {
 		return nil, err
@@ -380,6 +359,31 @@ func NestedUntrackedRepositoryEntriesContext(ctx context.Context, repoRoot, dir 
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	return entries, nil
+}
+
+func appendNestedRepositoryEntry(entries *[]NestedRepositoryWorktreeEntry, repoRoot, path string, d fs.DirEntry, walkErr error) error {
+	if walkErr != nil {
+		return walkErr
+	}
+	if d.Name() == ".git" {
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+	if d.IsDir() {
+		return nil
+	}
+	mode, err := nestedRepositoryFileMode(d, path)
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(repoRoot, path)
+	if err != nil {
+		return err
+	}
+	*entries = append(*entries, NestedRepositoryWorktreeEntry{Path: filepath.ToSlash(relative), Mode: mode})
+	return nil
 }
 
 func nestedRepositoryFileMode(entry fs.DirEntry, path string) (os.FileMode, error) {
