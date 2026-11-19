@@ -99,13 +99,8 @@ func printRepoSearchWithSearch(request repoSearchRequest, cfg config.AppConfig, 
 		return fmt.Errorf("repo searchが失敗しました: %w", err)
 	}
 	results := repoSearchResults(report.Results)
-	digest := parentevidence.StringDigest(
-		state.ParentEvidenceSurfaceSearch,
-		request.Question,
-		fmt.Sprintf("%v", request.Scopes),
-		repoSearchResultsDigest(results),
-	)
 	output := buildRepoSearchOutput(request, report, results)
+	digest := repoSearchDeliveryDigest(request, results, output.Status)
 	return parentevidence.FinishReadInScopeResult(st, scope, state.ParentEvidenceSurfaceSearch, digest, func() (parentevidence.RenderResult, error) {
 		return renderRepoSearchResult(output, stdout)
 	})
@@ -168,6 +163,16 @@ func buildRepoSearchOutput(request repoSearchRequest, report reposearch.Report, 
 		output.Results = results
 	}
 	return output
+}
+
+func repoSearchDeliveryDigest(request repoSearchRequest, results []repoSearchResult, status string) string {
+	return parentevidence.StringDigest(
+		state.ParentEvidenceSurfaceSearch,
+		request.Question,
+		fmt.Sprintf("%v", request.Scopes),
+		repoSearchResultsDigest(results),
+		status,
+	)
 }
 
 func repoSearchResultsDigest(results []repoSearchResult) string {

@@ -291,10 +291,7 @@ func projectParentEvidenceSearch(cfg config.AppConfig, request parentevidence.Se
 	}
 	results := repoSearchResults(report.Results)
 	output := buildRepoSearchOutput(scoped, report, results)
-	part.Digest = parentevidence.StringDigest(
-		state.ParentEvidenceSurfaceSearch, request.Question,
-		fmt.Sprintf("%v", request.Scopes), repoSearchResultsDigest(results),
-	)
+	part.Digest = repoSearchDeliveryDigest(scoped, results, output.Status)
 	body := parentevidence.SearchBody{
 		Question:    request.Question,
 		Scopes:      request.Scopes,
@@ -304,6 +301,7 @@ func projectParentEvidenceSearch(cfg config.AppConfig, request parentevidence.Se
 	}
 	if output.Status == repoSearchResultRequired {
 		part.Status = parentevidence.PartRefinement
+		part.ClaimRefinement = true
 		part.Reason = output.Reason
 	} else {
 		part.Status = parentevidence.PartProjected
