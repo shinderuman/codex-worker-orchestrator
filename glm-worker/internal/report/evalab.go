@@ -2,6 +2,7 @@ package report
 
 import (
 	"io"
+	"path/filepath"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/abeval"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
@@ -27,4 +28,15 @@ func PrintEvalAB(st *state.StateStore, dir string, stdout io.Writer) error {
 		return err
 	}
 	return machinecli.WriteJSON(stdout, abeval.BuildReport(abeval.Compare(spec, direct, orchestrated)))
+}
+
+func PrintEvalABWorktreeIdentity(path string, stdout io.Writer) error {
+	identity, err := abeval.CaptureWorktreeIdentity(path)
+	if err != nil {
+		return err
+	}
+	return machinecli.WriteJSON(stdout, map[string]any{
+		"worktree_path": filepath.Clean(path),
+		"worktree_identity": identity,
+	})
 }

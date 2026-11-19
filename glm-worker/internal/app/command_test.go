@@ -21,6 +21,7 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "status", args: []string{"--status"}, mode: ModeStatus},
 		{name: "stats", args: []string{"--stats"}, mode: ModeStats},
 		{name: "eval-ab", args: []string{"--eval-ab", "/tmp/ab-run"}, mode: ModeEvalAB, payload: "/tmp/ab-run"},
+		{name: "eval-ab-worktree-identity", args: []string{"--eval-ab-worktree-identity", "/tmp/worktree"}, mode: ModeEvalABWorktreeIdentity, payload: "/tmp/worktree"},
 		{name: "call-outliers", args: []string{"--call-outliers"}, mode: ModeCallOutliers},
 		{name: "model-routing", args: []string{"--model-routing"}, mode: ModeModelRouting},
 		{name: "test-impact", args: []string{"--test-impact"}, mode: ModeTestImpact},
