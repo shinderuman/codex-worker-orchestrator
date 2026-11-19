@@ -27,6 +27,10 @@ exportごとの証拠復号と観測範囲を一致させる。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 controllerのexport analysisとworkflowでtelemetry/roundsの解釈が分散。

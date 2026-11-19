@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md`](IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md)
+- [`IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md`](IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md)
 
 ## NEXT（優先順）
 
@@ -21,7 +21,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md`](IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md)
 - [`IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md`](IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md)
 - [`IMPLEMENTATION_TASKS/review-admission-quality-reachability.md`](IMPLEMENTATION_TASKS/review-admission-quality-reachability.md)
-- [`IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md`](IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md)
 - [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)
 - [`IMPLEMENTATION_TASKS/test-timing-regression-owner.md`](IMPLEMENTATION_TASKS/test-timing-regression-owner.md)
 - [`IMPLEMENTATION_TASKS/provider-resume-wait-ownership.md`](IMPLEMENTATION_TASKS/provider-resume-wait-ownership.md)
