@@ -186,7 +186,6 @@ func validFinalValidationWorkingDir(dir string) bool {
 	return true
 }
 
-
 func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalValidationEvidence, error) {
 	return s.collectFinalValidationEvidenceFromInventory(c, nil)
 }
@@ -274,6 +273,7 @@ func (s *Store) verifyFinalValidationEvidenceFromInventory(c AcceptedCandidate, 
 	}
 	return nil
 }
+
 func finalValidationForms(requests []FinalValidationRequest) []string {
 	forms := make([]string, 0, len(requests))
 	for _, request := range requests {
@@ -307,7 +307,6 @@ func finalValidationRecordShape(forms []string, recorded []FinalValidationEviden
 	return byForm, true, nil
 }
 
-
 func verifyFinalValidationRecord(record qualitygate.RunRecord, repoRoot string, request FinalValidationRequest, source finalValidationSource) error {
 	runID := record.ValidationRunID
 	if record.Form != request.Form {
@@ -321,6 +320,7 @@ func verifyFinalValidationRecord(record qualitygate.RunRecord, repoRoot string, 
 	}
 	return nil
 }
+
 func (s *Store) finalValidationSource(c AcceptedCandidate) (finalValidationSource, error) {
 	indexDigest, err := candidateTreeIndexDigest(s.identity.PrimaryRoot, c.TreeOID)
 	if err != nil {
@@ -355,7 +355,6 @@ func (s *Store) finalValidationRunStore(task SemanticTaskRef) (*state.StateStore
 	return module, nil
 }
 
-
 func latestFinalValidationRun(module *state.StateStore, repoRoot, form string) (qualitygate.RunRecord, bool, error) {
 	inventory, err := readPublicationRunInventory(module)
 	if err != nil {
@@ -363,6 +362,7 @@ func latestFinalValidationRun(module *state.StateStore, repoRoot, form string) (
 	}
 	return inventory.latestValidation(repoRoot, form)
 }
+
 func finalValidationMatchesSource(record qualitygate.RunRecord, repoRoot string, source finalValidationSource, request FinalValidationRequest) bool {
 	return filepath.Clean(record.Repository) == filepath.Clean(repoRoot) &&
 		record.IgnoredInputsAbsent != nil && *record.IgnoredInputsAbsent &&

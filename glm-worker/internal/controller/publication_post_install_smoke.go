@@ -202,7 +202,6 @@ func (s *Store) CandidatePostInstallSmokeWorkspace(input PublicationInput) (Acce
 	return candidate, root, func() error { return s.releaseSmokeProbeCheckout(root, candidate.TaskRef) }, nil
 }
 
-
 func (s *Store) InterruptedPostInstallSmokeWorkspace(candidate AcceptedCandidate) (bool, error) {
 	root, err := s.smokeProbeWorkspace(candidate)
 	if err != nil {
@@ -241,6 +240,7 @@ func (s *Store) InterruptedPostInstallSmokeWorkspace(candidate AcceptedCandidate
 	}
 	return false, nil
 }
+
 func (s *Store) PreparePostInstallSmokeCheckout(candidate AcceptedCandidate, interrupted bool) error {
 	root, err := s.smokeProbeWorkspace(candidate)
 	if err != nil {
@@ -293,7 +293,6 @@ func (s *Store) OutstandingSmokeProbes(c AcceptedCandidate) ([]SmokeProbeDeclara
 	return s.outstandingSmokeProbes(c)
 }
 
-
 func (s *Store) outstandingSmokeProbes(c AcceptedCandidate) ([]SmokeProbeDeclaration, error) {
 	return s.outstandingSmokeProbesFromInventory(c, nil)
 }
@@ -331,6 +330,7 @@ func (s *Store) outstandingSmokeProbesFromInventory(c AcceptedCandidate, invento
 		return smokeProbeSatisfied(inventory, repoRoot, source, c, probe, deployment)
 	})
 }
+
 func outstandingObligations[T any](requests []T, satisfied func(T) (bool, error)) ([]T, error) {
 	outstanding := make([]T, 0, len(requests))
 	for _, request := range requests {
@@ -344,7 +344,6 @@ func outstandingObligations[T any](requests []T, satisfied func(T) (bool, error)
 	}
 	return outstanding, nil
 }
-
 
 func smokeProbeSatisfied(inventory *publicationRunInventory, repoRoot string, source finalValidationSource, c AcceptedCandidate, probe SmokeProbeDeclaration, deployment SmokeProbeDeployment) (bool, error) {
 	record, found, err := inventory.latestSmokeProbe(repoRoot, probe.ProbeID)
@@ -416,6 +415,7 @@ func (s *Store) verifySmokeProbeEvidenceFromInventory(c AcceptedCandidate, recor
 	}
 	return s.verifySmokeProbeRuns(c, probes, byProbe, inventory)
 }
+
 func smokeProbeRecordShape(probes []SmokeProbeDeclaration, recorded []SmokeProbeEvidence) (map[string]string, error) {
 	if len(probes) == 0 {
 		if len(recorded) != 0 {
@@ -440,7 +440,6 @@ func smokeProbeRecordShape(probes []SmokeProbeDeclaration, recorded []SmokeProbe
 	}
 	return byProbe, nil
 }
-
 
 func (s *Store) verifySmokeProbeRuns(c AcceptedCandidate, probes []SmokeProbeDeclaration, byProbe map[string]string, inventory *publicationRunInventory) error {
 	if len(probes) == 0 {
@@ -505,6 +504,7 @@ func latestSmokeProbeRun(module *state.StateStore, repoRoot, probeID string) (qu
 	}
 	return inventory.latestSmokeProbe(repoRoot, probeID)
 }
+
 func verifyTerminalSmokeProbePass(module *state.StateStore, record qualitygate.RunRecord) error {
 	taskID, err := module.TaskID()
 	if err != nil {

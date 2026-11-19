@@ -271,7 +271,6 @@ func (s *Store) projectPromotedCandidateOperation(head RepositoryControllerHead,
 	return s.projectCandidateOperation(head, candidate, PublicationOperationPublish), nil
 }
 
-
 func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead, candidate AcceptedCandidate) (ParentCompletionOperation, error) {
 	inventory, err := s.publicationRunInventoryFor(candidate)
 	if errors.Is(err, os.ErrNotExist) {
@@ -320,6 +319,7 @@ func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead,
 	}
 	return s.projectCandidateOperation(head, candidate, PublicationOperationPromote), nil
 }
+
 func smokeProbeIDs(probes []SmokeProbeDeclaration) []string {
 	ids := make([]string, 0, len(probes))
 	for _, probe := range probes {
@@ -681,7 +681,6 @@ func deriveRepositoryPublicationPolicy(repo string) (PublicationPolicy, error) {
 	return policy, nil
 }
 
-
 func (s *Store) outstandingFinalValidations(c AcceptedCandidate) ([]FinalValidationRequest, error) {
 	return s.outstandingFinalValidationsFromInventory(c, nil)
 }
@@ -722,6 +721,7 @@ func (s *Store) finalValidationSatisfied(c AcceptedCandidate, request FinalValid
 	}
 	return qualitygate.VerifyTerminalPass(record) == nil, nil
 }
+
 func gitTrimmedLines(repo string, args ...string) ([]string, error) {
 	output, err := runGitBinary(repo, nil, args...)
 	if err != nil {

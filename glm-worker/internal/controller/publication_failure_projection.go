@@ -8,7 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 )
 
-
 func (s *Store) failedFinalValidation(candidate AcceptedCandidate) (*FinalValidationRequest, error) {
 	return s.failedFinalValidationFromInventory(candidate, nil)
 }
@@ -45,6 +44,7 @@ func (s *Store) failedFinalValidationFromInventory(candidate AcceptedCandidate, 
 	}
 	return nil, nil
 }
+
 func (s *Store) projectSuspendedExecutionMaterialization(head RepositoryControllerHead) (ParentCompletionOperation, bool, error) {
 	if head.LiveLeaseID != "" || head.PendingTransitionID != "" || head.AcceptedCandidateRef != nil || head.ExecutionTaskRef == nil || head.ActiveEpisodeID != "" {
 		return ParentCompletionOperation{}, false, nil
