@@ -115,6 +115,7 @@ func TestQualityReviewActiveFixerRejectsParentMetadataChange(t *testing.T) {
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},
 	}, "", 0, nil)
+	setCurrentTaskChangedPath(w, "tracked.txt")
 	w.qualityGate = func(root string) (harnesslint.Report, error) {
 		before, err := state.CaptureGitSnapshot(root)
 		if err != nil {
