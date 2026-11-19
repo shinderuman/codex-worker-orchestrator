@@ -15,6 +15,8 @@ const (
 	parentActionRegistryName = "parentActionCommands"
 )
 
+const cleanCutoverExecutionIdentifier = "execution"
+
 func scanCleanCutover(root string, paths []string) ([]Violation, error) {
 	for _, path := range paths {
 		if path == parentActionMetadataPath {
@@ -206,8 +208,6 @@ func cleanCutoverSpecialKinds(function *ast.FuncDecl, kinds map[string]bool) {
 		}
 	}
 }
-
-const cleanCutoverExecutionIdentifier = "execution"
 
 func cleanCutoverExecutionMatch(expression ast.Expr) (string, bool) {
 	comparison, ok := expression.(*ast.BinaryExpr)

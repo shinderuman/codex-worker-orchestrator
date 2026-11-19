@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-const goNilIdentifier = "nil"
-
 type mainCallKind int
 
 type mainPosition struct {
@@ -46,6 +44,8 @@ const mainTerminalOnlyMessage = "main must only delegate to the internal command
 const startupSelectorName = "Run"
 
 const terminalHelperSelectorName = "WriteProcessError"
+
+const goNilIdentifier = "nil"
 
 func scanGoRules(root string, paths []string) ([]Violation, error) {
 	var violations []Violation

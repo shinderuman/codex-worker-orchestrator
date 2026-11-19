@@ -47,64 +47,43 @@ func executeSpecialParentAction() {
 `
 
 func TestCleanCutoverRejectsRegisteredParentActionRejectionRoots(t *testing.T) {
-	cases := []struct {
-		name    string
-		source  string
-		message string
-	}{
-		{
-			name:    "unsupported tombstone",
-			source:  strings.Replace(currentParentActionCutoverFixture,
-				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
-				"\"special\": {Action: \"special\", Execute: parentActionExecutionUnsupported},", 1),
-			message: "no live executable dispatch",
-		},
-		{
-			name:    "registered kind with no dispatch",
-			source:  strings.Replace(currentParentActionCutoverFixture,
-				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
-				"\"retired\": {Action: \"retired\", Execute: parentActionExecutionRetired},", 1),
-			message: "no live executable dispatch",
-		},
-		{
-			name:    "error only dispatch",
-			source:  strings.Replace(
-				strings.Replace(currentParentActionCutoverFixture,
-					"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
-					"\"retired\": {Action: \"retired\", Execute: parentActionExecutionRetired},", 1),
-				"return usageError()",
-				"if execution == parentActionExecutionRetired { return retiredError() }; return usageError()", 1),
-			message: "no live executable dispatch",
-		},
-		{
-			name:    "retired alias mismatch",
-			source:  strings.Replace(currentParentActionCutoverFixture,
-				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
-				"\"retired\": {Action: \"special\", Execute: parentActionExecutionSpecial},", 1),
-			message: "same canonical action",
-		},
-		{
-			name:    "terminal tombstone",
-			source:  strings.Replace(currentParentActionCutoverFixture,
-				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
-				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial, TerminalExecute: parentActionExecutionRetired},", 1),
-			message: "no live terminal dispatch",
-		},
+	const current = `"special": {Action: "special", Execute: parentActionExecutionSpecial},`
+
+	t.Run("unsupported tombstone", func(t *testing.T) {
+		source := strings.Replace(currentParentActionCutoverFixture, current, `"special": {Action: "special", Execute: parentActionExecutionUnsupported},`, 1)
+		checkCleanCutoverViolation(t, source, "no live executable dispatch")
+	})
+	t.Run("registered kind with no dispatch", func(t *testing.T) {
+		source := strings.Replace(currentParentActionCutoverFixture, current, `"retired": {Action: "retired", Execute: parentActionExecutionRetired},`, 1)
+		checkCleanCutoverViolation(t, source, "no live executable dispatch")
+	})
+	t.Run("error only dispatch", func(t *testing.T) {
+		source := strings.Replace(currentParentActionCutoverFixture, current, `"retired": {Action: "retired", Execute: parentActionExecutionRetired},`, 1)
+		source = strings.Replace(source, "return usageError()", "if execution == parentActionExecutionRetired { return retiredError() }; return usageError()", 1)
+		checkCleanCutoverViolation(t, source, "no live executable dispatch")
+	})
+	t.Run("retired alias mismatch", func(t *testing.T) {
+		source := strings.Replace(currentParentActionCutoverFixture, current, `"retired": {Action: "special", Execute: parentActionExecutionSpecial},`, 1)
+		checkCleanCutoverViolation(t, source, "same canonical action")
+	})
+	t.Run("terminal tombstone", func(t *testing.T) {
+		source := strings.Replace(currentParentActionCutoverFixture, current, `"special": {Action: "special", Execute: parentActionExecutionSpecial, TerminalExecute: parentActionExecutionRetired},`, 1)
+		checkCleanCutoverViolation(t, source, "no live terminal dispatch")
+	})
+}
+
+func checkCleanCutoverViolation(t *testing.T, source, message string) {
+	t.Helper()
+	root := fixtureRoot(t)
+	writeFixture(t, root, parentActionMetadataPath, source)
+	violations, err := scanCleanCutover(root, []string{parentActionMetadataPath})
+	if err != nil {
+		t.Fatalf("scanCleanCutover: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			root := fixtureRoot(t)
-			writeFixture(t, root, parentActionMetadataPath, tc.source)
-			violations, err := scanCleanCutover(root, []string{parentActionMetadataPath})
-			if err != nil {
-				t.Fatalf("scanCleanCutover: %v", err)
-			}
-			if len(violations) != 1 || violations[0].Rule != cleanCutoverRule ||
-				violations[0].Path != parentActionMetadataPath ||
-				!strings.Contains(violations[0].Message, tc.message) {
-				t.Fatalf("violations = %+v, want one %q rule", violations, tc.message)
-			}
-		})
+	if len(violations) != 1 || violations[0].Rule != cleanCutoverRule ||
+		violations[0].Path != parentActionMetadataPath ||
+		!strings.Contains(violations[0].Message, message) {
+		t.Fatalf("violations = %+v, want one %q rule", violations, message)
 	}
 }
 
