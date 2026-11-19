@@ -56,7 +56,7 @@ func TestSessionRotationRejectsIssuedBoundIdentityMismatch(t *testing.T) {
 	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, boundThread); err == nil {
 		t.Fatal("claim/issued bound thread identity mismatch reached acknowledge")
 	}
-	if _, err := st.AdmitNewTaskRotation(boundThread, claim.ClaimID); err == nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(boundThread, claim.ClaimID); err == nil {
 		t.Fatal("claim/issued bound thread identity mismatch reached admission")
 	}
 	if _, err := st.StartSessionRotationTask(boundThread, claim.ClaimID); err == nil {
@@ -119,7 +119,7 @@ func TestSessionRotationIdentityCoherencePreservesRetries(t *testing.T) {
 	if issued.Claim == nil || issued.Issued == nil || issued.Claim.ClaimantThreadID != parentThread || issued.Claim.BoundThreadID != boundThread || issued.Issued.BoundThreadID != boundThread {
 		t.Fatalf("issued identity state = %#v", issued)
 	}
-	resume, err := st.AdmitNewTaskRotation(boundThread, claim.ClaimID)
+	resume, err := st.AdmitNewTaskRotationBoundary(boundThread, claim.ClaimID)
 	if err != nil || !resume {
 		t.Fatalf("issued start retry = %v, %v", resume, err)
 	}

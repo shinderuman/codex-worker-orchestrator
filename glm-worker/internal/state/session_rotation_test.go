@@ -582,11 +582,11 @@ func TestSessionRotationCreationFailureReleaseAndRetry(t *testing.T) {
 
 func TestSessionRotationStartAcceptsLatestEvaluationAfterLaterCompletedTask(t *testing.T) {
 	seed := seedBoundRotationAfterLaterTask(t, true, TaskStatusComplete)
-	resume, err := seed.st.AdmitNewTaskRotation(seed.newThread, seed.claim.ClaimID)
+	resume, err := seed.st.AdmitNewTaskRotationBoundary(seed.newThread, seed.claim.ClaimID)
 	if err != nil || resume {
 		t.Fatalf("latest evaluation admission = resume:%v err:%v", resume, err)
 	}
-	if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err != nil {
+	if _, err := seed.st.AdmitNewTaskRotationBoundary(seed.newThread, seed.claim.ClaimID); err != nil {
 		t.Fatalf("latest terminal evaluationからのstart admissionが拒否されました: %v", err)
 	}
 	started, err := seed.st.StartSessionRotationTask(seed.newThread, seed.claim.ClaimID)
@@ -653,13 +653,13 @@ func seedBoundRotationAfterLaterTask(t *testing.T, laterRequired bool, laterStat
 func TestSessionRotationLatestEvaluationAdmissionFailsClosed(t *testing.T) {
 	t.Run("active later task is not a rotation source", func(t *testing.T) {
 		seed := seedBoundRotationAfterLaterTask(t, true, TaskStatusActive)
-		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+		if _, err := seed.st.AdmitNewTaskRotationBoundary(seed.newThread, seed.claim.ClaimID); err == nil {
 			t.Fatal("未完了taskをrotation元としたstartが受理されました")
 		}
 	})
 	t.Run("not-required evaluation is not a rotation source", func(t *testing.T) {
 		seed := seedBoundRotationAfterLaterTask(t, false, TaskStatusComplete)
-		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+		if _, err := seed.st.AdmitNewTaskRotationBoundary(seed.newThread, seed.claim.ClaimID); err == nil {
 			t.Fatal("not-required evaluationをrotation元としたstartが受理されました")
 		}
 	})
@@ -671,7 +671,7 @@ func TestSessionRotationLatestEvaluationAdmissionFailsClosed(t *testing.T) {
 		if err := seed.st.SetTaskStatus(TaskStatusComplete); err != nil {
 			t.Fatal(err)
 		}
-		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+		if _, err := seed.st.AdmitNewTaskRotationBoundary(seed.newThread, seed.claim.ClaimID); err == nil {
 			t.Fatal("最新evaluationと一致しないtaskからのstartが受理されました")
 		}
 		if _, err := seed.st.StartSessionRotationTask(seed.newThread, seed.claim.ClaimID); err == nil {
@@ -688,7 +688,7 @@ func TestSessionRotationLatestEvaluationAdmissionFailsClosed(t *testing.T) {
 		if err := seed.st.writeSessionRotationMarker(marker); err != nil {
 			t.Fatal(err)
 		}
-		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+		if _, err := seed.st.AdmitNewTaskRotationBoundary(seed.newThread, seed.claim.ClaimID); err == nil {
 			t.Fatal("未知terminal評価をrotation元としたstartが受理されました")
 		}
 		if _, err := seed.st.StartSessionRotationTask(seed.newThread, seed.claim.ClaimID); err == nil {
@@ -743,7 +743,7 @@ func TestSessionRotationStaleDirectiveBoundClaimRetryFixture(t *testing.T) {
 	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ValidateNewTaskRotation(boundThread, claimID); err != nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(boundThread, claimID); err != nil {
 		t.Fatalf("現行bound claimと同型fixtureのstart admissionが拒否されました: %v", err)
 	}
 	started, err := st.StartSessionRotationTask(boundThread, claimID)
@@ -765,7 +765,7 @@ func TestSessionRotationStaleDirectiveBoundClaimRetryFixture(t *testing.T) {
 	}
 }
 
-func TestValidateNewTaskRotationPreservesNormalPathAndRejectsOldThread(t *testing.T) {
+func TestCanonicalNewTaskRotationPreservesNormalPathAndClaimIdentity(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -775,7 +775,7 @@ func TestValidateNewTaskRotationPreservesNormalPathAndRejectsOldThread(t *testin
 	if err := st.SetParentCodexIdentity(oldThread, oldThread, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ValidateNewTaskRotation(oldThread, ""); err != nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(oldThread, ""); err != nil {
 		t.Fatalf("通常new-task pathが拒否されました: %v", err)
 	}
 	if err := st.commitSessionRotation(&SessionRotationEvaluation{
@@ -785,8 +785,8 @@ func TestValidateNewTaskRotationPreservesNormalPathAndRejectsOldThread(t *testin
 		t.Fatal(err)
 	}
 	marker, _ := st.LoadSessionRotationMarker(oldThread)
-	if err := st.ValidateNewTaskRotation(oldThread, ""); err == nil {
-		t.Fatal("pending directive中に旧threadのstartが受理されました")
+	if resume, err := st.AdmitNewTaskRotationBoundary(oldThread, ""); err != nil || resume {
+		t.Fatalf("pending recommendation blocked ordinary start: resume=%v err=%v", resume, err)
 	}
 	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
 	if err != nil {
@@ -795,15 +795,15 @@ func TestValidateNewTaskRotationPreservesNormalPathAndRejectsOldThread(t *testin
 	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ValidateNewTaskRotation(oldThread, claim.ClaimID); err == nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(oldThread, claim.ClaimID); err == nil {
 		t.Fatal("claimを旧threadが使用できました")
 	}
-	if err := st.ValidateNewTaskRotation(newThread, claim.ClaimID); err != nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(newThread, claim.ClaimID); err != nil {
 		t.Fatalf("bound new threadが拒否されました: %v", err)
 	}
 }
 
-func TestAdmitNewTaskRotationRejectsUnrelatedCallerWhileRotationIncomplete(t *testing.T) {
+func TestCanonicalNewTaskRotationAllowsPendingAndBlocksClaims(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -825,23 +825,23 @@ func TestAdmitNewTaskRotationRejectsUnrelatedCallerWhileRotationIncomplete(t *te
 	if err != nil || marker == nil || marker.Directive == nil {
 		t.Fatalf("pending marker = %#v err=%v", marker, err)
 	}
-	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil || !strings.Contains(err.Error(), oldThread) || !strings.Contains(err.Error(), marker.Directive.DirectiveID) {
-		t.Fatalf("pending directive中の別thread通常startがbypassされました: %v", err)
+	if resume, err := st.AdmitNewTaskRotationBoundary(newThread, ""); err != nil || resume {
+		t.Fatalf("pending recommendation blocked unrelated ordinary start: resume=%v err=%v", resume, err)
 	}
 	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil || !strings.Contains(err.Error(), oldThread) {
+	if _, err := st.AdmitNewTaskRotationBoundary(newThread, ""); err == nil || !strings.Contains(err.Error(), oldThread) {
 		t.Fatalf("claimed directive中の別thread通常startがbypassされました: %v", err)
 	}
 	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil || !strings.Contains(err.Error(), claim.ClaimID) {
+	if _, err := st.AdmitNewTaskRotationBoundary(newThread, ""); err == nil || !strings.Contains(err.Error(), claim.ClaimID) {
 		t.Fatalf("bind済みthreadのclaim無しstartがbypassされました: %v", err)
 	}
-	if err := st.ValidateNewTaskRotation(newThread, claim.ClaimID); err != nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(newThread, claim.ClaimID); err != nil {
 		t.Fatalf("作成済みthreadへの正規claim付きstart admissionが拒否されました: %v", err)
 	}
 	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
@@ -857,7 +857,7 @@ func TestAdmitNewTaskRotationRejectsUnrelatedCallerWhileRotationIncomplete(t *te
 	if err != nil || issued.State != SessionRotationStateIssued || issued.Issued == nil || issued.Issued.BoundThreadID != newThread {
 		t.Fatalf("recovery後の旧directive = %#v err=%v", issued, err)
 	}
-	if admitted, err := st.AdmitNewTaskRotation("01a08268-2c7d-72a0-9aa1-605eed066ce9", ""); err != nil || admitted {
+	if admitted, err := st.AdmitNewTaskRotationBoundary("01a08268-2c7d-72a0-9aa1-605eed066ce9", ""); err != nil || admitted {
 		t.Fatalf("directive完了後の第三thread通常start = %v err=%v", admitted, err)
 	}
 }
@@ -898,21 +898,27 @@ func TestSessionRotationIssuedStartRetriesOnlyFromActiveCheckpoint(t *testing.T)
 	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
 		t.Fatal(err)
 	}
-	if resume, err := st.AdmitNewTaskRotation(newThread, claim.ClaimID); err != nil || !resume {
+	if resume, err := st.AdmitNewTaskRotationBoundary(newThread, claim.ClaimID); err != nil || !resume {
 		t.Fatalf("active checkpoint retry = %v, %v", resume, err)
 	}
-	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil {
+	if taskID, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil || taskID != claim.TargetTaskID {
+		t.Fatalf("mutation-time issued retry = %q, %v", taskID, err)
+	}
+	if _, err := st.AdmitNewTaskRotationBoundary(newThread, ""); err == nil {
 		t.Fatal("active rotated task accepted retry without claim")
 	}
 	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AdmitNewTaskRotation(newThread, claim.ClaimID); err == nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(newThread, claim.ClaimID); err == nil {
 		t.Fatal("completed rotated task accepted duplicate start")
+	}
+	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err == nil {
+		t.Fatal("completed rotated task accepted duplicate mutation")
 	}
 }
 
-func TestAdmitNewTaskRotationSkipsVanishedRotationMarker(t *testing.T) {
+func TestCanonicalNewTaskRotationSkipsVanishedRotationMarker(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -926,7 +932,7 @@ func TestAdmitNewTaskRotationSkipsVanishedRotationMarker(t *testing.T) {
 	if err := os.Symlink(filepath.Join(st.Path(sessionRotationDirectory), "missing.json"), st.SessionRotationMarkerPath(vanished)); err != nil {
 		t.Fatal(err)
 	}
-	admitted, err := st.AdmitNewTaskRotation(caller, "")
+	admitted, err := st.AdmitNewTaskRotationBoundary(caller, "")
 	if err != nil || admitted {
 		t.Fatalf("消失marker列入時のadmission = %v, %v", admitted, err)
 	}
@@ -936,7 +942,7 @@ func TestAdmitNewTaskRotationSkipsVanishedRotationMarker(t *testing.T) {
 	if err := os.WriteFile(st.SessionRotationMarkerPath(corrupt), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AdmitNewTaskRotation(caller, ""); err == nil {
+	if _, err := st.AdmitNewTaskRotationBoundary(caller, ""); err == nil {
 		t.Fatal("schema不正な他thread markerが通常startをfail closedしませんでした")
 	}
 	if _, err := st.ProjectSessionRotation(caller); err == nil {
