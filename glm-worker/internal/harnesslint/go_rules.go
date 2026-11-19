@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const goNilIdentifier = "nil"
+
 type mainCallKind int
 
 type mainPosition struct {
@@ -429,7 +431,7 @@ func errorCheckIdent(condition ast.Expr) (string, bool) {
 
 func nilCheckOperand(expression ast.Expr) (string, bool) {
 	identifier, ok := expression.(*ast.Ident)
-	if !ok || identifier.Name == "nil" {
+	if !ok || identifier.Name == goNilIdentifier {
 		return "", false
 	}
 	return identifier.Name, true
@@ -437,7 +439,7 @@ func nilCheckOperand(expression ast.Expr) (string, bool) {
 
 func isNilIdent(expression ast.Expr) bool {
 	identifier, ok := expression.(*ast.Ident)
-	return ok && identifier.Name == "nil"
+	return ok && identifier.Name == goNilIdentifier
 }
 
 func referencesIdent(expressions []ast.Expr, name string) bool {

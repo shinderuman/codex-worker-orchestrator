@@ -24,8 +24,6 @@ func scanCleanCutover(root string, paths []string) ([]Violation, error) {
 	return nil, nil
 }
 
-// Enforce the current registry-to-dispatch postcondition, rather than searching
-// for a historical retirement predicate that the live command owner no longer uses.
 func cleanCutoverParentActionViolations(root string) ([]Violation, error) {
 	data, err := readRegularFile(root, parentActionMetadataPath)
 	if err != nil {
@@ -55,32 +53,36 @@ func cleanCutoverParentActionViolations(root string) ([]Violation, error) {
 		return violations, nil
 	}
 	for _, element := range registry.Elts {
-		entry, ok := element.(*ast.KeyValueExpr)
-		if !ok {
-			report(element, "parent-action registry entry must be a keyed descriptor")
-			continue
-		}
-		descriptor, ok := entry.Value.(*ast.CompositeLit)
-		if !ok {
-			report(entry, "parent-action registry descriptor must be a literal")
-			continue
-		}
-		key, keyOK := cleanCutoverAction(entry.Key)
-		action, actionOK := cleanCutoverDescriptorField(descriptor, "Action")
-		actionName, actionNameOK := cleanCutoverAction(action)
-		if !keyOK || !actionOK || !actionNameOK || key != actionName {
-			report(entry, "parent-action registry key and descriptor action must be the same canonical action")
-		}
-		execution, ok := cleanCutoverDescriptorField(descriptor, "Execute")
-		if !ok || !cleanCutoverExecutable(execution, kinds) {
-			report(entry, "registered parent action has no live executable dispatch (rejection-only tombstone)")
-		}
-		if terminal, specified := cleanCutoverDescriptorField(descriptor, "TerminalExecute"); specified &&
-			!cleanCutoverExecutable(terminal, kinds) {
-			report(entry, "registered parent action has no live terminal dispatch (rejection-only tombstone)")
-		}
+		cleanCutoverReportRegistryEntry(element, kinds, report)
 	}
 	return violations, nil
+}
+
+func cleanCutoverReportRegistryEntry(element ast.Expr, kinds map[string]bool, report func(ast.Node, string)) {
+	entry, ok := element.(*ast.KeyValueExpr)
+	if !ok {
+		report(element, "parent-action registry entry must be a keyed descriptor")
+		return
+	}
+	descriptor, ok := entry.Value.(*ast.CompositeLit)
+	if !ok {
+		report(entry, "parent-action registry descriptor must be a literal")
+		return
+	}
+	key, keyOK := cleanCutoverAction(entry.Key)
+	action, actionOK := cleanCutoverDescriptorField(descriptor, "Action")
+	actionName, actionNameOK := cleanCutoverAction(action)
+	if !keyOK || !actionOK || !actionNameOK || key != actionName {
+		report(entry, "parent-action registry key and descriptor action must be the same canonical action")
+	}
+	execution, ok := cleanCutoverDescriptorField(descriptor, "Execute")
+	if !ok || !cleanCutoverExecutable(execution, kinds) {
+		report(entry, "registered parent action has no live executable dispatch (rejection-only tombstone)")
+	}
+	if terminal, specified := cleanCutoverDescriptorField(descriptor, "TerminalExecute"); specified &&
+		!cleanCutoverExecutable(terminal, kinds) {
+		report(entry, "registered parent action has no live terminal dispatch (rejection-only tombstone)")
+	}
 }
 
 func cleanCutoverAction(expr ast.Expr) (string, bool) {
@@ -135,9 +137,6 @@ func cleanCutoverRegistry(file *ast.File) *ast.CompositeLit {
 	return nil
 }
 
-// The only accepted routes are branches that invoke an executable handler;
-// a default usage error, a direct error-only branch, or an undeclared kind
-// cannot make a registered action executable.
 func cleanCutoverExecutableKinds(file *ast.File) (map[string]bool, bool) {
 	parent := cleanCutoverFunction(file, "executeParentActionCommand")
 	standard := cleanCutoverFunction(file, "executeStandardParentAction")
@@ -150,7 +149,14 @@ func cleanCutoverExecutableKinds(file *ast.File) (map[string]bool, bool) {
 		return nil, false
 	}
 	kinds := make(map[string]bool)
-	for _, statement := range standard.Body.List {
+	cleanCutoverStandardKinds(standard, kinds)
+	cleanCutoverInterfaceKinds(interfaced, kinds)
+	cleanCutoverSpecialKinds(special, kinds)
+	return kinds, len(kinds) > 0
+}
+
+func cleanCutoverStandardKinds(function *ast.FuncDecl, kinds map[string]bool) {
+	for _, statement := range function.Body.List {
 		conditional, ok := statement.(*ast.IfStmt)
 		if !ok {
 			continue
@@ -159,28 +165,38 @@ func cleanCutoverExecutableKinds(file *ast.File) (map[string]bool, bool) {
 			kinds[kind] = true
 		}
 	}
-	for _, statement := range interfaced.Body.List {
+}
+
+func cleanCutoverInterfaceKinds(function *ast.FuncDecl, kinds map[string]bool) {
+	for _, statement := range function.Body.List {
 		switcher, ok := statement.(*ast.SwitchStmt)
 		if !ok {
 			continue
 		}
 		tag, ok := switcher.Tag.(*ast.Ident)
-		if !ok || tag.Name != "execution" {
+		if !ok || tag.Name != cleanCutoverExecutionIdentifier {
 			continue
 		}
 		for _, item := range switcher.Body.List {
-			clause, ok := item.(*ast.CaseClause)
-			if !ok || !cleanCutoverHandlerReturn(clause.Body, true) {
-				continue
-			}
-			for _, expression := range clause.List {
-				if kind, ok := expression.(*ast.Ident); ok {
-					kinds[kind.Name] = true
-				}
-			}
+			cleanCutoverCaseKinds(item, kinds)
 		}
 	}
-	for _, statement := range special.Body.List {
+}
+
+func cleanCutoverCaseKinds(item ast.Stmt, kinds map[string]bool) {
+	clause, ok := item.(*ast.CaseClause)
+	if !ok || !cleanCutoverHandlerReturn(clause.Body, true) {
+		return
+	}
+	for _, expression := range clause.List {
+		if kind, ok := expression.(*ast.Ident); ok {
+			kinds[kind.Name] = true
+		}
+	}
+}
+
+func cleanCutoverSpecialKinds(function *ast.FuncDecl, kinds map[string]bool) {
+	for _, statement := range function.Body.List {
 		conditional, ok := statement.(*ast.IfStmt)
 		if !ok {
 			continue
@@ -189,20 +205,21 @@ func cleanCutoverExecutableKinds(file *ast.File) (map[string]bool, bool) {
 			kinds[kind] = true
 		}
 	}
-	return kinds, len(kinds) > 0
 }
+
+const cleanCutoverExecutionIdentifier = "execution"
 
 func cleanCutoverExecutionMatch(expression ast.Expr) (string, bool) {
 	comparison, ok := expression.(*ast.BinaryExpr)
 	if !ok || comparison.Op != token.EQL {
 		return "", false
 	}
-	if execution, ok := comparison.X.(*ast.Ident); ok && execution.Name == "execution" {
+	if execution, ok := comparison.X.(*ast.Ident); ok && execution.Name == cleanCutoverExecutionIdentifier {
 		if kind, ok := comparison.Y.(*ast.Ident); ok {
 			return kind.Name, true
 		}
 	}
-	if execution, ok := comparison.Y.(*ast.Ident); ok && execution.Name == "execution" {
+	if execution, ok := comparison.Y.(*ast.Ident); ok && execution.Name == cleanCutoverExecutionIdentifier {
 		if kind, ok := comparison.X.(*ast.Ident); ok {
 			return kind.Name, true
 		}
