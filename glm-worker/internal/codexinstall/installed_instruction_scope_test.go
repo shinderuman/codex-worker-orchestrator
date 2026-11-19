@@ -23,75 +23,87 @@ func TestInstalledInstructionOptInScope(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sourceRepo := initInstallFixtureRepo(t)
-			codexDir := t.TempDir()
-			globalAgents := filepath.Join(codexDir, "AGENTS.md")
-			globalOriginal := []byte("# user-owned global instructions\n")
-			writeTestFile(t, globalAgents, globalOriginal)
-
-			runInstall(t, sourceRepo, codexDir)
-			installedInstructions := filepath.Join(codexDir, "instructions", "codex-worker-orchestrator.md")
-			assertFileBytes(t, installedInstructions, readTestFile(t, filepath.Join(sourceRepo, "codex", "AGENTS.md")))
-			assertFileBytes(t, globalAgents, globalOriginal)
-			globalConfig := readTestFile(t, filepath.Join(codexDir, "config.toml"))
-			if bytes.Contains(globalConfig, []byte("developer_instructions")) ||
-				bytes.Contains(globalConfig, []byte("instructions/codex-worker-orchestrator.md")) {
-				t.Fatalf("installer activated project instructions in global config:\n%s", globalConfig)
-			}
-
-			targetRepo := filepath.Join(t.TempDir(), "target")
-			if err := os.MkdirAll(targetRepo, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if output, err := exec.Command("git", "init", "-q", targetRepo).CombinedOutput(); err != nil {
-				t.Fatalf("init target repo: %v: %s", err, output)
-			}
-			projectAgents := filepath.Join(targetRepo, "AGENTS.md")
-			projectOriginal := []byte("# target repository's own instructions\n")
-			writeTestFile(t, projectAgents, projectOriginal)
-			if tc.plan {
-				writeTestFile(t, filepath.Join(targetRepo, "IMPLEMENTATION_PLAN.local.md"), []byte("# target plan\n"))
-			}
-
-			configPath := filepath.Join(targetRepo, filepath.FromSlash(codexcontext.ProjectConfigRelativePath))
-			if _, err := os.Stat(configPath); !os.IsNotExist(err) {
-				t.Fatalf("install unexpectedly activated target repository: %v", err)
-			}
-			if tc.optIn {
-				var output bytes.Buffer
-				if err := codexcontext.Run([]string{"enable", targetRepo}, &output); err != nil {
-					t.Fatalf("explicit project opt-in: %v", err)
-				}
-				projectConfig := readTestFile(t, configPath)
-				for _, required := range []string{
-					"developer_instructions = ",
-					"instructions/codex-worker-orchestrator.md",
-				} {
-					if !bytes.Contains(projectConfig, []byte(required)) {
-						t.Fatalf("opt-in config missing %q:\n%s", required, projectConfig)
-					}
-				}
-				var disabled bytes.Buffer
-				if err := codexcontext.Run([]string{"disable", targetRepo}, &disabled); err != nil {
-					t.Fatalf("disable project opt-in: %v", err)
-				}
-				if _, err := os.Stat(configPath); !os.IsNotExist(err) {
-					t.Fatalf("project opt-in remains after disable: %v", err)
-				}
-			} else if _, err := os.Stat(configPath); !os.IsNotExist(err) {
-				t.Fatalf("no opt-in should leave target project config absent: %v", err)
-			}
-
-			assertFileBytes(t, globalAgents, globalOriginal)
-			assertFileBytes(t, projectAgents, projectOriginal)
+			codexDir := installScopeFixture(t)
+			targetRepo := initScopeTargetRepo(t, tc.plan)
+			checkScopeActivation(t, targetRepo, tc.optIn)
+			assertFileBytes(t, filepath.Join(codexDir, "AGENTS.md"), []byte("# user-owned global instructions\n"))
+			assertFileBytes(t, filepath.Join(targetRepo, "AGENTS.md"), []byte("# target repository's own instructions\n"))
 			if _, err := os.Stat(filepath.Join(targetRepo, "AGENTS.override.md")); !os.IsNotExist(err) {
 				t.Fatalf("target user override created: %v", err)
 			}
-			if _, err := os.Stat(filepath.Join(targetRepo, "IMPLEMENTATION_PLAN.local.md")); tc.plan && err != nil {
-				t.Fatalf("target plan removed or changed: %v", err)
-			} else if !tc.plan && !os.IsNotExist(err) {
+			planPath := filepath.Join(targetRepo, "IMPLEMENTATION_PLAN.local.md")
+			if tc.plan {
+				assertFileBytes(t, planPath, []byte("# target plan\n"))
+			} else if _, err := os.Stat(planPath); !os.IsNotExist(err) {
 				t.Fatalf("tool created missing target plan: %v", err)
 			}
 		})
+	}
+}
+
+func installScopeFixture(t *testing.T) string {
+	t.Helper()
+	sourceRepo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	globalAgents := filepath.Join(codexDir, "AGENTS.md")
+	globalOriginal := []byte("# user-owned global instructions\n")
+	writeTestFile(t, globalAgents, globalOriginal)
+	runInstall(t, sourceRepo, codexDir)
+
+	installedInstructions := filepath.Join(codexDir, "instructions", "codex-worker-orchestrator.md")
+	assertFileBytes(t, installedInstructions, readTestFile(t, filepath.Join(sourceRepo, "codex", "AGENTS.md")))
+	assertFileBytes(t, globalAgents, globalOriginal)
+	globalConfig := readTestFile(t, filepath.Join(codexDir, "config.toml"))
+	if bytes.Contains(globalConfig, []byte("developer_instructions")) ||
+		bytes.Contains(globalConfig, []byte("instructions/codex-worker-orchestrator.md")) {
+		t.Fatalf("installer activated project instructions in global config:\n%s", globalConfig)
+	}
+	return codexDir
+}
+
+func initScopeTargetRepo(t *testing.T, plan bool) string {
+	t.Helper()
+	targetRepo := filepath.Join(t.TempDir(), "target")
+	if err := os.MkdirAll(targetRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "init", "-q", targetRepo).CombinedOutput(); err != nil {
+		t.Fatalf("init target repo: %v: %s", err, output)
+	}
+	writeTestFile(t, filepath.Join(targetRepo, "AGENTS.md"), []byte("# target repository's own instructions\n"))
+	if plan {
+		writeTestFile(t, filepath.Join(targetRepo, "IMPLEMENTATION_PLAN.local.md"), []byte("# target plan\n"))
+	}
+	return targetRepo
+}
+
+func checkScopeActivation(t *testing.T, targetRepo string, optIn bool) {
+	t.Helper()
+	configPath := filepath.Join(targetRepo, filepath.FromSlash(codexcontext.ProjectConfigRelativePath))
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("install unexpectedly activated target repository: %v", err)
+	}
+	if !optIn {
+		return
+	}
+	var output bytes.Buffer
+	if err := codexcontext.Run([]string{"enable", targetRepo}, &output); err != nil {
+		t.Fatalf("explicit project opt-in: %v", err)
+	}
+	projectConfig := readTestFile(t, configPath)
+	for _, required := range []string{
+		"developer_instructions = ",
+		"instructions/codex-worker-orchestrator.md",
+	} {
+		if !bytes.Contains(projectConfig, []byte(required)) {
+			t.Fatalf("opt-in config missing %q:\n%s", required, projectConfig)
+		}
+	}
+	var disabled bytes.Buffer
+	if err := codexcontext.Run([]string{"disable", targetRepo}, &disabled); err != nil {
+		t.Fatalf("disable project opt-in: %v", err)
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("project opt-in remains after disable: %v", err)
 	}
 }
