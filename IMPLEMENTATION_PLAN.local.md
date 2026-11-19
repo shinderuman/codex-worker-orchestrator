@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/status-event-read-completeness.md`](IMPLEMENTATION_TASKS/status-event-read-completeness.md)
+- [`IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md`](IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md`](IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md)
 - [`IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md`](IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md)
 - [`IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md`](IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md)
 - [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)

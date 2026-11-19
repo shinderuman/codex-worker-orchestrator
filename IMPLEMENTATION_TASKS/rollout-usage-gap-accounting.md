@@ -20,6 +20,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 **親Codex消費の集計で観測欠損が消える。** `bundleanalysis/bundle_analysis_tokens.go::analysisTokenSegments` はanchorのない中間ファイルを飛ばす。独立counterの3ファイルをreaderへ入力。中間にはtool callがありtoken観測がなく、前後にのみanchorがある。結果は `available`、total 13、unknownなしだった。
