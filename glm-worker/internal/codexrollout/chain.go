@@ -97,25 +97,8 @@ func duplicateContentWithReader(ordered []Rollout, read func(string, int64) (cac
 	cache := make(map[int]cachedRolloutDigest, len(ordered))
 	for i := range ordered {
 		for j := i + 1; j < len(ordered); j++ {
-			if sizes[i] != sizes[j] {
-				continue
-			}
-			left, err := rolloutDigestAt(ordered[i], sizes[i], i, cache, read)
-			if err != nil {
-				return "rollout chain candidate cannot be read for duplicate comparison: " + ordered[i].HomeRelative + ": " + err.Error()
-			}
-			right, err := rolloutDigestAt(ordered[j], sizes[j], j, cache, read)
-			if err != nil {
-				return "rollout chain candidate cannot be read for duplicate comparison: " + ordered[i].HomeRelative + ": " + err.Error()
-			}
-			if left.sum == right.sum {
-				if _, err := rolloutDigestAt(ordered[i], sizes[i], i, cache, read); err != nil {
-					return "rollout chain candidate cannot be read for duplicate comparison: " + ordered[i].HomeRelative + ": " + err.Error()
-				}
-				if _, err := rolloutDigestAt(ordered[j], sizes[j], j, cache, read); err != nil {
-					return "rollout chain candidate cannot be read for duplicate comparison: " + ordered[i].HomeRelative + ": " + err.Error()
-				}
-				return "rollout chain candidates duplicate identical content: " + ordered[i].HomeRelative + ", " + ordered[j].HomeRelative
+			if reason := duplicatePair(ordered, sizes, i, j, cache, read); reason != "" {
+				return reason
 			}
 		}
 	}
@@ -124,10 +107,39 @@ func duplicateContentWithReader(ordered []Rollout, read func(string, int64) (cac
 			continue
 		}
 		if _, err := rolloutDigestAt(member, sizes[i], i, cache, read); err != nil {
-			return "rollout chain candidate cannot be read for duplicate comparison: " + member.HomeRelative + ": " + err.Error()
+			return duplicateReadFailure(member, err)
 		}
 	}
 	return ""
+}
+
+func duplicatePair(ordered []Rollout, sizes []int64, i, j int, cache map[int]cachedRolloutDigest, read func(string, int64) (cachedRolloutDigest, error)) string {
+	if sizes[i] != sizes[j] {
+		return ""
+	}
+	left, right := ordered[i], ordered[j]
+	leftDigest, err := rolloutDigestAt(left, sizes[i], i, cache, read)
+	if err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	rightDigest, err := rolloutDigestAt(right, sizes[j], j, cache, read)
+	if err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	if leftDigest.sum != rightDigest.sum {
+		return ""
+	}
+	if _, err := rolloutDigestAt(left, sizes[i], i, cache, read); err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	if _, err := rolloutDigestAt(right, sizes[j], j, cache, read); err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	return "rollout chain candidates duplicate identical content: " + left.HomeRelative + ", " + right.HomeRelative
+}
+
+func duplicateReadFailure(member Rollout, err error) string {
+	return "rollout chain candidate cannot be read for duplicate comparison: " + member.HomeRelative + ": " + err.Error()
 }
 
 func rolloutSizes(ordered []Rollout) ([]int64, string) {
