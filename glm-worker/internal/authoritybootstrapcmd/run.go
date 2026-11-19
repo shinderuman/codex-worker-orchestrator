@@ -14,7 +14,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 )
 
 type Output struct {
@@ -202,10 +202,17 @@ func readSnapshot(root string) (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
-	activePath, err := taskcontract.ParsePlanSchedule(string(plan)).ActiveTask()
+	prepared, err := repositoryproject.PrepareProjectState(string(plan))
 	if err != nil {
 		return snapshot{}, err
 	}
+	if len(prepared.Active) == 0 {
+		if err := controller.ValidateIdleBootstrap(cfg); err != nil {
+			return snapshot{}, err
+		}
+		return snapshot{rules: rules, plan: plan, hash: snapshotHash(rules, plan, "", nil)}, nil
+	}
+	activePath := prepared.Active[0]
 	executionTask, canonical, err := controller.WorkflowAuthorityTask(cfg)
 	if err != nil {
 		return snapshot{}, err
@@ -278,6 +285,9 @@ func snapshotHash(rules []byte, plan []byte, activePath string, active []byte) s
 }
 
 func snapshotPart(kind string, snap snapshot) (Output, error) {
+	if kind == "active" && snap.activePath == "" {
+		return Output{}, fmt.Errorf("idle schedule has no ACTIVE Task authority")
+	}
 	var content []byte
 	switch kind {
 	case "rules":

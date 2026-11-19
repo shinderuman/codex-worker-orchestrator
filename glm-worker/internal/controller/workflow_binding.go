@@ -208,6 +208,47 @@ func WorkflowAuthorityTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) 
 	return store.quiescentWorkflowAuthority(cfg, head, executionErr)
 }
 
+// ValidateIdleBootstrap rejects a live or inconsistent Controller when Plan has no ACTIVE Task.
+func ValidateIdleBootstrap(cfg config.AppConfig) error {
+	present, err := RepositoryPresent(cfg.RepoRoot)
+	if err != nil || !present {
+		return err
+	}
+	exists, err := Exists(cfg)
+	if err != nil || !exists {
+		return err
+	}
+	store, err := Open(cfg)
+	if err != nil {
+		return err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	if IsPristine(head) {
+		authority, err := ResolveCommittedTaskAuthority(store.identity.PrimaryRoot)
+		if err != nil {
+			return err
+		}
+		if !authority.Task.Empty() {
+			return fmt.Errorf("idle bootstrap conflicts with committed ACTIVE Task")
+		}
+		return nil
+	}
+	if !retiredMetadataHead(head) || head.RootTaskRef != nil {
+		return fmt.Errorf("idle bootstrap requires an idle finalized controller")
+	}
+	authority, err := store.retiredProjectAuthority(head)
+	if err != nil {
+		return err
+	}
+	if !authority.Task.Empty() {
+		return fmt.Errorf("idle bootstrap conflicts with retained Task authority")
+	}
+	return nil
+}
+
 func (store *Store) quiescentWorkflowAuthority(cfg config.AppConfig, head RepositoryControllerHead, executionErr error) (SemanticTaskRef, bool, error) {
 	if task, pending, err := store.PreparedCompletionAuthority(head); pending || err != nil {
 		return task, true, err

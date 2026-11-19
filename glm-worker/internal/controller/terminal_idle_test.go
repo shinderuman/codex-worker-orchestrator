@@ -49,6 +49,9 @@ func TestLastTaskCompletionPublishesIdleProject(t *testing.T) {
 			if published.Head.RootTaskRef != nil || published.Head.ExecutionTaskRef != nil || published.Head.LiveAttemptID != "" || published.Head.AcceptedCandidateRef != nil {
 				t.Fatalf("completed project retained execution authority: %#v", published.Head)
 			}
+			if err := ValidateIdleBootstrap(store.config); err != nil {
+				t.Fatalf("finalized idle bootstrap rejected: %v", err)
+			}
 			if _, err := os.Stat(filepath.Join(repo, candidate.TaskRef.TaskPath)); !os.IsNotExist(err) {
 				t.Fatalf("completed Task was not deleted: %v", err)
 			}
@@ -191,5 +194,12 @@ func pruneAndRestoreRegisteredSource(t *testing.T, store *Store, sourceOID, proj
 	}
 	if _, err := ResolveCommittedTaskAuthorityAt(repo, project.HeadOID); err != nil {
 		t.Fatalf("sealed registered source was not restored: %v", err)
+	}
+}
+
+func TestValidateIdleBootstrapRejectsLiveController(t *testing.T) {
+	fixture := newFindingAcceptanceFixture(t)
+	if err := ValidateIdleBootstrap(fixture.store.config); err == nil {
+		t.Fatal("live Controller admitted idle bootstrap")
 	}
 }

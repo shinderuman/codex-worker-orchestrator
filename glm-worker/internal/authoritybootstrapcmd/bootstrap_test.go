@@ -1,6 +1,7 @@
 package authoritybootstrapcmd
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -128,5 +129,29 @@ func TestBuildCommandBootstrapUsesActiveRepositoryHarness(t *testing.T) {
 	}
 	if output.ActiveTask != "IMPLEMENTATION_TASKS/current.md" || output.Rules.Content != "rules\n" || output.Active.Content != "task\n" {
 		t.Fatalf("bootstrap output = %#v", output)
+	}
+}
+
+func TestBuildBootstrapIdleOmitsActivePartAndPreservesAuthoritySnapshot(t *testing.T) {
+	root := t.TempDir()
+	plan := "## ACTIVE\n\n## NEXT\n\n## BLOCKED / USER_PERMISSION_WAIT\n"
+	writeTestFile(t, root, rulesFile, "rules\n")
+	writeTestFile(t, root, planFile, plan)
+	output, err := buildBootstrapFromRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.ActiveTask != "" || output.Active != nil {
+		t.Fatalf("idle bootstrap fabricated ACTIVE Task: %#v", output)
+	}
+	if output.Rules.Content != "rules\n" || output.Plan.Content != plan || output.AuthoritySnapshotSHA256 == "" {
+		t.Fatalf("idle bootstrap omitted registration authority: %#v", output)
+	}
+	encoded, err := json.Marshal(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "\"active\"") {
+		t.Fatalf("idle bootstrap emitted synthetic active part: %s", encoded)
 	}
 }

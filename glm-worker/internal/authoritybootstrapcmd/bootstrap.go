@@ -15,7 +15,7 @@ type BootstrapOutput struct {
 	ActiveTask              string        `json:"active_task"`
 	Rules                   BootstrapPart `json:"rules"`
 	Plan                    BootstrapPart `json:"plan"`
-	Active                  BootstrapPart `json:"active"`
+	Active                  *BootstrapPart `json:"active,omitempty"`
 }
 
 func BuildCommand(args []string) (any, error) {
@@ -54,9 +54,13 @@ func projectBootstrap(snap snapshot) (BootstrapOutput, error) {
 	if err != nil {
 		return BootstrapOutput{}, err
 	}
-	active, err := snapshotPart("active", snap)
-	if err != nil {
-		return BootstrapOutput{}, err
+	var active *BootstrapPart
+	if snap.activePath != "" {
+		part, err := snapshotPart("active", snap)
+		if err != nil {
+			return BootstrapOutput{}, err
+		}
+		active = &BootstrapPart{ContentSHA256: part.ContentSHA256, Content: part.Content}
 	}
 	return BootstrapOutput{
 		AuthoritySnapshotSHA256: snap.hash,
@@ -69,9 +73,6 @@ func projectBootstrap(snap snapshot) (BootstrapOutput, error) {
 			ContentSHA256: plan.ContentSHA256,
 			Content:       plan.Content,
 		},
-		Active: BootstrapPart{
-			ContentSHA256: active.ContentSHA256,
-			Content:       active.Content,
-		},
+		Active: active,
 	}, nil
 }

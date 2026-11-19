@@ -11,7 +11,7 @@
 
 ### repository harnessを使う場合のbootstrap
 
-- `.glm-worker-repository-harness` active時、fresh session / `ContextCompaction` / provider/session interruption / long stop/resumeでは`control:canonical-authority-bootstrap`の`glm-worker --authority bootstrap`を最初のrepository authority readにする。rules / plan / activeは同一`authority_snapshot_sha256`へbind済みとして各1回だけ読み、conversation/compaction memoryだけで続行しない。失敗時は停止しauthority path探索・disk直読をfallback successとして扱わない。
+- `.glm-worker-repository-harness` active時、fresh session / `ContextCompaction` / provider/session interruption / long stop/resumeでは`control:canonical-authority-bootstrap`の`glm-worker --authority bootstrap`を最初のrepository authority readにする。rules / plan / 存在する場合のactiveは同一`authority_snapshot_sha256`へbind済みとして各1回だけ読む。正当なidle（ACTIVEとNEXTが空）ではactive Taskを要求せず、Rules・Planの取得後に親がTaskを登録する。conversation/compaction memoryだけで続行しない。失敗時は停止しauthority path探索・disk直読をfallback successとして扱わない。
 - resume後のrunning worker待機前に`glm-execution.md`のlong-blocking parent wait contractを再取得し、short-yield overrideしない。
 
 ### 通常のTask操作
