@@ -50,6 +50,9 @@ func readPublicationRunInventoryWith(
 			continue
 		}
 		record, err := readRecord(module, entry.Name())
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("publication run %s is missing its persisted record", entry.Name())
+		}
 		if err != nil {
 			return nil, fmt.Errorf("publication run %s is unreadable: %w", entry.Name(), err)
 		}
