@@ -138,7 +138,7 @@ func literalOnlyTestCallArgs(args []ast.Expr) bool {
 			continue
 		}
 		constant, ok := argument.(*ast.Ident)
-		if !ok || (constant.Name != "true" && constant.Name != "false" && constant.Name != cleanCutoverNilIdentifier) {
+		if !ok || (constant.Name != "true" && constant.Name != "false" && constant.Name != "nil") {
 			return false
 		}
 	}
