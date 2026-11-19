@@ -45,9 +45,6 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 	}
 	var violations []Violation
 	workflowViolations, err := qualityWiringPackageViolations(root, present, "glm-worker/internal/workflow/", []string{
-		// Source-level presence is useful for baseline protection only.
-		// Review admission reachability is verified by workflow behavioral tests;
-		// unrelated methods cannot establish that a reviewer is gated.
 		"w.captureQualitySurfaceBaseline()",
 		"w.verifyQualitySurfaceBaseline(workerPhase)",
 	})
