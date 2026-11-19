@@ -47,6 +47,11 @@ type rolloutTokenUsage struct {
 	TotalTokens          *int64 `json:"total_tokens"`
 }
 
+type cachedRolloutDigest struct {
+	sum  [sha256.Size]byte
+	info os.FileInfo
+}
+
 const rolloutTokenCountType = "token_count"
 
 func ResolveChain(matches []Rollout) ([]Rollout, string) {
@@ -81,18 +86,60 @@ func ResolveChain(matches []Rollout) ([]Rollout, string) {
 }
 
 func duplicateContent(ordered []Rollout) string {
+	return duplicateContentWithReader(ordered, readRolloutDigest)
+}
+
+func duplicateContentWithReader(ordered []Rollout, read func(string, int64) (cachedRolloutDigest, error)) string {
 	sizes, reason := rolloutSizes(ordered)
 	if reason != "" {
 		return reason
 	}
+	cache := make(map[int]cachedRolloutDigest, len(ordered))
 	for i := range ordered {
 		for j := i + 1; j < len(ordered); j++ {
-			if reason := duplicatePair(ordered[i], ordered[j], sizes[i], sizes[j]); reason != "" {
+			if reason := duplicatePair(ordered, sizes, i, j, cache, read); reason != "" {
 				return reason
 			}
 		}
 	}
+	for i, member := range ordered {
+		if _, ok := cache[i]; !ok {
+			continue
+		}
+		if _, err := rolloutDigestAt(member, sizes[i], i, cache, read); err != nil {
+			return duplicateReadFailure(member, err)
+		}
+	}
 	return ""
+}
+
+func duplicatePair(ordered []Rollout, sizes []int64, i, j int, cache map[int]cachedRolloutDigest, read func(string, int64) (cachedRolloutDigest, error)) string {
+	if sizes[i] != sizes[j] {
+		return ""
+	}
+	left, right := ordered[i], ordered[j]
+	leftDigest, err := rolloutDigestAt(left, sizes[i], i, cache, read)
+	if err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	rightDigest, err := rolloutDigestAt(right, sizes[j], j, cache, read)
+	if err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	if leftDigest.sum != rightDigest.sum {
+		return ""
+	}
+	if _, err := rolloutDigestAt(left, sizes[i], i, cache, read); err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	if _, err := rolloutDigestAt(right, sizes[j], j, cache, read); err != nil {
+		return duplicateReadFailure(left, err)
+	}
+	return "rollout chain candidates duplicate identical content: " + left.HomeRelative + ", " + right.HomeRelative
+}
+
+func duplicateReadFailure(member Rollout, err error) string {
+	return "rollout chain candidate cannot be read for duplicate comparison: " + member.HomeRelative + ": " + err.Error()
 }
 
 func rolloutSizes(ordered []Rollout) ([]int64, string) {
@@ -107,45 +154,62 @@ func rolloutSizes(ordered []Rollout) ([]int64, string) {
 	return sizes, ""
 }
 
-func duplicatePair(left, right Rollout, leftSize, rightSize int64) string {
-	if leftSize != rightSize {
-		return ""
+func rolloutDigestAt(member Rollout, size int64, index int, cache map[int]cachedRolloutDigest, read func(string, int64) (cachedRolloutDigest, error)) (cachedRolloutDigest, error) {
+	if cached, ok := cache[index]; ok {
+		current, err := os.Stat(member.AbsolutePath)
+		if err != nil {
+			return cachedRolloutDigest{}, err
+		}
+		if !sameRolloutFile(cached.info, current) {
+			return cachedRolloutDigest{}, errors.New("rollout file changed after digest read")
+		}
+		return cached, nil
 	}
-	equal, err := filesIdentical(left.AbsolutePath, right.AbsolutePath)
+	digest, err := read(member.AbsolutePath, size)
 	if err != nil {
-		return "rollout chain candidate cannot be read for duplicate comparison: " + left.HomeRelative + ": " + err.Error()
+		return cachedRolloutDigest{}, err
 	}
-	if !equal {
-		return ""
-	}
-	return "rollout chain candidates duplicate identical content: " + left.HomeRelative + ", " + right.HomeRelative
+	cache[index] = digest
+	return digest, nil
 }
 
-func filesIdentical(left, right string) (bool, error) {
-	leftSum, err := fileDigest(left)
-	if err != nil {
-		return false, err
-	}
-	rightSum, err := fileDigest(right)
-	if err != nil {
-		return false, err
-	}
-	return leftSum == rightSum, nil
-}
-
-func fileDigest(path string) ([sha256.Size]byte, error) {
+func readRolloutDigest(path string, expectedSize int64) (cachedRolloutDigest, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return [sha256.Size]byte{}, err
+		return cachedRolloutDigest{}, err
 	}
 	defer func() { _ = file.Close() }()
+	before, err := file.Stat()
+	if err != nil {
+		return cachedRolloutDigest{}, err
+	}
+	if !before.Mode().IsRegular() || before.Size() != expectedSize {
+		return cachedRolloutDigest{}, errors.New("rollout file changed before digest read")
+	}
 	digest := sha256.New()
-	if _, err := io.Copy(digest, file); err != nil {
-		return [sha256.Size]byte{}, err
+	readSize, err := io.Copy(digest, file)
+	if err != nil {
+		return cachedRolloutDigest{}, err
+	}
+	after, err := file.Stat()
+	if err != nil {
+		return cachedRolloutDigest{}, err
+	}
+	current, err := os.Stat(path)
+	if err != nil {
+		return cachedRolloutDigest{}, err
+	}
+	if readSize != expectedSize || !sameRolloutFile(before, after) || !sameRolloutFile(before, current) {
+		return cachedRolloutDigest{}, errors.New("rollout file changed during digest read")
 	}
 	var sum [sha256.Size]byte
 	copy(sum[:], digest.Sum(nil))
-	return sum, nil
+	return cachedRolloutDigest{sum: sum, info: after}, nil
+}
+
+func sameRolloutFile(left, right os.FileInfo) bool {
+	return left.Mode().IsRegular() && right.Mode().IsRegular() &&
+		os.SameFile(left, right) && left.Size() == right.Size() && left.ModTime().Equal(right.ModTime())
 }
 
 func identityMismatch(ordered []Rollout) string {

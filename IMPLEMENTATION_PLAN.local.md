@@ -28,7 +28,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/review-admission-quality-reachability.md`](IMPLEMENTATION_TASKS/review-admission-quality-reachability.md)
 - [`IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md`](IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md)
 - [`IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md`](IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md)
-- [`IMPLEMENTATION_TASKS/rollout-duplicate-hash-reads.md`](IMPLEMENTATION_TASKS/rollout-duplicate-hash-reads.md)
 - [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)
 - [`IMPLEMENTATION_TASKS/test-timing-regression-owner.md`](IMPLEMENTATION_TASKS/test-timing-regression-owner.md)
 - [`IMPLEMENTATION_TASKS/parent-evidence-diff-capture-and-budget.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-capture-and-budget.md)

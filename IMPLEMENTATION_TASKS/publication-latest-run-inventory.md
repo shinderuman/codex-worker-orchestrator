@@ -27,6 +27,10 @@ publicationが一意の最新runを順序に依存せず選ぶ。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 **最新のvalidation/smokeの選択がrun ID順に依存する（B07）。** `controller/publication_final_validation.go::latestFinalValidationRun` と `publication_post_install_smoke.go::latestSmokeProbeRun` は走査途中の同時刻を即座にerrorにする。時刻列「1,1,2」は両者エラー、「2,1,1」は両者成功。実際の最新時刻はどちらも一意。

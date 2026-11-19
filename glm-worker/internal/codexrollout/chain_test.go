@@ -2,6 +2,8 @@ package codexrollout
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -228,5 +230,155 @@ func TestResolveChainClassifiesCounterBoundaries(t *testing.T) {
 				t.Fatalf("continuation = %v, want %v", chain[1].CounterContinuation, tc.wantContinuation)
 			}
 		})
+	}
+}
+
+func TestDuplicateContentReadsEachSameSizeCandidateOncePerDecision(t *testing.T) {
+	dir := t.TempDir()
+	members := make([]Rollout, 0, 9)
+	for i := 0; i < 8; i++ {
+		name := fmt.Sprintf("session-%d.jsonl", i)
+		path := chainWrite(t, dir, name, fmt.Sprintf("unique-%04d", i))
+		members = append(members, Rollout{AbsolutePath: path, HomeRelative: name})
+	}
+	other := chainWrite(t, dir, "different-size.jsonl", "different length")
+	members = append(members, Rollout{AbsolutePath: other, HomeRelative: "different-size.jsonl"})
+	reads := make(map[string]int)
+	read := func(path string, size int64) (cachedRolloutDigest, error) {
+		reads[path]++
+		return readRolloutDigest(path, size)
+	}
+	for decision := 1; decision <= 2; decision++ {
+		if reason := duplicateContentWithReader(members, read); reason != "" {
+			t.Fatalf("decision %d: unexpected rejection: %s", decision, reason)
+		}
+		for _, member := range members[:8] {
+			if got := reads[member.AbsolutePath]; got != decision {
+				t.Fatalf("decision %d: %s read %d times, want %d", decision, member.HomeRelative, got, decision)
+			}
+		}
+		if reads[other] != 0 {
+			t.Fatalf("size-singleton should not be hashed, got %d reads", reads[other])
+		}
+	}
+}
+
+func TestDuplicateContentReportsSameContentAndReadFailures(t *testing.T) {
+	dir := t.TempDir()
+	first := chainWrite(t, dir, "first.jsonl", "same")
+	second := chainWrite(t, dir, "second.jsonl", "same")
+	members := []Rollout{
+		{AbsolutePath: first, HomeRelative: "sessions/first.jsonl"},
+		{AbsolutePath: second, HomeRelative: "sessions/second.jsonl"},
+	}
+	if reason := duplicateContent(members); !strings.Contains(reason, "duplicate identical content: sessions/first.jsonl, sessions/second.jsonl") {
+		t.Fatalf("identical candidates: %q", reason)
+	}
+	read := func(path string, size int64) (cachedRolloutDigest, error) {
+		if path == second {
+			return cachedRolloutDigest{}, errors.New("injected read failure")
+		}
+		return readRolloutDigest(path, size)
+	}
+	if reason := duplicateContentWithReader(members, read); !strings.Contains(reason, "sessions/first.jsonl: injected read failure") {
+		t.Fatalf("read failure: %q", reason)
+	}
+	if err := os.Remove(second); err != nil {
+		t.Fatal(err)
+	}
+	if reason := duplicateContent(members); !strings.Contains(reason, "not a readable regular file: sessions/second.jsonl") {
+		t.Fatalf("missing candidate: %q", reason)
+	}
+}
+
+func TestDuplicateContentDetectsChangesBeforeDigestReuse(t *testing.T) {
+	dir := t.TempDir()
+	first := chainWrite(t, dir, "first.jsonl", "aaa")
+	second := chainWrite(t, dir, "second.jsonl", "bbb")
+	third := chainWrite(t, dir, "third.jsonl", "ccc")
+	members := []Rollout{
+		{AbsolutePath: first, HomeRelative: "sessions/first.jsonl"},
+		{AbsolutePath: second, HomeRelative: "sessions/second.jsonl"},
+		{AbsolutePath: third, HomeRelative: "sessions/third.jsonl"},
+	}
+	reads := 0
+	read := func(path string, size int64) (cachedRolloutDigest, error) {
+		result, err := readRolloutDigest(path, size)
+		if err != nil {
+			return cachedRolloutDigest{}, err
+		}
+		reads++
+		if path == second {
+			changeDuplicateCandidate(t, first, "ddd")
+		}
+		return result, nil
+	}
+	reason := duplicateContentWithReader(members, read)
+	if !strings.Contains(reason, "sessions/first.jsonl: rollout file changed after digest read") {
+		t.Fatalf("changed candidate was accepted: %q", reason)
+	}
+	if reads != 2 {
+		t.Fatalf("hashed %d files before detecting changed cached candidate, want 2", reads)
+	}
+}
+
+func TestDuplicateContentRehashesOnNextDecision(t *testing.T) {
+	dir := t.TempDir()
+	first := chainWrite(t, dir, "first.jsonl", "aaa")
+	second := chainWrite(t, dir, "second.jsonl", "bbb")
+	members := []Rollout{
+		{AbsolutePath: first, HomeRelative: "sessions/first.jsonl"},
+		{AbsolutePath: second, HomeRelative: "sessions/second.jsonl"},
+	}
+	if reason := duplicateContent(members); reason != "" {
+		t.Fatalf("distinct candidates: %q", reason)
+	}
+	if err := os.WriteFile(second, []byte("aaa"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if reason := duplicateContent(members); !strings.Contains(reason, "duplicate identical content") {
+		t.Fatalf("second decision used stale digest: %q", reason)
+	}
+}
+
+func TestReadRolloutDigestRejectsSizeDrift(t *testing.T) {
+	path := chainWrite(t, t.TempDir(), "sample.jsonl", "content")
+	if _, err := readRolloutDigest(path, int64(len("content"))+1); err == nil || !strings.Contains(err.Error(), "changed before digest read") {
+		t.Fatalf("size drift: %v", err)
+	}
+}
+
+func TestDuplicateContentRechecksBeforeReportingDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	first := chainWrite(t, dir, "first.jsonl", "aaa")
+	second := chainWrite(t, dir, "second.jsonl", "aaa")
+	members := []Rollout{
+		{AbsolutePath: first, HomeRelative: "sessions/first.jsonl"},
+		{AbsolutePath: second, HomeRelative: "sessions/second.jsonl"},
+	}
+	read := func(path string, size int64) (cachedRolloutDigest, error) {
+		result, err := readRolloutDigest(path, size)
+		if err != nil {
+			return cachedRolloutDigest{}, err
+		}
+		if path == second {
+			changeDuplicateCandidate(t, first, "bbb")
+		}
+		return result, nil
+	}
+	reason := duplicateContentWithReader(members, read)
+	if !strings.Contains(reason, "sessions/first.jsonl: rollout file changed after digest read") {
+		t.Fatalf("stale duplicate digest was reported instead of change: %q", reason)
+	}
+}
+
+func changeDuplicateCandidate(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changedAt := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(path, changedAt, changedAt); err != nil {
+		t.Fatal(err)
 	}
 }
