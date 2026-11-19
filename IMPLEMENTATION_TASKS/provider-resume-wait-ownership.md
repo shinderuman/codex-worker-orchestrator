@@ -27,6 +27,10 @@ Z.ai再開待機をCLIの実行受付から分ける。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 app/execution.goのZ.ai待機・retryとCLI/controller admissionを分離。

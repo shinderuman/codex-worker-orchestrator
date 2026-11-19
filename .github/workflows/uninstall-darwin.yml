@@ -25,6 +25,7 @@ on:
       - 'glm-worker/internal/settingsmerge/**'
       - 'uninstall.sh'
       - 'tests/install_smoke.sh'
+      - 'tests/install_export_smoke.sh'
       - '.github/workflows/uninstall-darwin.yml'
   push:
     branches:
@@ -53,6 +54,7 @@ on:
       - 'glm-worker/internal/settingsmerge/**'
       - 'uninstall.sh'
       - 'tests/install_smoke.sh'
+      - 'tests/install_export_smoke.sh'
       - '.github/workflows/uninstall-darwin.yml'
 
 permissions:
