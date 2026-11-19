@@ -444,4 +444,3 @@ func startParentHandoffTask(t *testing.T, cfg config.AppConfig) *state.StateStor
 	}
 	return st
 }
-

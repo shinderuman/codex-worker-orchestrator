@@ -89,4 +89,3 @@ func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
 		t.Fatalf("record parent-excluded digest = %q", record.WorktreeDigestExcludingParent)
 	}
 }
-
