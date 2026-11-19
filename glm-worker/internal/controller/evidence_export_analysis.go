@@ -730,4 +730,3 @@ func sortedStringSet(values map[string]struct{}) []string {
 	sort.Strings(result)
 	return result
 }
-
