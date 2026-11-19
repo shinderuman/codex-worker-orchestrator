@@ -201,9 +201,11 @@ func reviewEquivalenceCanonicalPlanFixture(t *testing.T, activeRow, nextRow stri
 		"- [\x60IMPLEMENTATION_TASKS/active.md\x60](IMPLEMENTATION_TASKS/active.md)", activeRow, 1)
 	plan = strings.Replace(plan,
 		"- [\x60IMPLEMENTATION_TASKS/old-next.md\x60](IMPLEMENTATION_TASKS/old-next.md)", nextRow, 1)
-	reviewEquivalenceWrite(t, root, state.ParentPlanFile, plan)
-	reviewEquivalenceGit(t, root, "add", state.ParentPlanFile)
-	reviewEquivalenceGit(t, root, "commit", "-qm", "canonical entry baseline")
+	if plan != reviewEquivalenceOldPlan {
+		reviewEquivalenceWrite(t, root, state.ParentPlanFile, plan)
+		reviewEquivalenceGit(t, root, "add", state.ParentPlanFile)
+		reviewEquivalenceGit(t, root, "commit", "-qm", "canonical entry baseline")
+	}
 	snapshot, err := state.CaptureGitSnapshot(root)
 	if err != nil {
 		t.Fatal(err)
