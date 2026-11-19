@@ -47,6 +47,11 @@ type rolloutTokenUsage struct {
 	TotalTokens          *int64 `json:"total_tokens"`
 }
 
+type cachedRolloutDigest struct {
+	sum  [sha256.Size]byte
+	info os.FileInfo
+}
+
 const rolloutTokenCountType = "token_count"
 
 func ResolveChain(matches []Rollout) ([]Rollout, string) {
@@ -78,11 +83,6 @@ func ResolveChain(matches []Rollout) ([]Rollout, string) {
 		return nil, reason
 	}
 	return ordered, ""
-}
-
-type cachedRolloutDigest struct {
-	sum  [sha256.Size]byte
-	info os.FileInfo
 }
 
 func duplicateContent(ordered []Rollout) string {
