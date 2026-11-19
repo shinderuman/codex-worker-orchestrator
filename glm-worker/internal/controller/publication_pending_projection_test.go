@@ -3,11 +3,9 @@ package controller
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
 func TestPendingCompletionProjectionValidatesJournalBeforeHandoff(t *testing.T) {
@@ -16,18 +14,9 @@ func TestPendingCompletionProjectionValidatesJournalBeforeHandoff(t *testing.T) 
 	source := publicationTestEdit(t, fixture, "pending-projection.txt", "pending completion\n")
 	acceptedCompletionRuntime(t, fixture.store, source)
 	promoted, candidate := promoteTerminalTestSource(t, fixture, policy, source)
-	remote := controllerGitOutput(t, fixture.store.identity.PrimaryRoot, "remote", "get-url", policy.Remote)
-	hook := filepath.Join(remote, "hooks", "pre-receive")
-	if err := execfile.Write(hook, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.store.PublishAcceptedCandidate(PublicationInput{
-		ExpectedGeneration: promoted.Head.ControllerGeneration, CandidateID: candidate.CandidateID,
-	}); err == nil {
-		t.Fatal("injected publication failure did not leave a recovery path")
-	}
+	retired, _ := prepareCompletionTestCandidate(t, fixture.store, promoted, candidate)
 	head, err := fixture.store.LoadHead()
-	if err != nil || head.PendingTransitionID == "" {
+	if err != nil || head.PendingTransitionID != retired.TransitionID {
 		t.Fatalf("missing pending completion journal: %#v err=%v", head, err)
 	}
 	projected, err := fixture.store.ProjectParentCompletion()
