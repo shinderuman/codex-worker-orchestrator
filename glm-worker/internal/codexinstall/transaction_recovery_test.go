@@ -23,7 +23,7 @@ func newInstallRecoveryFixture(t *testing.T) installRecoveryFixture {
 	repo := initInstallFixtureRepo(t)
 	codexDir := t.TempDir()
 	runInstall(t, repo, codexDir)
-	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# tool instruction v2\n"))
+	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), []byte("# tool instruction v2\n"))
 	writeTestFile(t, filepath.Join(repo, "codex", "config-managed.toml"), []byte(managedConfigKey+" = 21600001\n"))
 	prep, err := prepareInstall(repo, codexDir)
 	if err != nil {
@@ -48,8 +48,8 @@ func TestRecoverInterruptedInstallRestoresPartialMutationBoundaries(t *testing.T
 		name  string
 		paths []string
 	}{
-		{name: "after managed file", paths: []string{"instructions/test.md"}},
-		{name: "after config", paths: []string{"instructions/test.md", "config.toml"}},
+		{name: "after managed file", paths: []string{"instructions/worker/test.md"}},
+		{name: "after config", paths: []string{"instructions/worker/test.md", "config.toml"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,8 +68,8 @@ func TestRecoverInterruptedInstallRestoresPartialMutationBoundaries(t *testing.T
 
 func TestRecoverInterruptedInstallPreservesUserEdit(t *testing.T) {
 	fixture := newInstallRecoveryFixture(t)
-	writeInstallTransactionSurface(t, fixture.codexDir, fixture.journal, "instructions/test.md", false)
-	target := filepath.Join(fixture.codexDir, "instructions", "test.md")
+	writeInstallTransactionSurface(t, fixture.codexDir, fixture.journal, "instructions/worker/test.md", false)
+	target := filepath.Join(fixture.codexDir, "instructions", "worker", "test.md")
 	userEdit := append(readTestFile(t, target), []byte("# user edit after interruption\n")...)
 	writeTestFile(t, target, userEdit)
 
@@ -205,7 +205,7 @@ func TestInstallRecoversAfterStateCommitBoundaryCrash(t *testing.T) {
 	runInstall(t, repo, codexDir)
 	oldState := append([]byte(nil), readTestFile(t, statePath(codexDir))...)
 	newTarget := []byte("# tool instruction after crash\n")
-	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), newTarget)
+	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), newTarget)
 	writeTestFile(t, filepath.Join(repo, "codex", "config-managed.toml"), []byte(managedConfigKey+" = 21600001\n"))
 
 	command := exec.Command(os.Args[0], "-test.run=^TestInstallRecoversAfterStateCommitBoundaryCrash$")
@@ -223,18 +223,18 @@ func TestInstallRecoversAfterStateCommitBoundaryCrash(t *testing.T) {
 		t.Fatalf("durable journal missing after crash: %v", err)
 	}
 	assertFileBytes(t, statePath(codexDir), oldState)
-	assertFileBytes(t, filepath.Join(codexDir, "instructions", "test.md"), newTarget)
+	assertFileBytes(t, filepath.Join(codexDir, "instructions", "worker", "test.md"), newTarget)
 
 	var stdout bytes.Buffer
 	if err := Install(repo, codexDir, &stdout); err != nil {
 		t.Fatalf("normal install did not recover interrupted transaction: %v", err)
 	}
 	assertInstallTransactionJournalAbsent(t, codexDir)
-	assertFileBytes(t, filepath.Join(codexDir, "instructions", "test.md"), newTarget)
+	assertFileBytes(t, filepath.Join(codexDir, "instructions", "worker", "test.md"), newTarget)
 	state := loadTestState(t, codexDir)
 	records := stateFileMap(state)
-	if records["instructions/test.md"].SHA256 != digestBytes(newTarget) {
-		t.Fatalf("recovered install state did not commit current target: %+v", records["instructions/test.md"])
+	if records["instructions/worker/test.md"].SHA256 != digestBytes(newTarget) {
+		t.Fatalf("recovered install state did not commit current target: %+v", records["instructions/worker/test.md"])
 	}
 }
 

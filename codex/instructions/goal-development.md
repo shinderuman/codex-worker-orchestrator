@@ -21,7 +21,7 @@ Plan管理repositoryで`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を
 ## user amendment
 
 - Goal自体への追加要求・制約変更は、原文をGOAL節のgoal amendmentsへ省略せず追記し、矛盾する旧要求も削除せず最新をderived acceptanceへ反映する
-- 個別taskへの追加要求は`~/.codex/instructions/task-request-boundary.md`の境界でtask fileの`Amendments`へ反映する。amendmentを理由にACTIVE taskを無条件に破棄しない
+- 個別taskへの追加要求は`codex/instructions/task-request-boundary.md`の境界でtask fileの`Amendments`へ反映する。amendmentを理由にACTIVE taskを無条件に破棄しない
 - amendment後の継続・再計画・安全停止の判断は親Codexが影響範囲と依存関係から行う
 
 ## 停止・再開

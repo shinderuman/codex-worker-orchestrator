@@ -107,7 +107,7 @@ func TestConcurrentInstallUninstallRejectsOverlapBeforeOwnershipChanges(t *testi
 	}
 
 	guard := filepath.Join(binDir, "glm-publication-guard")
-	codexManaged := filepath.Join(codexDir, "instructions", "test.md")
+	codexManaged := filepath.Join(codexDir, "instructions", "worker", "test.md")
 	claudeState := filepath.Join(home, ".claude", ".codex-worker-orchestrator", "settings.json.managed-settings-state.json")
 	hook := filepath.Join(repo, ".git", "codex-worker-orchestrator", "hooks", "pre-push")
 	for _, owned := range []string{guard, codexManaged, claudeState, hook} {
@@ -126,7 +126,7 @@ func createConcurrentRetireFixture(t *testing.T) string {
 	t.Helper()
 	repo := filepath.Join(t.TempDir(), "repo")
 	writeConcurrentRetireFile(t, filepath.Join(repo, "codex", "AGENTS.md"), []byte("# rules\n"), 0o644)
-	writeConcurrentRetireFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# fixture\n"), 0o644)
+	writeConcurrentRetireFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), []byte("# fixture\n"), 0o644)
 	writeConcurrentRetireFile(t, filepath.Join(repo, "codex", "rules", "glm-worker.rules"),
 		[]byte("prefix_rule(pattern=[\"glm-worker\"], decision=\"allow\")\n"), 0o644)
 	writeConcurrentRetireFile(t, filepath.Join(repo, "codex", "glm-worker", "prompts", "WORKER.md"),

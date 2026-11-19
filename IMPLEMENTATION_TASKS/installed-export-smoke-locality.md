@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 tests/install_smoke.shのexport検証を既存のinstalled fixture内で局所化。

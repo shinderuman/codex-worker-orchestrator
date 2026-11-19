@@ -13,7 +13,7 @@ worker/reviewer packet、`glm-parent-action`のterminal envelope、またはboun
 - terminal transport/parse/projection failureで子stateが不明なら、最初にread-only `glm-worker --handoff recovery`だけをbounded recovery入口として使う。`semantic_result.availability:"available"`なら同梱`packet`を失われたreviewer semantic resultとして扱い、`state_key`と`call_id`をexact source locatorとする。同じsemantic resultを`--status`、timeline、telemetry、session transcript、artifact inventoryから再探索しない。`semantic_result.availability:"unavailable"`は同梱`reason`のunknown/errorを維持し、whole-document/corpus探索へ自動fallbackしない。`last_material`、guard/quality failure projection等で足りる事実もtelemetry/session/artifact全体から再探索しない。不足が残る場合だけexact locatorに限定して追加evidenceを読む。
 - 同一decision leaseのduplicate projection拒否はmachine dedupであり、同じbodyを再取得する理由にしない。複数surfaceが必要ならmachineのevidence batchを使う。
 - review packetの`failure_path_advisory`はmachine専有のfailure-path advisoryである。通常reviewerのstatus・採否・source proofとは独立した、Sol Highが検証する候補に過ぎず、advisoryだけでacceptやfixを変更しない。`findings`の`target`に限定して確認し、true positive / duplicate / false positiveのlabelと最終採否はSol判断として`--failure-path-advisory --labels`へ記録する。`indeterminate`と`truncated`は成功findingではないため、hitやQuality成功値へ数えない。
-- `artifacts`は必要な成果物だけ記載pathから読む。packetへ全内容を転載しない。原因不明runtime failureは`~/.codex/instructions/failure-evidence.md`のbounded evidence条件に従う。
+- `artifacts`は必要な成果物だけ記載pathから読む。packetへ全内容を転載しない。原因不明runtime failureは`codex/instructions/failure-evidence.md`のbounded evidence条件に従う。
 
 ## `"status":"NEEDS_SOL_DECISION"`
 
@@ -21,7 +21,7 @@ worker/reviewer packet、`glm-parent-action`のterminal envelope、またはboun
 - protected instruction変更を親適用する要求では、承認したtargetだけへ最小変更を行い、instruction baseline rotationが必要なら既存machine controlを使う。reject時はinstruction surfaceを変更しない。
 - packetで判断できるならrepoを再探索しない。不足する場合だけ`targets`へ限定する。
 - No-Goがmachine-admittedされ、semantic判断もNo-Goならhandoffのdirect action specを使う。同じNo-Goをworkerへdecisionとして再送しない。
-- それ以外のdecisionはhandoffのstaged action specを使う。元依頼を再記述せず、decision内容とexecution-unit/milestone内容だけをmachine-declared slotsへ渡す。PoC/observationのGoは`~/.codex/instructions/feasibility-gate.md`に従ってtask declarationをimplementationへmigrationしてから継続する。
+- それ以外のdecisionはhandoffのstaged action specを使う。元依頼を再記述せず、decision内容とexecution-unit/milestone内容だけをmachine-declared slotsへ渡す。PoC/observationのGoは`codex/instructions/feasibility-gate.md`に従ってtask declarationをimplementationへmigrationしてから継続する。
 
 ## `"status":"PASS"`
 
@@ -33,7 +33,7 @@ worker/reviewer packet、`glm-parent-action`のterminal envelope、またはboun
 
 - `targets`と`sol_question`に限定して実コードまたはdiffを確認する。reviewer summaryだけで現物確認を代用しない。
 - file:line・symbol・行範囲等で絞られている場合はchanged hunkまたは狭いsource近傍から読む。不足した対象だけ段階的に拡張し、target外を予防的に先読みしない。
-- 修正が必要ならCodex自身で編集せず、handoffのstaged fix action specへsemantic fix内容を渡す。origin/cause/accepted-scopeの意味判断は`~/.codex/instructions/glm-execution.md`に従う。独立reviewer再実行はwrapperに任せる。
+- 修正が必要ならCodex自身で編集せず、handoffのstaged fix action specへsemantic fix内容を渡す。origin/cause/accepted-scopeの意味判断は`codex/instructions/glm-execution.md`に従う。独立reviewer再実行はwrapperに任せる。
 - quality policy surface承認がmachine-admittedされている場合、承認するかsemantic fixへ戻すかだけを判断する。承認時のexact command/required parameterはdirect action specを正とし、packet自由文から組み立てない。
 
 ## finalization evidence

@@ -10,11 +10,11 @@
 ## 実行
 
 - model実行またはstate変更を行うcommandはsandbox外、実装上read-onlyのinspection/report commandはsandbox内で実行する。command名で推測せずside effectを正とする。
-- 同じ依頼を重複起動せず、GLM処理中にCodex自身が同じ調査・実装を代行しない。直接許可済みのrelease/deploy途中で新しい開発変更が必要になった場合も`~/.codex/instructions/direct-edit.md`の境界に従う。
+- 同じ依頼を重複起動せず、GLM処理中にCodex自身が同じ調査・実装を代行しない。直接許可済みのrelease/deploy途中で新しい開発変更が必要になった場合も`codex/instructions/direct-edit.md`の境界に従う。
 - 1回の新規taskには同じ責務・変更理由・検証単位に属する要求だけを渡す。独立workstreamは分け、同時変更しないと整合しない要求は分断しない。
-- 未検証の外部成立性は`~/.codex/instructions/feasibility-gate.md`、外部failureの追加evidenceは`~/.codex/instructions/failure-evidence.md`、escaped bug/reviewの原因分析は`~/.codex/instructions/escaped-cause-layer.md`に従う。機械的admissionやschemaは`control:external-feasibility-admission`を正とし、親はsemantic十分性だけを判断する。
+- 未検証の外部成立性は`codex/instructions/feasibility-gate.md`、外部failureの追加evidenceは`codex/instructions/failure-evidence.md`、escaped bug/reviewの原因分析は`codex/instructions/escaped-cause-layer.md`に従う。機械的admissionやschemaは`control:external-feasibility-admission`を正とし、親はsemantic十分性だけを判断する。
 - worker依頼には調査・実装・必要テスト・lint/build・自己レビューまでを含める。独立reviewerはwrapperが別sessionで起動するため、依頼文へ重複要求しない。
-- `.glm-worker-repository-harness`でopt-inしたrepoでは、task要求は`IMPLEMENTATION_TASKS/`のtask fileをauthorityとし、Planの`## ACTIVE`から1件だけ指す。USER_REQUESTへtask全文を複製しない。user指示のdurable requirement化は`~/.codex/instructions/task-request-boundary.md`に従う。
+- `.glm-worker-repository-harness`でopt-inしたrepoでは、task要求は`IMPLEMENTATION_TASKS/`のtask fileをauthorityとし、Planの`## ACTIVE`から1件だけ指す。USER_REQUESTへtask全文を複製しない。user指示のdurable requirement化は`codex/instructions/task-request-boundary.md`に従う。
 - parent metadata failureや外部成立性admission failureはGLM再実行で推測修復せず、親がauthority/evidenceを修復して同じtaskを継続する。
 - `AGENTS.md`等にある一般品質ゲートをworker依頼へ列挙し直さず、task固有の条件だけを明記する。packet上限を超える正確な一覧は`REPORT_ARTIFACT_DIR`へ保存させる。
 - 同一taskがSol判断待ち・review fix・rate/provider stop中なら新規taskへ切り替えず、保存済みstateを継続する。
@@ -59,7 +59,7 @@
 - Desktop/tool transport境界の長時間接続だけはrepository外である。主model呼出または`glm-parent-action wait`のcode-mode cellでは外側`// @exec: {"yield_time_ms":21600000,"max_output_tokens":8192}`と`background_terminal_max_timeout=21600000`を使い、内側`tools.exec_command`がrunning sessionを返す場合の`tools.write_stdin`も同じ長時間yieldを使う。この指定はlifecycle判断ではない。
 - 主tool sessionを失った場合は`glm-parent-action wait`をcanonical recovery waiterとして1回使う。machineがowner release・worker release・owner epochを処理し、最後にrecovery handoffを返す。taskがactiveのまま親ownerだけ失われた場合は`owner_lost:true`として返し、親はstatus/watch loopや新規task起動へ切り替えない。
 - 主呼出またはwait継続中は、経過時間だけを理由にpoll・進捗用model return・別terminal操作を追加しない。terminal、Sol/user attention、rate/provider stop、user interruptionだけを制御復帰境界とする。
-- packet受理・install完了は局所終端であり、親USER_REQUESTの完了は`~/.codex/instructions/task-lifecycle.md`のsemantic lifecycleで判断する。
+- packet受理・install完了は局所終端であり、親USER_REQUESTの完了は`codex/instructions/task-lifecycle.md`のsemantic lifecycleで判断する。
 
 ## terminal result
 

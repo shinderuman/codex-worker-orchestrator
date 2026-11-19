@@ -26,8 +26,6 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 		t.Fatalf("unexpected managed config:\n%s", content)
 	}
 	for _, setting := range []string{
-		"developer_instructions = ",
-		"instructions/codex-worker-orchestrator.md",
 		"include_apps_instructions = false",
 		"include_collaboration_mode_instructions = false",
 		"include_instructions = false",
@@ -40,6 +38,9 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 		if !strings.Contains(string(content), setting) {
 			t.Fatalf("managed config is missing %q:\n%s", setting, content)
 		}
+	}
+	if bytes.Contains(content, []byte("developer_instructions")) || bytes.Contains(content, []byte("instructions/codex-worker-orchestrator.md")) {
+		t.Fatalf("managed profile retains user-level repository instruction: %s", content)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "AGENTS.override.md")); !os.IsNotExist(err) {
 		t.Fatalf("enable created AGENTS.override.md: %v", err)
@@ -195,4 +196,39 @@ func gitOutput(t *testing.T, repo string, args ...string) string {
 		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func TestDisableRetiresExactObsoleteInstructionProfile(t *testing.T) {
+	const oldBootstrap = `developer_instructions = "When glm-worker or glm-parent-action is used in this repository, first read and follow instructions/codex-worker-orchestrator.md from the active Codex configuration directory. Resolve that directory as CODEX_CONFIG_DIR when set by this toolchain, otherwise CODEX_HOME when set, otherwise ~/.codex. Treat that installed file as the single source of truth for parent/tool rules; do not duplicate its rule body here."`
+	repo := initTestRepo(t)
+	runAction(t, "enable", repo)
+	configPath := filepath.Join(repo, filepath.FromSlash(ProjectConfigRelativePath))
+	legacy := bytes.Replace(managedConfig, []byte("include_apps_instructions = false"), []byte(oldBootstrap+"\n\ninclude_apps_instructions = false"), 1)
+	custom := append(bytes.Clone(legacy), []byte("\n# user customization\n")...)
+	if err := os.WriteFile(configPath, custom, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run([]string{"disable", repo}, &bytes.Buffer{}); err == nil {
+		t.Fatal("disable accepted a customized obsolete profile")
+	}
+	if got, err := os.ReadFile(configPath); err != nil || !bytes.Equal(got, custom) {
+		t.Fatalf("customized profile changed: %v", err)
+	}
+	if err := os.WriteFile(configPath, legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run([]string{"enable", repo}, &bytes.Buffer{}); err == nil {
+		t.Fatal("enable accepted an obsolete instruction profile")
+	}
+	disabled := runAction(t, "disable", repo)
+	if disabled.Status != contextStateDisabled || disabled.GitExcluded {
+		t.Fatalf("obsolete profile did not retire: %+v", disabled)
+	}
+	if _, err := os.Lstat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("obsolete profile remains: %v", err)
+	}
+	runAction(t, "enable", repo)
+	if got, err := os.ReadFile(configPath); err != nil || !bytes.Equal(got, managedConfig) {
+		t.Fatalf("re-enabled project did not use current profile: %v", err)
+	}
 }

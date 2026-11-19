@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/installed-instruction-opt-in-scope.md`](IMPLEMENTATION_TASKS/installed-instruction-opt-in-scope.md)
+- [`IMPLEMENTATION_TASKS/installed-export-smoke-locality.md`](IMPLEMENTATION_TASKS/installed-export-smoke-locality.md)
 
 ## NEXT（優先順）
 
@@ -27,7 +27,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md`](IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md)
 - [`IMPLEMENTATION_TASKS/session-rotation-handoff-test-locality.md`](IMPLEMENTATION_TASKS/session-rotation-handoff-test-locality.md)
 - [`IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md`](IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md)
-- [`IMPLEMENTATION_TASKS/installed-export-smoke-locality.md`](IMPLEMENTATION_TASKS/installed-export-smoke-locality.md)
 
 ## BLOCKED / USER_PERMISSION_WAIT
 

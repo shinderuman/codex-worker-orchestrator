@@ -165,8 +165,7 @@ if [ "$(shasum -a 256 "$home/.codex/.codex-config-managed-files")" != "$legacy_m
 	exit 1
 fi
 test -f "$home/.codex/codex-worker-orchestrator/install-state.json"
-test -f "$home/.codex/instructions/codex-worker-orchestrator.md"
-cmp "$repo/codex/AGENTS.md" "$home/.codex/instructions/codex-worker-orchestrator.md"
+test ! -e "$home/.codex/instructions/codex-worker-orchestrator.md"
 test -f "$home/.codex/rules/glm-worker.rules"
 cmp "$repo/codex/rules/glm-worker.rules" "$home/.codex/rules/glm-worker.rules"
 grep -Fq '"glm-worker"' "$home/.codex/rules/glm-worker.rules"
@@ -180,9 +179,9 @@ if grep -Eq '(not_)?match = \[' "$home/.codex/rules/glm-worker.rules"; then
 	printf '%s\n' 'managed rules still pin a per-subcommand allow-list' >&2
 	exit 1
 fi
-test -f "$home/.codex/instructions/execution-permission.md"
-cmp "$repo/codex/instructions/execution-permission.md" "$home/.codex/instructions/execution-permission.md"
-grep -q 'execution denial' "$home/.codex/instructions/execution-permission.md"
+test ! -e "$home/.codex/instructions/execution-permission.md"
+grep -q 'execution denial' "$repo/codex/instructions/execution-permission.md"
+test -f "$home/.codex/instructions/worker/common-code.md"
 test -f "$home/.codex/glm-worker/prompts/WORKER.md"
 grep -q '^local_key = "keep"$' "$home/.codex/config.toml"
 grep -q '^background_terminal_max_timeout = ' "$home/.codex/config.toml"
@@ -204,8 +203,8 @@ if [ "$(shasum -a 256 "$home/.local/bin/merge-json")" != "$stale_merge_json_hash
 	exit 1
 fi
 
-cmp "$repo/codex/instructions/glm-repo-search.md" "$home/.codex/instructions/glm-repo-search.md"
-grep -q 'GLM_WORKER_REPO_SEARCH' "$home/.codex/instructions/glm-repo-search.md"
+test ! -e "$home/.codex/instructions/glm-repo-search.md"
+grep -q 'GLM_WORKER_REPO_SEARCH' "$repo/codex/instructions/glm-repo-search.md"
 HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --help >"$tmp/repo-search-help.json"
 grep -q -- '--repo-search' "$tmp/repo-search-help.json"
 HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" GLM_WORKER_REPO_SEARCH=0 "$home/.local/bin/glm-worker" --repo-search smoke --scope cmd --budget 512 >"$tmp/repo-search-disabled.json"
@@ -231,8 +230,14 @@ grep -Fxq 'include_collaboration_mode_instructions = false' "$repo/.codex/config
 grep -Fxq 'include_instructions = false' "$repo/.codex/config.toml"
 grep -Fxq 'apps = false' "$repo/.codex/config.toml"
 grep -Fxq 'plugins = false' "$repo/.codex/config.toml"
-grep -Fq 'developer_instructions = ' "$repo/.codex/config.toml"
-grep -Fq 'instructions/codex-worker-orchestrator.md' "$repo/.codex/config.toml"
+if grep -Fq 'developer_instructions = ' "$repo/.codex/config.toml"; then
+	printf '%s\n' 'project config injected instructions despite native AGENTS discovery' >&2
+	exit 1
+fi
+if grep -Fq 'instructions/codex-worker-orchestrator.md' "$repo/.codex/config.toml"; then
+	printf '%s\n' 'project config references retired global instructions' >&2
+	exit 1
+fi
 test ! -e "$repo/AGENTS.override.md"
 git -C "$repo" check-ignore -q -- .codex/config.toml
 if git -C "$repo" status --porcelain --untracked-files=all | grep -Fq '.codex/config.toml'; then

@@ -246,7 +246,7 @@ func validInstallTransactionSurfacePath(path string) bool {
 	if err := validateManagedRelativePath(path); err != nil {
 		return false
 	}
-	if path == stateRelativePath || path == "config.toml" || path == "instructions/codex-worker-orchestrator.md" || path == "rules/glm-worker.rules" {
+	if path == stateRelativePath || path == "config.toml" || path == "rules/glm-worker.rules" {
 		return true
 	}
 	return strings.HasPrefix(path, "instructions/") || strings.HasPrefix(path, "glm-worker/prompts/")
