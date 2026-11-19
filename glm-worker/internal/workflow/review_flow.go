@@ -46,15 +46,28 @@ func (w *Workflow) prepareReviewInputSnapshot(
 	if err != nil || stopped {
 		return workerEnd, true, err
 	}
-	parentBefore, err := state.CaptureParentFileStates(w.config.RepoRoot)
+	harnessActive, err := w.repositoryHarnessActive()
 	if err != nil {
 		return workerEnd, true, w.failClosedSnapshot(
 			state.SnapshotStageWorkerEnd,
 			workerEnd,
 			state.GitSnapshot{},
-			"quality gate開始前parent-managed metadata取得失敗",
+			"quality gate開始前repository harness activation判定失敗",
 			err,
 		)
+	}
+	var parentBefore state.ParentFileStates
+	if harnessActive {
+		parentBefore, err = state.CaptureParentFileStates(w.config.RepoRoot)
+		if err != nil {
+			return workerEnd, true, w.failClosedSnapshot(
+				state.SnapshotStageWorkerEnd,
+				workerEnd,
+				state.GitSnapshot{},
+				"quality gate開始前parent-managed metadata取得失敗",
+				err,
+			)
+		}
 	}
 	qualityReport, err := w.runQualityGate()
 	if err != nil {
@@ -211,24 +224,26 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 			nil,
 		)
 	}
-	parentAfter, err := state.CaptureParentFileStates(w.config.RepoRoot)
-	if err != nil {
-		return reviewInput, true, w.failClosedSnapshot(
-			state.SnapshotStageReviewStart,
-			workerEnd,
-			reviewInput,
-			"machine quality fixer後parent-managed metadata取得失敗",
-			err,
-		)
-	}
-	if !state.SameParentFileStates(parentBefore, parentAfter) {
-		return reviewInput, true, w.failClosedSnapshot(
-			state.SnapshotStageReviewStart,
-			workerEnd,
-			reviewInput,
-			fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", report.Fixed),
-			nil,
-		)
+	if parentBefore != nil {
+		parentAfter, err := state.CaptureParentFileStates(w.config.RepoRoot)
+		if err != nil {
+			return reviewInput, true, w.failClosedSnapshot(
+				state.SnapshotStageReviewStart,
+				workerEnd,
+				reviewInput,
+				"machine quality fixer後parent-managed metadata取得失敗",
+				err,
+			)
+		}
+		if !state.SameParentFileStates(parentBefore, parentAfter) {
+			return reviewInput, true, w.failClosedSnapshot(
+				state.SnapshotStageReviewStart,
+				workerEnd,
+				reviewInput,
+				fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", report.Fixed),
+				nil,
+			)
+		}
 	}
 	if err := w.state.SaveWorkerEndSnapshot(reviewInput); err != nil {
 		return reviewInput, true, w.failClosedSnapshot(
