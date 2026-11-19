@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 func TestTerminalProjectionBoundsDecisionAndPreservesSemanticFields(t *testing.T) {
@@ -395,4 +396,145 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestTerminalProjectionPreservesActuallyEmittedAdvisory(t *testing.T) {
+	for _, tc := range []struct {
+		status packet.Status
+		risk   packet.Risk
+	}{
+		{packet.StatusPass, packet.RiskLow},
+		{packet.StatusNeedsSolReview, packet.RiskHigh},
+		{packet.StatusNeedsSolDecision, packet.RiskHigh},
+	} {
+		t.Run(string(tc.status), func(t *testing.T) {
+			result := packet.Result{
+				Status: tc.status, Risk: tc.risk,
+				Summary: "review summary", RequirementCoverage: "covered",
+				Invariants: "preserved", TestEvidence: "passed", Issues: "none",
+				ResidualRisk: "low", SolQuestion: "verify independently",
+				Decision: "independent review required", Evidence: "packet proof",
+				Options: "proceed or stop", Recommendation: "stop on mismatch",
+				TestObligations: "regression",
+				Targets: []string{"internal/packet/result.go:1"},
+				Artifacts: []string{"/tmp/task/review.json"},
+			}
+			result.FailurePathAdvisory = packet.BoundFailurePathAdvisory(result, &packet.FailurePathAdvisory{
+				CallID: "call-advisory",
+				Findings: []packet.FailurePathAdvisoryFinding{{
+					Target: "internal/packet/result.go:1", Class: "failure-path", Issue: "independent failure-path concern",
+				}},
+			})
+			if result.FailurePathAdvisory == nil {
+				t.Fatal("advisory was not emitted by packet")
+			}
+			emitted, err := result.MachineJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			terminal := json.RawMessage(emitted)
+			var object map[string]json.RawMessage
+			if err := json.Unmarshal(terminal, &object); err != nil {
+				t.Fatal(err)
+			}
+			object["transport_padding"] = mustJSONRaw(t, strings.Repeat("padding-", 1400))
+			oversized := mustJSONRaw(t, object)
+			handoff := representativeHandoff(t, strings.Repeat("baseline-", 260), strings.Repeat("validation-", 260))
+			envelope, err := projectParentActionTerminalEnvelope(oversized, handoff)
+			if err != nil {
+				t.Fatalf("advisory projection: %v", err)
+			}
+			assertEnvelopeWithinBudget(t, envelope)
+			if envelope.Projection == nil || envelope.Projection.TerminalMode != "semantic" {
+				t.Fatalf("did not exercise semantic overflow projection: %+v", envelope.Projection)
+			}
+			assertJSONFieldAbsent(t, envelope.Terminal, "transport_padding")
+			for _, field := range []string{"failure_path_advisory", "status", "risk", "targets", "artifacts"} {
+				assertJSONFieldEqual(t, terminal, envelope.Terminal, field)
+			}
+			if containsString(envelope.Projection.OmittedFields, "terminal.failure_path_advisory") {
+				t.Fatalf("advisory reported omitted: %+v", envelope.Projection)
+			}
+		})
+	}
+}
+
+func TestTerminalProjectionAdvisoryFailClosedWhenLosslessPacketCannotFit(t *testing.T) {
+	result := packet.Result{
+		Status: packet.StatusPass, Risk: packet.RiskLow,
+		Summary: strings.Repeat("summary-", 240),
+		RequirementCoverage: strings.Repeat("coverage-", 210),
+		Invariants: strings.Repeat("invariant-", 190),
+		TestEvidence: strings.Repeat("test-", 380),
+		Issues: "none", ResidualRisk: "low",
+		Targets: []string{"internal/packet/result.go:1"},
+	}
+	result.FailurePathAdvisory = packet.BoundFailurePathAdvisory(result, &packet.FailurePathAdvisory{
+		CallID: "call-overflow",
+		Findings: []packet.FailurePathAdvisoryFinding{{Target: "result.go:1", Class: "failure-path", Issue: "do not discard silently"}},
+	})
+	if result.FailurePathAdvisory == nil {
+		t.Fatal("advisory was not emitted by packet")
+	}
+	terminal, err := result.MachineJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(terminal) > packet.MaxPacketBytes {
+		t.Fatalf("fixture packet exceeds canonical limit: %d", len(terminal))
+	}
+	handoff := representativeHandoff(t, "small", "small")
+	var handoffObject map[string]json.RawMessage
+	if err := json.Unmarshal(handoff, &handoffObject); err != nil {
+		t.Fatal(err)
+	}
+	handoffObject["required_action_parameters"] = mustJSONRaw(t, map[string]string{"proof": strings.Repeat("required-", 1300)})
+	handoff = mustJSONRaw(t, handoffObject)
+	_, err = projectParentActionTerminalEnvelope(terminal, handoff)
+	var overflow *parentActionTerminalProjectionError
+	if !errors.As(err, &overflow) {
+		t.Fatalf("must explicitly overflow instead of dropping advisory: %v", err)
+	}
+	failure, err := writeTerminalProjectionFailurePayload(terminal, handoff, overflow)
+	if err != nil {
+		t.Fatalf("bounded overflow payload: %v", err)
+	}
+	assertEnvelopeWithinBudget(t, failure)
+	if failure.Status != "parent_action_terminal_projection_overflow" || failure.ProjectionError == "" || !failure.Projection.Overflow {
+		t.Fatalf("unsafe overflow response: %+v", failure)
+	}
+	if !containsString(failure.Projection.OmittedFields, "terminal.failure_path_advisory") {
+		t.Fatalf("overflow must disclose omitted advisory: %+v", failure.Projection)
+	}
+	assertJSONFieldEqual(t, terminal, failure.Terminal, "status")
+	assertHandoffRequiredActionSpecPreserved(t, failure.Handoff)
+}
+
+func TestTerminalProjectionPacketWrapperEvidenceAndUnknownStatus(t *testing.T) {
+	implemented := packet.Result{
+		Status: packet.StatusImplemented, Risk: packet.RiskLow,
+		Summary: "implementation", Tests: "passed",
+		ParentValidation: packet.ParentValidationGoTest,
+		ParentValidationWorkingDir: "glm-worker",
+		ParentValidationEvidence: &packet.ParentValidationEvidence{ValidationRunID: "run-id", Form: packet.ParentValidationGoTest, Status: "pass"},
+	}
+	terminal, err := implemented.MachineJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, _, omitted, err := projectTerminalSemanticResult(append([]byte(nil), terminal...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(omitted) != 0 {
+		t.Fatalf("wrapper field unexpectedly omitted: %v", omitted)
+	}
+	for _, key := range []string{"parent_validation", "parent_validation_working_dir", "parent_validation_evidence"} {
+		assertJSONFieldEqual(t, terminal, projected, key)
+	}
+	unknown := mustJSONRaw(t, map[string]any{"status": "unknown", "opaque": "preserve"})
+	full, mode, omitted, err := projectTerminalSemanticResult(unknown)
+	if err != nil || mode != "full" || len(omitted) != 0 || !bytes.Equal(full, unknown) {
+		t.Fatalf("unknown terminal altered: mode=%s omitted=%v err=%v", mode, omitted, err)
+	}
 }

@@ -208,7 +208,7 @@ func projectTerminalSemanticResult(raw json.RawMessage) (json.RawMessage, string
 		return raw, "error", nil, nil
 	}
 	status, _ := rawJSONString(object["status"])
-	keep := terminalProjectionFields(status)
+	keep := packet.TerminalSemanticFields(packet.Status(status))
 	if len(keep) == 0 {
 		return raw, "full", nil, nil
 	}
@@ -217,21 +217,6 @@ func projectTerminalSemanticResult(raw json.RawMessage) (json.RawMessage, string
 		return nil, "", nil, err
 	}
 	return projected, "semantic", omitted, nil
-}
-
-func terminalProjectionFields(status string) []string {
-	switch status {
-	case "NEEDS_SOL_DECISION":
-		return []string{"status", "risk", "decision", "evidence", "options", "recommendation", "test_obligations", "targets", "artifacts"}
-	case "NEEDS_SOL_REVIEW":
-		return []string{"status", "risk", "summary", "requirement_coverage", "invariants", "test_evidence", "issues", "residual_risk", "sol_question", "targets", "artifacts"}
-	case "PASS", "FIX_REQUIRED":
-		return []string{"status", "risk", "summary", "requirement_coverage", "invariants", "test_evidence", "issues", "residual_risk", "targets", "artifacts"}
-	case "IMPLEMENTED":
-		return []string{"status", "risk", "summary", "requirement_coverage", "tests", "unverified", "parent_validation", "parent_validation_working_dir", "parent_validation_evidence", "targets", "artifacts"}
-	default:
-		return nil
-	}
 }
 
 func projectRecoverableTerminalEvidence(raw json.RawMessage) (json.RawMessage, []string, bool, error) {

@@ -217,6 +217,27 @@ func invalidLowHighRisk(risk Risk) string {
 	return fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(risk))
 }
 
+// TerminalSemanticFields exposes the canonical packet fields eligible for
+// bounded terminal projection. Unknown statuses have no packet contract.
+func TerminalSemanticFields(status Status) []string {
+	statusContract, ok := packetStatusContracts[status]
+	if !ok {
+		return nil
+	}
+	fields := make([]string, 0, len(statusContract.resultFields)+7)
+	fields = append(fields, string(fieldStatus), string(fieldRisk))
+	for _, field := range statusContract.resultFields {
+		fields = append(fields, string(field))
+	}
+	if status == StatusImplemented {
+		fields = append(fields, string(fieldParentValidation), string(fieldParentValidationWorkingDir), string(fieldParentValidationEvidence))
+	}
+	if AdvisoryVisibleStatus(status) {
+		fields = append(fields, string(fieldFailurePathAdvisory))
+	}
+	return append(fields, string(fieldTargets), string(fieldArtifacts))
+}
+
 func resultFieldsForStatus(status Status) []machineField {
 	if contract, ok := packetStatusContracts[status]; ok {
 		return contract.resultFields
