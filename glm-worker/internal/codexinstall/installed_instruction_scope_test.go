@@ -93,16 +93,8 @@ func checkScopeActivation(t *testing.T, targetRepo string, optIn bool) {
 		t.Fatalf("explicit project opt-in: %v", err)
 	}
 	projectConfig := readTestFile(t, configPath)
-	for _, required := range []string{
-		"developer_instructions = ",
-		"this repository's own AGENTS.md",
-	} {
-		if !bytes.Contains(projectConfig, []byte(required)) {
-			t.Fatalf("opt-in config missing %q:\n%s", required, projectConfig)
-		}
-	}
-	if bytes.Contains(projectConfig, []byte("instructions/codex-worker-orchestrator.md")) {
-		t.Fatalf("project opt-in loads removed user-level repository instructions: %s", projectConfig)
+	if bytes.Contains(projectConfig, []byte("developer_instructions")) || bytes.Contains(projectConfig, []byte("instructions/codex-worker-orchestrator.md")) {
+		t.Fatalf("project opt-in injected repository-specific instructions: %s", projectConfig)
 	}
 	var disabled bytes.Buffer
 	if err := codexcontext.Run([]string{"disable", targetRepo}, &disabled); err != nil {

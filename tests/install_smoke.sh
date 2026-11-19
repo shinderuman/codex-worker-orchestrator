@@ -230,8 +230,10 @@ grep -Fxq 'include_collaboration_mode_instructions = false' "$repo/.codex/config
 grep -Fxq 'include_instructions = false' "$repo/.codex/config.toml"
 grep -Fxq 'apps = false' "$repo/.codex/config.toml"
 grep -Fxq 'plugins = false' "$repo/.codex/config.toml"
-grep -Fq 'developer_instructions = ' "$repo/.codex/config.toml"
-grep -Fq "this repository's own AGENTS.md" "$repo/.codex/config.toml"
+if grep -Fq 'developer_instructions = ' "$repo/.codex/config.toml"; then
+	printf '%s\n' 'project config injected instructions despite native AGENTS discovery' >&2
+	exit 1
+fi
 if grep -Fq 'instructions/codex-worker-orchestrator.md' "$repo/.codex/config.toml"; then
 	printf '%s\n' 'project config references retired global instructions' >&2
 	exit 1

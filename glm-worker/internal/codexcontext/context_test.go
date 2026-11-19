@@ -26,8 +26,6 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 		t.Fatalf("unexpected managed config:\n%s", content)
 	}
 	for _, setting := range []string{
-		"developer_instructions = ",
-		"this repository's own AGENTS.md",
 		"include_apps_instructions = false",
 		"include_collaboration_mode_instructions = false",
 		"include_instructions = false",
@@ -41,7 +39,7 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 			t.Fatalf("managed config is missing %q:\n%s", setting, content)
 		}
 	}
-	if bytes.Contains(content, []byte("instructions/codex-worker-orchestrator.md")) {
+	if bytes.Contains(content, []byte("developer_instructions")) || bytes.Contains(content, []byte("instructions/codex-worker-orchestrator.md")) {
 		t.Fatalf("managed profile retains user-level repository instruction: %s", content)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "AGENTS.override.md")); !os.IsNotExist(err) {

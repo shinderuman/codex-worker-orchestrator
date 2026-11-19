@@ -37,8 +37,6 @@ var managedConfig = []byte(managedMarker + `
 # This local project profile reduces Codex Desktop context for glm-worker tasks.
 # Start a new Codex thread after enabling or disabling it.
 
-developer_instructions = "When glm-worker or glm-parent-action is used in this repository, follow this repository's own AGENTS.md and project-local instructions. Do not load codex-worker-orchestrator repository-specific instructions from the user-level Codex configuration directory or apply that repository's rules here."
-
 include_apps_instructions = false
 include_collaboration_mode_instructions = false
 
