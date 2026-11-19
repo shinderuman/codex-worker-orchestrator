@@ -33,8 +33,6 @@ func writeQualityFile(t *testing.T, root, path, content string) {
 	}
 }
 
-// The package matcher verifies bound syntax, not a reachable review path.
-// These uncalled helpers must not be used to certify reviewer admission.
 func TestQualityWiringPackageMatcherOnlyChecksCallPresence(t *testing.T) {
 	root := t.TempDir()
 	workflowPath := "glm-worker/internal/workflow/workflow.go"

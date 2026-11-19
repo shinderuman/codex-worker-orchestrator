@@ -29,8 +29,6 @@ func (w *Workflow) runQualityGate() (harnesslint.Report, error) {
 	if err != nil {
 		return report, w.verifyQualityGateAbort(guard, before, err)
 	}
-	// A missing or internally inconsistent gate result must not admit a reviewer.
-	// The gate is executed once; this checks its returned evidence, not a second run.
 	if (report.Status != "pass" && !harnesslint.IsViolation(report)) ||
 		(report.Status == "pass" && len(report.Violations) != 0) {
 		invalid := fmt.Errorf("invalid machine quality gate report: status=%q violations=%d", report.Status, len(report.Violations))

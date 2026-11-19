@@ -11,9 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// TestReviewAdmissionRequiresReachableQualityGate exercises the real worker to
-// reviewer entrypoint. A disconnected helper containing the correct calls
-// cannot make these cases pass without the gate on the executable path.
 func TestReviewAdmissionRequiresReachableQualityGate(t *testing.T) {
 	t.Parallel()
 	invalid := harnesslint.Report{}
@@ -94,9 +91,6 @@ func TestReviewAdmissionRequiresReachableQualityGate(t *testing.T) {
 				return
 			}
 			if tc.mutate {
-				// A clean gate report cannot authorize a changed review input.
-				// The review-start snapshot guard rejects it without a recoverable
-				// quality-tool failure (and without invoking the reviewer).
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -132,8 +126,6 @@ func TestReviewAdmissionRequiresReachableQualityGate(t *testing.T) {
 	}
 }
 
-// A saved worker result does not bypass the gate when quality tools recover:
-// resume must run a fresh gate before it can invoke a reviewer.
 func TestReviewAdmissionResumeRechecksGateBeforeReviewer(t *testing.T) {
 	t.Parallel()
 	repo := newRetentionGitRepo(t)
