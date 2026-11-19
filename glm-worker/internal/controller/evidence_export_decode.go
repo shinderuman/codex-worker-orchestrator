@@ -55,6 +55,17 @@ func (b *evidenceExportBuilder) exportRecordBytes(name string) (string, []byte, 
     return "", nil, false
 }
 
+func (b *evidenceExportBuilder) exportRecordSourcePartial(path string) bool {
+    for _, entry := range b.entries {
+        if entry.Path != path {
+            continue
+        }
+        return entry.Changing || entry.TrailingFragment || entry.Missing ||
+            entry.Unreadable != "" || entry.Unattributed != ""
+    }
+    return false
+}
+
 func decodeExportRecordSource[T any](b *evidenceExportBuilder, name, taskID string,
     parse func([]byte, bool) []T, matches func(T, string) bool,
 ) evidenceExportDecodedSource[T] {
@@ -62,11 +73,8 @@ func decodeExportRecordSource[T any](b *evidenceExportBuilder, name, taskID stri
     if !ok {
         return evidenceExportDecodedSource[T]{status: evidenceAnalysisStatusAbsent}
     }
-    for _, entry := range b.entries {
-        if entry.Path == path && (entry.Changing || entry.TrailingFragment || entry.Missing ||
-            entry.Unreadable != "" || entry.Unattributed != "") {
-            return evidenceExportDecodedSource[T]{status: evidenceAnalysisStatusPartial}
-        }
+    if b.exportRecordSourcePartial(path) {
+        return evidenceExportDecodedSource[T]{status: evidenceAnalysisStatusPartial}
     }
     // An empty rounds file is an observed zero-round stream for workflow.
     // Other empty streams have no records and remain absent in the index.
