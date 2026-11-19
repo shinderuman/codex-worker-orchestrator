@@ -154,4 +154,3 @@ jobs:
     needs:
       - lint
     uses: ./.github/workflows/install-smoke.yml
-
