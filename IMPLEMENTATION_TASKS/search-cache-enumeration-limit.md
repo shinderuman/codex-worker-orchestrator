@@ -20,6 +20,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 glm-worker/internal/reposearch/document.go の rebuildIndex はスキップ対象も含む列挙数をMaxFilesと比較し、cache.go の cacheCountsValid はIndexedFilesだけを上限と比較する。テキスト1件とbinary1件を上限2で構築後、同じ内容を上限1で読めばhitの判定と再構築の判定が一致しない。現行worker/reviewerは既定上限を指定し、親の2入口はcache無効。影響を異なる上限を指定したSearch呼出に限定する。
