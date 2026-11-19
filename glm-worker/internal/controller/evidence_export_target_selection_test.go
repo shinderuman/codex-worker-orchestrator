@@ -25,7 +25,6 @@ func TestExportEvidenceRequiresRuntimeTaskIdentityForDefaultTargets(t *testing.T
 	})
 }
 
-
 func TestExportEvidenceRejectsUnknownTargetsAndSelectors(t *testing.T) {
 	t.Parallel()
 	fixture := newEvidenceExportFixture(t)

@@ -218,7 +218,6 @@ func TestExportEvidenceBindsRepositoryScopedValidationRuns(t *testing.T) {
 	}
 }
 
-
 func TestExportEvidenceAggregatesParentEvidenceRepetitions(t *testing.T) {
 	t.Parallel()
 	fixture := newEvidenceExportFixture(t)

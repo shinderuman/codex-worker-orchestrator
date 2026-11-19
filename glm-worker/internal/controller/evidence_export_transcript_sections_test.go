@@ -35,7 +35,6 @@ func TestExportEvidenceBoundSectionRecordsMissingTranscriptUnderBoundPrefix(t *t
 	}
 }
 
-
 func TestExportEvidenceBoundSectionExcludesPostAttemptSessionRecords(t *testing.T) {
 	t.Parallel()
 	sealedOptions := func(f *evidenceExportFixture) {
@@ -281,7 +280,6 @@ func TestExportEvidenceLiveSectionCollectsFullParentRollout(t *testing.T) {
 		t.Fatal("live export dropped a guardian rollout that predates the live attempt")
 	}
 }
-
 
 func TestScanTranscriptWindowBoundsReusedSessions(t *testing.T) {
 	t.Parallel()

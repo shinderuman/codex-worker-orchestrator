@@ -657,7 +657,6 @@ func exportFileByPath(t *testing.T, export EvidenceExport, path string) []byte {
 	return nil
 }
 
-
 func evidenceObjectTreeDigest(t *testing.T, store *Store) string {
 	t.Helper()
 	root := filepath.Join(store.dir, "evidence", "objects")
