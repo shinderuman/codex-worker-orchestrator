@@ -217,6 +217,7 @@ type bundleRolloutScan struct {
 	hasWindow            bool
 	windowRecords        []time.Time
 	fileCount            int
+	fileMembers          []analysisRolloutMember
 	counterContinuations []bool
 	turns                []analysisRolloutTurn
 	turnIndex            map[string]int
@@ -337,6 +338,7 @@ type analysisCounterDelta struct {
 
 type analysisTokenSegment struct {
 	file     int
+	source   string
 	baseline *analysisRolloutTokenAnchor
 	end      *analysisRolloutTokenAnchor
 }
@@ -435,6 +437,7 @@ func scanCodexRolloutChainMember(scan *bundleRolloutScan, member codexRollout, s
 func scanCodexRolloutReader(scan *bundleRolloutScan, input io.Reader, source string, continuation bool, start, end time.Time) error {
 	fileIndex := scan.fileCount
 	scan.fileCount++
+	scan.fileMembers = append(scan.fileMembers, analysisRolloutMember{source: source})
 	scan.counterContinuations = append(scan.counterContinuations, continuation)
 	reader := bufio.NewReaderSize(input, 64*1024)
 	lineNumber := 0
@@ -486,6 +489,7 @@ func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber
 	if timestampErr != nil {
 		return fmt.Errorf("parent rollout %d行目のtimestampを解析できません: %w", lineNumber, timestampErr)
 	}
+	scan.fileMembers[fileIndex].observe(timestamp)
 	observeAnalysisRolloutInWindowRecord(scan, line, timestamp, start, end)
 	if record.Type == "response_item" {
 		observeAnalysisRolloutWait(scan, record.Payload, timestamp, lineNumber)

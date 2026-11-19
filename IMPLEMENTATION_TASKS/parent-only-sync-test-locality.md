@@ -27,6 +27,10 @@ parent-onlyのauthority同期テストを独立させる。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 controller_task_authority_sync_test.goのparent-only側の成功・証拠偽装拒否を分ける。

@@ -101,6 +101,8 @@ const parentUsageReasonMissingInBaseline = "missing-in-baseline-anchor"
 
 const parentUsageReasonMissingInEnd = "missing-in-end-anchor"
 
+const parentUsageReasonUnobservedMember = "unobserved-rollout-member"
+
 const parentUsageIntervalStartInclusive = false
 
 const parentUsageIntervalStartExclusive = true
@@ -248,16 +250,6 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 	case end.Offset <= baseline.Offset:
 		return parentUsageTokens{Status: analysisStatusNoObservation, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line)}
 	}
-	segments := analysisTokenSegments(scan, baseline, end)
-	if analysisSegmentsCounterReset(scan, segments) {
-		return parentUsageTokens{
-			Status:         analysisStatusCounterReset,
-			BaselineAt:     baseline.RawAt,
-			EndAt:          end.RawAt,
-			BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line),
-			EndSource:      parentUsageSourceLocator(end.Source, end.Line),
-		}
-	}
 	tokens := parentUsageTokens{
 		Status:         analysisStatusAvailable,
 		BaselineAt:     baseline.RawAt,
@@ -265,11 +257,30 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 		BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line),
 		EndSource:      parentUsageSourceLocator(end.Source, end.Line),
 	}
+	segments := analysisTokenSegments(scan, baseline, end)
+	if unobserved, found := analysisUnobservedMember(scan, segments, end.File, baselineBound, endBound); found {
+		return parentUsageUnobservedTokens(tokens, unobserved)
+	}
+	if analysisSegmentsCounterReset(scan, segments) {
+		tokens.Status = analysisStatusCounterReset
+		return tokens
+	}
 	tokens.InputTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldInput, analysisAnchorInput, segments, tokens.UnknownFields)
 	tokens.CachedInputTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldCached, analysisAnchorCached, segments, tokens.UnknownFields)
 	tokens.OutputTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldOutput, analysisAnchorOutput, segments, tokens.UnknownFields)
 	tokens.ReasoningTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldReasoning, analysisAnchorReasoning, segments, tokens.UnknownFields)
 	tokens.TotalTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldTotal, analysisAnchorTotal, segments, tokens.UnknownFields)
+	return tokens
+}
+
+func parentUsageUnobservedTokens(tokens parentUsageTokens, source string) parentUsageTokens {
+	tokens.Status = analysisStatusUnknown
+	tokens.Reason = parentUsageReasonUnobservedMember
+	for _, field := range []string{parentUsageFieldInput, parentUsageFieldCached, parentUsageFieldOutput, parentUsageFieldReasoning, parentUsageFieldTotal} {
+		tokens.UnknownFields = append(tokens.UnknownFields, parentUsageUnknownField{
+			Field: field, Reason: parentUsageReasonUnobservedMember, Source: source,
+		})
+	}
 	return tokens
 }
 

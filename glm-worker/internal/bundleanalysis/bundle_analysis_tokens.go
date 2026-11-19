@@ -1,5 +1,22 @@
 package bundleanalysis
 
+import "time"
+
+type analysisRolloutMember struct {
+	source string
+	first  time.Time
+	last   time.Time
+}
+
+func (member *analysisRolloutMember) observe(at time.Time) {
+	if member.first.IsZero() || at.Before(member.first) {
+		member.first = at
+	}
+	if at.After(member.last) {
+		member.last = at
+	}
+}
+
 func analysisTokenSegments(scan bundleRolloutScan, baseline, end analysisRolloutTokenAnchor) []analysisTokenSegment {
 	if baseline.File == end.File {
 		return []analysisTokenSegment{{file: baseline.File, baseline: &baseline, end: &end}}
@@ -19,11 +36,26 @@ func analysisTokenSegments(scan bundleRolloutScan, baseline, end analysisRollout
 			continue
 		}
 		if last == nil {
+			segments = append(segments, analysisTokenSegment{file: file, source: scan.fileMembers[file].source})
 			continue
 		}
 		segments = append(segments, analysisTokenSegment{file: file, baseline: analysisContinuationBaseline(scan, file), end: last})
 	}
 	return segments
+}
+
+func analysisUnobservedMember(scan bundleRolloutScan, segments []analysisTokenSegment, endFile int, start, end time.Time) (string, bool) {
+	for _, segment := range segments {
+		if segment.end == nil {
+			return segment.source, true
+		}
+	}
+	for _, member := range scan.fileMembers[endFile+1:] {
+		if !member.first.IsZero() && !member.first.After(end) && !member.last.Before(start) {
+			return member.source, true
+		}
+	}
+	return "", false
 }
 
 func analysisContinuationBaseline(scan bundleRolloutScan, file int) *analysisRolloutTokenAnchor {

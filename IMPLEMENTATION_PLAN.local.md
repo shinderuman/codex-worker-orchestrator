@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md`](IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md)
+- [`IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md`](IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md)
 
 ## NEXT（優先順）
 
@@ -17,7 +17,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)
 - [`IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md`](IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md)
 - [`IMPLEMENTATION_TASKS/session-rotation-handoff-test-locality.md`](IMPLEMENTATION_TASKS/session-rotation-handoff-test-locality.md)
-- [`IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md`](IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md)
 - [`IMPLEMENTATION_TASKS/remove-backward-compatibility-surfaces.md`](IMPLEMENTATION_TASKS/remove-backward-compatibility-surfaces.md)
 
 ## BLOCKED / USER_PERMISSION_WAIT
