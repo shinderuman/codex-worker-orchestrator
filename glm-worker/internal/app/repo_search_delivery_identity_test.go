@@ -84,13 +84,13 @@ func TestRepoSearchRefinementDeliversLocatorsWithinSameLease(t *testing.T) {
 
 func TestRepoSearchRefinementAndBatchDeliveryShareIdentity(t *testing.T) {
 	tests := []struct {
-		name            string
-		first           string
-		firstBudget     int
-		second          string
-		secondBudget    int
-		wantDuplicate   bool
-		wantRefinement  bool
+		name		string
+		first		string
+		firstBudget	int
+		second		string
+		secondBudget	int
+		wantDuplicate	bool
+		wantRefinement	bool
 	}{
 		{"standalone shortage then batch shortage", "standalone", 8, "batch", 8, true, true},
 		{"batch shortage then standalone shortage", "batch", 8, "standalone", 8, true, true},
