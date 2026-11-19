@@ -25,7 +25,8 @@ const pendingSessionRotationRetirementVersion = 1
 
 func (s *StateStore) AdmitNewTaskRotationBoundary(callerThreadID, claimID string) (bool, error) {
 	if claimID != "" {
-		return s.AdmitNewTaskRotation(callerThreadID, claimID)
+		admission, err := s.admitClaimedSessionRotation(callerThreadID, claimID)
+		return admission.resume, err
 	}
 	if incomplete, err := s.incompleteSessionRotationTarget(callerThreadID); err != nil {
 		return false, err

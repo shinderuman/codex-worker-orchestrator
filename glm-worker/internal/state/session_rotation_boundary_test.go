@@ -1,6 +1,9 @@
 package state
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestAdmitNewTaskRotationBoundaryDeclinesPendingRecommendationAfterAdmission(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
@@ -229,5 +232,110 @@ func TestAdmitNewTaskRotationBoundaryPreservesClaimedStartPath(t *testing.T) {
 	resume, err := st.AdmitNewTaskRotationBoundary(boundThread, claim.ClaimID)
 	if err != nil || resume {
 		t.Fatalf("claimed rotation admission = resume:%v err:%v", resume, err)
+	}
+}
+
+func TestCanonicalRotationAdmissionMatchesStartWithNoPreviousTask(t *testing.T) {
+	st, parentThread, directiveID, claim := seedClaimedSessionRotationIdentityTest(t)
+	boundThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.BindSessionRotationClaim(parentThread, directiveID, claim.ClaimID, boundThread); err != nil {
+		t.Fatal(err)
+	}
+	if st.Exists("task.id") {
+		t.Fatal("fixture unexpectedly contains a task")
+	}
+	if resume, err := st.AdmitNewTaskRotationBoundary(boundThread, claim.ClaimID); err != nil || resume {
+		t.Fatalf("bound admission without old task = resume:%v err:%v", resume, err)
+	}
+	taskID, err := st.StartSessionRotationTask(boundThread, claim.ClaimID)
+	if err != nil || taskID != claim.TargetTaskID {
+		t.Fatalf("bound start without old task = %q err:%v", taskID, err)
+	}
+}
+
+func TestCanonicalRotationRejectsUnreadableOrEmptyTaskIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		prepare func(*StateStore) error
+	}{
+		{name: "directory", prepare: func(st *StateStore) error { return os.Mkdir(st.Path("task.id"), 0o700) }},
+		{name: "empty file", prepare: func(st *StateStore) error { return st.Write("task.id", "") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, parentThread, directiveID, claim := seedClaimedSessionRotationIdentityTest(t)
+			boundThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+			if err := st.BindSessionRotationClaim(parentThread, directiveID, claim.ClaimID, boundThread); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.prepare(st); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.AdmitNewTaskRotationBoundary(boundThread, claim.ClaimID); err == nil {
+				t.Fatal("preflight admitted an invalid existing task identity")
+			}
+			if _, err := st.StartSessionRotationTask(boundThread, claim.ClaimID); err == nil {
+				t.Fatal("rotation start admitted an invalid existing task identity")
+			}
+			if st.Exists("task.status") {
+				t.Fatal("denied start modified the task runtime")
+			}
+			marker, err := st.LoadSessionRotationMarker(parentThread)
+			if err != nil || marker == nil || marker.State != SessionRotationStateBound {
+				t.Fatalf("denied start changed the bound claim: %#v err=%v", marker, err)
+			}
+		})
+	}
+}
+
+func TestCanonicalRotationStartRechecksClaimAfterPreflight(t *testing.T) {
+	st, parentThread, directiveID, claim := seedClaimedSessionRotationIdentityTest(t)
+	boundThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.BindSessionRotationClaim(parentThread, directiveID, claim.ClaimID, boundThread); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AdmitNewTaskRotationBoundary(boundThread, claim.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker.Claim.BoundThreadID = "01a08268-2c7d-72a0-9aa1-605eed066ce9"
+	if err := st.writeSessionRotationMarker(marker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartSessionRotationTask(boundThread, claim.ClaimID); err == nil {
+		t.Fatal("stale preflight authorized a different bound thread")
+	}
+	if st.Exists("task.id") {
+		t.Fatal("denied mutation created a task")
+	}
+}
+
+func TestPendingRetirementSurvivesRestartBeforeCommit(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	parentThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	ordinaryThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: parentThread,
+		TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:       SessionRotationTerminalAccept,
+		Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.StagePendingSessionRotationRecommendationRetirement(ordinaryThread); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &StateStore{dir: st.dir}
+	if _, err := restarted.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := restarted.LoadSessionRotationMarker(parentThread)
+	if err != nil || marker == nil || marker.State != "" || marker.Directive != nil {
+		t.Fatalf("restarted retirement = %#v err:%v", marker, err)
+	}
+	if restarted.Exists(pendingSessionRotationRetirementStateFile) {
+		t.Fatal("completed retirement left a staging journal after restart")
 	}
 }

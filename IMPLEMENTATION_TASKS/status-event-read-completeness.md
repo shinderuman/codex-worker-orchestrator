@@ -20,6 +20,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 **statusが途中のイベントを最新として返す。** `taskview/taskview.go::ReadLastTaskEvent` はscanner終了理由を確認しない。seq=1、上限4MiBを超える行、seq=3を順に置くとseq=1を成功として返す。`app/output.go::fillStatusTaskDetail` はそのphase/roleから進捗も投影する。

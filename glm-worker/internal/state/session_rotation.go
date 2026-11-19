@@ -136,6 +136,11 @@ type SessionRotationDecision struct {
 	Evidence []SessionRotationEvidence
 }
 
+type sessionRotationStartAdmission struct {
+	targetTaskID string
+	resume       bool
+}
+
 type SessionRotationEvaluation struct {
 	ParentThreadID           string
 	TaskID                   string
@@ -565,40 +570,48 @@ func (s *StateStore) findSessionRotationClaim(claimID string) (*SessionRotationM
 	return found, nil
 }
 
-func (s *StateStore) ValidateNewTaskRotation(callerThreadID, claimID string) error {
-	_, err := s.AdmitNewTaskRotation(callerThreadID, claimID)
-	return err
-}
-
-func (s *StateStore) AdmitNewTaskRotation(callerThreadID, claimID string) (bool, error) {
-	if claimID != "" {
-		return s.admitClaimedSessionRotation(callerThreadID, claimID)
-	}
-	return s.admitUnclaimedNewTask(callerThreadID)
-}
-
-func (s *StateStore) admitClaimedSessionRotation(callerThreadID, claimID string) (bool, error) {
+func (s *StateStore) admitClaimedSessionRotation(callerThreadID, claimID string) (sessionRotationStartAdmission, error) {
 	marker, err := s.findSessionRotationClaim(claimID)
 	if err != nil {
-		return false, err
+		return sessionRotationStartAdmission{}, err
 	}
 	if marker.Claim == nil || marker.Claim.BoundThreadID != callerThreadID {
-		return false, fmt.Errorf("session rotation claimまたはbound threadが一致しません")
+		return sessionRotationStartAdmission{}, fmt.Errorf("session rotation claimまたはbound threadが一致しません")
 	}
-	currentTaskID := s.ReadOr("task.id", "")
+	currentTaskID, err := s.readSessionRotationStartTaskID()
+	if err != nil {
+		return sessionRotationStartAdmission{}, err
+	}
 	if marker.State == SessionRotationStateIssued {
 		if currentTaskID == marker.Claim.TargetTaskID && s.sessionRotationStartRetryable() {
-			return true, nil
+			return sessionRotationStartAdmission{targetTaskID: marker.Claim.TargetTaskID, resume: true}, nil
 		}
-		return false, fmt.Errorf("session rotation claimは既に完了しています")
+		return sessionRotationStartAdmission{}, fmt.Errorf("session rotation claimは既に完了しています")
 	}
 	if marker.State != SessionRotationStateBound {
-		return false, fmt.Errorf("session rotation claimは開始に使用できません: %s", marker.State)
+		return sessionRotationStartAdmission{}, fmt.Errorf("session rotation claimは開始に使用できません: %s", marker.State)
 	}
-	if !s.sessionRotationSourceTaskAdmitted(marker, currentTaskID) {
-		return false, fmt.Errorf("session rotation開始中のtask identityが一致しません")
+	if currentTaskID != "" && !s.sessionRotationSourceTaskAdmitted(marker, currentTaskID) {
+		return sessionRotationStartAdmission{}, fmt.Errorf("session rotation開始中のtask identityが一致しません")
 	}
-	return currentTaskID == marker.Claim.TargetTaskID, nil
+	return sessionRotationStartAdmission{
+		targetTaskID: marker.Claim.TargetTaskID,
+		resume:       currentTaskID == marker.Claim.TargetTaskID,
+	}, nil
+}
+
+func (s *StateStore) readSessionRotationStartTaskID() (string, error) {
+	taskID, err := s.Read("task.id")
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("session rotation開始中のtask identityを読めません: %w", err)
+	case taskID == "":
+		return "", fmt.Errorf("session rotation開始中のtask identityが空です")
+	default:
+		return taskID, nil
+	}
 }
 
 func (s *StateStore) sessionRotationSourceTaskAdmitted(marker *SessionRotationMarker, currentTaskID string) bool {
@@ -624,38 +637,6 @@ func (s *StateStore) sessionRotationStartRetryable() bool {
 	}
 	checkpoint, err := s.LoadResumeCheckpoint()
 	return err == nil && checkpoint.Phase == "worker-new" && checkpoint.Role == WorkerRole
-}
-
-func (s *StateStore) admitUnclaimedNewTask(callerThreadID string) (bool, error) {
-	incomplete, err := s.incompleteSessionRotationTarget(callerThreadID)
-	if err != nil {
-		return false, err
-	}
-	if incomplete {
-		return false, fmt.Errorf("session rotation開始の再試行にはrotation claimが必要です")
-	}
-	if err := s.rejectRetiredSessionRotationCaller(callerThreadID); err != nil {
-		return false, err
-	}
-	if err := s.rejectIncompleteSessionRotation(callerThreadID); err != nil {
-		return false, err
-	}
-	return false, nil
-}
-
-func (s *StateStore) rejectIncompleteSessionRotation(callerThreadID string) error {
-	rotations, err := s.IncompleteSessionRotations()
-	if err != nil {
-		return err
-	}
-	if len(rotations) == 0 {
-		return nil
-	}
-	rotation := rotations[0]
-	if rotation.State == SessionRotationStateBound && rotation.BoundThreadID == callerThreadID {
-		return fmt.Errorf("このthreadにbind済みのsession rotationはclaim付きstartで開始してください: claim_id=%s", rotation.ClaimID)
-	}
-	return fmt.Errorf("未完了session rotationを持ち主threadのclaim・bindとclaim付きstartで完了してください: parent_thread_id=%s state=%s directive_id=%s", rotation.ParentThreadID, rotation.State, rotation.DirectiveID)
 }
 
 func (s *StateStore) rejectRetiredSessionRotationCaller(callerThreadID string) error {
@@ -697,27 +678,11 @@ func sessionRotationMarkerTargets(marker *SessionRotationMarker, callerThreadID,
 }
 
 func (s *StateStore) StartSessionRotationTask(callerThreadID, claimID string) (string, error) {
-	marker, err := s.findSessionRotationClaim(claimID)
+	admission, err := s.admitClaimedSessionRotation(callerThreadID, claimID)
 	if err != nil {
 		return "", err
 	}
-	if marker.Claim == nil || marker.Claim.BoundThreadID != callerThreadID {
-		return "", fmt.Errorf("session rotation claimまたはbound threadが一致しません")
-	}
-	currentTaskID := s.ReadOr("task.id", "")
-	if marker.State == SessionRotationStateIssued {
-		if currentTaskID == marker.Claim.TargetTaskID && s.sessionRotationStartRetryable() {
-			return s.startNewTaskWithID(marker.Claim.TargetTaskID, true)
-		}
-		return "", fmt.Errorf("session rotation claimは既に完了しています")
-	}
-	if marker.State != SessionRotationStateBound {
-		return "", fmt.Errorf("session rotation claimは開始に使用できません: %s", marker.State)
-	}
-	if currentTaskID != "" && !s.sessionRotationSourceTaskAdmitted(marker, currentTaskID) {
-		return "", fmt.Errorf("session rotation開始中のtask identityが一致しません")
-	}
-	return s.startNewTaskWithID(marker.Claim.TargetTaskID, currentTaskID == marker.Claim.TargetTaskID)
+	return s.startNewTaskWithID(admission.targetTaskID, admission.resume)
 }
 
 func sessionRotationMarkerThreadID(name string) string {
