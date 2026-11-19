@@ -649,6 +649,11 @@ func (b *evidenceExportBuilder) analysisModelCalls() EvidenceAnalysisModelCalls 
 	calls := EvidenceAnalysisModelCalls{Status: source.status, Basis: evidenceAnalysisBasisTelemetry}
 	logs := workflowModelCalls(source.records)
 	if len(logs) == 0 {
+		// A valid event-only stream contains no model calls; invalid evidence
+		// retains its partial coverage instead of being treated as absent.
+		if source.status == evidenceAnalysisStatusCollected {
+			calls.Status = evidenceAnalysisStatusAbsent
+		}
 		return calls
 	}
 	calls.Total = len(logs)

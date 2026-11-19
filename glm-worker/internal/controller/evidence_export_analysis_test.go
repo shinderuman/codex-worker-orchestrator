@@ -145,13 +145,13 @@ func TestExportEvidenceAnalysisModelCallsClassifyTelemetryCallTypes(t *testing.T
 			expected: EvidenceAnalysisModelCalls{Status: evidenceAnalysisStatusAbsent},
 		},
 		{
-			name: "unsupported telemetry version stays unreadable",
+			name: "unsupported telemetry version has partial coverage",
 			calls: func(fixture *evidenceExportFixture) []state.ModelCallLog {
 				call := analysisTelemetryCall(fixture, "w1", state.CallTypeTask, state.WorkerRole, "session-worker", start)
 				call.Version = state.ModelCallLogVersion - 1
 				return []state.ModelCallLog{call}
 			},
-			expected: EvidenceAnalysisModelCalls{Status: evidenceAnalysisStatusAbsent},
+			expected: EvidenceAnalysisModelCalls{Status: evidenceAnalysisStatusPartial},
 		},
 	}
 	for _, testCase := range cases {
