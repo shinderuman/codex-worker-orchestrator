@@ -156,15 +156,9 @@ func applyParentQualityGateRecovery(st *state.StateStore, output *parentHandoffR
 	output.QualityGateFailure = checkpoint.QualityGateFailure
 }
 
-// parentHandoffEvidenceReadVisits measures optional quality-run inventory reads.
-// It is scoped to one projection, never cached across decisions.
 type parentHandoffEvidenceReadVisits struct {
 	RunEntries int
 	RunRecords int
-}
-
-func buildParentHandoffFromContinuation(st *state.StateStore, continuation parentcontinuation.Projection) parentHandoffOutput {
-	return buildParentHandoffFromContinuationWithEvidence(st, continuation, true, nil)
 }
 
 func buildParentHandoffFromContinuationWithEvidence(st *state.StateStore, continuation parentcontinuation.Projection, full bool, visits *parentHandoffEvidenceReadVisits) parentHandoffOutput {
@@ -207,8 +201,6 @@ func buildParentHandoffFromContinuationWithEvidence(st *state.StateStore, contin
 		output.Baseline = st.BaselineEvidence()
 		output.Validations = currentParentValidationsWithVisits(st, repoRoot, output.Snapshot, visits)
 	} else {
-		// Snapshot is still captured by canonical continuation for source-current
-		// checks, but is not retained in the narrow handoff materialization.
 		output.Snapshot = nil
 	}
 	return output
@@ -264,10 +256,6 @@ func currentParentValidationsWithVisits(st *state.StateStore, repoRoot string, s
 		validations = append(validations, parentHandoffValidationFromRun(latestByForm[form]))
 	}
 	return validations
-}
-
-func latestCurrentValidationRuns(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) map[string]qualitygate.RunRecord {
-	return latestCurrentValidationRunsWithVisits(st, repoRoot, snapshot, nil)
 }
 
 func latestCurrentValidationRunsWithVisits(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest, visits *parentHandoffEvidenceReadVisits) map[string]qualitygate.RunRecord {
