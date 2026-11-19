@@ -9,7 +9,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 )
 
-func TestQualityWiringRequiresReviewerGate(t *testing.T) {
+func TestQualityWiringRequiresBaselineAndRepositoryFiles(t *testing.T) {
 	root := t.TempDir()
 	path := "glm-worker/internal/workflow/workflow.go"
 	writeQualityFile(t, root, path, "package workflow\n")
@@ -17,7 +17,7 @@ func TestQualityWiringRequiresReviewerGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(violations) != 13 {
+	if len(violations) != 11 {
 		t.Fatalf("violations = %+v", violations)
 	}
 }
@@ -33,7 +33,9 @@ func writeQualityFile(t *testing.T, root, path, content string) {
 	}
 }
 
-func TestQualityWiringPackageAllowsResponsibilitySplit(t *testing.T) {
+// The package matcher verifies bound syntax, not a reachable review path.
+// These uncalled helpers must not be used to certify reviewer admission.
+func TestQualityWiringPackageMatcherOnlyChecksCallPresence(t *testing.T) {
 	root := t.TempDir()
 	workflowPath := "glm-worker/internal/workflow/workflow.go"
 	reviewPath := "glm-worker/internal/workflow/review_flow.go"
