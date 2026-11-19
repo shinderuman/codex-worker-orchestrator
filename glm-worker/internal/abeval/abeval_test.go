@@ -71,6 +71,8 @@ func validDirectRecord(spec Spec) RunRecord {
 			TestFailures:       0,
 			HiddenVerification: "pass",
 		},
+
+		WorktreeIdentity: WorktreeIdentity{ResolvedPath: "/tmp/abeval-fixture/direct-worktree", Device: 1, Inode: 101},
 	}
 }
 
@@ -114,6 +116,8 @@ func validOrchestratedRecord(spec Spec) RunRecord {
 		Proxy: ProxyMetrics{
 			SolPacketBytes: 812,
 		},
+
+		WorktreeIdentity: WorktreeIdentity{ResolvedPath: "/tmp/abeval-fixture/orchestrated-worktree", Device: 1, Inode: 102},
 	}
 }
 
@@ -213,6 +217,7 @@ func TestValidatePairRejectsInvalid(t *testing.T) {
 		}, "同一session"},
 		{"pair same worktree", func(_ *Spec, d *RunRecord, o *RunRecord) {
 			o.WorktreePath = d.WorktreePath
+			o.WorktreeIdentity = d.WorktreeIdentity
 		}, "同一working tree"},
 		{"pair modes swapped", func(_ *Spec, d *RunRecord, _ *RunRecord) {
 			d.Mode = ModeOrchestrated
@@ -253,7 +258,7 @@ func TestLoadPairRejectsUnknownModeAndVersion(t *testing.T) {
 		t.Fatal("未知のmodeが受理されました")
 	}
 	orchestrated := validOrchestratedRecord(spec)
-	orchestrated.Version = 2
+	orchestrated.Version = 1
 	if _, err := LoadRecord(writeRecordJSON(t, "orchestrated.json", orchestrated)); err == nil {
 		t.Fatal("未知のversionが受理されました")
 	}

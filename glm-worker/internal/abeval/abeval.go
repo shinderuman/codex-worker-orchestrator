@@ -44,6 +44,8 @@ type RunRecord struct {
 	Proxy         ProxyMetrics  `json:"proxy"`
 
 	RepoSearch RepoSearchMetrics `json:"-"`
+
+	WorktreeIdentity WorktreeIdentity `json:"worktree_identity"`
 }
 
 type RepoSearchMetrics struct {
@@ -106,7 +108,7 @@ type ProxyMetrics struct {
 
 const (
 	specVersion      = 1
-	runRecordVersion = 1
+	runRecordVersion = 2
 )
 
 const CanonicalMeasurementBoundary = "親USER_REQUEST/task開始から最終完了までの親Codex全体(委譲前処理、Sol decision/review、fix instruction、final acceptanceを含む)"

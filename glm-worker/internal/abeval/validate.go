@@ -155,8 +155,8 @@ func ValidatePair(spec Spec, direct, orchestrated RunRecord) error {
 	if direct.SessionID == orchestrated.SessionID {
 		return fmt.Errorf("両modeが同一session %qを使っています。独立sessionで比較してください", direct.SessionID)
 	}
-	if filepath.Clean(direct.WorktreePath) == filepath.Clean(orchestrated.WorktreePath) {
-		return fmt.Errorf("両modeが同一working tree %qを使っています。独立working treeで比較してください", direct.WorktreePath)
+	if !independentWorktreeIdentity(direct.WorktreeIdentity, orchestrated.WorktreeIdentity) {
+		return fmt.Errorf("両modeが同一working tree identityを使っています。独立working treeで比較してください")
 	}
 	return nil
 }
@@ -192,6 +192,9 @@ func validateRecordIdentity(spec Spec, record RunRecord) error {
 	}
 	if !filepath.IsAbs(record.WorktreePath) {
 		return fmt.Errorf("worktree_pathは絶対pathである必要があります: %s", record.WorktreePath)
+	}
+	if err := validateWorktreeIdentity(record); err != nil {
+		return err
 	}
 	expected := RunConditions{
 		RepoSnapshotCommit:   spec.RepoSnapshotCommit,

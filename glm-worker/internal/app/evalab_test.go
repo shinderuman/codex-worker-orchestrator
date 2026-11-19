@@ -62,7 +62,7 @@ func evalABSpec() abeval.Spec {
 func evalABDirectRecord(spec abeval.Spec) abeval.RunRecord {
 	start := time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
 	return abeval.RunRecord{
-		Version:      1,
+		Version:      2,
 		SpecID:       spec.ID,
 		SpecSHA256:   abeval.SpecSHA256(spec),
 		Mode:         abeval.ModeDirect,
@@ -80,13 +80,15 @@ func evalABDirectRecord(spec abeval.Spec) abeval.RunRecord {
 		},
 		CodexUsage: abeval.CodexUsage{Source: abeval.CodexUsageSourceAppExport, InputTokens: 1000000, OutputTokens: 80000},
 		Quality:    abeval.Quality{TestsRun: 10, TestFailures: 0, HiddenVerification: "pass"},
+
+		WorktreeIdentity: abeval.WorktreeIdentity{ResolvedPath: "/tmp/evalab-cli/direct", Device: 1, Inode: 201},
 	}
 }
 
 func evalABOrchestratedRecord(spec abeval.Spec) abeval.RunRecord {
 	start := time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
 	return abeval.RunRecord{
-		Version:      1,
+		Version:      2,
 		SpecID:       spec.ID,
 		SpecSHA256:   abeval.SpecSHA256(spec),
 		Mode:         abeval.ModeOrchestrated,
@@ -105,6 +107,8 @@ func evalABOrchestratedRecord(spec abeval.Spec) abeval.RunRecord {
 		CodexUsage: abeval.CodexUsage{Source: abeval.CodexUsageSourceAppExport, InputTokens: 500000, OutputTokens: 40000},
 		Quality:    abeval.Quality{TestsRun: 10, TestFailures: 0, HiddenVerification: "pass"},
 		GLMUsage:   abeval.GLMUsage{Source: abeval.GLMUsageSourceTaskStats, TaskID: "task-ab-1"},
+
+		WorktreeIdentity: abeval.WorktreeIdentity{ResolvedPath: "/tmp/evalab-cli/orchestrated", Device: 1, Inode: 202},
 	}
 }
 

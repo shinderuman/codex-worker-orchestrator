@@ -21,7 +21,7 @@
         }
       },
       "direct": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-actual-usage-fake",
         "spec_sha256": "9ed706add96905f91b9bafda8d1159819ae1f1f868eeb472ef771a1781fb8fec",
         "mode": "direct",
@@ -62,10 +62,15 @@
           "sol_decision_commands": 0,
           "sol_fix_commands": 0,
           "auto_fix_rounds": 0
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair1-direct",
+          "device": 1,
+          "inode": 301
         }
       },
       "orchestrated": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-actual-usage-fake",
         "spec_sha256": "9ed706add96905f91b9bafda8d1159819ae1f1f868eeb472ef771a1781fb8fec",
         "mode": "orchestrated",
@@ -107,6 +112,11 @@
           "sol_decision_commands": 0,
           "sol_fix_commands": 0,
           "auto_fix_rounds": 0
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair1-orchestrated",
+          "device": 1,
+          "inode": 302
         }
       },
       "expected_codex_reduction": "actual"
@@ -130,7 +140,7 @@
         }
       },
       "direct": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-usage-unknown-fake",
         "spec_sha256": "26c681afbb54b871392415120bf8dcbb5d8a430cbd39ebac076c8fa2089441a4",
         "mode": "direct",
@@ -171,10 +181,15 @@
           "sol_decision_commands": 0,
           "sol_fix_commands": 0,
           "auto_fix_rounds": 0
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair2-direct",
+          "device": 1,
+          "inode": 303
         }
       },
       "orchestrated": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-usage-unknown-fake",
         "spec_sha256": "26c681afbb54b871392415120bf8dcbb5d8a430cbd39ebac076c8fa2089441a4",
         "mode": "orchestrated",
@@ -216,6 +231,11 @@
           "sol_decision_commands": 1,
           "sol_fix_commands": 1,
           "auto_fix_rounds": 2
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair2-orchestrated",
+          "device": 1,
+          "inode": 304
         }
       },
       "expected_codex_reduction": "unknown"
