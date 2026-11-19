@@ -1,6 +1,8 @@
 package state
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -810,5 +812,15 @@ func TestCaptureGitSnapshotTracksNestedRepositoryExecutableMode(t *testing.T) {
 	}
 	if executable.WorktreeDigest == reverted.WorktreeDigest || original.WorktreeDigest != reverted.WorktreeDigest {
 		t.Fatalf("0755 -> 0644の復元がdigestへ反映されません: original=%q executable=%q reverted=%q", original.WorktreeDigest, executable.WorktreeDigest, reverted.WorktreeDigest)
+	}
+}
+
+func TestNestedUntrackedRepositoryEntriesContextCanceled(t *testing.T) {
+	root := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := NestedUntrackedRepositoryEntriesContext(ctx, root, "nested/")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled nested enumeration result = %v", err)
 	}
 }

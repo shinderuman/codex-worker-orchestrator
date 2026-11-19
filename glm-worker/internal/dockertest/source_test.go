@@ -3,6 +3,8 @@ package dockertest
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -14,6 +16,44 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/execfile"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+type cancelAfterArchiveRead struct {
+	cancel    context.CancelFunc
+	reads     int
+	remaining int
+}
+
+func (r *cancelAfterArchiveRead) Read(p []byte) (int, error) {
+	if r.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := len(p)
+	if n > r.remaining {
+		n = r.remaining
+	}
+	for i := range p[:n] {
+		p[i] = 'x'
+	}
+	r.remaining -= n
+	r.reads++
+	if r.reads == 1 {
+		r.cancel()
+	}
+	return n, nil
+}
+
+type cancelAfterArchiveWrite struct {
+	cancel context.CancelFunc
+	writes int
+}
+
+func (w *cancelAfterArchiveWrite) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == 2 {
+		w.cancel()
+	}
+	return len(p), nil
+}
 
 func sourceFixture(t *testing.T) string {
 	t.Helper()
@@ -62,6 +102,14 @@ func TestSourceArchivePreservesIndexDirtyFilesAndDeletion(t *testing.T) {
 	}
 	if len(digest) != 64 {
 		t.Fatalf("archive SHA-256 = %q", digest)
+	}
+	body, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	if digest != hex.EncodeToString(sum[:]) {
+		t.Fatalf("archive SHA-256 mismatch: reported=%s actual=%x", digest, sum)
 	}
 	restored := t.TempDir()
 	extractFixtureArchive(t, archive, restored)
@@ -502,5 +550,53 @@ func TestSourceArchiveNestedExecutableModeMatchesSourceIdentity(t *testing.T) {
 			t.Fatal("nested tool.shがDocker転送tarに含まれていません")
 		}
 		previous = snapshot
+	}
+}
+
+func TestCopyArchiveStopsReadingWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reader := &cancelAfterArchiveRead{cancel: cancel, remaining: 256 << 10}
+	_, err := copyArchive(ctx, io.Discard, reader)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled copy result = %v", err)
+	}
+	if reader.reads != 1 || reader.remaining == 0 {
+		t.Fatalf("copy continued after cancellation: reads=%d remaining=%d", reader.reads, reader.remaining)
+	}
+}
+
+func TestCopyArchivePreservesDataWithoutCancellation(t *testing.T) {
+	body := strings.Repeat("archive-body", 8192)
+	var output strings.Builder
+	n, err := copyArchive(context.Background(), &output, strings.NewReader(body))
+	if err != nil || n != int64(len(body)) || output.String() != body {
+		t.Fatalf("active copy differed: n=%d err=%v", n, err)
+	}
+}
+
+func TestWriteArchiveStopsBeforeRemainingPathsWhenCanceled(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "first.bin"), []byte(strings.Repeat("x", 128<<10)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sink := &cancelAfterArchiveWrite{cancel: cancel}
+	err := writeArchive(ctx, tar.NewWriter(sink), root, t.TempDir(), []byte("first.bin\x00missing.bin\x00"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled path walk result = %v", err)
+	}
+	if sink.writes < 2 {
+		t.Fatalf("archive payload was not copied: writes=%d", sink.writes)
+	}
+}
+
+func TestWriteArchiveRejectsPreCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := writeArchive(ctx, tar.NewWriter(io.Discard), t.TempDir(), t.TempDir(), []byte("missing.bin\x00"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled enumeration result = %v", err)
 	}
 }

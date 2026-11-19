@@ -37,13 +37,18 @@ func sourceArchive(ctx context.Context, root, temporary string, snapshot state.G
 	}
 	hash := sha256.New()
 	writer := tar.NewWriter(io.MultiWriter(file, hash))
-	writeErr := writeArchive(writer, root, clone, paths)
+	writeErr := writeArchive(ctx, writer, root, clone, paths)
 	closeErr := writer.Close()
 	fileErr := file.Close()
 	for _, err := range []error{writeErr, closeErr, fileErr} {
 		if err != nil {
+			_ = os.Remove(path)
 			return "", "", err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		_ = os.Remove(path)
+		return "", "", err
 	}
 	return path, hex.EncodeToString(hash.Sum(nil)), nil
 }
@@ -87,24 +92,30 @@ func copySharedIndexFiles(sourceDir, destinationDir string) error {
 	return nil
 }
 
-func writeArchive(writer *tar.Writer, root, clone string, paths []byte) error {
+func writeArchive(ctx context.Context, writer *tar.Writer, root, clone string, paths []byte) error {
 	seen := map[string]bool{}
 	for _, path := range strings.Split(string(paths), "\x00") {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if path == "" || seen[path] {
 			continue
 		}
 		seen[path] = true
 		if strings.HasSuffix(path, "/") {
-			if err := archiveNestedRepository(writer, root, path); err != nil {
+			if err := archiveNestedRepository(ctx, writer, root, path); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := archiveEntry(writer, root, path, true); err != nil {
+		if err := archiveEntry(ctx, writer, root, path, true); err != nil {
 			return err
 		}
 	}
-	return filepath.WalkDir(filepath.Join(clone, ".git"), func(path string, _ fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(filepath.Join(clone, ".git"), func(path string, _ fs.DirEntry, err error) error {
+		if canceled := ctx.Err(); canceled != nil {
+			return canceled
+		}
 		if err != nil {
 			return err
 		}
@@ -112,24 +123,34 @@ func writeArchive(writer *tar.Writer, root, clone string, paths []byte) error {
 		if err != nil {
 			return err
 		}
-		return archiveEntry(writer, clone, relative, false)
+		return archiveEntry(ctx, writer, clone, relative, false)
 	})
+	if walkErr != nil {
+		return walkErr
+	}
+	return ctx.Err()
 }
 
-func archiveNestedRepository(writer *tar.Writer, root, dir string) error {
-	entries, err := state.NestedUntrackedRepositoryEntries(root, dir)
+func archiveNestedRepository(ctx context.Context, writer *tar.Writer, root, dir string) error {
+	entries, err := state.NestedUntrackedRepositoryEntriesContext(ctx, root, dir)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		if err := archiveEntry(writer, root, entry.Path, true); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := archiveEntry(ctx, writer, root, entry.Path, true); err != nil {
 			return err
 		}
 	}
-	return nil
+	return ctx.Err()
 }
 
-func archiveEntry(writer *tar.Writer, root, path string, allowDeleted bool) error {
+func archiveEntry(ctx context.Context, writer *tar.Writer, root, path string, allowDeleted bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	header, err := archiveHeader(root, path, allowDeleted)
 	if err != nil || header == nil {
 		return err
@@ -144,12 +165,32 @@ func archiveEntry(writer *tar.Writer, root, path string, allowDeleted bool) erro
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(writer, file)
+	_, copyErr := copyArchive(ctx, writer, file)
 	closeErr := file.Close()
 	if copyErr != nil {
 		return copyErr
 	}
 	return closeErr
+}
+
+type archiveContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r archiveContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
+}
+
+func copyArchive(ctx context.Context, writer io.Writer, reader io.Reader) (int64, error) {
+	n, err := io.Copy(writer, archiveContextReader{ctx: ctx, reader: reader})
+	if err != nil {
+		return n, err
+	}
+	return n, ctx.Err()
 }
 
 func archiveHeader(root, path string, allowDeleted bool) (*tar.Header, error) {

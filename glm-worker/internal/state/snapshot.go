@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -335,9 +336,19 @@ func hashUntrackedEntry(hasher hash.Hash, repoRoot, absPath, path string, mode o
 }
 
 func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryWorktreeEntry, error) {
+	return NestedUntrackedRepositoryEntriesContext(context.Background(), repoRoot, dir)
+}
+
+func NestedUntrackedRepositoryEntriesContext(ctx context.Context, repoRoot, dir string) ([]NestedRepositoryWorktreeEntry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	root := filepath.Join(repoRoot, filepath.FromSlash(dir))
 	entries := []NestedRepositoryWorktreeEntry{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return walkErr
 		}
@@ -362,6 +373,9 @@ func NestedUntrackedRepositoryEntries(repoRoot, dir string) ([]NestedRepositoryW
 		return nil
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
