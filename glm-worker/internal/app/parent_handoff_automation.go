@@ -33,7 +33,11 @@ func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) pa
 }
 
 func projectBoundParentHandoff(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
-	output := buildParentHandoffFromContinuation(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st))
+	return projectBoundParentHandoffWithEvidence(cfg, st, true)
+}
+
+func projectBoundParentHandoffWithEvidence(cfg config.AppConfig, st *state.StateStore, full bool) parentHandoffOutput {
+	output := buildParentHandoffFromContinuationWithEvidence(st, parentcontinuation.BuildWithRepositoryPolicy(cfg, st), full, nil)
 	if applyAvailableSummaryRecoveryHandoff(cfg, st, &output) {
 		return output
 	}
@@ -100,7 +104,8 @@ func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.
 	if err != nil {
 		return err
 	}
-	full := projectBoundParentHandoff(cfg, st)
+	// Select the recovery view before collecting optional full handoff evidence.
+	full := projectBoundParentHandoffWithEvidence(cfg, st, false)
 	value := projectParentHandoffRecovery(full)
 	applyParentGuardRecovery(st, &value)
 	applyParentQualityGateRecovery(st, &value)
