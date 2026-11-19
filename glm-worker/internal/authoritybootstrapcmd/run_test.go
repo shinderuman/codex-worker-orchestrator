@@ -299,3 +299,80 @@ func runAuthorityGit(t *testing.T, root string, args ...string) {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, string(output))
 	}
 }
+
+func TestLoadSnapshotAcceptsIdleAuthorityWithoutFakeTask(t *testing.T) {
+	root := t.TempDir()
+	plan := "# Plan\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n- `IMPLEMENTATION_TASKS/blocked.md`\n"
+	writeTestFile(t, root, rulesFile, "rules-body\n")
+	writeTestFile(t, root, planFile, plan)
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/blocked.md", "blocked-body\n")
+	snap, err := loadSnapshot(root)
+	if err != nil {
+		t.Fatalf("loadSnapshot idle: %v", err)
+	}
+	if snap.activePath != "" || snap.active != nil {
+		t.Fatalf("idle bootstrap invented Task: %#v", snap)
+	}
+	if snap.hash != snapshotHash([]byte("rules-body\n"), []byte(plan), "", nil) {
+		t.Fatalf("idle snapshot hash = %q", snap.hash)
+	}
+	for kind, want := range map[string]string{"rules": "rules-body\n", "plan": plan} {
+		out, err := BuildFromRoot(root, kind, "")
+		if err != nil || out.ActiveTask != "" || out.Content != want || out.AuthoritySnapshotSHA256 != snap.hash {
+			t.Fatalf("%s idle authority = %#v, err=%v", kind, out, err)
+		}
+	}
+	if _, err := BuildFromRoot(root, "active", ""); err == nil || !strings.Contains(err.Error(), "no ACTIVE Task") {
+		t.Fatalf("idle ACTIVE projection should fail: %v", err)
+	}
+}
+
+func TestLoadSnapshotRejectsMalformedIdleSchedule(t *testing.T) {
+	cases := []struct {
+		name string
+		plan string
+	}{
+		{"nonempty NEXT", "## ACTIVE\n\n## NEXT\n- `IMPLEMENTATION_TASKS/next.md`\n\n## BLOCKED\n"},
+		{"duplicate ACTIVE", "## ACTIVE\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n"},
+		{"missing BLOCKED", "## ACTIVE\n\n## NEXT\n"},
+		{"invalid BLOCKED", "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/../bad.md`\n"},
+		{"active GOAL without Task", "## GOAL\nstatus: active\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n"},
+		{"completed GOAL missing section", "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## NEXT\n"},
+		{"completed GOAL duplicate ACTIVE", "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n"},
+		{"missing BLOCKED Task", "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/missing.md`\n"},
+		{"duplicate BLOCKED Task", "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/missing.md`\n- `IMPLEMENTATION_TASKS/missing.md`\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeTestFile(t, root, rulesFile, "rules\n")
+			writeTestFile(t, root, planFile, tc.plan)
+			if _, err := buildBootstrapFromRoot(root); err == nil {
+				t.Fatal("malformed idle schedule admitted")
+			}
+		})
+	}
+}
+
+func TestLoadStableSnapshotRejectsIdlePlanChangingDuringRead(t *testing.T) {
+	first := snapshot{rules: []byte("rules\n"), plan: []byte("## ACTIVE\n## NEXT\n## BLOCKED\n")}
+	second := snapshot{rules: first.rules, plan: []byte("## ACTIVE\n## NEXT\n## BLOCKED\n- `IMPLEMENTATION_TASKS/blocked.md`\n")}
+	_, err := loadStableSnapshot("unused", func(string) (snapshot, error) {
+		out := first
+		first = second
+		return out, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed while reading snapshot") {
+		t.Fatalf("mixed idle authority error = %v", err)
+	}
+}
+
+func TestLoadSnapshotRejectsUnscheduledTaskDuringIdle(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, rulesFile, "rules\n")
+	writeTestFile(t, root, planFile, "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n")
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/unregistered.md", "# unregistered\n")
+	if _, err := buildBootstrapFromRoot(root); err == nil || !strings.Contains(err.Error(), "unscheduled") && !strings.Contains(err.Error(), "列挙") {
+		t.Fatalf("idle bootstrap admitted unscheduled Task: %v", err)
+	}
+}

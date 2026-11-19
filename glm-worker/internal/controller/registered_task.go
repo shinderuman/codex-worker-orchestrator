@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
@@ -102,27 +103,10 @@ func (s *Store) captureRegisteredTaskAuthority(snapshot WorkspaceSnapshot) (Task
 }
 
 func (s *Store) validateRegisteredTaskStart(head RepositoryControllerHead) error {
-	if IsPristine(head) {
-		authority, err := ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
-		if err != nil {
-			return err
-		}
-		if !authority.Task.Empty() {
-			return fmt.Errorf("registered Task start cannot replace committed Task authority")
-		}
-		return nil
-	}
-	if !retiredMetadataHead(head) || head.RootTaskRef != nil {
-		return fmt.Errorf("registered Task start requires an idle finalized controller")
-	}
-	authority, err := s.retiredProjectAuthority(head)
-	if err != nil {
+	if err := s.validateRegisteredTaskIdleAuthority(head); err != nil {
 		return err
 	}
-	if !authority.Task.Empty() {
-		return fmt.Errorf("registered Task start cannot replace committed Task authority")
-	}
-	if head.PublicationPolicy != nil {
+	if !IsPristine(head) && head.PublicationPolicy != nil {
 		remote, err := observePublicationRemote(s.identity.PrimaryRoot, *head.PublicationPolicy)
 		if err != nil {
 			return err
@@ -132,4 +116,44 @@ func (s *Store) validateRegisteredTaskStart(head RepositoryControllerHead) error
 		}
 	}
 	return nil
+}
+
+func (s *Store) validateRegisteredTaskIdleAuthority(head RepositoryControllerHead) error {
+	var authority TaskAuthority
+	var err error
+	switch {
+	case IsPristine(head):
+		authority, err = ResolveCommittedTaskAuthority(s.identity.PrimaryRoot)
+	case retiredMetadataHead(head) && head.RootTaskRef == nil:
+		authority, err = s.retiredProjectAuthority(head)
+	default:
+		return fmt.Errorf("registered Task start requires an idle finalized controller")
+	}
+	if err != nil {
+		return err
+	}
+	if !authority.Task.Empty() {
+		return fmt.Errorf("registered Task start cannot replace committed Task authority")
+	}
+	return nil
+}
+
+func ValidateIdleBootstrap(cfg config.AppConfig) error {
+	present, err := RepositoryPresent(cfg.RepoRoot)
+	if err != nil || !present {
+		return err
+	}
+	exists, err := Exists(cfg)
+	if err != nil || !exists {
+		return err
+	}
+	store, err := Open(cfg)
+	if err != nil {
+		return err
+	}
+	head, err := store.LoadHead()
+	if err != nil {
+		return err
+	}
+	return store.validateRegisteredTaskIdleAuthority(head)
 }

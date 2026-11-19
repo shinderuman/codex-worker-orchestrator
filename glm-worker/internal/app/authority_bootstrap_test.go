@@ -68,3 +68,59 @@ func TestRunEntryAuthorityBootstrapBypassesConfigAndReturnsAtomicProjection(t *t
 		t.Fatalf("authority bootstrap parts = %#v", output)
 	}
 }
+
+func TestRunEntryAuthorityBootstrapFromIdleThenRegisteredTask(t *testing.T) {
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	writeAppTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+	if output, err := exec.Command("git", "-C", root, "add", "--", repositoryharness.MarkerPath).CombinedOutput(); err != nil {
+		t.Fatalf("git add marker: %v: %s", err, output)
+	}
+	writeAppTestFile(t, root, "IMPLEMENTATION_RULES.md", "rules-body\n")
+	idlePlan := "## ACTIVE\n\n## NEXT\n\n## BLOCKED / USER_PERMISSION_WAIT\n"
+	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", idlePlan)
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+
+	read := func() authoritybootstrapcmd.BootstrapOutput {
+		t.Helper()
+		var stdout bytes.Buffer
+		err := runEntry([]string{"--authority", "bootstrap"}, func() (config.AppConfig, error) {
+			t.Fatal("bootstrap loaded normal repository config")
+			return config.AppConfig{}, nil
+		}, nil, bytes.NewReader(nil), &stdout, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateSingleMachineJSONObject(stdout.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+		var result authoritybootstrapcmd.BootstrapOutput
+		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	idle := read()
+	if idle.ActiveTask != "" || idle.Active != nil || idle.Rules.Content != "rules-body\n" || idle.Plan.Content != idlePlan {
+		t.Fatalf("idle bootstrap = %#v", idle)
+	}
+	path := "IMPLEMENTATION_TASKS/new.md"
+	body := "# Task\n\n## External feasibility\nstatus: not-applicable\n"
+	writeAppTestFile(t, root, path, body)
+	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "## ACTIVE\n- `"+path+"`\n\n## NEXT\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
+	registered := read()
+	if registered.ActiveTask != path || registered.Active == nil || registered.Active.Content != body ||
+		registered.AuthoritySnapshotSHA256 == idle.AuthoritySnapshotSHA256 {
+		t.Fatalf("registered bootstrap = %#v", registered)
+	}
+}

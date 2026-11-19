@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 stateの旧 `ValidateNewTaskRotation` と新 `AdmitNewTaskRotationBoundary`。通常startのPending退役は後者へ統一。
