@@ -84,6 +84,10 @@
           "symbol": "cleanCutoverParentActionViolations"
         },
         {
+          "path": "glm-worker/internal/harnesslint/clean_cutover.go",
+          "symbol": "cleanCutoverExecutableKinds"
+        },
+        {
           "path": "glm-worker/internal/parentactioncmd/command_metadata.go",
           "symbol": "executeParentActionCommand"
         }
