@@ -5,19 +5,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexcontext"
 )
 
-// TestInstalledInstructionOptInScope covers installation and the separately
-// activated project instruction entrypoint, without claiming to execute Codex.
 func TestInstalledInstructionOptInScope(t *testing.T) {
 	cases := []struct {
-		name   string
-		plan   bool
-		optIn  bool
+		name  string
+		plan  bool
+		optIn bool
 	}{
 		{name: "project-plan-opt-in", plan: true, optIn: true},
 		{name: "project-plan-no-opt-in", plan: true},
