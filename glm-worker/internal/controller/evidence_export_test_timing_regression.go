@@ -68,6 +68,8 @@ type testTimingKey struct {
 	test string
 }
 
+const evidenceAnalysisBasisTestTimings = "validation-test-timings"
+
 const (
 	testTimingRegressionRatioThreshold  = 1.5
 	testTimingRegressionDeltaFloorMS    = int64(500)
