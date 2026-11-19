@@ -5,7 +5,6 @@ import (
 	"os"
 	"reflect"
 	"testing"
-
 )
 
 func TestPendingCompletionProjectionValidatesJournalBeforeHandoff(t *testing.T) {
