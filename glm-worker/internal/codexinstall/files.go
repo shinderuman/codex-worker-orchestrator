@@ -28,8 +28,6 @@ type fileInstallPlan struct {
 
 func collectDesiredFiles(repoRoot string) ([]desiredFile, error) {
 	files := []desiredFile{}
-	// Repository-specific instructions remain local to the repository.
-	// Only reusable worker instructions are installed as tool assets.
 	if err := walkDesiredTree(repoRoot, "codex/instructions/worker", "instructions/worker", &files); err != nil {
 		return nil, err
 	}
