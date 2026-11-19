@@ -208,7 +208,7 @@ func WorkflowAuthorityTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) 
 	return store.quiescentWorkflowAuthority(cfg, head, executionErr)
 }
 
-// ValidateIdleBootstrap rejects a live or inconsistent Controller when Plan has no ACTIVE Task.
+// ValidateIdleBootstrap はPlanがidleのときにControllerも正規のidle状態であることを検証する。
 func ValidateIdleBootstrap(cfg config.AppConfig) error {
 	present, err := RepositoryPresent(cfg.RepoRoot)
 	if err != nil || !present {

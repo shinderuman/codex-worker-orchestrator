@@ -334,6 +334,8 @@ func TestLoadSnapshotRejectsMalformedIdleSchedule(t *testing.T) {
 		"missing BLOCKED": "## ACTIVE\n\n## NEXT\n",
 		"invalid BLOCKED": "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/../bad.md`\n",
 		"active GOAL without Task": "## GOAL\nstatus: active\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n",
+		"completed GOAL missing section": "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## NEXT\n",
+		"completed GOAL duplicate ACTIVE": "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n",
 	}
 	for name, plan := range cases {
 		t.Run(name, func(t *testing.T) {

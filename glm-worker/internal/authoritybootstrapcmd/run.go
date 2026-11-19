@@ -207,6 +207,9 @@ func readSnapshot(root string) (snapshot, error) {
 		return snapshot{}, err
 	}
 	if len(prepared.Active) == 0 {
+		if err := prepared.Schedule.ValidateIdle(); err != nil {
+			return snapshot{}, err
+		}
 		if err := controller.ValidateIdleBootstrap(cfg); err != nil {
 			return snapshot{}, err
 		}
