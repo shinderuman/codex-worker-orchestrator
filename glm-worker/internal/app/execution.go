@@ -390,4 +390,3 @@ func executeWorkflowCommand(cmd Command, wf *workflow.Workflow) error {
 		return fmt.Errorf("unsupported command mode")
 	}
 }
-
