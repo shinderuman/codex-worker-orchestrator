@@ -101,6 +101,8 @@ const parentUsageReasonMissingInBaseline = "missing-in-baseline-anchor"
 
 const parentUsageReasonMissingInEnd = "missing-in-end-anchor"
 
+const parentUsageReasonUnobservedMember = "unobserved-rollout-member"
+
 const parentUsageIntervalStartInclusive = false
 
 const parentUsageIntervalStartExclusive = true
@@ -270,12 +272,24 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 	tokens.OutputTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldOutput, analysisAnchorOutput, segments, tokens.UnknownFields)
 	tokens.ReasoningTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldReasoning, analysisAnchorReasoning, segments, tokens.UnknownFields)
 	tokens.TotalTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldTotal, analysisAnchorTotal, segments, tokens.UnknownFields)
+	for _, segment := range segments {
+		if segment.end == nil {
+			// Without an anchor in this member, no counter continuity proves full coverage.
+			tokens.Status = analysisStatusUnknown
+			break
+		}
+	}
 	return tokens
 }
 
 func parentUsageSegmentField(field string, accessor func(*analysisRolloutTokenAnchor) *int64, segments []analysisTokenSegment, unknowns []parentUsageUnknownField) (int64, []parentUsageUnknownField) {
 	var total int64
 	for _, segment := range segments {
+		if segment.end == nil {
+			return 0, append(unknowns, parentUsageUnknownField{
+				Field: field, Reason: parentUsageReasonUnobservedMember, Source: segment.source,
+			})
+		}
 		if segment.baseline != nil {
 			delta := analysisCounterDeltaState(accessor(segment.baseline), accessor(segment.end))
 			if delta.Known {

@@ -217,6 +217,7 @@ type bundleRolloutScan struct {
 	hasWindow            bool
 	windowRecords        []time.Time
 	fileCount            int
+	fileSources          []string
 	counterContinuations []bool
 	turns                []analysisRolloutTurn
 	turnIndex            map[string]int
@@ -337,6 +338,7 @@ type analysisCounterDelta struct {
 
 type analysisTokenSegment struct {
 	file     int
+	source   string
 	baseline *analysisRolloutTokenAnchor
 	end      *analysisRolloutTokenAnchor
 }
@@ -435,6 +437,7 @@ func scanCodexRolloutChainMember(scan *bundleRolloutScan, member codexRollout, s
 func scanCodexRolloutReader(scan *bundleRolloutScan, input io.Reader, source string, continuation bool, start, end time.Time) error {
 	fileIndex := scan.fileCount
 	scan.fileCount++
+	scan.fileSources = append(scan.fileSources, source)
 	scan.counterContinuations = append(scan.counterContinuations, continuation)
 	reader := bufio.NewReaderSize(input, 64*1024)
 	lineNumber := 0
