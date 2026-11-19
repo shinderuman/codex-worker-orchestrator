@@ -1,7 +1,10 @@
 #!/bin/sh
-# shellcheck disable=SC2154
-# Caller-owned fixture variables are intentionally provided by install_smoke.sh.
-# Sourced by install_smoke.sh within the existing installed-runtime fixture.
+set -eu
+repo=$1
+home=$2
+tmp=$3
+go_mod_cache=$4
+fixture_task_path=$5
 export_lock_pid=
 export_writer_pid=
 stop_export_processes() {
@@ -18,13 +21,13 @@ stop_export_processes() {
 }
 run_single_export() {
 	(
-		cd "$repo"
+		cd "$repo" || exit 1
 		HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle
 	)
 }
 
 (
-	cd "$repo"
+	cd "$repo" || exit 1
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --authority controller-activate
 ) >"$tmp/controller-activation.json"
 export_attempt_id=$(sed -n 's/.*"attempt_id":"\([^"]*\)".*/\1/p' "$tmp/controller-activation.json")
@@ -82,7 +85,7 @@ if unzip -l "$export_archive_path" | grep -q 'object-archive'; then
 	exit 1
 fi
 (
-	cd "$repo"
+	cd "$repo" || exit 1
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle --task-id runtime-task-smoke-1
 ) >"$tmp/export-task-id.json"
 grep -q '"runtime_section":"collected"' "$tmp/export-task-id.json"
@@ -95,7 +98,7 @@ grep -q 'glm-controller-evidence-export-v2' "$tmp/export-task-id-manifest.json"
 grep -q '"kind": "task-id"' "$tmp/export-task-id-manifest.json"
 grep -q '"runtime_task_id": "runtime-task-smoke-1"' "$tmp/export-task-id-manifest.json"
 (
-	cd "$repo"
+	cd "$repo" || exit 1
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" export-bundle --task-id runtime-task-unknown
 ) >"$tmp/export-unknown.out" 2>"$tmp/export-unknown.stderr" && exit 1
 grep -q 'unknown to the controller' "$tmp/export-unknown.stderr"
@@ -106,7 +109,7 @@ test "$export_generation_before" = "$export_generation_after"
 find "$home/.glm-worker/sessions" -mindepth 1 -maxdepth 1 | LC_ALL=C sort >"$tmp/export-sessions-after"
 cmp "$tmp/export-sessions-before" "$tmp/export-sessions-after"
 if (
-	cd "$repo"
+	cd "$repo" || exit 1
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" controller-evidence definitely-not-a-token
 ) >"$tmp/export-bad-token.stdout" 2>"$tmp/export-bad-token.stderr"; then
 	printf '%s\n' 'glm-parent-action controller-evidence accepted an invalid token' >&2

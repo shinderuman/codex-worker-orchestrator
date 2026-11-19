@@ -268,8 +268,11 @@ grep -Fq "\"vcs_revision\":\"$repo_revision\"" "$tmp/runtime-status.json"
 grep -Fq '"vcs_modified":false' "$tmp/runtime-status.json"
 grep -Fq '"relationship":"same"' "$tmp/runtime-status.json"
 
-# shellcheck source=tests/install_export_smoke.sh
-. "$source_root/tests/install_export_smoke.sh"
+export_smoke_source=$(cat "$source_root/tests/install_export_smoke.sh")
+set -- "$repo" "$home" "$tmp" "$go_mod_cache" "$fixture_task_path" "$@"
+eval "$export_smoke_source"
+shift 5
+unset export_smoke_source
 
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f ! -name '.codex-worker-orchestrator-cli-install.lock' -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/first.sha"
 run_install
