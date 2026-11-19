@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"io"
 	"strconv"
 	"time"
@@ -27,6 +28,7 @@ type statusOutput struct {
 	ParentReviewOpen    *string                               `json:"parent_review_open"`
 	TaskStartedAt       *time.Time                            `json:"task_started_at"`
 	TaskElapsedMS       *int64                                `json:"task_elapsed_ms"`
+	EventLog            *string                               `json:"event_log"`
 	LastEvent           *state.TaskEventRecord                `json:"last_event"`
 	LastEventAgeMS      *int64                                `json:"last_event_age_ms"`
 	CurrentPhase        *string                               `json:"current_phase"`
@@ -175,7 +177,29 @@ func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOut
 	}
 
 	current := currentCallView{}
-	if last, ok := taskview.LastTaskEvent(st, taskID); ok {
+	last, ok, readErr := taskview.LastTaskEvent(st, taskID)
+	if readErr != nil {
+		status, reason := taskview.StatusUnreadable, "event-log-unreadable"
+		if errors.Is(readErr, taskview.ErrEventLogReadIncomplete) {
+			status, reason = taskview.StatusPartial, "event-log-read-incomplete"
+		}
+		output.EventLog = &status
+		// A prior event or checkpoint cannot establish the current phase after a
+		// failed log read. Do not derive progress from an unverified phase.
+		output.Progress = &workflow.ExecutionProgressProjection{
+			Status: "indeterminate", Basis: "event-log", Precision: "unavailable",
+			Reason: reason, PhaseStage: "unknown",
+		}
+		return
+	}
+	if taskID != "" {
+		status := taskview.StatusNone
+		if ok {
+			status = "ok"
+		}
+		output.EventLog = &status
+	}
+	if ok {
 		current = currentCallView{phase: last.Phase, role: last.Role, model: last.ModelAlias}
 		if current.model == "" {
 			current.model = last.MessageModel
