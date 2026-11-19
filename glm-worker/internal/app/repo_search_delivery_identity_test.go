@@ -200,3 +200,31 @@ func TestRepoSearchDeliveryIdentityExcludesBudgetButIncludesDeliveryState(t *tes
 		t.Fatal("delivered locators reused undelivered refinement identity")
 	}
 }
+
+func TestRepoSearchDuplicateBatchRefinementKeepsOriginalDeliveryClaim(t *testing.T) {
+	fixture := newParentEvidenceFixture(t)
+	manifest := parentevidence.Manifest{
+		Version: 1,
+		Reason:  "duplicate refinement claim",
+		Search: []parentevidence.SearchRequest{{
+			Question: "park lifecycle owner", Scopes: []string{"docs"}, BudgetBytes: 8,
+		}},
+	}
+	first := runParentEvidence(t, fixture, manifest)
+	if len(first.Output.Parts) != 1 || first.Output.Parts[0].Status != parentevidence.PartRefinement {
+		t.Fatalf("first batch did not deliver refinement: %s", first.Raw)
+	}
+	digest := first.Output.Parts[0].Digest
+	claimed, present, err := fixture.st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceSearch, digest)
+	if err != nil || !present || claimed.OwnerCallID != first.Output.OwnerCallID {
+		t.Fatalf("first refinement claim: %#v present=%v err=%v", claimed, present, err)
+	}
+	second := runParentEvidence(t, fixture, manifest)
+	if second.Output.Parts[0].Reason != parentevidence.UnchangedReason {
+		t.Fatalf("second refinement was not de-duplicated: %s", second.Raw)
+	}
+	after, present, err := fixture.st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceSearch, digest)
+	if err != nil || !present || after.OwnerCallID != claimed.OwnerCallID {
+		t.Fatalf("duplicate refinement replaced its original claim: before=%#v after=%#v present=%v err=%v", claimed, after, present, err)
+	}
+}
