@@ -272,7 +272,13 @@ func (s *Store) projectPromotedCandidateOperation(head RepositoryControllerHead,
 }
 
 func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead, candidate AcceptedCandidate) (ParentCompletionOperation, error) {
-	failed, err := s.failedFinalValidation(candidate)
+	inventory, err := s.publicationRunInventoryFor(candidate)
+	if errors.Is(err, os.ErrNotExist) {
+		inventory = &publicationRunInventory{}
+	} else if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	failed, err := s.failedFinalValidation(candidate, inventory)
 	if err != nil {
 		return ParentCompletionOperation{}, err
 	}
@@ -283,7 +289,7 @@ func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead,
 		operation.SemanticSlots = []string{CompletionSlotFailureDisposition}
 		return operation, nil
 	}
-	outstanding, err := s.outstandingFinalValidations(candidate)
+	outstanding, err := s.outstandingFinalValidationsFromInventory(candidate, inventory)
 	if err != nil {
 		return ParentCompletionOperation{}, err
 	}
@@ -302,7 +308,7 @@ func (s *Store) projectPreparedCandidateOperation(head RepositoryControllerHead,
 		operation.SemanticSlots = []string{CompletionSlotFailureDisposition}
 		return operation, nil
 	}
-	probes, err := s.outstandingSmokeProbes(candidate)
+	probes, err := s.outstandingSmokeProbesFromInventory(candidate, inventory)
 	if err != nil {
 		return ParentCompletionOperation{}, err
 	}
@@ -676,39 +682,41 @@ func deriveRepositoryPublicationPolicy(repo string) (PublicationPolicy, error) {
 }
 
 func (s *Store) outstandingFinalValidations(c AcceptedCandidate) ([]FinalValidationRequest, error) {
+	return s.outstandingFinalValidationsFromInventory(c, nil)
+}
+
+func (s *Store) outstandingFinalValidationsFromInventory(c AcceptedCandidate, inventory *publicationRunInventory) ([]FinalValidationRequest, error) {
 	requests, err := normalizeRequiredValidations(c.RequiredValidations)
-	if err != nil {
+	if err != nil || len(requests) == 0 {
 		return nil, err
-	}
-	if len(requests) == 0 {
-		return nil, nil
 	}
 	source, err := s.finalValidationSource(c)
 	if err != nil {
 		return nil, err
 	}
+	if inventory == nil {
+		inventory, err = s.publicationRunInventoryFor(c)
+		if errors.Is(err, os.ErrNotExist) {
+			inventory = &publicationRunInventory{}
+		} else if err != nil {
+			return nil, err
+		}
+	}
 	return outstandingObligations(requests, func(request FinalValidationRequest) (bool, error) {
-		return s.finalValidationSatisfied(c, request, source)
+		return s.finalValidationSatisfied(c, request, source, inventory)
 	})
 }
 
-func (s *Store) finalValidationSatisfied(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource) (bool, error) {
+func (s *Store) finalValidationSatisfied(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource, inventory *publicationRunInventory) (bool, error) {
 	repoRoot, err := s.finalValidationWorkspace(c, request)
 	if err != nil {
 		return false, err
 	}
-	module, err := s.finalValidationRunStore(c.TaskRef)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
+	record, found, err := inventory.latestValidation(repoRoot, request.Form)
+	if err != nil || !found {
 		return false, err
 	}
-	record, ok, err := latestFinalValidationRun(module, repoRoot, request.Form)
-	if err != nil {
-		return false, err
-	}
-	if !ok || !finalValidationMatchesSource(record, repoRoot, source, request) {
+	if !finalValidationMatchesSource(record, repoRoot, source, request) {
 		return false, nil
 	}
 	return qualitygate.VerifyTerminalPass(record) == nil, nil

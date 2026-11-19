@@ -8,7 +8,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 )
 
-func (s *Store) failedFinalValidation(candidate AcceptedCandidate) (*FinalValidationRequest, error) {
+func (s *Store) failedFinalValidation(candidate AcceptedCandidate, inventory *publicationRunInventory) (*FinalValidationRequest, error) {
 	if len(candidate.RequiredValidations) == 0 {
 		return nil, nil
 	}
@@ -16,19 +16,21 @@ func (s *Store) failedFinalValidation(candidate AcceptedCandidate) (*FinalValida
 	if err != nil {
 		return nil, err
 	}
-	module, err := s.finalValidationRunStore(candidate.TaskRef)
-	if err != nil {
+	if inventory == nil {
+		inventory, err = s.publicationRunInventoryFor(candidate)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, request := range candidate.RequiredValidations {
 		root, err := s.finalValidationWorkspace(candidate, request)
 		if err != nil {
 			return nil, err
 		}
-		record, found, err := latestFinalValidationRun(module, root, request.Form)
+		record, found, err := inventory.latestValidation(root, request.Form)
 		if err != nil {
 			return nil, err
 		}

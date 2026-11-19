@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/publication-latest-run-inventory.md`](IMPLEMENTATION_TASKS/publication-latest-run-inventory.md)
+- [`IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md`](IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md)
 
 ## NEXT（優先順）
 
@@ -21,7 +21,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md`](IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md)
 - [`IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md`](IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md)
 - [`IMPLEMENTATION_TASKS/rotation-start-admission-owner.md`](IMPLEMENTATION_TASKS/rotation-start-admission-owner.md)
-- [`IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md`](IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md)
 - [`IMPLEMENTATION_TASKS/docker-source-archive-cancellation.md`](IMPLEMENTATION_TASKS/docker-source-archive-cancellation.md)
 - [`IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md`](IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md)
 - [`IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md`](IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md)

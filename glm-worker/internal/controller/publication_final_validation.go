@@ -186,7 +186,7 @@ func validFinalValidationWorkingDir(dir string) bool {
 	return true
 }
 
-func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalValidationEvidence, error) {
+func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate, optional ...*publicationRunInventory) ([]FinalValidationEvidence, error) {
 	requests, err := normalizeRequiredValidations(c.RequiredValidations)
 	if err != nil || len(requests) == 0 {
 		return nil, err
@@ -195,32 +195,46 @@ func (s *Store) collectFinalValidationEvidence(c AcceptedCandidate) ([]FinalVali
 	if err != nil {
 		return nil, err
 	}
+	var inventory *publicationRunInventory
+	if len(optional) != 0 {
+		inventory = optional[0]
+	}
+	if inventory == nil {
+		inventory, err = s.publicationRunInventoryFor(c)
+		if err != nil {
+			return nil, err
+		}
+	}
 	evidence := make([]FinalValidationEvidence, 0, len(requests))
 	for _, request := range requests {
-		repoRoot, err := s.finalValidationWorkspace(c, request)
+		item, err := s.finalValidationEvidenceFor(c, request, source, inventory)
 		if err != nil {
 			return nil, err
 		}
-		module, err := s.finalValidationRunStore(c.TaskRef)
-		if err != nil {
-			return nil, err
-		}
-		record, ok, err := latestFinalValidationRun(module, repoRoot, request.Form)
-		if err != nil {
-			return nil, err
-		}
-		if !ok || !finalValidationMatchesSource(record, repoRoot, source, request) {
-			return nil, fmt.Errorf("final validation %s has no terminal PASS run for the current candidate source", request.Form)
-		}
-		if err := qualitygate.VerifyTerminalPass(record); err != nil {
-			return nil, fmt.Errorf("final validation %s run %s is not a terminal PASS: %w", request.Form, record.ValidationRunID, err)
-		}
-		evidence = append(evidence, FinalValidationEvidence{Form: request.Form, ValidationRunID: record.ValidationRunID})
+		evidence = append(evidence, item)
 	}
 	return evidence, nil
 }
 
-func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []FinalValidationEvidence) error {
+func (s *Store) finalValidationEvidenceFor(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource, inventory *publicationRunInventory) (FinalValidationEvidence, error) {
+	repoRoot, err := s.finalValidationWorkspace(c, request)
+	if err != nil {
+		return FinalValidationEvidence{}, err
+	}
+	record, found, err := inventory.latestValidation(repoRoot, request.Form)
+	if err != nil {
+		return FinalValidationEvidence{}, err
+	}
+	if !found || !finalValidationMatchesSource(record, repoRoot, source, request) {
+		return FinalValidationEvidence{}, fmt.Errorf("final validation %s has no terminal PASS run for the current candidate source", request.Form)
+	}
+	if err := qualitygate.VerifyTerminalPass(record); err != nil {
+		return FinalValidationEvidence{}, fmt.Errorf("final validation %s run %s is not a terminal PASS: %w", request.Form, record.ValidationRunID, err)
+	}
+	return FinalValidationEvidence{Form: request.Form, ValidationRunID: record.ValidationRunID}, nil
+}
+
+func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []FinalValidationEvidence, optional ...*publicationRunInventory) error {
 	requests, err := normalizeRequiredValidations(c.RequiredValidations)
 	if err != nil {
 		return err
@@ -234,25 +248,42 @@ func (s *Store) verifyFinalValidationEvidence(c AcceptedCandidate, recorded []Fi
 	if err != nil {
 		return err
 	}
+	var inventory *publicationRunInventory
+	if len(optional) != 0 {
+		inventory = optional[0]
+	}
+	if inventory == nil {
+		inventory, err = s.publicationRunInventoryFor(c)
+		if err != nil {
+			return err
+		}
+	}
 	for _, request := range requests {
-		repoRoot, err := s.finalValidationWorkspace(c, request)
-		if err != nil {
+		if err := s.verifyRecordedFinalValidation(c, request, source, inventory, byForm[request.Form]); err != nil {
 			return err
 		}
-		module, err := s.finalValidationRunStore(c.TaskRef)
-		if err != nil {
-			return err
-		}
-		if err := verifyFinalValidationRun(module, repoRoot, byForm[request.Form], request, source); err != nil {
-			return err
-		}
-		latest, _, err := latestFinalValidationRun(module, repoRoot, request.Form)
-		if err != nil {
-			return err
-		}
-		if latest.ValidationRunID != byForm[request.Form] {
-			return fmt.Errorf("final validation %s has a newer run; saved readiness is stale", request.Form)
-		}
+	}
+	return nil
+}
+
+func (s *Store) verifyRecordedFinalValidation(c AcceptedCandidate, request FinalValidationRequest, source finalValidationSource, inventory *publicationRunInventory, runID string) error {
+	repoRoot, err := s.finalValidationWorkspace(c, request)
+	if err != nil {
+		return err
+	}
+	record, err := inventory.record(runID)
+	if err != nil {
+		return fmt.Errorf("final validation %s run %s is unreadable: %w", request.Form, runID, err)
+	}
+	if err := verifyFinalValidationRecord(record, repoRoot, request, source); err != nil {
+		return err
+	}
+	latest, _, err := inventory.latestValidation(repoRoot, request.Form)
+	if err != nil {
+		return err
+	}
+	if latest.ValidationRunID != runID {
+		return fmt.Errorf("final validation %s has a newer run; saved readiness is stale", request.Form)
 	}
 	return nil
 }
@@ -290,11 +321,8 @@ func finalValidationRecordShape(forms []string, recorded []FinalValidationEviden
 	return byForm, true, nil
 }
 
-func verifyFinalValidationRun(module *state.StateStore, repoRoot, runID string, request FinalValidationRequest, source finalValidationSource) error {
-	record, err := qualitygate.Read(module, runID)
-	if err != nil {
-		return fmt.Errorf("final validation %s run %s is unreadable: %w", request.Form, runID, err)
-	}
+func verifyFinalValidationRecord(record qualitygate.RunRecord, repoRoot string, request FinalValidationRequest, source finalValidationSource) error {
+	runID := record.ValidationRunID
 	if record.Form != request.Form {
 		return fmt.Errorf("final validation run %s records form %s, not %s", record.ValidationRunID, record.Form, request.Form)
 	}
@@ -339,34 +367,6 @@ func (s *Store) finalValidationRunStore(task SemanticTaskRef) (*state.StateStore
 		return nil, fmt.Errorf("no validation run store is bound to the final Task: %w", err)
 	}
 	return module, nil
-}
-
-func latestFinalValidationRun(module *state.StateStore, repoRoot, form string) (qualitygate.RunRecord, bool, error) {
-	var latest qualitygate.RunRecord
-	found := false
-	entries, err := os.ReadDir(module.Path(qualitygate.RunDirectory))
-	if err != nil {
-		return latest, false, err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
-			continue
-		}
-		record, err := qualitygate.Read(module, entry.Name())
-		if err != nil {
-			return latest, false, fmt.Errorf("final validation run %s is unreadable: %w", entry.Name(), err)
-		}
-		if record.Form != form || filepath.Clean(record.Repository) != filepath.Clean(repoRoot) {
-			continue
-		}
-		switch {
-		case !found, latest.StartedAt.Before(record.StartedAt):
-			latest, found = record, true
-		case latest.StartedAt.Equal(record.StartedAt):
-			return latest, false, fmt.Errorf("final validation run ordering is ambiguous")
-		}
-	}
-	return latest, found, nil
 }
 
 func finalValidationMatchesSource(record qualitygate.RunRecord, repoRoot string, source finalValidationSource, request FinalValidationRequest) bool {

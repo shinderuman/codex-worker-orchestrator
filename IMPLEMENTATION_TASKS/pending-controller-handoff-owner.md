@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 appの `applyPendingControllerMaintenanceHandoff` がpending種別を再選択。controllerの `ProjectParentCompletion` に集約。
