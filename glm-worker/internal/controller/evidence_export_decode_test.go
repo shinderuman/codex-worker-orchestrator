@@ -133,3 +133,24 @@ func TestExportEvidenceDecodedSnapshotSingleSharedResult(t *testing.T) {
         t.Fatalf("truncated export promoted to complete: %#v", partial)
     }
 }
+
+func TestExportEvidenceDecodedEventsPreserveUnsequencedValidation(t *testing.T) {
+    fixture := newEvidenceExportFixture(t)
+    fixture.runtime.RecordValidationEvent(state.TaskValidationEvent{
+        Form: "go-test",
+        ValidationRunID: "unsequenced-canonical-validation",
+        Result: "pass",
+    })
+    export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
+    if err != nil {
+        t.Fatal(err)
+    }
+    index := decodeAnalysisIndex(t, export)
+    for _, validation := range index.ObservedValidationActions {
+        if validation.RunID == "unsequenced-canonical-validation" {
+            return
+        }
+    }
+    t.Fatalf("canonical zero-sequence validation event was lost: %#v", index.ObservedValidationActions)
+}
+

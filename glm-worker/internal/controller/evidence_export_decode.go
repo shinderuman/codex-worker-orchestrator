@@ -34,7 +34,14 @@ func (b *evidenceExportBuilder) exportDecodedEvidence() *evidenceExportDecodedRe
         rounds: decodeExportRecordSource(b, "rounds.jsonl", taskID, parseWorkflowRounds,
             func(record state.RoundRecord, taskID string) bool { return record.TaskID == taskID && record.Seq > 0 && !record.CapturedAt.IsZero() && !record.CapturedAt.After(b.observedAt) }),
         events: decodeExportRecordSource(b, "events.jsonl", taskID, parseExportTaskEvents,
-            func(record state.TaskEventRecord, taskID string) bool { return record.TaskID == taskID && record.Seq > 0 && !record.Timestamp.IsZero() && !record.Timestamp.After(b.observedAt) }),
+            func(record state.TaskEventRecord, taskID string) bool {
+                // Validation evidence is emitted without a per-call event sequence.
+                // Preserve that canonical zero-sequence record, but reject an
+                // unsequenced stream event or negative sequence.
+                return record.TaskID == taskID &&
+                    (record.Seq > 0 || (record.Seq == 0 && record.Kind == taskEventKindValidation)) &&
+                    !record.Timestamp.IsZero() && !record.Timestamp.After(b.observedAt)
+            }),
     }
     return b.decodedEvidence
 }
