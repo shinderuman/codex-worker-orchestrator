@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 type WorktreeIdentity struct {
@@ -29,14 +28,17 @@ func CaptureWorktreeIdentity(path string) (WorktreeIdentity, error) {
 	if !info.IsDir() {
 		return WorktreeIdentity{}, fmt.Errorf("worktree identityはdirectoryである必要があります: %s", path)
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Ino == 0 {
-		return WorktreeIdentity{}, fmt.Errorf("worktree identityのdevice/inodeを取得できません: %s", path)
+	device, inode, err := directoryFileIdentity(resolved, info)
+	if err != nil {
+		return WorktreeIdentity{}, err
+	}
+	if device == 0 || inode == 0 {
+		return WorktreeIdentity{}, fmt.Errorf("worktree identityのdevice/inodeが零です: %s", path)
 	}
 	return WorktreeIdentity{
 		ResolvedPath: filepath.Clean(resolved),
-		Device:       uint64(stat.Dev),
-		Inode:        uint64(stat.Ino),
+		Device:       device,
+		Inode:        inode,
 	}, nil
 }
 

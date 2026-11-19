@@ -203,7 +203,7 @@ func TestBuildReportJSONKeysAreStable(t *testing.T) {
 	}
 	want := []string{
 		"spec_id", "modes", "metadata", "measurement_boundary", "isolation",
-		"codex_reduction", "quality_delta", "time", "codex_usage", "glm_usage", "proxy_metrics", "repo_search",
+		"codex_reduction", "quality_delta", "time", "codex_usage", "glm_usage", "proxy_metrics", "repo_search", "worktree_identities",
 	}
 	if len(object) != len(want) {
 		t.Fatalf("key数 = %d want %d: %v", len(object), len(want), object)
