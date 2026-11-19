@@ -11,6 +11,18 @@
 > あとそのタスクで今後同様の後方互換性が作られない仕組みを追加しろ
 > 既存もすでにいくつかそういう仕組がある
 
+## Resolved references
+
+起票時に確認済みの後方互換処理
+
+- `glm-worker/internal/codexcontext/context.go` の `retiredManagedConfigSHA256`、`isRetiredManagedConfig`、`canRetireManagedConfig` は、廃止済みの生成設定を固定digestで識別し、専用の拒否・削除へ送る。#1672で追加されたこの分岐を削除する。
+- `glm-worker/internal/bundleanalysis/review_gap.go` の `reviewGapCauseStatus` は、原因が空のCodexレビューにだけ `cause_missing_legacy` を返す。`glm-worker/internal/state/parent_review.go` の専用状態と、それを期待する既存テストを対象に含める。原因が欠損した現行の入力は現行の要求に沿って検証・分類する。
+
+実装時に現行契約と照合する箇所
+
+- `glm-worker/internal/state/forward_schema.go` の `ModelCallLog.UnmarshalJSON` は版またはschema revisionが現行値と一致しないとき、versionだけを持つ値へ置き換えて成功を返す。`glm-worker/internal/state/telemetry_corpus.go` は同じ不一致をdecode前に扱う。呼出元を照合し、専用の成功値を残さず現行の検証と汎用の除外で扱う。
+- `codex/instructions/glm-execution.md` は `--decision-stdin` と `--fix-stdin` をrecovery/debug互換として説明する。`glm-worker/internal/app/command.go` に受付があり、`glm-worker/internal/parentaction/action.go` の現行staged actionも両方をWorkerModeに使う。直接互換入口と現行内部通信を照合し、必要な認可と通信を保ったうえで互換入口を削除する。
+
 ## Purpose
 
 現行の実装規則に従って、以前の利用方法を維持するために残っている受付経路と識別分岐を削除する。

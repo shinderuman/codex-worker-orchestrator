@@ -27,6 +27,10 @@ worker終了からreviewer起動までの品質ゲートを検証する。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 B05の表を整理しても、本番review admissionの到達性は別問題。
@@ -44,5 +48,10 @@ B05の表を整理しても、本番review admissionの到達性は別問題。
 現行形式と正規の判定元を使う。実消費が観測できない計測値は代理指標として扱う。
 
 ## Dependencies
+
+none
+
+
+## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md`

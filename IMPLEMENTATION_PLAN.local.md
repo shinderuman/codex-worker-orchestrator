@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md`](IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md)
+- [`IMPLEMENTATION_TASKS/review-admission-quality-reachability.md`](IMPLEMENTATION_TASKS/review-admission-quality-reachability.md)
 
 ## NEXT（優先順）
 
@@ -18,7 +18,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - [`IMPLEMENTATION_TASKS/status-event-read-completeness.md`](IMPLEMENTATION_TASKS/status-event-read-completeness.md)
 - [`IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md`](IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md)
 - [`IMPLEMENTATION_TASKS/rotation-start-admission-owner.md`](IMPLEMENTATION_TASKS/rotation-start-admission-owner.md)
-- [`IMPLEMENTATION_TASKS/review-admission-quality-reachability.md`](IMPLEMENTATION_TASKS/review-admission-quality-reachability.md)
 - [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)
 - [`IMPLEMENTATION_TASKS/test-timing-regression-owner.md`](IMPLEMENTATION_TASKS/test-timing-regression-owner.md)
 - [`IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md`](IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md)
