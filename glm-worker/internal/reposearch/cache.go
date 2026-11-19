@@ -94,7 +94,8 @@ func cacheCorpusMatches(cached cacheData, fp fingerprint, settings searchSetting
 
 func cacheCountsValid(cached cacheData, settings searchSettings) bool {
 	return cached.IndexedFiles == len(cached.Docs) && cached.IndexedFiles >= 0 && cached.SkippedFiles >= 0 &&
-		cached.IndexedBytes >= 0 && cached.IndexedFiles <= settings.maxFiles && cached.IndexedBytes <= settings.maxTotalBytes
+		cached.IndexedBytes >= 0 && cached.IndexedFiles <= settings.maxFiles-cached.SkippedFiles &&
+		cached.IndexedBytes <= settings.maxTotalBytes
 }
 
 func cachedDocsValid(docs []doc, repoRoot string, excludeDirs map[string]bool) bool {

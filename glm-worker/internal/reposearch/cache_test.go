@@ -388,3 +388,84 @@ func TestCacheSemanticCorruptionRebuilds(t *testing.T) {
 		})
 	}
 }
+
+func TestCacheMaxFilesIncludesSkippedEnumeration(t *testing.T) {
+	dir := initRepo(t)
+	writeTestFile(t, filepath.Join(dir, "a.txt"), "needle\n")
+	writeTestFile(t, filepath.Join(dir, "b.bin"), "needle\x00binary\n")
+	commitAll(t, dir, "init")
+
+	type check struct {
+		maxFiles   int
+		wantStatus CacheStatus
+		wantLimit  bool
+	}
+	for _, tc := range []struct {
+		name  string
+		steps []check
+	}{
+		{
+			name: "high then low",
+			steps: []check{
+				{maxFiles: 2, wantStatus: CacheStatusRebuilt},
+				{maxFiles: 1, wantLimit: true},
+				{maxFiles: 2, wantStatus: CacheStatusHit},
+			},
+		},
+		{
+			name: "low then high",
+			steps: []check{
+				{maxFiles: 1, wantLimit: true},
+				{maxFiles: 2, wantStatus: CacheStatusRebuilt},
+				{maxFiles: 2, wantStatus: CacheStatusHit},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cacheRoot := t.TempDir()
+			for i, step := range tc.steps {
+				cached, cacheErr := Search(context.Background(), dir, "needle", Options{
+					CacheRoot: cacheRoot,
+					MaxFiles:  step.maxFiles,
+				})
+				uncached, uncachedErr := Search(context.Background(), dir, "needle", Options{
+					DisableCache: true,
+					MaxFiles:     step.maxFiles,
+				})
+				if step.wantLimit {
+					if !errors.Is(cacheErr, ErrIndexLimit) || !errors.Is(uncachedErr, ErrIndexLimit) {
+						t.Fatalf("step %d MaxFiles=%d: cache error=%v, no-cache error=%v; want ErrIndexLimit for both",
+							i, step.maxFiles, cacheErr, uncachedErr)
+					}
+					if !reflect.DeepEqual(cached, Report{}) || !reflect.DeepEqual(uncached, Report{}) {
+						t.Fatalf("step %d MaxFiles=%d: limit exceeded but partial reports returned: cached=%+v uncached=%+v",
+							i, step.maxFiles, cached, uncached)
+					}
+					if i == 0 {
+						if _, err := os.Stat(canonicalCachePath(t, cacheRoot, dir)); !errors.Is(err, os.ErrNotExist) {
+							t.Fatalf("limit exceeded before cache creation: stat error=%v; want not-exist", err)
+						}
+					}
+					continue
+				}
+				if cacheErr != nil || uncachedErr != nil {
+					t.Fatalf("step %d MaxFiles=%d: cache error=%v, no-cache error=%v",
+						i, step.maxFiles, cacheErr, uncachedErr)
+				}
+				if cached.CacheStatus != step.wantStatus || uncached.CacheStatus != CacheStatusRebuilt {
+					t.Fatalf("step %d MaxFiles=%d: cache status=%q, no-cache status=%q; want %q/rebuilt",
+						i, step.maxFiles, cached.CacheStatus, uncached.CacheStatus, step.wantStatus)
+				}
+				if cached.IndexedFiles != 1 || cached.SkippedFiles != 1 {
+					t.Fatalf("step %d MaxFiles=%d: indexed=%d skipped=%d; want 1/1",
+						i, step.maxFiles, cached.IndexedFiles, cached.SkippedFiles)
+				}
+				cached.CacheStatus = uncached.CacheStatus
+				if !reflect.DeepEqual(cached, uncached) {
+					t.Fatalf("step %d MaxFiles=%d: cached and uncached reports differ: cached=%+v uncached=%+v",
+						i, step.maxFiles, cached, uncached)
+				}
+			}
+		})
+	}
+}
