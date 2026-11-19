@@ -154,3 +154,25 @@ jobs:
     needs:
       - lint
     uses: ./.github/workflows/install-smoke.yml
+
+  # TEMPORARY: live Codex instructions request capture for original Issue #1649 acceptance.
+  # Remove this job and the probe after recording evidence in PR #1672.
+  codex-runtime-scope-probe:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: Codex runtime instruction scope (temporary)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-quality-go
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Codex CLI
+        run: |
+          npm install --global @openai/codex@0.164.0
+          codex --version
+      - name: Capture actual Codex runtime instruction requests using a loopback mock
+        run: python3 tests/codex_installed_scope_runtime_probe.py
