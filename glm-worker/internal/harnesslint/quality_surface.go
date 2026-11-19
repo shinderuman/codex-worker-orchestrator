@@ -11,4 +11,3 @@ func scanQualitySurface(root string, paths []string) ([]Violation, error) {
 	}
 	return append(wiring, streams...), nil
 }
-
