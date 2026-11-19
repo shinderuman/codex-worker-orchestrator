@@ -48,47 +48,47 @@ func executeSpecialParentAction() {
 
 func TestCleanCutoverRejectsRegisteredParentActionRejectionRoots(t *testing.T) {
 	cases := []struct {
-		name	string
-		source	string
-		message	string
+		name    string
+		source  string
+		message string
 	}{
 		{
-			name:	"unsupported tombstone",
-			source:	strings.Replace(currentParentActionCutoverFixture,
+			name:    "unsupported tombstone",
+			source:  strings.Replace(currentParentActionCutoverFixture,
 				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
 				"\"special\": {Action: \"special\", Execute: parentActionExecutionUnsupported},", 1),
-			message:	"no live executable dispatch",
+			message: "no live executable dispatch",
 		},
 		{
-			name:	"registered kind with no dispatch",
-			source:	strings.Replace(currentParentActionCutoverFixture,
+			name:    "registered kind with no dispatch",
+			source:  strings.Replace(currentParentActionCutoverFixture,
 				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
 				"\"retired\": {Action: \"retired\", Execute: parentActionExecutionRetired},", 1),
-			message:	"no live executable dispatch",
+			message: "no live executable dispatch",
 		},
 		{
-			name:	"error only dispatch",
-			source:	strings.Replace(
+			name:    "error only dispatch",
+			source:  strings.Replace(
 				strings.Replace(currentParentActionCutoverFixture,
 					"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
 					"\"retired\": {Action: \"retired\", Execute: parentActionExecutionRetired},", 1),
 				"return usageError()",
 				"if execution == parentActionExecutionRetired { return retiredError() }; return usageError()", 1),
-			message:	"no live executable dispatch",
+			message: "no live executable dispatch",
 		},
 		{
-			name:	"retired alias mismatch",
-			source:	strings.Replace(currentParentActionCutoverFixture,
+			name:    "retired alias mismatch",
+			source:  strings.Replace(currentParentActionCutoverFixture,
 				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
 				"\"retired\": {Action: \"special\", Execute: parentActionExecutionSpecial},", 1),
-			message:	"same canonical action",
+			message: "same canonical action",
 		},
 		{
-			name:	"terminal tombstone",
-			source:	strings.Replace(currentParentActionCutoverFixture,
+			name:    "terminal tombstone",
+			source:  strings.Replace(currentParentActionCutoverFixture,
 				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial},",
 				"\"special\": {Action: \"special\", Execute: parentActionExecutionSpecial, TerminalExecute: parentActionExecutionRetired},", 1),
-			message:	"no live terminal dispatch",
+			message: "no live terminal dispatch",
 		},
 	}
 	for _, tc := range cases {

@@ -88,6 +88,10 @@
           "symbol": "cleanCutoverExecutableKinds"
         },
         {
+          "path": "glm-worker/internal/harnesslint/clean_cutover.go",
+          "symbol": "cleanCutoverReportRegistryEntry"
+        },
+        {
           "path": "glm-worker/internal/parentactioncmd/command_metadata.go",
           "symbol": "executeParentActionCommand"
         }
