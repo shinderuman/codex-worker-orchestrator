@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 harnesslint/quality_surface.goの固有CI・hook規則とAST照合を同package内で分離。
