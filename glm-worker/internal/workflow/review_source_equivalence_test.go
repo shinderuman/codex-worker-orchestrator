@@ -193,3 +193,127 @@ func TestEquivalentReviewSourceRejectsChangedPlanAndUnprovableIndex(t *testing.T
 		}
 	})
 }
+
+func reviewEquivalenceCanonicalPlanFixture(t *testing.T, activeRow, nextRow string) (string, state.SnapshotDigest, string) {
+	t.Helper()
+	root, _ := reviewEquivalenceFixture(t)
+	plan := strings.Replace(reviewEquivalenceOldPlan,
+		"- [\x60IMPLEMENTATION_TASKS/active.md\x60](IMPLEMENTATION_TASKS/active.md)", activeRow, 1)
+	plan = strings.Replace(plan,
+		"- [\x60IMPLEMENTATION_TASKS/old-next.md\x60](IMPLEMENTATION_TASKS/old-next.md)", nextRow, 1)
+	reviewEquivalenceWrite(t, root, state.ParentPlanFile, plan)
+	reviewEquivalenceGit(t, root, "add", state.ParentPlanFile)
+	reviewEquivalenceGit(t, root, "commit", "-qm", "canonical entry baseline")
+	snapshot, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, state.SnapshotDigest{
+		Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest,
+	}, plan
+}
+
+func TestEquivalentReviewSourceCanonicalTaskEntryForms(t *testing.T) {
+	forms := []struct {
+		name string
+		row  func(string) string
+	}{
+		{"plain", func(path string) string { return "- " + path }},
+		{"backtick", func(path string) string { return "- \x60" + path + "\x60" }},
+		{"link", func(path string) string { return "- [\x60" + path + "\x60](" + path + ")" }},
+	}
+	for activeIndex, active := range forms {
+		for nextIndex, next := range forms {
+			t.Run(active.name+" ACTIVE / "+next.name+" NEXT", func(t *testing.T) {
+				root, old, plan := reviewEquivalenceCanonicalPlanFixture(t,
+					active.row("IMPLEMENTATION_TASKS/active.md"),
+					next.row("IMPLEMENTATION_TASKS/old-next.md"))
+				newRow := forms[(activeIndex+nextIndex+1)%len(forms)].row("IMPLEMENTATION_TASKS/new-next.md")
+				reviewEquivalenceWrite(t, root, state.ParentPlanFile,
+					strings.Replace(plan, "## BLOCKED", newRow+"\n\n## BLOCKED", 1))
+				reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/new-next.md", "# new NEXT\n")
+				reviewEquivalenceGit(t, root, "add", ".")
+				reviewEquivalenceGit(t, root, "commit", "-qm", "canonical NEXT-only fast-forward")
+				current, err := equivalentReviewSource(root, old, []string{"review.go:1", "review_test.go:1"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if current.Head == old.Head || current.IndexDigest == old.IndexDigest ||
+					current.WorktreeDigest != old.WorktreeDigest {
+					t.Fatalf("fast-forward identity changed: old=%#v new=%#v", old, current)
+				}
+			})
+		}
+	}
+}
+
+func TestEquivalentReviewSourcePlainEntriesPreserveNonNextRejection(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(string) string
+	}{
+		{"ACTIVE representation changed", func(plan string) string {
+			return strings.Replace(plan, "- IMPLEMENTATION_TASKS/active.md",
+				"- \x60IMPLEMENTATION_TASKS/active.md\x60", 1)
+		}},
+		{"BLOCKED changed", func(plan string) string {
+			return strings.Replace(plan, "## BLOCKED\n\n", "## BLOCKED\n\n- IMPLEMENTATION_TASKS/blocked.md\n", 1)
+		}},
+		{"GOAL changed", func(plan string) string {
+			return strings.Replace(plan, "# project\n", "# project\n\n## GOAL\n\n- different goal\n", 1)
+		}},
+		{"invalid NEXT link", func(plan string) string {
+			return strings.Replace(plan, "- IMPLEMENTATION_TASKS/new-next.md",
+				"- [\x60IMPLEMENTATION_TASKS/new-next.md\x60](IMPLEMENTATION_TASKS/other.md)", 1)
+		}},
+		{"invalid NEXT path", func(plan string) string {
+			return strings.Replace(plan, "- IMPLEMENTATION_TASKS/new-next.md",
+				"- IMPLEMENTATION_TASKS/../new-next.md", 1)
+		}},
+		{"duplicate NEXT heading", func(plan string) string {
+			return strings.Replace(plan, "## BLOCKED", "## NEXT\n\n## BLOCKED", 1)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, old, base := reviewEquivalenceCanonicalPlanFixture(t,
+				"- IMPLEMENTATION_TASKS/active.md", "- IMPLEMENTATION_TASKS/old-next.md")
+			next := strings.Replace(base, "## BLOCKED", "- IMPLEMENTATION_TASKS/new-next.md\n\n## BLOCKED", 1)
+			reviewEquivalenceWrite(t, root, state.ParentPlanFile, tc.change(next))
+			reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/new-next.md", "# new NEXT\n")
+			reviewEquivalenceGit(t, root, "add", ".")
+			reviewEquivalenceGit(t, root, "commit", "-qm", "non-NEXT or invalid change")
+			if _, err := equivalentReviewSource(root, old, []string{"review.go:1"}); err == nil {
+				t.Fatal("non-NEXT change or invalid NEXT entry was accepted")
+			}
+		})
+	}
+}
+
+func TestEquivalentReviewSourcePlainEntriesRejectReorderedNext(t *testing.T) {
+	root, _, plan := reviewEquivalenceCanonicalPlanFixture(t,
+		"- IMPLEMENTATION_TASKS/active.md", "- IMPLEMENTATION_TASKS/old-next.md")
+	originalNext := "- IMPLEMENTATION_TASKS/old-next.md\n"
+	secondNext := "- \x60IMPLEMENTATION_TASKS/second-next.md\x60\n"
+	plan = strings.Replace(plan, originalNext, originalNext+secondNext, 1)
+	reviewEquivalenceWrite(t, root, state.ParentPlanFile, plan)
+	reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/second-next.md", "# second NEXT\n")
+	reviewEquivalenceGit(t, root, "add", ".")
+	reviewEquivalenceGit(t, root, "commit", "-qm", "two original NEXT tasks")
+	snapshot, err := state.CaptureGitSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := state.SnapshotDigest{
+		Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest,
+	}
+	reordered := strings.Replace(plan, originalNext+secondNext,
+		secondNext+originalNext+"- IMPLEMENTATION_TASKS/new-next.md\n", 1)
+	reviewEquivalenceWrite(t, root, state.ParentPlanFile, reordered)
+	reviewEquivalenceWrite(t, root, "IMPLEMENTATION_TASKS/new-next.md", "# new NEXT\n")
+	reviewEquivalenceGit(t, root, "add", ".")
+	reviewEquivalenceGit(t, root, "commit", "-qm", "reordered original NEXT tasks")
+	if _, err := equivalentReviewSource(root, old, []string{"review.go:1"}); err == nil {
+		t.Fatal("reordered NEXT tasks passed review-source equivalence")
+	}
+}

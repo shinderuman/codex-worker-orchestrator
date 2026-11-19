@@ -151,10 +151,7 @@ func parsePlanScheduleSection(planContent string, section planScheduleSection) (
 		if trimmed == "" {
 			continue
 		}
-		if !strings.HasPrefix(trimmed, "- ") {
-			return nil, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdの%s欄の行 %qがschedule list記法(`- `bulletとblank行のみ)へ違反しています", section, trimmed)
-		}
-		path, err := scheduleEntryPath(section, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+		path, err := parsePlanScheduleEntry(section, trimmed)
 		if err != nil {
 			return nil, err
 		}
@@ -168,6 +165,19 @@ func scheduleHeadingMatches(section planScheduleSection, heading string) bool {
 		return heading == string(section)
 	}
 	return strings.HasPrefix(heading, string(section))
+}
+
+// ParsePlanTaskEntry parses a complete Plan Task bullet using the schedule grammar.
+// The caller must validate the returned path for its admission context.
+func ParsePlanTaskEntry(row string) (string, error) {
+	return parsePlanScheduleEntry(planScheduleNext, strings.TrimSpace(row))
+}
+
+func parsePlanScheduleEntry(section planScheduleSection, row string) (string, error) {
+	if !strings.HasPrefix(row, "- ") {
+		return "", fmt.Errorf("IMPLEMENTATION_PLAN.local.mdの%s欄の行 %qがschedule list記法(`- `bulletとblank行のみ)へ違反しています", section, row)
+	}
+	return scheduleEntryPath(section, strings.TrimSpace(strings.TrimPrefix(row, "- ")))
 }
 
 func scheduleEntryPath(section planScheduleSection, item string) (string, error) {

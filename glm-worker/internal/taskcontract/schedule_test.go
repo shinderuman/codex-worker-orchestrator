@@ -180,3 +180,34 @@ func TestRetirePlanTaskRemovesScheduleLinesWithoutSyntheticBlankRuns(t *testing.
 		t.Fatalf("blocked retirement with no NEXT: %q %v", result, err)
 	}
 }
+
+func TestParsePlanTaskEntryUsesScheduleGrammar(t *testing.T) {
+	const path = "IMPLEMENTATION_TASKS/a.md"
+	canonical := []string{
+		"- " + path,
+		"- \x60" + path + "\x60",
+		"- [\x60" + path + "\x60](" + path + ")",
+	}
+	for _, row := range canonical {
+		got, err := ParsePlanTaskEntry(row)
+		if err != nil || got != path {
+			t.Errorf("ParsePlanTaskEntry(%q) = %q, %v", row, got, err)
+		}
+		schedule := ParsePlanSchedule("## NEXT\n" + row + "\n")
+		next, _, err := schedule.NonActiveEntries()
+		if err != nil || len(next) != 1 || next[0] != got {
+			t.Errorf("schedule and shared parser disagree for %q: %v, %v", row, next, err)
+		}
+	}
+	for _, row := range []string{
+		"IMPLEMENTATION_TASKS/a.md",
+		"* IMPLEMENTATION_TASKS/a.md",
+		"- [\x60IMPLEMENTATION_TASKS/a.md\x60](IMPLEMENTATION_TASKS/b.md)",
+		"- \x60IMPLEMENTATION_TASKS/a.md\x60 suffix",
+		"- [IMPLEMENTATION_TASKS/a.md](IMPLEMENTATION_TASKS/a.md)",
+	} {
+		if _, err := ParsePlanTaskEntry(row); err == nil {
+			t.Errorf("invalid task bullet accepted: %q", row)
+		}
+	}
+}
