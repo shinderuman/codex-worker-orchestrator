@@ -33,8 +33,6 @@ func TestStatusEventReadIncompleteDoesNotProjectStaleEvent(t *testing.T) {
 		t.Fatalf("initial last_event = %#v", before.LastEvent)
 	}
 
-	// The scanner must not return seq=1 as current when a too-long seq=2
-	// prevents it from reaching a valid seq=3.
 	path := st.TaskEventLogPath(taskID)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -76,8 +74,6 @@ func TestStatusEventLogOpenFailureIsUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A regular file in the parent position produces an open error rather
-	// than a missing log, and must not silently fall back to a checkpoint.
 	eventsDir := filepath.Dir(st.TaskEventLogPath(taskID))
 	if err := os.RemoveAll(eventsDir); err != nil {
 		t.Fatal(err)

@@ -184,8 +184,6 @@ func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOut
 			status, reason = taskview.StatusPartial, "event-log-read-incomplete"
 		}
 		output.EventLog = &status
-		// A prior event or checkpoint cannot establish the current phase after a
-		// failed log read. Do not derive progress from an unverified phase.
 		output.Progress = &workflow.ExecutionProgressProjection{
 			Status: "indeterminate", Basis: "event-log", Precision: "unavailable",
 			Reason: reason, PhaseStage: "unknown",

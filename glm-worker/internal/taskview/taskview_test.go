@@ -69,7 +69,6 @@ func TestReadLastTaskEventReadErrors(t *testing.T) {
 		t.Fatalf("missing log: last=%#v found=%v err=%v", last, found, err)
 	}
 
-	// Opening a directory works on Unix, but scanning its contents fails.
 	if last, found, err := ReadLastTaskEvent(dir); !errors.Is(err, ErrEventLogReadIncomplete) || found || last.Seq != 0 {
 		t.Fatalf("read failure: last=%#v found=%v err=%v", last, found, err)
 	}
