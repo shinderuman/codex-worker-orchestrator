@@ -20,6 +20,10 @@ Dockerのsource archive作成に取消を伝える。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 **Docker向けsource tar作成中に取消が届かない。** `dockertest/source.go::sourceArchive` はGit操作にctxを渡す一方、`writeArchive`、Git directoryのwalk、`archiveEntry`のcopyには渡さない。大きな作業コピーでは取消後も残りを読める構造。静的確認で、遅延時間は未測定。
