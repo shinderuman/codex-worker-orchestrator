@@ -167,8 +167,6 @@ func scheduleHeadingMatches(section planScheduleSection, heading string) bool {
 	return strings.HasPrefix(heading, string(section))
 }
 
-// ParsePlanTaskEntry parses a complete Plan Task bullet using the schedule grammar.
-// The caller must validate the returned path for its admission context.
 func ParsePlanTaskEntry(row string) (string, error) {
 	return parsePlanScheduleEntry(planScheduleNext, strings.TrimSpace(row))
 }
