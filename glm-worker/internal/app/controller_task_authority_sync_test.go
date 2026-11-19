@@ -712,4 +712,3 @@ func TestTaskAuthoritySyncRejectsForeignMilestoneLineage(t *testing.T) {
 		})
 	}
 }
-
