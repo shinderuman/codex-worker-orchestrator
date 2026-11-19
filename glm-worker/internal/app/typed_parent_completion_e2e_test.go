@@ -197,7 +197,7 @@ func TestTypedCompletionWorkerProcess(_ *testing.T) {
 		os.Exit(2)
 	}
 	args := os.Args[separator+1:]
-	if primary := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_PRIMARY"); primary != "" && len(args) == 1 && args[0] == "--handoff" {
+	if primary := os.Getenv("GLM_TYPED_COMPLETION_HANDOFF_PRIMARY"); primary != "" && len(args) == 2 && args[0] == "--handoff" && args[1] == handoffTerminalView {
 		root, err := os.Getwd()
 		if err != nil || root != primary {
 			_, _ = fmt.Fprintln(os.Stderr, "completion handoff cannot read the retired execution lane")

@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 Git diff取得4提案の実装は一度。parentevidenceのbudget/strippingも同作業内の別責務として残す。

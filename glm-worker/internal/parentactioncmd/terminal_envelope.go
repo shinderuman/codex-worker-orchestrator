@@ -103,7 +103,7 @@ func readTerminalHandoff(cfg config.AppConfig, stderr io.Writer, recovery bool) 
 	if recovery {
 		err = runWorker(cfg.RepoRoot, []string{"--handoff", "recovery"}, nil, &handoff, stderr, nil)
 	} else {
-		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
+		err = runWorker(cfg.RepoRoot, []string{"--handoff", "terminal"}, nil, &handoff, stderr, nil)
 	}
 	if err != nil {
 		return nil, err

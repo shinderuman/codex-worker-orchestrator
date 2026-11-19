@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -104,5 +106,37 @@ func TestWriteTerminalHandoffFailurePreservesTerminalResult(t *testing.T) {
 	}
 	if len(envelope.Handoff) != 0 {
 		t.Fatalf("handoff must be absent on failure: %s", envelope.Handoff)
+	}
+}
+
+func TestReadTerminalHandoffSelectsBoundedWorkerView(t *testing.T) {
+	root := t.TempDir()
+	worker := filepath.Join(root, "glm-worker")
+	script := `#!/bin/sh
+set -eu
+test "$#" -eq 2 && test "$1" = "--handoff"
+case "$2" in
+  terminal) printf '%s\n' '{"consistent":true,"required_action":"accept"}' ;;
+  recovery) printf '%s\n' '{"consistent":false,"projection":"recovery"}' ;;
+  *) exit 2 ;;
+esac
+`
+	if err := os.WriteFile(worker, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cfg := config.AppConfig{RepoRoot: root}
+	for _, tc := range []struct {
+		recovery bool
+		field    string
+	}{
+		{false, `"required_action":"accept"`},
+		{true, `"projection":"recovery"`},
+	} {
+		var stderr bytes.Buffer
+		raw, err := readTerminalHandoff(cfg, &stderr, tc.recovery)
+		if err != nil || !bytes.Contains(raw, []byte(tc.field)) {
+			t.Fatalf("recovery=%v: handoff=%s, error=%v, stderr=%s", tc.recovery, raw, err, &stderr)
+		}
 	}
 }

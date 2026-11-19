@@ -90,6 +90,11 @@ type parentHandoffValidation struct {
 	WorktreeDigest  string `json:"worktree_digest"`
 }
 
+type parentHandoffEvidenceReadVisits struct {
+	RunEntries int
+	RunRecords int
+}
+
 const parentHandoffVersion = 3
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
@@ -156,7 +161,7 @@ func applyParentQualityGateRecovery(st *state.StateStore, output *parentHandoffR
 	output.QualityGateFailure = checkpoint.QualityGateFailure
 }
 
-func buildParentHandoffFromContinuation(st *state.StateStore, continuation parentcontinuation.Projection) parentHandoffOutput {
+func buildParentHandoffFromContinuationWithEvidence(st *state.StateStore, continuation parentcontinuation.Projection, full bool, visits *parentHandoffEvidenceReadVisits) parentHandoffOutput {
 	taskID := st.ReadOr("task.id", "")
 	taskStatus := st.TaskStatus()
 	repoRoot := st.ReadOr("repo-root", "")
@@ -169,7 +174,6 @@ func buildParentHandoffFromContinuation(st *state.StateStore, continuation paren
 		AllowedActions:   []string{},
 		PendingDecision:  st.Exists("pending-decision"),
 		ParentReviewOpen: parentReviewPtr(st.OpenParentReviewLabel()),
-		Baseline:         st.BaselineEvidence(),
 		Snapshot:         continuation.Snapshot,
 		Validations:      []parentHandoffValidation{},
 		SessionRotation:  continuation.SessionRotation,
@@ -193,7 +197,12 @@ func buildParentHandoffFromContinuation(st *state.StateStore, continuation paren
 		output.ResumeKind = machinecli.StringPtr(continuation.ActionPlan.ResumeKind)
 	}
 	applyParentLastMaterial(st, taskID, &output)
-	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
+	if full {
+		output.Baseline = st.BaselineEvidence()
+		output.Validations = currentParentValidationsWithVisits(st, repoRoot, output.Snapshot, visits)
+	} else {
+		output.Snapshot = nil
+	}
 	return output
 }
 
@@ -229,10 +238,14 @@ func parentHandoffMaterialFromLog(log state.ModelCallLog) *parentHandoffMaterial
 }
 
 func currentParentValidations(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) []parentHandoffValidation {
+	return currentParentValidationsWithVisits(st, repoRoot, snapshot, nil)
+}
+
+func currentParentValidationsWithVisits(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest, visits *parentHandoffEvidenceReadVisits) []parentHandoffValidation {
 	if repoRoot == "" || snapshot == nil {
 		return []parentHandoffValidation{}
 	}
-	latestByForm := latestCurrentValidationRuns(st, repoRoot, snapshot)
+	latestByForm := latestCurrentValidationRunsWithVisits(st, repoRoot, snapshot, visits)
 	forms := make([]string, 0, len(latestByForm))
 	for form := range latestByForm {
 		forms = append(forms, form)
@@ -245,15 +258,21 @@ func currentParentValidations(st *state.StateStore, repoRoot string, snapshot *s
 	return validations
 }
 
-func latestCurrentValidationRuns(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) map[string]qualitygate.RunRecord {
+func latestCurrentValidationRunsWithVisits(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest, visits *parentHandoffEvidenceReadVisits) map[string]qualitygate.RunRecord {
 	latestByForm := make(map[string]qualitygate.RunRecord, len(qualityGateForms))
 	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
 	if err != nil {
 		return latestByForm
 	}
+	if visits != nil {
+		visits.RunEntries += len(entries)
+	}
 	for _, entry := range entries {
 		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
 			continue
+		}
+		if visits != nil {
+			visits.RunRecords++
 		}
 		record, err := readQualityGateRun(st, entry.Name())
 		if err != nil || !qualityGateMatchesHandoff(record, repoRoot, snapshot) {
