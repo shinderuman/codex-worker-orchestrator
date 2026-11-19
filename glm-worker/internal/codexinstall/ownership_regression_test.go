@@ -13,8 +13,8 @@ func TestInstallRemovesUnmodifiedRetiredManagedFile(t *testing.T) {
 	codexDir := t.TempDir()
 	runInstall(t, repo, codexDir)
 
-	source := filepath.Join(repo, "codex", "instructions", "test.md")
-	target := filepath.Join(codexDir, "instructions", "test.md")
+	source := filepath.Join(repo, "codex", "instructions", "worker", "test.md")
+	target := filepath.Join(codexDir, "instructions", "worker", "test.md")
 	if err := os.Remove(source); err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestInstallRemovesUnmodifiedRetiredManagedFile(t *testing.T) {
 	}
 	state := loadTestState(t, codexDir)
 	for _, record := range state.Files {
-		if record.Path == "instructions/test.md" {
+		if record.Path == "instructions/worker/test.md" {
 			t.Fatalf("retired file remained tool-owned: %+v", record)
 		}
 	}

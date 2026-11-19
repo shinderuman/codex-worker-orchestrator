@@ -24,7 +24,7 @@ func TestRetireOwnedCodexFilesAndConfigOnly(t *testing.T) {
 	if _, err := os.Stat(statePath(dir)); !os.IsNotExist(err) {
 		t.Fatalf("install state not removed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "instructions", "test.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "instructions", "worker", "test.md")); !os.IsNotExist(err) {
 		t.Fatalf("managed instruction remains: %v", err)
 	}
 	if err := Retire(dir, &bytes.Buffer{}); err != nil {
@@ -37,7 +37,7 @@ func TestRetireCodexRefusesModifiedInstruction(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
 	dir := t.TempDir()
 	runInstall(t, repo, dir)
-	target := filepath.Join(dir, "instructions", "test.md")
+	target := filepath.Join(dir, "instructions", "worker", "test.md")
 	writeTestFile(t, target, []byte("user edit\n"))
 	var out bytes.Buffer
 	if err := Retire(dir, &out); err == nil || !strings.Contains(err.Error(), "refusing modified") {
@@ -66,7 +66,7 @@ func TestRetireCodexRefusesModifiedConfigAndSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path = filepath.Join(dir, "instructions", "test.md")
+	path = filepath.Join(dir, "instructions", "worker", "test.md")
 	backup := filepath.Join(t.TempDir(), "user.txt")
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)

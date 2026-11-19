@@ -17,7 +17,7 @@ func TestInstallRejectsPreexistingUserManagedPathBeforeMutation(t *testing.T) {
 	configPath := filepath.Join(codexDir, "config.toml")
 	originalConfig := []byte("local_key = \"keep\"\n")
 	writeTestFile(t, configPath, originalConfig)
-	userPath := filepath.Join(codexDir, "instructions", "test.md")
+	userPath := filepath.Join(codexDir, "instructions", "worker", "test.md")
 	originalUser := []byte("# user instruction\n")
 	writeTestFile(t, userPath, originalUser)
 
@@ -41,8 +41,8 @@ func TestInstallUpdatesOwnedFileAndPreservesModifiedObsoleteFile(t *testing.T) {
 	codexDir := t.TempDir()
 	runInstall(t, repo, codexDir)
 
-	source := filepath.Join(repo, "codex", "instructions", "test.md")
-	target := filepath.Join(codexDir, "instructions", "test.md")
+	source := filepath.Join(repo, "codex", "instructions", "worker", "test.md")
+	target := filepath.Join(codexDir, "instructions", "worker", "test.md")
 	writeTestFile(t, source, []byte("# tool instruction v2\n"))
 	runInstall(t, repo, codexDir)
 	assertFileBytes(t, target, []byte("# tool instruction v2\n"))
@@ -56,7 +56,7 @@ func TestInstallUpdatesOwnedFileAndPreservesModifiedObsoleteFile(t *testing.T) {
 	assertFileBytes(t, target, userEdit)
 	state := loadTestState(t, codexDir)
 	for _, record := range state.Files {
-		if record.Path == "instructions/test.md" {
+		if record.Path == "instructions/worker/test.md" {
 			t.Fatalf("modified obsolete file remained tool-owned: %+v", record)
 		}
 	}
@@ -111,10 +111,10 @@ func TestInstallRejectsEditedOwnedConfigKey(t *testing.T) {
 func TestInstallLegacyManifestDoesNotConferFileOwnership(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
 	codexDir := t.TempDir()
-	target := filepath.Join(codexDir, "instructions", "test.md")
+	target := filepath.Join(codexDir, "instructions", "worker", "test.md")
 	original := []byte("# tool instruction\n")
 	manifestPath := filepath.Join(codexDir, ".codex-config-managed-files")
-	manifest := []byte("instructions/test.md\n")
+	manifest := []byte("instructions/worker/test.md\n")
 	writeTestFile(t, target, original)
 	writeTestFile(t, manifestPath, manifest)
 
@@ -189,14 +189,14 @@ func TestInstallRollsBackWhenStateCommitFails(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
 	codexDir := t.TempDir()
 	runInstall(t, repo, codexDir)
-	target := filepath.Join(codexDir, "instructions", "test.md")
+	target := filepath.Join(codexDir, "instructions", "worker", "test.md")
 	configPath := filepath.Join(codexDir, "config.toml")
 	stateFile := statePath(codexDir)
 	oldTarget := append([]byte(nil), readTestFile(t, target)...)
 	oldConfig := append([]byte(nil), readTestFile(t, configPath)...)
 	oldState := append([]byte(nil), readTestFile(t, stateFile)...)
 
-	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# tool instruction changed\n"))
+	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), []byte("# tool instruction changed\n"))
 	writeTestFile(t, filepath.Join(repo, "codex", "config-managed.toml"), []byte(managedConfigKey+" = 21600001\n"))
 	preparation, err := prepareInstall(repo, codexDir)
 	if err != nil {
@@ -225,7 +225,7 @@ func initInstallFixtureRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
 	writeTestFile(t, filepath.Join(repo, "codex", "AGENTS.md"), []byte("# parent rules\n"))
-	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# tool instruction\n"))
+	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), []byte("# tool instruction\n"))
 	writeTestFile(t, filepath.Join(repo, "codex", "rules", "glm-worker.rules"), []byte("prefix_rule(pattern=[\"glm-worker\"], decision=\"allow\")\n"))
 	writeTestFile(t, filepath.Join(repo, "codex", "glm-worker", "prompts", "WORKER.md"), []byte("# worker\n"))
 	writeTestFile(t, filepath.Join(repo, "codex", "config-managed.toml"), []byte(managedConfigKey+" = 21600000\n"))

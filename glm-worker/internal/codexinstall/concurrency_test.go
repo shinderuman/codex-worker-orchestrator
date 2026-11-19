@@ -35,8 +35,8 @@ func TestApplyRejectsManagedFileEditAfterPreparation(t *testing.T) {
 	repo := initConcurrentFixtureRepo(t)
 	dest := t.TempDir()
 	runConcurrentInstall(t, repo, dest)
-	source := filepath.Join(repo, "codex", "instructions", "test.md")
-	target := filepath.Join(dest, "instructions", "test.md")
+	source := filepath.Join(repo, "codex", "instructions", "worker", "test.md")
+	target := filepath.Join(dest, "instructions", "worker", "test.md")
 	writeConcurrentFile(t, source, []byte("# source v2\n"))
 	prep, err := prepareInstall(repo, dest)
 	if err != nil {
@@ -54,8 +54,8 @@ func TestApplyRejectsObsoleteFileEditAfterPreparation(t *testing.T) {
 	repo := initConcurrentFixtureRepo(t)
 	dest := t.TempDir()
 	runConcurrentInstall(t, repo, dest)
-	source := filepath.Join(repo, "codex", "instructions", "test.md")
-	target := filepath.Join(dest, "instructions", "test.md")
+	source := filepath.Join(repo, "codex", "instructions", "worker", "test.md")
+	target := filepath.Join(dest, "instructions", "worker", "test.md")
 	if err := os.Remove(source); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestApplyRejectsStateEditAfterPreparation(t *testing.T) {
 	repo := initConcurrentFixtureRepo(t)
 	dest := t.TempDir()
 	runConcurrentInstall(t, repo, dest)
-	writeConcurrentFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# source v2\n"))
+	writeConcurrentFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), []byte("# source v2\n"))
 	prep, err := prepareInstall(repo, dest)
 	if err != nil {
 		t.Fatal(err)
@@ -96,8 +96,8 @@ func TestRollbackPreservesEditMadeAfterInstallerWrite(t *testing.T) {
 	configPath := filepath.Join(dest, "config.toml")
 	writeConcurrentFile(t, configPath, []byte("local_key = \"initial\"\n"))
 	runConcurrentInstall(t, repo, dest)
-	oldTarget := readConcurrentFile(t, filepath.Join(dest, "instructions", "test.md"))
-	writeConcurrentFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# source v2\n"))
+	oldTarget := readConcurrentFile(t, filepath.Join(dest, "instructions", "worker", "test.md"))
+	writeConcurrentFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), []byte("# source v2\n"))
 	writeConcurrentFile(t, filepath.Join(repo, "codex", "config-managed.toml"), []byte(managedConfigKey+" = 21600001\n"))
 	prep, err := prepareInstall(repo, dest)
 	if err != nil {
@@ -113,7 +113,7 @@ func TestRollbackPreservesEditMadeAfterInstallerWrite(t *testing.T) {
 		t.Fatalf("expected state failure, got %v", err)
 	}
 	assertConcurrentBytes(t, configPath, userConfig)
-	assertConcurrentBytes(t, filepath.Join(dest, "instructions", "test.md"), oldTarget)
+	assertConcurrentBytes(t, filepath.Join(dest, "instructions", "worker", "test.md"), oldTarget)
 }
 
 func TestCodexInstallLockSerializesSameDestination(t *testing.T) {
@@ -152,7 +152,7 @@ func initConcurrentFixtureRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
 	writeConcurrentFile(t, filepath.Join(repo, "codex", "AGENTS.md"), []byte("# parent rules\n"))
-	writeConcurrentFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# source v1\n"))
+	writeConcurrentFile(t, filepath.Join(repo, "codex", "instructions", "worker", "test.md"), []byte("# source v1\n"))
 	writeConcurrentFile(t, filepath.Join(repo, "codex", "rules", "glm-worker.rules"), []byte("prefix_rule(pattern=[\"glm-worker\"], decision=\"allow\")\n"))
 	writeConcurrentFile(t, filepath.Join(repo, "codex", "glm-worker", "prompts", "WORKER.md"), []byte("# worker\n"))
 	writeConcurrentFile(t, filepath.Join(repo, "codex", "config-managed.toml"), []byte(managedConfigKey+" = 21600000\n"))
