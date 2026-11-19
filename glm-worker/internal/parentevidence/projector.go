@@ -930,6 +930,7 @@ func (p *Projector) degradeDuplicateParts() error {
 		}
 		hadBody := partHasBody(part)
 		clearPartBody(part)
+		part.ClaimRefinement = false
 		part.Reason = UnchangedReason
 		if hadBody {
 			part.Bytes = 0
