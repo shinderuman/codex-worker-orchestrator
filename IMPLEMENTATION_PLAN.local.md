@@ -8,7 +8,37 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
+- [`IMPLEMENTATION_TASKS/staging-response-exit-status.md`](IMPLEMENTATION_TASKS/staging-response-exit-status.md)
+
 ## NEXT（優先順）
+
+- [`IMPLEMENTATION_TASKS/publication-latest-run-inventory.md`](IMPLEMENTATION_TASKS/publication-latest-run-inventory.md)
+- [`IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md`](IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md)
+- [`IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md`](IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md)
+- [`IMPLEMENTATION_TASKS/idle-authority-bootstrap.md`](IMPLEMENTATION_TASKS/idle-authority-bootstrap.md)
+- [`IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md`](IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md)
+- [`IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md`](IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md)
+- [`IMPLEMENTATION_TASKS/status-event-read-completeness.md`](IMPLEMENTATION_TASKS/status-event-read-completeness.md)
+- [`IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md`](IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md)
+- [`IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md`](IMPLEMENTATION_TASKS/plan-entry-grammar-equivalence.md)
+- [`IMPLEMENTATION_TASKS/rotation-start-admission-owner.md`](IMPLEMENTATION_TASKS/rotation-start-admission-owner.md)
+- [`IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md`](IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md)
+- [`IMPLEMENTATION_TASKS/docker-source-archive-cancellation.md`](IMPLEMENTATION_TASKS/docker-source-archive-cancellation.md)
+- [`IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md`](IMPLEMENTATION_TASKS/search-cache-enumeration-limit.md)
+- [`IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md`](IMPLEMENTATION_TASKS/quality-wiring-policy-owner.md)
+- [`IMPLEMENTATION_TASKS/review-admission-quality-reachability.md`](IMPLEMENTATION_TASKS/review-admission-quality-reachability.md)
+- [`IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md`](IMPLEMENTATION_TASKS/handoff-evidence-on-demand.md)
+- [`IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md`](IMPLEMENTATION_TASKS/export-evidence-decode-coverage.md)
+- [`IMPLEMENTATION_TASKS/rollout-duplicate-hash-reads.md`](IMPLEMENTATION_TASKS/rollout-duplicate-hash-reads.md)
+- [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)
+- [`IMPLEMENTATION_TASKS/test-timing-regression-owner.md`](IMPLEMENTATION_TASKS/test-timing-regression-owner.md)
+- [`IMPLEMENTATION_TASKS/parent-evidence-diff-capture-and-budget.md`](IMPLEMENTATION_TASKS/parent-evidence-diff-capture-and-budget.md)
+- [`IMPLEMENTATION_TASKS/provider-resume-wait-ownership.md`](IMPLEMENTATION_TASKS/provider-resume-wait-ownership.md)
+- [`IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md`](IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md)
+- [`IMPLEMENTATION_TASKS/session-rotation-handoff-test-locality.md`](IMPLEMENTATION_TASKS/session-rotation-handoff-test-locality.md)
+- [`IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md`](IMPLEMENTATION_TASKS/parent-only-sync-test-locality.md)
+- [`IMPLEMENTATION_TASKS/installed-export-smoke-locality.md`](IMPLEMENTATION_TASKS/installed-export-smoke-locality.md)
+- [`IMPLEMENTATION_TASKS/installed-instruction-opt-in-scope.md`](IMPLEMENTATION_TASKS/installed-instruction-opt-in-scope.md)
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
