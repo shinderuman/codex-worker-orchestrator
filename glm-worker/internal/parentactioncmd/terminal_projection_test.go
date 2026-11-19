@@ -399,32 +399,31 @@ func containsString(values []string, want string) bool {
 }
 
 func TestTerminalProjectionPreservesActuallyEmittedAdvisory(t *testing.T) {
-	for _, tc := range []struct {
-		status packet.Status
-		risk   packet.Risk
-	}{
-		{packet.StatusPass, packet.RiskLow},
-		{packet.StatusNeedsSolReview, packet.RiskHigh},
-		{packet.StatusNeedsSolDecision, packet.RiskHigh},
-	} {
-		t.Run(string(tc.status), func(t *testing.T) {
-			result := packet.Result{
-				Status: tc.status, Risk: tc.risk,
-				Summary: "review summary", RequirementCoverage: "covered",
-				Invariants: "preserved", TestEvidence: "passed", Issues: "none",
-				ResidualRisk: "low", SolQuestion: "verify independently",
-				Decision: "independent review required", Evidence: "packet proof",
-				Options: "proceed or stop", Recommendation: "stop on mismatch",
-				TestObligations: "regression",
-				Targets: []string{"internal/packet/result.go:1"},
-				Artifacts: []string{"/tmp/task/review.json"},
+	for _, status := range []packet.Status{packet.StatusPass, packet.StatusNeedsSolReview, packet.StatusNeedsSolDecision} {
+		t.Run(string(status), func(t *testing.T) {
+			result := packet.Result{}
+			result.Status = status
+			result.Risk = packet.RiskHigh
+			if status == packet.StatusPass {
+				result.Risk = packet.RiskLow
 			}
-			result.FailurePathAdvisory = packet.BoundFailurePathAdvisory(result, &packet.FailurePathAdvisory{
-				CallID: "call-advisory",
-				Findings: []packet.FailurePathAdvisoryFinding{{
-					Target: "internal/packet/result.go:1", Class: "failure-path", Issue: "independent failure-path concern",
-				}},
-			})
+			result.Summary = "review summary"
+			result.RequirementCoverage = "covered"
+			result.Invariants = "preserved"
+			result.TestEvidence = "passed"
+			result.Issues = "none"
+			result.ResidualRisk = "low"
+			result.SolQuestion = "verify independently"
+			result.Decision = "independent review required"
+			result.Evidence = "packet proof"
+			result.Options = "proceed or stop"
+			result.Recommendation = "stop on mismatch"
+			result.TestObligations = "regression"
+			result.Targets = []string{"internal/packet/result.go:1"}
+			result.Artifacts = []string{"/tmp/task/review.json"}
+			advisory := packet.FailurePathAdvisory{CallID: "call-advisory"}
+			advisory.Findings = []packet.FailurePathAdvisoryFinding{{Target: "internal/packet/result.go:1", Class: "failure-path", Issue: "independent failure-path concern"}}
+			result.FailurePathAdvisory = packet.BoundFailurePathAdvisory(result, &advisory)
 			if result.FailurePathAdvisory == nil {
 				t.Fatal("advisory was not emitted by packet")
 			}
@@ -460,19 +459,19 @@ func TestTerminalProjectionPreservesActuallyEmittedAdvisory(t *testing.T) {
 }
 
 func TestTerminalProjectionAdvisoryFailClosedWhenLosslessPacketCannotFit(t *testing.T) {
-	result := packet.Result{
-		Status: packet.StatusPass, Risk: packet.RiskLow,
-		Summary: strings.Repeat("summary-", 240),
-		RequirementCoverage: strings.Repeat("coverage-", 210),
-		Invariants: strings.Repeat("invariant-", 190),
-		TestEvidence: strings.Repeat("test-", 380),
-		Issues: "none", ResidualRisk: "low",
-		Targets: []string{"internal/packet/result.go:1"},
-	}
-	result.FailurePathAdvisory = packet.BoundFailurePathAdvisory(result, &packet.FailurePathAdvisory{
-		CallID: "call-overflow",
-		Findings: []packet.FailurePathAdvisoryFinding{{Target: "result.go:1", Class: "failure-path", Issue: "do not discard silently"}},
-	})
+	result := packet.Result{}
+	result.Status = packet.StatusPass
+	result.Risk = packet.RiskLow
+	result.Summary = strings.Repeat("summary-", 240)
+	result.RequirementCoverage = strings.Repeat("coverage-", 210)
+	result.Invariants = strings.Repeat("invariant-", 190)
+	result.TestEvidence = strings.Repeat("test-", 380)
+	result.Issues = "none"
+	result.ResidualRisk = "low"
+	result.Targets = []string{"internal/packet/result.go:1"}
+	advisory := packet.FailurePathAdvisory{CallID: "call-overflow"}
+	advisory.Findings = []packet.FailurePathAdvisoryFinding{{Target: "result.go:1", Class: "failure-path", Issue: "do not discard silently"}}
+	result.FailurePathAdvisory = packet.BoundFailurePathAdvisory(result, &advisory)
 	if result.FailurePathAdvisory == nil {
 		t.Fatal("advisory was not emitted by packet")
 	}
@@ -511,13 +510,14 @@ func TestTerminalProjectionAdvisoryFailClosedWhenLosslessPacketCannotFit(t *test
 }
 
 func TestTerminalProjectionPacketWrapperEvidenceAndUnknownStatus(t *testing.T) {
-	implemented := packet.Result{
-		Status: packet.StatusImplemented, Risk: packet.RiskLow,
-		Summary: "implementation", Tests: "passed",
-		ParentValidation: packet.ParentValidationGoTest,
-		ParentValidationWorkingDir: "glm-worker",
-		ParentValidationEvidence: &packet.ParentValidationEvidence{ValidationRunID: "run-id", Form: packet.ParentValidationGoTest, Status: "pass"},
-	}
+	implemented := packet.Result{}
+	implemented.Status = packet.StatusImplemented
+	implemented.Risk = packet.RiskLow
+	implemented.Summary = "implementation"
+	implemented.Tests = "passed"
+	implemented.ParentValidation = packet.ParentValidationGoTest
+	implemented.ParentValidationWorkingDir = "glm-worker"
+	implemented.ParentValidationEvidence = &packet.ParentValidationEvidence{ValidationRunID: "run-id", Form: packet.ParentValidationGoTest, Status: "pass"}
 	terminal, err := implemented.MachineJSON()
 	if err != nil {
 		t.Fatal(err)

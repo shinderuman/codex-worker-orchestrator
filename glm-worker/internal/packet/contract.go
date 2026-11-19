@@ -217,8 +217,6 @@ func invalidLowHighRisk(risk Risk) string {
 	return fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(risk))
 }
 
-// TerminalSemanticFields exposes the canonical packet fields eligible for
-// bounded terminal projection. Unknown statuses have no packet contract.
 func TerminalSemanticFields(status Status) []string {
 	statusContract, ok := packetStatusContracts[status]
 	if !ok {
