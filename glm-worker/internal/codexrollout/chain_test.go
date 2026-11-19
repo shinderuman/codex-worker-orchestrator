@@ -309,13 +309,7 @@ func TestDuplicateContentDetectsChangesBeforeDigestReuse(t *testing.T) {
 		}
 		reads++
 		if path == second {
-			if err := os.WriteFile(first, []byte("ddd"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			changedAt := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
-			if err := os.Chtimes(first, changedAt, changedAt); err != nil {
-				t.Fatal(err)
-			}
+			changeDuplicateCandidate(t, first, "ddd")
 		}
 		return result, nil
 	}
@@ -368,18 +362,23 @@ func TestDuplicateContentRechecksBeforeReportingDuplicate(t *testing.T) {
 			return cachedRolloutDigest{}, err
 		}
 		if path == second {
-			if err := os.WriteFile(first, []byte("bbb"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			changedAt := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
-			if err := os.Chtimes(first, changedAt, changedAt); err != nil {
-				t.Fatal(err)
-			}
+			changeDuplicateCandidate(t, first, "bbb")
 		}
 		return result, nil
 	}
 	reason := duplicateContentWithReader(members, read)
 	if !strings.Contains(reason, "sessions/first.jsonl: rollout file changed after digest read") {
 		t.Fatalf("stale duplicate digest was reported instead of change: %q", reason)
+	}
+}
+
+func changeDuplicateCandidate(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changedAt := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(path, changedAt, changedAt); err != nil {
+		t.Fatal(err)
 	}
 }
