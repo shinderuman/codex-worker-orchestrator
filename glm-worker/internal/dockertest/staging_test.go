@@ -94,9 +94,21 @@ func TestParseStagingResponseRejectsProtocolViolations(t *testing.T) {
 	if _, err := ParseStagingResponse([]byte(" \n\t" + `{"schema_version":1,"token":"100","exit_code":0,"stdout":"","stderr":""}` + "\n\t ")); err != nil {
 		t.Fatalf("末尾空白を含む正当responseが拒否されました: %v", err)
 	}
+	for _, body := range []string{
+		`{"schema_version":1,"token":"100","exit_code":5,"stderr":"go test failed"}`,
+		`{"schema_version":1,"token":"100","exit_code":1,"failure":"docker failed"}`,
+	} {
+		response, err := ParseStagingResponse([]byte(body))
+		if err != nil || response.ExitCode == 0 {
+			t.Fatalf("非0終了responseが拒否されました: %#v %v", response, err)
+		}
+	}
 	for name, body := range map[string]string{
 		"unknown-field":          `{"schema_version":1,"token":"100","exit_code":0,"promote":true}`,
 		"schema-mismatch":        `{"schema_version":3,"token":"100","exit_code":0}`,
+		"missing-exit-code":      `{"schema_version":1,"token":"100","stdout":""}`,
+		"null-exit-code":         `{"schema_version":1,"token":"100","exit_code":null}`,
+		"success-with-failure":   `{"schema_version":1,"token":"100","exit_code":0,"failure":"docker failed"}`,
 		"trailing-value":         `{"schema_version":1,"token":"100","exit_code":0}1`,
 		"trailing-close-bracket": `{"schema_version":1,"token":"100","exit_code":0}]`,
 		"trailing-close-brace":   `{"schema_version":1,"token":"100","exit_code":0}}`,
@@ -652,4 +664,56 @@ func TestStagingClientKeepsPartialResponsePendingAndCancellable(t *testing.T) {
 			t.Fatalf("部分responseのcancel = code %d out %q err %q", code, stdout.String(), stderr.String())
 		}
 	})
+}
+
+func TestStagingClientRejectsIncompleteExitStatus(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "missing", body: `{"schema_version":1,"token":"` + stagingClientToken() + `","stdout":"forged-success"}`},
+		{name: "null", body: `{"schema_version":1,"token":"` + stagingClientToken() + `","exit_code":null,"stdout":"forged-success"}`},
+		{name: "success-with-failure", body: `{"schema_version":1,"token":"` + stagingClientToken() + `","exit_code":0,"failure":"docker failed","stdout":"forged-success"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, staging, responses := newStagingClientFixture(t)
+			written := publishTestStagingResponseAfterRequest(staging, responses, stagingClientToken(), tc.body)
+			var stdout, stderr strings.Builder
+			code := client.Run(context.Background(), []string{"./..."}, &stdout, &stderr)
+			if err := <-written; err != nil {
+				t.Fatal(err)
+			}
+			if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "締切内に得られませんでした") {
+				t.Fatalf("不完全な終了状態の受理 = code %d out %q err %q", code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestStagingClientAcceptsResponseCompletedAfterPartialWrite(t *testing.T) {
+	t.Parallel()
+	client, staging, responses := newStagingClientFixture(t)
+	client.Timeout = time.Second
+	token := stagingClientToken()
+	partial := `{"schema_version":1,"token":"` + token + `","exit_code":`
+	written := publishTestStagingResponseAfterRequest(staging, responses, token, partial)
+	finished := make(chan error, 1)
+	go func() {
+		if err := <-written; err != nil {
+			finished <- err
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+		finished <- os.WriteFile(filepath.Join(responses, StagingResponseFileName(token)),
+			[]byte(partial+`0,"stdout":"completed","stderr":""}`), 0o600)
+	}()
+	var stdout, stderr strings.Builder
+	code := client.Run(context.Background(), []string{"./..."}, &stdout, &stderr)
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || stdout.String() != "completed" || stderr.Len() != 0 {
+		t.Fatalf("追記完了した正常responseが受理されません: code %d out %q err %q", code, stdout.String(), stderr.String())
+	}
 }
