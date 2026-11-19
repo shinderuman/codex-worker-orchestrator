@@ -103,14 +103,34 @@ func ParseStagingRequest(data []byte) (StagingRequest, error) {
 }
 
 func ParseStagingResponse(data []byte) (StagingResponse, error) {
-	var response StagingResponse
-	if err := decodeStrictStagingJSON(data, &response); err != nil {
+	var wire struct {
+		SchemaVersion int    `json:"schema_version"`
+		Token         string `json:"token"`
+		ExitCode      *int   `json:"exit_code"`
+		Stdout        string `json:"stdout"`
+		Stderr        string `json:"stderr"`
+		Failure       string `json:"failure,omitempty"`
+	}
+	if err := decodeStrictStagingJSON(data, &wire); err != nil {
 		return StagingResponse{}, fmt.Errorf("staging responseの形式が不正です: %w", err)
 	}
-	if response.SchemaVersion != StagingSchemaVersion {
-		return StagingResponse{}, fmt.Errorf("staging responseのschema_versionが不正です: %d", response.SchemaVersion)
+	if wire.SchemaVersion != StagingSchemaVersion {
+		return StagingResponse{}, fmt.Errorf("staging responseのschema_versionが不正です: %d", wire.SchemaVersion)
 	}
-	return response, nil
+	if wire.ExitCode == nil {
+		return StagingResponse{}, fmt.Errorf("staging responseのexit_codeが欠落またはnullです")
+	}
+	if *wire.ExitCode == 0 && wire.Failure != "" {
+		return StagingResponse{}, fmt.Errorf("staging responseの成功終了にfailureがあります")
+	}
+	return StagingResponse{
+		SchemaVersion: wire.SchemaVersion,
+		Token:         wire.Token,
+		ExitCode:      *wire.ExitCode,
+		Stdout:        wire.Stdout,
+		Stderr:        wire.Stderr,
+		Failure:       wire.Failure,
+	}, nil
 }
 
 func decodeStrictStagingJSON(data []byte, target any) error {
