@@ -26,7 +26,16 @@ func TestParentHandoffEvidenceReadScopeFullVersusRecovery(t *testing.T) {
 	}
 	const runs = 24
 	for i := 0; i < runs; i++ {
-		record := qualitygate.RunRecord{ValidationRunID: fmt.Sprintf("%032x", i + 1), Form: "go-test", Repository: cfg.RepoRoot, WorkingDir: cfg.RepoRoot, Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest, StartedAt: time.Now().UTC().Add(time.Duration(i) * time.Second), Status: qualitygate.StatusPass}
+		record := qualitygate.RunRecord{}
+		record.ValidationRunID = fmt.Sprintf("%032x", i+1)
+		record.Form = "go-test"
+		record.Repository = cfg.RepoRoot
+		record.WorkingDir = cfg.RepoRoot
+		record.Head = snapshot.Head
+		record.IndexDigest = snapshot.IndexDigest
+		record.WorktreeDigest = snapshot.WorktreeDigest
+		record.StartedAt = time.Now().UTC().Add(time.Duration(i) * time.Second)
+		record.Status = qualitygate.StatusPass
 		if err := writeQualityGateRun(st, record); err != nil {
 			t.Fatal(err)
 		}
@@ -66,7 +75,9 @@ func TestParentHandoffEvidenceReadScopeFullVersusRecovery(t *testing.T) {
 	if len(narrowJSON) >= len(wideJSON) {
 		t.Fatalf("intermediate handoff JSON not reduced: wide=%d narrow=%d", len(wideJSON), len(narrowJSON))
 	}
-	t.Logf("optional evidence proxy: records wide=%d narrow=%d, entries wide=%d narrow=%d, intermediate bytes wide=%d narrow=%d", fullVisits.RunRecords, narrowVisits.RunRecords, fullVisits.RunEntries, narrowVisits.RunEntries, len(wideJSON), len(narrowJSON))
+	t.Logf("run records: full=%d recovery=%d", fullVisits.RunRecords, narrowVisits.RunRecords)
+	t.Logf("run entries: full=%d recovery=%d", fullVisits.RunEntries, narrowVisits.RunEntries)
+	t.Logf("intermediate JSON bytes: full=%d recovery=%d", len(wideJSON), len(narrowJSON))
 
 	var recovery bytes.Buffer
 	if err := printParentHandoffRecoveryLeasedWithConfig(cfg, st, &recovery); err != nil {
