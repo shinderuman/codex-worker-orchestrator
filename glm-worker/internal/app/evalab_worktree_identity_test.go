@@ -18,10 +18,11 @@ func TestExecuteEvalABWorktreeIdentityReadOnly(t *testing.T) {
 	}
 	var result struct {
 		WorktreePath string `json:"worktree_path"`
+
 		Identity abeval.WorktreeIdentity `json:"worktree_identity"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil { t.Fatal(err) }
-	if result.WorktreePath != filepath.Clean(path) || result.Identity.ResolvedPath == "" || result.Identity.Inode == 0 {
+	if result.WorktreePath != filepath.Clean(path) || result.Identity.ResolvedPath == "" || result.Identity.Device == 0 || result.Identity.Inode == 0 {
 		t.Fatalf("worktree identity capture: %+v", result)
 	}
 }

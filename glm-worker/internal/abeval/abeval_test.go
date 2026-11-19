@@ -128,6 +128,10 @@ func TestValidatePairAcceptsValidPair(t *testing.T) {
 	if err := ValidatePair(spec, direct, orchestrated); err != nil {
 		t.Fatalf("妥当なpairが拒否されました: %v", err)
 	}
+	report := BuildReport(Compare(spec, direct, orchestrated))
+	if report.WorktreeIdentities.Direct != direct.WorktreeIdentity || report.WorktreeIdentities.Orchestrated != orchestrated.WorktreeIdentity {
+		t.Fatalf("比較reportにworktree identity証拠がありません: %+v", report.WorktreeIdentities)
+	}
 }
 
 func TestValidatePairRejectsInvalid(t *testing.T) {
@@ -157,6 +161,8 @@ func TestValidatePairRejectsInvalid(t *testing.T) {
 		{"spec isolation cache note empty", func(spec *Spec, _ *RunRecord, _ *RunRecord) {
 			spec.Isolation.CacheAvoidance = ""
 		}, "cache_avoidance"},
+		{"record obsolete version", func(_ *Spec, d *RunRecord, _ *RunRecord) { d.Version = 1 }, "run記録version"},
+		{"record missing worktree identity", func(_ *Spec, d *RunRecord, _ *RunRecord) { d.WorktreeIdentity = WorktreeIdentity{} }, "worktree_identity"},
 		{"record spec hash mismatch", func(_ *Spec, d *RunRecord, _ *RunRecord) {
 			d.SpecSHA256 = "deadbeef"
 		}, "spec_sha256"},

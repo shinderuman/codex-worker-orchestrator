@@ -181,6 +181,9 @@ func validateRecord(spec Spec, record RunRecord) error {
 }
 
 func validateRecordIdentity(spec Spec, record RunRecord) error {
+	if record.Version != runRecordVersion {
+		return fmt.Errorf("run記録versionは%dである必要があります: %d", runRecordVersion, record.Version)
+	}
 	if record.SpecID != spec.ID {
 		return fmt.Errorf("spec_id %qはspec %qと一致しません", record.SpecID, spec.ID)
 	}

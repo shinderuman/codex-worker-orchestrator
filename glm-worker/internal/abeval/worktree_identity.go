@@ -42,7 +42,7 @@ func CaptureWorktreeIdentity(path string) (WorktreeIdentity, error) {
 
 func validateWorktreeIdentity(record RunRecord) error {
 	id := record.WorktreeIdentity
-	if !filepath.IsAbs(id.ResolvedPath) || filepath.Clean(id.ResolvedPath) != id.ResolvedPath || id.Inode == 0 {
+	if !filepath.IsAbs(id.ResolvedPath) || filepath.Clean(id.ResolvedPath) != id.ResolvedPath || id.Device == 0 || id.Inode == 0 {
 		return fmt.Errorf("worktree_identityに採取時のresolved_path/device/inodeが必要です")
 	}
 	live, err := CaptureWorktreeIdentity(record.WorktreePath)

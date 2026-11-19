@@ -57,7 +57,7 @@ func TestWorktreeIdentityRejectsMissingAndStale(t *testing.T) {
 		t.Fatalf("不一致のidentityが受理されました: %v", err)
 	}
 	direct.WorktreeIdentity = id
-	if err := os.RemoveAll(path); err != nil { t.Fatal(err) }
+	if err := os.Rename(path, path+"-old"); err != nil { t.Fatal(err) }
 	if err := os.Mkdir(path, 0o700); err != nil { t.Fatal(err) }
 	if err := ValidatePair(spec, direct, other); err == nil { t.Fatal("再作成後のstale identityが受理されました") }
 }
