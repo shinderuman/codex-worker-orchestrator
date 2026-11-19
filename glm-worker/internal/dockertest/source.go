@@ -15,6 +15,11 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type archiveContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
 func sourceArchive(ctx context.Context, root, temporary string, snapshot state.GitSnapshot) (string, string, error) {
 	clone := filepath.Join(temporary, "git-copy")
 	if _, err := output(ctx, temporary, "git", "clone", "--quiet", "--no-hardlinks", "--dissociate", "--no-checkout", root, clone); err != nil {
@@ -171,11 +176,6 @@ func archiveEntry(ctx context.Context, writer *tar.Writer, root, path string, al
 		return copyErr
 	}
 	return closeErr
-}
-
-type archiveContextReader struct {
-	ctx    context.Context
-	reader io.Reader
 }
 
 func (r archiveContextReader) Read(p []byte) (int, error) {
