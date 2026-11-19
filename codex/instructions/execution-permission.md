@@ -6,7 +6,7 @@
 
 - task authority(userがACTIVE taskへ与えた継続authority)、execution permission(execpolicy ruleと審査layerのapproval状態)、execution result(個別commandの成功失敗)を別stateとして扱い、暗黙変換しない。
 - 外部実行層のdenialをuser denial・user authority欠如へ変換しない。command-failed・execution-denied・permission-required・user-denied・user-input-required・task-blocked・task-terminalを同一視せず、execution deniedだけでawait-user・親USER_REQUEST完了・task terminalへ自動遷移しない。
-- ACTIVE taskを継続するuserのrun-control指示は`~/.codex/instructions/task-request-boundary.md`の境界に従い、permission grantにもpermission denialにも解釈しない。
+- ACTIVE taskを継続するuserのrun-control指示は`codex/instructions/task-request-boundary.md`の境界に従い、permission grantにもpermission denialにも解釈しない。
 
 ## canonical permission state
 
@@ -21,7 +21,7 @@
 - 従来成功していたoperationが突然denialされた場合、すぐにuserへ承認を求めない。前回成功時とのpermission-relevant state差分(task authority・session identity / rotation・approval state・sandbox profile・execution policy・permission profile・runtime実行境界)を先に確認する。
 - 差分を確認できない場合は「permission不足」と推測して再承認を求めない。外部審査layerの非観測状態をtask state・session・telemetryへ複製せず、denialはそのcommandのexecution resultとして扱い、同一scopeの正当操作または同じcommandの再実行へ継続する。
 - 差分が実在する場合だけ、何が以前と違うか・なぜ既存permissionでは不足するか・どのscopeへのpermissionかを示して正規approval手続きを取ってよい。成立したpermissionは同一scopeで保持し、再要求には前回成立後のpermission-relevant state change証拠を要する。
-- 対応の結果、新たな権限・Codexの外で変わる外部状態・意味のあるuser判断が本当に必要な場合だけ停止する。停止条件は`~/.codex/instructions/task-lifecycle.md`と同じ境界である。
+- 対応の結果、新たな権限・Codexの外で変わる外部状態・意味のあるuser判断が本当に必要な場合だけ停止する。停止条件は`codex/instructions/task-lifecycle.md`と同じ境界である。
 
 ## user messageの解釈
 
