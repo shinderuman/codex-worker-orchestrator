@@ -25,10 +25,13 @@ func TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot(t *testing.T) {
 	if output.ActiveTask != "IMPLEMENTATION_TASKS/current.md" {
 		t.Fatalf("active task = %q", output.ActiveTask)
 	}
+	if output.Active == nil {
+		t.Fatal("ACTIVE bootstrap omitted the active part")
+	}
 	for name, part := range map[string]BootstrapPart{
 		"rules":  output.Rules,
 		"plan":   output.Plan,
-		"active": output.Active,
+		"active": *output.Active,
 	} {
 		if part.ContentSHA256 == "" || part.Content == "" {
 			t.Fatalf("%s projection is incomplete: %#v", name, part)
