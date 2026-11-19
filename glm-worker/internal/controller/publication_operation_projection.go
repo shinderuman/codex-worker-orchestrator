@@ -185,12 +185,38 @@ func (s *Store) projectQuiescentCompletion(head RepositoryControllerHead) (Paren
 }
 
 func (s *Store) projectTransitionRecovery(head RepositoryControllerHead) (ParentCompletionOperation, error) {
-	pending, err := s.PendingAdvancementRecovery(head)
+	completion, err := s.PendingCompletionRecovery(head)
 	if err != nil {
 		return ParentCompletionOperation{}, err
 	}
-	if !pending {
-		return ParentCompletionOperation{Surface: ExecutionOperationSurface, Operation: PublicationOperationRecover, Execution: &CompletionExecutionCommand{Action: "recover", ExpectedGeneration: head.ControllerGeneration, TransitionID: head.PendingTransitionID}}, nil
+	if completion {
+		return ParentCompletionOperation{
+			Surface:   ExecutionOperationSurface,
+			Operation: PublicationOperationRecover,
+			Execution: &CompletionExecutionCommand{
+				Action:             PublicationOperationRecover,
+				ExpectedGeneration: head.ControllerGeneration,
+				TransitionID:       head.PendingTransitionID,
+			},
+		}, nil
+	}
+	advancement, err := s.PendingAdvancementRecovery(head)
+	if err != nil {
+		return ParentCompletionOperation{}, err
+	}
+	if !advancement {
+		if _, _, err := s.LoadTransition(head.PendingTransitionID); err != nil {
+			return ParentCompletionOperation{}, err
+		}
+		return ParentCompletionOperation{
+			Surface:   ExecutionOperationSurface,
+			Operation: PublicationOperationRecover,
+			Execution: &CompletionExecutionCommand{
+				Action:             PublicationOperationRecover,
+				ExpectedGeneration: head.ControllerGeneration,
+				TransitionID:       head.PendingTransitionID,
+			},
+		}, nil
 	}
 	return ParentCompletionOperation{
 		Surface:   PublicationOperationSurface,

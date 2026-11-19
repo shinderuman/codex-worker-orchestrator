@@ -60,47 +60,54 @@ func applyPendingControllerMaintenanceHandoff(cfg config.AppConfig, output *pare
 	if report.Head.PendingTransitionID == "" {
 		return applyRuntimeDispositionHandoff(cfg, output, report)
 	}
+	*output = parentHandoffOutput{
+		Version: parentHandoffVersion, Controller: &report, Consistent: false,
+		AllowedActions: []string{}, Validations: []parentHandoffValidation{},
+	}
 	store, err := controller.Open(cfg)
 	if err != nil {
-		return false
-	}
-	checks := []struct {
-		surface string
-		pending func(controller.RepositoryControllerHead) (bool, error)
-	}{
-		{controllerExecutionSurface, store.PendingCompletionRecovery},
-		{controllerPublicationSurface, store.PendingAdvancementRecovery},
-	}
-	for _, check := range checks {
-		pending, err := check.pending(report.Head)
-		if !pending {
-			continue
-		}
-		*output = parentHandoffOutput{Version: parentHandoffVersion, Controller: &report, Consistent: false, AllowedActions: []string{}, Validations: []parentHandoffValidation{}}
-		if err != nil {
-			message := err.Error()
-			output.Inconsistency = &message
-			return true
-		}
-		command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
-		if err != nil {
-			message := err.Error()
-			output.Inconsistency = &message
-			return true
-		}
-		applyControllerRecoveryHandoff(output, check.surface, string(command))
-		return true
-	}
-	if _, _, err := store.LoadTransition(report.Head.PendingTransitionID); err != nil {
 		failParentCompletionHandoff(output, err)
 		return true
 	}
-	command, err := json.Marshal(workflow.ControllerExecutionCommand{Action: "recover", ExpectedGeneration: report.Head.ControllerGeneration, TransitionID: report.Head.PendingTransitionID})
+	operation, err := store.ProjectParentCompletion()
 	if err != nil {
 		failParentCompletionHandoff(output, err)
 		return true
 	}
-	applyControllerRecoveryHandoff(output, controllerExecutionSurface, string(command))
+	if operation.Operation != controller.PublicationOperationRecover {
+		failParentCompletionHandoff(output, errors.New("pending Controller has no projected recovery"))
+		return true
+	}
+	var command any
+	switch operation.Surface {
+	case controller.ExecutionOperationSurface:
+		if operation.Execution == nil ||
+			operation.Execution.Action != controller.PublicationOperationRecover ||
+			operation.Execution.ExpectedGeneration != report.Head.ControllerGeneration ||
+			operation.Execution.TransitionID != report.Head.PendingTransitionID {
+			failParentCompletionHandoff(output, errors.New("projected execution recovery differs from Controller status"))
+			return true
+		}
+		command = operation.Execution
+	case controller.PublicationOperationSurface:
+		if operation.Command == nil ||
+			operation.Command.Action != controller.PublicationOperationRecover ||
+			operation.Command.ExpectedGeneration != report.Head.ControllerGeneration ||
+			operation.Command.TransitionID != report.Head.PendingTransitionID {
+			failParentCompletionHandoff(output, errors.New("projected publication recovery differs from Controller status"))
+			return true
+		}
+		command = operation.Command
+	default:
+		failParentCompletionHandoff(output, errors.New("pending Controller projected an invalid recovery surface"))
+		return true
+	}
+	payload, err := json.Marshal(command)
+	if err != nil {
+		failParentCompletionHandoff(output, err)
+		return true
+	}
+	applyControllerRecoveryHandoff(output, operation.Surface, string(payload))
 	return true
 }
 
