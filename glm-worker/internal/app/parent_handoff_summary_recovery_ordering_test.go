@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -21,6 +22,13 @@ func TestSummaryRecoveryHandoffDoesNotBypassPendingControllerTransition(t *testi
 		t.Fatalf("missing real pending publication transition: %#v err=%v", head, err)
 	}
 	pendingID := head.PendingTransitionID
+	operation, err := store.ProjectParentCompletion()
+	if err != nil || operation.Operation != "recover" || operation.Surface != controller.ExecutionOperationSurface ||
+		operation.Execution == nil || operation.Command != nil ||
+		operation.Execution.ExpectedGeneration != head.ControllerGeneration ||
+		operation.Execution.TransitionID != pendingID {
+		t.Fatalf("canonical completion recovery projection: %#v err=%v", operation, err)
+	}
 	bound, _ := retiredWorkflowRuntime(t, cfg)
 	st := startParentHandoffTask(t, bound)
 	const sessionID = "pending-controller-summary-recovery"

@@ -37,6 +37,13 @@ func TestExternalAdvancementInterruptedRecoveryHandoff(t *testing.T) {
 	if err != nil || head.PendingTransitionID == "" {
 		t.Fatalf("pending synchronization authority: %v", err)
 	}
+	projected, err := store.ProjectParentCompletion()
+	if err != nil || projected.Operation != controller.PublicationOperationRecover ||
+		projected.Surface != controller.PublicationOperationSurface || projected.Execution != nil ||
+		projected.Command == nil || projected.Command.ExpectedGeneration != head.ControllerGeneration ||
+		projected.Command.TransitionID != head.PendingTransitionID {
+		t.Fatalf("canonical advancement recovery projection: %#v err=%v", projected, err)
+	}
 	handoff := executeParentHandoff(t, cfg)
 	var command controllerPublicationCommand
 	if !handoff.Consistent || handoff.RequiredAction == nil || *handoff.RequiredAction != controllerPublicationSurface || json.Unmarshal([]byte(handoff.RequiredActionParameters["controller_command_json"]), &command) != nil || command.Action != "recover" || command.TransitionID != head.PendingTransitionID {

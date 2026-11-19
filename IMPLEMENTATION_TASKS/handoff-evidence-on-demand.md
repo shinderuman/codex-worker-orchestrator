@@ -45,5 +45,9 @@ appのfull handoffを作った後でterminal/recovery用に削る。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md`
 - `IMPLEMENTATION_TASKS/bounded-terminal-packet-fields.md`
+
+
+## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/pending-controller-handoff-owner.md`

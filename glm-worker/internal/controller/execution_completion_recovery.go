@@ -30,14 +30,6 @@ func (s *Store) PreparedCompletionAuthority(head RepositoryControllerHead) (Sema
 	return *op.Terminal.RootTaskRef, true, nil
 }
 
-func (s *Store) PendingCompletionRecovery(head RepositoryControllerHead) (bool, error) {
-	return s.pendingTransitionRecovery(head, pendingCompletionRecoveryKind)
-}
-
-func (s *Store) PendingAdvancementRecovery(head RepositoryControllerHead) (bool, error) {
-	return s.pendingTransitionRecovery(head, pendingAdvancementRecoveryKind)
-}
-
 func pendingCompletionRecoveryKind(kind string) bool {
 	switch kind {
 	case publicationPromote, publicationPublish, executionTaskAuthoritySync, executionRuntimeDisposition:
@@ -56,7 +48,7 @@ func pendingAdvancementRecoveryKind(kind string) bool {
 	}
 }
 
-func (s *Store) pendingTransitionRecovery(head RepositoryControllerHead, recoverableKind func(string) bool) (bool, error) {
+func (s *Store) PendingCompletionRecovery(head RepositoryControllerHead) (bool, error) {
 	if head.PendingTransitionID == "" {
 		return false, nil
 	}
@@ -64,27 +56,31 @@ func (s *Store) pendingTransitionRecovery(head RepositoryControllerHead, recover
 	if err != nil {
 		return true, err
 	}
-	if !recoverableKind(record.Kind) {
+	if !pendingCompletionRecoveryKind(record.Kind) {
 		return false, nil
 	}
+	return true, s.validatePendingTransitionRecovery(head, record, phase)
+}
+
+func (s *Store) validatePendingTransitionRecovery(head RepositoryControllerHead, record TransitionRecord, phase TransitionState) error {
 	var op ExecutionOperation
 	if err := readJSON(s.executionOperationPath(record.TransitionID), &op); err != nil {
-		return true, err
+		return err
 	}
 	if !reflect.DeepEqual(record, op.Transition) {
-		return true, fmt.Errorf("pending transition recovery journal differs from transition")
+		return fmt.Errorf("pending transition recovery journal differs from transition")
 	}
 	if _, err := s.validateExecutionOperation(op); err != nil {
-		return true, err
+		return err
 	}
 	current, _, err := s.loadExecutionRecoveryAuthority(op)
 	if err != nil {
-		return true, err
+		return err
 	}
 	if !reflect.DeepEqual(current, head) {
-		return true, fmt.Errorf("pending transition recovery controller changed")
+		return fmt.Errorf("pending transition recovery controller changed")
 	}
-	return true, validateCompletionRecoveryGeneration(op, head, phase)
+	return validateCompletionRecoveryGeneration(op, head, phase)
 }
 
 func validateCompletionRecoveryGeneration(op ExecutionOperation, head RepositoryControllerHead, phase TransitionState) error {

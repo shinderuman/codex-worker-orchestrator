@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 packetの状態別契約とterminal側の `terminalProjectionFields` の二重化。後者にadvisoryがなく本文が落ちる。省略キーを記録するので完全に無通知とは断定しない。
