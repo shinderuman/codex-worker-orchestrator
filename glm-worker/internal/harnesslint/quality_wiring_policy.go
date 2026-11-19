@@ -16,8 +16,6 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 	workflowViolations, err := qualityWiringPackageViolations(root, present, "glm-worker/internal/workflow/", []string{
 		"w.captureQualitySurfaceBaseline()",
 		"w.verifyQualitySurfaceBaseline(workerPhase)",
-		"w.qualityGate(w.config.RepoRoot)",
-		"harnesslint.IsViolation(qualityReport)",
 	})
 	if err != nil {
 		return nil, err

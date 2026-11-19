@@ -29,6 +29,11 @@ func (w *Workflow) runQualityGate() (harnesslint.Report, error) {
 	if err != nil {
 		return report, w.verifyQualityGateAbort(guard, before, err)
 	}
+	if (report.Status != "pass" && !harnesslint.IsViolation(report)) ||
+		(report.Status == "pass" && len(report.Violations) != 0) {
+		invalid := fmt.Errorf("invalid machine quality gate report: status=%q violations=%d", report.Status, len(report.Violations))
+		return report, w.verifyQualityGateAbort(guard, before, invalid)
+	}
 	if err := w.recordQualityGateMutation(guard, before, report); err != nil {
 		return harnesslint.Report{}, err
 	}

@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 `analysisTestTimingRegression`以降の時刻比較・選別をindex組立から切り出す。
