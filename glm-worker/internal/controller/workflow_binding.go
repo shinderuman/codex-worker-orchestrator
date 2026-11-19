@@ -208,7 +208,6 @@ func WorkflowAuthorityTask(cfg config.AppConfig) (SemanticTaskRef, bool, error) 
 	return store.quiescentWorkflowAuthority(cfg, head, executionErr)
 }
 
-// ValidateIdleBootstrap はPlanがidleのときにControllerも正規のidle状態であることを検証する。
 func ValidateIdleBootstrap(cfg config.AppConfig) error {
 	present, err := RepositoryPresent(cfg.RepoRoot)
 	if err != nil || !present {
@@ -222,6 +221,10 @@ func ValidateIdleBootstrap(cfg config.AppConfig) error {
 	if err != nil {
 		return err
 	}
+	return store.validateIdleBootstrapState()
+}
+
+func (store *Store) validateIdleBootstrapState() error {
 	head, err := store.LoadHead()
 	if err != nil {
 		return err

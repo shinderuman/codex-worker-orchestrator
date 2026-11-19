@@ -46,6 +46,7 @@ const knownContentSHA256Flag = "--known-content-sha256"
 const (
 	rulesFile = "IMPLEMENTATION_RULES.md"
 	planFile  = "IMPLEMENTATION_PLAN.local.md"
+	activeKind = "active"
 	usage     = "usage: glm-worker --authority bootstrap | <rules|plan|active> [--known-content-sha256 <hex>]"
 )
 
@@ -121,7 +122,7 @@ func applyKnownContent(output Output, knownContentSHA string) Output {
 }
 
 func validKind(kind string) bool {
-	return kind == "rules" || kind == "plan" || kind == "active"
+	return kind == "rules" || kind == "plan" || kind == activeKind
 }
 
 func findRepoRoot(start string) (string, error) {
@@ -208,20 +209,7 @@ func readSnapshot(root string) (snapshot, error) {
 		return snapshot{}, err
 	}
 	if len(prepared.Active) == 0 {
-		if err := prepared.Schedule.ValidateIdle(); err != nil {
-			return snapshot{}, err
-		}
-		entries, err := taskcontract.EnumerateTaskCorpus(cfg.RepoRoot)
-		if err != nil {
-			return snapshot{}, err
-		}
-		if err := repositoryproject.ValidateClosure(prepared.Schedule, entries, "idle bootstrap"); err != nil {
-			return snapshot{}, err
-		}
-		if err := controller.ValidateIdleBootstrap(cfg); err != nil {
-			return snapshot{}, err
-		}
-		return snapshot{rules: rules, plan: plan, hash: snapshotHash(rules, plan, "", nil)}, nil
+		return readIdleSnapshot(cfg, prepared.Schedule, rules, plan)
 	}
 	activePath := prepared.Active[0]
 	executionTask, canonical, err := controller.WorkflowAuthorityTask(cfg)
@@ -236,6 +224,24 @@ func readSnapshot(root string) (snapshot, error) {
 		return snapshot{}, err
 	}
 	return snapshot{rules: rules, plan: plan, active: active, activePath: activePath, hash: snapshotHash(rules, plan, activePath, active)}, nil
+}
+
+
+func readIdleSnapshot(cfg config.AppConfig, schedule taskcontract.PlanSchedule, rules, plan []byte) (snapshot, error) {
+	if err := schedule.ValidateIdle(); err != nil {
+		return snapshot{}, err
+	}
+	entries, err := taskcontract.EnumerateTaskCorpus(cfg.RepoRoot)
+	if err != nil {
+		return snapshot{}, err
+	}
+	if err := repositoryproject.ValidateClosure(schedule, entries, "idle bootstrap"); err != nil {
+		return snapshot{}, err
+	}
+	if err := controller.ValidateIdleBootstrap(cfg); err != nil {
+		return snapshot{}, err
+	}
+	return snapshot{rules: rules, plan: plan, hash: snapshotHash(rules, plan, "", nil)}, nil
 }
 
 func readSnapshotMetadata(root string, metadata map[string][]byte, sealed bool) ([]byte, []byte, error) {
@@ -296,7 +302,7 @@ func snapshotHash(rules []byte, plan []byte, activePath string, active []byte) s
 }
 
 func snapshotPart(kind string, snap snapshot) (Output, error) {
-	if kind == "active" && snap.activePath == "" {
+	if kind == activeKind && snap.activePath == "" {
 		return Output{}, fmt.Errorf("idle schedule has no ACTIVE Task authority")
 	}
 	var content []byte
@@ -305,7 +311,7 @@ func snapshotPart(kind string, snap snapshot) (Output, error) {
 		content = snap.rules
 	case "plan":
 		content = snap.plan
-	case "active":
+	case activeKind:
 		content = snap.active
 	default:
 		return Output{}, fmt.Errorf("unknown kind %q", kind)

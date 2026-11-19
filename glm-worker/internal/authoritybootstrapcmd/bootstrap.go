@@ -11,10 +11,10 @@ type BootstrapPart struct {
 }
 
 type BootstrapOutput struct {
-	AuthoritySnapshotSHA256 string        `json:"authority_snapshot_sha256"`
-	ActiveTask              string        `json:"active_task"`
-	Rules                   BootstrapPart `json:"rules"`
-	Plan                    BootstrapPart `json:"plan"`
+	AuthoritySnapshotSHA256 string         `json:"authority_snapshot_sha256"`
+	ActiveTask              string         `json:"active_task"`
+	Rules                   BootstrapPart  `json:"rules"`
+	Plan                    BootstrapPart  `json:"plan"`
 	Active                  *BootstrapPart `json:"active,omitempty"`
 }
 

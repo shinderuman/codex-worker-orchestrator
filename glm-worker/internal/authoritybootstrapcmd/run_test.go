@@ -328,22 +328,25 @@ func TestLoadSnapshotAcceptsIdleAuthorityWithoutFakeTask(t *testing.T) {
 }
 
 func TestLoadSnapshotRejectsMalformedIdleSchedule(t *testing.T) {
-	cases := map[string]string{
-		"nonempty NEXT": "## ACTIVE\n\n## NEXT\n- `IMPLEMENTATION_TASKS/next.md`\n\n## BLOCKED\n",
-		"duplicate ACTIVE": "## ACTIVE\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n",
-		"missing BLOCKED": "## ACTIVE\n\n## NEXT\n",
-		"invalid BLOCKED": "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/../bad.md`\n",
-		"active GOAL without Task": "## GOAL\nstatus: active\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n",
-		"completed GOAL missing section": "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## NEXT\n",
-		"completed GOAL duplicate ACTIVE": "## GOAL\nstatus: completed\n\n## ACTIVE\n\n## ACTIVE\n\n## NEXT\n\n## BLOCKED\n",
-		"missing BLOCKED Task": "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/missing.md`\n",
-		"duplicate BLOCKED Task": "## ACTIVE\n\n## NEXT\n\n## BLOCKED\n- `IMPLEMENTATION_TASKS/missing.md`\n- `IMPLEMENTATION_TASKS/missing.md`\n",
+	cases := []struct {
+		name string
+		plan string
+	}{
+		{"nonempty NEXT", "## ACTIVE\\n\\n## NEXT\\n- `IMPLEMENTATION_TASKS/next.md`\\n\\n## BLOCKED\\n"},
+		{"duplicate ACTIVE", "## ACTIVE\\n\\n## ACTIVE\\n\\n## NEXT\\n\\n## BLOCKED\\n"},
+		{"missing BLOCKED", "## ACTIVE\\n\\n## NEXT\\n"},
+		{"invalid BLOCKED", "## ACTIVE\\n\\n## NEXT\\n\\n## BLOCKED\\n- `IMPLEMENTATION_TASKS/../bad.md`\\n"},
+		{"active GOAL without Task", "## GOAL\\nstatus: active\\n\\n## ACTIVE\\n\\n## NEXT\\n\\n## BLOCKED\\n"},
+		{"completed GOAL missing section", "## GOAL\\nstatus: completed\\n\\n## ACTIVE\\n\\n## NEXT\\n"},
+		{"completed GOAL duplicate ACTIVE", "## GOAL\\nstatus: completed\\n\\n## ACTIVE\\n\\n## ACTIVE\\n\\n## NEXT\\n\\n## BLOCKED\\n"},
+		{"missing BLOCKED Task", "## ACTIVE\\n\\n## NEXT\\n\\n## BLOCKED\\n- `IMPLEMENTATION_TASKS/missing.md`\\n"},
+		{"duplicate BLOCKED Task", "## ACTIVE\\n\\n## NEXT\\n\\n## BLOCKED\\n- `IMPLEMENTATION_TASKS/missing.md`\\n- `IMPLEMENTATION_TASKS/missing.md`\\n"},
 	}
-	for name, plan := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			writeTestFile(t, root, rulesFile, "rules\n")
-			writeTestFile(t, root, planFile, plan)
+			writeTestFile(t, root, planFile, tc.plan)
 			if _, err := buildBootstrapFromRoot(root); err == nil {
 				t.Fatal("malformed idle schedule admitted")
 			}
