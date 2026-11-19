@@ -170,7 +170,7 @@ func BuildReport(c Comparison) Report {
 		},
 		MeasurementBoundary: c.Spec.MeasurementBoundary,
 		Isolation:           c.Spec.Isolation,
-		WorktreeIdentities: ReportWorktreeIdentityPair{
+		WorktreeIdentities:  ReportWorktreeIdentityPair{
 			Direct: c.Direct.WorktreeIdentity,
 			Orchestrated: c.Orchestrated.WorktreeIdentity,
 		},
