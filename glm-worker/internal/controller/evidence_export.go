@@ -204,6 +204,7 @@ type evidenceExportBuilder struct {
 	association    *runtimeSessionAssociation
 	archiveRefs    []evidenceExportArchiveSource
 	validationRuns []collectedValidationRun
+	decodedEvidence *evidenceExportDecodedRecords
 
 	workspaceRoot           string
 	workspaceRootResolved   bool
