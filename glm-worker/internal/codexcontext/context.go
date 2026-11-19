@@ -25,7 +25,7 @@ type Result struct {
 
 const (
 	ProjectConfigRelativePath = ".codex/config.toml"
-	managedMarker             = "# managed-by: codex-worker-orchestrator glm-codex-context v2"
+	managedMarker             = "# managed-by: codex-worker-orchestrator glm-codex-context v1"
 	excludeMarker             = "# codex-worker-orchestrator glm-codex-context v1"
 	excludePattern            = "/.codex/config.toml"
 	contextStateEnabled       = "enabled"
