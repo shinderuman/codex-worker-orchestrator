@@ -38,11 +38,15 @@ func (s *Store) prepareCompletionReadiness(op ExecutionOperation) (EvidenceObjec
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
-	finalValidations, err := s.collectFinalValidationEvidence(candidate)
+	inventory, err := s.publicationRunInventoryFor(candidate)
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
-	smokeProbes, err := s.collectSmokeProbeEvidence(candidate)
+	finalValidations, err := s.collectFinalValidationEvidenceFromInventory(candidate, inventory)
+	if err != nil {
+		return EvidenceObjectRef{}, err
+	}
+	smokeProbes, err := s.collectSmokeProbeEvidenceFromInventory(candidate, inventory)
 	if err != nil {
 		return EvidenceObjectRef{}, err
 	}
@@ -146,10 +150,14 @@ func (s *Store) validateCompletionReadiness(op ExecutionOperation, phase Transit
 	if err != nil {
 		return ready, err
 	}
-	if err := s.verifyFinalValidationEvidence(candidate, ready.FinalValidations); err != nil {
+	inventory, err := s.publicationRunInventoryFor(candidate)
+	if err != nil {
 		return ready, err
 	}
-	if err := s.verifySmokeProbeEvidence(candidate, ready.SmokeProbes); err != nil {
+	if err := s.verifyFinalValidationEvidenceFromInventory(candidate, ready.FinalValidations, inventory); err != nil {
+		return ready, err
+	}
+	if err := s.verifySmokeProbeEvidenceFromInventory(candidate, ready.SmokeProbes, inventory); err != nil {
 		return ready, err
 	}
 	if err := s.reverifyCompletionRuntime(op, candidate, ready); err != nil {

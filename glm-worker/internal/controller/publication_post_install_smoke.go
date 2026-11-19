@@ -202,6 +202,7 @@ func (s *Store) CandidatePostInstallSmokeWorkspace(input PublicationInput) (Acce
 	return candidate, root, func() error { return s.releaseSmokeProbeCheckout(root, candidate.TaskRef) }, nil
 }
 
+
 func (s *Store) InterruptedPostInstallSmokeWorkspace(candidate AcceptedCandidate) (bool, error) {
 	root, err := s.smokeProbeWorkspace(candidate)
 	if err != nil {
@@ -222,11 +223,15 @@ func (s *Store) InterruptedPostInstallSmokeWorkspace(candidate AcceptedCandidate
 	if err != nil {
 		return false, err
 	}
+	inventory, err := readPublicationRunInventory(module)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	for _, probe := range candidate.RequiredSmokeProbes {
-		record, found, err := latestSmokeProbeRun(module, root, probe.ProbeID)
-		if os.IsNotExist(err) {
-			return false, nil
-		}
+		record, found, err := inventory.latestSmokeProbe(root, probe.ProbeID)
 		if err != nil {
 			return false, err
 		}
@@ -236,7 +241,6 @@ func (s *Store) InterruptedPostInstallSmokeWorkspace(candidate AcceptedCandidate
 	}
 	return false, nil
 }
-
 func (s *Store) PreparePostInstallSmokeCheckout(candidate AcceptedCandidate, interrupted bool) error {
 	root, err := s.smokeProbeWorkspace(candidate)
 	if err != nil {
@@ -289,23 +293,44 @@ func (s *Store) OutstandingSmokeProbes(c AcceptedCandidate) ([]SmokeProbeDeclara
 	return s.outstandingSmokeProbes(c)
 }
 
+
 func (s *Store) outstandingSmokeProbes(c AcceptedCandidate) ([]SmokeProbeDeclaration, error) {
+	return s.outstandingSmokeProbesFromInventory(c, nil)
+}
+
+func (s *Store) outstandingSmokeProbesFromInventory(c AcceptedCandidate, inventory *publicationRunInventory) ([]SmokeProbeDeclaration, error) {
 	probes, err := normalizeSmokeProbes(c.RequiredSmokeProbes)
-	if err != nil {
+	if err != nil || len(probes) == 0 {
 		return nil, err
-	}
-	if len(probes) == 0 {
-		return nil, nil
 	}
 	source, err := s.finalValidationSource(c)
 	if err != nil {
 		return nil, err
 	}
+	if inventory == nil {
+		inventory, err = s.publicationRunInventoryFor(c)
+		if errors.Is(err, os.ErrNotExist) {
+			return probes, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if inventory.module == nil {
+		return probes, nil
+	}
+	repoRoot, err := s.smokeProbeWorkspace(c)
+	if err != nil {
+		return nil, err
+	}
+	deployment, err := s.PostInstallSmokeDeployment(c)
+	if err != nil {
+		return nil, err
+	}
 	return outstandingObligations(probes, func(probe SmokeProbeDeclaration) (bool, error) {
-		return s.smokeProbeSatisfied(c, probe, source)
+		return smokeProbeSatisfied(inventory, repoRoot, source, c, probe, deployment)
 	})
 }
-
 func outstandingObligations[T any](requests []T, satisfied func(T) (bool, error)) ([]T, error) {
 	outstanding := make([]T, 0, len(requests))
 	for _, request := range requests {
@@ -320,33 +345,23 @@ func outstandingObligations[T any](requests []T, satisfied func(T) (bool, error)
 	return outstanding, nil
 }
 
-func (s *Store) smokeProbeSatisfied(c AcceptedCandidate, probe SmokeProbeDeclaration, source finalValidationSource) (bool, error) {
-	module, err := s.finalValidationRunStore(c.TaskRef)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	repoRoot, err := s.smokeProbeWorkspace(c)
-	if err != nil {
-		return false, err
-	}
-	deployment, err := s.PostInstallSmokeDeployment(c)
-	if err != nil {
-		return false, err
-	}
-	record, found, err := latestSmokeProbeRun(module, repoRoot, probe.ProbeID)
+
+func smokeProbeSatisfied(inventory *publicationRunInventory, repoRoot string, source finalValidationSource, c AcceptedCandidate, probe SmokeProbeDeclaration, deployment SmokeProbeDeployment) (bool, error) {
+	record, found, err := inventory.latestSmokeProbe(repoRoot, probe.ProbeID)
 	if err != nil || !found {
 		return false, err
 	}
 	if !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
 		return false, nil
 	}
-	return verifyTerminalSmokeProbePass(module, record) == nil, nil
+	return verifyTerminalSmokeProbePass(inventory.module, record) == nil, nil
 }
 
 func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvidence, error) {
+	return s.collectSmokeProbeEvidenceFromInventory(c, nil)
+}
+
+func (s *Store) collectSmokeProbeEvidenceFromInventory(c AcceptedCandidate, inventory *publicationRunInventory) ([]SmokeProbeEvidence, error) {
 	probes, err := normalizeSmokeProbes(c.RequiredSmokeProbes)
 	if err != nil || len(probes) == 0 {
 		return nil, err
@@ -363,20 +378,22 @@ func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvid
 	if err != nil {
 		return nil, err
 	}
-	module, err := s.finalValidationRunStore(c.TaskRef)
-	if err != nil {
-		return nil, err
+	if inventory == nil {
+		inventory, err = s.publicationRunInventoryFor(c)
+		if err != nil {
+			return nil, err
+		}
 	}
 	evidence := make([]SmokeProbeEvidence, 0, len(probes))
 	for _, probe := range probes {
-		record, found, err := latestSmokeProbeRun(module, repoRoot, probe.ProbeID)
+		record, found, err := inventory.latestSmokeProbe(repoRoot, probe.ProbeID)
 		if err != nil {
 			return nil, err
 		}
 		if !found || !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
 			return nil, fmt.Errorf("post-install smoke probe %s has no terminal PASS run for the current candidate source and verification deployment", probe.ProbeID)
 		}
-		if err := verifyTerminalSmokeProbePass(module, record); err != nil {
+		if err := verifyTerminalSmokeProbePass(inventory.module, record); err != nil {
 			return nil, fmt.Errorf("post-install smoke probe %s has no complete PASS evidence: %w", probe.ProbeID, err)
 		}
 		evidence = append(evidence, SmokeProbeEvidence{ProbeID: probe.ProbeID, ValidationRunID: record.ValidationRunID})
@@ -385,6 +402,10 @@ func (s *Store) collectSmokeProbeEvidence(c AcceptedCandidate) ([]SmokeProbeEvid
 }
 
 func (s *Store) verifySmokeProbeEvidence(c AcceptedCandidate, recorded []SmokeProbeEvidence) error {
+	return s.verifySmokeProbeEvidenceFromInventory(c, recorded, nil)
+}
+
+func (s *Store) verifySmokeProbeEvidenceFromInventory(c AcceptedCandidate, recorded []SmokeProbeEvidence, inventory *publicationRunInventory) error {
 	probes, err := normalizeSmokeProbes(c.RequiredSmokeProbes)
 	if err != nil {
 		return err
@@ -393,9 +414,8 @@ func (s *Store) verifySmokeProbeEvidence(c AcceptedCandidate, recorded []SmokePr
 	if err != nil {
 		return err
 	}
-	return s.verifySmokeProbeRuns(c, probes, byProbe)
+	return s.verifySmokeProbeRuns(c, probes, byProbe, inventory)
 }
-
 func smokeProbeRecordShape(probes []SmokeProbeDeclaration, recorded []SmokeProbeEvidence) (map[string]string, error) {
 	if len(probes) == 0 {
 		if len(recorded) != 0 {
@@ -421,7 +441,8 @@ func smokeProbeRecordShape(probes []SmokeProbeDeclaration, recorded []SmokeProbe
 	return byProbe, nil
 }
 
-func (s *Store) verifySmokeProbeRuns(c AcceptedCandidate, probes []SmokeProbeDeclaration, byProbe map[string]string) error {
+
+func (s *Store) verifySmokeProbeRuns(c AcceptedCandidate, probes []SmokeProbeDeclaration, byProbe map[string]string, inventory *publicationRunInventory) error {
 	if len(probes) == 0 {
 		return nil
 	}
@@ -437,30 +458,34 @@ func (s *Store) verifySmokeProbeRuns(c AcceptedCandidate, probes []SmokeProbeDec
 	if err != nil {
 		return err
 	}
-	module, err := s.finalValidationRunStore(c.TaskRef)
-	if err != nil {
-		return err
+	if inventory == nil {
+		inventory, err = s.publicationRunInventoryFor(c)
+		if err != nil {
+			return err
+		}
 	}
 	for _, probe := range probes {
-		if err := verifySmokeProbeRun(module, repoRoot, source, c, probe, deployment, byProbe[probe.ProbeID]); err != nil {
+		runID := byProbe[probe.ProbeID]
+		record, err := inventory.record(runID)
+		if err != nil {
+			return fmt.Errorf("post-install smoke probe %s run %s is unreadable: %w", probe.ProbeID, runID, err)
+		}
+		if err := verifySmokeProbeRun(inventory, record, repoRoot, source, c, probe, deployment); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func verifySmokeProbeRun(module *state.StateStore, repoRoot string, source finalValidationSource, c AcceptedCandidate, probe SmokeProbeDeclaration, deployment SmokeProbeDeployment, runID string) error {
-	record, err := qualitygate.Read(module, runID)
-	if err != nil {
-		return fmt.Errorf("post-install smoke probe %s run %s is unreadable: %w", probe.ProbeID, runID, err)
-	}
+func verifySmokeProbeRun(inventory *publicationRunInventory, record qualitygate.RunRecord, repoRoot string, source finalValidationSource, c AcceptedCandidate, probe SmokeProbeDeclaration, deployment SmokeProbeDeployment) error {
+	runID := record.ValidationRunID
 	if record.Form != smokeProbeForm || !smokeProbeMatchesSource(record, repoRoot, source, c, probe, deployment) {
 		return fmt.Errorf("post-install smoke probe %s run %s does not match the current candidate source, declaration, and verification deployment", probe.ProbeID, runID)
 	}
-	if err := verifyTerminalSmokeProbePass(module, record); err != nil {
+	if err := verifyTerminalSmokeProbePass(inventory.module, record); err != nil {
 		return fmt.Errorf("post-install smoke probe %s run %s has no complete PASS evidence: %w", probe.ProbeID, runID, err)
 	}
-	latest, found, err := latestSmokeProbeRun(module, repoRoot, probe.ProbeID)
+	latest, found, err := inventory.latestSmokeProbe(repoRoot, probe.ProbeID)
 	if err != nil {
 		return err
 	}
@@ -471,36 +496,15 @@ func verifySmokeProbeRun(module *state.StateStore, repoRoot string, source final
 }
 
 func latestSmokeProbeRun(module *state.StateStore, repoRoot, probeID string) (qualitygate.RunRecord, bool, error) {
-	var latest qualitygate.RunRecord
-	found := false
-	entries, err := os.ReadDir(module.Path(qualitygate.RunDirectory))
+	inventory, err := readPublicationRunInventory(module)
 	if errors.Is(err, os.ErrNotExist) {
-		return latest, false, nil
+		return qualitygate.RunRecord{}, false, nil
 	}
 	if err != nil {
-		return latest, false, err
+		return qualitygate.RunRecord{}, false, err
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
-			continue
-		}
-		record, err := qualitygate.Read(module, entry.Name())
-		if err != nil {
-			return latest, false, fmt.Errorf("post-install smoke run %s is unreadable: %w", entry.Name(), err)
-		}
-		if record.Form != smokeProbeForm || record.ProbeID != probeID || filepath.Clean(record.Repository) != filepath.Clean(repoRoot) {
-			continue
-		}
-		switch {
-		case !found, latest.StartedAt.Before(record.StartedAt):
-			latest, found = record, true
-		case latest.StartedAt.Equal(record.StartedAt):
-			return latest, false, fmt.Errorf("post-install smoke run ordering is ambiguous")
-		}
-	}
-	return latest, found, nil
+	return inventory.latestSmokeProbe(repoRoot, probeID)
 }
-
 func verifyTerminalSmokeProbePass(module *state.StateStore, record qualitygate.RunRecord) error {
 	taskID, err := module.TaskID()
 	if err != nil {
