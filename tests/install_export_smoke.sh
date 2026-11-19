@@ -1,4 +1,6 @@
 #!/bin/sh
+# shellcheck disable=SC2154
+# Caller-owned fixture variables are intentionally provided by install_smoke.sh.
 # Sourced by install_smoke.sh within the existing installed-runtime fixture.
 export_lock_pid=
 export_writer_pid=
