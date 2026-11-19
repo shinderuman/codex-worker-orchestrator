@@ -45,7 +45,9 @@ func TestReviewAdmissionRequiresReachableQualityGate(t *testing.T) {
 				{structured: passPacket()},
 			}}
 			w := newGitWorkflowT(t, st, r, repo)
-			w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }
+			w.collectChangedPaths = func(string, string) ([]string, error) {
+				return []string{"tracked.md"}, nil
+			}
 			calls := 0
 			w.qualityGate = func(root string) (harnesslint.Report, error) {
 				calls++
