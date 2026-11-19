@@ -20,6 +20,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 glm-worker/internal/app/repo_search.go の printRepoSearchWithSearch は質問、スコープ、パスと行からdigestを作る。buildRepoSearchOutput は同じ入力結果でもbudget不足ならlocatorを返さず、budgetを増やすよう案内する。glm-worker/internal/parentevidence/support.go の FinishReadInScopeResult はrefinementにもSaveLedgerを呼ぶ。同じdecision leaseで指示どおりbudgetだけ増やすと、結果は同じdigestでDecideReadがrender前に重複として拒否する。app/repo_search_test.go の TestPrintRepoSearchRefinementIsDeduplicatedWithinDecisionLease は同じ小さいbudgetを二度使うケースだけを固定している。

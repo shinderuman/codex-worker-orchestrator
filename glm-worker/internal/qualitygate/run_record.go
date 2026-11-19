@@ -1,6 +1,7 @@
 package qualitygate
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -244,7 +245,7 @@ func nestedUntrackedValidationCandidates(repository string, listing []byte) ([]s
 		if dir == "" || !strings.HasSuffix(dir, "/") {
 			continue
 		}
-		entries, err := state.NestedUntrackedRepositoryEntries(repository, dir)
+		entries, err := state.NestedUntrackedRepositoryEntries(context.Background(), repository, dir)
 		if err != nil {
 			return nil, err
 		}

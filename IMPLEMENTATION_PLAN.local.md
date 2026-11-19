@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/docker-source-archive-cancellation.md`](IMPLEMENTATION_TASKS/docker-source-archive-cancellation.md)
+- [`IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md`](IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md`](IMPLEMENTATION_TASKS/search-refinement-delivery-identity.md)
 - [`IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md`](IMPLEMENTATION_TASKS/rollout-usage-gap-accounting.md)
 - [`IMPLEMENTATION_TASKS/idle-authority-bootstrap.md`](IMPLEMENTATION_TASKS/idle-authority-bootstrap.md)
 - [`IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md`](IMPLEMENTATION_TASKS/quality-review-metadata-harness-scope.md)
