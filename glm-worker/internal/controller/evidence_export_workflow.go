@@ -207,10 +207,11 @@ func (b *evidenceExportBuilder) analysisWorkflow(live EvidenceExportRuntimeSecti
 		Regression:   emptyWorkflowRegression(evidenceAnalysisStatusAbsent),
 	}
 	decoded := b.exportDecodedEvidence()
-	if decoded.telemetry.status == evidenceAnalysisStatusPartial ||
-		decoded.lifecycle.status == evidenceAnalysisStatusPartial ||
-		decoded.rounds.status == evidenceAnalysisStatusPartial {
+	if decoded.isPartial() {
 		workflow.Status = evidenceAnalysisStatusPartial
+	}
+	if decoded.events.status == evidenceAnalysisStatusPartial {
+		workflow.Unknown = append(workflow.Unknown, "task events are partial; observed validation actions and event-derived retries are incomplete")
 	}
 	latest := b.latestWorkflowObservation(b.workflowObservationWindow(live))
 	if latest == nil {

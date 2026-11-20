@@ -17,7 +17,7 @@ func TestQualityWiringRequiresBaselineAndRepositoryFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(violations) != 11 {
+	if len(violations) != 13 {
 		t.Fatalf("violations = %+v", violations)
 	}
 }
@@ -30,6 +30,54 @@ func writeQualityFile(t *testing.T, root, path, content string) {
 	}
 	if err := execfile.Write(absolute, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestQualityWiringIgnoresNestedWorkflowPackage(t *testing.T) {
+	root := t.TempDir()
+	const workflow = "glm-worker/internal/workflow/workflow.go"
+	const nested = "glm-worker/internal/workflow/example/example.go"
+	writeQualityFile(t, root, workflow, "package workflow\n")
+	writeQualityFile(t, root, nested, "package example\nfunc (w *Workflow) review() { w.captureQualitySurfaceBaseline() }\n")
+	violations, err := qualityWiringPackageViolations(root, map[string]bool{workflow: true, nested: true}, "glm-worker/internal/workflow/", []string{"w.captureQualitySurfaceBaseline()"})
+	if err != nil || len(violations) != 1 {
+		t.Fatalf("nested package supplied workflow wiring: %+v, %v", violations, err)
+	}
+}
+
+func TestQualityWiringResolvesPackageConstant(t *testing.T) {
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	const settings = "glm-worker/internal/workflow/settings.go"
+	writeQualityFile(t, root, check.path, "package workflow\nimport \"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint\"\nfunc runRepositoryQualityGate(root string) { harnesslint.Run(root, applyFixes); captureQualitySurfaceDigest(root) }\n")
+	present := map[string]bool{check.path: true, settings: true}
+	for _, value := range []string{"true", "false"} {
+		writeQualityFile(t, root, settings, "package workflow\nconst applyFixes = "+value+"\n")
+		violations, err := qualityWiringCheckViolations(root, present, check)
+		if err != nil || (len(violations) == 0) != (value == "true") {
+			t.Fatalf("applyFixes=%s: violations=%+v err=%v", value, violations, err)
+		}
+	}
+}
+
+func TestQualityWiringRequiresCISmokeCommand(t *testing.T) {
+	check := ciWorkflowWiringCheck()
+	const script = "./tests/install_quality_tools_smoke.sh"
+	for _, tc := range []struct {
+		step string
+		want bool
+	}{
+		{step: "run: sh " + script, want: true},
+		{step: "run: |\n          # smoke\n          sh " + script, want: true},
+		{step: "run: |\n          # sh " + script},
+		{step: "name: " + script},
+		{step: "run: echo " + script},
+	} {
+		source := "jobs:\n  lint:\n    steps:\n      - " + tc.step + "\n"
+		violations, err := qualityWiringRunViolations(check, []byte(source))
+		if err != nil || (len(violations) == 0) != tc.want {
+			t.Fatalf("step=%s violations=%+v err=%v", tc.step, violations, err)
+		}
 	}
 }
 

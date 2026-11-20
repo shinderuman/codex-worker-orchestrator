@@ -7,8 +7,12 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"path"
+	"slices"
 	"strconv"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 type qualityWiringGoEvidence struct {
@@ -25,19 +29,18 @@ func qualityWiringPackageViolations(root string, present map[string]bool, prefix
 		return nil, err
 	}
 	found := make(map[string]bool, len(required))
-	packageFound := false
-	for path := range present {
-		if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			continue
-		}
-		packageFound = true
-		if err := scanQualityWiringCalls(root, path, required, found); err != nil {
-			return nil, err
-		}
+	directory := strings.TrimSuffix(prefix, "/")
+	set := token.NewFileSet()
+	files, err := qualityWiringPackageFiles(root, directory, present, set)
+	if err != nil {
+		return nil, err
 	}
-	path := strings.TrimSuffix(prefix, "/")
-	if !packageFound {
-		return []Violation{{Rule: "quality-wiring", Path: path, Line: 1, Column: 1, Message: "required quality-gate package is missing"}}, nil
+	if len(files) == 0 {
+		return []Violation{{Rule: "quality-wiring", Path: directory, Line: 1, Column: 1, Message: "required quality-gate package is missing"}}, nil
+	}
+	bindings, _ := qualityWiringPartialBindings(set, files)
+	for _, file := range files {
+		scanQualityWiringCalls(file, &bindings, required, found)
 	}
 	var violations []Violation
 	for _, token := range tokens {
@@ -45,7 +48,7 @@ func qualityWiringPackageViolations(root string, present map[string]bool, prefix
 			continue
 		}
 		violations = append(violations, Violation{
-			Rule: "quality-wiring", Path: path, Line: 1, Column: 1,
+			Rule: "quality-wiring", Path: directory, Line: 1, Column: 1,
 			Message: "required quality-gate wiring is missing: " + token,
 		})
 	}
@@ -72,26 +75,38 @@ func qualityWiringRequiredCalls(tokens []string) (map[string]string, error) {
 	return required, nil
 }
 
-func scanQualityWiringCalls(root, path string, required map[string]string, found map[string]bool) error {
-	data, err := readRegularFile(root, path)
-	if err != nil {
-		return err
+func qualityWiringPackageFiles(root, directory string, present map[string]bool, set *token.FileSet) ([]*ast.File, error) {
+	var paths []string
+	for name := range present {
+		if path.Dir(name) == directory && strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
+			paths = append(paths, name)
+		}
 	}
-	set := token.NewFileSet()
-	file, err := parser.ParseFile(set, path, data, 0)
-	if err != nil {
-		return fmt.Errorf("parse quality wiring %s: %w", path, err)
+	slices.Sort(paths)
+	files := make([]*ast.File, 0, len(paths))
+	for _, name := range paths {
+		data, err := readRegularFile(root, name)
+		if err != nil {
+			return nil, err
+		}
+		file, err := parser.ParseFile(set, name, data, 0)
+		if err != nil {
+			return nil, fmt.Errorf("parse quality wiring %s: %w", name, err)
+		}
+		files = append(files, file)
 	}
-	bindings, _ := qualityWiringPartialBindings(set, file)
+	return files, nil
+}
+
+func scanQualityWiringCalls(file *ast.File, bindings *types.Info, required map[string]string, found map[string]bool) {
 	importName := qualityWiringHarnesslintImport(file)
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok || function.Body == nil {
 			continue
 		}
-		scanQualityWiringFunction(function, required, found, importName, &bindings)
+		scanQualityWiringFunction(function, required, found, importName, bindings)
 	}
-	return nil
 }
 
 func scanQualityWiringFunction(function *ast.FuncDecl, required map[string]string, found map[string]bool, importName string, bindings *types.Info) {
@@ -212,7 +227,7 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 		return nil, err
 	}
 	text := string(data)
-	requiredGo, err := qualityWiringGoTokensForPath(check.path, data)
+	requiredGo, err := qualityWiringGoTokensForPath(root, check.path, present)
 	if err != nil {
 		return nil, err
 	}
@@ -241,14 +256,79 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 		return nil, err
 	}
 	violations = append(violations, orderViolations...)
+	runViolations, err := qualityWiringRunViolations(check, data)
+	return append(violations, runViolations...), err
+}
+
+func qualityWiringGoTokensForPath(root, name string, present map[string]bool) (qualityWiringGoEvidence, error) {
+	if !strings.HasSuffix(name, ".go") {
+		return qualityWiringGoEvidence{}, nil
+	}
+	set := token.NewFileSet()
+	files, err := qualityWiringPackageFiles(root, path.Dir(name), present, set)
+	if err != nil {
+		return qualityWiringGoEvidence{}, err
+	}
+	for _, file := range files {
+		if set.Position(file.Package).Filename == name {
+			return qualityWiringRequiredGoTokens(set, file, files), nil
+		}
+	}
+	return qualityWiringGoEvidence{}, fmt.Errorf("quality wiring Go file not found in package: %s", name)
+}
+
+func qualityWiringRunViolations(check qualityWiringCheck, data []byte) ([]Violation, error) {
+	if len(check.runCommands) == 0 {
+		return nil, nil
+	}
+	var workflow struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(data, &workflow); err != nil {
+		return nil, fmt.Errorf("parse quality workflow %s: %w", check.path, err)
+	}
+	var violations []Violation
+	for _, command := range check.runCommands {
+		found := false
+		for _, job := range workflow.Jobs {
+			for _, step := range job.Steps {
+				found = found || qualityWiringRunCommand(step.Run, command)
+			}
+		}
+		if !found {
+			violations = append(violations, Violation{
+				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
+				Message: "required quality-gate run step is missing: " + command,
+			})
+		}
+	}
 	return violations, nil
 }
 
-func qualityWiringGoTokensForPath(path string, data []byte) (qualityWiringGoEvidence, error) {
-	if !strings.HasSuffix(path, ".go") {
-		return qualityWiringGoEvidence{}, nil
+func qualityWiringRunCommand(run, command string) bool {
+	var matched bool
+	for _, line := range strings.Split(run, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if matched {
+			return false
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 2 && (fields[0] == "sh" || fields[0] == "bash") {
+			fields = fields[1:]
+		}
+		if len(fields) != 1 || (fields[0] != command && fields[0] != strconv.Quote(command) && fields[0] != "'"+command+"'") {
+			return false
+		}
+		matched = true
 	}
-	return qualityWiringRequiredGoTokens(path, data)
+	return matched
 }
 
 func qualityWiringTokenPresent(text string, detected qualityWiringGoEvidence, token string) bool {
@@ -258,13 +338,8 @@ func qualityWiringTokenPresent(text string, detected qualityWiringGoEvidence, to
 	return strings.Contains(text, token)
 }
 
-func qualityWiringRequiredGoTokens(path string, data []byte) (qualityWiringGoEvidence, error) {
-	set := token.NewFileSet()
-	file, err := parser.ParseFile(set, path, data, 0)
-	if err != nil {
-		return qualityWiringGoEvidence{}, err
-	}
-	bindings, bindingError := qualityWiringPartialBindings(set, file)
+func qualityWiringRequiredGoTokens(set *token.FileSet, file *ast.File, files []*ast.File) qualityWiringGoEvidence {
+	bindings, bindingError := qualityWiringPartialBindings(set, files)
 	found := map[string]bool{
 		"harnesslint.Run(root, true)": false,
 		"captureQualitySurfaceDigest": false,
@@ -280,7 +355,7 @@ func qualityWiringRequiredGoTokens(path string, data []byte) (qualityWiringGoEvi
 		}
 		return true
 	})
-	return qualityWiringGoEvidence{tokens: found, bindingError: bindingError, file: file, bindings: bindings, importName: harnessImport}, nil
+	return qualityWiringGoEvidence{tokens: found, bindingError: bindingError, file: file, bindings: bindings, importName: harnessImport}
 }
 
 func qualityWiringHasDigestEvidence(node ast.Node) bool {
@@ -303,10 +378,10 @@ func qualityWiringMissingTokenMessage(token string, evidence qualityWiringGoEvid
 	return message
 }
 
-func qualityWiringPartialBindings(set *token.FileSet, file *ast.File) (types.Info, error) {
+func qualityWiringPartialBindings(set *token.FileSet, files []*ast.File) (types.Info, error) {
 	bindings := types.Info{Defs: make(map[*ast.Ident]types.Object), Uses: make(map[*ast.Ident]types.Object)}
 	configuration := types.Config{Error: func(error) {}}
-	_, err := configuration.Check(file.Name.Name, set, []*ast.File{file}, &bindings)
+	_, err := configuration.Check(files[0].Name.Name, set, files, &bindings)
 	return bindings, err
 }
 

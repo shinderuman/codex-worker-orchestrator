@@ -18,6 +18,16 @@ func writeEvidenceGateTimings(t *testing.T, fixture *evidenceExportFixture, reco
 	writeEvidenceGateRunFileContent(t, fixture, record.ValidationRunID, qualitygate.TestTimingsFile, mustEncodeTestTimings(t, record.ValidationRunID, timings))
 }
 
+func timingEvidenceExportFixture(t *testing.T) *evidenceExportFixture {
+	t.Helper()
+	fixture := newEvidenceExportFixture(t)
+	defaultRecord := fixture.runtime.Path(filepath.Join(qualitygate.RunDirectory, evidenceExportGateRunID, qualitygate.RunFile))
+	if err := os.Remove(defaultRecord); err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}
+
 func writeEvidenceGateTimingsContent(t *testing.T, fixture *evidenceExportFixture, runID, content string) {
 	t.Helper()
 	writeEvidenceGateRunFileContent(t, fixture, runID, qualitygate.TestTimingsFile, content)
@@ -238,7 +248,7 @@ func TestTimingComparisonTreatsContradictoryTimingsAsIdentityConflict(t *testing
 
 func TestExportEvidenceExposesTestTimingsAndRegressionCandidates(t *testing.T) {
 	t.Parallel()
-	fixture := newEvidenceExportFixture(t)
+	fixture := timingEvidenceExportFixture(t)
 	repoRoot, err := canonicalPath(fixture.repo)
 	if err != nil {
 		t.Fatal(err)
@@ -354,7 +364,7 @@ func TestExportEvidenceExposesTestTimingsAndRegressionCandidates(t *testing.T) {
 
 func TestExportEvidenceDisclosesCorruptGateRunTimings(t *testing.T) {
 	t.Parallel()
-	fixture := newEvidenceExportFixture(t)
+	fixture := timingEvidenceExportFixture(t)
 	repoRoot, err := canonicalPath(fixture.repo)
 	if err != nil {
 		t.Fatal(err)
@@ -391,14 +401,38 @@ func TestExportEvidenceDisclosesCorruptGateRunTimings(t *testing.T) {
 			t.Fatalf("corrupt timings were counted as collected: %#v", run)
 		}
 	}
-	if analysis.TestTimingRegression.Status != evidenceAnalysisStatusAbsent || analysis.TestTimingRegression.Runs != 0 {
-		t.Fatalf("corrupt timings fed the regression derivation: %#v", analysis.TestTimingRegression)
+	regression := analysis.TestTimingRegression
+	if regression.Runs != 2 || len(regression.Comparisons) != 1 {
+		t.Fatalf("valid run identities were lost with corrupt timings: %#v", regression)
+	}
+	comparison := regression.Comparisons[0]
+	if comparison.Latest.RunID != foreign.ValidationRunID || comparison.Baseline.RunID != "" || comparison.Unknown == "" || len(comparison.Candidates) != 0 {
+		t.Fatalf("corrupt timings fed the regression derivation: %#v", comparison)
+	}
+}
+
+func TestTimingComparisonReportsNewestRunWithoutTimings(t *testing.T) {
+	t.Parallel()
+	baseline := regressionFixtureRun("/repo", "11111111111111111111111111111111", time.Unix(6100, 0))
+	older := regressionFixtureRun("/repo", "22222222222222222222222222222222", time.Unix(6200, 0))
+	latest := regressionFixtureRun("/repo", "33333333333333333333333333333333", time.Unix(6300, 0))
+	timings := capturedFixtureTimings([]qualitygate.TestTiming{{Package: "example.com/m", Test: "TestSlow", Action: "pass", ElapsedMS: 100}})
+	b := evidenceExportBuilder{validationRuns: []collectedValidationRun{
+		{run: baseline, timings: &timings}, {run: latest}, {run: older, timings: &timings},
+	}}
+	result := b.analysisTestTimingRegression()
+	if result.Runs != 3 || len(result.Comparisons) != 1 {
+		t.Fatalf("expected every test run in one comparison: %#v", result)
+	}
+	current := result.Comparisons[0]
+	if current.Latest.RunID != latest.ValidationRunID || current.Unknown == "" || current.Baseline.RunID != "" || len(current.Candidates) != 0 {
+		t.Fatalf("older run replaced unobserved latest run: %#v", current)
 	}
 }
 
 func TestExportEvidenceTimingComparisonWithoutRecordedConditionsStaysUnknown(t *testing.T) {
 	t.Parallel()
-	fixture := newEvidenceExportFixture(t)
+	fixture := timingEvidenceExportFixture(t)
 	repoRoot, err := canonicalPath(fixture.repo)
 	if err != nil {
 		t.Fatal(err)
@@ -433,7 +467,7 @@ func TestExportEvidenceTimingComparisonWithoutRecordedConditionsStaysUnknown(t *
 
 func TestExportEvidenceTimingComparisonSkipsIncomparableRuns(t *testing.T) {
 	t.Parallel()
-	fixture := newEvidenceExportFixture(t)
+	fixture := timingEvidenceExportFixture(t)
 	repoRoot, err := canonicalPath(fixture.repo)
 	if err != nil {
 		t.Fatal(err)

@@ -44,6 +44,7 @@ func TestInstalledInstructionOptInScope(t *testing.T) {
 func installScopeFixture(t *testing.T) string {
 	t.Helper()
 	sourceRepo := initInstallFixtureRepo(t)
+	writeTestFile(t, filepath.Join(sourceRepo, "codex", "instructions", "codex-worker-orchestrator.md"), []byte("# repository-specific parent instructions\n"))
 	codexDir := t.TempDir()
 	globalAgents := filepath.Join(codexDir, "AGENTS.md")
 	globalOriginal := []byte("# user-owned global instructions\n")
@@ -54,6 +55,7 @@ func installScopeFixture(t *testing.T) string {
 	if _, err := os.Lstat(installedInstructions); !os.IsNotExist(err) {
 		t.Fatalf("repository-specific instructions were installed at user scope: %v", err)
 	}
+	assertFileBytes(t, filepath.Join(codexDir, "instructions", "worker", "test.md"), []byte("# tool instruction\n"))
 	assertFileBytes(t, globalAgents, globalOriginal)
 	globalConfig := readTestFile(t, filepath.Join(codexDir, "config.toml"))
 	if bytes.Contains(globalConfig, []byte("developer_instructions")) ||

@@ -247,8 +247,6 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 		return parentUsageTokens{Status: analysisStatusMissing, Reason: parentUsageReasonBaselineAnchor, BaselineSource: source}
 	case !hasEnd:
 		return parentUsageTokens{Status: analysisStatusMissing, Reason: parentUsageReasonEndAnchor, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line)}
-	case end.Offset <= baseline.Offset:
-		return parentUsageTokens{Status: analysisStatusNoObservation, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line)}
 	}
 	tokens := parentUsageTokens{
 		Status:         analysisStatusAvailable,
@@ -260,6 +258,9 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 	segments := analysisTokenSegments(scan, baseline, end)
 	if unobserved, found := analysisUnobservedMember(scan, segments, end.File, baselineBound, endBound); found {
 		return parentUsageUnobservedTokens(tokens, unobserved)
+	}
+	if end.Offset <= baseline.Offset {
+		return parentUsageTokens{Status: analysisStatusNoObservation, BaselineAt: tokens.BaselineAt, BaselineSource: tokens.BaselineSource}
 	}
 	if analysisSegmentsCounterReset(scan, segments) {
 		tokens.Status = analysisStatusCounterReset

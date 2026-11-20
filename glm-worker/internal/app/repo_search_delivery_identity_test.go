@@ -188,15 +188,19 @@ func TestRepoSearchDeliveryIdentityExcludesBudgetButIncludesDeliveryState(t *tes
 	if refined.Status != repoSearchResultRequired {
 		t.Fatal("small-budget request did not require refinement")
 	}
-	refinementDigest := repoSearchDeliveryDigest(request, results, refined.Status)
+	refinementDigest := repoSearchDeliveryDigest(request, results, refined)
+	tooMany := buildRepoSearchOutput(request, reposearch.Report{Candidates: repoSearchCandidateLimit + 1}, results)
+	if tooMany.Status != refined.Status || repoSearchDeliveryDigest(request, results, tooMany) == refinementDigest {
+		t.Fatal("different refinement causes share a delivery identity")
+	}
 	request.BudgetBytes = 8
 	repeated := buildRepoSearchOutput(request, report, results)
-	if repeated.Status != repoSearchResultRequired || repoSearchDeliveryDigest(request, results, repeated.Status) != refinementDigest {
+	if repeated.Status != repoSearchResultRequired || repoSearchDeliveryDigest(request, results, repeated) != refinementDigest {
 		t.Fatal("changing an insufficient budget changed refinement delivery identity")
 	}
 	request.BudgetBytes = 4096
 	delivered := buildRepoSearchOutput(request, report, results)
-	if delivered.Status != "executed" || repoSearchDeliveryDigest(request, results, delivered.Status) == refinementDigest {
+	if delivered.Status != "executed" || repoSearchDeliveryDigest(request, results, delivered) == refinementDigest {
 		t.Fatal("delivered locators reused undelivered refinement identity")
 	}
 }
@@ -231,9 +235,9 @@ func TestRepoSearchDuplicateBatchRefinementKeepsOriginalDeliveryClaim(t *testing
 
 func TestRepoSearchDeliveryIdentityPreservesScopeBoundaries(t *testing.T) {
 	request := repoSearchRequest{Question: "owner", Scopes: []string{"docs old"}}
-	combined := repoSearchDeliveryDigest(request, nil, "executed")
+	combined := repoSearchDeliveryDigest(request, nil, repoSearchOutput{Status: "executed"})
 	request.Scopes = []string{"docs", "old"}
-	if combined == repoSearchDeliveryDigest(request, nil, "executed") {
+	if combined == repoSearchDeliveryDigest(request, nil, repoSearchOutput{Status: "executed"}) {
 		t.Fatal("distinct scope lists produced one delivery identity")
 	}
 }

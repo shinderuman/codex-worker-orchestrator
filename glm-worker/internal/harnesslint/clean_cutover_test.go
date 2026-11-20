@@ -23,16 +23,16 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 	"current": {Action: "current", Execute: parentActionExecutionCurrent},
 	"special": {Action: "special", Execute: parentActionExecutionSpecial},
 }
-func executeParentActionCommand() error {
-	if err, handled := executeStandardParentAction(); handled {
+func executeParentActionCommand(execution parentActionExecutionKind) error {
+	if err, handled := executeStandardParentAction(execution); handled {
 		return err
 	}
-	return executeSpecialParentAction()
+	return executeSpecialParentAction(execution)
 }
-func executeStandardParentAction() (error, bool) {
-	return executeInterfaceParentAction()
+func executeStandardParentAction(execution parentActionExecutionKind) (error, bool) {
+	return executeInterfaceParentAction(execution)
 }
-func executeInterfaceParentAction() {
+func executeInterfaceParentAction(execution parentActionExecutionKind) {
 	switch execution {
 	case parentActionExecutionCurrent:
 		return executeCurrent(), true
@@ -40,7 +40,7 @@ func executeInterfaceParentAction() {
 		return nil, false
 	}
 }
-func executeSpecialParentAction() {
+func executeSpecialParentAction(execution parentActionExecutionKind) {
 	if execution == parentActionExecutionSpecial {
 		return executeSpecial()
 	}
@@ -107,9 +107,13 @@ func TestCleanCutoverRejectsUnprovenDispatch(t *testing.T) {
 		from string
 		to   string
 	}{
-		{"missing dispatch", "return executeSpecialParentAction()", "return missingSpecialDispatch()"},
-		{"disconnected dispatch", "return executeSpecialParentAction()", "if false { return executeSpecialParentAction() }; return usageError()"},
-		{"ignored dispatch result", "return executeInterfaceParentAction()", "executeInterfaceParentAction(); return nil, false"},
+		{"missing dispatch", "return executeSpecialParentAction(execution)", "return missingSpecialDispatch()"},
+		{"disconnected dispatch", "return executeSpecialParentAction(execution)", "if false { return executeSpecialParentAction(execution) }; return usageError()"},
+		{"ignored dispatch result", "return executeInterfaceParentAction(execution)", "executeInterfaceParentAction(execution); return nil, false"},
+		{"early return shadows interface", "return executeInterfaceParentAction(execution)", "if execution == parentActionExecutionCurrent { return nil, false }; return executeInterfaceParentAction(execution)"},
+		{"wrong interface argument", "return executeInterfaceParentAction(execution)", "return executeInterfaceParentAction(parentActionExecutionSpecial)"},
+		{"wrong special argument", "return executeSpecialParentAction(execution)", "return executeSpecialParentAction(parentActionExecutionCurrent)"},
+		{"wrong standard argument", "executeStandardParentAction(execution); handled", "executeStandardParentAction(parentActionExecutionSpecial); handled"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source := strings.Replace(currentParentActionCutoverFixture, tc.from, tc.to, 1)

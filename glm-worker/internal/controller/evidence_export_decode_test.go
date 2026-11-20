@@ -107,6 +107,21 @@ func TestExportEvidenceDecodedTelemetryRejectsForeignTask(t *testing.T) {
 	}
 }
 
+func TestExportEvidenceTelemetryExcludesValidCallsPastObservation(t *testing.T) {
+	fixture := newEvidenceExportFixture(t)
+	observed := analysisTelemetryCall(fixture, "observed", state.CallTypeTask, state.WorkerRole, "worker", time.Unix(6100, 0).UTC())
+	future := analysisTelemetryCall(fixture, "future", state.CallTypeTask, state.WorkerRole, "worker", time.Now().UTC().Add(time.Hour))
+	overwriteLiveTelemetry(t, fixture, observed, future)
+	export, _, err := fixture.store.ExportEvidence(EvidenceExportRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := decodeAnalysisIndex(t, export)
+	if index.ModelCalls.Status != evidenceAnalysisStatusCollected || index.ModelCalls.Total != 1 {
+		t.Fatalf("observed telemetry lost after valid append: %#v", index.ModelCalls)
+	}
+}
+
 func TestExportEvidenceDecodedEventsRejectPartialAndForeign(t *testing.T) {
 	for _, suffix := range []string{"{broken\n", `{"version":1,"task_id":"foreign-task","seq":99,"timestamp":"2026-10-06T00:05:00Z","kind":"user"}` + "\n"} {
 		t.Run(strconv.Itoa(len(suffix)), func(t *testing.T) {
@@ -128,8 +143,10 @@ func TestExportEvidenceDecodedEventsRejectPartialAndForeign(t *testing.T) {
 				t.Fatal(err)
 			}
 			index := decodeAnalysisIndex(t, export)
-			if len(index.ObservedValidationActions) != 0 {
-				t.Fatalf("partial or foreign task-events counted as valid: %#v", index.ObservedValidationActions)
+			if len(index.ObservedValidationActions) != 0 || index.ValidationEventsStatus != evidenceAnalysisStatusPartial ||
+				index.Workflow.Status != evidenceAnalysisStatusPartial ||
+				!strings.Contains(strings.Join(index.Workflow.Unknown, " "), "task events are partial") {
+				t.Fatalf("partial task-event coverage lost: status=%s workflow=%s reasons=%v", index.ValidationEventsStatus, index.Workflow.Status, index.Workflow.Unknown)
 			}
 		})
 	}

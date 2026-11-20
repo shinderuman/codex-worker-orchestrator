@@ -61,6 +61,26 @@ func TestParentUsageUnobservedMemberBeforeEndBound(t *testing.T) {
 	}
 }
 
+func TestParentUsageSameAnchorStillReportsUnobservedMember(t *testing.T) {
+	t.Parallel()
+	start := time.Unix(1_000, 0).UTC()
+	first := ParentUsageEvidence{Source: "first.jsonl", Content: []byte(parentUsageTokenCountLine(t, start.Add(-time.Second), 2, 1, 1, 0, 2) + "\n")}
+	tail := ParentUsageEvidence{Source: "tail.jsonl", Content: []byte(parentUsageToolCallLine(t, start.Add(time.Second), "tool-without-counter") + "\n")}
+	noGap := ObserveParentUsage([]ParentUsageEvidence{first}, start, start.Add(2*time.Second))
+	if noGap.Tokens.Status != analysisStatusNoObservation {
+		t.Fatalf("single anchor without gap: %#v", noGap.Tokens)
+	}
+	withGap := ObserveParentUsage([]ParentUsageEvidence{first, tail}, start, start.Add(2*time.Second))
+	if withGap.Tokens.Status != analysisStatusUnknown || withGap.Tokens.Reason != parentUsageReasonUnobservedMember || len(withGap.Tokens.UnknownFields) != 5 {
+		t.Fatalf("single anchor hid unobserved member: %#v", withGap.Tokens)
+	}
+	for _, field := range withGap.Tokens.UnknownFields {
+		if field.Source != tail.Source {
+			t.Fatalf("gap provenance lost: %#v", field)
+		}
+	}
+}
+
 func TestParentUsageCounterContinuityAndSingleFile(t *testing.T) {
 	t.Parallel()
 	start := time.Unix(2_000, 0).UTC()

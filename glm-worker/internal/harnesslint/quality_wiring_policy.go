@@ -5,6 +5,7 @@ type qualityWiringCheck struct {
 	tokens          []string
 	forbiddenTokens []string
 	orderedTokens   []string
+	runCommands     []string
 }
 
 func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
@@ -16,6 +17,8 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 	workflowViolations, err := qualityWiringPackageViolations(root, present, "glm-worker/internal/workflow/", []string{
 		"w.captureQualitySurfaceBaseline()",
 		"w.verifyQualitySurfaceBaseline(workerPhase)",
+		"w.qualityGate(w.config.RepoRoot)",
+		"harnesslint.IsViolation(qualityReport)",
 	})
 	if err != nil {
 		return nil, err
@@ -134,9 +137,9 @@ func ciWorkflowWiringCheck() qualityWiringCheck {
 			"QUALITY_TOOLS_BIN_DIR",
 			"$GITHUB_ENV",
 			"./install-quality-tools.sh",
-			"./tests/install_quality_tools_smoke.sh",
 			"./.github/workflows/install-smoke.yml",
 		},
+		runCommands: []string{"./tests/install_quality_tools_smoke.sh"},
 	}
 }
 

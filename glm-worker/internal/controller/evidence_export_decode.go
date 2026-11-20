@@ -19,14 +19,20 @@ type evidenceExportDecodedRecords struct {
 	events    evidenceExportDecodedSource[state.TaskEventRecord]
 }
 
+func (records *evidenceExportDecodedRecords) isPartial() bool {
+	return records.telemetry.status == evidenceAnalysisStatusPartial ||
+		records.lifecycle.status == evidenceAnalysisStatusPartial ||
+		records.rounds.status == evidenceAnalysisStatusPartial ||
+		records.events.status == evidenceAnalysisStatusPartial
+}
+
 func (b *evidenceExportBuilder) exportDecodedEvidence() *evidenceExportDecodedRecords {
 	if b.decodedEvidence != nil {
 		return b.decodedEvidence
 	}
 	taskID := b.workflowRuntimeTaskID()
 	b.decodedEvidence = &evidenceExportDecodedRecords{
-		telemetry: decodeExportRecordSource(b, "telemetry.jsonl", taskID, parseWorkflowTelemetry,
-			b.exportTelemetryMatches),
+		telemetry: b.decodeExportTelemetry(taskID),
 		lifecycle: decodeExportRecordSource(b, "lifecycle.jsonl", taskID, parseWorkflowLifecycle,
 			func(record state.TaskLifecycleRecord, taskID string) bool {
 				return record.TaskID == taskID && !record.Timestamp.IsZero() && !record.Timestamp.After(b.observedAt)
@@ -45,9 +51,25 @@ func (b *evidenceExportBuilder) exportDecodedEvidence() *evidenceExportDecodedRe
 	return b.decodedEvidence
 }
 
-func (b *evidenceExportBuilder) exportTelemetryMatches(record state.ModelCallLog, taskID string) bool {
-	return record.TaskID == taskID && !record.StartedAt.IsZero() &&
-		!record.CompletedAt.Before(record.StartedAt) && !record.CompletedAt.After(b.observedAt)
+func (b *evidenceExportBuilder) decodeExportTelemetry(taskID string) evidenceExportDecodedSource[state.ModelCallLog] {
+	source := decodeExportRecordSource(b, "telemetry.jsonl", taskID, parseWorkflowTelemetry,
+		func(record state.ModelCallLog, taskID string) bool {
+			return record.TaskID == taskID && !record.StartedAt.IsZero() && !record.CompletedAt.Before(record.StartedAt)
+		})
+	if source.status != evidenceAnalysisStatusCollected {
+		return source
+	}
+	observed := source.records[:0]
+	for _, record := range source.records {
+		if !record.CompletedAt.After(b.observedAt) {
+			observed = append(observed, record)
+		}
+	}
+	if len(observed) == 0 {
+		return evidenceExportDecodedSource[state.ModelCallLog]{status: evidenceAnalysisStatusAbsent}
+	}
+	source.records = observed
+	return source
 }
 
 func (b *evidenceExportBuilder) exportRecordBytes(name string) ([]byte, string) {

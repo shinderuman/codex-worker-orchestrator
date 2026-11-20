@@ -144,29 +144,33 @@ func cleanCutoverExecutableKinds(file *ast.File) (map[string]bool, bool) {
 	standard := cleanCutoverFunction(file, "executeStandardParentAction")
 	interfaced := cleanCutoverFunction(file, "executeInterfaceParentAction")
 	special := cleanCutoverFunction(file, "executeSpecialParentAction")
-	if !cleanCutoverStandardDelegation(parent) ||
-		!cleanCutoverTailCall(parent, "executeSpecialParentAction") ||
-		!cleanCutoverTailCall(standard, "executeInterfaceParentAction") ||
-		interfaced == nil || special == nil {
+	if !cleanCutoverStandardDelegation(parent, standard) ||
+		!cleanCutoverTailCall(parent, special) ||
+		!cleanCutoverTailCall(standard, interfaced) {
 		return nil, false
 	}
 	kinds := make(map[string]bool)
-	cleanCutoverStandardKinds(standard, kinds)
+	if !cleanCutoverStandardKinds(standard, kinds) {
+		return nil, false
+	}
 	cleanCutoverInterfaceKinds(interfaced, kinds)
 	cleanCutoverSpecialKinds(special, kinds)
 	return kinds, len(kinds) > 0
 }
 
-func cleanCutoverStandardKinds(function *ast.FuncDecl, kinds map[string]bool) {
-	for _, statement := range function.Body.List {
+func cleanCutoverStandardKinds(function *ast.FuncDecl, kinds map[string]bool) bool {
+	for _, statement := range function.Body.List[:len(function.Body.List)-1] {
 		conditional, ok := statement.(*ast.IfStmt)
-		if !ok {
-			continue
+		if !ok || conditional.Init != nil || conditional.Else != nil {
+			return false
 		}
-		if kind, ok := cleanCutoverExecutionMatch(conditional.Cond); ok && cleanCutoverHandlerReturn(conditional.Body.List, true) {
-			kinds[kind] = true
+		kind, matched := cleanCutoverExecutionMatch(conditional.Cond)
+		if !matched || !cleanCutoverHandlerReturn(conditional.Body.List, true) {
+			return false
 		}
+		kinds[kind] = true
 	}
+	return true
 }
 
 func cleanCutoverInterfaceKinds(function *ast.FuncDecl, kinds map[string]bool) {
@@ -263,21 +267,21 @@ func cleanCutoverFunction(file *ast.File, name string) *ast.FuncDecl {
 	return nil
 }
 
-func cleanCutoverStandardDelegation(function *ast.FuncDecl) bool {
+func cleanCutoverStandardDelegation(function, handler *ast.FuncDecl) bool {
 	if function == nil || len(function.Body.List) < 2 {
 		return false
 	}
 	branch, ok := function.Body.List[len(function.Body.List)-2].(*ast.IfStmt)
-	return ok && cleanCutoverHandledReturn(branch)
+	return ok && cleanCutoverHandledReturn(branch, handler)
 }
 
-func cleanCutoverHandledReturn(branch *ast.IfStmt) bool {
+func cleanCutoverHandledReturn(branch *ast.IfStmt, handler *ast.FuncDecl) bool {
 	if branch.Else != nil || len(branch.Body.List) != 1 {
 		return false
 	}
 	assignment, ok := branch.Init.(*ast.AssignStmt)
 	if !ok || assignment.Tok != token.DEFINE || len(assignment.Lhs) != 2 || len(assignment.Rhs) != 1 ||
-		!cleanCutoverCallTo(assignment.Rhs[0], "executeStandardParentAction") {
+		!cleanCutoverCallTo(assignment.Rhs[0], handler) {
 		return false
 	}
 	result, ok := branch.Body.List[0].(*ast.ReturnStmt)
@@ -286,7 +290,7 @@ func cleanCutoverHandledReturn(branch *ast.IfStmt) bool {
 		cleanCutoverSameIdentifier(assignment.Lhs[0], result.Results[0])
 }
 
-func cleanCutoverTailCall(function *ast.FuncDecl, handler string) bool {
+func cleanCutoverTailCall(function, handler *ast.FuncDecl) bool {
 	if function == nil || len(function.Body.List) == 0 {
 		return false
 	}
@@ -294,13 +298,34 @@ func cleanCutoverTailCall(function *ast.FuncDecl, handler string) bool {
 	return ok && len(result.Results) == 1 && cleanCutoverCallTo(result.Results[0], handler)
 }
 
-func cleanCutoverCallTo(expression ast.Expr, handler string) bool {
+func cleanCutoverCallTo(expression ast.Expr, handler *ast.FuncDecl) bool {
 	call, ok := expression.(*ast.CallExpr)
-	if !ok {
+	if !ok || handler == nil {
 		return false
 	}
 	function, ok := call.Fun.(*ast.Ident)
-	return ok && function.Name == handler
+	if !ok || function.Name != handler.Name.Name {
+		return false
+	}
+	index := cleanCutoverExecutionParameter(handler)
+	if index < 0 || index >= len(call.Args) {
+		return false
+	}
+	argument, ok := ast.Unparen(call.Args[index]).(*ast.Ident)
+	return ok && argument.Name == cleanCutoverExecutionIdentifier
+}
+
+func cleanCutoverExecutionParameter(handler *ast.FuncDecl) int {
+	index := 0
+	for _, field := range handler.Type.Params.List {
+		for _, name := range field.Names {
+			if name.Name == cleanCutoverExecutionIdentifier {
+				return index
+			}
+			index++
+		}
+	}
+	return -1
 }
 
 func cleanCutoverSameIdentifier(left, right ast.Expr) bool {

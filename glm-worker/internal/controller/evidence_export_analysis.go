@@ -20,6 +20,7 @@ type EvidenceAnalysisIndex struct {
 	Instructions              EvidenceAnalysisInstructions         `json:"instructions"`
 	CanonicalValidationRuns   []EvidenceAnalysisValidationRun      `json:"canonical_validation_runs,omitempty"`
 	ObservedValidationActions []EvidenceAnalysisValidationRun      `json:"observed_validation_actions,omitempty"`
+	ValidationEventsStatus    string                               `json:"validation_events_status"`
 	Retries                   EvidenceAnalysisRetries              `json:"retries"`
 	Workflow                  EvidenceAnalysisWorkflow             `json:"workflow"`
 	TestTimingRegression      EvidenceAnalysisTestTimingRegression `json:"test_timing_regression"`
@@ -200,6 +201,7 @@ func (b *evidenceExportBuilder) buildAnalysisIndex(live EvidenceExportRuntimeSec
 		Instructions:              b.analysisInstructions(),
 		CanonicalValidationRuns:   canonicalRuns,
 		ObservedValidationActions: observedActions,
+		ValidationEventsStatus:    b.exportDecodedEvidence().events.status,
 		TaskResources:             b.analysisTaskResources(),
 		ModelCalls:                b.analysisModelCalls(),
 		ReviewRounds:              b.analysisReviewRounds(),

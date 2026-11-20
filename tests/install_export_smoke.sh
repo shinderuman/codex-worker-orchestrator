@@ -223,12 +223,23 @@ EOF_HOLD_LOCK
 	export_lock_pid=$!
 	wait_for_export_lock "$tmp/export-lock-held.out"
 	(
+		printf '%s\n' '{"version":3,"call_id":"active-writer"}' >>"$export_runtime_dir/telemetry/runtime-task-smoke-1.jsonl"
+		touch "$tmp/export-writer-ready"
 		while :; do
-			printf '%s\n' '{"version":3,"call_id":"active-writer"}' >>"$export_runtime_dir/telemetry/runtime-task-smoke-1.jsonl"
 			sleep 0.01
+			printf '%s\n' '{"version":3,"call_id":"active-writer"}' >>"$export_runtime_dir/telemetry/runtime-task-smoke-1.jsonl"
 		done
 	) &
 	export_writer_pid=$!
+	for _ in $(seq 1 100); do
+		test ! -f "$tmp/export-writer-ready" || break
+		kill -0 "$export_writer_pid" 2>/dev/null || break
+		sleep 0.05
+	done
+	if ! test -f "$tmp/export-writer-ready"; then
+		printf '%s\n' 'telemetry writer did not complete its first append' >&2
+		exit 1
+	fi
 	run_single_export >"$tmp/export-concurrent.json"
 	export_lock_wait_pid=$export_lock_pid
 	stop_export_processes

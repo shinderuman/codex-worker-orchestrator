@@ -331,6 +331,16 @@ func assertEnvelopeWithinBudget(t *testing.T, envelope parentActionTerminalEnvel
 
 func assertJSONFieldEqual(t *testing.T, wantJSON, gotJSON json.RawMessage, field string) {
 	t.Helper()
+	assertJSONFieldEquality(t, wantJSON, gotJSON, field, false)
+}
+
+func assertRequiredJSONFieldEqual(t *testing.T, wantJSON, gotJSON json.RawMessage, field string) {
+	t.Helper()
+	assertJSONFieldEquality(t, wantJSON, gotJSON, field, true)
+}
+
+func assertJSONFieldEquality(t *testing.T, wantJSON, gotJSON json.RawMessage, field string, required bool) {
+	t.Helper()
 	var want, got map[string]json.RawMessage
 	if err := json.Unmarshal(wantJSON, &want); err != nil {
 		t.Fatal(err)
@@ -340,6 +350,9 @@ func assertJSONFieldEqual(t *testing.T, wantJSON, gotJSON json.RawMessage, field
 	}
 	wantValue, wantOK := want[field]
 	gotValue, gotOK := got[field]
+	if required && (!wantOK || !gotOK) {
+		t.Fatalf("required field %q missing: source=%t projected=%t", field, wantOK, gotOK)
+	}
 	if wantOK != gotOK || string(wantValue) != string(gotValue) {
 		t.Fatalf("field %q differs:\nwant %s\n got %s", field, wantValue, gotValue)
 	}
@@ -448,7 +461,8 @@ func TestTerminalProjectionPreservesActuallyEmittedAdvisory(t *testing.T) {
 				t.Fatalf("did not exercise semantic overflow projection: %+v", envelope.Projection)
 			}
 			assertJSONFieldAbsent(t, envelope.Terminal, "transport_padding")
-			for _, field := range []string{"failure_path_advisory", "status", "risk", "targets", "artifacts"} {
+			assertRequiredJSONFieldEqual(t, terminal, envelope.Terminal, "failure_path_advisory")
+			for _, field := range []string{"status", "risk", "targets", "artifacts"} {
 				assertJSONFieldEqual(t, terminal, envelope.Terminal, field)
 			}
 			if containsString(envelope.Projection.OmittedFields, "terminal.failure_path_advisory") {
@@ -530,7 +544,7 @@ func TestTerminalProjectionPacketWrapperEvidenceAndUnknownStatus(t *testing.T) {
 		t.Fatalf("wrapper field unexpectedly omitted: %v", omitted)
 	}
 	for _, key := range []string{"parent_validation", "parent_validation_working_dir", "parent_validation_evidence"} {
-		assertJSONFieldEqual(t, terminal, projected, key)
+		assertRequiredJSONFieldEqual(t, terminal, projected, key)
 	}
 	unknown := mustJSONRaw(t, map[string]any{"status": "unknown", "opaque": "preserve"})
 	full, mode, omitted, err := projectTerminalSemanticResult(unknown)

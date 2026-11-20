@@ -214,17 +214,23 @@ HOME="$home" "$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-co
 grep -q '"status":"enabled"' "$tmp/codex-context-enable.json"
 grep -q '"git_excluded":true' "$tmp/codex-context-enable.json"
 grep -q '"requires_new_thread":true' "$tmp/codex-context-enable.json"
-grep -Fxq 'include_apps_instructions = false' "$repo/.codex/config.toml"
-grep -Fxq 'include_collaboration_mode_instructions = false' "$repo/.codex/config.toml"
-grep -Fxq 'include_instructions = false' "$repo/.codex/config.toml"
-grep -Fxq 'apps = false' "$repo/.codex/config.toml"
-grep -Fxq 'plugins = false' "$repo/.codex/config.toml"
-if grep -Fq 'developer_instructions = ' "$repo/.codex/config.toml"; then
-	printf '%s\n' 'project config injected instructions despite native AGENTS discovery' >&2
-	exit 1
-fi
-if grep -Fq 'instructions/codex-worker-orchestrator.md' "$repo/.codex/config.toml"; then
-	printf '%s\n' 'project config references retired global instructions' >&2
+cat >"$tmp/codex-context-expected.toml" <<'EOF_CONTEXT_PROFILE'
+include_apps_instructions = false
+include_collaboration_mode_instructions = false
+[skills]
+include_instructions = false
+[features]
+apps = false
+plugins = false
+[features.code_mode]
+default_exec_yield_time_ms = 21600000
+[features.multi_agent_v2]
+root_agent_usage_hint_text = ""
+multi_agent_mode_hint_text = ""
+EOF_CONTEXT_PROFILE
+sed -e '/^[[:blank:]]*#/d' -e '/^[[:blank:]]*$/d' "$repo/.codex/config.toml" >"$tmp/codex-context-actual.toml"
+if ! cmp -s "$tmp/codex-context-expected.toml" "$tmp/codex-context-actual.toml"; then
+	printf '%s\n' 'project config differs from the expected managed profile' >&2
 	exit 1
 fi
 test ! -e "$repo/AGENTS.override.md"

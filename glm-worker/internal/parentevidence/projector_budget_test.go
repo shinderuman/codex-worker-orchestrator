@@ -106,6 +106,46 @@ func requireBudgetedJSON(t *testing.T, output Output) {
 	}
 }
 
+func TestTotalBudgetMeasuresDeliveredJSONWithNewline(t *testing.T) {
+	t.Parallel()
+	part := Part{Kind: "source", Status: PartProjected, Source: &SourceBody{Content: "x"}}
+	output := Output{Version: ManifestVersion, Status: StatusOK, Parts: []Part{part}}
+	var empty bytes.Buffer
+	base, err := WriteMeasuredJSON(&empty, output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := strings.Repeat("<", MaxOutputBytes-base+1)
+	part.Source.Content = content
+	if !applyTotalBudget(&output) || output.Parts[0].Source.Content != content {
+		t.Fatal("budget dropped bytes that fit the wire encoding")
+	}
+	var wire bytes.Buffer
+	size, err := WriteMeasuredJSON(&wire, output)
+	if err != nil || size != MaxOutputBytes || wire.Bytes()[wire.Len()-1] != '\n' {
+		t.Fatalf("wire size=%d err=%v", size, err)
+	}
+}
+
+func TestUndeliverableSourceDoesNotReserveBatchIdentity(t *testing.T) {
+	repo, st := newReviewCoverageStore(t)
+	projector := NewProjector(repo, st, "source-budget-order", Providers{})
+	request := SourceRequest{Question: "inspect", Path: "review.go", LineStart: 1, LineEnd: 1, BudgetBytes: 1}
+	roomy := request
+	roomy.BudgetBytes = 1024
+	projector.Project(Manifest{Version: ManifestVersion, Reason: "source budget order", Source: []SourceRequest{request, roomy}})
+	if err := projector.Commit(&bytes.Buffer{}, "source budget order"); err != nil {
+		t.Fatal(err)
+	}
+	parts := projector.Output().Parts
+	if len(parts) != 2 || parts[0].Status != PartRefinement || parts[1].Source == nil || parts[1].Source.Content == "" {
+		t.Fatalf("first part suppressed deliverable source: %#v", parts)
+	}
+	if _, delivered, err := st.ParentEvidenceDelivered(parts[1].Surface, parts[1].Digest); err != nil || !delivered {
+		t.Fatalf("delivered source missing from ledger: %t, %v", delivered, err)
+	}
+}
+
 func TestDuplicateSearchCannotClaimLocatorsStrippedByBatchBudget(t *testing.T) {
 	repoRoot, st := newReviewCoverageStore(t)
 	const searchDigest = "search-locators"

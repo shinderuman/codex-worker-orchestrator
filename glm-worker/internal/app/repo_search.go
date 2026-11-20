@@ -35,6 +35,7 @@ type repoSearchOutput struct {
 	IndexedFiles int                `json:"indexed_files"`
 	SkippedFiles int                `json:"skipped_files"`
 	Results      []repoSearchResult `json:"results"`
+	refinement   string
 }
 
 type repoSearchRequest struct {
@@ -100,7 +101,7 @@ func printRepoSearchWithSearch(request repoSearchRequest, cfg config.AppConfig, 
 	}
 	results := repoSearchResults(report.Results)
 	output := buildRepoSearchOutput(request, report, results)
-	digest := repoSearchDeliveryDigest(request, results, output.Status)
+	digest := repoSearchDeliveryDigest(request, results, output)
 	return parentevidence.FinishReadInScopeResult(st, scope, state.ParentEvidenceSurfaceSearch, digest, func() (parentevidence.RenderResult, error) {
 		return renderRepoSearchResult(output, stdout)
 	})
@@ -138,6 +139,7 @@ func buildRepoSearchOutput(request repoSearchRequest, report reposearch.Report, 
 		Results:      []repoSearchResult{},
 	}
 	if report.Candidates > repoSearchCandidateLimit {
+		output.refinement = "candidate-limit"
 		output.Status = repoSearchResultRequired
 		output.Result = repoSearchResultRequired
 		output.Reason = fmt.Sprintf(
@@ -148,6 +150,7 @@ func buildRepoSearchOutput(request repoSearchRequest, report reposearch.Report, 
 	}
 	rendered, err := json.Marshal(results)
 	if err == nil && len(rendered) > request.BudgetBytes {
+		output.refinement = "output-budget"
 		output.Status = repoSearchResultRequired
 		output.Result = repoSearchResultRequired
 		output.Reason = fmt.Sprintf(
@@ -165,14 +168,15 @@ func buildRepoSearchOutput(request repoSearchRequest, report reposearch.Report, 
 	return output
 }
 
-func repoSearchDeliveryDigest(request repoSearchRequest, results []repoSearchResult, status string) string {
+func repoSearchDeliveryDigest(request repoSearchRequest, results []repoSearchResult, output repoSearchOutput) string {
 	scopeDigest, _ := parentevidence.Digest(request.Scopes)
 	return parentevidence.StringDigest(
 		state.ParentEvidenceSurfaceSearch,
 		request.Question,
 		scopeDigest,
 		repoSearchResultsDigest(results),
-		status,
+		output.Status,
+		output.refinement,
 	)
 }
 

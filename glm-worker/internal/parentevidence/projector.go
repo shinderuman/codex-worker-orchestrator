@@ -640,19 +640,22 @@ func (p *Projector) saveSurvivingClaims(parts []Part) error {
 
 func claimSurvivesBudget(parts []Part, claim state.ParentEvidenceLedgerEntry) bool {
 	for _, part := range parts {
-		if part.Surface == claim.Surface && part.Digest == claim.Digest && !part.duplicateDelivery &&
-			(part.Status != PartRefinement || part.ClaimRefinement) {
+		if part.Surface == claim.Surface && part.Digest == claim.Digest && !part.duplicateDelivery && partCanClaim(part) {
 			return true
 		}
 	}
 	return false
 }
 
+func partCanClaim(part Part) bool {
+	return part.Status == PartProjected || (part.Status == PartRefinement && part.ClaimRefinement)
+}
+
 func (p *Projector) degradeDuplicateParts() error {
 	claimed := make(map[string]bool, len(p.pendingClaims))
 	for index := range p.output.Parts {
 		part := &p.output.Parts[index]
-		if part.Digest == "" {
+		if part.Digest == "" || !partCanClaim(*part) {
 			continue
 		}
 		key := part.Surface + "\x00" + part.Digest

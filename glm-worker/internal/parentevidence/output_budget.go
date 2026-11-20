@@ -1,6 +1,6 @@
 package parentevidence
 
-import "encoding/json"
+import "io"
 
 const MaxOutputBytes = 96 * 1024
 
@@ -27,10 +27,10 @@ var bodyStrippers = []func(*Part) bool{
 
 func applyTotalBudget(output *Output) bool {
 	output.Status = aggregateStatus(output.Parts)
-	for outputSize(*output)+1 > MaxOutputBytes && stripBody(output) {
+	for outputSize(*output) > MaxOutputBytes && stripBody(output) {
 		output.Status = aggregateStatus(output.Parts)
 	}
-	if outputSize(*output)+1 > MaxOutputBytes {
+	if outputSize(*output) > MaxOutputBytes {
 		*output = Output{
 			Version:     ManifestVersion,
 			Status:      StatusError,
@@ -42,7 +42,7 @@ func applyTotalBudget(output *Output) bool {
 				Reason: "evidence metadata cannot fit within the serialized output budget",
 			}},
 		}
-		if outputSize(*output)+1 > MaxOutputBytes {
+		if outputSize(*output) > MaxOutputBytes {
 			output.OwnerCallID = ""
 		}
 		return false
@@ -52,11 +52,11 @@ func applyTotalBudget(output *Output) bool {
 }
 
 func outputSize(output Output) int {
-	data, err := json.Marshal(output)
+	size, err := WriteMeasuredJSON(io.Discard, output)
 	if err != nil {
 		return MaxOutputBytes + 1
 	}
-	return len(data)
+	return size
 }
 
 func stripBody(output *Output) bool {

@@ -11,7 +11,9 @@ func TestQualityWiringForbiddenCheckUsesSyntax(t *testing.T) {
 import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 func run(repoRoot string) { harnesslint.Check(repoRoot) }
 `)
-	evidence, err := qualityWiringGoTokensForPath(check.path, source)
+	root := fixtureRoot(t)
+	writeQualityFile(t, root, check.path, string(source))
+	evidence, err := qualityWiringGoTokensForPath(root, check.path, map[string]bool{check.path: true})
 	if err != nil {
 		t.Fatal(err)
 	}

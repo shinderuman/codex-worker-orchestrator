@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 )
 
@@ -110,7 +111,7 @@ func collectTestTimingGroups(validationRuns []collectedValidationRun) (map[testT
 	converged, conflicts := convergeValidationRunIdentities(validationRuns)
 	groups := map[testTimingGroupKey][]collectedValidationRun{}
 	for _, collected := range converged {
-		if collected.timings == nil {
+		if collected.run.Form != packet.ParentValidationGoTest && collected.run.Form != packet.ParentValidationGoTestRace {
 			continue
 		}
 		module := testTimingModule(collected.run)
@@ -266,6 +267,10 @@ func testTimingComparison(form, workingDir string, runs []collectedValidationRun
 		WorkingDir: workingDir,
 		Latest:     testTimingRunSide(latest),
 	}
+	if latest.timings == nil {
+		comparison.Unknown = "latest run captured no machine-readable test events"
+		return comparison
+	}
 	if workingDir == "" {
 		comparison.Unknown = "run does not record a module within its repository checkout"
 		return comparison
@@ -275,7 +280,7 @@ func testTimingComparison(form, workingDir string, runs []collectedValidationRun
 		comparison.Unknown = "latest run does not record its execution conditions"
 		return comparison
 	}
-	if latest.timings == nil || !latest.timings.Coverage.Captured || latest.timings.Coverage.UntimedTerminalEvents > 0 || latest.run.Status != qualitygate.StatusPass {
+	if !latest.timings.Coverage.Captured || latest.timings.Coverage.UntimedTerminalEvents > 0 || latest.run.Status != qualitygate.StatusPass {
 		comparison.Unknown = "latest run captured no machine-readable test events"
 		return comparison
 	}

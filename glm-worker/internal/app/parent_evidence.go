@@ -291,7 +291,7 @@ func projectParentEvidenceSearch(cfg config.AppConfig, request parentevidence.Se
 	}
 	results := repoSearchResults(report.Results)
 	output := buildRepoSearchOutput(scoped, report, results)
-	part.Digest = repoSearchDeliveryDigest(scoped, results, output.Status)
+	part.Digest = repoSearchDeliveryDigest(scoped, results, output)
 	body := parentevidence.SearchBody{
 		Question:    request.Question,
 		Scopes:      request.Scopes,
