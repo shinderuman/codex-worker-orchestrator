@@ -57,23 +57,43 @@
     {
       "id": "clean-cutover-rejection-only-surface",
       "classification": "machine-enforced",
-      "purpose": "Reject parent-action registry roots that the current explicit dispatch contract unconditionally rejects, so retired rejection-only surfaces do not remain in the production graph.",
+      "purpose": "Require each canonical registered parent-action descriptor to resolve to a current executable normal and terminal dispatch handler, rejecting unsupported or error-only roots without reconstructing retired guards.",
       "machine_owners": [
         {
           "path": "glm-worker/internal/harnesslint/clean_cutover.go",
           "symbol": "scanCleanCutover"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/command_metadata.go",
+          "symbol": "lookupParentActionCommand"
         }
       ],
       "tests": [
         {
           "path": "glm-worker/internal/harnesslint/clean_cutover_test.go",
           "symbol": "TestCleanCutoverRejectsRegisteredParentActionRejectionRoots"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/command_registry_cutover_test.go",
+          "symbol": "TestParentActionCommandRegistryLiveAndUnknown"
         }
       ],
       "postconditions": [
         {
           "path": "glm-worker/internal/harnesslint/clean_cutover.go",
           "symbol": "cleanCutoverParentActionViolations"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/clean_cutover.go",
+          "symbol": "cleanCutoverExecutableKinds"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/clean_cutover.go",
+          "symbol": "cleanCutoverReportRegistryEntry"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/command_metadata.go",
+          "symbol": "executeParentActionCommand"
         }
       ],
       "residual_parent_judgment": "The parent applies the repository-wide forward-only policy to semantic compatibility questions outside this explicit mechanically decidable owner contract."
