@@ -27,6 +27,10 @@ none
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 harnesslintのclean-cutover AST判定を現行parentaction registryの検証へ移す。

@@ -29,6 +29,7 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeConvergence,
 		ModeStats,
 		ModeEvalAB,
+		ModeEvalABWorktreeIdentity,
 		ModeCallOutliers,
 		ModeCodexLimit,
 		ModeModelRouting,
@@ -74,6 +75,8 @@ func executeRuntimeControl(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 
 func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
 	switch cmd.Mode {
+	case ModeEvalABWorktreeIdentity:
+		return report.PrintEvalABWorktreeIdentity(cmd.Payload, stdout)
 	case ModeStageTimeline:
 		return report.PrintStageTimeline(state.AttachStateStore(cfg), cmd.Payload, stdout)
 	case ModeTimeline,

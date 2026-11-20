@@ -63,6 +63,7 @@ const (
 	ModeStats
 	ModeVerifyCodexWake
 	ModeEvalAB
+	ModeEvalABWorktreeIdentity
 	ModeCallOutliers
 	ModeCodexLimit
 	ModeInstallSmoke
@@ -149,6 +150,9 @@ var commandParsers = map[string]commandParser{
 	"--codex-wake-response-stdin": codexWakeResponseCommand,
 	"--eval-ab": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
+	},
+	"--eval-ab-worktree-identity": func(args []string) (Command, error) {
+		return requiredPayloadCommand(args, ModeEvalABWorktreeIdentity, "usage: glm-worker --eval-ab-worktree-identity <absolute-worktree-path>")
 	},
 	"--call-outliers": func(args []string) (Command, error) {
 		return telemetryQueryCommand(args, ModeCallOutliers, "--call-outliers")

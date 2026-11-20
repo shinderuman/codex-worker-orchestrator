@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Codex Direct対orchestratedのA/B比較基盤のfake/local固定Eval corpus。数値・session・worktreeはすべて架空で、harness・比較前提検証・usage取得(task stats解決)・aggregation・結果表示の自動testのためだけに使う。各pairは固定比較metadata(spec)とdirect/orchestrated両modeのrun記録を持ち、expected_codex_reductionでactual usage基準の削減率とunknown保持の両経路を固定する。actual Codex usageは公式/runtime telemetry由来のみを記録し、codex_usage.sourceはcodex-app-usage-exportだけを、glm_usage.sourceはglm-worker-task-statsだけを受理し、orchestrated記録のglm_usage値はtask stats解決済みsnapshotのfake表現とする。取得できないactual usageはunknown(零値)とし推定しない。GLM tokenとCodex tokenの合算値は算出しない。usage測定のための追加AI promptは発生させない。実Sol High Direct baseline・本番A/B・複数repeat・Codex枠を消費するbenchmarkはこのcorpusでは実行せず、ユーザーの明示指示後だけ実行する。実行時の比較run dir構成(spec.json・direct.json・orchestrated.json)はglm-worker --eval-ab <run-dir>が読み込む。",
+  "description": "Codex Direct対orchestratedのA/B比較基盤のfake/local固定Eval corpus。数値・session・worktreeはすべて架空で、harness・比較前提検証・usage取得(task stats解決)・aggregation・結果表示の自動testのためだけに使う。各pairは固定比較metadata(spec)とdirect/orchestrated両modeのrun記録を持ち、expected_codex_reductionでactual usage基準の削減率とunknown保持の両経路を固定する。actual Codex usageは公式/runtime telemetry由来のみを記録し、codex_usage.sourceはcodex-app-usage-exportだけを、glm_usage.sourceはglm-worker-task-statsだけを受理し、orchestrated記録のglm_usage値はtask stats解決済みsnapshotのfake表現とする。取得できないactual usageはunknown(零値)とし推定しない。GLM tokenとCodex tokenの合算値は算出しない。usage測定のための追加AI promptは発生させない。実Sol High Direct baseline・本番A/B・複数repeat・Codex枠を消費するbenchmarkはこのcorpusでは実行せず、ユーザーの明示指示後だけ実行する。実際の採取時には各Git worktreeの絶対pathをglm-worker --eval-ab-worktree-identityへ渡し、出力のworktree_pathとworktree_identityを両modeの各run記録に保存する。実行時の比較run dir構成(spec.json・direct.json・orchestrated.json)はglm-worker --eval-ab <run-dir>が読み込む。",
   "pairs": [
     {
       "spec": {
@@ -21,7 +21,7 @@
         }
       },
       "direct": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-actual-usage-fake",
         "spec_sha256": "9ed706add96905f91b9bafda8d1159819ae1f1f868eeb472ef771a1781fb8fec",
         "mode": "direct",
@@ -62,10 +62,15 @@
           "sol_decision_commands": 0,
           "sol_fix_commands": 0,
           "auto_fix_rounds": 0
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair1-direct",
+          "device": 1,
+          "inode": 301
         }
       },
       "orchestrated": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-actual-usage-fake",
         "spec_sha256": "9ed706add96905f91b9bafda8d1159819ae1f1f868eeb472ef771a1781fb8fec",
         "mode": "orchestrated",
@@ -107,6 +112,11 @@
           "sol_decision_commands": 0,
           "sol_fix_commands": 0,
           "auto_fix_rounds": 0
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair1-orchestrated",
+          "device": 1,
+          "inode": 302
         }
       },
       "expected_codex_reduction": "actual"
@@ -130,7 +140,7 @@
         }
       },
       "direct": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-usage-unknown-fake",
         "spec_sha256": "26c681afbb54b871392415120bf8dcbb5d8a430cbd39ebac076c8fa2089441a4",
         "mode": "direct",
@@ -171,10 +181,15 @@
           "sol_decision_commands": 0,
           "sol_fix_commands": 0,
           "auto_fix_rounds": 0
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair2-direct",
+          "device": 1,
+          "inode": 303
         }
       },
       "orchestrated": {
-        "version": 1,
+        "version": 2,
         "spec_id": "fixed-eval-abeval-usage-unknown-fake",
         "spec_sha256": "26c681afbb54b871392415120bf8dcbb5d8a430cbd39ebac076c8fa2089441a4",
         "mode": "orchestrated",
@@ -216,6 +231,11 @@
           "sol_decision_commands": 1,
           "sol_fix_commands": 1,
           "auto_fix_rounds": 2
+        },
+        "worktree_identity": {
+          "resolved_path": "/tmp/abeval-corpus/pair2-orchestrated",
+          "device": 1,
+          "inode": 304
         }
       },
       "expected_codex_reduction": "unknown"

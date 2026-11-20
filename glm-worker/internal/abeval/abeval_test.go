@@ -71,6 +71,8 @@ func validDirectRecord(spec Spec) RunRecord {
 			TestFailures:       0,
 			HiddenVerification: "pass",
 		},
+
+		WorktreeIdentity: WorktreeIdentity{ResolvedPath: "/tmp/abeval-fixture/direct-worktree", Device: 1, Inode: 101},
 	}
 }
 
@@ -114,6 +116,8 @@ func validOrchestratedRecord(spec Spec) RunRecord {
 		Proxy: ProxyMetrics{
 			SolPacketBytes: 812,
 		},
+
+		WorktreeIdentity: WorktreeIdentity{ResolvedPath: "/tmp/abeval-fixture/orchestrated-worktree", Device: 1, Inode: 102},
 	}
 }
 
@@ -123,6 +127,10 @@ func TestValidatePairAcceptsValidPair(t *testing.T) {
 	orchestrated := validOrchestratedRecord(spec)
 	if err := ValidatePair(spec, direct, orchestrated); err != nil {
 		t.Fatalf("妥当なpairが拒否されました: %v", err)
+	}
+	report := BuildReport(Compare(spec, direct, orchestrated))
+	if report.WorktreeIdentities.Direct != direct.WorktreeIdentity || report.WorktreeIdentities.Orchestrated != orchestrated.WorktreeIdentity {
+		t.Fatalf("比較reportにworktree identity証拠がありません: %+v", report.WorktreeIdentities)
 	}
 }
 
@@ -153,6 +161,8 @@ func TestValidatePairRejectsInvalid(t *testing.T) {
 		{"spec isolation cache note empty", func(spec *Spec, _ *RunRecord, _ *RunRecord) {
 			spec.Isolation.CacheAvoidance = ""
 		}, "cache_avoidance"},
+		{"record obsolete version", func(_ *Spec, d *RunRecord, _ *RunRecord) { d.Version = 1 }, "run記録version"},
+		{"record missing worktree identity", func(_ *Spec, d *RunRecord, _ *RunRecord) { d.WorktreeIdentity = WorktreeIdentity{} }, "worktree_identity"},
 		{"record spec hash mismatch", func(_ *Spec, d *RunRecord, _ *RunRecord) {
 			d.SpecSHA256 = "deadbeef"
 		}, "spec_sha256"},
@@ -213,6 +223,7 @@ func TestValidatePairRejectsInvalid(t *testing.T) {
 		}, "同一session"},
 		{"pair same worktree", func(_ *Spec, d *RunRecord, o *RunRecord) {
 			o.WorktreePath = d.WorktreePath
+			o.WorktreeIdentity = d.WorktreeIdentity
 		}, "同一working tree"},
 		{"pair modes swapped", func(_ *Spec, d *RunRecord, _ *RunRecord) {
 			d.Mode = ModeOrchestrated
@@ -253,7 +264,7 @@ func TestLoadPairRejectsUnknownModeAndVersion(t *testing.T) {
 		t.Fatal("未知のmodeが受理されました")
 	}
 	orchestrated := validOrchestratedRecord(spec)
-	orchestrated.Version = 2
+	orchestrated.Version = 1
 	if _, err := LoadRecord(writeRecordJSON(t, "orchestrated.json", orchestrated)); err == nil {
 		t.Fatal("未知のversionが受理されました")
 	}

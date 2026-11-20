@@ -37,6 +37,13 @@ type Report struct {
 	GLMUsage            ReportGLMUsagePair    `json:"glm_usage"`
 	ProxyMetrics        ReportProxyPair       `json:"proxy_metrics"`
 	RepoSearch          ReportRepoSearchPair  `json:"repo_search"`
+
+	WorktreeIdentities ReportWorktreeIdentityPair `json:"worktree_identities"`
+}
+
+type ReportWorktreeIdentityPair struct {
+	Direct       WorktreeIdentity `json:"direct"`
+	Orchestrated WorktreeIdentity `json:"orchestrated"`
 }
 
 type ReportMetadata struct {
@@ -163,7 +170,11 @@ func BuildReport(c Comparison) Report {
 		},
 		MeasurementBoundary: c.Spec.MeasurementBoundary,
 		Isolation:           c.Spec.Isolation,
-		CodexReduction:      reduction,
+		WorktreeIdentities: ReportWorktreeIdentityPair{
+			Direct:       c.Direct.WorktreeIdentity,
+			Orchestrated: c.Orchestrated.WorktreeIdentity,
+		},
+		CodexReduction: reduction,
 		QualityDelta: ReportQualityDelta{
 			Direct:       c.Direct.Quality,
 			Orchestrated: c.Orchestrated.Quality,

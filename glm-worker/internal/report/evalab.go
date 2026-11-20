@@ -28,3 +28,11 @@ func PrintEvalAB(st *state.StateStore, dir string, stdout io.Writer) error {
 	}
 	return machinecli.WriteJSON(stdout, abeval.BuildReport(abeval.Compare(spec, direct, orchestrated)))
 }
+
+func PrintEvalABWorktreeIdentity(path string, stdout io.Writer) error {
+	identity, err := abeval.CaptureWorktreeIdentity(path)
+	if err != nil {
+		return err
+	}
+	return machinecli.WriteJSON(stdout, map[string]any{"worktree_path": identity.ResolvedPath, "worktree_identity": identity})
+}
