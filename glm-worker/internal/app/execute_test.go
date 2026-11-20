@@ -608,7 +608,7 @@ func TestInstructionMutationGuardRecoveryCLIAcceptance(t *testing.T) {
 			Restored:     true,
 		}},
 	}}
-	err := Execute(Command{Mode: ModeDecision, Payload: "A案で進める"}, cfg, guardRunner.factory(), io.Discard, io.Discard)
+	err := Execute(Command{Mode: ModeDecision, Payload: stagedSingleDecision("A案で進める")}, cfg, guardRunner.factory(), io.Discard, io.Discard)
 	var stopped *workflow.GuardRecoverableError
 	if !errors.As(err, &stopped) {
 		t.Fatalf("GuardRecoverableErrorを期待: %v", err)
@@ -623,7 +623,7 @@ func TestInstructionMutationGuardRecoveryCLIAcceptance(t *testing.T) {
 		t.Fatal("guard停止後にresume_availableがfalse")
 	}
 
-	assertGuardRecoveryCommandRejected(t, cfg, Command{Mode: ModeDecision, Payload: "再送"}, "no pending Sol decision")
+	assertGuardRecoveryCommandRejected(t, cfg, Command{Mode: ModeDecision, Payload: stagedSingleDecision("再送")}, "no pending Sol decision")
 	assertGuardRecoveryCommandRejected(t, cfg, Command{Mode: ModeFix, Payload: "fix"}, "--fix is only available after NEEDS_SOL_REVIEW")
 	assertGuardRecoveryCommandRejected(t, cfg, Command{Mode: ModeNewTask, Payload: "replacement"}, "recoverable guard failure")
 

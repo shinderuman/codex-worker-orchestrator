@@ -7,19 +7,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestFixStdinUsesCanonicalSemanticOptionsAlongsideTransport(t *testing.T) {
+func TestStagedFixUsesCanonicalSemanticOptionsAlongsideTransport(t *testing.T) {
 	t.Parallel()
-	digest := strings.Repeat("a", 64)
-	command, err := ParseCommand([]string{
-		"--fix-stdin", "12",
-		"--sha256", digest,
-		"--origin", state.ParentOriginExternalReview,
-		"--accepted-scope", "current-diff",
-	})
+	command, err := ParseCommand(stagedTestCommandArgs("fix", "--origin", state.ParentOriginExternalReview,
+		"--accepted-scope", "current-diff"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Mode != ModeFix || command.StdinBytes != 12 || command.SHA256 != digest {
+	if command.Mode != ModeFix || command.ParentStageToken != stagedTestToken || command.SHA256 != stagedTestDigest {
 		t.Fatalf("transport command = %#v", command)
 	}
 	if command.Origin != state.ParentOriginExternalReview || command.AcceptedScope != "current-diff" {
@@ -27,14 +22,14 @@ func TestFixStdinUsesCanonicalSemanticOptionsAlongsideTransport(t *testing.T) {
 	}
 }
 
-func TestFixStdinRejectsInvalidCanonicalSemanticOptionsDuringParsing(t *testing.T) {
+func TestStagedFixRejectsInvalidCanonicalSemanticOptionsDuringParsing(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"--fix-stdin", "12", "--accepted-scope", "other"},
-		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only"},
-		{"--fix-stdin", "12", "--origin", state.ParentOriginCodexReview, "--origin", state.ParentOriginGLMReviewer},
-		{"--fix-stdin", "12", "--unknown", "value"},
-		{"--fix-stdin", "12", "--sha256", "--origin", state.ParentOriginCodexReview, strings.Repeat("a", 64)},
+		stagedTestCommandArgs("fix", "--accepted-scope", "other"),
+		stagedTestCommandArgs("fix", "--accepted-scope", "current-diff", "--approval-only"),
+		stagedTestCommandArgs("fix", "--origin", state.ParentOriginCodexReview, "--origin", state.ParentOriginGLMReviewer),
+		stagedTestCommandArgs("fix", "--unknown", "value"),
+		stagedTestCommandArgs("fix", "--sha256", "--origin", state.ParentOriginCodexReview, strings.Repeat("a", 64)),
 	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("ParseCommand(%v) unexpectedly succeeded", args)

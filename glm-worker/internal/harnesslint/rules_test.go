@@ -476,6 +476,39 @@ func TestStaleAuthority(t *testing.T) {
 	}
 }
 
+func TestCanonicalLintRejectsReintroducedCompatibilitySurfaces(t *testing.T) {
+	root := fixtureRoot(t)
+	type sample struct {
+		path string
+		text string
+	}
+	for _, item := range []sample{
+		{"glm-worker/internal/example/app.go", "package example\nconst diagnostic = \"--decision-stdin\"\n"},
+		{"glm-worker/internal/example/context.go", "package example\nconst digest = \"272650650f2f339a7d9272252c76b4abb0f12d04567143b159241b56514269aa\"\n"},
+		{"glm-worker/internal/example/telemetry.go", "package example\nconst cause = \"cause_missing_legacy\"\n"},
+		{"codex/instructions/example.md", "# 指示\n\n--fix-stdinを使う。\n"},
+	} {
+		writeFixture(t, root, item.path, item.text)
+	}
+	fixture := "glm-worker/internal/example/example_test.go"
+	writeFixture(t, root, fixture, "package example\nconst rejected = \"--fix-stdin\"\n")
+	current := "glm-worker/internal/example/current.go"
+	writeFixture(t, root, current, "package example\nconst command = \"--staged-parent-input\"\n")
+	violations := ruleViolations(t, root)
+	count := 0
+	for _, violation := range violations {
+		if violation.Rule == cleanCutoverRule {
+			count++
+			if violation.Path == current || violation.Path == fixture {
+				t.Fatalf("current surface or regression fixture rejected: %+v", violation)
+			}
+		}
+	}
+	if count != 4 {
+		t.Fatalf("expected all four reintroduction probes to fail: %+v", violations)
+	}
+}
+
 func fixtureRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

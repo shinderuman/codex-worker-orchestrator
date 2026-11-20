@@ -36,7 +36,7 @@ func TestDispatchCommandMachineOutputContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	flags := dispatchCommandFlags(t)
-	for _, required := range []string{"--accept", "--status", "--install-smoke", "--decision-stdin"} {
+	for _, required := range []string{"--accept", "--status", "--install-smoke", "--staged-parent-input"} {
 		if !flags[required] {
 			t.Fatalf("ParseCommand dispatchの展開に%sが含まれていません: %v", required, flags)
 		}

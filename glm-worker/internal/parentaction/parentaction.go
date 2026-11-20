@@ -157,19 +157,28 @@ func Peek(repoRoot, action, token string) ([]byte, error) {
 }
 
 func Consume(repoRoot, action, token string) ([]byte, error) {
-	return consume(repoRoot, action, token, nil, false)
+	return consume(repoRoot, action, token, nil)
 }
 
 func ConsumeExpected(repoRoot, action, token string, expected []byte) ([]byte, error) {
-	return consume(repoRoot, action, token, expected, true)
+	return consume(repoRoot, action, token, func(payload []byte) bool {
+		return bytes.Equal(payload, expected)
+	})
 }
 
-func consume(repoRoot, action, token string, expected []byte, requireExpected bool) ([]byte, error) {
+func ConsumeSHA256(repoRoot, action, token, expected string) ([]byte, error) {
+	return consume(repoRoot, action, token, func(payload []byte) bool {
+		digest := sha256.Sum256(payload)
+		return hex.EncodeToString(digest[:]) == expected
+	})
+}
+
+func consume(repoRoot, action, token string, matches func([]byte) bool) ([]byte, error) {
 	payload, err := Peek(repoRoot, action, token)
 	if err != nil {
 		return nil, err
 	}
-	if requireExpected && !bytes.Equal(payload, expected) {
+	if matches != nil && !matches(payload) {
 		return nil, fmt.Errorf("parent action staging payload changed after validation")
 	}
 	stageDir, err := actionStageDir(repoRoot, action)

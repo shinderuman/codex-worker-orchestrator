@@ -3,7 +3,6 @@ package app
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -140,13 +140,37 @@ func prepareWaitingSolReviewState(t *testing.T, cfg config.AppConfig) *state.Sta
 	return st
 }
 
-func runStdinPayload(t *testing.T, cfg config.AppConfig, r *fakeRunner, args []string, stdin io.Reader) error {
+func stagedSingleDecision(value string) string {
+	return "EXECUTION_UNIT: single\nMILESTONES_JSON: {\"milestones\":[]}\nDECISION:\n" + value
+}
+
+func writeStagedInput(t *testing.T, cfg config.AppConfig, action, payload string) parentaction.Prepared {
 	t.Helper()
-	return run(
-		args,
+	stage, err := parentaction.Prepare(cfg.RepoRoot, action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(stage.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, _, ok := strings.Cut(string(raw), "\n")
+	if !ok {
+		t.Fatal("missing staged token header")
+	}
+	if err := os.WriteFile(stage.Path, []byte(header+"\n"+payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return stage
+}
+
+func runStagedInput(t *testing.T, cfg config.AppConfig, r *fakeRunner, action, token, digest string) error {
+	t.Helper()
+	return runEntry(
+		[]string{parentaction.StagedWorkerInput, action, token, "--sha256", digest},
 		func() (config.AppConfig, error) { return cfg, nil },
 		r.factory(),
-		stdin,
+		strings.NewReader(""),
 		io.Discard,
 		io.Discard,
 	)
@@ -172,7 +196,7 @@ func assertFailClosedStateUnchanged(t *testing.T, cfg config.AppConfig, before m
 	}
 }
 
-func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
+func TestRunStagedDecisionPreservesPayloadBytes(t *testing.T) {
 	cfg := newHarnessAppConfig(t)
 	startStdinTaskAtDecision(t, cfg)
 	payload := stdinTestPayload()
@@ -181,11 +205,15 @@ func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
 		{structured: needsSolReviewPacketApp()},
 	}}
 
-	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
-	if err := runStdinPayload(t, cfg, r, args, strings.NewReader(payload)); err != nil {
+	framed := stagedSingleDecision(payload)
+	stage := writeStagedInput(t, cfg, "decision", framed)
+	if err := runStagedInput(t, cfg, r, "decision", stage.Token, stdinPayloadSHA(framed)); err != nil {
 		t.Fatal(err)
 	}
 
+	if _, err := os.Stat(stage.Path); !os.IsNotExist(err) {
+		t.Fatalf("valid staged decision was not consumed exactly once: %v", err)
+	}
 	st := state.AttachStateStore(cfg)
 	persisted, err := os.ReadFile(st.Path("last-decision"))
 	if err != nil {
@@ -203,7 +231,7 @@ func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
 	}
 }
 
-func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
+func TestRunStagedDecisionFailsClosedWithoutTokenPayload(t *testing.T) {
 	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
@@ -211,11 +239,14 @@ func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
 	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
 	before := snapshotStateFiles(t, cfg)
 
-	short := strings.NewReader(payload[:40])
-	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
-	err := runStdinPayload(t, cfg, r, args, short)
-	if err == nil || !strings.Contains(err.Error(), "stdin payload read failed after 40 of") {
-		t.Fatalf("読み取り不足をfail closedする必要があります: %v", err)
+	framed := stagedSingleDecision(payload)
+	stage := writeStagedInput(t, cfg, "decision", framed)
+	if err := os.Remove(stage.Path); err != nil {
+		t.Fatal(err)
+	}
+	err := runStagedInput(t, cfg, r, "decision", stage.Token, stdinPayloadSHA(framed))
+	if !os.IsNotExist(err) && (err == nil || !strings.Contains(err.Error(), "parent action staging file unavailable")) {
+		t.Fatalf("missing staged payload must fail closed: %v", err)
 	}
 	assertFailClosedStateUnchanged(t, cfg, before, r, state.TaskStatusWaitingDecision)
 	st := state.AttachStateStore(cfg)
@@ -224,7 +255,7 @@ func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
 	}
 }
 
-func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
+func TestRunStagedDecisionFailsClosedOnSHAMismatch(t *testing.T) {
 	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
@@ -232,16 +263,19 @@ func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
 	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
 	before := snapshotStateFiles(t, cfg)
 
-	other := stdinPayloadSHA(payload + "corrupted")
-	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", other}
-	err := runStdinPayload(t, cfg, r, args, strings.NewReader(payload))
-	if err == nil || !strings.Contains(err.Error(), "stdin payload sha256 mismatch") {
+	framed := stagedSingleDecision(payload)
+	stage := writeStagedInput(t, cfg, "decision", framed)
+	err := runStagedInput(t, cfg, r, "decision", stage.Token, stdinPayloadSHA(framed+"corrupted"))
+	if err == nil || !strings.Contains(err.Error(), "payload changed after validation") {
 		t.Fatalf("sha256不一致をfail closedする必要があります: %v", err)
+	}
+	if _, err := os.Stat(stage.Path); err != nil {
+		t.Fatalf("failed digest check consumed authorization: %v", err)
 	}
 	assertFailClosedStateUnchanged(t, cfg, before, r, state.TaskStatusWaitingDecision)
 }
 
-func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
+func TestRunStagedFixPreservesPayloadBytes(t *testing.T) {
 	cfg := newHarnessAppConfig(t)
 	startStdinTaskAtReview(t, cfg)
 	payload := stdinTestPayload()
@@ -250,8 +284,8 @@ func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
 		{structured: needsSolReviewPacketApp()},
 	}}
 
-	args := []string{"--fix-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
-	if err := runStdinPayload(t, cfg, r, args, strings.NewReader(payload)); err != nil {
+	stage := writeStagedInput(t, cfg, "fix", payload)
+	if err := runStagedInput(t, cfg, r, "fix", stage.Token, stdinPayloadSHA(payload)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,7 +299,7 @@ func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
 	}
 }
 
-func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
+func TestRunStagedFixFailsClosedOnWrongAction(t *testing.T) {
 	t.Parallel()
 	cfg := newCanonicalAppConfig(t)
 	prepareWaitingSolReviewState(t, cfg)
@@ -273,11 +307,10 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
 	before := snapshotStateFiles(t, cfg)
 
-	short := strings.NewReader(payload[:15])
-	args := []string{"--fix-stdin", fmt.Sprint(len(payload))}
-	err := runStdinPayload(t, cfg, r, args, short)
-	if err == nil || !strings.Contains(err.Error(), "stdin payload read failed after 15 of") {
-		t.Fatalf("読み取り不足をfail closedする必要があります: %v", err)
+	stage := writeStagedInput(t, cfg, "decision", stagedSingleDecision(payload))
+	err := runStagedInput(t, cfg, r, "fix", stage.Token, stdinPayloadSHA(payload))
+	if err == nil || !strings.Contains(err.Error(), "parent action staging file unavailable") {
+		t.Fatalf("a token for a different action must fail closed: %v", err)
 	}
 	assertFailClosedStateUnchanged(t, cfg, before, r, state.TaskStatusWaitingSolReview)
 	if st := state.AttachStateStore(cfg); !st.Exists("last-review") {
@@ -285,7 +318,7 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 	}
 }
 
-func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
+func TestRunStagedDecisionPreservesNULBytes(t *testing.T) {
 	cfg := newHarnessAppConfig(t)
 	startStdinTaskAtDecision(t, cfg)
 	payload := "NUL先頭\x00中間\x00末尾\n2行目 `backtick` $HOME \"double\" 'single' 日本語\x00"
@@ -294,18 +327,9 @@ func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
 		{structured: needsSolReviewPacketApp()},
 	}}
 
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = pipeReader.Close() }()
-	go func() {
-		_, _ = pipeWriter.Write([]byte(payload))
-		_ = pipeWriter.Close()
-	}()
-
-	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
-	if err := runStdinPayload(t, cfg, r, args, pipeReader); err != nil {
+	framed := stagedSingleDecision(payload)
+	stage := writeStagedInput(t, cfg, "decision", framed)
+	if err := runStagedInput(t, cfg, r, "decision", stage.Token, stdinPayloadSHA(framed)); err != nil {
 		t.Fatal(err)
 	}
 

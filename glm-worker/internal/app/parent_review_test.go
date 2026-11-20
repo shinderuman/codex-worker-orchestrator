@@ -30,19 +30,21 @@ func TestParseCommandAccept(t *testing.T) {
 	}
 }
 
-func TestParseCommandFixStdinOrigin(t *testing.T) {
+func TestParseCommandStagedFixOrigin(t *testing.T) {
 	t.Parallel()
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-	command, err := ParseCommand([]string{"--fix-stdin", "2507", "--origin", "metadata-repair"})
+	command, err := ParseCommand(stagedTestCommandArgs("fix", "--origin", "metadata-repair"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Mode != ModeFix || command.StdinBytes != 2507 || command.Origin != "metadata-repair" {
+	if command.Mode != ModeFix || command.ParentStageToken != stagedTestToken || command.Origin != "metadata-repair" {
 		t.Fatalf("command = %#v", command)
 	}
 
-	command, err = ParseCommand([]string{"--fix-stdin", "1", "--sha256", digest, "--origin", "user-amendment"})
+	args := stagedTestCommandArgs("fix", "--origin", "user-amendment")
+	args[4] = digest
+	command, err = ParseCommand(args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +52,9 @@ func TestParseCommandFixStdinOrigin(t *testing.T) {
 		t.Fatalf("command = %#v", command)
 	}
 
-	command, err = ParseCommand([]string{"--fix-stdin", "1", "--origin", "external-review", "--sha256", strings.ToUpper(digest)})
+	args = stagedTestCommandArgs("fix", "--origin", "external-review")
+	args[4] = strings.ToUpper(digest)
+	command, err = ParseCommand(args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +63,12 @@ func TestParseCommandFixStdinOrigin(t *testing.T) {
 	}
 
 	for _, args := range [][]string{
-		{"--fix-stdin", "1", "--origin", "codex-review", "--origin", "user-amendment"},
-		{"--fix-stdin", "1", "--origin"},
-		{"--fix-stdin", "1", "--origin", "vibe-check"},
-		{"--fix-stdin", "1", "--origin", "reviewer"},
-		{"--fix-stdin", "1", "--sha256"},
-		{"--decision-stdin", "1", "--origin", "codex-review"},
+		stagedTestCommandArgs("fix", "--origin", "codex-review", "--origin", "user-amendment"),
+		stagedTestCommandArgs("fix", "--origin"),
+		stagedTestCommandArgs("fix", "--origin", "vibe-check"),
+		stagedTestCommandArgs("fix", "--origin", "reviewer"),
+		stagedTestCommandArgs("fix", "--sha256"),
+		stagedTestCommandArgs("decision", "--origin", "codex-review"),
 	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("不正なstdin option組み合わせを拒否する必要があります: %#v", args)
@@ -458,7 +462,7 @@ func TestExecuteDecisionRecordsParentOutcome(t *testing.T) {
 		{structured: implementedPacketApp("resolved")},
 		{structured: reviewFixPacketApp()},
 	}}
-	if err := Execute(Command{Mode: ModeDecision, Payload: "A案で進める"}, cfg, answer.factory(), io.Discard, io.Discard); err != nil {
+	if err := Execute(Command{Mode: ModeDecision, Payload: stagedSingleDecision("A案で進める")}, cfg, answer.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 

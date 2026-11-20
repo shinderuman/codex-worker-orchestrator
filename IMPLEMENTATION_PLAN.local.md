@@ -8,8 +8,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/remove-backward-compatibility-surfaces.md`](IMPLEMENTATION_TASKS/remove-backward-compatibility-surfaces.md)
-
 ## NEXT（優先順）
 
 ## BLOCKED / USER_PERMISSION_WAIT

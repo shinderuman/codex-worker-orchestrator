@@ -97,7 +97,7 @@ func TestExecuteStagedFixForwardsOriginAndCauseLosslessly(t *testing.T) {
 		t.Fatal("fix payload descriptor missing")
 	}
 	marker := writeParentActionWorkerStubWithCheck(t, cfg,
-		`test "$1" = "--fix-stdin" && test "$5" = "--origin" && test "$6" = "glm-reviewer" && test "$7" = "--cause" && test "$8" = "cross-cutting-invariant"`)
+		`test "$1" = "--staged-parent-input" && test "$2" = "fix" && test "$4" = "--sha256" && test "$6" = "--origin" && test "$7" = "glm-reviewer" && test "$8" = "--cause" && test "$9" = "cross-cutting-invariant"`)
 	if err := executePayloadAction(
 		cfg.RepoRoot,
 		descriptor,

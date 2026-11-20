@@ -9,10 +9,6 @@ import (
 )
 
 func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error {
-	if !executionunit.IsPayload(payload) {
-		return w.ExecuteDecisionWithExecutionMilestones(payload)
-	}
-
 	input, err := executionunit.Parse(payload)
 	if err != nil {
 		return err

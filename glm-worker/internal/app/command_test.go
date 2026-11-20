@@ -1,9 +1,13 @@
 package app
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
+
+const stagedTestToken = "stage-token"
+const stagedTestDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestParseCommandModes(t *testing.T) {
 	t.Parallel()
@@ -101,69 +105,47 @@ func TestGLMProviderAutoResumeCommandsAreRetired(t *testing.T) {
 	}
 }
 
-func TestParseCommandStdinPayloadModes(t *testing.T) {
+func stagedTestCommandArgs(action string, options ...string) []string {
+	return append([]string{"--staged-parent-input", action, stagedTestToken, "--sha256", stagedTestDigest}, options...)
+}
+
+func TestParseCommandStagedParentInput(t *testing.T) {
 	t.Parallel()
-	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-	tests := []struct {
-		name        string
-		args        []string
-		mode        CommandMode
-		stdinBytes  int64
-		expectedSHA string
-	}{
-		{name: "decision stdin", args: []string{"--decision-stdin", "3850"}, mode: ModeDecision, stdinBytes: 3850},
-		{name: "fix stdin", args: []string{"--fix-stdin", "2507"}, mode: ModeFix, stdinBytes: 2507},
-		{
-			name:        "decision stdin with sha256",
-			args:        []string{"--decision-stdin", "100", "--sha256", strings.ToUpper(digest)},
-			mode:        ModeDecision,
-			stdinBytes:  100,
-			expectedSHA: digest,
-		},
-		{
-			name:        "fix stdin with sha256",
-			args:        []string{"--fix-stdin", "1", "--sha256", digest},
-			mode:        ModeFix,
-			stdinBytes:  1,
-			expectedSHA: digest,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			command, err := ParseCommand(test.args)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if command.Mode != test.mode || command.StdinBytes != test.stdinBytes || command.Payload != "" || command.SHA256 != test.expectedSHA {
-				t.Fatalf("command = %#v", command)
-			}
-		})
+	for action, mode := range map[string]CommandMode{"decision": ModeDecision, "fix": ModeFix} {
+		args := stagedTestCommandArgs(action)
+		args[4] = strings.ToUpper(args[4])
+		command, err := ParseCommand(args)
+		if err != nil || command.Mode != mode || command.StdinBytes != 0 || command.Payload != "" ||
+			command.ParentStageToken != stagedTestToken || command.SHA256 != stagedTestDigest {
+			t.Fatalf("staged command = %#v, %v", command, err)
+		}
 	}
 }
 
-func TestParseCommandRejectsInvalidStdinArguments(t *testing.T) {
+func TestParseCommandRejectsInvalidStagedInputArguments(t *testing.T) {
 	t.Parallel()
-	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	tests := [][]string{
-		{"--decision-stdin"},
-		{"--decision-stdin", "abc"},
-		{"--decision-stdin", "0"},
-		{"--decision-stdin", "-1"},
-		{"--decision-stdin", "10", "extra"},
-		{"--decision-stdin", "10", "--sha256"},
-		{"--decision-stdin", "10", "--sha256", "short"},
-		{"--decision-stdin", "10", "--sha256", digest[:63] + "g"},
-		{"--decision-stdin", "10", "--sha256", digest, "extra"},
-		{"--decision-stdin", "10", "--decision", "payload"},
-		{"--fix-stdin"},
-		{"--fix-stdin", "10", "--checksum", digest},
-	}
-
-	for _, args := range tests {
+	for _, args := range [][]string{
+		{"--staged-parent-input"},
+		{"--staged-parent-input", "decision", stagedTestToken},
+		{"--staged-parent-input", "decision", "", "--sha256", stagedTestDigest},
+		{"--staged-parent-input", "decision", stagedTestToken, "--sha256", "short"},
+		{"--staged-parent-input", "decision", stagedTestToken, "--sha256", stagedTestDigest[:63] + "g"},
+		{"--staged-parent-input", "other", stagedTestToken, "--sha256", stagedTestDigest},
+		stagedTestCommandArgs("decision", "unexpected"),
+		stagedTestCommandArgs("fix", "--sha256", stagedTestDigest),
+	} {
 		if _, err := ParseCommand(args); err == nil {
-			t.Fatalf("invalid argsを受理しました: %#v", args)
+			t.Fatalf("invalid staged args accepted: %#v", args)
+		}
+	}
+}
+
+func TestRetiredDecisionFixStdinCommandsUseGenericRejection(t *testing.T) {
+	t.Parallel()
+	for _, flag := range []string{"--decision-stdin", "--fix-stdin"} {
+		_, err := ParseCommand([]string{flag, "12", "--sha256", stagedTestDigest})
+		if err == nil || err.Error() != "unknown command "+strconv.Quote(flag)+"; run glm-worker --help for command list" {
+			t.Fatalf("retired command must use generic unknown-command handling: %v", err)
 		}
 	}
 }

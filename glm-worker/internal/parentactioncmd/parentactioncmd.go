@@ -474,12 +474,25 @@ func executePayloadAction(
 	if err != nil {
 		return err
 	}
+	if descriptor.WorkerMode == parentaction.StagedWorkerInput {
+		payload, err := parentaction.Peek(repoRoot, action, args[0])
+		if err != nil {
+			return err
+		}
+		return runResolvedWorker(worker, repoRoot, stagedWorkerArgs(action, args[0], payload, args[1:]), nil, stdout, stderr, extraEnv)
+	}
 	payload, err := parentaction.Consume(repoRoot, action, args[0])
 	if err != nil {
 		return err
 	}
 	workerArgs := payloadWorkerArgsForDescriptor(descriptor, payload, args[1:])
 	return runResolvedWorker(worker, repoRoot, workerArgs, bytes.NewReader(payload), stdout, stderr, extraEnv)
+}
+
+func stagedWorkerArgs(action, token string, payload []byte, options []string) []string {
+	digest := sha256.Sum256(payload)
+	args := []string{parentaction.StagedWorkerInput, action, token, "--sha256", hex.EncodeToString(digest[:])}
+	return append(args, options...)
 }
 
 func payloadWorkerArgsForDescriptor(descriptor parentaction.PayloadAction, payload []byte, options []string) []string {

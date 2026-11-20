@@ -4,8 +4,8 @@ import "testing"
 
 func TestLookupPayloadActionOwnsCurrentTransportMapping(t *testing.T) {
 	for action, wantMode := range map[string]string{
-		"decision":          "--decision-stdin",
-		"fix":               "--fix-stdin",
+		"decision":          StagedWorkerInput,
+		"fix":               StagedWorkerInput,
 		"start-milestones":  "--execution-milestones-stdin",
 		"revise-milestones": "--execution-milestones-revise-stdin",
 	} {

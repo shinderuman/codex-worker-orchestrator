@@ -1,10 +1,35 @@
 package state
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 )
+
+func TestModelCallLogRejectsEveryNoncurrentSchema(t *testing.T) {
+	t.Parallel()
+	current := ModelCallLog{Version: ModelCallLogVersion}
+	encoded, err := json.Marshal(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(encoded, &current); err != nil {
+		t.Fatalf("current retained schema: %v", err)
+	}
+	for _, wire := range []string{
+		`{}`,
+		fmt.Sprintf(`{"version":%d,"schema_revision":%d}`, ModelCallLogVersion-1, ModelCallLogSchemaRevision),
+		fmt.Sprintf(`{"version":%d,"schema_revision":%d}`, ModelCallLogVersion+1, ModelCallLogSchemaRevision),
+		fmt.Sprintf(`{"version":%d,"schema_revision":%d}`, ModelCallLogVersion, ModelCallLogSchemaRevision+1),
+	} {
+		if err := json.Unmarshal([]byte(wire), &current); !errors.Is(err, errUnsupportedModelCallSchema) || current.Version != ModelCallLogVersion {
+			t.Fatalf("noncurrent schema decoded or mutated current value: %s: %v", wire, err)
+		}
+	}
+}
 
 func TestRecordModelCallLogPersistsPrivateJSONL(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}

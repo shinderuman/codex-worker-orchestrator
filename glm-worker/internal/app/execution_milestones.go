@@ -16,7 +16,7 @@ const executionMilestoneTaskUsage = "usage: glm-worker --execution-milestones-st
 const executionMilestoneRevisionUsage = "usage: glm-worker --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>]"
 
 func executionMilestoneTaskCommand(args []string) (Command, error) {
-	command, err := stdinPayloadCommand(ModeNewTask, args, executionMilestoneTaskUsage, false)
+	command, err := stdinPayloadCommand(ModeNewTask, args, executionMilestoneTaskUsage)
 	if err != nil {
 		return Command{}, err
 	}
@@ -25,7 +25,7 @@ func executionMilestoneTaskCommand(args []string) (Command, error) {
 }
 
 func executionMilestoneRevisionCommand(args []string) (Command, error) {
-	return stdinPayloadCommand(ModeExecutionMilestonesRevise, args, executionMilestoneRevisionUsage, false)
+	return stdinPayloadCommand(ModeExecutionMilestonesRevise, args, executionMilestoneRevisionUsage)
 }
 
 func executeExecutionMilestoneRevision(

@@ -1,7 +1,6 @@
 package parentactioncmd
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 
@@ -39,11 +38,7 @@ func executePreflightedDecision(cfg config.AppConfig, args []string, stdout, std
 		if _, err := executionmilestone.Preflight(cfg, state.AttachStateStore(cfg), input); err != nil {
 			return err
 		}
-		payload, err = parentaction.ConsumeExpected(cfg.RepoRoot, string(descriptor.Action), args[1], payload)
-		if err != nil {
-			return err
-		}
-		workerArgs := payloadWorkerArgsForDescriptor(descriptor, payload, nil)
-		return runResolvedWorker(worker, cfg.RepoRoot, workerArgs, bytes.NewReader(payload), stdout, stderr, nil)
+		workerArgs := stagedWorkerArgs(string(descriptor.Action), args[1], payload, nil)
+		return runResolvedWorker(worker, cfg.RepoRoot, workerArgs, nil, stdout, stderr, nil)
 	})
 }

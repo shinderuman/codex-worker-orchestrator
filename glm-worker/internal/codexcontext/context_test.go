@@ -198,37 +198,40 @@ func gitOutput(t *testing.T, repo string, args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func TestDisableRetiresExactObsoleteInstructionProfile(t *testing.T) {
-	const oldBootstrap = `developer_instructions = "When glm-worker or glm-parent-action is used in this repository, first read and follow instructions/codex-worker-orchestrator.md from the active Codex configuration directory. Resolve that directory as CODEX_CONFIG_DIR when set by this toolchain, otherwise CODEX_HOME when set, otherwise ~/.codex. Treat that installed file as the single source of truth for parent/tool rules; do not duplicate its rule body here."`
+func TestProjectConfigOtherThanCurrentUsesGenericConflict(t *testing.T) {
+	const priorBootstrap = `developer_instructions = "When glm-worker or glm-parent-action is used in this repository, first read and follow instructions/codex-worker-orchestrator.md from the active Codex configuration directory. Resolve that directory as CODEX_CONFIG_DIR when set by this toolchain, otherwise CODEX_HOME when set, otherwise ~/.codex. Treat that installed file as the single source of truth for parent/tool rules; do not duplicate its rule body here."`
 	repo := initTestRepo(t)
 	runAction(t, "enable", repo)
 	configPath := filepath.Join(repo, filepath.FromSlash(ProjectConfigRelativePath))
-	legacy := bytes.Replace(managedConfig, []byte("include_apps_instructions = false"), []byte(oldBootstrap+"\n\ninclude_apps_instructions = false"), 1)
-	custom := append(bytes.Clone(legacy), []byte("\n# user customization\n")...)
-	if err := os.WriteFile(configPath, custom, 0o644); err != nil {
+	priorProfile := bytes.Replace(managedConfig, []byte("include_apps_instructions = false"), []byte(priorBootstrap+"\n\ninclude_apps_instructions = false"), 1)
+	if err := os.WriteFile(configPath, []byte("[features]\napps = true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Run([]string{"disable", repo}, &bytes.Buffer{}); err == nil {
-		t.Fatal("disable accepted a customized obsolete profile")
+	generic := runAction(t, "status", repo)
+	if generic.Status != contextStateConflict {
+		t.Fatalf("ordinary foreign config should conflict: %+v", generic)
 	}
-	if got, err := os.ReadFile(configPath); err != nil || !bytes.Equal(got, custom) {
-		t.Fatalf("customized profile changed: %v", err)
-	}
-	if err := os.WriteFile(configPath, legacy, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := Run([]string{"enable", repo}, &bytes.Buffer{}); err == nil {
-		t.Fatal("enable accepted an obsolete instruction profile")
-	}
-	disabled := runAction(t, "disable", repo)
-	if disabled.Status != contextStateDisabled || disabled.GitExcluded {
-		t.Fatalf("obsolete profile did not retire: %+v", disabled)
-	}
-	if _, err := os.Lstat(configPath); !os.IsNotExist(err) {
-		t.Fatalf("obsolete profile remains: %v", err)
-	}
-	runAction(t, "enable", repo)
-	if got, err := os.ReadFile(configPath); err != nil || !bytes.Equal(got, managedConfig) {
-		t.Fatalf("re-enabled project did not use current profile: %v", err)
+	for _, candidate := range [][]byte{
+		priorProfile,
+		append(bytes.Clone(priorProfile), []byte("\n# user customization\n")...),
+	} {
+		if err := os.WriteFile(configPath, candidate, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		result := runAction(t, "status", repo)
+		if result != generic {
+			t.Fatalf("foreign configuration should have the generic conflict: %+v", result)
+		}
+		for action, message := range map[string]string{
+			"enable":  "refusing to overwrite existing ",
+			"disable": "refusing to remove existing ",
+		} {
+			if err := Run([]string{action, repo}, &bytes.Buffer{}); err == nil || !strings.HasPrefix(err.Error(), message) {
+				t.Fatalf("%s did not use the generic ownership guard: %v", action, err)
+			}
+		}
+		if got, err := os.ReadFile(configPath); err != nil || !bytes.Equal(got, candidate) {
+			t.Fatalf("foreign configuration changed: %v", err)
+		}
 	}
 }

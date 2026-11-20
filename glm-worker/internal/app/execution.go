@@ -7,6 +7,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controller"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -37,6 +38,17 @@ func run(
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
+	}
+	if cmd.ParentStageToken != "" {
+		action := parentaction.ActionDecision
+		if cmd.Mode == ModeFix {
+			action = parentaction.ActionFix
+		}
+		payload, err := parentaction.ConsumeSHA256(cfg.RepoRoot, string(action), cmd.ParentStageToken, cmd.SHA256)
+		if err != nil {
+			return err
+		}
+		cmd.Payload = string(payload)
 	}
 	return dispatchMachineOutput(cmd, cfg, runnerFactory, stdout, stderr)
 }

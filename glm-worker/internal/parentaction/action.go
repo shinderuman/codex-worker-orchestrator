@@ -7,6 +7,8 @@ type PayloadAction struct {
 	WorkerMode string
 }
 
+const StagedWorkerInput = "--staged-parent-input"
+
 const (
 	ActionDecision           Action = "decision"
 	ActionFix                Action = "fix"
@@ -18,11 +20,11 @@ const (
 var payloadActions = map[Action]PayloadAction{
 	ActionDecision: {
 		Action:     ActionDecision,
-		WorkerMode: "--decision-stdin",
+		WorkerMode: StagedWorkerInput,
 	},
 	ActionFix: {
 		Action:     ActionFix,
-		WorkerMode: "--fix-stdin",
+		WorkerMode: StagedWorkerInput,
 	},
 	ActionStartMilestones: {
 		Action:     ActionStartMilestones,

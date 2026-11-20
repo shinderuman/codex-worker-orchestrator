@@ -309,7 +309,7 @@ func buildReviewGapFix(evidence reviewGapTaskEvidence) reviewGapFix {
 		FixEvent:    reviewGapEventRefOf(event),
 		Origin:      origin,
 		Cause:       event.ParentCause,
-		CauseStatus: reviewGapCauseStatus(event, origin),
+		CauseStatus: reviewGapCauseStatus(event.ParentCause),
 	}
 	reviewGapFillRound(&fix, evidence)
 	fix.ParentReworkInterval = buildReviewGapReworkInterval(evidence)
@@ -317,12 +317,9 @@ func buildReviewGapFix(evidence reviewGapTaskEvidence) reviewGapFix {
 	return fix
 }
 
-func reviewGapCauseStatus(event state.ModelCallLog, origin string) string {
-	if event.ParentCause != "" {
+func reviewGapCauseStatus(cause string) string {
+	if cause != "" {
 		return reviewGapKnown
-	}
-	if origin == state.ParentOriginCodexReview {
-		return state.CauseStatusMissingLegacy
 	}
 	return state.CauseStatusNotDeclared
 }

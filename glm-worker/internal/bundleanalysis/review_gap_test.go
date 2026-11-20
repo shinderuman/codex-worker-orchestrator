@@ -257,10 +257,10 @@ func TestReviewGapPreservesFixCountWithUnknownEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Now().UTC().Add(-1 * time.Hour)
-	legacyAt := start.Add(10 * time.Minute)
+	missingCauseAt := start.Add(10 * time.Minute)
 	undeclaredAt := start.Add(30 * time.Minute)
 	records := []state.ModelCallLog{
-		reviewGapParentEvent(taskID, legacyAt, state.ParentPhaseFix, state.ParentOutcomeFix, state.ParentOriginCodexReview, ""),
+		reviewGapParentEvent(taskID, missingCauseAt, state.ParentPhaseFix, state.ParentOutcomeFix, state.ParentOriginCodexReview, ""),
 		reviewGapParentEvent(taskID, undeclaredAt, state.ParentPhaseFix, state.ParentOutcomeFix, state.ParentOriginExternalReview, ""),
 	}
 	writeReviewGapTelemetry(t, st, taskID, records)
@@ -273,27 +273,26 @@ func TestReviewGapPreservesFixCountWithUnknownEvidence(t *testing.T) {
 	if report.FixCount != 2 || len(report.Fixes) != 2 || report.Coverage != reviewGapCoverageComplete {
 		t.Fatalf("fix count lost: %#v", report)
 	}
-	legacy := report.Fixes[0]
-	if legacy.CauseStatus != state.CauseStatusMissingLegacy {
-		t.Fatalf("legacy codex-review cause status = %q", legacy.CauseStatus)
+	missingCause := report.Fixes[0]
+	if missingCause.CauseStatus != state.CauseStatusNotDeclared {
+		t.Fatalf("missingCause codex-review cause status = %q", missingCause.CauseStatus)
 	}
-	if legacy.CategoryStatus != reviewGapUnknown || legacy.CategoryReason != reviewGapReasonRoundLogMissing ||
-		legacy.SemanticityStatus != reviewGapUnknown || legacy.SemanticityReason != reviewGapReasonRoundLogMissing {
-		t.Fatalf("legacy round evidence = %#v", legacy)
+	if missingCause.CategoryStatus != reviewGapUnknown || missingCause.CategoryReason != reviewGapReasonRoundLogMissing ||
+		missingCause.SemanticityStatus != reviewGapUnknown || missingCause.SemanticityReason != reviewGapReasonRoundLogMissing {
+		t.Fatalf("missingCause round evidence = %#v", missingCause)
 	}
-	if legacy.Downstream.Status != reviewGapUnknown || legacy.Downstream.Reason != reviewGapReasonWorkerFixCallMissing {
-		t.Fatalf("legacy downstream = %#v", legacy.Downstream)
+	if missingCause.Downstream.Status != reviewGapUnknown || missingCause.Downstream.Reason != reviewGapReasonWorkerFixCallMissing {
+		t.Fatalf("missingCause downstream = %#v", missingCause.Downstream)
 	}
-	if legacy.ParentReworkInterval.Status != codexStatusMissing ||
-		legacy.ParentReworkInterval.Reason != "parent-session-missing" {
-		t.Fatalf("legacy interval = %#v", legacy.ParentReworkInterval)
+	if missingCause.ParentReworkInterval.Status != codexStatusMissing ||
+		missingCause.ParentReworkInterval.Reason != "parent-session-missing" {
+		t.Fatalf("missingCause interval = %#v", missingCause.ParentReworkInterval)
 	}
 	undeclared := report.Fixes[1]
 	if undeclared.CauseStatus != state.CauseStatusNotDeclared {
 		t.Fatalf("external-review cause status = %q", undeclared.CauseStatus)
 	}
-	if report.Summary.ByCauseStatus[state.CauseStatusMissingLegacy] != 1 ||
-		report.Summary.ByCauseStatus[state.CauseStatusNotDeclared] != 1 || len(report.Summary.ByCause) != 0 {
+	if report.Summary.ByCauseStatus[state.CauseStatusNotDeclared] != 2 || len(report.Summary.ByCause) != 0 {
 		t.Fatalf("summary = %#v", report.Summary)
 	}
 }

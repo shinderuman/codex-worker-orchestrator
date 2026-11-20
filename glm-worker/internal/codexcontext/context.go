@@ -2,7 +2,6 @@ package codexcontext
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,14 +24,13 @@ type Result struct {
 }
 
 const (
-	ProjectConfigRelativePath  = ".codex/config.toml"
-	managedMarker              = "# managed-by: codex-worker-orchestrator glm-codex-context v1"
-	excludeMarker              = "# codex-worker-orchestrator glm-codex-context v1"
-	excludePattern             = "/.codex/config.toml"
-	contextStateEnabled        = "enabled"
-	contextStateDisabled       = "disabled"
-	contextStateConflict       = "conflict"
-	retiredManagedConfigSHA256 = "272650650f2f339a7d9272252c76b4abb0f12d04567143b159241b56514269aa"
+	ProjectConfigRelativePath = ".codex/config.toml"
+	managedMarker             = "# managed-by: codex-worker-orchestrator glm-codex-context v1"
+	excludeMarker             = "# codex-worker-orchestrator glm-codex-context v1"
+	excludePattern            = "/.codex/config.toml"
+	contextStateEnabled       = "enabled"
+	contextStateDisabled      = "disabled"
+	contextStateConflict      = "conflict"
 )
 
 var managedConfig = []byte(managedMarker + `
@@ -59,10 +57,6 @@ multi_agent_mode_hint_text = ""
 
 func IsManagedConfig(content []byte) bool {
 	return bytes.Equal(content, managedConfig)
-}
-
-func isRetiredManagedConfig(content []byte) bool {
-	return fmt.Sprintf("%x", sha256.Sum256(content)) == retiredManagedConfigSHA256
 }
 
 func Run(args []string, stdout io.Writer) error {
@@ -135,8 +129,6 @@ func enable(root string) (Result, error) {
 func ensureManagedConfig(configPath string) (bool, error) {
 	content, err := os.ReadFile(configPath)
 	switch {
-	case err == nil && isRetiredManagedConfig(content):
-		return false, errors.New("obsolete managed project configuration: run glm-codex-context disable before enabling")
 	case err == nil && !IsManagedConfig(content):
 		return false, fmt.Errorf("refusing to overwrite existing %s; merge the lean Codex settings explicitly or disable/remove the existing project config first", ProjectConfigRelativePath)
 	case err == nil:
@@ -166,7 +158,7 @@ func disable(root string) (Result, error) {
 	content, err := os.ReadFile(configPath)
 	switch {
 	case err == nil:
-		if !IsManagedConfig(content) && !canRetireManagedConfig(configPath, content) {
+		if !IsManagedConfig(content) {
 			return Result{}, fmt.Errorf("refusing to remove existing %s because it is not owned by glm-codex-context", ProjectConfigRelativePath)
 		}
 		if err := removeManagedConfig(configPath); err != nil {
@@ -193,18 +185,6 @@ func disable(root string) (Result, error) {
 		DesktopRestart:    false,
 		Detail:            "start a new Codex thread to return to normal inherited Skills/Plugins/Apps/collaboration behavior",
 	}, nil
-}
-
-func canRetireManagedConfig(path string, content []byte) bool {
-	if !isRetiredManagedConfig(content) {
-		return false
-	}
-	dir, err := os.Lstat(filepath.Dir(path))
-	if err != nil || !dir.IsDir() {
-		return false
-	}
-	info, err := os.Lstat(path)
-	return err == nil && info.Mode().IsRegular()
 }
 
 func status(root string) (Result, error) {
@@ -234,8 +214,6 @@ func managedConfigState(configPath string) (string, string, error) {
 	switch {
 	case err == nil && IsManagedConfig(content):
 		return contextStateEnabled, "lean project context is configured; setting changes apply to new Codex threads", nil
-	case err == nil && canRetireManagedConfig(configPath, content):
-		return contextStateConflict, "obsolete managed project configuration; run glm-codex-context disable to retire it", nil
 	case err == nil:
 		return contextStateConflict, "project config exists but is not owned by glm-codex-context", nil
 	case errors.Is(err, os.ErrNotExist):

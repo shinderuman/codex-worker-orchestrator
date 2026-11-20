@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -44,6 +45,8 @@ const gitSnapshotSchemaVersion = 1
 const taskStatsSchemaRevision = 1
 
 const ModelCallLogSchemaRevision = 1
+
+var errUnsupportedModelCallSchema = errors.New("unsupported model call schema")
 
 func decodeCurrentStateJSON(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -141,19 +144,12 @@ func (call ModelCallLog) MarshalJSON() ([]byte, error) {
 }
 
 func (call *ModelCallLog) UnmarshalJSON(data []byte) error {
-	var header struct {
-		Version        int `json:"version"`
-		SchemaRevision int `json:"schema_revision"`
-	}
+	var header telemetryCorpusHeader
 	if err := json.Unmarshal(data, &header); err != nil {
 		return err
 	}
-	if header.Version != ModelCallLogVersion || header.SchemaRevision != ModelCallLogSchemaRevision {
-		*call = ModelCallLog{Version: header.Version}
-		if header.Version == ModelCallLogVersion {
-			call.Version = 0
-		}
-		return nil
+	if !header.current() {
+		return errUnsupportedModelCallSchema
 	}
 	var current modelCallLogWire
 	if err := decodeCurrentStateJSON(data, &current); err != nil {

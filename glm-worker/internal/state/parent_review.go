@@ -65,8 +65,7 @@ const (
 )
 
 const (
-	CauseStatusNotDeclared   = "cause_not_declared"
-	CauseStatusMissingLegacy = "cause_missing_legacy"
+	CauseStatusNotDeclared = "cause_not_declared"
 )
 
 const (

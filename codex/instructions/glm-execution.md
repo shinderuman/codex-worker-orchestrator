@@ -36,7 +36,7 @@
 - decisionの`execution_unit`だけはsemantic判断であり、`single`または`milestones`を選ぶ。`milestones`なら同じ自然停止境界で残作業を2〜8個のbounded scope/acceptanceへ分ける。token量・file数だけでは決めない。既存pending milestone authorityはbypassしない。
 - fixのorigin/cause/accepted-scopeは観測・semantic metadataである。起点と原因層は一次証拠から親が決め、GLMへ追加推定させない。machine contractが受理するsurface以外を作らない。
 - machine projectionに必要なaction spec/slot/next commandが欠落・矛盾している場合はfail closedし、旧stdin transport、shell quoting、独自path探索へfallbackしない。
-- `glm-worker --decision-stdin`/`--fix-stdin`はrecovery/debug互換であり、normal parent workflowのtransport authorityではない。
+- decision / fixは`glm-parent-action`が用意するstagingを使う。workerはactionとdigestが一致する一回限りのstagingを消費する。
 
 ## 親操作のsemantic disposition
 

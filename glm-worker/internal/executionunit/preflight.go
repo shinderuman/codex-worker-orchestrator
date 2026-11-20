@@ -43,10 +43,6 @@ const (
 	milestoneMaxTextBytes = 2048
 )
 
-func IsPayload(payload string) bool {
-	return strings.HasPrefix(payload, executionUnitPrefix)
-}
-
 func Parse(payload string) (Decision, error) {
 	parts := strings.SplitN(payload, "\n", 4)
 	if len(parts) != 4 || !strings.HasPrefix(parts[0], executionUnitPrefix) ||

@@ -229,10 +229,10 @@ func (s *StateStore) ReadModelCallLogs(taskID string) ([]ModelCallLog, error) {
 	for scanner.Scan() {
 		var value ModelCallLog
 		if err := json.Unmarshal(scanner.Bytes(), &value); err != nil {
+			if errors.Is(err, errUnsupportedModelCallSchema) {
+				continue
+			}
 			return nil, fmt.Errorf("telemetryを読めません: %w", err)
-		}
-		if value.Version != ModelCallLogVersion {
-			continue
 		}
 		result = append(result, value)
 	}

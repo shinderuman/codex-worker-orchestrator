@@ -430,7 +430,32 @@ func staleAuthorityPathViolations(root, path string, staleFiles []string) ([]Vio
 			Message: "live code or instruction references obsolete authority " + stale,
 		})
 	}
-	return violations, nil
+	return append(violations, retiredCompatibilityReferences(path, data)...), nil
+}
+
+func retiredCompatibilityReferences(path string, data []byte) []Violation {
+	if strings.HasSuffix(path, "_test.go") || strings.HasPrefix(path, "tests/") || strings.HasPrefix(path, "glm-worker/scenarios/") {
+		return nil
+	}
+	var violations []Violation
+	for _, surface := range []string{
+		"--decision-stdin",
+		"--fix-stdin",
+		"retiredManagedConfigSHA256",
+		"isRetiredManagedConfig",
+		"canRetireManagedConfig",
+		"272650650f2f339a7d9272252c76b4abb0f12d04567143b159241b56514269aa",
+		"cause_missing_legacy",
+		"CauseStatusMissingLegacy",
+	} {
+		if bytes.Contains(data, []byte(surface)) {
+			violations = append(violations, Violation{
+				Rule: cleanCutoverRule, Path: path, Line: lineOf(string(data), surface), Column: 1,
+				Message: "retired compatibility surface is present: " + surface,
+			})
+		}
+	}
+	return violations
 }
 
 func staleScenarioManifest(path string) bool {

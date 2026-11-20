@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 )
@@ -20,7 +21,8 @@ type Command struct {
 	Mode    CommandMode
 	Payload string
 
-	StdinBytes int64
+	StdinBytes       int64
+	ParentStageToken string
 
 	SHA256 string
 
@@ -93,13 +95,8 @@ const approveSurfaceUsage = "usage: glm-worker --approve-surface current-diff"
 const acceptedFixScopeCurrentDiffCLI = "current-diff"
 
 var commandParsers = map[string]commandParser{
-	"--task": newTaskCommand,
-	"--decision-stdin": func(args []string) (Command, error) {
-		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
-	},
-	"--fix-stdin": func(args []string) (Command, error) {
-		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
-	},
+	"--task":                              newTaskCommand,
+	parentaction.StagedWorkerInput:        stagedParentInputCommand,
 	"--execution-milestones-stdin":        executionMilestoneTaskCommand,
 	"--execution-milestones-revise-stdin": executionMilestoneRevisionCommand,
 	"--approve-surface": func(args []string) (Command, error) {
@@ -226,36 +223,49 @@ func requiredPayloadCommand(args []string, mode CommandMode, usage string) (Comm
 	return Command{Mode: mode, Payload: args[1]}, nil
 }
 
-func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFixOptions bool) (Command, error) {
-	if len(args) < 2 {
+func stagedParentInputCommand(args []string) (Command, error) {
+	const usage = "usage: glm-worker --staged-parent-input <decision|fix> <token> --sha256 <hex>"
+	if len(args) < 5 || args[2] == "" || args[3] != "--sha256" {
+		return Command{}, machinecli.UsageErrorf("%s", usage)
+	}
+	digest, err := parsePayloadSHA256(args[4])
+	if err != nil {
+		return Command{}, machinecli.UsageErrorf("%s", usage)
+	}
+	command := Command{ParentStageToken: args[2], SHA256: digest}
+	switch parentaction.Action(args[1]) {
+	case parentaction.ActionDecision:
+		if len(args) != 5 {
+			return Command{}, machinecli.UsageErrorf("%s", usage)
+		}
+		command.Mode = ModeDecision
+	case parentaction.ActionFix:
+		options, remaining, err := parentfix.Extract(args[5:])
+		if err != nil || len(remaining) != 0 {
+			return Command{}, machinecli.UsageErrorf("%s %s", usage, fixOriginUsage)
+		}
+		command.Mode = ModeFix
+		command.Origin = options.Origin
+		command.Cause = options.Cause
+		command.AcceptedScope = options.AcceptedScope
+	default:
+		return Command{}, machinecli.UsageErrorf("%s", usage)
+	}
+	return command, nil
+}
+
+func stdinPayloadCommand(mode CommandMode, args []string, usage string) (Command, error) {
+	if len(args) != 2 && len(args) != 4 {
 		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	payloadBytes, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil || payloadBytes <= 0 {
 		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
-
-	semantic := parentfix.Options{}
-	options := args[2:]
-	if allowFixOptions {
-		semantic, options, err = parentfix.Extract(options)
-		if err != nil {
-			return Command{}, machinecli.UsageErrorf("%s", usage)
-		}
-	}
-	if len(options)%2 != 0 {
-		return Command{}, machinecli.UsageErrorf("%s", usage)
-	}
-	command := Command{
-		Mode:          mode,
-		StdinBytes:    payloadBytes,
-		Origin:        semantic.Origin,
-		Cause:         semantic.Cause,
-		AcceptedScope: semantic.AcceptedScope,
-	}
-	seenSHA256 := false
-	for index := 0; index < len(options); index += 2 {
-		if err := applyStdinPayloadOption(&command, options[index], options[index+1], usage, &seenSHA256); err != nil {
+	command := Command{Mode: mode, StdinBytes: payloadBytes}
+	if len(args) == 4 {
+		seenSHA256 := false
+		if err := applyStdinPayloadOption(&command, args[2], args[3], usage, &seenSHA256); err != nil {
 			return Command{}, err
 		}
 	}

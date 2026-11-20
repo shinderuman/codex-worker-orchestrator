@@ -58,6 +58,10 @@ type telemetryCorpusHeader struct {
 	TreeUsage      json.RawMessage `json:"tree_usage"`
 }
 
+func (header telemetryCorpusHeader) current() bool {
+	return header.Version != nil && *header.Version == ModelCallLogVersion && header.SchemaRevision == ModelCallLogSchemaRevision
+}
+
 func (s *StateStore) scanTelemetryCorpus(filter TelemetryQueryFilter) (*telemetryCorpusScan, error) {
 	dir := s.Path("telemetry")
 	entries, err := os.ReadDir(dir)
@@ -141,7 +145,7 @@ func decodeTelemetryCorpusLine(
 			currentReadError: "telemetryを読めません: versionがありません",
 		}, true
 	}
-	if *header.Version != ModelCallLogVersion || header.SchemaRevision != ModelCallLogSchemaRevision {
+	if !header.current() {
 		return telemetryCorpusRecord{
 			malformedReason: telemetryMalformedReasonUnsupportedSchema,
 			currentReadError: fmt.Sprintf(

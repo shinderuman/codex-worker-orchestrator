@@ -2,13 +2,10 @@ package app
 
 import "testing"
 
-func TestFixStdinAcceptsExplicitCurrentDiffScope(t *testing.T) {
+func TestStagedFixAcceptsExplicitCurrentDiffScope(t *testing.T) {
 	t.Parallel()
-	command, err := ParseCommand([]string{
-		"--fix-stdin", "12",
-		"--origin", "glm-reviewer",
-		"--accepted-scope", "current-diff",
-	})
+	command, err := ParseCommand(stagedTestCommandArgs("fix", "--origin", "glm-reviewer",
+		"--accepted-scope", "current-diff"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,13 +14,10 @@ func TestFixStdinAcceptsExplicitCurrentDiffScope(t *testing.T) {
 	}
 }
 
-func TestFixStdinParsesCauseWithOrigin(t *testing.T) {
+func TestStagedFixParsesCauseWithOrigin(t *testing.T) {
 	t.Parallel()
-	command, err := ParseCommand([]string{
-		"--fix-stdin", "12",
-		"--origin", "codex-review",
-		"--cause", "reviewer",
-	})
+	command, err := ParseCommand(stagedTestCommandArgs("fix", "--origin", "codex-review",
+		"--cause", "reviewer"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,14 +40,14 @@ func TestApproveSurfaceRequiresExactCurrentDiffScope(t *testing.T) {
 func TestAcceptedScopeIsFixOnlyAndClosedValue(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"--decision-stdin", "12", "--accepted-scope", "current-diff"},
-		{"--fix-stdin", "12", "--accepted-scope", "anything-else"},
-		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--accepted-scope", "current-diff"},
-		{"--decision-stdin", "12", "--cause", "worker"},
-		{"--fix-stdin", "12", "--origin", "codex-review"},
-		{"--fix-stdin", "12", "--origin", "codex-review", "--cause", "legacy-layer"},
-		{"--fix-stdin", "12", "--origin", "glm-reviewer", "--cause", "worker", "--cause", "reviewer"},
-		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only"},
+		stagedTestCommandArgs("decision", "--accepted-scope", "current-diff"),
+		stagedTestCommandArgs("fix", "--accepted-scope", "anything-else"),
+		stagedTestCommandArgs("fix", "--accepted-scope", "current-diff", "--accepted-scope", "current-diff"),
+		stagedTestCommandArgs("decision", "--cause", "worker"),
+		stagedTestCommandArgs("fix", "--origin", "codex-review"),
+		stagedTestCommandArgs("fix", "--origin", "codex-review", "--cause", "legacy-layer"),
+		stagedTestCommandArgs("fix", "--origin", "glm-reviewer", "--cause", "worker", "--cause", "reviewer"),
+		stagedTestCommandArgs("fix", "--accepted-scope", "current-diff", "--approval-only"),
 	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("accepted invalid args: %v", args)
