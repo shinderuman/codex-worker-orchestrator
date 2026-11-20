@@ -27,6 +27,10 @@ exportの共通fixtureとシナリオを整理する。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 controllerのexport fixtureとcatch-all scenarioの移設は一度。

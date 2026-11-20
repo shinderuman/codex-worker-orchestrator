@@ -11,6 +11,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/gitexec"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type reviewNextPlanSections struct {
@@ -234,42 +235,26 @@ func (s *reviewNextPlanSections) addLine(line string) error {
 }
 
 func reviewPlanTaskPath(row string) (string, bool) {
-	if strings.HasPrefix(row, "- [\x60IMPLEMENTATION_TASKS/") {
-		rest := strings.TrimPrefix(row, "- [\x60")
-		path, after, ok := strings.Cut(rest, "\x60](")
-		if !ok || !strings.HasPrefix(path, state.ParentTasksDir+"/") ||
-			!strings.HasSuffix(path, ".md") || after != path+")" {
-			return "", false
-		}
-		return path, true
+	path, err := taskcontract.ParsePlanTaskEntry(row)
+	if err != nil || taskcontract.ValidateActiveTaskPath(path) != nil {
+		return "", false
 	}
-	if strings.HasPrefix(row, "- \x60IMPLEMENTATION_TASKS/") && strings.HasSuffix(row, "\x60") {
-		path := strings.TrimSuffix(strings.TrimPrefix(row, "- \x60"), "\x60")
-		if strings.HasPrefix(path, state.ParentTasksDir+"/") && strings.HasSuffix(path, ".md") {
-			return path, true
-		}
-	}
-	return "", false
+	return path, true
 }
 
 func reviewPlanActivePath(planWithoutNext string) (string, bool) {
-	section := false
-	active := ""
+	found := false
 	for _, line := range strings.Split(planWithoutNext, "\n") {
-		if strings.HasPrefix(line, "## ") {
-			section = strings.HasPrefix(line, "## ACTIVE")
+		if !strings.HasPrefix(line, "## ") || strings.TrimSpace(strings.TrimPrefix(line, "## ")) != "ACTIVE" {
 			continue
 		}
-		if !section || strings.TrimSpace(line) == "" {
-			continue
-		}
-		path, ok := reviewPlanTaskPath(strings.TrimSpace(line))
-		if !ok || active != "" {
+		if found {
 			return "", false
 		}
-		active = path
+		found = true
 	}
-	return active, active != ""
+	path, err := taskcontract.ParsePlanSchedule(planWithoutNext).ActiveTask()
+	return path, err == nil
 }
 
 func equivalentPreAdvancementIndex(repo, oldHead, newHead, oldDigest string, changed map[string]string) error {
