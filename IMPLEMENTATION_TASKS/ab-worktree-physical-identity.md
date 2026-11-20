@@ -20,6 +20,10 @@ A/B比較の独立したworktreeを検証する。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 **同じ作業ツリーで採取したA/B記録を独立と判定できる。** `abeval/validate.go::ValidatePair` の比較は `filepath.Clean` した文字列。実在する一時directoryとそのsymlinkを両側のworktreeに指定すると、他の条件が妥当なpairとして通った。

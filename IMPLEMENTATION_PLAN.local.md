@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- [`IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md`](IMPLEMENTATION_TASKS/export-fixture-and-scenario-ownership.md)
+- [`IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md`](IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md)
 
 ## NEXT（優先順）
 
-- [`IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md`](IMPLEMENTATION_TASKS/ab-worktree-physical-identity.md)
 - [`IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md`](IMPLEMENTATION_TASKS/clean-cutover-live-command-proof.md)
 - [`IMPLEMENTATION_TASKS/remove-backward-compatibility-surfaces.md`](IMPLEMENTATION_TASKS/remove-backward-compatibility-surfaces.md)
 
