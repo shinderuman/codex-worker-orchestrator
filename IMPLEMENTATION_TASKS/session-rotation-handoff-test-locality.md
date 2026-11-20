@@ -27,6 +27,10 @@ rotationのhandoff統合テストをまとめる。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 app/parent_handoff_test.goのrotation群を同packageのrotationテストへまとめる。
