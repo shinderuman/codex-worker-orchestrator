@@ -63,3 +63,29 @@ func TestRecordQualityGateValidationPreservesRunAndSnapshotIdentity(t *testing.T
 		t.Fatalf("validation evidence exposed absolute state path: %q", validation.Evidence)
 	}
 }
+
+func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
+	t.Parallel()
+	_, st := newQualityGateEnv(t)
+	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
+	if err := st.Write("task.id", taskID); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := prepareQualityGateStartAt("go-test", st, initGitRepo(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.TaskID != taskID {
+		t.Fatalf("identity = %#v", identity)
+	}
+	record, err := newQualityGateRunRecord(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.TaskID != taskID {
+		t.Fatalf("record task id = %q", record.TaskID)
+	}
+	if record.WorktreeDigestExcludingParent == "" || record.WorktreeDigestExcludingParent != identity.Snapshot.WorktreeDigestExcludingParent {
+		t.Fatalf("record parent-excluded digest = %q", record.WorktreeDigestExcludingParent)
+	}
+}

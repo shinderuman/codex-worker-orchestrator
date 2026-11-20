@@ -27,6 +27,10 @@ PlanのTask表記をreview判定とscheduleで一致させる。
 
 status: not-applicable
 
+## Execution authority
+
+mode: parent-only
+
 ## Contract
 
 `taskcontract/schedule.go::scheduleEntryPath` はplain pathを許可し、`workflow/review_source_equivalence.go::reviewPlanTaskPath` は拒否する。同関数はACTIVE抽出にも使われる。
