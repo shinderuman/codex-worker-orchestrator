@@ -13,8 +13,8 @@ const defaultUnknownModelContextWindowTokens = 200_000
 const zaiModelContextWindowSource = "zai-model-spec"
 
 var zaiModelContextWindowTokens = map[string]int{
-	"glm-4.7": 200_000,
-	"glm-5.3": 1_000_000,
+	"glm-4.7":     200_000,
+	"glm-5.4[1m]": 1_000_000,
 }
 
 func contextWindowForModel(model string, settingEnv map[string]string) contextWindowConfig {

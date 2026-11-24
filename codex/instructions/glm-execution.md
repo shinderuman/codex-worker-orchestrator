@@ -4,7 +4,7 @@
 
 ## model routing
 
-- 通常workerはGLM-5.3/high。初回低リスクreviewはGLM-4.7/high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.3/highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.3/max。
+- 通常workerはGLM-5.4/high。初回低リスクreviewはGLM-4.7/high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.4/highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.4/max。
 
 
 ## 実行
