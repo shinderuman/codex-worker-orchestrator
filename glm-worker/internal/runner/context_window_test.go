@@ -15,10 +15,9 @@ func TestContextWindowForManagedGLMModels(t *testing.T) {
 		known    int
 		declared int
 	}{
-		{alias: "opus", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
-		{alias: "sonnet", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
-		{alias: "glm-5.4", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
-		{alias: "glm-5.4[1m]", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
+		{alias: "opus", model: "glm-5.4[1m]", known: 1_000_000, declared: 1_000_000},
+		{alias: "sonnet", model: "glm-5.4[1m]", known: 1_000_000, declared: 1_000_000},
+		{alias: "glm-5.4[1m]", model: "glm-5.4[1m]", known: 1_000_000, declared: 1_000_000},
 		{alias: "haiku", model: "glm-4.7", known: 200_000, declared: 0},
 	}
 	for _, test := range tests {
