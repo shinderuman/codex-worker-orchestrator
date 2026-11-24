@@ -517,7 +517,7 @@ func TestLoadSettingEnvExtractsOnlyAllowlistedKeys(t *testing.T) {
 		"env": map[string]any{
 			"ANTHROPIC_AUTH_TOKEN":                     "zai-token",
 			"ANTHROPIC_BASE_URL":                       "https://api.z.ai/api/anthropic",
-			"ANTHROPIC_DEFAULT_OPUS_MODEL":             "glm-5.3",
+			"ANTHROPIC_DEFAULT_OPUS_MODEL":             "glm-5.4[1m]",
 			"API_TIMEOUT_MS":                           "3000000",
 			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
 			"UNRELATED_ENV":                            "dropped",
@@ -540,7 +540,7 @@ func TestLoadSettingEnvExtractsOnlyAllowlistedKeys(t *testing.T) {
 	if result["ANTHROPIC_AUTH_TOKEN"] != "zai-token" || result["ANTHROPIC_BASE_URL"] != "https://api.z.ai/api/anthropic" {
 		t.Fatalf("Z.ai必須keyが抽出されていません: %#v", result)
 	}
-	if result["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "glm-5.3" || result["API_TIMEOUT_MS"] != "3000000" {
+	if result["ANTHROPIC_DEFAULT_OPUS_MODEL"] != "glm-5.4[1m]" || result["API_TIMEOUT_MS"] != "3000000" {
 		t.Fatalf("model alias/runtime keyが抽出されていません: %#v", result)
 	}
 	for key, value := range result {

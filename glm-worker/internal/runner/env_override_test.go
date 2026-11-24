@@ -127,7 +127,7 @@ func TestLoadSettingEnvOverrideDeleteSuppressesSettingsKey(t *testing.T) {
 	claudeConfigDir := t.TempDir()
 	writeSettings(t, claudeConfigDir, map[string]any{
 		"ANTHROPIC_BASE_URL":           "https://api.z.ai/api/anthropic",
-		"ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.4[1m]",
 		"API_TIMEOUT_MS":               "3000000",
 	})
 	override := writeOverrideFile(t, `{"env":{"ANTHROPIC_BASE_URL":null,"ANTHROPIC_DEFAULT_OPUS_MODEL":null}}`)
@@ -155,7 +155,7 @@ func TestLoadSettingEnvOverrideAbsentEqualsNoOverride(t *testing.T) {
 	claudeConfigDir := t.TempDir()
 	writeSettings(t, claudeConfigDir, map[string]any{
 		"ANTHROPIC_BASE_URL":                       "https://api.z.ai/api/anthropic",
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":             "glm-5.3",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":             "glm-5.4[1m]",
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
 	})
 

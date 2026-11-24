@@ -14,11 +14,14 @@ const zaiModelContextWindowSource = "zai-model-spec"
 
 var zaiModelContextWindowTokens = map[string]int{
 	"glm-4.7": 200_000,
-	"glm-5.3": 1_000_000,
+	"glm-5.4": 1_000_000,
 }
 
 func contextWindowForModel(model string, settingEnv map[string]string) contextWindowConfig {
 	resolved := resolveClaudeModelID(model, settingEnv)
+	if strings.EqualFold(resolved, "glm-5.4[1m]") {
+		resolved = "glm-5.4"
+	}
 	result := contextWindowConfig{resolvedModelID: resolved}
 	window, ok := zaiModelContextWindowTokens[strings.ToLower(resolved)]
 	if !ok {

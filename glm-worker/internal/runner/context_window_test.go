@@ -5,8 +5,8 @@ import "testing"
 func TestContextWindowForManagedGLMModels(t *testing.T) {
 	t.Parallel()
 	env := map[string]string{
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "glm-5.3",
-		"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL":   "glm-5.4[1m]",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.4[1m]",
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "glm-4.7",
 	}
 	tests := []struct {
@@ -15,8 +15,10 @@ func TestContextWindowForManagedGLMModels(t *testing.T) {
 		known    int
 		declared int
 	}{
-		{alias: "opus", model: "glm-5.3", known: 1_000_000, declared: 1_000_000},
-		{alias: "sonnet", model: "glm-5.3", known: 1_000_000, declared: 1_000_000},
+		{alias: "opus", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
+		{alias: "sonnet", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
+		{alias: "glm-5.4", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
+		{alias: "glm-5.4[1m]", model: "glm-5.4", known: 1_000_000, declared: 1_000_000},
 		{alias: "haiku", model: "glm-4.7", known: 200_000, declared: 0},
 	}
 	for _, test := range tests {

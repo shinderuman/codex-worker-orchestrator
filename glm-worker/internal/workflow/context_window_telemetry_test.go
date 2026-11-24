@@ -26,7 +26,7 @@ func TestBuildModelCallLogCarriesContextWindowDeclaration(t *testing.T) {
 		runner.RunResult{
 			SessionID:                         "session",
 			Response:                          "response",
-			ResolvedModelID:                   "glm-5.3",
+			ResolvedModelID:                   "glm-5.4",
 			ConfiguredAutoCompactWindowTokens: 500_000,
 			KnownModelContextWindowTokens:     1_000_000,
 			DeclaredMaxContextWindowTokens:    1_000_000,
@@ -39,7 +39,7 @@ func TestBuildModelCallLogCarriesContextWindowDeclaration(t *testing.T) {
 		nil,
 		"unused",
 	)
-	if entry.ResolvedModelID != "glm-5.3" || entry.ConfiguredAutoCompactWindowTokens != 500_000 ||
+	if entry.ResolvedModelID != "glm-5.4" || entry.ConfiguredAutoCompactWindowTokens != 500_000 ||
 		entry.KnownModelContextWindowTokens != 1_000_000 || entry.DeclaredMaxContextWindowTokens != 1_000_000 ||
 		entry.ContextWindowSource != "zai-model-spec" {
 		t.Fatalf("context declaration = %#v", entry)
